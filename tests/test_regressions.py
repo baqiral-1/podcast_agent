@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 import json
 from pathlib import Path
 
@@ -410,6 +411,50 @@ def test_openai_client_logs_llm_error_for_timeout(tmp_path: Path) -> None:
     assert errors
     assert errors[0]["payload"]["schema_name"] == "structured_chapter"
     assert errors[0]["payload"]["error_type"] == "TimeoutError"
+
+
+def test_run_logger_remains_parseable_under_concurrent_writes(tmp_path: Path) -> None:
+    run_logger = RunLogger(tmp_path / "runs")
+    run_logger.bind_run("threaded-run")
+
+    def emit(thread_id: int) -> None:
+        for index in range(100):
+            run_logger.log("thread_event", thread_id=thread_id, sequence=index)
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        for thread_id in range(8):
+            executor.submit(emit, thread_id)
+
+    run_log = tmp_path / "runs" / "threaded-run" / "run.log"
+    lines = run_log.read_text(encoding="utf-8").splitlines()
+    parsed = [json.loads(line) for line in lines]
+
+    assert len(parsed) == 800
+    assert all(line["event_type"] == "thread_event" for line in parsed)
+
+
+def test_run_logger_preserves_buffered_and_concurrent_events(tmp_path: Path) -> None:
+    run_logger = RunLogger(tmp_path / "runs")
+    for index in range(10):
+        run_logger.log("buffered_event", sequence=index)
+
+    run_logger.bind_run("buffered-threaded-run")
+
+    def emit(thread_id: int) -> None:
+        for index in range(50):
+            run_logger.log("thread_event", thread_id=thread_id, sequence=index)
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        for thread_id in range(4):
+            executor.submit(emit, thread_id)
+
+    run_log = tmp_path / "runs" / "buffered-threaded-run" / "run.log"
+    lines = run_log.read_text(encoding="utf-8").splitlines()
+    parsed = [json.loads(line) for line in lines]
+
+    assert len(parsed) == 210
+    assert sum(1 for line in parsed if line["event_type"] == "buffered_event") == 10
+    assert sum(1 for line in parsed if line["event_type"] == "thread_event") == 200
 
 
 def test_planning_retries_after_non_compliant_series_plan(tmp_path: Path) -> None:
