@@ -6,13 +6,15 @@ import json
 from pathlib import Path
 
 from podcast_agent.cli.app import _build_orchestrator
-from podcast_agent.agents import EpisodePlanningAgent
+from podcast_agent.agents import EpisodePlanningAgent, WritingAgent
 from podcast_agent.config import PipelineConfig, Settings
 from podcast_agent.db import InMemoryRepository
 from podcast_agent.db.repository import _format_pgvector
 from podcast_agent.llm import HeuristicLLMClient
 from podcast_agent.llm.base import LLMClient
+from podcast_agent.llm.openai_compatible import HTTPTransport, OpenAICompatibleLLMClient
 from podcast_agent.pipeline.orchestrator import PipelineOrchestrator
+from podcast_agent.run_logging import RunLogger
 from podcast_agent.schemas.models import (
     BookAnalysis,
     BookChapter,
@@ -23,6 +25,7 @@ from podcast_agent.schemas.models import (
     EpisodeCluster,
     EpisodePlan,
     GroundingStatus,
+    RetrievalHit,
     SeriesPlan,
 )
 
@@ -175,6 +178,84 @@ class FlakyAnalysisLLM(LLMClient):
         return self.delegate.generate_json(schema_name, instructions, payload, response_model)
 
 
+class FlakyWritingLLM(LLMClient):
+    """LLM stub that returns one summary-length script before recovering."""
+
+    def __init__(self) -> None:
+        from podcast_agent.llm import HeuristicLLMClient
+
+        self.delegate = HeuristicLLMClient()
+        self.write_calls = 0
+
+    def generate_json(self, schema_name, instructions, payload, response_model):
+        if schema_name == "beat_script":
+            self.write_calls += 1
+            if self.write_calls == 1:
+                beat = payload["beat"]
+                first_chunk = payload["retrieval_hits"][0]["chunk_id"]
+                return response_model.model_validate(
+                    {
+                        "beat_id": beat["beat_id"],
+                        "segments": [
+                            {
+                                "segment_id": f"{beat['beat_id']}-segment-1",
+                                "beat_id": beat["beat_id"],
+                                "heading": beat["title"],
+                                "narration": "Short summary.",
+                                "claims": [
+                                    {
+                                        "claim_id": "claim-1",
+                                        "text": "Short claim.",
+                                        "evidence_chunk_ids": [first_chunk],
+                                    }
+                                ],
+                                "citations": [first_chunk],
+                            }
+                        ],
+                    }
+                )
+        return self.delegate.generate_json(schema_name, instructions, payload, response_model)
+
+
+class InspectingWritingLLM(LLMClient):
+    """LLM stub that records beat payload details."""
+
+    def __init__(self) -> None:
+        from podcast_agent.llm import HeuristicLLMClient
+
+        self.delegate = HeuristicLLMClient()
+        self.beat_calls: list[dict] = []
+
+    def generate_json(self, schema_name, instructions, payload, response_model):
+        if schema_name == "beat_script":
+            self.beat_calls.append(
+                {
+                    "beat_id": payload["beat"]["beat_id"],
+                    "chunk_count": len(payload["retrieval_hits"]),
+                    "chunk_ids": [hit["chunk_id"] for hit in payload["retrieval_hits"]],
+                }
+            )
+        return self.delegate.generate_json(schema_name, instructions, payload, response_model)
+
+
+class FailingStructuringLLM(LLMClient):
+    """LLM stub that fails during chapter structuring."""
+
+    def generate_json(self, schema_name, instructions, payload, response_model):
+        if schema_name == "structured_chapter":
+            chapter_number = payload["draft"]["chapter_number"]
+            if chapter_number == 2:
+                raise TimeoutError("simulated chapter timeout")
+        return HeuristicLLMClient().generate_json(schema_name, instructions, payload, response_model)
+
+
+class TimeoutTransport(HTTPTransport):
+    """Transport stub that raises a raw timeout-like exception."""
+
+    def post_json(self, url, headers, payload, timeout_seconds):
+        raise TimeoutError("simulated transport timeout")
+
+
 def test_build_orchestrator_uses_in_memory_when_database_url_missing(monkeypatch) -> None:
     monkeypatch.delenv("DATABASE_URL", raising=False)
 
@@ -272,6 +353,65 @@ def test_incremental_structuring_logs_one_request_per_chapter(tmp_path: Path) ->
     assert len(chapter_requests) == 2
 
 
+def test_structuring_logs_failed_chapter_before_aborting(tmp_path: Path) -> None:
+    book_path = tmp_path / "book.txt"
+    book_path.write_text(BOOK_TEXT, encoding="utf-8")
+    settings = Settings(pipeline=PipelineConfig(artifact_root=tmp_path / "runs"))
+    orchestrator = PipelineOrchestrator(
+        repository=InMemoryRepository(),
+        llm=FailingStructuringLLM(),
+        settings=settings,
+    )
+
+    ingestion = orchestrator.ingest_book(book_path, title="Broken Structuring", author="A. Writer")
+
+    try:
+        orchestrator.index_book(ingestion)
+    except RuntimeError as exc:
+        assert "Structuring failed for chapter 2" in str(exc)
+    else:
+        raise AssertionError("Expected chapter structuring to fail")
+
+    run_log = tmp_path / "runs" / orchestrator.run_id / "run.log"
+    lines = [json.loads(line) for line in run_log.read_text(encoding="utf-8").splitlines()]
+    failures = [line for line in lines if line["event_type"] == "structuring_chapter_failed"]
+
+    assert failures
+    assert failures[0]["payload"]["chapter_number"] == 2
+    assert failures[0]["payload"]["error_type"] == "TimeoutError"
+
+
+def test_openai_client_logs_llm_error_for_timeout(tmp_path: Path) -> None:
+    settings = Settings(
+        llm=Settings().llm.model_copy(update={"api_key": "test-key"}),
+        pipeline=PipelineConfig(artifact_root=tmp_path / "runs"),
+    )
+    run_logger = RunLogger(tmp_path / "runs")
+    run_logger.bind_run("test-run")
+    client = OpenAICompatibleLLMClient(settings.llm, transport=TimeoutTransport())
+    client.set_run_logger(run_logger)
+
+    try:
+        client.generate_json(
+            schema_name="structured_chapter",
+            instructions="Normalize this chapter into canonical chunks.",
+            payload={"draft": {"chapter_number": 1, "title": "Chapter 1", "summary": "S", "chunks": []}},
+            response_model=BookAnalysis,
+        )
+    except TimeoutError as exc:
+        assert "timeout" in str(exc)
+    else:
+        raise AssertionError("Expected timeout to be raised")
+
+    run_log = tmp_path / "runs" / "test-run" / "run.log"
+    lines = [json.loads(line) for line in run_log.read_text(encoding="utf-8").splitlines()]
+    errors = [line for line in lines if line["event_type"] == "llm_error"]
+
+    assert errors
+    assert errors[0]["payload"]["schema_name"] == "structured_chapter"
+    assert errors[0]["payload"]["error_type"] == "TimeoutError"
+
+
 def test_planning_retries_after_non_compliant_series_plan(tmp_path: Path) -> None:
     book_path = tmp_path / "book.txt"
     book_path.write_text(
@@ -326,7 +466,7 @@ def test_analysis_retries_after_sparse_cluster_output(tmp_path: Path) -> None:
     assert diagnostics[-1]["payload"]["violations"] == []
 
 
-def test_planning_allows_multi_episode_books_when_total_words_cannot_fill_all_targets() -> None:
+def test_planning_returns_single_episode_when_book_is_below_source_word_floor() -> None:
     chunk_a = "alpha " * 3000
     chunk_b = "beta " * 3000
     structure = BookStructure(
@@ -439,19 +579,23 @@ def test_planning_allows_multi_episode_books_when_total_words_cannot_fill_all_ta
     )
     planner = EpisodePlanningAgent(HeuristicLLMClient())
 
-    assert planner._compliance_violations(plan, structure, analysis) == []
+    normalized = planner._normalize_plan(plan, structure)
+
+    assert len(normalized.episodes) == 1
+    assert normalized.episodes[0].chapter_ids == ["medium-book-chapter-1", "medium-book-chapter-2"]
+    assert planner._compliance_violations(normalized, structure, analysis) == []
 
 
-def test_planning_rebalances_short_episode_above_standalone_minimum() -> None:
+def test_planning_splits_large_books_only_when_each_episode_meets_source_floor() -> None:
     def words(label: str, count: int) -> str:
         return ((label + " ") * count).strip()
 
-    chapter_counts = [1325, 1313, 1328, 1365, 1458, 1426, 1321, 1335, 1337, 1355, 1415, 1435]
+    chapter_word_count = 26000
     chapters = []
     chunks = []
     clusters = []
-    for index, word_count in enumerate(chapter_counts, start=1):
-        chapter_id = f"river-of-hours-chapter-{index}"
+    for index in range(1, 5):
+        chapter_id = f"large-book-chapter-{index}"
         chunk_id = f"{chapter_id}-chunk-1"
         chapters.append(
             BookChapter(
@@ -469,149 +613,55 @@ def test_planning_rebalances_short_episode_above_standalone_minimum() -> None:
                 chapter_title=f"Chapter {index}",
                 chapter_number=index,
                 sequence=1,
-                text=words(f"chapter{index}", word_count),
+                text=words(f"chapter{index}", chapter_word_count),
                 start_word=0,
-                end_word=word_count,
-                source_offsets=[0, word_count],
+                end_word=chapter_word_count,
+                source_offsets=[0, chapter_word_count],
                 themes=[f"theme-{index}"],
             )
         )
-    structure = BookStructure(book_id="river-of-hours", title="River of Hours", chapters=chapters, chunks=chunks)
-    clusters = [
-        EpisodeCluster(
-            cluster_id="cluster-1",
-            label="Cluster 1",
-            rationale="Chapters 1-3",
-            chapter_ids=[chapters[0].chapter_id, chapters[1].chapter_id, chapters[2].chapter_id],
-            chunk_ids=[chapters[0].chunk_ids[0], chapters[1].chunk_ids[0], chapters[2].chunk_ids[0]],
-            themes=["theme-1"],
-        ),
-        EpisodeCluster(
-            cluster_id="cluster-2",
-            label="Cluster 2",
-            rationale="Chapters 4-6",
-            chapter_ids=[chapters[3].chapter_id, chapters[4].chapter_id, chapters[5].chapter_id],
-            chunk_ids=[chapters[3].chunk_ids[0], chapters[4].chunk_ids[0], chapters[5].chunk_ids[0]],
-            themes=["theme-4"],
-        ),
-        EpisodeCluster(
-            cluster_id="cluster-3",
-            label="Cluster 3",
-            rationale="Chapters 7-8",
-            chapter_ids=[chapters[6].chapter_id, chapters[7].chapter_id],
-            chunk_ids=[chapters[6].chunk_ids[0], chapters[7].chunk_ids[0]],
-            themes=["theme-7"],
-        ),
-        EpisodeCluster(
-            cluster_id="cluster-4",
-            label="Cluster 4",
-            rationale="Chapters 9-12",
-            chapter_ids=[chapters[8].chapter_id, chapters[9].chapter_id, chapters[10].chapter_id, chapters[11].chapter_id],
-            chunk_ids=[chapters[8].chunk_ids[0], chapters[9].chunk_ids[0], chapters[10].chunk_ids[0], chapters[11].chunk_ids[0]],
-            themes=["theme-9"],
-        ),
-    ]
+        clusters.append(
+            EpisodeCluster(
+                cluster_id=f"cluster-{index}",
+                label=f"Cluster {index}",
+                rationale=f"Part {index}",
+                chapter_ids=[chapter_id],
+                chunk_ids=[chunk_id],
+                themes=[f"theme-{index}"],
+            )
+        )
+    structure = BookStructure(book_id="large-book", title="Large Book", chapters=chapters, chunks=chunks)
     analysis = BookAnalysis(
-        book_id="river-of-hours",
-        themes=["identity"],
+        book_id="large-book",
+        themes=["theme-1"],
         continuity_arcs=[],
         notable_claims=[],
         episode_clusters=clusters,
     )
     plan = SeriesPlan(
-        book_id="river-of-hours",
+        book_id="large-book",
         format="single_narrator",
-        strategy_summary="Initial plan.",
+        strategy_summary="Four-part draft.",
         episodes=[
             EpisodePlan(
-                episode_id="episode-1",
-                sequence=1,
-                title="Episode 1",
-                synopsis="Chapters 1-3",
-                chapter_ids=[chapters[0].chapter_id, chapters[1].chapter_id, chapters[2].chapter_id],
-                chunk_ids=[chapters[0].chunk_ids[0], chapters[1].chunk_ids[0], chapters[2].chunk_ids[0]],
-                themes=["theme-1"],
-                beats=[EpisodeBeat(beat_id="beat-1", title="Beat 1", objective="Objective", chunk_ids=[chapters[0].chunk_ids[0]], claim_requirements=[])],
-            ),
-            EpisodePlan(
-                episode_id="episode-2",
-                sequence=2,
-                title="Episode 2",
-                synopsis="Chapters 4-6",
-                chapter_ids=[chapters[3].chapter_id, chapters[4].chapter_id, chapters[5].chapter_id],
-                chunk_ids=[chapters[3].chunk_ids[0], chapters[4].chunk_ids[0], chapters[5].chunk_ids[0]],
-                themes=["theme-4"],
-                beats=[EpisodeBeat(beat_id="beat-2", title="Beat 2", objective="Objective", chunk_ids=[chapters[3].chunk_ids[0]], claim_requirements=[])],
-            ),
-            EpisodePlan(
-                episode_id="episode-3",
-                sequence=3,
-                title="Episode 3",
-                synopsis="Chapters 7-8",
-                chapter_ids=[chapters[6].chapter_id, chapters[7].chapter_id],
-                chunk_ids=[chapters[6].chunk_ids[0], chapters[7].chunk_ids[0]],
-                themes=["theme-7"],
-                beats=[EpisodeBeat(beat_id="beat-3", title="Beat 3", objective="Objective", chunk_ids=[chapters[6].chunk_ids[0]], claim_requirements=[])],
-            ),
-            EpisodePlan(
-                episode_id="episode-4",
-                sequence=4,
-                title="Episode 4",
-                synopsis="Chapters 9-12",
-                chapter_ids=[chapters[8].chapter_id, chapters[9].chapter_id, chapters[10].chapter_id, chapters[11].chapter_id],
-                chunk_ids=[chapters[8].chunk_ids[0], chapters[9].chunk_ids[0], chapters[10].chunk_ids[0], chapters[11].chunk_ids[0]],
-                themes=["theme-9"],
-                beats=[EpisodeBeat(beat_id="beat-4", title="Beat 4", objective="Objective", chunk_ids=[chapters[8].chunk_ids[0]], claim_requirements=[])],
-            ),
-        ],
-    )
-    planner = EpisodePlanningAgent(HeuristicLLMClient())
-
-    normalized = planner._normalize_plan(plan, structure)
-
-    assert [episode.chapter_ids for episode in normalized.episodes] == [
-        [chapters[0].chapter_id, chapters[1].chapter_id, chapters[2].chapter_id],
-        [chapters[3].chapter_id, chapters[4].chapter_id, chapters[5].chapter_id],
-        [chapters[6].chapter_id, chapters[7].chapter_id, chapters[8].chapter_id],
-        [chapters[9].chapter_id, chapters[10].chapter_id, chapters[11].chapter_id],
-    ]
-    assert planner._compliance_violations(normalized, structure, analysis) == []
-
-
-def test_planning_merges_episode_only_below_ten_minutes() -> None:
-    def words(label: str, count: int) -> str:
-        return ((label + " ") * count).strip()
-
-    chapters = [
-        BookChapter(chapter_id="book-chapter-1", chapter_number=1, title="Chapter 1", summary="A", chunk_ids=["c1"]),
-        BookChapter(chapter_id="book-chapter-2", chapter_number=2, title="Chapter 2", summary="B", chunk_ids=["c2"]),
-        BookChapter(chapter_id="book-chapter-3", chapter_number=3, title="Chapter 3", summary="C", chunk_ids=["c3"]),
-    ]
-    chunks = [
-        BookChunk(chunk_id="c1", chapter_id="book-chapter-1", chapter_title="Chapter 1", chapter_number=1, sequence=1, text=words("alpha", 2200), start_word=0, end_word=2200, source_offsets=[0, 2200], themes=["alpha"]),
-        BookChunk(chunk_id="c2", chapter_id="book-chapter-2", chapter_title="Chapter 2", chapter_number=2, sequence=1, text=words("beta", 2100), start_word=0, end_word=2100, source_offsets=[0, 2100], themes=["beta"]),
-        BookChunk(chunk_id="c3", chapter_id="book-chapter-3", chapter_title="Chapter 3", chapter_number=3, sequence=1, text=words("gamma", 900), start_word=0, end_word=900, source_offsets=[0, 900], themes=["gamma"]),
-    ]
-    structure = BookStructure(book_id="short-book", title="Short Book", chapters=chapters, chunks=chunks)
-    analysis = BookAnalysis(
-        book_id="short-book",
-        themes=["alpha"],
-        continuity_arcs=[],
-        notable_claims=[],
-        episode_clusters=[
-            EpisodeCluster(cluster_id="cluster-1", label="Cluster 1", rationale="Part 1", chapter_ids=["book-chapter-1"], chunk_ids=["c1"], themes=["alpha"]),
-            EpisodeCluster(cluster_id="cluster-2", label="Cluster 2", rationale="Part 2", chapter_ids=["book-chapter-2"], chunk_ids=["c2"], themes=["beta"]),
-            EpisodeCluster(cluster_id="cluster-3", label="Cluster 3", rationale="Part 3", chapter_ids=["book-chapter-3"], chunk_ids=["c3"], themes=["gamma"]),
-        ],
-    )
-    plan = SeriesPlan(
-        book_id="short-book",
-        format="single_narrator",
-        strategy_summary="Initial plan.",
-        episodes=[
-            EpisodePlan(episode_id="episode-1", sequence=1, title="Episode 1", synopsis="Part 1", chapter_ids=["book-chapter-1"], chunk_ids=["c1"], themes=["alpha"], beats=[EpisodeBeat(beat_id="beat-1", title="Beat 1", objective="Objective", chunk_ids=["c1"], claim_requirements=[])]),
-            EpisodePlan(episode_id="episode-2", sequence=2, title="Episode 2", synopsis="Part 2", chapter_ids=["book-chapter-2"], chunk_ids=["c2"], themes=["beta"], beats=[EpisodeBeat(beat_id="beat-2", title="Beat 2", objective="Objective", chunk_ids=["c2"], claim_requirements=[])]),
-            EpisodePlan(episode_id="episode-3", sequence=3, title="Episode 3", synopsis="Part 3", chapter_ids=["book-chapter-3"], chunk_ids=["c3"], themes=["gamma"], beats=[EpisodeBeat(beat_id="beat-3", title="Beat 3", objective="Objective", chunk_ids=["c3"], claim_requirements=[])]),
+                episode_id=f"episode-{index}",
+                sequence=index,
+                title=f"Episode {index}",
+                synopsis=f"Part {index}",
+                chapter_ids=[chapter.chapter_id],
+                chunk_ids=[chapter.chunk_ids[0]],
+                themes=[f"theme-{index}"],
+                beats=[
+                    EpisodeBeat(
+                        beat_id=f"beat-{index}",
+                        title="Beat",
+                        objective="Objective",
+                        chunk_ids=[chapter.chunk_ids[0]],
+                        claim_requirements=[],
+                    )
+                ],
+            )
+            for index, chapter in enumerate(chapters, start=1)
         ],
     )
     planner = EpisodePlanningAgent(HeuristicLLMClient())
@@ -620,7 +670,102 @@ def test_planning_merges_episode_only_below_ten_minutes() -> None:
 
     assert len(normalized.episodes) == 2
     assert [episode.chapter_ids for episode in normalized.episodes] == [
-        ["book-chapter-1"],
-        ["book-chapter-2", "book-chapter-3"],
+        ["large-book-chapter-1", "large-book-chapter-2"],
+        ["large-book-chapter-3", "large-book-chapter-4"],
     ]
     assert planner._compliance_violations(normalized, structure, analysis) == []
+
+
+def test_writing_retries_after_summary_length_script() -> None:
+    structure = BookStructure(
+        book_id="writer-book",
+        title="Writer Book",
+        chapters=[
+            BookChapter(chapter_id="writer-book-chapter-1", chapter_number=1, title="Chapter 1", summary="A", chunk_ids=["c1", "c2"]),
+            BookChapter(chapter_id="writer-book-chapter-2", chapter_number=2, title="Chapter 2", summary="B", chunk_ids=["c3", "c4"]),
+        ],
+        chunks=[
+            BookChunk(chunk_id="c1", chapter_id="writer-book-chapter-1", chapter_title="Chapter 1", chapter_number=1, sequence=1, text=("alpha " * 500).strip(), start_word=0, end_word=500, source_offsets=[0, 500], themes=["alpha"]),
+            BookChunk(chunk_id="c2", chapter_id="writer-book-chapter-1", chapter_title="Chapter 1", chapter_number=1, sequence=2, text=("beta " * 500).strip(), start_word=500, end_word=1000, source_offsets=[500, 1000], themes=["beta"]),
+            BookChunk(chunk_id="c3", chapter_id="writer-book-chapter-2", chapter_title="Chapter 2", chapter_number=2, sequence=1, text=("gamma " * 500).strip(), start_word=0, end_word=500, source_offsets=[0, 500], themes=["gamma"]),
+            BookChunk(chunk_id="c4", chapter_id="writer-book-chapter-2", chapter_title="Chapter 2", chapter_number=2, sequence=2, text=("delta " * 500).strip(), start_word=500, end_word=1000, source_offsets=[500, 1000], themes=["delta"]),
+        ],
+    )
+    episode = EpisodePlan(
+        episode_id="episode-1",
+        sequence=1,
+        title="Episode 1",
+        synopsis="Full episode",
+        chapter_ids=["writer-book-chapter-1", "writer-book-chapter-2"],
+        chunk_ids=["c1", "c2", "c3", "c4"],
+        themes=["alpha"],
+        beats=[
+            EpisodeBeat(beat_id="beat-1", title="Beat 1", objective="Objective", chunk_ids=["c1", "c2"], claim_requirements=[]),
+            EpisodeBeat(beat_id="beat-2", title="Beat 2", objective="Objective", chunk_ids=["c3", "c4"], claim_requirements=[]),
+        ],
+    )
+    retrieval_hits = [
+        RetrievalHit(
+            chunk_id=chunk.chunk_id,
+            chapter_id=chunk.chapter_id,
+            chapter_title=chunk.chapter_title,
+            score=1.0,
+            text=chunk.text,
+        )
+        for chunk in structure.chunks
+    ]
+    llm = FlakyWritingLLM()
+    writer = WritingAgent(llm, beat_parallelism=1)
+
+    script = writer.write(episode, retrieval_hits)
+
+    assert llm.write_calls == 3
+    assert sum(len(segment.narration.split()) for segment in script.segments) >= writer._target_script_words(2000)
+
+
+def test_writing_runs_per_beat_with_top_six_evidence() -> None:
+    retrieval_hits = [
+        RetrievalHit(
+            chunk_id=f"chunk-{index}",
+            chapter_id="chapter-1",
+            chapter_title="Chapter 1",
+            score=1.0,
+            text=("word " * 120).strip(),
+        )
+        for index in range(1, 9)
+    ]
+    episode = EpisodePlan(
+        episode_id="episode-1",
+        sequence=1,
+        title="Episode 1",
+        synopsis="Full episode",
+        chapter_ids=["chapter-1"],
+        chunk_ids=[hit.chunk_id for hit in retrieval_hits],
+        themes=["alpha"],
+        beats=[
+            EpisodeBeat(
+                beat_id="beat-1",
+                title="Beat 1",
+                objective="Objective 1",
+                chunk_ids=[hit.chunk_id for hit in retrieval_hits],
+                claim_requirements=[],
+            ),
+            EpisodeBeat(
+                beat_id="beat-2",
+                title="Beat 2",
+                objective="Objective 2",
+                chunk_ids=["chunk-3", "chunk-4", "chunk-5"],
+                claim_requirements=[],
+            ),
+        ],
+    )
+    llm = InspectingWritingLLM()
+    writer = WritingAgent(llm)
+
+    script = writer.write(episode, retrieval_hits)
+
+    assert len(llm.beat_calls) == 2
+    assert llm.beat_calls[0]["chunk_count"] == 6
+    assert llm.beat_calls[0]["chunk_ids"] == [f"chunk-{index}" for index in range(1, 7)]
+    assert llm.beat_calls[1]["chunk_count"] == 3
+    assert [segment.beat_id for segment in script.segments] == ["beat-1", "beat-2"]

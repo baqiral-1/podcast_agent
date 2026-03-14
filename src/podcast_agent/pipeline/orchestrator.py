@@ -69,13 +69,11 @@ class PipelineOrchestrator:
         self.analysis_agent = AnalysisAgent(self.llm)
         self.planning_agent = EpisodePlanningAgent(
             self.llm,
-            min_episode_minutes=self.settings.pipeline.min_episode_minutes,
-            minimum_standalone_episode_minutes=self.settings.pipeline.minimum_standalone_episode_minutes,
-            spoken_words_per_minute=self.settings.pipeline.spoken_words_per_minute,
+            minimum_source_words_per_episode=self.settings.pipeline.minimum_source_words_per_episode,
         )
         self.writing_agent = WritingAgent(
             self.llm,
-            min_episode_minutes=self.settings.pipeline.min_episode_minutes,
+            minimum_source_words_per_episode=self.settings.pipeline.minimum_source_words_per_episode,
             spoken_words_per_minute=self.settings.pipeline.spoken_words_per_minute,
         )
         self.validation_agent = GroundingValidationAgent(self.llm)

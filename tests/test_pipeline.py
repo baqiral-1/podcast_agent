@@ -47,7 +47,8 @@ def test_pipeline_creates_multi_chapter_episode_and_manifest(tmp_path: Path) -> 
     result = orchestrator.run_pipeline(book_path, title="Observatory Book", author="A. Writer")
 
     assert result["series_plan"]["episodes"]
-    assert any(len(episode["chapter_ids"]) > 1 for episode in result["series_plan"]["episodes"])
+    assert len(result["series_plan"]["episodes"]) == 1
+    assert len(result["series_plan"]["episodes"][0]["chapter_ids"]) == 4
     assert result["episodes"][0]["manifest"]["segments"]
     episode_output_path = (
         tmp_path
@@ -95,9 +96,8 @@ def test_validation_schema_is_claim_level(tmp_path: Path) -> None:
     assert all(assessment.claim_id for assessment in report.claim_assessments)
 
 
-def test_long_book_episodes_meet_minimum_spoken_length() -> None:
+def test_books_under_source_word_floor_collapse_to_single_episode() -> None:
     settings = Settings()
-    target_words = settings.pipeline.min_episode_minutes * settings.pipeline.spoken_words_per_minute
     orchestrator = PipelineOrchestrator(
         repository=InMemoryRepository(),
         llm=HeuristicLLMClient(),
@@ -110,13 +110,8 @@ def test_long_book_episodes_meet_minimum_spoken_length() -> None:
         author="Sample Author",
     )
 
-    assert result["episodes"]
-    for episode in result["episodes"]:
-        spoken_words = sum(
-            len(segment["text"].split())
-            for segment in (episode["manifest"] or {"segments": []})["segments"]
-        )
-        assert spoken_words >= target_words
+    assert len(result["series_plan"]["episodes"]) == 1
+    assert len(result["series_plan"]["episodes"][0]["chapter_ids"]) == 12
 
 
 def test_pipeline_can_synthesize_audio_manifest(tmp_path: Path) -> None:

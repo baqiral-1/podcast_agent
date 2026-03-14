@@ -112,7 +112,7 @@ class HeuristicLLMClient(LLMClient):
     def _generate_series_plan(self, payload: PromptPayload) -> dict[str, Any]:
         analysis = payload["analysis"]
         structure = payload["structure"]
-        target_episode_words = payload.get("target_episode_words", 3900)
+        minimum_source_words_per_episode = payload.get("minimum_source_words_per_episode", 50000)
         chapter_map = {chapter["chapter_id"]: chapter for chapter in structure["chapters"]}
         chunk_map = {chunk["chunk_id"]: chunk for chunk in structure["chunks"]}
         pending_clusters = list(analysis["episode_clusters"])
@@ -135,7 +135,7 @@ class HeuristicLLMClient(LLMClient):
                     "word_count": cluster_word_count,
                 }
                 continue
-            if current_cluster["word_count"] < target_episode_words:
+            if current_cluster["word_count"] < minimum_source_words_per_episode:
                 current_cluster["chapter_ids"].extend(cluster["chapter_ids"])
                 current_cluster["chunk_ids"].extend(cluster["chunk_ids"])
                 current_cluster["themes"].extend(cluster["themes"])
@@ -152,7 +152,7 @@ class HeuristicLLMClient(LLMClient):
                     "word_count": cluster_word_count,
                 }
         if current_cluster is not None:
-            if merged_clusters and current_cluster["word_count"] < target_episode_words:
+            if merged_clusters and current_cluster["word_count"] < minimum_source_words_per_episode:
                 merged_clusters[-1]["chapter_ids"].extend(current_cluster["chapter_ids"])
                 merged_clusters[-1]["chunk_ids"].extend(current_cluster["chunk_ids"])
                 merged_clusters[-1]["themes"].extend(current_cluster["themes"])
@@ -238,6 +238,38 @@ class HeuristicLLMClient(LLMClient):
             "title": episode["title"],
             "narrator": "Narrator",
             "segments": segments,
+        }
+
+    def _generate_beat_script(self, payload: PromptPayload) -> dict[str, Any]:
+        beat = payload["beat"]
+        chunks_by_id = {chunk["chunk_id"]: chunk for chunk in payload["retrieval_hits"]}
+        beat_chunks = [chunks_by_id[chunk_id] for chunk_id in beat["chunk_ids"] if chunk_id in chunks_by_id]
+        citations = [chunk["chunk_id"] for chunk in beat_chunks]
+        claims = []
+        narration_parts = []
+        for claim_sequence, chunk in enumerate(beat_chunks, start=1):
+            claim_text = chunk["text"].split(".")[0].strip()
+            if claim_text:
+                claims.append(
+                    {
+                        "claim_id": f"{beat['beat_id']}-claim-{claim_sequence}",
+                        "text": claim_text,
+                        "evidence_chunk_ids": [chunk["chunk_id"]],
+                    }
+                )
+            narration_parts.append(chunk["text"].strip())
+        return {
+            "beat_id": beat["beat_id"],
+            "segments": [
+                {
+                    "segment_id": f"{beat['beat_id']}-segment-1",
+                    "beat_id": beat["beat_id"],
+                    "heading": beat["title"],
+                    "narration": " ".join(narration_parts) or beat["objective"],
+                    "claims": claims,
+                    "citations": citations,
+                }
+            ],
         }
 
     def _generate_grounding_report(self, payload: PromptPayload) -> dict[str, Any]:

@@ -13,8 +13,10 @@ The current implementation is designed around a few fixed principles:
 - Chunk storage happens during `index-book`, immediately after `BookStructure` is created.
 - Grounding validation happens before render-manifest generation, and repair is a separate targeted step.
 - Audio synthesis is optional and runs only after a validated render manifest exists.
-- Episodes target at least 30 minutes of spoken narration when the source material is sufficient.
-- Episodes are only merged away when they cannot be kept above a 10-minute standalone minimum after rebalancing.
+- Episodes are sized by assigned source-book volume, with a default minimum of `50,000` source words per episode when the book is large enough.
+- Books shorter than that source-word floor collapse to one episode that covers the full book.
+- Writing validates that the generated script is proportional to the assigned source material before rendering or TTS.
+- Writing now runs one LLM call per beat, selecting only the top 6 beat-local chunks per call and merging the results into one final episode script.
 - Structuring is incremental and runs up to 3 chapter-level calls in parallel, with smaller fallbacks only when a chapter is too large.
 
 ## Architecture
@@ -146,6 +148,11 @@ podcast-agent run-pipeline ./examples/river_of_hours.txt --title "River of Hours
 ```
 
 Artifacts are written to a per-run subdirectory under `.podcast_agent/runs/<book-title>-<timestamp-to-minute>/`, with nested book and episode folders inside that run. Each run root also includes `run.log`, which records stage transitions, full prompts, responses, TTS requests, and command metadata for that run.
+
+Episode formation now uses source-book word volume rather than a spoken-runtime target. With the default settings:
+
+- books under `50,000` source words produce one episode
+- larger books split only when each resulting episode still carries at least `50,000` assigned source words
 
 ## Outputs and Contracts
 

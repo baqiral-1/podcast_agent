@@ -12,9 +12,8 @@
 - Keep agent outputs JSON-serializable and schema-validated before passing them to the next stage.
 - Do not bypass grounding validation before render-manifest generation.
 - Prefer deterministic helpers for parsing, chunking, and repository logic; reserve LLM inference for judgment-heavy work.
-- Update `README.md` whenever agent structure, agent responsibilities, default model behavior, or stage boundaries change.
+- Update the docs index.html whenever agent structure, agent responsibilities, default model behavior, or stage boundaries change.
 - Update `README.md` whenever audio/TTS stages, output artifacts, CLI commands, or runtime configuration change.
-- Keep README agent descriptions concise: prefer 2-3 bullets per agent unless extra detail is required to prevent confusion.
 
 ## Testing Expectations
 
@@ -29,11 +28,12 @@
 - Use the following commit structure:
   Description
   Intent:
-    - 2-3 bullet points summarizing intent. Keep each bullet point under 15 words.
+    - 2 bullet points summarizing intent (3 if necessary). Keep each bullet point under 20 words.
     - ...
   
   Changes:
-    - 3-5 bullet points summarizing changes.
+    - Generate 3 bullet points (maximum 5 if necessary) summarizing changes. Keep each bullet point under 25 words.
 - Infer the intent from the actual diff; do not use generic summaries that are not supported by the changes.
-- Keep bullets specific to concrete behavioural changes.
+- Keep bullets specific to concrete behavioural changes. Start with functional changes; changes related to logging, README, etc. should be at the end.
 - Prefer describing why the change exists and what it changes over listing filenames.
+- Whenever amending a commit, ensure that the commit message captures the description across all files in the commit.

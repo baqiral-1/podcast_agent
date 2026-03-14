@@ -187,6 +187,13 @@ class EpisodeSegment(StrictModel):
     citations: list[str]
 
 
+class BeatScript(StrictModel):
+    """Intermediate beat-scoped script emitted during writing."""
+
+    beat_id: str
+    segments: list[EpisodeSegment]
+
+
 class EpisodeScript(StrictModel):
     """Single-episode script emitted by the writing stage."""
 

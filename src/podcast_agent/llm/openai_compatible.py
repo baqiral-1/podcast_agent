@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import socket
 from dataclasses import dataclass
 from typing import Any
 from urllib import request
@@ -45,6 +46,10 @@ class HTTPTransport:
             raise RuntimeError(f"LLM request failed with status {exc.code}: {message}") from exc
         except URLError as exc:
             raise RuntimeError(f"LLM request failed: {exc.reason}") from exc
+        except (TimeoutError, socket.timeout) as exc:
+            raise RuntimeError(f"LLM request timed out after {timeout_seconds} seconds") from exc
+        except OSError as exc:
+            raise RuntimeError(f"LLM request failed with transport error: {exc}") from exc
 
 
 class OpenAICompatibleLLMClient(LLMClient):
@@ -110,23 +115,34 @@ class OpenAICompatibleLLMClient(LLMClient):
                 model=self.config.model_name,
                 timeout_seconds=self.config.timeout_seconds,
             )
-        response = self.transport.post_json(
-            url=endpoint,
-            headers=headers,
-            payload=request_payload,
-            timeout_seconds=self.config.timeout_seconds,
-        )
-        if self.run_logger is not None:
-            self.run_logger.log(
-                "llm_response",
-                client="openai-compatible",
-                schema_name=schema_name,
-                response=response.body,
+        try:
+            response = self.transport.post_json(
+                url=endpoint,
+                headers=headers,
+                payload=request_payload,
+                timeout_seconds=self.config.timeout_seconds,
             )
-        content = _extract_message_content(response.body)
-        normalized_json = _normalize_json_content(content)
-        normalized_payload = _unwrap_response_payload(json.loads(normalized_json))
-        return response_model.model_validate_json(json.dumps(normalized_payload))
+            if self.run_logger is not None:
+                self.run_logger.log(
+                    "llm_response",
+                    client="openai-compatible",
+                    schema_name=schema_name,
+                    response=response.body,
+                )
+            content = _extract_message_content(response.body)
+            normalized_json = _normalize_json_content(content)
+            normalized_payload = _unwrap_response_payload(json.loads(normalized_json))
+            return response_model.model_validate_json(json.dumps(normalized_payload))
+        except Exception as exc:
+            if self.run_logger is not None:
+                self.run_logger.log(
+                    "llm_error",
+                    client="openai-compatible",
+                    schema_name=schema_name,
+                    error_type=type(exc).__name__,
+                    error_message=str(exc),
+                )
+            raise
 
 
 def build_llm_client(settings: Settings) -> LLMClient:

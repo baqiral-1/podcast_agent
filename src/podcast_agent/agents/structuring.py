@@ -123,7 +123,19 @@ class StructuringAgent(Agent):
             }
             for future in as_completed(future_map):
                 chapter_number, chapter_title = future_map[future]
-                structured_results[chapter_number] = future.result()
+                try:
+                    structured_results[chapter_number] = future.result()
+                except Exception as exc:
+                    self._log(
+                        "structuring_chapter_failed",
+                        chapter_number=chapter_number,
+                        chapter_title=chapter_title,
+                        error_type=type(exc).__name__,
+                        error_message=str(exc),
+                    )
+                    raise RuntimeError(
+                        f"Structuring failed for chapter {chapter_number} ({chapter_title}): {exc}"
+                    ) from exc
                 self._log(
                     "structuring_chapter_completed",
                     chapter_number=chapter_number,
