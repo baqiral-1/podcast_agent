@@ -4,16 +4,17 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 import json
+from json import JSONDecodeError
 from pathlib import Path
 
 from podcast_agent.cli.app import _build_orchestrator
-from podcast_agent.agents import EpisodePlanningAgent, WritingAgent
+from podcast_agent.agents import AnalysisAgent, EpisodePlanningAgent, WritingAgent
 from podcast_agent.config import PipelineConfig, Settings
 from podcast_agent.db import InMemoryRepository
 from podcast_agent.db.repository import _format_pgvector
 from podcast_agent.ingestion import extract_pdf_text, normalize_source_text
 from podcast_agent.llm import HeuristicLLMClient
-from podcast_agent.llm.base import LLMClient
+from podcast_agent.llm.base import LLMClient, LLMContentFilterError
 from podcast_agent.llm.openai_compatible import HTTPTransport, OpenAICompatibleLLMClient
 from podcast_agent.pipeline.orchestrator import PipelineOrchestrator
 from podcast_agent.run_logging import RunLogger
@@ -249,6 +250,24 @@ class FailingStructuringLLM(LLMClient):
             chapter_number = payload["draft"]["chapter_number"]
             if chapter_number == 2:
                 raise TimeoutError("simulated chapter timeout")
+        return HeuristicLLMClient().generate_json(schema_name, instructions, payload, response_model)
+
+
+class MalformedStructuringLLM(LLMClient):
+    """LLM stub that always produces malformed chapter JSON."""
+
+    def generate_json(self, schema_name, instructions, payload, response_model):
+        if schema_name == "structured_chapter":
+            raise JSONDecodeError("simulated malformed json", "{", 1)
+        return HeuristicLLMClient().generate_json(schema_name, instructions, payload, response_model)
+
+
+class FilteredStructuringLLM(LLMClient):
+    """LLM stub that simulates a content-filtered structuring response."""
+
+    def generate_json(self, schema_name, instructions, payload, response_model):
+        if schema_name == "structured_chapter":
+            raise LLMContentFilterError("simulated content filter")
         return HeuristicLLMClient().generate_json(schema_name, instructions, payload, response_model)
 
 
@@ -532,6 +551,55 @@ def test_structuring_logs_failed_chapter_before_aborting(tmp_path: Path) -> None
     assert failures
     assert failures[0]["payload"]["chapter_number"] == 2
     assert failures[0]["payload"]["error_type"] == "TimeoutError"
+
+
+def test_structuring_falls_back_after_malformed_llm_response(tmp_path: Path) -> None:
+    book_path = tmp_path / "book.txt"
+    book_path.write_text(BOOK_TEXT, encoding="utf-8")
+    settings = Settings(pipeline=PipelineConfig(artifact_root=tmp_path / "runs"))
+    orchestrator = PipelineOrchestrator(
+        repository=InMemoryRepository(),
+        llm=MalformedStructuringLLM(),
+        settings=settings,
+    )
+
+    ingestion = orchestrator.ingest_book(book_path, title="Fallback Structuring", author="A. Writer")
+    structure = orchestrator.index_book(ingestion)
+
+    assert structure.chapters
+    assert structure.chunks
+    run_log = tmp_path / "runs" / orchestrator.run_id / "run.log"
+    lines = [json.loads(line) for line in run_log.read_text(encoding="utf-8").splitlines()]
+    retries = [line for line in lines if line["event_type"] == "structuring_llm_retry"]
+    fallbacks = [line for line in lines if line["event_type"] == "structuring_llm_fallback"]
+
+    assert retries
+    assert fallbacks
+    assert retries[0]["payload"]["error_type"] == "JSONDecodeError"
+
+
+def test_structuring_logs_content_filter_and_falls_back(tmp_path: Path) -> None:
+    book_path = tmp_path / "book.txt"
+    book_path.write_text(BOOK_TEXT, encoding="utf-8")
+    settings = Settings(pipeline=PipelineConfig(artifact_root=tmp_path / "runs"))
+    orchestrator = PipelineOrchestrator(
+        repository=InMemoryRepository(),
+        llm=FilteredStructuringLLM(),
+        settings=settings,
+    )
+
+    ingestion = orchestrator.ingest_book(book_path, title="Filtered Structuring", author="A. Writer")
+    structure = orchestrator.index_book(ingestion)
+
+    assert structure.chapters
+    run_log = tmp_path / "runs" / orchestrator.run_id / "run.log"
+    lines = [json.loads(line) for line in run_log.read_text(encoding="utf-8").splitlines()]
+    filter_events = [line for line in lines if line["event_type"] == "structuring_llm_content_filter"]
+    fallbacks = [line for line in lines if line["event_type"] == "structuring_llm_fallback"]
+
+    assert filter_events
+    assert fallbacks
+    assert fallbacks[0]["payload"]["fallback_reason"] == "LLMContentFilterError"
 
 
 def test_openai_client_logs_llm_error_for_timeout(tmp_path: Path) -> None:
@@ -920,7 +988,141 @@ def test_writing_retries_after_summary_length_script() -> None:
     assert sum(len(segment.narration.split()) for segment in script.segments) >= writer._target_script_words(2000)
 
 
-def test_writing_runs_per_beat_with_top_six_evidence() -> None:
+def test_planning_splits_long_chapter_into_section_beats() -> None:
+    def words(label: str) -> str:
+        return ((label + " ") * 120).strip()
+
+    chapter_id = "chapter-1"
+    chunk_ids = [f"{chapter_id}-chunk-{index}" for index in range(1, 10)]
+    structure = BookStructure(
+        book_id="sectioned-book",
+        title="Sectioned Book",
+        chapters=[
+            BookChapter(
+                chapter_id=chapter_id,
+                chapter_number=1,
+                title="Chapter 1: Long March",
+                summary="A long chapter.",
+                chunk_ids=chunk_ids,
+            )
+        ],
+        chunks=[
+            BookChunk(
+                chunk_id=chunk_id,
+                chapter_id=chapter_id,
+                chapter_title="Chapter 1: Long March",
+                chapter_number=1,
+                sequence=index,
+                text=words(f"chunk{index}"),
+                start_word=(index - 1) * 120,
+                end_word=index * 120,
+                source_offsets=[(index - 1) * 120, index * 120],
+                themes=["march"],
+            )
+            for index, chunk_id in enumerate(chunk_ids, start=1)
+        ],
+    )
+    analysis = BookAnalysis(
+        book_id="sectioned-book",
+        themes=["march"],
+        continuity_arcs=[],
+        notable_claims=[],
+        episode_clusters=[
+            EpisodeCluster(
+                cluster_id="cluster-1",
+                label="Cluster 1",
+                rationale="Keep the chapter together.",
+                chapter_ids=[chapter_id],
+                chunk_ids=chunk_ids,
+                themes=["march"],
+            )
+        ],
+    )
+    plan = SeriesPlan(
+        book_id="sectioned-book",
+        format="single_narrator",
+        strategy_summary="One long chapter.",
+        episodes=[
+            EpisodePlan(
+                episode_id="episode-1",
+                sequence=1,
+                title="Episode 1",
+                synopsis="Long chapter",
+                chapter_ids=[chapter_id],
+                chunk_ids=chunk_ids,
+                themes=["march"],
+                beats=[
+                    EpisodeBeat(
+                        beat_id="beat-1",
+                        title="Beat 1",
+                        objective="Objective",
+                        chunk_ids=chunk_ids,
+                        claim_requirements=[],
+                    )
+                ],
+            )
+        ],
+    )
+    planner = EpisodePlanningAgent(
+        HeuristicLLMClient(),
+        minimum_source_words_per_episode=1000,
+        section_beat_target_words=300,
+        beat_evidence_window_size=3,
+    )
+
+    normalized = planner._normalize_plan(plan, structure)
+
+    assert len(normalized.episodes) == 1
+    assert [beat.chunk_ids for beat in normalized.episodes[0].beats] == [
+        [f"{chapter_id}-chunk-{index}" for index in range(1, 4)],
+        [f"{chapter_id}-chunk-{index}" for index in range(4, 7)],
+        [f"{chapter_id}-chunk-{index}" for index in range(7, 10)],
+    ]
+    assert [beat.title for beat in normalized.episodes[0].beats] == [
+        "Chapter 1: Long March (Section 1)",
+        "Chapter 1: Long March (Section 2)",
+        "Chapter 1: Long March (Section 3)",
+    ]
+
+
+def test_analysis_agent_rejects_oversized_payload() -> None:
+    structure = BookStructure(
+        book_id="payload-book",
+        title="Payload Book",
+        chapters=[
+            BookChapter(
+                chapter_id="payload-book-chapter-1",
+                chapter_number=1,
+                title="Chapter 1",
+                summary="Summary",
+                chunk_ids=["payload-book-chapter-1-chunk-1"],
+            )
+        ],
+        chunks=[
+            BookChunk(
+                chunk_id="payload-book-chapter-1-chunk-1",
+                chapter_id="payload-book-chapter-1",
+                chapter_title="Chapter 1",
+                chapter_number=1,
+                sequence=1,
+                text=("alpha " * 400).strip(),
+                start_word=0,
+                end_word=400,
+                source_offsets=[0, 400],
+                themes=["alpha"],
+            )
+        ],
+    )
+
+    try:
+        AnalysisAgent(HeuristicLLMClient(), max_payload_bytes=200).analyze(structure)
+    except RuntimeError as exc:
+        assert "Analysis payload exceeds the configured maximum size" in str(exc)
+    else:
+        raise AssertionError("Expected oversized analysis payload to fail")
+
+
+def test_writing_runs_per_beat_with_assigned_evidence_windows() -> None:
     retrieval_hits = [
         RetrievalHit(
             chunk_id=f"chunk-{index}",
@@ -962,7 +1164,40 @@ def test_writing_runs_per_beat_with_top_six_evidence() -> None:
     script = writer.write(episode, retrieval_hits)
 
     assert len(llm.beat_calls) == 2
-    assert llm.beat_calls[0]["chunk_count"] == 6
-    assert llm.beat_calls[0]["chunk_ids"] == [f"chunk-{index}" for index in range(1, 7)]
+    assert llm.beat_calls[0]["chunk_count"] == 8
+    assert llm.beat_calls[0]["chunk_ids"] == [f"chunk-{index}" for index in range(1, 9)]
     assert llm.beat_calls[1]["chunk_count"] == 3
+    assert llm.beat_calls[1]["chunk_ids"] == ["chunk-3", "chunk-4", "chunk-5"]
     assert [segment.beat_id for segment in script.segments] == ["beat-1", "beat-2"]
+
+
+def test_pipeline_logs_payload_and_assignment_diagnostics(tmp_path: Path) -> None:
+    book_path = tmp_path / "book.txt"
+    book_path.write_text(ANALYSIS_BOOK_TEXT, encoding="utf-8")
+    settings = Settings(
+        pipeline=PipelineConfig(
+            artifact_root=tmp_path / "runs",
+            minimum_source_words_per_episode=1000,
+            section_beat_target_words=200,
+            beat_evidence_window_size=2,
+        )
+    )
+    orchestrator = PipelineOrchestrator(
+        repository=InMemoryRepository(),
+        llm=HeuristicLLMClient(),
+        settings=settings,
+    )
+
+    orchestrator.run_pipeline(book_path, title="Diagnostic Book", author="A. Writer")
+
+    run_log = tmp_path / "runs" / orchestrator.run_id / "run.log"
+    lines = [json.loads(line) for line in run_log.read_text(encoding="utf-8").splitlines()]
+
+    assert any(line["event_type"] == "analysis_payload_diagnostics" for line in lines)
+    assert any(line["event_type"] == "planning_payload_diagnostics" for line in lines)
+    assignment_events = [line for line in lines if line["event_type"] == "episode_assignment_diagnostics"]
+    assert assignment_events
+    assert assignment_events[0]["payload"]["beat_chunk_counts"]
+    repair_events = [line for line in lines if line["event_type"] == "repair_summary"]
+    assert repair_events
+    assert repair_events[0]["payload"]["repair_attempt_count"] == 0

@@ -11,6 +11,10 @@ from pydantic import BaseModel
 PromptPayload = dict[str, Any]
 
 
+class LLMContentFilterError(RuntimeError):
+    """Raised when the model response is blocked by content filtering."""
+
+
 class LLMClient(ABC):
     """Abstract interface for JSON-producing LLM calls."""
 

@@ -76,6 +76,23 @@ class StructuredChunkDraft(StrictModel):
     themes: list[str] = Field(default_factory=list)
 
 
+class StructuredChunkPlan(StrictModel):
+    """Metadata-only chunk plan returned by the LLM during structuring."""
+
+    start_word: int = Field(ge=0)
+    end_word: int = Field(ge=0)
+    themes: list[str] = Field(default_factory=list)
+
+
+class StructuredChapterPlan(StrictModel):
+    """Metadata-only structuring plan used to rebuild full chapter chunks locally."""
+
+    chapter_number: int | None = Field(default=None, ge=1)
+    title: str | None = None
+    summary: str | None = None
+    chunks: list[StructuredChunkPlan]
+
+
 class StructuredChapter(StrictModel):
     """Intermediate chapter structure used before merging a full book."""
 

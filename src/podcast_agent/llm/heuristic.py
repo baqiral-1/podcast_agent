@@ -50,7 +50,20 @@ class HeuristicLLMClient(LLMClient):
         return payload["draft"]
 
     def _generate_structured_chapter(self, payload: PromptPayload) -> dict[str, Any]:
-        return payload["draft"]
+        draft = payload["draft"]
+        return {
+            "chapter_number": draft["chapter_number"],
+            "title": draft["title"],
+            "summary": draft["summary"],
+            "chunks": [
+                {
+                    "start_word": chunk["start_word"],
+                    "end_word": chunk["end_word"],
+                    "themes": chunk.get("themes", []),
+                }
+                for chunk in draft["chunks"]
+            ],
+        }
 
     def _generate_book_analysis(self, payload: PromptPayload) -> dict[str, Any]:
         structure = payload["structure"]
@@ -98,7 +111,8 @@ class HeuristicLLMClient(LLMClient):
             )
         notable_claims = []
         for chunk in chunks[:8]:
-            sentence = chunk["text"].split(".")[0].strip()
+            source_text = chunk.get("text") or chunk.get("excerpt", "")
+            sentence = source_text.split(".")[0].strip()
             if sentence:
                 notable_claims.append(sentence)
         return {
@@ -121,7 +135,7 @@ class HeuristicLLMClient(LLMClient):
 
         for cluster in pending_clusters:
             cluster_word_count = sum(
-                len(chunk_map[chunk_id]["text"].split())
+                chunk_map[chunk_id].get("word_count", len(chunk_map[chunk_id].get("text", "").split()))
                 for chunk_id in cluster["chunk_ids"]
                 if chunk_id in chunk_map
             )

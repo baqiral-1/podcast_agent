@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from podcast_agent.agents.base import Agent
 from podcast_agent.schemas.models import BookAnalysis, BookStructure
+from podcast_agent.utils.planning_payloads import build_structure_summary, payload_size_bytes
 
 
 class AnalysisAgent(Agent):
@@ -19,13 +20,18 @@ class AnalysisAgent(Agent):
     )
     response_model = BookAnalysis
 
+    def __init__(self, llm, max_payload_bytes: int = 500000) -> None:
+        super().__init__(llm)
+        self.max_payload_bytes = max_payload_bytes
+
     def build_payload(self, structure: BookStructure) -> dict:
-        return {"structure": structure.model_dump(mode="python")}
+        return {"structure": build_structure_summary(structure)}
 
     def analyze(self, structure: BookStructure) -> BookAnalysis:
         """Run book analysis."""
 
         payload = self.build_payload(structure)
+        self._check_payload_size(payload, structure)
         analysis = self.llm.generate_json(
             schema_name=self.schema_name,
             instructions=self.instructions,
@@ -55,6 +61,23 @@ class AnalysisAgent(Agent):
                 + "; ".join(retry_violations)
             )
         return retry_analysis
+
+    def _check_payload_size(self, payload: dict, structure: BookStructure) -> None:
+        run_logger = getattr(self.llm, "run_logger", None)
+        payload_bytes = payload_size_bytes(payload)
+        if run_logger is not None:
+            run_logger.log(
+                "analysis_payload_diagnostics",
+                chapter_count=len(structure.chapters),
+                chunk_count=len(structure.chunks),
+                payload_bytes=payload_bytes,
+                max_payload_bytes=self.max_payload_bytes,
+            )
+        if payload_bytes > self.max_payload_bytes:
+            raise RuntimeError(
+                "Analysis payload exceeds the configured maximum size: "
+                f"{payload_bytes} bytes > {self.max_payload_bytes} bytes."
+            )
 
     def _compliance_violations(self, analysis: BookAnalysis, structure: BookStructure) -> list[str]:
         chapter_order = {chapter.chapter_id: chapter.chapter_number for chapter in structure.chapters}

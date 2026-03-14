@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from podcast_agent.llm.base import LLMClient
 from podcast_agent.agents import (
     AnalysisAgent,
     EpisodePlanningAgent,
@@ -88,6 +89,64 @@ def _build_script_and_report() -> tuple[EpisodeScript, GroundingReport, list[Ret
     return script, report, retrieval_hits
 
 
+class BoundaryOnlyStructuringLLM(LLMClient):
+    """LLM stub that returns metadata-only chunk plans."""
+
+    def generate_json(self, schema_name, instructions, payload, response_model):
+        if schema_name == "structured_chapter":
+            draft = payload["draft"]
+            return response_model.model_validate(
+                {
+                    "chapter_number": draft["chapter_number"],
+                    "title": draft["title"],
+                    "summary": "Boundary-only summary.",
+                    "chunks": [
+                        {
+                            "start_word": draft["chunks"][0]["start_word"],
+                            "end_word": draft["chunks"][1]["end_word"],
+                            "themes": ["observatory"],
+                        },
+                        {
+                            "start_word": draft["chunks"][2]["start_word"],
+                            "end_word": draft["chunks"][-1]["end_word"],
+                            "themes": [],
+                        },
+                    ],
+                }
+            )
+        return HeuristicLLMClient().generate_json(schema_name, instructions, payload, response_model)
+
+
+class MissingMetadataStructuringLLM(LLMClient):
+    """LLM stub that omits redundant chapter metadata."""
+
+    def generate_json(self, schema_name, instructions, payload, response_model):
+        if schema_name == "structured_chapter":
+            draft = payload["draft"]
+            return response_model.model_validate(
+                {
+                    "summary": "",
+                    "chunks": [
+                        {
+                            "start_word": draft["chunks"][0]["start_word"],
+                            "end_word": draft["chunks"][-1]["end_word"],
+                            "themes": ["observatory"],
+                        }
+                    ],
+                }
+            )
+        return HeuristicLLMClient().generate_json(schema_name, instructions, payload, response_model)
+
+
+class FailingStructuringBoundaryLLM(LLMClient):
+    """LLM stub that should never be reached for oversized chapters."""
+
+    def generate_json(self, schema_name, instructions, payload, response_model):
+        if schema_name == "structured_chapter":
+            raise AssertionError("oversized chapters should skip LLM structuring")
+        return HeuristicLLMClient().generate_json(schema_name, instructions, payload, response_model)
+
+
 def test_structuring_agent_creates_chapters_and_chunks() -> None:
     structure = _build_structure()
 
@@ -95,6 +154,57 @@ def test_structuring_agent_creates_chapters_and_chunks() -> None:
     assert structure.chunks
     assert all(chapter.title for chapter in structure.chapters)
     assert all(chunk.chunk_id.startswith("observatory-book-chapter-") for chunk in structure.chunks)
+
+
+def test_structuring_rebuilds_chunk_text_from_metadata_only_response() -> None:
+    long_ingestion = _build_ingestion().model_copy(
+        update={
+            "raw_text": """
+Chapter 1: Arrival
+The expedition arrives at the northern harbor after months at sea. The crew studies old maps and notices repeated references to a hidden observatory. The historian argues that the harbor served as a relay for scholars, not soldiers. The expedition catalogues every signal tower, cross-checks old manifests, and compares copies of damaged letters. When the group returns to the archive, it reconstructs a timeline of arrivals, repairs, and vanished couriers.
+"""
+        }
+    )
+    structure = StructuringAgent(
+        BoundaryOnlyStructuringLLM(),
+        max_chunk_words=20,
+        chunk_overlap_words=0,
+    ).structure(long_ingestion)
+
+    chapter_one_chunks = [chunk for chunk in structure.chunks if chunk.chapter_number == 1]
+
+    assert len(chapter_one_chunks) == 2
+    assert "The expedition arrives at the northern harbor" in chapter_one_chunks[0].text
+    assert chapter_one_chunks[0].themes == ["observatory"]
+    assert chapter_one_chunks[1].text
+
+
+def test_structuring_fills_missing_plan_metadata_from_draft() -> None:
+    structure = StructuringAgent(
+        MissingMetadataStructuringLLM(),
+        max_chunk_words=20,
+        chunk_overlap_words=0,
+    ).structure(_build_ingestion())
+
+    chapter_one = next(chapter for chapter in structure.chapters if chapter.chapter_number == 1)
+    chapter_one_chunks = [chunk for chunk in structure.chunks if chunk.chapter_number == 1]
+
+    assert chapter_one.title == "Chapter 1: Arrival"
+    assert chapter_one.summary
+    assert chapter_one_chunks[0].themes == ["observatory"]
+
+
+def test_structuring_skips_oversized_chapters() -> None:
+    agent = StructuringAgent(
+        FailingStructuringBoundaryLLM(),
+        max_chunk_words=200,
+        chunk_overlap_words=0,
+        max_structuring_llm_chapter_words=42232,
+    )
+
+    chapter = agent._structure_chapter(1, "Chapter 1: Giant", ("observatory " * 43000).strip())
+
+    assert chapter is None
 
 
 def test_split_into_chapters_handles_front_matter_roman_and_appendix() -> None:
@@ -222,6 +332,16 @@ def test_analysis_agent_creates_multi_chapter_clusters() -> None:
     assert analysis.themes
     assert analysis.episode_clusters
     assert any(len(cluster.chapter_ids) > 1 for cluster in analysis.episode_clusters)
+
+
+def test_analysis_payload_uses_compact_chunk_summaries() -> None:
+    structure = _build_structure()
+
+    payload = AnalysisAgent(HeuristicLLMClient()).build_payload(structure)
+
+    assert payload["structure"]["chunks"]
+    assert "text" not in payload["structure"]["chunks"][0]
+    assert payload["structure"]["chunks"][0]["excerpt"]
 
 
 def test_episode_planning_agent_creates_hierarchical_plan() -> None:

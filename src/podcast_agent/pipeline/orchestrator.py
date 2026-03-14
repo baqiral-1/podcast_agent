@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -64,18 +65,27 @@ class PipelineOrchestrator:
             max_chunk_words=self.settings.pipeline.max_chunk_words,
             chunk_overlap_words=self.settings.pipeline.chunk_overlap_words,
             max_structuring_chapter_words=self.settings.pipeline.max_structuring_chapter_words,
+            max_structuring_llm_chapter_words=self.settings.pipeline.max_structuring_llm_chapter_words,
+            structuring_parallelism=self.settings.pipeline.structuring_parallelism,
             structuring_window_words=self.settings.pipeline.structuring_window_words,
             structuring_window_overlap_words=self.settings.pipeline.structuring_window_overlap_words,
         )
-        self.analysis_agent = AnalysisAgent(self.llm)
+        self.analysis_agent = AnalysisAgent(
+            self.llm,
+            max_payload_bytes=self.settings.pipeline.max_analysis_payload_bytes,
+        )
         self.planning_agent = EpisodePlanningAgent(
             self.llm,
             minimum_source_words_per_episode=self.settings.pipeline.minimum_source_words_per_episode,
+            max_payload_bytes=self.settings.pipeline.max_planning_payload_bytes,
+            section_beat_target_words=self.settings.pipeline.section_beat_target_words,
+            beat_evidence_window_size=self.settings.pipeline.beat_evidence_window_size,
         )
         self.writing_agent = WritingAgent(
             self.llm,
             minimum_source_words_per_episode=self.settings.pipeline.minimum_source_words_per_episode,
             spoken_words_per_minute=self.settings.pipeline.spoken_words_per_minute,
+            coverage_warning_min_ratio=self.settings.pipeline.coverage_warning_min_ratio,
         )
         self.validation_agent = GroundingValidationAgent(self.llm)
         self.repair_agent = RepairAgent(self.llm)
@@ -97,12 +107,13 @@ class PipelineOrchestrator:
         raw_text = read_source_text(path)
         resolved_title = title or path.stem.replace("_", " ").title()
         book_id = _slugify(resolved_title)
+        source_type = _detect_source_type(path)
         ingestion = BookIngestionResult(
             book_id=book_id,
             title=resolved_title,
             author=author,
             source_path=str(path),
-            source_type=_detect_source_type(path),
+            source_type=source_type,
             raw_text=raw_text,
         )
         self.current_book_id = book_id
@@ -117,6 +128,21 @@ class PipelineOrchestrator:
             title=resolved_title,
             author=author,
         )
+        if source_type == SourceType.PDF:
+            page_count = len(re.findall(r"^\[Page \d+\]$", raw_text, flags=re.MULTILINE))
+            word_count = len(raw_text.split())
+            warnings: list[str] = []
+            if page_count == 0:
+                warnings.append("missing_page_markers")
+            if word_count < 50:
+                warnings.append("low_extracted_word_count")
+            self.run_logger.log(
+                "pdf_ingest_diagnostics",
+                source_path=str(path),
+                page_count=page_count,
+                extracted_word_count=word_count,
+                warnings=warnings,
+            )
         self.repository.save_book(ingestion)
         self._write_artifact(self._book_artifact_key(book_id), "ingestion", ingestion.model_dump(mode="json"))
         self.run_logger.log("stage_end", stage="ingest_book", book_id=book_id)
@@ -171,6 +197,7 @@ class PipelineOrchestrator:
             stage="plan_episodes",
             book_id=structure.book_id,
             episode_count=len(plan.episodes),
+            episode_parallelism=self.settings.pipeline.episode_parallelism,
         )
         return analysis, plan
 
@@ -179,6 +206,14 @@ class PipelineOrchestrator:
 
         self.run_logger.log("stage_start", stage="write_episode", book_id=book_id, episode_id=episode_plan.episode_id)
         retrieval_hits = self.retrieval.fetch_for_episode(book_id=book_id, chunk_ids=episode_plan.chunk_ids)
+        self.run_logger.log(
+            "episode_assignment_diagnostics",
+            book_id=book_id,
+            episode_id=episode_plan.episode_id,
+            assigned_chunk_count=len(retrieval_hits),
+            beat_count=len(episode_plan.beats),
+            beat_chunk_counts=[len(beat.chunk_ids) for beat in episode_plan.beats],
+        )
         script = self.writing_agent.write(episode_plan, retrieval_hits)
         self.run_logger.log("stage_end", stage="write_episode", book_id=book_id, episode_id=episode_plan.episode_id)
         return script
@@ -350,44 +385,93 @@ class PipelineOrchestrator:
         ingestion = self.ingest_book(source_path=source_path, title=title, author=author)
         structure = self.index_book(ingestion)
         analysis, plan = self.plan_episodes(structure)
-        episodes = []
-        for episode_plan in plan.episodes:
-            script = self.write_episode(structure.book_id, episode_plan)
-            report = self.validate_episode(structure.book_id, script)
-            repair_attempts: list[RepairResult] = []
-            if report.overall_status != "pass":
-                repair = self.repair_episode(structure.book_id, script, report)
-                script = repair.script
-                report = repair.report
-                repair_attempts.append(repair)
-            manifest = None
-            audio_manifest = None
-            if report.overall_status == "pass":
-                manifest = self.render_manifest(script, report)
-                if synthesize_audio:
-                    audio_manifest = self.synthesize_audio(manifest)
-            episode_output = EpisodeOutput(
-                plan=episode_plan,
-                script=script,
-                report=report,
-                manifest=manifest,
-                audio_manifest=audio_manifest,
-                repair_attempts=repair_attempts,
-            )
-            self._write_artifact(
-                self._episode_artifact_key(structure.book_id, episode_plan.episode_id),
-                "episode_output",
-                episode_output.model_dump(mode="json"),
-            )
-            episodes.append(
-                episode_output.model_dump(mode="json")
-            )
+        self.run_logger.log(
+            "episode_parallelism_configured",
+            book_id=structure.book_id,
+            episode_count=len(plan.episodes),
+            episode_parallelism=self.settings.pipeline.episode_parallelism,
+        )
+        episode_outputs = self._process_episode_plans(
+            structure.book_id,
+            plan.episodes,
+            synthesize_audio=synthesize_audio,
+        )
+        episodes = [episode_output.model_dump(mode="json") for episode_output in episode_outputs]
         return {
             "ingestion": ingestion.model_dump(mode="json"),
             "analysis": analysis.model_dump(mode="json"),
             "series_plan": plan.model_dump(mode="json"),
             "episodes": episodes,
         }
+
+    def _process_episode_plans(
+        self,
+        book_id: str,
+        episode_plans: list[EpisodePlan],
+        *,
+        synthesize_audio: bool,
+    ) -> list[EpisodeOutput]:
+        if self.settings.pipeline.episode_parallelism == 1 or len(episode_plans) <= 1:
+            return [
+                self._run_episode_plan(book_id, episode_plan, synthesize_audio=synthesize_audio)
+                for episode_plan in episode_plans
+            ]
+        with ThreadPoolExecutor(max_workers=self.settings.pipeline.episode_parallelism) as executor:
+            episode_outputs = list(
+                executor.map(
+                    lambda episode_plan: self._run_episode_plan(
+                        book_id,
+                        episode_plan,
+                        synthesize_audio=synthesize_audio,
+                    ),
+                    episode_plans,
+                )
+            )
+        episode_outputs.sort(key=lambda episode_output: episode_output.plan.sequence)
+        return episode_outputs
+
+    def _run_episode_plan(
+        self,
+        book_id: str,
+        episode_plan: EpisodePlan,
+        *,
+        synthesize_audio: bool,
+    ) -> EpisodeOutput:
+        script = self.write_episode(book_id, episode_plan)
+        report = self.validate_episode(book_id, script)
+        repair_attempts: list[RepairResult] = []
+        if report.overall_status != "pass":
+            repair = self.repair_episode(book_id, script, report)
+            script = repair.script
+            report = repair.report
+            repair_attempts.append(repair)
+        self.run_logger.log(
+            "repair_summary",
+            book_id=book_id,
+            episode_id=episode_plan.episode_id,
+            repair_attempt_count=len(repair_attempts),
+            final_status=report.overall_status,
+        )
+        manifest = None
+        audio_manifest = None
+        if report.overall_status == "pass":
+            manifest = self.render_manifest(script, report)
+            if synthesize_audio:
+                audio_manifest = self.synthesize_audio(manifest)
+        episode_output = EpisodeOutput(
+            plan=episode_plan,
+            script=script,
+            report=report,
+            manifest=manifest,
+            audio_manifest=audio_manifest,
+            repair_attempts=repair_attempts,
+        )
+        self._write_artifact(
+            self._episode_artifact_key(book_id, episode_plan.episode_id),
+            "episode_output",
+            episode_output.model_dump(mode="json"),
+        )
+        return episode_output
 
     def _write_artifact(self, run_key: str, name: str, payload: dict) -> None:
         artifact_path = self.artifacts.write_json(run_key, name, payload)

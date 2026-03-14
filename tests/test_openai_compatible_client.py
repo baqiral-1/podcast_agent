@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from podcast_agent.config import LLMConfig, TTSConfig
+from podcast_agent.llm.base import LLMContentFilterError
 from podcast_agent.llm.openai_compatible import HTTPResponse, OpenAICompatibleLLMClient
 from podcast_agent.schemas.models import GroundingReport
 from podcast_agent.tts.openai_compatible import BinaryHTTPTransport, OpenAICompatibleTTSClient
@@ -93,6 +94,35 @@ def test_openai_compatible_client_unwraps_payload_echoes() -> None:
     )
 
     assert result.episode_id == "episode-1"
+
+
+def test_openai_compatible_client_raises_for_content_filter_finish_reason() -> None:
+    transport = FakeTransport(
+        {
+            "choices": [
+                {
+                    "finish_reason": "content_filter",
+                    "message": {"content": '{"episode_id":"episode-1"}'},
+                }
+            ]
+        }
+    )
+    client = OpenAICompatibleLLMClient(
+        config=LLMConfig(api_key="test-key"),
+        transport=transport,
+    )
+
+    try:
+        client.generate_json(
+            schema_name="grounding_report",
+            instructions="Validate the claims.",
+            payload={"script": {"episode_id": "episode-1"}},
+            response_model=GroundingReport,
+        )
+    except LLMContentFilterError as exc:
+        assert "content filtering" in str(exc)
+    else:
+        raise AssertionError("Expected content filter error to be raised")
 
 
 def test_openai_compatible_tts_client_returns_audio_bytes(monkeypatch) -> None:

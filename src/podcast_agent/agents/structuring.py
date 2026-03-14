@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from json import JSONDecodeError
 
 from podcast_agent.agents.base import Agent
 from podcast_agent.ingestion import normalize_source_text
+from podcast_agent.llm.base import LLMContentFilterError
 from podcast_agent.schemas.models import (
     BookChapter,
     BookChunk,
@@ -14,6 +16,7 @@ from podcast_agent.schemas.models import (
     BookStructure,
     SourceType,
     StructuredChapter,
+    StructuredChapterPlan,
     StructuredChunkDraft,
 )
 from podcast_agent.utils import (
@@ -39,8 +42,12 @@ class StructuringAgent(Agent):
     """Agent that normalizes raw book text into chapters and chunks."""
 
     schema_name = "structured_chapter"
-    instructions = "Normalize this chapter into canonical chunks."
-    response_model = StructuredChapter
+    instructions = (
+        "Normalize this chapter into canonical chunk metadata. "
+        "Return only chapter title, summary, and chunk boundaries with themes. "
+        "Do not quote or reproduce chunk text from the source."
+    )
+    response_model = StructuredChapterPlan
 
     def __init__(
         self,
@@ -48,6 +55,8 @@ class StructuringAgent(Agent):
         max_chunk_words: int = 180,
         chunk_overlap_words: int = 30,
         max_structuring_chapter_words: int = 2500,
+        max_structuring_llm_chapter_words: int = 42232,
+        structuring_parallelism: int = 10,
         structuring_window_words: int = 1800,
         structuring_window_overlap_words: int = 150,
     ) -> None:
@@ -55,6 +64,8 @@ class StructuringAgent(Agent):
         self.max_chunk_words = max_chunk_words
         self.chunk_overlap_words = chunk_overlap_words
         self.max_structuring_chapter_words = max_structuring_chapter_words
+        self.max_structuring_llm_chapter_words = max_structuring_llm_chapter_words
+        self.structuring_parallelism = structuring_parallelism
         self.structuring_window_words = structuring_window_words
         self.structuring_window_overlap_words = structuring_window_overlap_words
 
@@ -135,10 +146,10 @@ class StructuringAgent(Agent):
         self._log(
             "structuring_schedule",
             chapter_count=len(chapter_inputs),
-            concurrency=3,
+            concurrency=self.structuring_parallelism,
         )
-        structured_results: dict[int, StructuredChapter] = {}
-        with ThreadPoolExecutor(max_workers=3) as executor:
+        structured_results: dict[int, StructuredChapter | None] = {}
+        with ThreadPoolExecutor(max_workers=self.structuring_parallelism) as executor:
             future_map = {
                 executor.submit(self._structure_chapter, chapter_number, chapter_title, chapter_body): (
                     chapter_number,
@@ -161,14 +172,23 @@ class StructuringAgent(Agent):
                     raise RuntimeError(
                         f"Structuring failed for chapter {chapter_number} ({chapter_title}): {exc}"
                     ) from exc
-                self._log(
-                    "structuring_chapter_completed",
-                    chapter_number=chapter_number,
-                    chapter_title=chapter_title,
-                )
+                if structured_results[chapter_number] is None:
+                    self._log(
+                        "structuring_chapter_skipped",
+                        chapter_number=chapter_number,
+                        chapter_title=chapter_title,
+                    )
+                else:
+                    self._log(
+                        "structuring_chapter_completed",
+                        chapter_number=chapter_number,
+                        chapter_title=chapter_title,
+                    )
         for chapter_number, _, _ in chapter_inputs:
-            chapter_id = f"{ingestion.book_id}-chapter-{chapter_number}"
             structured_chapter = structured_results[chapter_number]
+            if structured_chapter is None:
+                continue
+            chapter_id = f"{ingestion.book_id}-chapter-{chapter_number}"
             chapter_chunk_ids = []
             for local_sequence, chunk in enumerate(structured_chapter.chunks, start=1):
                 chunk_id = f"{chapter_id}-chunk-{local_sequence}"
@@ -208,7 +228,7 @@ class StructuringAgent(Agent):
         chapter_number: int,
         chapter_title: str,
         chapter_body: str,
-    ) -> StructuredChapter:
+    ) -> StructuredChapter | None:
         self._log(
             "structuring_chapter_started",
             chapter_number=chapter_number,
@@ -216,8 +236,35 @@ class StructuringAgent(Agent):
             chapter_word_count=len(chapter_body.split()),
         )
         chapter_words = len(chapter_body.split())
+        if chapter_words > self.max_structuring_llm_chapter_words:
+            self._log(
+                "structuring_chapter_skipped_llm",
+                chapter_number=chapter_number,
+                chapter_title=chapter_title,
+                chapter_word_count=chapter_words,
+                max_llm_chapter_words=self.max_structuring_llm_chapter_words,
+            )
+            return None
         if chapter_words <= self.max_structuring_chapter_words:
-            return self.run(self.build_payload(chapter_number, chapter_title, chapter_body))
+            draft = _build_structured_chapter_draft(
+                chapter_number=chapter_number,
+                chapter_title=chapter_title,
+                chapter_body=chapter_body,
+                max_chunk_words=self.max_chunk_words,
+                overlap_words=self.chunk_overlap_words,
+                body_start_word=0,
+                body_start_char=0,
+            )
+            return self._structure_payload_with_retry(
+                payload={"draft": draft.model_dump(mode="python")},
+                draft=draft,
+                source_text=chapter_body,
+                chapter_number=chapter_number,
+                chapter_title=chapter_title,
+                body_start_word=0,
+                body_start_char=0,
+                context_label="chapter",
+            )
 
         windows = _window_ranges(
             total_words=chapter_words,
@@ -239,7 +286,22 @@ class StructuringAgent(Agent):
                 window_start_word=start_word,
                 window_end_word=end_word,
             )
-            result = self.run(payload)
+            draft = StructuredChapter.model_validate(payload["draft"])
+            window_text, window_start_char, _ = _slice_words(
+                chapter_body,
+                start_word,
+                end_word,
+            )
+            result = self._structure_payload_with_retry(
+                payload=payload,
+                draft=draft,
+                source_text=window_text,
+                chapter_number=chapter_number,
+                chapter_title=chapter_title,
+                body_start_word=start_word,
+                body_start_char=window_start_char,
+                context_label=f"window-{window_index}",
+            )
             window_outputs.append((window_index, result))
         return _merge_structured_chapter_windows(
             chapter_number=chapter_number,
@@ -252,6 +314,68 @@ class StructuringAgent(Agent):
         run_logger = getattr(self.llm, "run_logger", None)
         if run_logger is not None:
             run_logger.log(event_type, **payload)
+
+    def _structure_payload_with_retry(
+        self,
+        *,
+        payload: dict,
+        draft: StructuredChapter,
+        source_text: str,
+        chapter_number: int,
+        chapter_title: str,
+        body_start_word: int,
+        body_start_char: int,
+        context_label: str,
+    ) -> StructuredChapter:
+        retry_instructions = (
+            f"{self.instructions} "
+            "Do not repeat source prose. Return valid JSON only with chapter metadata and chunk boundaries."
+        )
+        attempts = [
+            ("initial", self.instructions),
+            ("retry", retry_instructions),
+        ]
+        last_error: Exception | None = None
+        for attempt_label, instructions in attempts:
+            try:
+                plan = self.llm.generate_json(
+                    schema_name=self.schema_name,
+                    instructions=instructions,
+                    payload=payload,
+                    response_model=self.response_model,
+                )
+                return _rebuild_structured_chapter(
+                    plan=plan,
+                    source_text=source_text,
+                    chapter_number=chapter_number,
+                    chapter_title=chapter_title,
+                    fallback_summary=draft.summary,
+                    fallback_chunks=draft.chunks,
+                    body_start_word=body_start_word,
+                    body_start_char=body_start_char,
+                )
+            except (JSONDecodeError, LLMContentFilterError, ValueError) as exc:
+                last_error = exc
+                event_type = "structuring_llm_content_filter" if isinstance(exc, LLMContentFilterError) else "structuring_llm_retry"
+                self._log(
+                    event_type,
+                    chapter_number=chapter_number,
+                    chapter_title=chapter_title,
+                    context=context_label,
+                    attempt=attempt_label,
+                    error_type=type(exc).__name__,
+                    error_message=str(exc),
+                )
+                if attempt_label == "retry":
+                    break
+        self._log(
+            "structuring_llm_fallback",
+            chapter_number=chapter_number,
+            chapter_title=chapter_title,
+            context=context_label,
+            fallback_reason=type(last_error).__name__ if last_error is not None else "unknown",
+        )
+        return draft
 
 
 def _chunk_text(text: str, max_words: int, overlap_words: int) -> list[dict[str, int | str]]:
@@ -350,7 +474,7 @@ def _merge_structured_chapter_windows(
     merged_chunks = []
     for _, structured_window in windows:
         for chunk in structured_window.chunks:
-            key = (chunk.start_word, chunk.end_word, chunk.text)
+            key = (chunk.start_word, chunk.end_word, tuple(chunk.source_offsets))
             if key in seen_positions:
                 continue
             seen_positions.add(key)
@@ -362,6 +486,54 @@ def _merge_structured_chapter_windows(
         title=chapter_title,
         summary=summary,
         chunks=merged_chunks,
+    )
+
+
+def _rebuild_structured_chapter(
+    *,
+    plan: StructuredChapterPlan,
+    source_text: str,
+    chapter_number: int,
+    chapter_title: str,
+    fallback_summary: str,
+    fallback_chunks: list[StructuredChunkDraft],
+    body_start_word: int,
+    body_start_char: int,
+) -> StructuredChapter:
+    word_count = len(source_text.split())
+    previous_start = body_start_word
+    previous_end = body_start_word
+    rebuilt_chunks: list[StructuredChunkDraft] = []
+    for chunk in plan.chunks:
+        if chunk.start_word < body_start_word or chunk.end_word > body_start_word + word_count:
+            raise ValueError("LLM returned chunk boundaries outside the available source window.")
+        if chunk.start_word >= chunk.end_word:
+            raise ValueError("LLM returned an empty or inverted chunk range.")
+        if chunk.start_word < previous_start or chunk.end_word < previous_end:
+            raise ValueError("LLM returned chunk ranges out of order.")
+        local_start_word = chunk.start_word - body_start_word
+        local_end_word = chunk.end_word - body_start_word
+        chunk_text, start_char, end_char = _slice_words(source_text, local_start_word, local_end_word)
+        if not chunk_text.strip():
+            raise ValueError("LLM returned a chunk range that produced empty source text.")
+        rebuilt_chunks.append(
+            StructuredChunkDraft(
+                text=chunk_text,
+                start_word=chunk.start_word,
+                end_word=chunk.end_word,
+                source_offsets=[body_start_char + start_char, body_start_char + end_char],
+                themes=chunk.themes or _infer_themes(chunk_text),
+            )
+        )
+        previous_start = chunk.start_word
+        previous_end = chunk.end_word
+    if not rebuilt_chunks:
+        rebuilt_chunks = fallback_chunks
+    return StructuredChapter(
+        chapter_number=plan.chapter_number or chapter_number,
+        title=(plan.title or chapter_title).strip(),
+        summary=(plan.summary or fallback_summary).strip(),
+        chunks=rebuilt_chunks,
     )
 
 

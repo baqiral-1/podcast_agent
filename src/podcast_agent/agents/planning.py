@@ -6,6 +6,11 @@ from collections import Counter
 
 from podcast_agent.agents.base import Agent
 from podcast_agent.schemas.models import BookAnalysis, BookStructure, EpisodePlan, SeriesPlan
+from podcast_agent.utils.planning_payloads import (
+    build_analysis_summary,
+    build_structure_summary,
+    payload_size_bytes,
+)
 
 
 class EpisodePlanningAgent(Agent):
@@ -22,14 +27,24 @@ class EpisodePlanningAgent(Agent):
     )
     response_model = SeriesPlan
 
-    def __init__(self, llm, minimum_source_words_per_episode: int = 50000) -> None:
+    def __init__(
+        self,
+        llm,
+        minimum_source_words_per_episode: int = 50000,
+        max_payload_bytes: int = 500000,
+        section_beat_target_words: int = 1200,
+        beat_evidence_window_size: int = 8,
+    ) -> None:
         super().__init__(llm)
         self.minimum_source_words_per_episode = minimum_source_words_per_episode
+        self.max_payload_bytes = max_payload_bytes
+        self.section_beat_target_words = section_beat_target_words
+        self.beat_evidence_window_size = beat_evidence_window_size
 
     def build_payload(self, structure: BookStructure, analysis: BookAnalysis) -> dict:
         return {
-            "structure": structure.model_dump(mode="python"),
-            "analysis": analysis.model_dump(mode="python"),
+            "structure": build_structure_summary(structure),
+            "analysis": build_analysis_summary(analysis),
             "minimum_source_words_per_episode": self.minimum_source_words_per_episode,
         }
 
@@ -37,6 +52,7 @@ class EpisodePlanningAgent(Agent):
         """Run episode planning."""
 
         payload = self.build_payload(structure, analysis)
+        self._check_payload_size(payload, structure, analysis)
         plan = self.llm.generate_json(
             schema_name=self.schema_name,
             instructions=self.instructions,
@@ -124,8 +140,13 @@ class EpisodePlanningAgent(Agent):
     def _normalize_plan(self, plan: SeriesPlan, structure: BookStructure) -> SeriesPlan:
         chapter_order = {chapter.chapter_id: chapter.chapter_number for chapter in structure.chapters}
         chapter_to_chunks = {chapter.chapter_id: list(chapter.chunk_ids) for chapter in structure.chapters}
+        chapter_titles = {chapter.chapter_id: chapter.title for chapter in structure.chapters}
         chunk_themes = {
             chunk.chunk_id: chunk.themes
+            for chunk in structure.chunks
+        }
+        chunk_word_counts = {
+            chunk.chunk_id: len(chunk.text.split())
             for chunk in structure.chunks
         }
         chapter_word_counts = {
@@ -147,7 +168,9 @@ class EpisodePlanningAgent(Agent):
                     episode_data,
                     chapter_to_chunks=chapter_to_chunks,
                     chapter_order=chapter_order,
+                    chapter_titles=chapter_titles,
                     chunk_themes=chunk_themes,
+                    chunk_word_counts=chunk_word_counts,
                 )
             )
             for episode_data in normalized_episode_data
@@ -257,7 +280,9 @@ class EpisodePlanningAgent(Agent):
         *,
         chapter_to_chunks: dict[str, list[str]],
         chapter_order: dict[str, int],
+        chapter_titles: dict[str, str],
         chunk_themes: dict[str, list[str]],
+        chunk_word_counts: dict[str, int],
     ) -> dict:
         chapter_ids = sorted(episode["chapter_ids"], key=lambda chapter_id: chapter_order[chapter_id])
         chunk_ids = [
@@ -268,7 +293,13 @@ class EpisodePlanningAgent(Agent):
         episode["chapter_ids"] = chapter_ids
         episode["chunk_ids"] = chunk_ids
         episode["themes"] = self._themes_for_chunks(chunk_ids, chunk_themes) or episode["themes"]
-        episode["beats"] = self._build_beats(episode["episode_id"], chapter_ids, chapter_to_chunks)
+        episode["beats"] = self._build_beats(
+            episode["episode_id"],
+            chapter_ids,
+            chapter_to_chunks,
+            chapter_titles,
+            chunk_word_counts,
+        )
         return episode
 
     def _build_beats(
@@ -276,21 +307,56 @@ class EpisodePlanningAgent(Agent):
         episode_id: str,
         chapter_ids: list[str],
         chapter_to_chunks: dict[str, list[str]],
+        chapter_titles: dict[str, str],
+        chunk_word_counts: dict[str, int],
     ) -> list[dict]:
         beats: list[dict] = []
-        for sequence, chapter_id in enumerate(chapter_ids, start=1):
-            chapter_number = chapter_id.rsplit("-", 1)[-1]
-            chunk_ids = list(chapter_to_chunks.get(chapter_id, []))
-            beats.append(
-                {
-                    "beat_id": f"{episode_id}-beat-{sequence}",
-                    "title": f"Chapter {chapter_number}",
-                    "objective": f"Synthesize the grounded material from chapter {chapter_number}.",
-                    "chunk_ids": chunk_ids,
-                    "claim_requirements": [],
-                }
-            )
+        beat_sequence = 1
+        for chapter_id in chapter_ids:
+            chapter_chunk_ids = list(chapter_to_chunks.get(chapter_id, []))
+            chapter_title = chapter_titles.get(chapter_id, chapter_id)
+            groups = self._group_chapter_chunks(chapter_chunk_ids, chunk_word_counts)
+            for section_index, group_chunk_ids in enumerate(groups, start=1):
+                section_label = chapter_title if len(groups) == 1 else f"{chapter_title} (Section {section_index})"
+                beats.append(
+                    {
+                        "beat_id": f"{episode_id}-beat-{beat_sequence}",
+                        "title": section_label,
+                        "objective": f"Synthesize the grounded material from {section_label.lower()}.",
+                        "chunk_ids": group_chunk_ids,
+                        "claim_requirements": [],
+                    }
+                )
+                beat_sequence += 1
         return beats
+
+    def _group_chapter_chunks(
+        self,
+        chunk_ids: list[str],
+        chunk_word_counts: dict[str, int],
+    ) -> list[list[str]]:
+        if not chunk_ids:
+            return []
+        groups: list[list[str]] = []
+        current_group: list[str] = []
+        current_words = 0
+        for chunk_id in chunk_ids:
+            chunk_words = chunk_word_counts.get(chunk_id, 0)
+            if (
+                current_group
+                and (
+                    current_words >= self.section_beat_target_words
+                    or len(current_group) >= self.beat_evidence_window_size
+                )
+            ):
+                groups.append(current_group)
+                current_group = []
+                current_words = 0
+            current_group.append(chunk_id)
+            current_words += chunk_words
+        if current_group:
+            groups.append(current_group)
+        return groups
 
     def _themes_for_chunks(
         self,
@@ -324,6 +390,8 @@ class EpisodePlanningAgent(Agent):
             "planning_diagnostics",
             retried=retried,
             minimum_source_words_per_episode=self.minimum_source_words_per_episode,
+            section_beat_target_words=self.section_beat_target_words,
+            beat_evidence_window_size=self.beat_evidence_window_size,
             analysis_cluster_count=len(analysis.episode_clusters),
             analysis_cluster_chapter_counts=[len(cluster.chapter_ids) for cluster in analysis.episode_clusters],
             episode_count=len(plan.episodes),
@@ -333,5 +401,39 @@ class EpisodePlanningAgent(Agent):
                 sum(chunk_word_counts.get(chunk_id, 0) for chunk_id in episode.chunk_ids)
                 for episode in plan.episodes
             ],
+            episode_beat_counts=[len(episode.beats) for episode in plan.episodes],
+            beat_assigned_chunk_counts=[
+                [len(beat.chunk_ids) for beat in episode.beats]
+                for episode in plan.episodes
+            ],
+            oversized_episode_ids=[
+                episode.episode_id
+                for episode in plan.episodes
+                if sum(chunk_word_counts.get(chunk_id, 0) for chunk_id in episode.chunk_ids)
+                >= self.minimum_source_words_per_episode * 2
+            ],
             violations=violations,
         )
+
+    def _check_payload_size(
+        self,
+        payload: dict,
+        structure: BookStructure,
+        analysis: BookAnalysis,
+    ) -> None:
+        run_logger = getattr(self.llm, "run_logger", None)
+        payload_bytes = payload_size_bytes(payload)
+        if run_logger is not None:
+            run_logger.log(
+                "planning_payload_diagnostics",
+                chapter_count=len(structure.chapters),
+                chunk_count=len(structure.chunks),
+                analysis_cluster_count=len(analysis.episode_clusters),
+                payload_bytes=payload_bytes,
+                max_payload_bytes=self.max_payload_bytes,
+            )
+        if payload_bytes > self.max_payload_bytes:
+            raise RuntimeError(
+                "Planning payload exceeds the configured maximum size: "
+                f"{payload_bytes} bytes > {self.max_payload_bytes} bytes."
+            )

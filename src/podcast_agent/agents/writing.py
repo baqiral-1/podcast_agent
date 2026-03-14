@@ -25,13 +25,13 @@ class WritingAgent(Agent):
         llm,
         minimum_source_words_per_episode: int = 50000,
         spoken_words_per_minute: int = 130,
-        beat_evidence_limit: int = 6,
+        coverage_warning_min_ratio: float | None = None,
         beat_parallelism: int = 4,
     ) -> None:
         super().__init__(llm)
         self.minimum_source_words_per_episode = minimum_source_words_per_episode
         self.spoken_words_per_minute = spoken_words_per_minute
-        self.beat_evidence_limit = beat_evidence_limit
+        self.coverage_warning_min_ratio = coverage_warning_min_ratio
         self.beat_parallelism = beat_parallelism
 
     def build_payload(self, episode_plan: EpisodePlan, retrieval_hits: list[RetrievalHit]) -> dict:
@@ -55,6 +55,8 @@ class WritingAgent(Agent):
                 episode_id=episode_plan.episode_id,
                 beat_count=len(beat_payloads),
                 concurrency=self.beat_parallelism,
+                assigned_chunk_count=len(retrieval_hits),
+                beat_chunk_counts=[len(payload["retrieval_hits"]) for payload in beat_payloads],
             )
         with ThreadPoolExecutor(max_workers=self.beat_parallelism) as executor:
             beat_scripts = list(executor.map(self._write_beat, beat_payloads))
@@ -133,8 +135,31 @@ class WritingAgent(Agent):
                 for chunk_id in claim.evidence_chunk_ids
             }),
             assigned_chunk_count=len(payload["retrieval_hits"]),
+            uncited_chunk_count=len(self._uncited_chunk_ids(script, payload)),
+            dropped_chunk_count=len(payload["beat"]["chunk_ids"]) - len(payload["retrieval_hits"]),
             violations=violations,
         )
+        if self.coverage_warning_min_ratio is None:
+            return
+        assigned_count = len(payload["retrieval_hits"])
+        if assigned_count == 0:
+            return
+        cited_count = len({
+            chunk_id
+            for segment in script.segments
+            for claim in segment.claims
+            for chunk_id in claim.evidence_chunk_ids
+        })
+        cited_ratio = cited_count / assigned_count
+        if cited_ratio < self.coverage_warning_min_ratio:
+            run_logger.log(
+                "writing_coverage_warning",
+                episode_id=payload["episode"]["episode_id"],
+                beat_id=payload["beat"]["beat_id"],
+                cited_ratio=cited_ratio,
+                minimum_ratio=self.coverage_warning_min_ratio,
+                uncited_chunk_ids=self._uncited_chunk_ids(script, payload),
+            )
 
     def _build_beat_payloads(self, payload: dict) -> list[dict]:
         episode = payload["episode_plan"]
@@ -169,8 +194,7 @@ class WritingAgent(Agent):
         retrieval_hit_map: dict[str, RetrievalHit],
     ) -> list[RetrievalHit]:
         beat_chunk_ids = beat["chunk_ids"] if isinstance(beat, dict) else beat.chunk_ids
-        selected_hits = [retrieval_hit_map[chunk_id] for chunk_id in beat_chunk_ids if chunk_id in retrieval_hit_map]
-        return selected_hits[: self.beat_evidence_limit]
+        return [retrieval_hit_map[chunk_id] for chunk_id in beat_chunk_ids if chunk_id in retrieval_hit_map]
 
     def _allocate_beat_targets(
         self,
@@ -225,6 +249,7 @@ class WritingAgent(Agent):
                 episode_id=episode_id,
                 beat_id=beat_id,
                 selected_chunk_count=len(payload["retrieval_hits"]),
+                assigned_chunk_count=len(payload["beat"]["chunk_ids"]),
             )
         beat_script = self.run(payload)
         violations = self._compliance_violations(beat_script, payload)
@@ -253,3 +278,16 @@ class WritingAgent(Agent):
         if run_logger is not None:
             run_logger.log("beat_write_completed", episode_id=episode_id, beat_id=beat_id, retried=True)
         return retry_script
+
+    def _uncited_chunk_ids(self, script: BeatScript, payload: dict) -> list[str]:
+        cited_chunk_ids = {
+            chunk_id
+            for segment in script.segments
+            for claim in segment.claims
+            for chunk_id in claim.evidence_chunk_ids
+        }
+        return [
+            hit["chunk_id"]
+            for hit in payload["retrieval_hits"]
+            if hit["chunk_id"] not in cited_chunk_ids
+        ]

@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+import threading
 
 from podcast_agent.config import Settings
 from podcast_agent.db import InMemoryRepository
 from podcast_agent.llm import HeuristicLLMClient
 from podcast_agent.pipeline.orchestrator import PipelineOrchestrator
+from podcast_agent.schemas.models import EpisodeOutput, EpisodePlan, EpisodeScript, GroundingReport
 from podcast_agent.tts import TTSClient
 
 
@@ -76,6 +78,14 @@ def test_index_book_persists_chunks_and_embeddings(tmp_path: Path) -> None:
     assert structure.book_id in repository.structures
     assert structure.book_id in repository.embeddings
     assert len(repository.structures[structure.book_id].chunks) == len(repository.embeddings[structure.book_id])
+
+
+def test_pipeline_defaults_raise_parallelism() -> None:
+    settings = Settings()
+
+    assert settings.pipeline.episode_parallelism == 3
+    assert settings.pipeline.structuring_parallelism == 3
+    assert settings.pipeline.max_structuring_llm_chapter_words == 42232
 
 
 def test_ingest_book_reads_pdf_source_and_persists_artifact(tmp_path: Path, monkeypatch) -> None:
@@ -181,3 +191,55 @@ def test_pipeline_can_synthesize_audio_manifest(tmp_path: Path) -> None:
     assert audio_manifest["segments"]
     assert audio_manifest["audio_path"].endswith(".mp3")
     assert Path(audio_manifest["audio_path"]).exists()
+
+
+def test_run_pipeline_processes_episodes_in_parallel_when_enabled(tmp_path: Path, monkeypatch) -> None:
+    book_path = tmp_path / "book.txt"
+    book_path.write_text(BOOK_TEXT, encoding="utf-8")
+    settings = Settings()
+    settings = settings.model_copy(
+        update={
+            "pipeline": settings.pipeline.model_copy(
+                update={
+                    "artifact_root": tmp_path / "runs",
+                    "minimum_source_words_per_episode": 50,
+                    "episode_parallelism": 2,
+                }
+            )
+        }
+    )
+    orchestrator = PipelineOrchestrator(
+        repository=InMemoryRepository(),
+        llm=HeuristicLLMClient(),
+        settings=settings,
+    )
+    barrier = threading.Barrier(2)
+    thread_names: list[str] = []
+    lock = threading.Lock()
+
+    def fake_run_episode_plan(book_id: str, episode_plan: EpisodePlan, *, synthesize_audio: bool) -> EpisodeOutput:
+        del book_id, synthesize_audio
+        with lock:
+            thread_names.append(threading.current_thread().name)
+        barrier.wait(timeout=1)
+        script = EpisodeScript(
+            episode_id=episode_plan.episode_id,
+            title=episode_plan.title,
+            narrator="Narrator",
+            segments=[],
+        )
+        report = GroundingReport(
+            episode_id=episode_plan.episode_id,
+            overall_status="pass",
+            claim_assessments=[],
+        )
+        return EpisodeOutput(plan=episode_plan, script=script, report=report)
+
+    monkeypatch.setattr(orchestrator, "_run_episode_plan", fake_run_episode_plan)
+
+    result = orchestrator.run_pipeline(book_path, title="Observatory Book", author="A. Writer")
+
+    assert len(result["series_plan"]["episodes"]) == 2
+    assert result["episodes"][0]["plan"]["sequence"] == 1
+    assert result["episodes"][1]["plan"]["sequence"] == 2
+    assert len(set(thread_names)) == 2

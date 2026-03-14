@@ -12,7 +12,7 @@ from urllib.error import HTTPError, URLError
 from pydantic import BaseModel
 
 from podcast_agent.config import LLMConfig, Settings
-from podcast_agent.llm.base import LLMClient, PromptPayload
+from podcast_agent.llm.base import LLMClient, LLMContentFilterError, PromptPayload
 
 
 @dataclass(frozen=True)
@@ -129,6 +129,7 @@ class OpenAICompatibleLLMClient(LLMClient):
                     schema_name=schema_name,
                     response=response.body,
                 )
+            _raise_for_finish_reason(response.body)
             content = _extract_message_content(response.body)
             normalized_json = _normalize_json_content(content)
             normalized_payload = _unwrap_response_payload(json.loads(normalized_json))
@@ -177,6 +178,15 @@ def _extract_message_content(body: dict[str, Any]) -> str:
         if text_parts:
             return "".join(text_parts)
     raise RuntimeError("LLM response did not include parseable content.")
+
+
+def _raise_for_finish_reason(body: dict[str, Any]) -> None:
+    choices = body.get("choices")
+    if not choices:
+        return
+    finish_reason = choices[0].get("finish_reason")
+    if finish_reason == "content_filter":
+        raise LLMContentFilterError("LLM response was blocked by content filtering.")
 
 
 def _normalize_json_content(content: str) -> str:
