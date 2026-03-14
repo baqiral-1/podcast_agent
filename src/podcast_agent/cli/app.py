@@ -126,7 +126,7 @@ def render_audio(
         help="PostgreSQL database URL. If omitted, falls back to DATABASE_URL when set.",
     ),
 ) -> None:
-    """Run the pipeline and synthesize per-segment audio output."""
+    """Run the pipeline and synthesize one audio file per episode."""
 
     orchestrator = _build_orchestrator(database_url)
     orchestrator.log_command(

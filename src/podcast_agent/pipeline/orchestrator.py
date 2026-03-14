@@ -23,6 +23,7 @@ from podcast_agent.schemas.models import (
     AudioManifest,
     AudioSegmentFile,
     BookIngestionResult,
+    EpisodeOutput,
     EpisodePlan,
     EpisodeScript,
     GroundingReport,
@@ -69,6 +70,7 @@ class PipelineOrchestrator:
         self.planning_agent = EpisodePlanningAgent(
             self.llm,
             min_episode_minutes=self.settings.pipeline.min_episode_minutes,
+            minimum_standalone_episode_minutes=self.settings.pipeline.minimum_standalone_episode_minutes,
             spoken_words_per_minute=self.settings.pipeline.spoken_words_per_minute,
         )
         self.writing_agent = WritingAgent(
@@ -179,11 +181,6 @@ class PipelineOrchestrator:
         self.run_logger.log("stage_start", stage="write_episode", book_id=book_id, episode_id=episode_plan.episode_id)
         retrieval_hits = self.retrieval.fetch_for_episode(book_id=book_id, chunk_ids=episode_plan.chunk_ids)
         script = self.writing_agent.write(episode_plan, retrieval_hits)
-        self._write_artifact(
-            self._episode_artifact_key(book_id, episode_plan.episode_id),
-            "script",
-            script.model_dump(mode="json"),
-        )
         self.run_logger.log("stage_end", stage="write_episode", book_id=book_id, episode_id=episode_plan.episode_id)
         return script
 
@@ -196,11 +193,6 @@ class PipelineOrchestrator:
             cited_chunk_ids.extend(segment.citations)
         retrieval_hits = self.retrieval.fetch_for_episode(book_id=book_id, chunk_ids=sorted(set(cited_chunk_ids)))
         report = self.validation_agent.validate(script, retrieval_hits)
-        self._write_artifact(
-            self._episode_artifact_key(book_id, script.episode_id),
-            "grounding_report",
-            report.model_dump(mode="json"),
-        )
         self.run_logger.log(
             "stage_end",
             stage="validate_episode",
@@ -233,11 +225,6 @@ class PipelineOrchestrator:
             current_script = repair_result.script
             current_report = self.validate_episode(book_id, current_script)
             repair_result = repair_result.model_copy(update={"report": current_report})
-            self._write_artifact(
-                self._episode_artifact_key(book_id, script.episode_id),
-                f"repair_attempt_{attempt}",
-                repair_result.model_dump(mode="json"),
-            )
             self.run_logger.log(
                 "stage_end",
                 stage="repair_episode",
@@ -247,7 +234,7 @@ class PipelineOrchestrator:
                 overall_status=current_report.overall_status,
             )
             if current_report.overall_status == "pass":
-                return repair_result
+                return repair_result.model_copy(update={"repaired_segment_ids": repair_result.repaired_segment_ids})
         if repair_result is None:
             raise RuntimeError("Repair requested with no attempts configured.")
         return repair_result
@@ -293,11 +280,6 @@ class PipelineOrchestrator:
             book_id=self.current_book_id,
             episode_id=script.episode_id,
         )
-        self._write_artifact(
-            self._episode_artifact_key(self.current_book_id, script.episode_id),
-            "render_manifest",
-            manifest.model_dump(mode="json"),
-        )
         self.run_logger.log(
             "stage_end",
             stage="render_manifest",
@@ -318,39 +300,35 @@ class PipelineOrchestrator:
             episode_id=manifest.episode_id,
         )
         audio_segments = []
+        combined_audio = bytearray()
         for index, segment in enumerate(manifest.segments, start=1):
             audio_bytes = self.tts.synthesize(segment.text)
-            relative_dir = self._episode_artifact_key(self.current_book_id, manifest.episode_id)
-            extension = self.settings.tts.audio_format
-            file_name = f"segment-{index:03d}.{extension}"
-            audio_path = self.artifacts.write_bytes(relative_dir, file_name, audio_bytes)
-            self.run_logger.log(
-                "artifact_written",
-                artifact_path=str(audio_path),
-                artifact_name=file_name,
-            )
+            combined_audio.extend(audio_bytes)
             audio_segments.append(
                 AudioSegmentFile(
                     segment_id=segment.segment_id,
                     speaker=segment.speaker,
-                    audio_path=str(audio_path),
-                    audio_format=extension,
                     text=segment.text,
                     grounded_claim_ids=segment.grounded_claim_ids,
                 )
             )
+        extension = self.settings.tts.audio_format
+        file_name = f"{manifest.episode_id}.{extension}"
+        relative_dir = self._episode_artifact_key(self.current_book_id, manifest.episode_id)
+        audio_path = self.artifacts.write_bytes(relative_dir, file_name, bytes(combined_audio))
+        self.run_logger.log(
+            "artifact_written",
+            artifact_path=str(audio_path),
+            artifact_name=file_name,
+        )
         audio_manifest = AudioManifest(
             episode_id=manifest.episode_id,
             title=manifest.title,
             narrator=manifest.narrator,
             voice=self.settings.tts.voice,
+            audio_path=str(audio_path),
             audio_format=self.settings.tts.audio_format,
             segments=audio_segments,
-        )
-        self._write_artifact(
-            self._episode_artifact_key(self.current_book_id, manifest.episode_id),
-            "audio_manifest",
-            audio_manifest.model_dump(mode="json"),
         )
         self.run_logger.log(
             "stage_end",
@@ -377,24 +355,33 @@ class PipelineOrchestrator:
         for episode_plan in plan.episodes:
             script = self.write_episode(structure.book_id, episode_plan)
             report = self.validate_episode(structure.book_id, script)
+            repair_attempts: list[RepairResult] = []
             if report.overall_status != "pass":
                 repair = self.repair_episode(structure.book_id, script, report)
                 script = repair.script
                 report = repair.report
+                repair_attempts.append(repair)
             manifest = None
             audio_manifest = None
             if report.overall_status == "pass":
                 manifest = self.render_manifest(script, report)
                 if synthesize_audio:
                     audio_manifest = self.synthesize_audio(manifest)
+            episode_output = EpisodeOutput(
+                plan=episode_plan,
+                script=script,
+                report=report,
+                manifest=manifest,
+                audio_manifest=audio_manifest,
+                repair_attempts=repair_attempts,
+            )
+            self._write_artifact(
+                self._episode_artifact_key(structure.book_id, episode_plan.episode_id),
+                "episode_output",
+                episode_output.model_dump(mode="json"),
+            )
             episodes.append(
-                {
-                    "plan": episode_plan.model_dump(mode="json"),
-                    "script": script.model_dump(mode="json"),
-                    "report": report.model_dump(mode="json"),
-                    "manifest": None if manifest is None else manifest.model_dump(mode="json"),
-                    "audio_manifest": None if audio_manifest is None else audio_manifest.model_dump(mode="json"),
-                }
+                episode_output.model_dump(mode="json")
             )
         return {
             "ingestion": ingestion.model_dump(mode="json"),

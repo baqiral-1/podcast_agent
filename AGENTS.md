@@ -29,7 +29,7 @@
 - Use the following commit structure:
   Description
   Intent:
-    - 2-3 bullet points summarizing intent
+    - 2-3 bullet points summarizing intent. Keep each bullet point under 15 words.
     - ...
   
   Changes:

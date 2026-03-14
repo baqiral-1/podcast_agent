@@ -36,9 +36,12 @@ class FakeTTSClient(TTSClient):
 def test_pipeline_creates_multi_chapter_episode_and_manifest(tmp_path: Path) -> None:
     book_path = tmp_path / "book.txt"
     book_path.write_text(BOOK_TEXT, encoding="utf-8")
+    settings = Settings()
+    settings = settings.model_copy(update={"pipeline": settings.pipeline.model_copy(update={"artifact_root": tmp_path / "runs"})})
     orchestrator = PipelineOrchestrator(
         repository=InMemoryRepository(),
         llm=HeuristicLLMClient(),
+        settings=settings,
     )
 
     result = orchestrator.run_pipeline(book_path, title="Observatory Book", author="A. Writer")
@@ -46,6 +49,18 @@ def test_pipeline_creates_multi_chapter_episode_and_manifest(tmp_path: Path) -> 
     assert result["series_plan"]["episodes"]
     assert any(len(episode["chapter_ids"]) > 1 for episode in result["series_plan"]["episodes"])
     assert result["episodes"][0]["manifest"]["segments"]
+    episode_output_path = (
+        tmp_path
+        / "runs"
+        / orchestrator.run_id
+        / "observatory-book"
+        / result["episodes"][0]["plan"]["episode_id"]
+        / "episode_output.json"
+    )
+    assert episode_output_path.exists()
+    assert not episode_output_path.with_name("script.json").exists()
+    assert not episode_output_path.with_name("grounding_report.json").exists()
+    assert not episode_output_path.with_name("render_manifest.json").exists()
 
 
 def test_index_book_persists_chunks_and_embeddings(tmp_path: Path) -> None:
@@ -123,6 +138,5 @@ def test_pipeline_can_synthesize_audio_manifest(tmp_path: Path) -> None:
     audio_manifest = result["episodes"][0]["audio_manifest"]
     assert audio_manifest is not None
     assert audio_manifest["segments"]
-    first_segment = audio_manifest["segments"][0]
-    assert first_segment["audio_path"].endswith(".mp3")
-    assert Path(first_segment["audio_path"]).exists()
+    assert audio_manifest["audio_path"].endswith(".mp3")
+    assert Path(audio_manifest["audio_path"]).exists()

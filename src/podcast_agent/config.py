@@ -58,6 +58,7 @@ class PipelineConfig(BaseModel):
     chunk_overlap_words: int = Field(default=30, ge=0)
     max_repair_attempts: int = Field(default=2, ge=0)
     min_episode_minutes: int = Field(default=30, ge=1)
+    minimum_standalone_episode_minutes: int = Field(default=10, ge=1)
     spoken_words_per_minute: int = Field(default=130, ge=80)
     max_structuring_chapter_words: int = Field(default=2500, ge=500)
     structuring_window_words: int = Field(default=1800, ge=300)

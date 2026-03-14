@@ -255,12 +255,10 @@ class RenderManifest(StrictModel):
 
 
 class AudioSegmentFile(StrictModel):
-    """One synthesized audio file for a render segment."""
+    """Metadata for one rendered segment inside an episode audio output."""
 
     segment_id: str
     speaker: str
-    audio_path: str
-    audio_format: str
     text: str
     grounded_claim_ids: list[str]
 
@@ -272,6 +270,19 @@ class AudioManifest(StrictModel):
     title: str
     narrator: str
     voice: str
+    audio_path: str
     audio_format: str
     segments: list[AudioSegmentFile]
+    generated_at: datetime = Field(default_factory=utc_now)
+
+
+class EpisodeOutput(StrictModel):
+    """Canonical per-episode artifact persisted by the pipeline."""
+
+    plan: EpisodePlan
+    script: EpisodeScript
+    report: GroundingReport
+    manifest: RenderManifest | None = None
+    audio_manifest: AudioManifest | None = None
+    repair_attempts: list[RepairResult] = Field(default_factory=list)
     generated_at: datetime = Field(default_factory=utc_now)

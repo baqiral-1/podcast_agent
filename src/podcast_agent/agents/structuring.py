@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import re
 from collections import Counter
 
@@ -102,10 +103,35 @@ class StructuringAgent(Agent):
         chapters = []
         chunks = []
         sections = _split_into_chapters(ingestion.raw_text)
+        chapter_inputs = []
         for chapter_number, section in enumerate(sections, start=1):
-            chapter_id = f"{ingestion.book_id}-chapter-{chapter_number}"
             chapter_title, chapter_body = _extract_title_and_body(section, chapter_number)
-            structured_chapter = self._structure_chapter(chapter_number, chapter_title, chapter_body)
+            chapter_inputs.append((chapter_number, chapter_title, chapter_body))
+        self._log(
+            "structuring_schedule",
+            chapter_count=len(chapter_inputs),
+            concurrency=3,
+        )
+        structured_results: dict[int, StructuredChapter] = {}
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            future_map = {
+                executor.submit(self._structure_chapter, chapter_number, chapter_title, chapter_body): (
+                    chapter_number,
+                    chapter_title,
+                )
+                for chapter_number, chapter_title, chapter_body in chapter_inputs
+            }
+            for future in as_completed(future_map):
+                chapter_number, chapter_title = future_map[future]
+                structured_results[chapter_number] = future.result()
+                self._log(
+                    "structuring_chapter_completed",
+                    chapter_number=chapter_number,
+                    chapter_title=chapter_title,
+                )
+        for chapter_number, _, _ in chapter_inputs:
+            chapter_id = f"{ingestion.book_id}-chapter-{chapter_number}"
+            structured_chapter = structured_results[chapter_number]
             chapter_chunk_ids = []
             for local_sequence, chunk in enumerate(structured_chapter.chunks, start=1):
                 chunk_id = f"{chapter_id}-chunk-{local_sequence}"
@@ -146,6 +172,12 @@ class StructuringAgent(Agent):
         chapter_title: str,
         chapter_body: str,
     ) -> StructuredChapter:
+        self._log(
+            "structuring_chapter_started",
+            chapter_number=chapter_number,
+            chapter_title=chapter_title,
+            chapter_word_count=len(chapter_body.split()),
+        )
         chapter_words = len(chapter_body.split())
         if chapter_words <= self.max_structuring_chapter_words:
             return self.run(self.build_payload(chapter_number, chapter_title, chapter_body))
@@ -156,6 +188,12 @@ class StructuringAgent(Agent):
             overlap_words=self.structuring_window_overlap_words,
         )
         window_outputs = []
+        self._log(
+            "structuring_window_fallback",
+            chapter_number=chapter_number,
+            chapter_title=chapter_title,
+            window_count=len(windows),
+        )
         for window_index, (start_word, end_word) in enumerate(windows, start=1):
             payload = self.build_window_payload(
                 chapter_number=chapter_number,
@@ -172,6 +210,11 @@ class StructuringAgent(Agent):
             chapter_body=chapter_body,
             windows=window_outputs,
         )
+
+    def _log(self, event_type: str, **payload: object) -> None:
+        run_logger = getattr(self.llm, "run_logger", None)
+        if run_logger is not None:
+            run_logger.log(event_type, **payload)
 
 
 def _split_into_chapters(text: str) -> list[str]:

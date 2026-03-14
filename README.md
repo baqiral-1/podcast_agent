@@ -1,6 +1,6 @@
 # Podcast Agent
 
-`podcast-agent` is a modular book-to-podcast pipeline that converts a source book into grounded podcast episode plans, episode scripts, TTS-ready render manifests, and optional synthesized audio segment files. The project is library-first with a Typer CLI, PostgreSQL-backed retrieval, strict JSON contracts between stages, and specialized sub-agents for structure, analysis, planning, writing, validation, and repair.
+`podcast-agent` is a modular book-to-podcast pipeline that converts a source book into grounded podcast episode plans, episode scripts, TTS-ready render manifests, and optional synthesized audio output. The project is library-first with a Typer CLI, PostgreSQL-backed retrieval, strict JSON contracts between stages, and specialized sub-agents for structure, analysis, planning, writing, validation, and repair.
 
 ## Overview
 
@@ -14,7 +14,8 @@ The current implementation is designed around a few fixed principles:
 - Grounding validation happens before render-manifest generation, and repair is a separate targeted step.
 - Audio synthesis is optional and runs only after a validated render manifest exists.
 - Episodes target at least 30 minutes of spoken narration when the source material is sufficient.
-- Structuring is incremental: chapter-first for live LLM calls, with smaller fallbacks only when a chapter is too large.
+- Episodes are only merged away when they cannot be kept above a 10-minute standalone minimum after rebalancing.
+- Structuring is incremental and runs up to 3 chapter-level calls in parallel, with smaller fallbacks only when a chapter is too large.
 
 ## Architecture
 
@@ -38,14 +39,14 @@ The pipeline is organized as typed stage artifacts and deterministic orchestrati
 
 4. `analysis_agent`
    - Identifies themes, continuity arcs, notable claims, and candidate episode groupings from the structured book.
-   - Proposes multi-chapter episode clusters when continuity supports them.
-   - Emits a strict `BookAnalysis` artifact through the LLM interface.
+   - Produces coverage-preserving multi-chapter clusters that collectively account for the full book.
+   - Retries once and fails fast if the analysis omits chapters, under-assigns chunks, or produces invalid spans.
 
 5. `episode_planning_agent`
    - Converts `BookAnalysis` into a hierarchical `SeriesPlan` with episodes, beats, and claim requirements.
    - Defines episodes independently from chapter boundaries so they can span multiple chapters.
-   - Groups enough source material to target at least 30 minutes of spoken runtime per episode when possible.
-   - Carries planning context forward through the LLM interface for writing and validation.
+   - Strongly targets at least 30 minutes of spoken runtime per episode, then deterministically rebalances adjacent chapter boundaries before dropping any episode.
+   - Keeps short-but-viable episodes when they remain above a 10-minute standalone minimum and retries once if the live plan ignores multi-chapter or coverage constraints.
 
 6. `writing_agent`
    - Generates the single-narrator script for each episode from the plan plus retrieved source chunks.
@@ -67,8 +68,8 @@ The pipeline is organized as typed stage artifacts and deterministic orchestrati
    This is deterministic in the current implementation and is the gate into audio rendering.
 
 10. `synthesize-audio`
-   - Uses the configured TTS client to synthesize one audio file per validated render segment.
-   - Persists per-segment audio plus an `AudioManifest` that maps rendered text to files on disk.
+   - Uses the configured TTS client to synthesize validated render segments and combines them into one episode audio file.
+   - Persists audio metadata inside the canonical episode output plus one final audio file on disk.
    - Runs only when the CLI requests audio output or `run_pipeline(..., synthesize_audio=True)` is used.
 
 ## Project Layout
@@ -197,6 +198,7 @@ Important stage artifacts include:
 - `RepairResult`
 - `RenderManifest`
 - `AudioManifest`
+- `EpisodeOutput`
 
 The contracts are intentionally strict:
 
@@ -205,11 +207,10 @@ The contracts are intentionally strict:
 - malformed agent output should fail validation early
 - downstream stages should consume validated artifacts rather than free-form text
 
-When audio synthesis is enabled, each episode directory also includes:
+Each episode directory now contains:
 
-- `render_manifest.json`: validated speech-ready segments and SSML
-- `audio_manifest.json`: per-segment audio metadata including file paths
-- `segment-001.mp3`, `segment-002.mp3`, ...: synthesized audio files for each renderable segment
+- `episode_output.json`: the single canonical JSON artifact with plan, script, validation, render, repair, and audio metadata
+- `<episode-id>.mp3`: one final episode audio file when audio synthesis is enabled
 
 ## Development
 
