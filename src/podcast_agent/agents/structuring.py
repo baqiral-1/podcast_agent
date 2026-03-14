@@ -2,18 +2,23 @@
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import re
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from podcast_agent.agents.base import Agent
+from podcast_agent.ingestion import normalize_source_text
 from podcast_agent.schemas.models import (
     BookChapter,
     BookChunk,
     BookIngestionResult,
     BookStructure,
+    SourceType,
     StructuredChapter,
     StructuredChunkDraft,
+)
+from podcast_agent.utils import (
+    split_into_chapters,
+    split_into_detected_headings,
 )
 
 STOP_WORDS = {
@@ -29,7 +34,6 @@ STOP_WORDS = {
     "through",
     "between",
 }
-
 
 class StructuringAgent(Agent):
     """Agent that normalizes raw book text into chapters and chunks."""
@@ -102,11 +106,32 @@ class StructuringAgent(Agent):
 
         chapters = []
         chunks = []
-        sections = _split_into_chapters(ingestion.raw_text)
+        normalized_text = (
+            normalize_source_text(ingestion.raw_text)
+            if ingestion.source_type == SourceType.PDF
+            else ingestion.raw_text
+        )
+        heading_sections = split_into_detected_headings(normalized_text)
+        if len(heading_sections) == 1 and len(heading_sections[0].body.split()) > self.max_structuring_chapter_words:
+            self._log(
+                "structuring_sectioning_risk",
+                source_type=ingestion.source_type.value,
+                section_count=1,
+                title=heading_sections[0].title,
+                word_count=len(heading_sections[0].body.split()),
+                message="Detected a single oversized section before chapter structuring.",
+            )
+        sections = split_into_chapters(normalized_text)
+        if sections and all(section.title.startswith("Section ") for section in sections):
+            self._log(
+                "structuring_sectioning_fallback",
+                source_type=ingestion.source_type.value,
+                section_count=len(sections),
+                message="No reliable chapter headings detected; using deterministic fallback sectioning.",
+            )
         chapter_inputs = []
         for chapter_number, section in enumerate(sections, start=1):
-            chapter_title, chapter_body = _extract_title_and_body(section, chapter_number)
-            chapter_inputs.append((chapter_number, chapter_title, chapter_body))
+            chapter_inputs.append((chapter_number, section.title, section.body))
         self._log(
             "structuring_schedule",
             chapter_count=len(chapter_inputs),
@@ -227,28 +252,6 @@ class StructuringAgent(Agent):
         run_logger = getattr(self.llm, "run_logger", None)
         if run_logger is not None:
             run_logger.log(event_type, **payload)
-
-
-def _split_into_chapters(text: str) -> list[str]:
-    pattern = re.compile(r"(?im)^(chapter\s+\d+[:\s-].*|chapter\s+\d+.*)$")
-    matches = list(pattern.finditer(text))
-    if not matches:
-        return [text]
-    sections = []
-    for index, match in enumerate(matches):
-        start = match.start()
-        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
-        sections.append(text[start:end].strip())
-    return sections
-
-
-def _extract_title_and_body(section: str, chapter_number: int) -> tuple[str, str]:
-    lines = [line.strip() for line in section.splitlines() if line.strip()]
-    if not lines:
-        return f"Chapter {chapter_number}", section
-    title = lines[0]
-    body = "\n".join(lines[1:]).strip() or title
-    return title, body
 
 
 def _chunk_text(text: str, max_words: int, overlap_words: int) -> list[dict[str, int | str]]:

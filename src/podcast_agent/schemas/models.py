@@ -26,6 +26,7 @@ class SourceType(str, Enum):
 
     TEXT = "text"
     MARKDOWN = "markdown"
+    PDF = "pdf"
 
 
 class BookIngestionResult(StrictModel):

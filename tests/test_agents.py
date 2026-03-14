@@ -18,6 +18,7 @@ from podcast_agent.schemas.models import (
     RetrievalHit,
     SourceType,
 )
+from podcast_agent.utils import split_into_chapters
 
 
 BOOK_TEXT = """
@@ -94,6 +95,124 @@ def test_structuring_agent_creates_chapters_and_chunks() -> None:
     assert structure.chunks
     assert all(chapter.title for chapter in structure.chapters)
     assert all(chunk.chunk_id.startswith("observatory-book-chapter-") for chunk in structure.chunks)
+
+
+def test_split_into_chapters_handles_front_matter_roman_and_appendix() -> None:
+    text = """
+    Introduction
+    The editor frames the expedition.
+
+    Chapter I
+    Arrival
+    The ship reaches the harbor.
+
+    Chapter II: Signals
+    The archive reveals the mirror network.
+
+    Appendix A
+    Notes and source references.
+    """
+
+    sections = split_into_chapters(text)
+
+    assert [section.title for section in sections] == [
+        "Introduction: The editor frames the expedition.",
+        "Chapter I: Arrival",
+        "Chapter II: Signals",
+        "Appendix A: Notes and source references.",
+    ]
+
+
+def test_split_into_chapters_falls_back_when_no_headings_exist() -> None:
+    text = "\n\n".join(
+        [
+            ("astronomy " * 700).strip(),
+            ("observatory " * 700).strip(),
+            ("navigation " * 700).strip(),
+        ]
+    )
+
+    sections = split_into_chapters(text)
+
+    assert len(sections) == 2
+    assert sections[0].title == "Section 1"
+    assert sections[1].title == "Section 2"
+
+
+def test_split_into_chapters_rejects_toc_and_note_like_chapter_lines() -> None:
+    text = """
+    26. Rights 27. Riots 28. Rulers 29. Riches 30. A People's Entertainments Epilogue: Why India Survives Acknowledgements Notes Index
+
+    Prologue
+    Opening body text.
+
+    Chapter 2: The granting of maintenance to the wife who chose to live separately from the husband if he had a loathsome disease.
+    This should stay inside the prior body rather than start a chapter.
+
+    Chapter 1989: In November of that year Rajiv Gandhi was replaced as prime minister.
+    This also should not become a chapter.
+
+    Epilogue
+    Closing body text.
+    """
+
+    sections = split_into_chapters(text)
+
+    assert sections[0].title == "Section 1"
+    assert all("Chapter 1989" not in section.title for section in sections)
+    assert all("The granting of maintenance" not in section.title for section in sections)
+
+
+def test_split_into_chapters_falls_back_when_headings_are_too_sparse() -> None:
+    text = "\n\n".join(
+        [
+            "Prologue",
+            ("opening " * 2000).strip(),
+            "Epilogue",
+            ("closing " * 100).strip(),
+            "Notes",
+            ("citation " * 500).strip(),
+        ]
+    )
+
+    sections = split_into_chapters(text)
+
+    assert len(sections) >= 2
+    assert sections[0].title == "Section 1"
+    assert all("citation" not in section.body for section in sections)
+
+
+def test_structuring_skips_ocr_normalization_for_text_sources(monkeypatch) -> None:
+    called = False
+
+    def fail_if_called(text: str) -> str:
+        nonlocal called
+        called = True
+        raise AssertionError("text sources should not be OCR-normalized")
+
+    monkeypatch.setattr("podcast_agent.agents.structuring.normalize_source_text", fail_if_called)
+
+    structure = StructuringAgent(HeuristicLLMClient()).structure(_build_ingestion())
+
+    assert structure.chapters
+    assert called is False
+
+
+def test_structuring_applies_ocr_normalization_for_pdf_sources(monkeypatch) -> None:
+    called = False
+
+    def fake_normalize(text: str) -> str:
+        nonlocal called
+        called = True
+        return text
+
+    monkeypatch.setattr("podcast_agent.agents.structuring.normalize_source_text", fake_normalize)
+    ingestion = _build_ingestion().model_copy(update={"source_type": SourceType.PDF})
+
+    structure = StructuringAgent(HeuristicLLMClient()).structure(ingestion)
+
+    assert structure.chapters
+    assert called is True
 
 
 def test_analysis_agent_creates_multi_chapter_clusters() -> None:

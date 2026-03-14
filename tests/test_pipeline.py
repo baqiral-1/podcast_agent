@@ -78,6 +78,33 @@ def test_index_book_persists_chunks_and_embeddings(tmp_path: Path) -> None:
     assert len(repository.structures[structure.book_id].chunks) == len(repository.embeddings[structure.book_id])
 
 
+def test_ingest_book_reads_pdf_source_and_persists_artifact(tmp_path: Path, monkeypatch) -> None:
+    pdf_path = tmp_path / "book.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4\n")
+    settings = Settings()
+    settings = settings.model_copy(update={"pipeline": settings.pipeline.model_copy(update={"artifact_root": tmp_path / "runs"})})
+    orchestrator = PipelineOrchestrator(
+        repository=InMemoryRepository(),
+        llm=HeuristicLLMClient(),
+        settings=settings,
+    )
+
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.read_source_text",
+        lambda path: "[Page 1]\nChapter 1: Arrival\nThe observatory appears.",
+    )
+
+    ingestion = orchestrator.ingest_book(pdf_path, title="Observatory Book", author="A. Writer")
+
+    assert ingestion.source_type.value == "pdf"
+    assert ingestion.raw_text.startswith("[Page 1]")
+    artifact_path = tmp_path / "runs" / orchestrator.run_id / "observatory-book" / "ingestion.json"
+    assert artifact_path.exists()
+    artifact_payload = artifact_path.read_text(encoding="utf-8")
+    assert '"source_type": "pdf"' in artifact_payload
+    assert '"raw_text": "[Page 1]\\nChapter 1: Arrival\\nThe observatory appears."' in artifact_payload
+
+
 def test_validation_schema_is_claim_level(tmp_path: Path) -> None:
     book_path = tmp_path / "book.txt"
     book_path.write_text(BOOK_TEXT, encoding="utf-8")
@@ -112,6 +139,25 @@ def test_books_under_source_word_floor_collapse_to_single_episode() -> None:
 
     assert len(result["series_plan"]["episodes"]) == 1
     assert len(result["series_plan"]["episodes"][0]["chapter_ids"]) == 12
+
+
+def test_river_of_hours_text_indexes_same_chapter_count(tmp_path: Path) -> None:
+    settings = Settings()
+    settings = settings.model_copy(update={"pipeline": settings.pipeline.model_copy(update={"artifact_root": tmp_path / "runs"})})
+    orchestrator = PipelineOrchestrator(
+        repository=InMemoryRepository(),
+        llm=HeuristicLLMClient(),
+        settings=settings,
+    )
+
+    text_path = Path("tests/fixtures/river_of_hours.txt")
+    ingestion = orchestrator.ingest_book(text_path, title="River of Hours", author="Sample Author")
+    structure = orchestrator.index_book(ingestion)
+
+    assert ingestion.source_type.value == "text"
+    assert len(structure.chapters) == 12
+    assert structure.chapters[0].title == "Chapter 1: On Beginnings"
+    assert structure.chapters[-1].title == "Chapter 12: A Practical Metaphysics"
 
 
 def test_pipeline_can_synthesize_audio_manifest(tmp_path: Path) -> None:

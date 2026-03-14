@@ -16,6 +16,7 @@ from podcast_agent.agents import (
 )
 from podcast_agent.config import Settings
 from podcast_agent.db.repository import ArtifactStore, InMemoryRepository, Repository
+from podcast_agent.ingestion import read_source_text
 from podcast_agent.llm import LLMClient, build_llm_client
 from podcast_agent.retrieval import RetrievalService, embed_text
 from podcast_agent.run_logging import RunLogger
@@ -93,7 +94,7 @@ class PipelineOrchestrator:
         """Read source text and persist the book record."""
 
         path = Path(source_path)
-        raw_text = path.read_text(encoding="utf-8")
+        raw_text = read_source_text(path)
         resolved_title = title or path.stem.replace("_", " ").title()
         book_id = _slugify(resolved_title)
         ingestion = BookIngestionResult(
@@ -410,7 +411,12 @@ def _slugify(value: str) -> str:
 
 
 def _detect_source_type(path: Path) -> SourceType:
-    return SourceType.MARKDOWN if path.suffix.lower() == ".md" else SourceType.TEXT
+    suffix = path.suffix.lower()
+    if suffix == ".pdf":
+        return SourceType.PDF
+    if suffix == ".md":
+        return SourceType.MARKDOWN
+    return SourceType.TEXT
 
 
 def _new_run_id(book_id: str) -> str:

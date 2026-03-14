@@ -132,6 +132,8 @@ podcast-agent index-book ./examples/book.txt --database-url "$DATABASE_URL"
 
 The CLI currently supports stage-wise execution and end-to-end orchestration:
 
+Input files may be plain text, markdown, or PDF on the existing commands.
+
 ```bash
 podcast-agent ingest-book ./examples/book.txt --title "Example Book" --author "Author"
 podcast-agent index-book ./examples/book.txt --title "Example Book" --author "Author" --database-url "$DATABASE_URL"

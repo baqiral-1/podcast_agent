@@ -11,6 +11,7 @@ from podcast_agent.agents import EpisodePlanningAgent, WritingAgent
 from podcast_agent.config import PipelineConfig, Settings
 from podcast_agent.db import InMemoryRepository
 from podcast_agent.db.repository import _format_pgvector
+from podcast_agent.ingestion import extract_pdf_text, normalize_source_text
 from podcast_agent.llm import HeuristicLLMClient
 from podcast_agent.llm.base import LLMClient
 from podcast_agent.llm.openai_compatible import HTTPTransport, OpenAICompatibleLLMClient
@@ -29,6 +30,7 @@ from podcast_agent.schemas.models import (
     RetrievalHit,
     SeriesPlan,
 )
+from podcast_agent.utils import split_into_chapters
 
 
 BOOK_TEXT = """
@@ -257,6 +259,133 @@ class TimeoutTransport(HTTPTransport):
         raise TimeoutError("simulated transport timeout")
 
 
+def test_extract_pdf_text_preserves_page_markers_and_normalizes_spacing(monkeypatch, tmp_path: Path) -> None:
+    class FakePage:
+        def __init__(self, text: str) -> None:
+            self._text = text
+
+        def extract_text(self) -> str:
+            return self._text
+
+    class FakeReader:
+        def __init__(self, path: str) -> None:
+            self.path = path
+            self.is_encrypted = False
+            self.pages = [
+                FakePage("C H A P T E R I\nArrival\nThe observa-\ntory opens."),
+                FakePage("Appendix A\nSource notes"),
+            ]
+
+    monkeypatch.setattr("podcast_agent.ingestion.PdfReader", FakeReader)
+
+    extracted = extract_pdf_text(tmp_path / "book.pdf")
+
+    assert extracted == (
+        "[Page 1]\nCHAPTER I\n\nArrival\n\nThe observatory opens.\n\n"
+        "[Page 2]\nAppendix A\n\nSource notes"
+    )
+
+
+def test_extract_pdf_text_rejects_encrypted_pdfs(monkeypatch, tmp_path: Path) -> None:
+    class FakeReader:
+        def __init__(self, path: str) -> None:
+            self.path = path
+            self.is_encrypted = True
+            self.pages = []
+
+    monkeypatch.setattr("podcast_agent.ingestion.PdfReader", FakeReader)
+
+    try:
+        extract_pdf_text(tmp_path / "secret.pdf")
+    except ValueError as exc:
+        assert "Encrypted PDF files are not supported" in str(exc)
+    else:
+        raise AssertionError("Expected encrypted PDF extraction to fail")
+
+
+def test_normalize_source_text_joins_wrapped_lines() -> None:
+    normalized = normalize_source_text("The observa-\ntory\nrecords arrive.\nSecond line.")
+
+    assert normalized == "The observatory records arrive. Second line."
+
+
+def test_pdf_contents_drives_chapter_title_recovery(tmp_path: Path) -> None:
+    pdf_path = Path("tests/fixtures/ocr_like_contents.pdf")
+    text = extract_pdf_text(pdf_path)
+    chapter_sections = split_into_chapters(text)
+
+    assert [section.title for section in chapter_sections] == [
+        "Prologue: Opening Ground",
+        "Chapter 1: Freedom and Parricide",
+        "Chapter 2: Home and the World",
+        "Epilogue: Why It Holds",
+    ]
+
+
+def test_pdf_contents_handles_preface_appendix_and_afterword() -> None:
+    pdf_path = Path("tests/fixtures/nonfiction_preface_appendix.pdf")
+    text = extract_pdf_text(pdf_path)
+    chapter_sections = split_into_chapters(text)
+
+    assert [section.title for section in chapter_sections] == [
+        "Preface: Why This Story Matters",
+        "Chapter 1: The Long River",
+        "Chapter 2: The Mountain Road",
+        "Appendix A: Dates and Sources",
+        "Afterword: Looking Back",
+    ]
+
+
+def test_pdf_direct_headings_handle_roman_numeral_chapters() -> None:
+    pdf_path = Path("tests/fixtures/roman_chapters.pdf")
+    text = extract_pdf_text(pdf_path)
+    chapter_sections = split_into_chapters(text)
+
+    assert [section.title for section in chapter_sections] == [
+        "Introduction: A concise opening that frames the argument.",
+        "Chapter I: First Light",
+        "Chapter II: Second Wind",
+        "Chapter III: Third Crossing",
+        "Conclusion: The final section gathers the major claims.",
+    ]
+
+
+def test_pdf_two_page_contents_handles_parts_and_epilogue() -> None:
+    pdf_path = Path("tests/fixtures/two_page_contents_parts.pdf")
+    text = extract_pdf_text(pdf_path)
+    chapter_sections = split_into_chapters(text)
+
+    assert [section.title for section in chapter_sections] == [
+        "Introduction: At the Edge of Empire",
+        "Chapter 1: Harbour City",
+        "Chapter 2: Salt and Monsoon",
+        "Chapter 3: Inland Courts",
+        "Chapter 4: The Empty Throne",
+        "Chapter 5: Return Passage",
+        "Epilogue: The Archive Remains",
+    ]
+
+
+def test_river_of_hours_text_recovers_expected_chapter_titles() -> None:
+    text = Path("tests/fixtures/river_of_hours.txt").read_text(encoding="utf-8")
+    chapter_sections = split_into_chapters(text)
+
+    assert [section.title for section in chapter_sections] == [
+        "Chapter 1: On Beginnings",
+        "Chapter 2: The Discipline of Looking",
+        "Chapter 3: The Work of Naming",
+        "Chapter 4: Rooms of Solitude",
+        "Chapter 5: The Weight of Memory",
+        "Chapter 6: The Ordinary Good",
+        "Chapter 7: Dialogues with Fear",
+        "Chapter 8: The Public Life of Love",
+        "Chapter 9: What Endures",
+        "Chapter 10: Instructions for Attention",
+        "Chapter 11: The Uses of Uncertainty",
+        "Chapter 12: A Practical Metaphysics",
+    ]
+
+
 def test_build_orchestrator_uses_in_memory_when_database_url_missing(monkeypatch) -> None:
     monkeypatch.delenv("DATABASE_URL", raising=False)
 
@@ -352,6 +481,29 @@ def test_incremental_structuring_logs_one_request_per_chapter(tmp_path: Path) ->
     ]
 
     assert len(chapter_requests) == 2
+
+
+def test_structuring_logs_risk_for_single_oversized_detected_section(tmp_path: Path) -> None:
+    book_path = tmp_path / "book.txt"
+    oversized_body = " ".join(["observatory"] * 3000)
+    book_path.write_text(f"Introduction\n{oversized_body}", encoding="utf-8")
+    settings = Settings(pipeline=PipelineConfig(artifact_root=tmp_path / "runs"))
+    orchestrator = PipelineOrchestrator(
+        repository=InMemoryRepository(),
+        llm=HeuristicLLMClient(),
+        settings=settings,
+    )
+
+    ingestion = orchestrator.ingest_book(book_path, title="Risk Logged Book", author="A. Writer")
+    orchestrator.index_book(ingestion)
+
+    run_log = tmp_path / "runs" / orchestrator.run_id / "run.log"
+    lines = [json.loads(line) for line in run_log.read_text(encoding="utf-8").splitlines()]
+    risks = [line for line in lines if line["event_type"] == "structuring_sectioning_risk"]
+
+    assert len(risks) == 1
+    assert risks[0]["payload"]["section_count"] == 1
+    assert risks[0]["payload"]["word_count"] == 3000
 
 
 def test_structuring_logs_failed_chapter_before_aborting(tmp_path: Path) -> None:
