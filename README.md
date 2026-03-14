@@ -19,58 +19,20 @@ The current implementation is designed around a few fixed principles:
 
 ## Architecture
 
-The pipeline is organized as typed stage artifacts and deterministic orchestration around agent boundaries.
+The architecture guide now lives in [docs/index.html](docs/index.html), including the stage-by-stage execution flow, persisted artifacts, contract rules, and project layout.
 
-![Agent execution flow](docs/agent-flow.svg)
+At a high level, the pipeline alternates between deterministic orchestration steps and LLM-backed sub-agents:
 
 1. `ingest-book`
-   Reads a source file, normalizes source metadata, and creates a canonical `BookIngestionResult`.
-   This is a deterministic pipeline step, not an LLM-driven agent.
-
 2. `structuring_agent`
-   - Produces `BookStructure` with chapters, chunks, stable IDs, and source offsets.
-   - Uses deterministic preprocessing for chapter splitting and chunking, then routes through the shared LLM interface chapter by chapter.
-   - Feeds `index-book`, where chunks are stored in PostgreSQL and embeddings are generated.
-
 3. `index-book`
-   Stores chunk rows in PostgreSQL immediately after structuring.
-   Computes embeddings for those chunks and stores them in `pgvector`.
-   This is also a deterministic orchestration step rather than an agent.
-
 4. `analysis_agent`
-   - Identifies themes, continuity arcs, notable claims, and candidate episode groupings from the structured book.
-   - Produces coverage-preserving multi-chapter clusters that collectively account for the full book.
-   - Retries once and fails fast if the analysis omits chapters, under-assigns chunks, or produces invalid spans.
-
 5. `episode_planning_agent`
-   - Converts `BookAnalysis` into a hierarchical `SeriesPlan` with episodes, beats, and claim requirements.
-   - Defines episodes independently from chapter boundaries so they can span multiple chapters.
-   - Strongly targets at least 30 minutes of spoken runtime per episode, then deterministically rebalances adjacent chapter boundaries before dropping any episode.
-   - Keeps short-but-viable episodes when they remain above a 10-minute standalone minimum and retries once if the live plan ignores multi-chapter or coverage constraints.
-
 6. `writing_agent`
-   - Generates the single-narrator script for each episode from the plan plus retrieved source chunks.
-   - Builds segment-level narration, citations, and claim records for each segment.
-   - Emits an `EpisodeScript` artifact through the LLM interface using retrieval-backed evidence and enough source text to satisfy the runtime target when available.
-
 7. `grounding_validation_agent`
-   - Validates each claim-bearing script segment against cited source chunks before rendering.
-   - Classifies claims as grounded, weak, unsupported, or conflicting and emits a `GroundingReport`.
-   - Acts as the LLM-backed validation gate between writing and render-manifest generation.
-
 8. `repair_agent`
-   - Rewrites only weak or unsupported parts of the script instead of regenerating the full episode.
-   - Uses the prior script and `GroundingReport` to target failures precisely.
-   - Emits a `RepairResult` and is followed by revalidation before final manifest generation.
-
 9. `render-manifest`
-   Emits a TTS-ready manifest with grounded segments and SSML-ready text.
-   This is deterministic in the current implementation and is the gate into audio rendering.
-
 10. `synthesize-audio`
-   - Uses the configured TTS client to synthesize validated render segments and combines them into one episode audio file.
-   - Persists audio metadata inside the canonical episode output plus one final audio file on disk.
-   - Runs only when the CLI requests audio output or `run_pipeline(..., synthesize_audio=True)` is used.
 
 ## Project Layout
 
