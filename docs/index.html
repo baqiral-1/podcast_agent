@@ -284,18 +284,33 @@
       heroPlay.setAttribute("aria-label", audio.paused ? "Play audio" : "Pause audio");
     }
 
+    let isSeeking = false;
+
     function syncTimeline() {
-      if (!audio.duration) {
+      if (!Number.isFinite(audio.duration) || audio.duration <= 0) {
+        timeline.disabled = true;
+        timeline.max = "0";
         timeline.value = "0";
         currentTime.textContent = "0:00";
         duration.textContent = "0:00";
         return;
       }
 
-      const percent = (audio.currentTime / audio.duration) * 100;
-      timeline.value = String(percent);
+      timeline.disabled = false;
+      timeline.max = String(audio.duration);
+      if (!isSeeking) {
+        timeline.value = String(audio.currentTime);
+      }
       currentTime.textContent = formatTime(audio.currentTime);
       duration.textContent = formatTime(audio.duration);
+    }
+
+    function seekToTimelineValue() {
+      if (!Number.isFinite(audio.duration) || audio.duration <= 0) {
+        return;
+      }
+      audio.currentTime = Math.min(Number(timeline.value), audio.duration);
+      currentTime.textContent = formatTime(audio.currentTime);
     }
 
     heroPlay.addEventListener("click", () => {
@@ -309,14 +324,32 @@
     audio.addEventListener("play", syncPlayButton);
     audio.addEventListener("pause", syncPlayButton);
     audio.addEventListener("loadedmetadata", syncTimeline);
+    audio.addEventListener("durationchange", syncTimeline);
     audio.addEventListener("timeupdate", syncTimeline);
     audio.addEventListener("ended", syncPlayButton);
 
+    timeline.addEventListener("pointerdown", () => {
+      isSeeking = true;
+    });
+
+    timeline.addEventListener("pointerup", () => {
+      isSeeking = false;
+      seekToTimelineValue();
+      syncTimeline();
+    });
+
     timeline.addEventListener("input", () => {
-      if (!audio.duration) {
+      if (isSeeking) {
+        currentTime.textContent = formatTime(Number(timeline.value));
         return;
       }
-      audio.currentTime = (Number(timeline.value) / 100) * audio.duration;
+      seekToTimelineValue();
+    });
+
+    timeline.addEventListener("change", () => {
+      isSeeking = false;
+      seekToTimelineValue();
+      syncTimeline();
     });
 
     syncPlayButton();
