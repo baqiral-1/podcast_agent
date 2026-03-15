@@ -41,7 +41,13 @@ class OpenAICompatibleTTSClient(TTSClient):
         self.config = config
         self.transport = transport or BinaryHTTPTransport()
 
-    def synthesize(self, text: str, voice: str | None = None, audio_format: str | None = None) -> bytes:
+    def synthesize(
+        self,
+        text: str,
+        voice: str | None = None,
+        audio_format: str | None = None,
+        instructions: str | None = None,
+    ) -> bytes:
         if not text.strip():
             raise ValueError("Cannot synthesize empty text.")
         api_key = __import__("os").getenv("OPENAI_API_KEY")
@@ -52,6 +58,7 @@ class OpenAICompatibleTTSClient(TTSClient):
             "voice": voice or self.config.voice,
             "input": text,
             "format": audio_format or self.config.audio_format,
+            "instructions": instructions or self.config.instructions,
             "speed": self.config.speed,
         }
         endpoint = f"{(__import__('os').getenv('OPENAI_BASE_URL') or 'https://api.openai.com').rstrip('/')}/v1/audio/speech"
@@ -66,6 +73,7 @@ class OpenAICompatibleTTSClient(TTSClient):
                 model=self.config.model_name,
                 voice=payload["voice"],
                 audio_format=payload["format"],
+                instructions=payload["instructions"],
                 text=text,
             )
         audio_bytes = self.transport.post_json_for_bytes(
@@ -81,6 +89,7 @@ class OpenAICompatibleTTSClient(TTSClient):
                 model=self.config.model_name,
                 voice=payload["voice"],
                 audio_format=payload["format"],
+                instructions=payload["instructions"],
                 byte_count=len(audio_bytes),
             )
         return audio_bytes

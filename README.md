@@ -143,6 +143,7 @@ podcast-agent run-pipeline ./examples/book.txt --title "Example Book" --author "
 podcast-agent run-pipeline ./examples/book.txt --title "Example Book" --author "Author" --start-chapter "Chapter 3: Turning Point" --end-chapter "Chapter 5: Resolution" --episode-count 1
 podcast-agent run-pipeline ./examples/book.txt --title "Example Book" --author "Author" --episode-count 2 --with-audio
 podcast-agent render-audio ./examples/book.txt --title "Example Book" --author "Author" --episode-count 2
+podcast-agent render-audio-from-manifest ./.podcast_agent/runs/example-book-20260315T1106/example-book/episode-1/episode_output.json
 ```
 
 Example with one of the included sample books:
@@ -152,6 +153,8 @@ podcast-agent run-pipeline ./examples/river_of_hours.txt --title "River of Hours
 ```
 
 Artifacts are written to a per-run subdirectory under `.podcast_agent/runs/<book-title>-<timestamp-to-minute>/`, with nested book and episode folders inside that run. Each run root also includes `run.log`, which records stage transitions, full prompts, responses, TTS requests, and command metadata for that run.
+
+When a saved `episode_output.json` or legacy `render_manifest.json` already exists, `render-audio-from-manifest` can regenerate episode audio in a fresh run directory without invoking ingestion, planning, writing, or grounding stages.
 
 When `--start-chapter` and/or `--end-chapter` is provided, the pipeline selects an inclusive range of detected section titles. `--start-chapter` runs from the matched title to the end of the book, `--end-chapter` runs from the beginning through the matched title, and using both processes the inclusive range between them. Matching is case-insensitive and requires the full detected title.
 

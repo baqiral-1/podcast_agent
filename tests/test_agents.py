@@ -191,6 +191,26 @@ class CitationLoggingLLM(LLMClient):
         return HeuristicLLMClient().generate_json(schema_name, instructions, payload, response_model)
 
 
+class CapturingRepairLLM(LLMClient):
+    """LLM stub that captures the narrowed repair payload."""
+
+    def __init__(self) -> None:
+        self.payloads: list[dict] = []
+
+    def generate_json(self, schema_name, instructions, payload, response_model):
+        if schema_name == "episode_repair":
+            self.payloads.append(payload)
+            return response_model.model_validate(
+                {
+                    "episode_id": payload["episode_id"],
+                    "attempt": payload["attempt"],
+                    "repaired_segment_ids": [segment["segment_id"] for segment in payload["failed_segments"]],
+                    "repaired_segments": payload["failed_segments"],
+                }
+            )
+        return HeuristicLLMClient().generate_json(schema_name, instructions, payload, response_model)
+
+
 class RetryingClaimWritingLLM(LLMClient):
     """LLM stub that fails the first beat attempt, then returns valid claim evidence."""
 
@@ -1129,7 +1149,7 @@ def test_grounding_validation_agent_uses_configured_parallelism() -> None:
 
 
 def test_repair_agent_targets_only_failed_segments() -> None:
-    llm = HeuristicLLMClient()
+    llm = CapturingRepairLLM()
     script, _, retrieval_hits = _build_script_and_report()
 
     weakened_first_segment = script.segments[0].model_copy(
@@ -1157,3 +1177,11 @@ def test_repair_agent_targets_only_failed_segments() -> None:
     assert repair.attempt == 1
     assert repair.repaired_segment_ids
     assert repair.repaired_segment_ids[0] == weakened_script.segments[0].segment_id
+    payload = llm.payloads[0]
+    assert payload["episode_id"] == weakened_script.episode_id
+    assert len(payload["failed_segments"]) == 1
+    assert payload["failed_segments"][0]["segment_id"] == weakened_script.segments[0].segment_id
+    assert payload["failed_segments"][0]["beat_id"] == weakened_script.segments[0].beat_id
+    assert {assessment["claim_id"] for assessment in payload["report"]["claim_assessments"]} == {
+        weakened_script.segments[0].claims[0].claim_id
+    }

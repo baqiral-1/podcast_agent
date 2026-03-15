@@ -6,7 +6,10 @@ from concurrent.futures import ThreadPoolExecutor
 import re
 import threading
 from datetime import UTC, datetime
+import json
 from pathlib import Path
+
+from pydantic import ValidationError
 
 from podcast_agent.agents import (
     AnalysisAgent,
@@ -34,6 +37,7 @@ from podcast_agent.schemas.models import (
     RenderManifest,
     RenderSegment,
     RepairResult,
+    EpisodeSegment,
     SourceType,
 )
 from podcast_agent.tts import TTSClient, build_tts_client
@@ -280,6 +284,15 @@ class PipelineOrchestrator:
         current_report = report
         repair_result = None
         for attempt in range(1, self.settings.pipeline.max_repair_attempts + 1):
+            failed_segments = self.repair_agent.failed_segments(current_script, current_report)
+            if not failed_segments:
+                return RepairResult(
+                    episode_id=current_script.episode_id,
+                    attempt=attempt,
+                    repaired_segment_ids=[],
+                    script=current_script,
+                    report=current_report,
+                )
             self.run_logger.log(
                 "stage_start",
                 stage="repair_episode",
@@ -287,10 +300,47 @@ class PipelineOrchestrator:
                 episode_id=script.episode_id,
                 attempt=attempt,
             )
-            repair_result = self.repair_agent.repair(current_script, current_report, attempt)
-            current_script = repair_result.script
+            failed_assessments = self.repair_agent.failed_claim_assessments(current_script, current_report)
+            self.run_logger.log(
+                "repair_payload_diagnostics",
+                book_id=book_id,
+                episode_id=current_script.episode_id,
+                attempt=attempt,
+                failed_segment_count=len(failed_segments),
+                failed_segment_ids=[segment.segment_id for segment in failed_segments],
+                failed_beat_ids=[segment.beat_id for segment in failed_segments],
+                failed_claim_count=len(failed_assessments),
+            )
+            segment_repair = self.repair_agent.repair(current_script, current_report, attempt)
+            previous_script = current_script
+            current_script = self._merge_repaired_segments(previous_script, segment_repair.repaired_segments)
+            self._log_repair_segment_diffs(
+                book_id=book_id,
+                episode_id=current_script.episode_id,
+                attempt=attempt,
+                before_script=previous_script,
+                repaired_segments=segment_repair.repaired_segments,
+            )
             current_report = self.validate_episode(book_id, current_script)
-            repair_result = repair_result.model_copy(update={"report": current_report})
+            repair_result = RepairResult(
+                episode_id=current_script.episode_id,
+                attempt=attempt,
+                repaired_segment_ids=segment_repair.repaired_segment_ids,
+                script=current_script,
+                report=current_report,
+            )
+            self._write_artifact(
+                self._episode_artifact_key(book_id, current_script.episode_id),
+                f"repair_attempt_{attempt}",
+                {
+                    "episode_id": current_script.episode_id,
+                    "attempt": attempt,
+                    "repaired_segment_ids": segment_repair.repaired_segment_ids,
+                    "repaired_beat_ids": [segment.beat_id for segment in segment_repair.repaired_segments],
+                    "repaired_segments": [segment.model_dump(mode="json") for segment in segment_repair.repaired_segments],
+                    "report": current_report.model_dump(mode="json"),
+                },
+            )
             self.run_logger.log(
                 "stage_end",
                 stage="repair_episode",
@@ -304,6 +354,57 @@ class PipelineOrchestrator:
         if repair_result is None:
             raise RuntimeError("Repair requested with no attempts configured.")
         return repair_result
+
+    def _merge_repaired_segments(
+        self,
+        script: EpisodeScript,
+        repaired_segments: list[EpisodeSegment],
+    ) -> EpisodeScript:
+        repaired_by_id = {segment.segment_id: segment for segment in repaired_segments}
+        merged_segments = [repaired_by_id.get(segment.segment_id, segment) for segment in script.segments]
+        return script.model_copy(update={"segments": merged_segments})
+
+    def _log_repair_segment_diffs(
+        self,
+        *,
+        book_id: str,
+        episode_id: str,
+        attempt: int,
+        before_script: EpisodeScript,
+        repaired_segments: list[EpisodeSegment],
+    ) -> None:
+        previous_by_id = {segment.segment_id: segment for segment in before_script.segments}
+        repaired_segment_ids: list[str] = []
+        repaired_beat_ids: list[str] = []
+        for repaired_segment in repaired_segments:
+            previous_segment = previous_by_id[repaired_segment.segment_id]
+            repaired_segment_ids.append(repaired_segment.segment_id)
+            repaired_beat_ids.append(repaired_segment.beat_id)
+            self.run_logger.log(
+                "repair_segment_diff",
+                book_id=book_id,
+                episode_id=episode_id,
+                attempt=attempt,
+                segment_id=repaired_segment.segment_id,
+                beat_id=repaired_segment.beat_id,
+                heading_changed=previous_segment.heading != repaired_segment.heading,
+                old_narration_word_count=len(previous_segment.narration.split()),
+                new_narration_word_count=len(repaired_segment.narration.split()),
+                old_claim_count=len(previous_segment.claims),
+                new_claim_count=len(repaired_segment.claims),
+                old_citation_count=len(previous_segment.citations),
+                new_citation_count=len(repaired_segment.citations),
+                old_claim_ids=[claim.claim_id for claim in previous_segment.claims],
+                new_claim_ids=[claim.claim_id for claim in repaired_segment.claims],
+            )
+        self.run_logger.log(
+            "repair_merge_summary",
+            book_id=book_id,
+            episode_id=episode_id,
+            attempt=attempt,
+            repaired_segment_ids=repaired_segment_ids,
+            repaired_beat_ids=repaired_beat_ids,
+        )
 
     def render_manifest(self, script: EpisodeScript, report: GroundingReport) -> RenderManifest:
         """Build the TTS-ready manifest from a validated script."""
@@ -417,6 +518,49 @@ class PipelineOrchestrator:
         )
         return audio_manifest
 
+    def regenerate_audio_from_artifact(
+        self,
+        artifact_path: str | Path,
+        *,
+        book_id: str | None = None,
+    ) -> EpisodeOutput:
+        """Regenerate episode audio from a saved manifest-bearing artifact."""
+
+        path = Path(artifact_path)
+        payload = self._load_manifest_source(path)
+        manifest = self._extract_render_manifest(payload, path)
+        resolved_book_id = book_id or self._infer_book_id_from_artifact_path(path)
+        if not resolved_book_id:
+            raise ValueError(
+                "Unable to determine book ID from artifact path. Provide --book-id for manifest-only audio regeneration."
+            )
+
+        self.current_book_id = resolved_book_id
+        self.run_id = _new_run_id(resolved_book_id)
+        self.run_logger.bind_run(self.run_id)
+        self.run_logger.log("run_started", run_id=self.run_id, book_id=resolved_book_id, title=manifest.title)
+
+        episode_output: EpisodeOutput
+        if "manifest" in payload:
+            source_output = EpisodeOutput.model_validate_json(json.dumps(payload))
+            audio_manifest = self.synthesize_audio(manifest)
+            episode_output = source_output.model_copy(update={"audio_manifest": audio_manifest})
+        else:
+            audio_manifest = self.synthesize_audio(manifest)
+            episode_output = EpisodeOutput(
+                plan=_placeholder_episode_plan(resolved_book_id, manifest),
+                script=_placeholder_episode_script(manifest),
+                report=_placeholder_grounding_report(manifest),
+                manifest=manifest,
+                audio_manifest=audio_manifest,
+            )
+        self._write_artifact(
+            self._episode_artifact_key(resolved_book_id, manifest.episode_id),
+            "episode_output",
+            episode_output.model_dump(mode="json"),
+        )
+        return episode_output
+
     def _synthesize_audio_segment(
         self,
         index: int,
@@ -448,7 +592,12 @@ class PipelineOrchestrator:
             )
             try:
                 with self._audio_semaphore:
-                    return self.tts.synthesize(segment.text)
+                    return self.tts.synthesize(
+                        segment.text,
+                        voice=self.settings.tts.voice,
+                        audio_format=self.settings.tts.audio_format,
+                        instructions=self.settings.tts.instructions,
+                    )
             except Exception as exc:
                 if attempt == total_attempts:
                     self.run_logger.log(
@@ -636,6 +785,34 @@ class PipelineOrchestrator:
             raise RuntimeError("Run ID is not initialized. Ingest a book before writing artifacts.")
         return f"{self.run_id}/{book_id}/{episode_id}"
 
+    def _load_manifest_source(self, artifact_path: Path) -> dict:
+        try:
+            return json.loads(artifact_path.read_text(encoding="utf-8"))
+        except FileNotFoundError as exc:
+            raise ValueError(f"Artifact path does not exist: {artifact_path}") from exc
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Artifact file is not valid JSON: {artifact_path}") from exc
+
+    def _extract_render_manifest(self, payload: dict, artifact_path: Path) -> RenderManifest:
+        try:
+            if "manifest" in payload:
+                manifest_payload = payload.get("manifest")
+                if manifest_payload is None:
+                    raise ValueError(f"Artifact '{artifact_path}' is missing a usable 'manifest' payload.")
+                return RenderManifest.model_validate_json(json.dumps(manifest_payload))
+            return RenderManifest.model_validate_json(json.dumps(payload))
+        except ValidationError as exc:
+            raise ValueError(f"Artifact '{artifact_path}' does not contain a valid render manifest: {exc}") from exc
+
+    def _infer_book_id_from_artifact_path(self, artifact_path: Path) -> str | None:
+        parts = artifact_path.parts
+        for index, part in enumerate(parts[:-2]):
+            if part == self.settings.pipeline.artifact_root.name and index + 2 < len(parts):
+                return parts[index + 2]
+        if len(parts) >= 3 and parts[-2].startswith("episode-"):
+            return parts[-3]
+        return None
+
 
 def _slugify(value: str) -> str:
     value = value.strip().lower()
@@ -654,3 +831,32 @@ def _detect_source_type(path: Path) -> SourceType:
 def _new_run_id(book_id: str) -> str:
     timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M")
     return f"{book_id}-{timestamp}"
+
+
+def _placeholder_episode_plan(book_id: str, manifest: RenderManifest) -> EpisodePlan:
+    del book_id
+    return EpisodePlan(
+        episode_id=manifest.episode_id,
+        sequence=1,
+        title=manifest.title,
+        synopsis="Audio regenerated directly from an existing render manifest.",
+        chapter_ids=[],
+        themes=[],
+    )
+
+
+def _placeholder_episode_script(manifest: RenderManifest) -> EpisodeScript:
+    return EpisodeScript(
+        episode_id=manifest.episode_id,
+        title=manifest.title,
+        narrator=manifest.narrator,
+        segments=[],
+    )
+
+
+def _placeholder_grounding_report(manifest: RenderManifest) -> GroundingReport:
+    return GroundingReport(
+        episode_id=manifest.episode_id,
+        overall_status="pass",
+        claim_assessments=[],
+    )

@@ -260,7 +260,7 @@ class HeuristicLLMClient(LLMClient):
         }
 
     def _generate_episode_repair(self, payload: PromptPayload) -> dict[str, Any]:
-        script = payload["script"]
+        failed_segments = payload["failed_segments"]
         report = payload["report"]
         weak_claims = {
             assessment["claim_id"]
@@ -268,17 +268,18 @@ class HeuristicLLMClient(LLMClient):
             if assessment["status"] != "grounded"
         }
         repaired_segment_ids = []
-        for segment in script["segments"]:
+        repaired_segments = []
+        for segment in failed_segments:
             segment_claim_ids = {claim["claim_id"] for claim in segment["claims"]}
             if segment_claim_ids & weak_claims:
                 repaired_segment_ids.append(segment["segment_id"])
                 segment["narration"] = " ".join(claim["text"] for claim in segment["claims"])
+            repaired_segments.append(segment)
         return {
-            "episode_id": script["episode_id"],
+            "episode_id": payload["episode_id"],
             "attempt": payload["attempt"],
             "repaired_segment_ids": repaired_segment_ids,
-            "script": script,
-            "report": report,
+            "repaired_segments": repaired_segments,
         }
 
 

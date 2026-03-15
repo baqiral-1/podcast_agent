@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
+import json
 from pathlib import Path
 import threading
 import time
@@ -15,12 +16,17 @@ from podcast_agent.db import InMemoryRepository
 from podcast_agent.llm import HeuristicLLMClient
 from podcast_agent.pipeline.orchestrator import PipelineOrchestrator
 from podcast_agent.schemas.models import (
+    ClaimAssessment,
     EpisodeOutput,
     EpisodePlan,
+    EpisodeSegment,
     EpisodeScript,
     GroundingReport,
+    GroundingStatus,
     RenderManifest,
     RenderSegment,
+    SegmentRepairResult,
+    ScriptClaim,
 )
 from podcast_agent.tts import TTSClient
 
@@ -43,7 +49,14 @@ By the end of the journey, the team understands that the observatory connected c
 class FakeTTSClient(TTSClient):
     """Simple deterministic TTS stub for pipeline tests."""
 
-    def synthesize(self, text: str, voice: str | None = None, audio_format: str | None = None) -> bytes:
+    def synthesize(
+        self,
+        text: str,
+        voice: str | None = None,
+        audio_format: str | None = None,
+        instructions: str | None = None,
+    ) -> bytes:
+        del instructions
         return f"{voice or 'default'}::{audio_format or 'mp3'}::{text}".encode("utf-8")
 
 
@@ -54,8 +67,14 @@ class DelayedTTSClient(TTSClient):
         super().__init__()
         self.delays = delays
 
-    def synthesize(self, text: str, voice: str | None = None, audio_format: str | None = None) -> bytes:
-        del voice, audio_format
+    def synthesize(
+        self,
+        text: str,
+        voice: str | None = None,
+        audio_format: str | None = None,
+        instructions: str | None = None,
+    ) -> bytes:
+        del voice, audio_format, instructions
         time.sleep(self.delays[text])
         return text.encode("utf-8")
 
@@ -68,8 +87,14 @@ class RetryingTTSClient(TTSClient):
         self.failures = failures
         self.call_counts: dict[str, int] = {}
 
-    def synthesize(self, text: str, voice: str | None = None, audio_format: str | None = None) -> bytes:
-        del voice, audio_format
+    def synthesize(
+        self,
+        text: str,
+        voice: str | None = None,
+        audio_format: str | None = None,
+        instructions: str | None = None,
+    ) -> bytes:
+        del voice, audio_format, instructions
         self.call_counts[text] = self.call_counts.get(text, 0) + 1
         if self.call_counts[text] <= self.failures.get(text, 0):
             raise RuntimeError(f"planned failure for {text}")
@@ -85,8 +110,14 @@ class ConcurrencyTrackingTTSClient(TTSClient):
         self.active_calls = 0
         self.max_active_calls = 0
 
-    def synthesize(self, text: str, voice: str | None = None, audio_format: str | None = None) -> bytes:
-        del text, voice, audio_format
+    def synthesize(
+        self,
+        text: str,
+        voice: str | None = None,
+        audio_format: str | None = None,
+        instructions: str | None = None,
+    ) -> bytes:
+        del text, voice, audio_format, instructions
         with self._lock:
             self.active_calls += 1
             self.max_active_calls = max(self.max_active_calls, self.active_calls)
@@ -145,6 +176,60 @@ def _build_audio_orchestrator(
     orchestrator.run_id = "audio-run"
     orchestrator.run_logger.bind_run(orchestrator.run_id)
     return orchestrator
+
+
+def _write_episode_output_artifact(path: Path, manifest: RenderManifest) -> None:
+    payload = {
+        "plan": {
+            "episode_id": manifest.episode_id,
+            "sequence": 1,
+            "title": manifest.title,
+            "synopsis": "Original episode output.",
+            "chapter_ids": [],
+            "themes": [],
+        },
+        "script": {
+            "episode_id": manifest.episode_id,
+            "title": manifest.title,
+            "narrator": manifest.narrator,
+            "segments": [
+                {
+                    "segment_id": segment.segment_id,
+                    "beat_id": f"{segment.segment_id}-beat",
+                    "heading": "Heading",
+                    "narration": segment.text,
+                    "claims": [
+                        {
+                            "claim_id": claim_id,
+                            "text": segment.text,
+                            "evidence_chunk_ids": ["chunk-1"],
+                        }
+                        for claim_id in segment.grounded_claim_ids
+                    ],
+                    "citations": ["chunk-1"],
+                }
+                for segment in manifest.segments
+            ],
+        },
+        "report": {
+            "episode_id": manifest.episode_id,
+            "overall_status": "pass",
+            "claim_assessments": [
+                {
+                    "claim_id": claim_id,
+                    "status": "grounded",
+                    "reason": "Grounded in source material.",
+                    "evidence_chunk_ids": ["chunk-1"],
+                }
+                for segment in manifest.segments
+                for claim_id in segment.grounded_claim_ids
+            ],
+        },
+        "manifest": manifest.model_dump(mode="json"),
+        "audio_manifest": None,
+        "repair_attempts": [],
+    }
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 def test_pipeline_creates_multi_chapter_episode_and_manifest(tmp_path: Path) -> None:
@@ -319,13 +404,13 @@ def test_pipeline_defaults_raise_parallelism() -> None:
     settings = Settings()
 
     assert settings.pipeline.episode_parallelism == 3
-    assert settings.pipeline.audio_parallelism == 4
+    assert settings.pipeline.audio_parallelism == 8
     assert settings.pipeline.audio_retry_attempts == 2
     assert settings.pipeline.beat_parallelism == 4
     assert settings.pipeline.beat_write_timeout_seconds == 120.0
     assert settings.pipeline.grounding_parallelism == 3
     assert settings.pipeline.structuring_parallelism == 3
-    assert settings.pipeline.max_episode_minutes == 240
+    assert settings.pipeline.max_episode_minutes == 360
     assert settings.pipeline.max_structuring_llm_chapter_words == 42232
 
 
@@ -499,6 +584,167 @@ def test_synthesize_audio_uses_global_parallelism_cap_across_episodes(tmp_path: 
     assert tts.max_active_calls == 2
 
 
+def test_regenerate_audio_from_episode_output_artifact(tmp_path: Path) -> None:
+    orchestrator = _build_audio_orchestrator(tmp_path, FakeTTSClient())
+    source_path = tmp_path / "source-run" / "observatory-book" / "episode-1" / "episode_output.json"
+    source_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest = _build_render_manifest("episode-1", ["first line", "second line"])
+    _write_episode_output_artifact(source_path, manifest)
+
+    result = orchestrator.regenerate_audio_from_artifact(source_path)
+
+    assert result.manifest is not None
+    assert result.manifest.model_dump(mode="json") == manifest.model_dump(mode="json")
+    assert result.audio_manifest is not None
+    assert Path(result.audio_manifest.audio_path).exists()
+    persisted_output = (
+        tmp_path / "runs" / orchestrator.run_id / "observatory-book" / "episode-1" / "episode_output.json"
+    )
+    assert persisted_output.exists()
+    persisted_payload = json.loads(persisted_output.read_text(encoding="utf-8"))
+    assert persisted_payload["manifest"]["episode_id"] == "episode-1"
+    assert persisted_payload["audio_manifest"]["audio_path"].endswith("episode-1.mp3")
+
+
+def test_regenerate_audio_from_standalone_manifest_artifact(tmp_path: Path) -> None:
+    orchestrator = _build_audio_orchestrator(tmp_path, FakeTTSClient())
+    source_path = tmp_path / "external-manifests" / "render_manifest.json"
+    source_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest = _build_render_manifest("episode-1", ["alpha", "beta"])
+    source_path.write_text(manifest.model_dump_json(indent=2), encoding="utf-8")
+
+    result = orchestrator.regenerate_audio_from_artifact(source_path, book_id="observatory-book")
+
+    assert result.audio_manifest is not None
+    assert Path(result.audio_manifest.audio_path).read_bytes() == b"ballad::mp3::alphaballad::mp3::beta"
+    assert result.plan.synopsis == "Audio regenerated directly from an existing render manifest."
+
+
+def test_regenerate_audio_requires_valid_manifest_payload(tmp_path: Path) -> None:
+    orchestrator = _build_audio_orchestrator(tmp_path, FakeTTSClient())
+    source_path = tmp_path / "source-run" / "observatory-book" / "episode-1" / "episode_output.json"
+    source_path.parent.mkdir(parents=True, exist_ok=True)
+    source_path.write_text(json.dumps({"manifest": {"episode_id": "episode-1"}}), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="does not contain a valid render manifest"):
+        orchestrator.regenerate_audio_from_artifact(source_path)
+
+
+def test_regenerate_audio_does_not_invoke_upstream_pipeline_stages(tmp_path: Path, monkeypatch) -> None:
+    orchestrator = _build_audio_orchestrator(tmp_path, FakeTTSClient())
+    source_path = tmp_path / "source-run" / "observatory-book" / "episode-1" / "episode_output.json"
+    source_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest = _build_render_manifest("episode-1", ["first", "second"])
+    _write_episode_output_artifact(source_path, manifest)
+
+    for method_name in ("ingest_book", "index_book", "plan_episodes", "write_episode", "validate_episode", "repair_episode"):
+        monkeypatch.setattr(
+            orchestrator,
+            method_name,
+            lambda *args, _method_name=method_name, **kwargs: pytest.fail(f"{_method_name} should not be called"),
+        )
+
+    result = orchestrator.regenerate_audio_from_artifact(source_path)
+
+    assert result.audio_manifest is not None
+
+
+def test_repair_episode_merges_only_failed_segments_and_logs_diffs(tmp_path: Path, monkeypatch) -> None:
+    orchestrator = _build_audio_orchestrator(tmp_path, FakeTTSClient())
+    original_script = EpisodeScript(
+        episode_id="episode-1",
+        title="Episode 1",
+        narrator="Narrator",
+        segments=[
+            EpisodeSegment(
+                segment_id="episode-1-segment-1",
+                beat_id="episode-1-beat-1",
+                heading="Opening",
+                narration="Original failed narration",
+                claims=[ScriptClaim(claim_id="claim-1", text="Claim one", evidence_chunk_ids=["chunk-1"])],
+                citations=["chunk-1"],
+            ),
+            EpisodeSegment(
+                segment_id="episode-1-segment-2",
+                beat_id="episode-1-beat-2",
+                heading="Stable",
+                narration="Untouched narration",
+                claims=[ScriptClaim(claim_id="claim-1", text="Claim two", evidence_chunk_ids=["chunk-2"])],
+                citations=["chunk-2"],
+            ),
+        ],
+    )
+    failed_report = GroundingReport(
+        episode_id="episode-1",
+        overall_status="fail",
+        claim_assessments=[
+                ClaimAssessment(
+                    claim_id="claim-1",
+                    status=GroundingStatus.UNSUPPORTED,
+                    reason="Unsupported claim.",
+                    evidence_chunk_ids=["chunk-1"],
+                ),
+                ClaimAssessment(
+                    claim_id="claim-1",
+                    status=GroundingStatus.GROUNDED,
+                    reason="Grounded claim.",
+                    evidence_chunk_ids=["chunk-2"],
+                ),
+        ],
+    )
+    repaired_segment = original_script.segments[0].model_copy(
+        update={
+            "narration": "Repaired narration",
+            "claims": [ScriptClaim(claim_id="claim-1", text="Repaired claim", evidence_chunk_ids=["chunk-1"])],
+        }
+    )
+
+    monkeypatch.setattr(
+        orchestrator.repair_agent,
+        "repair",
+        lambda script, report, attempt: SegmentRepairResult(
+            episode_id=script.episode_id,
+            attempt=attempt,
+            repaired_segment_ids=[repaired_segment.segment_id],
+            repaired_segments=[repaired_segment],
+        ),
+    )
+    monkeypatch.setattr(
+        orchestrator,
+        "validate_episode",
+        lambda book_id, script: GroundingReport(
+            episode_id=script.episode_id,
+            overall_status="pass",
+            claim_assessments=[
+                ClaimAssessment(
+                    claim_id="claim-1",
+                    status=GroundingStatus.GROUNDED,
+                    reason="Grounded after repair.",
+                    evidence_chunk_ids=["chunk-1"],
+                ),
+                ClaimAssessment(
+                    claim_id="claim-1",
+                    status=GroundingStatus.GROUNDED,
+                    reason="Still grounded.",
+                    evidence_chunk_ids=["chunk-2"],
+                ),
+            ],
+        ),
+    )
+
+    repair = orchestrator.repair_episode("observatory-book", original_script, failed_report)
+
+    assert repair.repaired_segment_ids == ["episode-1-segment-1"]
+    assert repair.script.segments[0].narration == "Repaired narration"
+    assert repair.script.segments[1].narration == "Untouched narration"
+    repair_artifact = tmp_path / "runs" / "audio-run" / "observatory-book" / "episode-1" / "repair_attempt_1.json"
+    assert repair_artifact.exists()
+    run_log = (tmp_path / "runs" / "audio-run" / "run.log").read_text(encoding="utf-8")
+    assert '"event_type": "repair_payload_diagnostics"' in run_log
+    assert '"event_type": "repair_segment_diff"' in run_log
+    assert '"event_type": "repair_merge_summary"' in run_log
+
+
 def test_run_pipeline_can_end_at_matching_chapter_title(tmp_path: Path) -> None:
     book_path = tmp_path / "book.txt"
     book_path.write_text(BOOK_TEXT, encoding="utf-8")
@@ -647,3 +893,20 @@ def test_run_pipeline_requires_episode_count_cli(tmp_path: Path) -> None:
 
     assert result.exit_code != 0
     assert "Missing option '--episode-count'" in result.output
+
+
+def test_render_audio_from_manifest_cli_uses_saved_episode_output(tmp_path: Path, monkeypatch) -> None:
+    orchestrator = _build_audio_orchestrator(tmp_path, FakeTTSClient())
+    source_path = tmp_path / "source-run" / "observatory-book" / "episode-1" / "episode_output.json"
+    source_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest = _build_render_manifest("episode-1", ["cli first", "cli second"])
+    _write_episode_output_artifact(source_path, manifest)
+
+    monkeypatch.setattr("podcast_agent.cli.app._build_orchestrator", lambda database_url: orchestrator)
+
+    result = CliRunner().invoke(app, ["render-audio-from-manifest", str(source_path)])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["audio_manifest"]["audio_path"].endswith("episode-1.mp3")
+    assert payload["manifest"]["episode_id"] == "episode-1"

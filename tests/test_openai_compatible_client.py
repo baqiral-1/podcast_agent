@@ -158,15 +158,26 @@ def test_openai_compatible_tts_client_returns_audio_bytes(monkeypatch) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     transport = FakeBinaryTransport(b"fake-audio")
     client = OpenAICompatibleTTSClient(
-        config=TTSConfig(model_name="gpt-4o-mini-tts", voice="alloy", audio_format="mp3"),
+        config=TTSConfig(
+            model_name="gpt-4o-mini-tts",
+            voice="ballad",
+            audio_format="mp3",
+            instructions="Speak with dramatic restraint.",
+        ),
         transport=transport,
     )
 
-    audio_bytes = client.synthesize("Testing the TTS path.", voice="nova", audio_format="wav")
+    audio_bytes = client.synthesize(
+        "Testing the TTS path.",
+        voice="nova",
+        audio_format="wav",
+        instructions="Deliver this with ominous gravity.",
+    )
 
     assert audio_bytes == b"fake-audio"
     assert transport.last_payload is not None
     assert transport.last_payload["model"] == "gpt-4o-mini-tts"
     assert transport.last_payload["voice"] == "nova"
     assert transport.last_payload["format"] == "wav"
+    assert transport.last_payload["instructions"] == "Deliver this with ominous gravity."
     assert transport.last_payload["input"] == "Testing the TTS path."

@@ -41,9 +41,22 @@ class TTSConfig(BaseModel):
 
     provider: str = Field(default="openai-compatible")
     model_name: str = Field(default="gpt-4o-mini-tts")
-    voice: str = Field(default="alloy")
+    voice: str = Field(default="ballad")
     audio_format: str = Field(default="mp3")
-    speed: float = Field(default=1.0, gt=0.0, le=4.0)
+    instructions: str = Field(
+        default=(
+            "Voice Affect: Low, hushed, and suspenseful; convey tension and intrigue.\n\n"
+            "Tone: Deeply serious and mysterious, maintaining an undercurrent of unease throughout.\n\n"
+            "Pacing: Slow, deliberate, pausing slightly after suspenseful moments to heighten drama.\n\n"
+            "Emotion: Restrained yet intense—voice should subtly tremble or tighten at key suspenseful points.\n\n"
+            'Emphasis: Highlight sensory descriptions ("footsteps echoed," "heart hammering," '
+            '"shadows melting into darkness") to amplify atmosphere.\n\n'
+            "Pronunciation: Slightly elongated vowels and softened consonants for an eerie, haunting effect.\n\n"
+            'Pauses: Insert meaningful pauses after phrases like "only shadows melting into darkness," '
+            "and especially before the final line, to enhance suspense dramatically."
+        )
+    )
+    speed: float = Field(default=1.05, gt=0.0, le=4.0)
     timeout_seconds: float = Field(default=300.0, gt=0.0)
 
 
@@ -58,14 +71,14 @@ class PipelineConfig(BaseModel):
     chunk_overlap_words: int = Field(default=30, ge=0)
     max_repair_attempts: int = Field(default=2, ge=0)
     episode_parallelism: int = Field(default=3, ge=1)
-    audio_parallelism: int = Field(default=4, ge=1)
+    audio_parallelism: int = Field(default=8, ge=1)
     audio_retry_attempts: int = Field(default=2, ge=0)
     beat_parallelism: int = Field(default=4, ge=1)
     beat_write_timeout_seconds: float = Field(default=120.0, gt=0.0)
     grounding_parallelism: int = Field(default=3, ge=1)
     minimum_source_words_per_episode: int = Field(default=50000, ge=1000)
     spoken_words_per_minute: int = Field(default=130, ge=80)
-    max_episode_minutes: int = Field(default=240, ge=1)
+    max_episode_minutes: int = Field(default=360, ge=1)
     max_analysis_payload_bytes: int = Field(default=500000, ge=10000)
     max_planning_payload_bytes: int = Field(default=500000, ge=10000)
     max_analysis_payload_bytes_with_episode_count: int = Field(default=1000000, ge=10000)

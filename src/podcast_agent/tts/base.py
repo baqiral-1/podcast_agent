@@ -18,5 +18,11 @@ class TTSClient(ABC):
         self.run_logger = run_logger
 
     @abstractmethod
-    def synthesize(self, text: str, voice: str | None = None, audio_format: str | None = None) -> bytes:
+    def synthesize(
+        self,
+        text: str,
+        voice: str | None = None,
+        audio_format: str | None = None,
+        instructions: str | None = None,
+    ) -> bytes:
         """Synthesize speech audio bytes from text."""

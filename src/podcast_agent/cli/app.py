@@ -229,6 +229,36 @@ def render_audio(
     typer.echo(json.dumps(result, indent=2, default=str))
 
 
+@app.command("render-audio-from-manifest")
+def render_audio_from_manifest(
+    artifact_path: Path,
+    book_id: str | None = typer.Option(
+        default=None,
+        help="Book ID fallback when it cannot be inferred from the artifact path.",
+    ),
+    database_url: str | None = typer.Option(
+        default=None,
+        help="PostgreSQL database URL. If omitted, falls back to DATABASE_URL when set.",
+    ),
+) -> None:
+    """Synthesize episode audio directly from a saved render manifest artifact."""
+
+    orchestrator = _build_orchestrator(database_url)
+    orchestrator.log_command(
+        "render-audio-from-manifest",
+        {
+            "artifact_path": str(artifact_path),
+            "book_id": book_id,
+            "database_url": database_url,
+        },
+    )
+    try:
+        result = orchestrator.regenerate_audio_from_artifact(artifact_path=artifact_path, book_id=book_id)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc), param_hint="artifact_path") from exc
+    typer.echo(result.model_dump_json(indent=2))
+
+
 def main() -> None:
     """Entrypoint used by the console script."""
 

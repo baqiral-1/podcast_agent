@@ -280,6 +280,15 @@ class RepairResult(StrictModel):
     report: GroundingReport
 
 
+class SegmentRepairResult(StrictModel):
+    """LLM-scoped repair response containing only rewritten segments."""
+
+    episode_id: str
+    attempt: int = Field(ge=1)
+    repaired_segment_ids: list[str]
+    repaired_segments: list[EpisodeSegment]
+
+
 class RenderSegment(StrictModel):
     """Final renderable segment."""
 
