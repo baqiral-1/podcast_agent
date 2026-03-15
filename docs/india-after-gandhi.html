@@ -169,9 +169,46 @@
 
     .episode-description {
       max-width: 68rem;
+      margin: 0;
+      color: #ffffff;
+      font-size: 0.95rem;
+      line-height: 1.7;
+    }
+
+    .episode-details {
+      margin-top: 0.9rem;
+    }
+
+    .description-toggle {
+      margin-top: 0;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: var(--primary-color);
+      font-weight: 700;
+      cursor: pointer;
+      font: inherit;
+    }
+
+    .episode-description-preview {
+      max-width: 68rem;
       margin: 0.9rem 0 0;
       color: #ffffff;
+      font-size: 0.95rem;
       line-height: 1.7;
+    }
+
+    .episode-description-more {
+      display: none;
+      max-width: 68rem;
+      margin: 0;
+      color: #ffffff;
+      font-size: 0.95rem;
+      line-height: 1.7;
+    }
+
+    .episode-details.is-open .episode-description-more {
+      display: block;
     }
 
     .episode-player {
@@ -367,11 +404,22 @@
     <section class="episodes-section" id="episodes">
       <div class="shell episode-list">
         <article class="episode-card">
-          <p class="episode-meta">Mar 15, 2026 | 00:42:00</p>
-          <h2 class="episode-title">#01: Foundations of Indian Identity</h2>
-          <p class="episode-description">
-            An opening conversation on independence, political imagination, and the institutions that shaped the Indian republic.
+          <h2 class="episode-title">Nation, Partition, and the Making of the Republic</h2>
+          <p class="episode-description-preview">
+            In this episode, we trace the dramatic and often painful formation of modern India, from the idea of
+            the country as an unlikely and deeply divided civilization to the political struggle that brought
+            independence.
           </p>
+          <div class="episode-details">
+            <span class="episode-description-more" id="episode-description-more">
+              We follow the collapse of empire, the trauma of Partition, Gandhi's final efforts to
+              contain communal bloodshed, and Nehru's attempt to define India as a secular democratic state. Along
+              the way, the story explores the arguments for and against division, the human cost of freedom, the
+              pressures of refugee resettlement, and the enormous challenge of holding together a nation many
+              believed could never endure.
+            </span>
+            <button class="description-toggle" id="description-toggle" type="button" aria-expanded="false" aria-controls="episode-description-more">Read more</button>
+          </div>
           <div class="episode-player">
             <div class="audio-shell">
               <audio id="audio" class="native-audio" preload="metadata">
@@ -410,6 +458,8 @@
     const currentTime = document.getElementById("current-time");
     const duration = document.getElementById("duration");
     const speedToggle = document.getElementById("speed-toggle");
+    const descriptionToggle = document.getElementById("description-toggle");
+    const episodeDetails = document.querySelector(".episode-details");
     const speeds = [1, 1.5, 2];
     let isSeeking = false;
 
@@ -509,6 +559,12 @@
       const nextRate = speeds[(currentIndex + 1) % speeds.length];
       audio.playbackRate = nextRate;
       speedToggle.textContent = `${nextRate}x`;
+    });
+
+    descriptionToggle.addEventListener("click", () => {
+      const isOpen = episodeDetails.classList.toggle("is-open");
+      descriptionToggle.textContent = isOpen ? "Read less" : "Read more";
+      descriptionToggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
     });
 
     audio.addEventListener("loadedmetadata", syncTimeline);
