@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Podcast Agent | India After Gandhi</title>
+  <meta name="description" content="Stories and analyses adapted from India After Gandhi.">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css?family=Muli:300,400,400i,700&amp;display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Muli:300,400,400i,700&amp;display=swap">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkR4j8CGY1l6ar3E1N4CeL4gyWjvFIm3hmTA==" crossorigin="anonymous" referrerpolicy="no-referrer">
+  <style>
+    :root {
+      --body-bg-color: #000000;
+      --body-font-color: #ffffff;
+      --primary-font: "Muli", -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Helvetica Neue", Arial, sans-serif;
+      --primary-body-font-size: 1.12rem;
+      --primary-body-font-weight: 300;
+      --primary-color: #9d57ea;
+      --primary-hover-color: #9d57ea;
+      --body-padding: 1.4375rem;
+      --header-bg: #000000;
+      --nav-color: #ffffff;
+      --nav-color-hover: #9d57ea;
+      --nav-font-size: 1rem;
+      --header-padding: 1.25rem;
+      --nav-horizontal-margin: 1.25rem;
+      --show-header-padding-top: 5.9375rem;
+      --show-header-padding-bottom: 0rem;
+      --show-header-title-font-size: 2.1875rem;
+      --show-header-show-host-width: 2.5rem;
+      --episode-margin: 0.75rem;
+      --episode-inner-spacing: 1rem;
+      --episode-title-font-size: 1.5rem;
+      --episode-meta-color: #9d57ea;
+      --audio-player-progressed: #ffffff;
+      --audio-player-runtime-color: #ffffff;
+      --max-width: 1180px;
+    }
+
+    * {
+      box-sizing: border-box;
+      border: 0 solid transparent;
+    }
+
+    html {
+      line-height: 1.5;
+      -webkit-text-size-adjust: 100%;
+    }
+
+    body {
+      margin: 0;
+      background: var(--body-bg-color);
+      color: var(--body-font-color);
+      font-family: var(--primary-font);
+      font-size: var(--primary-body-font-size);
+      font-weight: var(--primary-body-font-weight);
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .shell {
+      width: min(calc(100% - (var(--body-padding) * 2)), var(--max-width));
+      margin: 0 auto;
+    }
+
+    .site-header {
+      background: var(--header-bg);
+      padding: var(--header-padding) 0;
+    }
+
+    .site-header-inner {
+      min-height: 3rem;
+      display: flex;
+      justify-content: center;
+    }
+
+    .brand-lockup {
+      width: 15.625rem;
+      margin: 0 auto;
+      text-align: center;
+    }
+
+    .brand-mark {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      min-height: 2.8rem;
+      color: #ffffff;
+      font-size: 1.6rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .show-header {
+      background: #000000;
+      padding-top: var(--show-header-padding-top);
+      padding-bottom: var(--show-header-padding-bottom);
+    }
+
+    .show-header-grid {
+      display: grid;
+      grid-template-columns: minmax(240px, 28%) minmax(0, 1fr);
+      gap: 2.2rem;
+      align-items: center;
+    }
+
+    .show-art {
+      width: 100%;
+      max-width: 420px;
+      margin: 0 auto;
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .show-copy {
+      color: #ffffff;
+    }
+
+    .show-title {
+      margin: 0;
+      color: #ffffff;
+      font-size: var(--show-header-title-font-size);
+      line-height: 1.2;
+      font-weight: 700;
+    }
+
+    .show-description {
+      max-width: 44rem;
+      margin: 1.35rem 0 0;
+      color: #ffffff;
+    }
+
+    .episodes-section {
+      padding: 2.6rem 0 4rem;
+      background: #000000;
+    }
+
+    .episode-list {
+      display: grid;
+      gap: var(--episode-margin);
+    }
+
+    .episode-card {
+      padding: var(--episode-inner-spacing) 0;
+      background: #000000;
+      text-align: left;
+    }
+
+    .episode-meta {
+      margin: 0 0 0.55rem;
+      color: var(--episode-meta-color);
+      font-size: 0.94rem;
+      font-weight: 700;
+    }
+
+    .episode-title {
+      margin: 0;
+      color: #ffffff;
+      font-size: var(--episode-title-font-size);
+      line-height: 1.35;
+      font-weight: 700;
+    }
+
+    .episode-description {
+      max-width: 68rem;
+      margin: 0.9rem 0 0;
+      color: #ffffff;
+      line-height: 1.7;
+    }
+
+    .episode-player {
+      margin-top: 1.15rem;
+      padding: 0.9rem 0 0;
+    }
+
+    .audio-shell {
+      display: grid;
+      gap: 0.85rem;
+    }
+
+    .player-row {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      width: 100%;
+    }
+
+    .play-toggle {
+      width: 3rem;
+      height: 3rem;
+      flex: 0 0 auto;
+      border-radius: 999px;
+      background: transparent;
+      color: #ffffff;
+      border: 2px solid rgba(255, 255, 255, 0.95);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+    }
+
+    .play-toggle:hover,
+    .play-toggle:focus-visible {
+      color: var(--primary-color);
+      border-color: var(--primary-color);
+      transform: translateY(-1px);
+    }
+
+    .play-toggle svg {
+      width: 1rem;
+      height: 1rem;
+      fill: currentColor;
+    }
+
+    .progress-cluster {
+      flex: 1 1 auto;
+      display: grid;
+      gap: 0.45rem;
+      align-items: center;
+    }
+
+    .timeline {
+      width: 100%;
+      margin: 0;
+      appearance: none;
+      background: transparent;
+      accent-color: var(--audio-player-progressed);
+      cursor: pointer;
+    }
+
+    .timeline::-webkit-slider-runnable-track {
+      height: 3px;
+      background: rgba(255, 255, 255, 0.28);
+      border-radius: 999px;
+    }
+
+    .timeline::-webkit-slider-thumb {
+      appearance: none;
+      width: 14px;
+      height: 14px;
+      margin-top: -5.5px;
+      border-radius: 999px;
+      background: #ffffff;
+    }
+
+    .timeline::-moz-range-track {
+      height: 3px;
+      background: rgba(255, 255, 255, 0.28);
+      border-radius: 999px;
+    }
+
+    .timeline::-moz-range-thumb {
+      width: 14px;
+      height: 14px;
+      border-radius: 999px;
+      border: 0;
+      background: #ffffff;
+    }
+
+    .player-meta-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      align-items: center;
+      color: var(--audio-player-runtime-color);
+      font-size: 0.9rem;
+    }
+
+    .player-utility {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex: 0 0 auto;
+    }
+
+    .player-utility button,
+    .player-utility a {
+      padding: 0;
+      background: transparent;
+      color: #ffffff;
+      font-size: 0.95rem;
+      cursor: pointer;
+    }
+
+    .player-utility button:hover,
+    .player-utility a:hover,
+    .player-utility button:focus-visible,
+    .player-utility a:focus-visible {
+      color: var(--primary-color);
+    }
+
+    .native-audio {
+      display: none;
+    }
+
+    @media screen and (max-width: 1024px) {
+      html {
+        font-size: 13px;
+      }
+    }
+
+    @media screen and (max-width: 767px) {
+      html {
+        font-size: 12px;
+        line-height: 1.7;
+      }
+
+      .site-header {
+        padding-bottom: 1rem;
+      }
+
+      .show-header-grid {
+        grid-template-columns: 1fr;
+        align-items: start;
+      }
+
+      .show-art {
+        max-width: 23rem;
+      }
+
+      .player-row {
+        align-items: flex-start;
+      }
+
+      .player-meta-row {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="shell site-header-inner">
+      <div class="brand-lockup">
+        <a class="brand-mark" href="./index.html">Podcast Agent</a>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="show-header">
+      <div class="shell show-header-grid">
+        <div class="show-art">
+          <img
+            alt="India After Gandhi cover art"
+            src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%23311b52'/><stop offset='0.52' stop-color='%239d57ea'/><stop offset='1' stop-color='%23f0a04b'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.5)' stroke-width='3'/><text x='110' y='690' fill='white' font-family='Muli, Arial, sans-serif' font-size='38' letter-spacing='8'>PODCAST AGENT</text><text x='110' y='785' fill='white' font-family='Muli, Arial, sans-serif' font-size='98' font-weight='700'>India After</text><text x='110' y='870' fill='white' font-family='Muli, Arial, sans-serif' font-size='98' font-weight='700'>Gandhi</text></svg>"
+          >
+        </div>
+
+        <div class="show-copy">
+          <h1 class="show-title">India After Gandhi</h1>
+          <p class="show-description">
+            Stories and analyses adapted from Ramachandra Guha's history of modern India.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="episodes-section" id="episodes">
+      <div class="shell episode-list">
+        <article class="episode-card">
+          <p class="episode-meta">Mar 15, 2026 | 00:42:00</p>
+          <h2 class="episode-title">#01: Foundations of Indian Identity</h2>
+          <p class="episode-description">
+            An opening conversation on independence, political imagination, and the institutions that shaped the Indian republic.
+          </p>
+          <div class="episode-player">
+            <div class="audio-shell">
+              <audio id="audio" class="native-audio" preload="metadata">
+                <source src="./india-after-gandhi-episode-1.mp3" type="audio/mpeg">
+                Your browser does not support the audio element.
+              </audio>
+              <div class="player-row">
+                <button class="play-toggle" id="hero-play" type="button" aria-label="Play audio">
+                  <svg id="play-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M8 5.14v13.72L19 12 8 5.14z"></path>
+                  </svg>
+                </button>
+                <div class="progress-cluster">
+                  <input id="timeline" class="timeline" type="range" min="0" max="100" step="0.1" value="0" aria-label="Seek through audio">
+                  <div class="player-meta-row">
+                    <div><span id="current-time">0:00</span> / <span id="duration">0:00</span></div>
+                    <div class="player-utility">
+                      <button id="speed-toggle" type="button">1x</button>
+                      <a href="./india-after-gandhi-episode-1.mp3" download>Download</a>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const audio = document.getElementById("audio");
+    const heroPlay = document.getElementById("hero-play");
+    const playIcon = document.getElementById("play-icon");
+    const timeline = document.getElementById("timeline");
+    const currentTime = document.getElementById("current-time");
+    const duration = document.getElementById("duration");
+    const speedToggle = document.getElementById("speed-toggle");
+    const speeds = [1, 1.5, 2];
+    let isSeeking = false;
+
+    function formatTime(value) {
+      if (!Number.isFinite(value) || value < 0) {
+        return "0:00";
+      }
+
+      const hours = Math.floor(value / 3600);
+      const minutes = Math.floor((value % 3600) / 60);
+      const seconds = Math.floor(value % 60).toString().padStart(2, "0");
+
+      if (hours > 0) {
+        return `${hours}:${minutes.toString().padStart(2, "0")}:${seconds}`;
+      }
+
+      return `${minutes}:${seconds}`;
+    }
+
+    function syncPlayButton() {
+      const paused = audio.paused;
+      heroPlay.setAttribute("aria-label", paused ? "Play audio" : "Pause audio");
+      playIcon.innerHTML = paused
+        ? '<path d="M8 5.14v13.72L19 12 8 5.14z"></path>'
+        : '<path d="M7 5h4v14H7zM13 5h4v14h-4z"></path>';
+    }
+
+    function syncTimeline() {
+      if (!Number.isFinite(audio.duration) || audio.duration <= 0) {
+        timeline.disabled = true;
+        timeline.max = "0";
+        timeline.value = "0";
+        currentTime.textContent = "0:00";
+        duration.textContent = "0:00";
+        return;
+      }
+
+      timeline.disabled = false;
+      timeline.max = String(audio.duration);
+
+      if (!isSeeking) {
+        timeline.value = String(audio.currentTime);
+        currentTime.textContent = formatTime(audio.currentTime);
+      }
+
+      duration.textContent = formatTime(audio.duration);
+    }
+
+    function commitSeek() {
+      if (!Number.isFinite(audio.duration) || audio.duration <= 0) {
+        return;
+      }
+
+      audio.currentTime = Math.min(Number(timeline.value), audio.duration);
+      currentTime.textContent = formatTime(audio.currentTime);
+    }
+
+    heroPlay.addEventListener("click", () => {
+      if (audio.paused) {
+        void audio.play();
+      } else {
+        audio.pause();
+      }
+    });
+
+    timeline.addEventListener("pointerdown", () => {
+      isSeeking = true;
+    });
+
+    timeline.addEventListener("input", () => {
+      if (!Number.isFinite(audio.duration) || audio.duration <= 0) {
+        return;
+      }
+
+      if (isSeeking) {
+        currentTime.textContent = formatTime(Number(timeline.value));
+        return;
+      }
+
+      commitSeek();
+    });
+
+    timeline.addEventListener("change", () => {
+      commitSeek();
+      isSeeking = false;
+      syncTimeline();
+    });
+
+    timeline.addEventListener("pointerup", () => {
+      commitSeek();
+      isSeeking = false;
+      syncTimeline();
+    });
+
+    speedToggle.addEventListener("click", () => {
+      const currentIndex = speeds.indexOf(audio.playbackRate);
+      const nextRate = speeds[(currentIndex + 1) % speeds.length];
+      audio.playbackRate = nextRate;
+      speedToggle.textContent = `${nextRate}x`;
+    });
+
+    audio.addEventListener("loadedmetadata", syncTimeline);
+    audio.addEventListener("durationchange", syncTimeline);
+    audio.addEventListener("timeupdate", syncTimeline);
+    audio.addEventListener("play", syncPlayButton);
+    audio.addEventListener("pause", syncPlayButton);
+    audio.addEventListener("ended", syncPlayButton);
+
+    syncPlayButton();
+    syncTimeline();
+  </script>
+</body>
+</html>
