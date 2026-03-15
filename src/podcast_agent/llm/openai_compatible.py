@@ -187,6 +187,8 @@ def _raise_for_finish_reason(body: dict[str, Any]) -> None:
     finish_reason = choices[0].get("finish_reason")
     if finish_reason == "content_filter":
         raise LLMContentFilterError("LLM response was blocked by content filtering.")
+    if finish_reason == "length":
+        raise RuntimeError("LLM response was truncated because it hit the completion token limit.")
 
 
 def _normalize_json_content(content: str) -> str:

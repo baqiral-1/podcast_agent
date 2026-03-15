@@ -19,11 +19,10 @@ class EpisodePlanningAgent(Agent):
     schema_name = "series_plan"
     instructions = (
         "Create a hierarchical series and episode plan for a single-narrator podcast. "
-        "Episodes should usually span multiple chapters, preserve the multi-chapter clusters from analysis, "
-        "and assign enough contiguous source material to each episode to satisfy the requested minimum source-word budget "
-        "when the book is large enough. Return a contiguous partition of the full chapter order and choose episode spans "
-        "by chapter_ids only; chunk coverage will be expanded deterministically from those chapter spans. If the full book is shorter than the "
-        "minimum source-word budget, return a single episode covering the entire book."
+        "Episodes should preserve the multi-chapter clusters from analysis and return exactly the requested episode count. "
+        "Return a contiguous partition of the full chapter order, choose episode spans by chapter_ids only, and distribute "
+        "source material as evenly as practical across the requested episodes. Chunk coverage will be expanded deterministically "
+        "from those chapter spans."
     )
     response_model = SeriesPlan
 
@@ -31,44 +30,59 @@ class EpisodePlanningAgent(Agent):
         self,
         llm,
         minimum_source_words_per_episode: int = 50000,
+        spoken_words_per_minute: int = 130,
+        max_episode_minutes: int = 58,
         max_payload_bytes: int = 500000,
+        max_payload_bytes_with_episode_count: int | None = None,
         section_beat_target_words: int = 1200,
         beat_evidence_window_size: int = 8,
     ) -> None:
         super().__init__(llm)
         self.minimum_source_words_per_episode = minimum_source_words_per_episode
+        self.spoken_words_per_minute = spoken_words_per_minute
+        self.max_episode_minutes = max_episode_minutes
         self.max_payload_bytes = max_payload_bytes
+        self.max_payload_bytes_with_episode_count = max_payload_bytes_with_episode_count or max_payload_bytes
         self.section_beat_target_words = section_beat_target_words
         self.beat_evidence_window_size = beat_evidence_window_size
 
-    def build_payload(self, structure: BookStructure, analysis: BookAnalysis) -> dict:
+    def build_payload(self, structure: BookStructure, analysis: BookAnalysis, episode_count: int) -> dict:
+        target_source_words_per_episode = self._target_source_words_per_episode(structure, episode_count)
         return {
             "structure": build_structure_summary(structure),
             "analysis": build_analysis_summary(analysis),
             "minimum_source_words_per_episode": self.minimum_source_words_per_episode,
+            "episode_count": episode_count,
+            "target_source_words_per_episode": target_source_words_per_episode,
+            "max_episode_minutes": self.max_episode_minutes,
+            "max_episode_script_words": self._max_episode_script_words(),
         }
 
-    def plan(self, structure: BookStructure, analysis: BookAnalysis) -> SeriesPlan:
+    def plan(self, structure: BookStructure, analysis: BookAnalysis, episode_count: int) -> SeriesPlan:
         """Run episode planning."""
 
-        payload = self.build_payload(structure, analysis)
-        self._check_payload_size(payload, structure, analysis)
+        if episode_count > len(structure.chapters):
+            raise RuntimeError(
+                f"Requested {episode_count} episodes, but only {len(structure.chapters)} chapters are available."
+            )
+        payload = self.build_payload(structure, analysis, episode_count)
+        self._check_payload_size(payload, structure, analysis, episode_count)
         plan = self.llm.generate_json(
             schema_name=self.schema_name,
             instructions=self.instructions,
             payload=payload,
             response_model=self.response_model,
         )
-        plan = self._normalize_plan(plan, structure)
-        violations = self._compliance_violations(plan, structure, analysis)
-        self._log_planning_metrics(plan, structure, analysis, violations, retried=False)
+        plan = self._normalize_plan(plan, structure, episode_count)
+        violations = self._compliance_violations(plan, structure, analysis, episode_count)
+        self._log_planning_metrics(plan, structure, analysis, violations, retried=False, episode_count=episode_count)
         if not violations:
             return plan
 
         retry_instructions = (
             f"{self.instructions} The previous plan violated these constraints: "
             f"{'; '.join(violations)}. Reuse or merge the provided analysis episode clusters instead of "
-            "re-splitting into chapter-level episodes."
+            f"re-splitting into chapter-level episodes, and return exactly {episode_count} episodes."
         )
         retry_plan = self.llm.generate_json(
             schema_name=self.schema_name,
@@ -76,9 +90,16 @@ class EpisodePlanningAgent(Agent):
             payload=payload,
             response_model=self.response_model,
         )
-        retry_plan = self._normalize_plan(retry_plan, structure)
-        retry_violations = self._compliance_violations(retry_plan, structure, analysis)
-        self._log_planning_metrics(retry_plan, structure, analysis, retry_violations, retried=True)
+        retry_plan = self._normalize_plan(retry_plan, structure, episode_count)
+        retry_violations = self._compliance_violations(retry_plan, structure, analysis, episode_count)
+        self._log_planning_metrics(
+            retry_plan,
+            structure,
+            analysis,
+            retry_violations,
+            retried=True,
+            episode_count=episode_count,
+        )
         if retry_violations:
             raise RuntimeError(
                 "Series plan violated episode-length constraints after retry: "
@@ -91,12 +112,17 @@ class EpisodePlanningAgent(Agent):
         plan: SeriesPlan,
         structure: BookStructure,
         analysis: BookAnalysis,
+        episode_count: int,
     ) -> list[str]:
         chunk_word_counts = {
             chunk.chunk_id: len(chunk.text.split())
             for chunk in structure.chunks
         }
         violations: list[str] = []
+        if len(plan.episodes) != episode_count:
+            violations.append(
+                f"planner returned {len(plan.episodes)} episodes instead of required {episode_count}"
+            )
         cluster_spans_multi_chapter = any(len(cluster.chapter_ids) > 1 for cluster in analysis.episode_clusters)
         chapter_level_episodes = [
             episode.episode_id for episode in plan.episodes if len(episode.chapter_ids) <= 1
@@ -104,6 +130,7 @@ class EpisodePlanningAgent(Agent):
         if cluster_spans_multi_chapter and chapter_level_episodes and len(plan.episodes) >= len(structure.chapters):
             violations.append("planner expanded multi-chapter analysis into chapter-level episodes")
         total_words = sum(chunk_word_counts.values())
+        target_source_words_per_episode = self._target_source_words_per_episode(structure, episode_count)
         all_chapter_ids = {chapter.chapter_id for chapter in structure.chapters}
         assigned_chapter_ids = [chapter_id for episode in plan.episodes for chapter_id in episode.chapter_ids]
         missing_chapters = sorted(all_chapter_ids - set(assigned_chapter_ids))
@@ -123,21 +150,21 @@ class EpisodePlanningAgent(Agent):
             violations.append(
                 f"planner assigned only {assigned_words} of {total_words} available words"
             )
-        if total_words < self.minimum_source_words_per_episode:
-            if len(plan.episodes) != 1:
-                violations.append(
-                    "planner should return exactly one episode when the full book is shorter than the minimum source-word budget"
-                )
-            return violations
         for episode in plan.episodes:
             episode_words = sum(chunk_word_counts.get(chunk_id, 0) for chunk_id in episode.chunk_ids)
-            if episode_words < self.minimum_source_words_per_episode:
+            if episode_words < max(1, target_source_words_per_episode // 2):
                 violations.append(
-                    f"{episode.episode_id} estimated at {episode_words} source words, below minimum {self.minimum_source_words_per_episode}"
+                    f"{episode.episode_id} estimated at {episode_words} source words, too small for target {target_source_words_per_episode}"
+                )
+            estimated_script_words = self._estimate_script_words_from_source_words(episode_words)
+            estimated_minutes = self._estimate_episode_minutes(estimated_script_words)
+            if estimated_minutes > self.max_episode_minutes:
+                violations.append(
+                    f"{episode.episode_id} estimated at {estimated_minutes:.1f} spoken minutes, above max {self.max_episode_minutes}; increase episode_count"
                 )
         return violations
 
-    def _normalize_plan(self, plan: SeriesPlan, structure: BookStructure) -> SeriesPlan:
+    def _normalize_plan(self, plan: SeriesPlan, structure: BookStructure, episode_count: int) -> SeriesPlan:
         chapter_order = {chapter.chapter_id: chapter.chapter_number for chapter in structure.chapters}
         chapter_to_chunks = {chapter.chapter_id: list(chapter.chunk_ids) for chapter in structure.chapters}
         chapter_titles = {chapter.chapter_id: chapter.title for chapter in structure.chapters}
@@ -161,7 +188,12 @@ class EpisodePlanningAgent(Agent):
             self._normalize_episode_data(episode, chapter_to_chunks, chapter_order, chunk_themes)
             for episode in sorted(plan.episodes, key=lambda episode: episode.sequence)
         ]
-        normalized_episode_data = self._rebalance_episode_data(normalized_episode_data, chapter_word_counts)
+        normalized_episode_data = self._rebalance_episode_data(
+            normalized_episode_data,
+            chapter_word_counts,
+            chapter_order,
+            episode_count,
+        )
         normalized_episodes = [
             EpisodePlan.model_validate(
                 self._episode_data_to_payload(
@@ -210,48 +242,83 @@ class EpisodePlanningAgent(Agent):
         self,
         episodes: list[dict],
         chapter_word_counts: dict[str, int],
+        chapter_order: dict[str, int],
+        episode_count: int,
     ) -> list[dict]:
-        if len(episodes) <= 1:
-            return episodes
-        total_words = sum(self._chapter_word_total(episode["chapter_ids"], chapter_word_counts) for episode in episodes)
-        if total_words < self.minimum_source_words_per_episode:
-            merged = self._merge_episode_group(episodes, episode_id=episodes[0]["episode_id"], title=episodes[0]["title"])
-            merged["sequence"] = 1
-            return [merged]
+        chapter_ids = sorted(chapter_word_counts, key=lambda chapter_id: chapter_order[chapter_id])
+        if episode_count < 1:
+            raise RuntimeError("episode_count must be at least 1")
+        if episode_count > len(chapter_ids):
+            raise RuntimeError(
+                f"Requested {episode_count} episodes, but only {len(chapter_ids)} chapters are available for contiguous partitioning."
+            )
+        target_words = self._target_source_words_for_chapter_counts(chapter_word_counts, chapter_ids, episode_count)
+        partitioned_chapter_ids = self._partition_chapters(chapter_ids, chapter_word_counts, episode_count, target_words)
+        sequence_to_episode = {
+            episode["sequence"]: episode
+            for episode in episodes
+        }
         normalized: list[dict] = []
-        current_group: list[dict] = []
+        for sequence, chapter_group in enumerate(partitioned_chapter_ids, start=1):
+            template = sequence_to_episode.get(sequence) or sequence_to_episode.get(min(sequence_to_episode, default=1), {
+                "episode_id": f"episode-{sequence}",
+                "title": f"Episode {sequence}",
+                "synopsis": "",
+                "themes": [],
+                "chunk_ids": [],
+            })
+            chunk_ids = [
+                chunk_id
+                for chapter_id in chapter_group
+                for chunk_id in template.get("chunk_ids", [])
+                if chunk_id.startswith(f"{chapter_id}-chunk-")
+            ]
+            normalized.append(
+                {
+                    "episode_id": f"episode-{sequence}",
+                    "sequence": sequence,
+                    "title": template["title"],
+                    "synopsis": template.get("synopsis", ""),
+                    "chapter_ids": chapter_group,
+                    "chunk_ids": chunk_ids,
+                    "themes": template.get("themes", []),
+                }
+            )
+        return normalized
+
+    def _partition_chapters(
+        self,
+        chapter_ids: list[str],
+        chapter_word_counts: dict[str, int],
+        episode_count: int,
+        target_words: int,
+    ) -> list[list[str]]:
+        groups: list[list[str]] = []
+        current_group: list[str] = []
         current_words = 0
-        for episode in episodes:
-            current_group.append(episode)
-            current_words += self._chapter_word_total(episode["chapter_ids"], chapter_word_counts)
-            if current_words >= self.minimum_source_words_per_episode:
-                normalized.append(
-                    self._merge_episode_group(
-                        current_group,
-                        episode_id=current_group[0]["episode_id"],
-                        title=current_group[0]["title"],
-                    )
-                )
+        remaining_groups = episode_count
+        remaining_chapters = len(chapter_ids)
+        for chapter_id in chapter_ids:
+            current_group.append(chapter_id)
+            current_words += chapter_word_counts[chapter_id]
+            remaining_chapters -= 1
+            groups_needed_after_current = remaining_groups - 1
+            if groups_needed_after_current == 0:
+                continue
+            if remaining_chapters == groups_needed_after_current:
+                groups.append(current_group)
                 current_group = []
                 current_words = 0
+                remaining_groups -= 1
+                continue
+            if current_words >= target_words:
+                groups.append(current_group)
+                current_group = []
+                current_words = 0
+                remaining_groups -= 1
         if current_group:
-            if normalized:
-                normalized[-1] = self._merge_episode_group(
-                    [normalized[-1], *current_group],
-                    episode_id=normalized[-1]["episode_id"],
-                    title=normalized[-1]["title"],
-                )
-            else:
-                normalized.append(
-                    self._merge_episode_group(
-                        current_group,
-                        episode_id=current_group[0]["episode_id"],
-                        title=current_group[0]["title"],
-                    )
-                )
-        for sequence, episode in enumerate(normalized, start=1):
-            episode["sequence"] = sequence
-        return normalized
+            groups.append(current_group)
+        return groups
 
     def _merge_episode_group(
         self,
@@ -371,6 +438,36 @@ class EpisodePlanningAgent(Agent):
     def _chapter_word_total(self, chapter_ids: list[str], chapter_word_counts: dict[str, int]) -> int:
         return sum(chapter_word_counts[chapter_id] for chapter_id in chapter_ids)
 
+    def _target_source_words_per_episode(self, structure: BookStructure, episode_count: int) -> int:
+        chapter_word_counts = {
+            chapter.chapter_id: sum(
+                len(chunk.text.split())
+                for chunk in structure.chunks
+                if chunk.chapter_id == chapter.chapter_id
+            )
+            for chapter in structure.chapters
+        }
+        chapter_ids = [chapter.chapter_id for chapter in structure.chapters]
+        return self._target_source_words_for_chapter_counts(chapter_word_counts, chapter_ids, episode_count)
+
+    def _target_source_words_for_chapter_counts(
+        self,
+        chapter_word_counts: dict[str, int],
+        chapter_ids: list[str],
+        episode_count: int,
+    ) -> int:
+        total_words = sum(chapter_word_counts[chapter_id] for chapter_id in chapter_ids)
+        return max(1, (total_words + episode_count - 1) // episode_count)
+
+    def _max_episode_script_words(self) -> int:
+        return self.max_episode_minutes * self.spoken_words_per_minute
+
+    def _estimate_script_words_from_source_words(self, source_words: int) -> int:
+        return max(1, source_words // 3)
+
+    def _estimate_episode_minutes(self, script_words: int) -> float:
+        return script_words / self.spoken_words_per_minute
+
     def _log_planning_metrics(
         self,
         plan: SeriesPlan,
@@ -378,6 +475,8 @@ class EpisodePlanningAgent(Agent):
         analysis: BookAnalysis,
         violations: list[str],
         retried: bool,
+        *,
+        episode_count: int,
     ) -> None:
         run_logger = getattr(self.llm, "run_logger", None)
         if run_logger is None:
@@ -389,7 +488,11 @@ class EpisodePlanningAgent(Agent):
         run_logger.log(
             "planning_diagnostics",
             retried=retried,
+            requested_episode_count=episode_count,
             minimum_source_words_per_episode=self.minimum_source_words_per_episode,
+            target_source_words_per_episode=self._target_source_words_per_episode(structure, episode_count),
+            max_episode_minutes=self.max_episode_minutes,
+            max_episode_script_words=self._max_episode_script_words(),
             section_beat_target_words=self.section_beat_target_words,
             beat_evidence_window_size=self.beat_evidence_window_size,
             analysis_cluster_count=len(analysis.episode_clusters),
@@ -401,6 +504,20 @@ class EpisodePlanningAgent(Agent):
                 sum(chunk_word_counts.get(chunk_id, 0) for chunk_id in episode.chunk_ids)
                 for episode in plan.episodes
             ],
+            episode_script_word_estimates=[
+                self._estimate_script_words_from_source_words(
+                    sum(chunk_word_counts.get(chunk_id, 0) for chunk_id in episode.chunk_ids)
+                )
+                for episode in plan.episodes
+            ],
+            episode_minute_estimates=[
+                self._estimate_episode_minutes(
+                    self._estimate_script_words_from_source_words(
+                        sum(chunk_word_counts.get(chunk_id, 0) for chunk_id in episode.chunk_ids)
+                    )
+                )
+                for episode in plan.episodes
+            ],
             episode_beat_counts=[len(episode.beats) for episode in plan.episodes],
             beat_assigned_chunk_counts=[
                 [len(beat.chunk_ids) for beat in episode.beats]
@@ -409,8 +526,11 @@ class EpisodePlanningAgent(Agent):
             oversized_episode_ids=[
                 episode.episode_id
                 for episode in plan.episodes
-                if sum(chunk_word_counts.get(chunk_id, 0) for chunk_id in episode.chunk_ids)
-                >= self.minimum_source_words_per_episode * 2
+                if self._estimate_episode_minutes(
+                    self._estimate_script_words_from_source_words(
+                        sum(chunk_word_counts.get(chunk_id, 0) for chunk_id in episode.chunk_ids)
+                    )
+                ) > self.max_episode_minutes
             ],
             violations=violations,
         )
@@ -420,20 +540,23 @@ class EpisodePlanningAgent(Agent):
         payload: dict,
         structure: BookStructure,
         analysis: BookAnalysis,
+        episode_count: int,
     ) -> None:
         run_logger = getattr(self.llm, "run_logger", None)
         payload_bytes = payload_size_bytes(payload)
+        max_payload_bytes = self.max_payload_bytes_with_episode_count
         if run_logger is not None:
             run_logger.log(
                 "planning_payload_diagnostics",
                 chapter_count=len(structure.chapters),
                 chunk_count=len(structure.chunks),
                 analysis_cluster_count=len(analysis.episode_clusters),
+                requested_episode_count=episode_count,
                 payload_bytes=payload_bytes,
-                max_payload_bytes=self.max_payload_bytes,
+                max_payload_bytes=max_payload_bytes,
             )
-        if payload_bytes > self.max_payload_bytes:
+        if payload_bytes > max_payload_bytes:
             raise RuntimeError(
                 "Planning payload exceeds the configured maximum size: "
-                f"{payload_bytes} bytes > {self.max_payload_bytes} bytes."
+                f"{payload_bytes} bytes > {max_payload_bytes} bytes."
             )

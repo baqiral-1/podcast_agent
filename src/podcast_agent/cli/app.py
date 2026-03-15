@@ -73,6 +73,11 @@ def plan_episodes(
     source_path: Path,
     title: str | None = None,
     author: str = "Unknown",
+    episode_count: int = typer.Option(
+        ...,
+        min=1,
+        help="Generate exactly this many episodes.",
+    ),
     chapter_limit: int | None = typer.Option(
         default=None,
         min=1,
@@ -92,13 +97,14 @@ def plan_episodes(
             "source_path": str(source_path),
             "title": title,
             "author": author,
+            "episode_count": episode_count,
             "chapter_limit": chapter_limit,
             "database_url": database_url,
         },
     )
     ingestion = orchestrator.ingest_book(source_path=source_path, title=title, author=author)
     structure = orchestrator.index_book(ingestion, chapter_limit=chapter_limit)
-    _, plan = orchestrator.plan_episodes(structure)
+    _, plan = orchestrator.plan_episodes(structure, episode_count=episode_count)
     typer.echo(plan.model_dump_json(indent=2))
 
 
@@ -107,6 +113,11 @@ def run_pipeline(
     source_path: Path,
     title: str | None = None,
     author: str = "Unknown",
+    episode_count: int = typer.Option(
+        ...,
+        min=1,
+        help="Generate exactly this many episodes.",
+    ),
     chapter_limit: int | None = typer.Option(
         default=None,
         min=1,
@@ -130,6 +141,7 @@ def run_pipeline(
             "source_path": str(source_path),
             "title": title,
             "author": author,
+            "episode_count": episode_count,
             "chapter_limit": chapter_limit,
             "database_url": database_url,
             "with_audio": with_audio,
@@ -140,6 +152,7 @@ def run_pipeline(
         title=title,
         author=author,
         chapter_limit=chapter_limit,
+        episode_count=episode_count,
         synthesize_audio=with_audio,
     )
     typer.echo(json.dumps(result, indent=2, default=str))
@@ -150,6 +163,11 @@ def render_audio(
     source_path: Path,
     title: str | None = None,
     author: str = "Unknown",
+    episode_count: int = typer.Option(
+        ...,
+        min=1,
+        help="Generate exactly this many episodes.",
+    ),
     chapter_limit: int | None = typer.Option(
         default=None,
         min=1,
@@ -169,6 +187,7 @@ def render_audio(
             "source_path": str(source_path),
             "title": title,
             "author": author,
+            "episode_count": episode_count,
             "chapter_limit": chapter_limit,
             "database_url": database_url,
         },
@@ -178,6 +197,7 @@ def render_audio(
         title=title,
         author=author,
         chapter_limit=chapter_limit,
+        episode_count=episode_count,
         synthesize_audio=True,
     )
     typer.echo(json.dumps(result, indent=2, default=str))

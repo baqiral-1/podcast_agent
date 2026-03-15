@@ -74,11 +74,15 @@ class PipelineOrchestrator:
         self.analysis_agent = AnalysisAgent(
             self.llm,
             max_payload_bytes=self.settings.pipeline.max_analysis_payload_bytes,
+            max_payload_bytes_with_episode_count=self.settings.pipeline.max_analysis_payload_bytes_with_episode_count,
         )
         self.planning_agent = EpisodePlanningAgent(
             self.llm,
             minimum_source_words_per_episode=self.settings.pipeline.minimum_source_words_per_episode,
+            spoken_words_per_minute=self.settings.pipeline.spoken_words_per_minute,
+            max_episode_minutes=self.settings.pipeline.max_episode_minutes,
             max_payload_bytes=self.settings.pipeline.max_planning_payload_bytes,
+            max_payload_bytes_with_episode_count=self.settings.pipeline.max_planning_payload_bytes_with_episode_count,
             section_beat_target_words=self.settings.pipeline.section_beat_target_words,
             beat_evidence_window_size=self.settings.pipeline.beat_evidence_window_size,
         )
@@ -87,8 +91,13 @@ class PipelineOrchestrator:
             minimum_source_words_per_episode=self.settings.pipeline.minimum_source_words_per_episode,
             spoken_words_per_minute=self.settings.pipeline.spoken_words_per_minute,
             coverage_warning_min_ratio=self.settings.pipeline.coverage_warning_min_ratio,
+            beat_parallelism=self.settings.pipeline.beat_parallelism,
+            beat_write_timeout_seconds=self.settings.pipeline.beat_write_timeout_seconds,
         )
-        self.validation_agent = GroundingValidationAgent(self.llm)
+        self.validation_agent = GroundingValidationAgent(
+            self.llm,
+            grounding_parallelism=self.settings.pipeline.grounding_parallelism,
+        )
         self.repair_agent = RepairAgent(self.llm)
 
     def log_command(self, command_name: str, arguments: dict) -> None:
@@ -190,12 +199,12 @@ class PipelineOrchestrator:
         )
         return structure
 
-    def plan_episodes(self, structure):
+    def plan_episodes(self, structure, *, episode_count: int):
         """Analyze the book and produce the series plan."""
 
         self.run_logger.log("stage_start", stage="plan_episodes", book_id=structure.book_id)
-        analysis = self.analysis_agent.analyze(structure)
-        plan = self.planning_agent.plan(structure, analysis)
+        analysis = self.analysis_agent.analyze(structure, episode_count)
+        plan = self.planning_agent.plan(structure, analysis, episode_count)
         self._write_artifact(
             self._book_artifact_key(structure.book_id),
             "analysis",
@@ -211,6 +220,7 @@ class PipelineOrchestrator:
             stage="plan_episodes",
             book_id=structure.book_id,
             episode_count=len(plan.episodes),
+            requested_episode_count=episode_count,
             episode_parallelism=self.settings.pipeline.episode_parallelism,
         )
         return analysis, plan
@@ -393,16 +403,20 @@ class PipelineOrchestrator:
         title: str | None = None,
         author: str = "Unknown",
         chapter_limit: int | None = None,
+        episode_count: int | None = None,
         synthesize_audio: bool = False,
     ) -> dict:
         """Run the end-to-end pipeline for every episode in the series plan."""
 
+        if episode_count is None:
+            raise TypeError("episode_count is required for run_pipeline")
         ingestion = self.ingest_book(source_path=source_path, title=title, author=author)
         structure = self.index_book(ingestion, chapter_limit=chapter_limit)
-        analysis, plan = self.plan_episodes(structure)
+        analysis, plan = self.plan_episodes(structure, episode_count=episode_count)
         self.run_logger.log(
             "episode_parallelism_configured",
             book_id=structure.book_id,
+            requested_episode_count=episode_count,
             episode_count=len(plan.episodes),
             episode_parallelism=self.settings.pipeline.episode_parallelism,
         )
@@ -452,7 +466,18 @@ class PipelineOrchestrator:
         *,
         synthesize_audio: bool,
     ) -> EpisodeOutput:
-        script = self.write_episode(book_id, episode_plan)
+        try:
+            script = self.write_episode(book_id, episode_plan)
+        except Exception as exc:
+            self.run_logger.log(
+                "stage_failed",
+                stage="write_episode",
+                book_id=book_id,
+                episode_id=episode_plan.episode_id,
+                error_type=type(exc).__name__,
+                error_message=str(exc),
+            )
+            raise
         self._write_citation_audit(book_id, episode_plan, script)
         report = self.validate_episode(book_id, script)
         self._write_citation_audit(book_id, episode_plan, script, report)

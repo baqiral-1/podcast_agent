@@ -125,6 +125,35 @@ def test_openai_compatible_client_raises_for_content_filter_finish_reason() -> N
         raise AssertionError("Expected content filter error to be raised")
 
 
+def test_openai_compatible_client_raises_for_length_finish_reason() -> None:
+    transport = FakeTransport(
+        {
+            "choices": [
+                {
+                    "finish_reason": "length",
+                    "message": {"content": '{"episode_id":"episode-1"}'},
+                }
+            ]
+        }
+    )
+    client = OpenAICompatibleLLMClient(
+        config=LLMConfig(api_key="test-key"),
+        transport=transport,
+    )
+
+    try:
+        client.generate_json(
+            schema_name="grounding_report",
+            instructions="Validate the claims.",
+            payload={"script": {"episode_id": "episode-1"}},
+            response_model=GroundingReport,
+        )
+    except RuntimeError as exc:
+        assert "completion token limit" in str(exc)
+    else:
+        raise AssertionError("Expected length truncation error to be raised")
+
+
 def test_openai_compatible_tts_client_returns_audio_bytes(monkeypatch) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     transport = FakeBinaryTransport(b"fake-audio")

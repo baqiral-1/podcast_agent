@@ -1,10 +1,12 @@
 """Integration and unit tests for the podcast pipeline."""
 
 from __future__ import annotations
-
 from pathlib import Path
 import threading
 
+from typer.testing import CliRunner
+
+from podcast_agent.cli.app import app
 from podcast_agent.config import Settings
 from podcast_agent.db import InMemoryRepository
 from podcast_agent.llm import HeuristicLLMClient
@@ -46,7 +48,7 @@ def test_pipeline_creates_multi_chapter_episode_and_manifest(tmp_path: Path) -> 
         settings=settings,
     )
 
-    result = orchestrator.run_pipeline(book_path, title="Observatory Book", author="A. Writer")
+    result = orchestrator.run_pipeline(book_path, title="Observatory Book", author="A. Writer", episode_count=1)
 
     assert result["series_plan"]["episodes"]
     assert len(result["series_plan"]["episodes"]) == 1
@@ -110,7 +112,11 @@ def test_pipeline_defaults_raise_parallelism() -> None:
     settings = Settings()
 
     assert settings.pipeline.episode_parallelism == 3
+    assert settings.pipeline.beat_parallelism == 4
+    assert settings.pipeline.beat_write_timeout_seconds == 120.0
+    assert settings.pipeline.grounding_parallelism == 3
     assert settings.pipeline.structuring_parallelism == 3
+    assert settings.pipeline.max_episode_minutes == 180
     assert settings.pipeline.max_structuring_llm_chapter_words == 42232
 
 
@@ -151,7 +157,7 @@ def test_validation_schema_is_claim_level(tmp_path: Path) -> None:
 
     ingestion = orchestrator.ingest_book(book_path, title="Observatory Book", author="A. Writer")
     structure = orchestrator.index_book(ingestion)
-    _, plan = orchestrator.plan_episodes(structure)
+    _, plan = orchestrator.plan_episodes(structure, episode_count=2)
     script = orchestrator.write_episode(structure.book_id, plan.episodes[0])
     report = orchestrator.validate_episode(structure.book_id, script)
 
@@ -171,6 +177,7 @@ def test_books_under_source_word_floor_collapse_to_single_episode() -> None:
         Path("examples/river_of_hours.txt"),
         title="River of Hours",
         author="Sample Author",
+        episode_count=1,
     )
 
     assert len(result["series_plan"]["episodes"]) == 1
@@ -209,6 +216,7 @@ def test_pipeline_can_synthesize_audio_manifest(tmp_path: Path) -> None:
         book_path,
         title="Observatory Book",
         author="A. Writer",
+        episode_count=1,
         synthesize_audio=True,
     )
 
@@ -235,6 +243,7 @@ def test_run_pipeline_can_limit_detected_chapters(tmp_path: Path) -> None:
         title="Observatory Book",
         author="A. Writer",
         chapter_limit=2,
+        episode_count=1,
     )
 
     planned_chapters = result["series_plan"]["episodes"][0]["chapter_ids"]
@@ -289,9 +298,22 @@ def test_run_pipeline_processes_episodes_in_parallel_when_enabled(tmp_path: Path
 
     monkeypatch.setattr(orchestrator, "_run_episode_plan", fake_run_episode_plan)
 
-    result = orchestrator.run_pipeline(book_path, title="Observatory Book", author="A. Writer")
+    result = orchestrator.run_pipeline(book_path, title="Observatory Book", author="A. Writer", episode_count=2)
 
     assert len(result["series_plan"]["episodes"]) == 2
     assert result["episodes"][0]["plan"]["sequence"] == 1
     assert result["episodes"][1]["plan"]["sequence"] == 2
     assert len(set(thread_names)) == 2
+
+
+def test_run_pipeline_requires_episode_count_cli(tmp_path: Path) -> None:
+    book_path = tmp_path / "book.txt"
+    book_path.write_text(BOOK_TEXT, encoding="utf-8")
+
+    result = CliRunner().invoke(
+        app,
+        ["run-pipeline", str(book_path), "--title", "Observatory Book", "--author", "A. Writer"],
+    )
+
+    assert result.exit_code != 0
+    assert "Missing option '--episode-count'" in result.output

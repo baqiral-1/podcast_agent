@@ -68,6 +68,7 @@ class HeuristicLLMClient(LLMClient):
     def _generate_book_analysis(self, payload: PromptPayload) -> dict[str, Any]:
         structure = payload["structure"]
         chapters = structure["chapters"]
+        episode_count = payload["episode_count"]
         all_terms: list[str] = []
         for chapter in chapters:
             all_terms.extend(chapter.get("themes", []))
@@ -85,12 +86,13 @@ class HeuristicLLMClient(LLMClient):
                     "chapter_ids": chapter_ids,
                 }
             )
+        if episode_count > len(chapters):
+            raise ValueError(
+                f"Requested {episode_count} episodes, but only {len(chapters)} chapters are available."
+            )
+        chapter_groups = _partition_evenly(chapters, episode_count)
         clusters = []
-        cluster_size = 2 if len(chapters) > 2 else 1
-        for sequence, start in enumerate(range(0, len(chapters), cluster_size), start=1):
-            chosen_chapters = chapters[start : start + cluster_size]
-            if not chosen_chapters:
-                continue
+        for sequence, chosen_chapters in enumerate(chapter_groups, start=1):
             chapter_ids = [chapter["chapter_id"] for chapter in chosen_chapters]
             cluster_themes = []
             for chapter in chosen_chapters:
@@ -125,50 +127,8 @@ class HeuristicLLMClient(LLMClient):
     def _generate_series_plan(self, payload: PromptPayload) -> dict[str, Any]:
         analysis = payload["analysis"]
         structure = payload["structure"]
-        minimum_source_words_per_episode = payload.get("minimum_source_words_per_episode", 50000)
         chapter_map = {chapter["chapter_id"]: chapter for chapter in structure["chapters"]}
-        pending_clusters = list(analysis["episode_clusters"])
-        merged_clusters = []
-        current_cluster: dict[str, Any] | None = None
-
-        for cluster in pending_clusters:
-            cluster_word_count = sum(
-                chapter_map[chapter_id].get("word_count", 0)
-                for chapter_id in cluster["chapter_ids"]
-                if chapter_id in chapter_map
-            )
-            if current_cluster is None:
-                current_cluster = {
-                    "cluster_id": f"cluster-{len(merged_clusters) + 1}",
-                    "chapter_ids": list(cluster["chapter_ids"]),
-                    "themes": list(cluster["themes"]),
-                    "rationale": [cluster["rationale"]],
-                    "word_count": cluster_word_count,
-                }
-                continue
-            if current_cluster["word_count"] < minimum_source_words_per_episode:
-                current_cluster["chapter_ids"].extend(cluster["chapter_ids"])
-                current_cluster["themes"].extend(cluster["themes"])
-                current_cluster["rationale"].append(cluster["rationale"])
-                current_cluster["word_count"] += cluster_word_count
-            else:
-                merged_clusters.append(current_cluster)
-                current_cluster = {
-                    "cluster_id": f"cluster-{len(merged_clusters) + 1}",
-                    "chapter_ids": list(cluster["chapter_ids"]),
-                    "themes": list(cluster["themes"]),
-                    "rationale": [cluster["rationale"]],
-                    "word_count": cluster_word_count,
-                }
-        if current_cluster is not None:
-            if merged_clusters and current_cluster["word_count"] < minimum_source_words_per_episode:
-                merged_clusters[-1]["chapter_ids"].extend(current_cluster["chapter_ids"])
-                merged_clusters[-1]["themes"].extend(current_cluster["themes"])
-                merged_clusters[-1]["rationale"].extend(current_cluster["rationale"])
-                merged_clusters[-1]["word_count"] += current_cluster["word_count"]
-            else:
-                merged_clusters.append(current_cluster)
-
+        merged_clusters = list(analysis["episode_clusters"])
         episodes = []
         for sequence, cluster in enumerate(merged_clusters, start=1):
             chapter_titles = [chapter_map[chapter_id]["title"] for chapter_id in cluster["chapter_ids"]]
@@ -324,3 +284,14 @@ class HeuristicLLMClient(LLMClient):
 
 def _group(values: list[str], group_size: int) -> list[list[str]]:
     return [values[index : index + group_size] for index in range(0, len(values), group_size)]
+
+
+def _partition_evenly(values: list[dict[str, Any]], group_count: int) -> list[list[dict[str, Any]]]:
+    groups: list[list[dict[str, Any]]] = []
+    start = 0
+    for remaining_groups in range(group_count, 0, -1):
+        remaining_items = len(values) - start
+        size = max(1, (remaining_items + remaining_groups - 1) // remaining_groups)
+        groups.append(values[start : start + size])
+        start += size
+    return groups

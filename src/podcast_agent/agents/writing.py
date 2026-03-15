@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from json import JSONDecodeError
 from typing import Any
 
 from pydantic import ValidationError
 
 from podcast_agent.agents.base import Agent
+from podcast_agent.llm.openai_compatible import OpenAICompatibleLLMClient
 from podcast_agent.schemas.models import BeatScript, EpisodeBeat, EpisodePlan, EpisodeScript, EpisodeSegment, RetrievalHit
 
 
@@ -17,17 +18,21 @@ class WritingAgent(Agent):
 
     schema_name = "beat_script"
     instructions = (
-        "Write a grounded single-narrator podcast script section for the provided beat with claim-level citations. "
-        "Use only the provided beat and retrieval hits. "
-        "Develop the beat into a substantial spoken section rather than summarizing it away, and keep the narration "
-        "proportional to the assigned source volume. "
-        "Cover the assigned retrieval hits comprehensively; when the beat has 7 or fewer assigned chunks, cite all of them "
-        "across the beat's claims. Do not concentrate coverage in the first few chunks if later chunks contain distinct material. "
-        "Prefer multiple grounded segments when that is needed to cover the full beat. "
-        "Every segment must include at least one claim, and every claim must include one or more evidence_chunk_ids "
-        "chosen from the assigned beat retrieval hits. "
-        "Every segment must include citations, and each segment's citations must match the union of its claims' evidence_chunk_ids. "
-        "Segment-level citations alone are not sufficient."
+        "Write a grounded single-narrator podcast script section for the provided beat. "
+        "Use only the provided beat and retrieval hits. Write spoken narration, not notes or analysis. "
+        "Develop the beat fully enough to reflect the assigned source material, but stay concise and proportional to the assigned source volume. "
+        "Coverage requirements: cover the assigned retrieval hits comprehensively. "
+        "If the beat has 7 or fewer assigned chunk_ids, every assigned chunk_id must appear in at least one claim's evidence_chunk_ids. "
+        "Do not focus only on early chunks if later chunks contain distinct material. "
+        "Use 1 or 2 segments unless more are clearly necessary. "
+        "Hard rules: "
+        "1. Every segment must contain at least one claim. "
+        "2. Every claim must include one or more evidence_chunk_ids taken only from the assigned beat retrieval hits. "
+        "3. Every segment must include citations. "
+        "4. For each segment, citations must be exactly the union of all evidence_chunk_ids used by that segment's claims. "
+        "5. Do not include any citation in a segment unless that citation also appears in one of that segment's claims. "
+        "6. Do not omit any claim evidence_chunk_id from that segment's citations. "
+        "Before finalizing each segment, check that segment.citations == union(segment.claims[*].evidence_chunk_ids)."
     )
     response_model = BeatScript
 
@@ -38,12 +43,14 @@ class WritingAgent(Agent):
         spoken_words_per_minute: int = 130,
         coverage_warning_min_ratio: float | None = None,
         beat_parallelism: int = 4,
+        beat_write_timeout_seconds: float = 120.0,
     ) -> None:
         super().__init__(llm)
         self.minimum_source_words_per_episode = minimum_source_words_per_episode
         self.spoken_words_per_minute = spoken_words_per_minute
         self.coverage_warning_min_ratio = coverage_warning_min_ratio
         self.beat_parallelism = beat_parallelism
+        self.beat_write_timeout_seconds = beat_write_timeout_seconds
 
     def build_payload(self, episode_plan: EpisodePlan, retrieval_hits: list[RetrievalHit]) -> dict:
         assigned_source_words = sum(len(hit.text.split()) for hit in retrieval_hits)
@@ -66,11 +73,30 @@ class WritingAgent(Agent):
                 episode_id=episode_plan.episode_id,
                 beat_count=len(beat_payloads),
                 concurrency=self.beat_parallelism,
+                beat_write_timeout_seconds=self.beat_write_timeout_seconds,
                 assigned_chunk_count=len(retrieval_hits),
                 beat_chunk_counts=[len(payload["retrieval_hits"]) for payload in beat_payloads],
             )
-        with ThreadPoolExecutor(max_workers=self.beat_parallelism) as executor:
-            beat_scripts = list(executor.map(self._write_beat, beat_payloads))
+        future_to_payload = {}
+        beat_script_map: dict[str, BeatScript] = {}
+        executor = ThreadPoolExecutor(max_workers=self.beat_parallelism)
+        try:
+            future_to_payload = {
+                executor.submit(self._write_beat, beat_payload): beat_payload for beat_payload in beat_payloads
+            }
+            for future in as_completed(future_to_payload):
+                beat_payload = future_to_payload[future]
+                beat_id = beat_payload["beat"]["beat_id"]
+                try:
+                    beat_script_map[beat_id] = future.result()
+                except Exception as exc:
+                    for pending in future_to_payload:
+                        if pending is not future:
+                            pending.cancel()
+                    raise RuntimeError(f"Beat writing failed for {beat_id}: {exc}") from exc
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
+        beat_scripts = [beat_script_map[beat.beat_id] for beat in episode_plan.beats]
         beat_order = {beat.beat_id: index for index, beat in enumerate(episode_plan.beats)}
         beat_scripts.sort(key=lambda beat_script: beat_order[beat_script.beat_id])
         merged_segments: list[EpisodeSegment] = []
@@ -331,9 +357,10 @@ class WritingAgent(Agent):
         last_error: Exception | None = None
         last_violations: list[str] = []
         retry_instructions = self.instructions
+        attempt = 1
         for retried in (False, True):
             try:
-                beat_script = self.llm.generate_json(
+                beat_script = self._generate_beat_script(
                     schema_name=self.schema_name,
                     instructions=retry_instructions,
                     payload=payload,
@@ -349,6 +376,7 @@ class WritingAgent(Agent):
                         retried=retried,
                         error_type=type(exc).__name__,
                         error_message=str(exc),
+                        attempt=attempt,
                     )
                 if retried:
                     break
@@ -363,7 +391,13 @@ class WritingAgent(Agent):
             self._log_writing_metrics(beat_script, payload, violations, retried=retried)
             if not violations:
                 if run_logger is not None:
-                    run_logger.log("beat_write_completed", episode_id=episode_id, beat_id=beat_id, retried=retried)
+                    run_logger.log(
+                        "beat_write_completed",
+                        episode_id=episode_id,
+                        beat_id=beat_id,
+                        retried=retried,
+                        attempt=attempt,
+                    )
                 return beat_script
             last_violations = violations
             if retried:
@@ -373,6 +407,17 @@ class WritingAgent(Agent):
                 violations=violations,
                 missing_chunk_ids=self._uncited_chunk_ids(beat_script, payload),
                 last_error=None,
+            )
+            attempt += 1
+            continue
+        if run_logger is not None:
+            self._log_terminal_beat_failure(
+                run_logger=run_logger,
+                episode_id=episode_id,
+                beat_id=beat_id,
+                attempt=attempt,
+                last_error=last_error,
+                last_violations=last_violations,
             )
         if last_error is not None and not last_violations:
             raise RuntimeError(
@@ -400,6 +445,9 @@ class WritingAgent(Agent):
             "Every segment must include citations.",
             "Each segment's citations must exactly match the union of its claims' evidence_chunk_ids.",
             "Do not concentrate evidence in the first few chunks when later assigned chunks contain distinct material.",
+            "Keep the response compact and JSON-only.",
+            "Use at most two segments unless one segment would be clearly insufficient.",
+            "Keep narration concise and avoid repeating or quoting source text at length.",
         ]
         if len(assigned_chunk_ids) <= 7:
             coverage_instructions.append(
@@ -416,10 +464,67 @@ class WritingAgent(Agent):
                 + "."
             )
         if last_error is not None:
+            if "truncated because it hit the completion token limit" in str(last_error):
+                coverage_instructions.append(
+                    "The previous response was truncated. Reduce output length substantially and avoid enumerating unnecessary details."
+                )
             coverage_instructions.append(
                 f"Previous schema/generation error: {last_error}."
             )
         return f"{self.instructions} {' '.join(coverage_instructions)}"
+
+    def _generate_beat_script(
+        self,
+        *,
+        schema_name: str,
+        instructions: str,
+        payload: dict,
+        response_model: type[BeatScript],
+    ) -> BeatScript:
+        llm = self.llm
+        if isinstance(self.llm, OpenAICompatibleLLMClient):
+            llm = OpenAICompatibleLLMClient(
+                self.llm.config.model_copy(update={"timeout_seconds": self.beat_write_timeout_seconds}),
+                transport=self.llm.transport,
+            )
+            if getattr(self.llm, "run_logger", None) is not None:
+                llm.set_run_logger(self.llm.run_logger)
+        return llm.generate_json(
+            schema_name=schema_name,
+            instructions=instructions,
+            payload=payload,
+            response_model=response_model,
+        )
+
+    def _log_terminal_beat_failure(
+        self,
+        *,
+        run_logger,
+        episode_id: str,
+        beat_id: str,
+        attempt: int,
+        last_error: Exception | None,
+        last_violations: list[str],
+    ) -> None:
+        event_type = "beat_write_failed"
+        error_type = type(last_error).__name__ if last_error is not None else "RuntimeError"
+        error_message = (
+            str(last_error)
+            if last_error is not None
+            else "Beat script violated coverage constraints after retry: " + "; ".join(last_violations)
+        )
+        if last_error is not None and "timed out" in str(last_error).lower():
+            event_type = "beat_write_timeout"
+        elif last_error is not None and "truncated because it hit the completion token limit" in str(last_error):
+            event_type = "beat_write_truncated"
+        run_logger.log(
+            event_type,
+            episode_id=episode_id,
+            beat_id=beat_id,
+            attempt=attempt,
+            error_type=error_type,
+            error_message=error_message,
+        )
 
     def _uncited_chunk_ids(self, script: BeatScript, payload: dict) -> list[str]:
         cited_chunk_ids = set(self._claim_evidence_chunk_ids(script)) | set(

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from threading import Event, Lock
 import json
+import time
 
 from pydantic import ValidationError
 
@@ -19,12 +21,14 @@ from podcast_agent.llm import HeuristicLLMClient
 from podcast_agent.run_logging import RunLogger
 from podcast_agent.schemas.models import (
     BeatScript,
+    BookAnalysis,
     BookIngestionResult,
     EpisodeBeat,
     EpisodePlan,
     EpisodeSegment,
     EpisodeScript,
     GroundingReport,
+    GroundingStatus,
     RetrievalHit,
     ScriptClaim,
     SourceType,
@@ -66,8 +70,8 @@ def _build_structure():
 def _build_analysis_and_plan():
     llm = HeuristicLLMClient()
     structure = _build_structure()
-    analysis = AnalysisAgent(llm).analyze(structure)
-    plan = EpisodePlanningAgent(llm).plan(structure, analysis)
+    analysis = AnalysisAgent(llm).analyze(structure, episode_count=2)
+    plan = EpisodePlanningAgent(llm).plan(structure, analysis, episode_count=2)
     return structure, analysis, plan
 
 
@@ -245,6 +249,78 @@ class RetryingClaimWritingLLM(LLMClient):
         return HeuristicLLMClient().generate_json(schema_name, instructions, payload, response_model)
 
 
+class SegmentRecordingValidationLLM(LLMClient):
+    """LLM stub that records segment-scoped validation payloads."""
+
+    def __init__(self) -> None:
+        self.payloads: list[dict] = []
+
+    def generate_json(self, schema_name, instructions, payload, response_model):
+        if schema_name == "grounding_report":
+            self.payloads.append(payload)
+            script = payload["script"]
+            assessments = []
+            for segment in script["segments"]:
+                for claim in segment["claims"]:
+                    assessments.append(
+                        {
+                            "claim_id": claim["claim_id"],
+                            "status": GroundingStatus.GROUNDED,
+                            "reason": "Segment-scoped validation.",
+                            "evidence_chunk_ids": claim["evidence_chunk_ids"],
+                        }
+                    )
+            return response_model.model_validate(
+                {
+                    "episode_id": script["episode_id"],
+                    "overall_status": "pass",
+                    "claim_assessments": assessments,
+                }
+            )
+        return HeuristicLLMClient().generate_json(schema_name, instructions, payload, response_model)
+
+
+class ParallelValidationLLM(LLMClient):
+    """LLM stub that blocks until multiple segment validations are in flight."""
+
+    def __init__(self) -> None:
+        self._lock = Lock()
+        self._active = 0
+        self.max_active = 0
+        self._gate = Event()
+
+    def generate_json(self, schema_name, instructions, payload, response_model):
+        if schema_name == "grounding_report":
+            with self._lock:
+                self._active += 1
+                self.max_active = max(self.max_active, self._active)
+                if self.max_active >= 3:
+                    self._gate.set()
+            self._gate.wait(timeout=1.0)
+            script = payload["script"]
+            assessments = []
+            for segment in script["segments"]:
+                for claim in segment["claims"]:
+                    assessments.append(
+                        {
+                            "claim_id": claim["claim_id"],
+                            "status": GroundingStatus.GROUNDED,
+                            "reason": "Parallel validation.",
+                            "evidence_chunk_ids": claim["evidence_chunk_ids"],
+                        }
+                    )
+            with self._lock:
+                self._active -= 1
+            return response_model.model_validate(
+                {
+                    "episode_id": script["episode_id"],
+                    "overall_status": "pass",
+                    "claim_assessments": assessments,
+                }
+            )
+        return HeuristicLLMClient().generate_json(schema_name, instructions, payload, response_model)
+
+
 class AlwaysInvalidClaimWritingLLM(LLMClient):
     """LLM stub that never returns valid claim evidence for a beat."""
 
@@ -317,6 +393,79 @@ class CoverageAwareRetryWritingLLM(LLMClient):
                             "citations": [chunk_id],
                         }
                         for index, chunk_id in enumerate(chunk_ids, start=1)
+                    ],
+                }
+            )
+        return HeuristicLLMClient().generate_json(schema_name, instructions, payload, response_model)
+
+
+class TruncatingThenValidWritingLLM(LLMClient):
+    """LLM stub that truncates once before succeeding."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+        self.instructions_seen: list[str] = []
+
+    def generate_json(self, schema_name, instructions, payload, response_model):
+        if schema_name == "beat_script":
+            self.calls += 1
+            self.instructions_seen.append(instructions)
+            if self.calls == 1:
+                raise RuntimeError("LLM response was truncated because it hit the completion token limit.")
+            beat = payload["beat"]
+            chunk_ids = [hit["chunk_id"] for hit in payload["retrieval_hits"]]
+            return response_model.model_validate(
+                {
+                    "beat_id": beat["beat_id"],
+                    "segments": [
+                        {
+                            "segment_id": f"{beat['beat_id']}-segment-1",
+                            "beat_id": beat["beat_id"],
+                            "heading": beat["title"],
+                            "narration": ("Compact grounded narration. " * 16).strip(),
+                            "claims": [
+                                {
+                                    "claim_id": f"{beat['beat_id']}-claim-{index}",
+                                    "text": f"Grounded claim {index}.",
+                                    "evidence_chunk_ids": [chunk_id],
+                                }
+                                for index, chunk_id in enumerate(chunk_ids, start=1)
+                            ],
+                            "citations": chunk_ids,
+                        }
+                    ],
+                }
+            )
+        return HeuristicLLMClient().generate_json(schema_name, instructions, payload, response_model)
+
+
+class OutOfOrderWritingLLM(LLMClient):
+    """LLM stub that finishes beats out of order while returning valid output."""
+
+    def generate_json(self, schema_name, instructions, payload, response_model):
+        if schema_name == "beat_script":
+            beat = payload["beat"]
+            if beat["beat_id"].endswith("1"):
+                time.sleep(0.05)
+            chunk_ids = [hit["chunk_id"] for hit in payload["retrieval_hits"]]
+            return response_model.model_validate(
+                {
+                    "beat_id": beat["beat_id"],
+                    "segments": [
+                        {
+                            "segment_id": f"{beat['beat_id']}-segment-1",
+                            "beat_id": beat["beat_id"],
+                            "heading": beat["title"],
+                            "narration": ("Ordered grounded narration. " * 12).strip(),
+                            "claims": [
+                                {
+                                    "claim_id": f"{beat['beat_id']}-claim-1",
+                                    "text": "Grounded claim.",
+                                    "evidence_chunk_ids": chunk_ids[:1],
+                                }
+                            ],
+                            "citations": chunk_ids[:1],
+                        }
                     ],
                 }
             )
@@ -519,6 +668,49 @@ def test_writing_retry_instructions_include_missing_chunk_ids() -> None:
         assert chunk_id in retry_instructions
 
 
+def test_writing_instructions_use_simplified_hard_rules_prompt() -> None:
+    instructions = WritingAgent.instructions
+
+    assert "Write spoken narration, not notes or analysis." in instructions
+    assert "Coverage requirements:" in instructions
+    assert "Hard rules:" in instructions
+    assert "1. Every segment must contain at least one claim." in instructions
+    assert "If the beat has 7 or fewer assigned chunk_ids" in instructions
+    assert "segment.citations == union(segment.claims[*].evidence_chunk_ids)" in instructions
+
+
+def test_writing_retries_after_truncation_with_compact_retry_instructions() -> None:
+    llm = TruncatingThenValidWritingLLM()
+    writer = WritingAgent(llm, beat_parallelism=1)
+    structure, _, plan = _build_analysis_and_plan()
+    episode = plan.episodes[0]
+    beat = episode.beats[0]
+    retrieval_hits = _build_retrieval_hits(structure, beat.chunk_ids)
+    payload = writer.build_payload(episode, retrieval_hits)
+    beat_payload = writer._build_beat_payloads(payload)[0]
+
+    beat_script = writer._write_beat(beat_payload)
+
+    assert llm.calls == 2
+    assert beat_script.segments
+    assert "The previous response was truncated." in llm.instructions_seen[-1]
+    assert "Use at most two segments" in llm.instructions_seen[-1]
+
+
+def test_writing_preserves_plan_order_when_beats_finish_out_of_order() -> None:
+    llm = OutOfOrderWritingLLM()
+    writer = WritingAgent(llm, beat_parallelism=2)
+    structure, _, plan = _build_analysis_and_plan()
+    episode = plan.episodes[0]
+    retrieval_hits = _build_retrieval_hits(structure, episode.chunk_ids)
+
+    script = writer.write(episode, retrieval_hits)
+
+    observed = [segment.beat_id for segment in script.segments]
+    expected = [beat.beat_id for beat in episode.beats[: len(script.segments)]]
+    assert observed == expected
+
+
 def test_split_into_chapters_handles_front_matter_roman_and_appendix() -> None:
     text = """
     Introduction
@@ -639,7 +831,7 @@ def test_structuring_applies_ocr_normalization_for_pdf_sources(monkeypatch) -> N
 
 def test_analysis_agent_creates_multi_chapter_clusters() -> None:
     structure = _build_structure()
-    analysis = AnalysisAgent(HeuristicLLMClient()).analyze(structure)
+    analysis = AnalysisAgent(HeuristicLLMClient()).analyze(structure, episode_count=2)
 
     assert analysis.themes
     assert analysis.episode_clusters
@@ -649,20 +841,63 @@ def test_analysis_agent_creates_multi_chapter_clusters() -> None:
 def test_analysis_payload_uses_compact_chunk_summaries() -> None:
     structure = _build_structure()
 
-    payload = AnalysisAgent(HeuristicLLMClient()).build_payload(structure)
+    payload = AnalysisAgent(HeuristicLLMClient()).build_payload(structure, episode_count=2)
 
     assert "chunks" not in payload["structure"]
+    assert payload["episode_count"] == 2
     assert payload["structure"]["chapters"][0]["sections"]
     assert payload["structure"]["chapters"][0]["sections"][0]["excerpt"]
     assert "chunk_ids" not in payload["structure"]["chapters"][0]
+
+
+def test_analysis_normalization_derives_chunk_ids_from_chapter_ids() -> None:
+    structure = _build_structure()
+    chapter_ids = [chapter.chapter_id for chapter in structure.chapters[:2]]
+    analysis = BookAnalysis.model_validate(
+        {
+            "book_id": structure.book_id,
+            "themes": ["observatory", "memory"],
+            "continuity_arcs": [],
+            "notable_claims": ["The archive connects the chapters."],
+            "episode_clusters": [
+                {
+                    "cluster_id": "cluster-1",
+                    "label": "Joined chapters",
+                    "rationale": "Keep the first two chapters together.",
+                    "chapter_ids": chapter_ids,
+                    "chunk_ids": [],
+                    "themes": [],
+                }
+            ],
+        }
+    )
+
+    normalized = AnalysisAgent(HeuristicLLMClient())._normalize_analysis(analysis, structure)
+
+    assert normalized.episode_clusters[0].chapter_ids == chapter_ids
+    assert normalized.episode_clusters[0].chunk_ids == [
+        chunk_id for chapter in structure.chapters[:2] for chunk_id in chapter.chunk_ids
+    ]
+    assert normalized.episode_clusters[0].themes
 
 
 def test_episode_planning_agent_creates_hierarchical_plan() -> None:
     structure, analysis, plan = _build_analysis_and_plan()
 
     assert plan.book_id == structure.book_id
-    assert plan.episodes
+    assert len(plan.episodes) == 2
     assert all(episode.beats for episode in plan.episodes)
+
+
+def test_analysis_and_planning_reject_episode_count_above_chapter_count() -> None:
+    structure = _build_structure()
+
+    try:
+        AnalysisAgent(HeuristicLLMClient()).analyze(structure, episode_count=10)
+    except RuntimeError as exc:
+        assert "Requested 10 episodes" in str(exc)
+    else:
+        raise AssertionError("Expected analysis to reject impossible episode counts")
 
 
 def test_writing_agent_creates_cited_episode_script() -> None:
@@ -685,6 +920,40 @@ def test_grounding_validation_agent_returns_claim_assessments() -> None:
     assert report.overall_status in {"pass", "fail"}
     assert report.claim_assessments
     assert all(assessment.claim_id for assessment in report.claim_assessments)
+
+
+def test_grounding_validation_agent_scopes_payloads_to_segment_citations() -> None:
+    script, _, retrieval_hits = _build_script_and_report()
+    llm = SegmentRecordingValidationLLM()
+
+    report = GroundingValidationAgent(llm, grounding_parallelism=1).validate(script, retrieval_hits)
+
+    assert len(llm.payloads) == len(script.segments)
+    assert len(report.claim_assessments) == sum(len(segment.claims) for segment in script.segments)
+    for payload, segment in zip(llm.payloads, script.segments, strict=True):
+        assert len(payload["script"]["segments"]) == 1
+        assert payload["script"]["segments"][0]["segment_id"] == segment.segment_id
+        assert sorted(hit["chunk_id"] for hit in payload["retrieval_hits"]) == sorted(set(segment.citations))
+
+
+def test_grounding_validation_agent_preserves_claim_order_across_segments() -> None:
+    script, _, retrieval_hits = _build_script_and_report()
+    llm = SegmentRecordingValidationLLM()
+
+    report = GroundingValidationAgent(llm, grounding_parallelism=3).validate(script, retrieval_hits)
+
+    expected_claim_ids = [claim.claim_id for segment in script.segments for claim in segment.claims]
+    assert [assessment.claim_id for assessment in report.claim_assessments] == expected_claim_ids
+
+
+def test_grounding_validation_agent_uses_configured_parallelism() -> None:
+    script, _, retrieval_hits = _build_script_and_report()
+    llm = ParallelValidationLLM()
+
+    report = GroundingValidationAgent(llm, grounding_parallelism=3).validate(script, retrieval_hits)
+
+    assert report.overall_status == "pass"
+    assert llm.max_active == min(3, len(script.segments))
 
 
 def test_repair_agent_targets_only_failed_segments() -> None:

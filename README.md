@@ -137,24 +137,25 @@ Input files may be plain text, markdown, or PDF on the existing commands.
 ```bash
 podcast-agent ingest-book ./examples/book.txt --title "Example Book" --author "Author"
 podcast-agent index-book ./examples/book.txt --title "Example Book" --author "Author" --database-url "$DATABASE_URL"
-podcast-agent plan-episodes ./examples/book.txt --title "Example Book" --author "Author" --database-url "$DATABASE_URL"
-podcast-agent run-pipeline ./examples/book.txt --title "Example Book" --author "Author" --database-url "$DATABASE_URL"
-podcast-agent run-pipeline ./examples/book.txt --title "Example Book" --author "Author" --with-audio
-podcast-agent render-audio ./examples/book.txt --title "Example Book" --author "Author"
+podcast-agent plan-episodes ./examples/book.txt --title "Example Book" --author "Author" --episode-count 2 --database-url "$DATABASE_URL"
+podcast-agent run-pipeline ./examples/book.txt --title "Example Book" --author "Author" --episode-count 2 --database-url "$DATABASE_URL"
+podcast-agent run-pipeline ./examples/book.txt --title "Example Book" --author "Author" --episode-count 2 --with-audio
+podcast-agent render-audio ./examples/book.txt --title "Example Book" --author "Author" --episode-count 2
 ```
 
 Example with one of the included sample books:
 
 ```bash
-podcast-agent run-pipeline ./examples/river_of_hours.txt --title "River of Hours" --author "Sample Author"
+podcast-agent run-pipeline ./examples/river_of_hours.txt --title "River of Hours" --author "Sample Author" --episode-count 1
 ```
 
 Artifacts are written to a per-run subdirectory under `.podcast_agent/runs/<book-title>-<timestamp-to-minute>/`, with nested book and episode folders inside that run. Each run root also includes `run.log`, which records stage transitions, full prompts, responses, TTS requests, and command metadata for that run.
 
-Episode formation now uses source-book word volume rather than a spoken-runtime target. With the default settings:
+Episode planning now requires an explicit episode count. With the default settings:
 
-- books under `50,000` source words produce one episode
-- larger books split only when each resulting episode still carries at least `50,000` assigned source words
+- requested episode count is treated as exact
+- planning fails clearly if the request would create an episode longer than the default `180` spoken-minute cap
+- planning still preserves contiguous chapter coverage and deterministic beat construction inside each episode
 
 ## Outputs and Contracts
 

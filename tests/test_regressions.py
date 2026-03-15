@@ -171,6 +171,38 @@ class FlakyAnalysisLLM(LLMClient):
         return self.delegate.generate_json(schema_name, instructions, payload, response_model)
 
 
+class SchemaFlakyAnalysisLLM(LLMClient):
+    """LLM stub that omits required BookAnalysis fields once before recovering."""
+
+    def __init__(self) -> None:
+        from podcast_agent.llm import HeuristicLLMClient
+
+        self.delegate = HeuristicLLMClient()
+        self.analysis_calls = 0
+        self.instructions_seen: list[str] = []
+
+    def generate_json(self, schema_name, instructions, payload, response_model):
+        if schema_name == "book_analysis":
+            self.analysis_calls += 1
+            self.instructions_seen.append(instructions)
+            if self.analysis_calls == 1:
+                structure = payload["structure"]
+                response_model.model_validate(
+                    {
+                        "episode_clusters": [
+                            {
+                                "cluster_id": "cluster-1",
+                                "label": "Incomplete cluster output",
+                                "rationale": "Missing top-level fields.",
+                                "chapter_ids": [structure["chapters"][0]["chapter_id"]],
+                                "themes": ["observatory"],
+                            }
+                        ]
+                    }
+                )
+        return self.delegate.generate_json(schema_name, instructions, payload, response_model)
+
+
 class FlakyWritingLLM(LLMClient):
     """LLM stub that returns one summary-length script before recovering."""
 
@@ -207,6 +239,20 @@ class FlakyWritingLLM(LLMClient):
                         ],
                     }
                 )
+        return self.delegate.generate_json(schema_name, instructions, payload, response_model)
+
+
+class AlwaysFailBeatWritingLLM(LLMClient):
+    """LLM stub that fails beat writing while delegating other schemas."""
+
+    def __init__(self) -> None:
+        from podcast_agent.llm import HeuristicLLMClient
+
+        self.delegate = HeuristicLLMClient()
+
+    def generate_json(self, schema_name, instructions, payload, response_model):
+        if schema_name == "beat_script":
+            raise RuntimeError("Synthetic beat failure.")
         return self.delegate.generate_json(schema_name, instructions, payload, response_model)
 
 
@@ -415,7 +461,7 @@ def test_failed_grounding_skips_render_manifest(tmp_path: Path) -> None:
         llm=FailingValidationLLM(),
     )
 
-    result = orchestrator.run_pipeline(book_path, title="Broken Grounding", author="A. Writer")
+    result = orchestrator.run_pipeline(book_path, title="Broken Grounding", author="A. Writer", episode_count=1)
 
     assert result["episodes"]
     assert result["episodes"][0]["report"]["overall_status"] == "fail"
@@ -440,8 +486,8 @@ def test_each_run_uses_book_title_and_minute_timestamp_in_artifact_subdirectory(
         settings=settings,
     )
 
-    first.run_pipeline(book_path, title="Run One", author="A. Writer")
-    second.run_pipeline(book_path, title="Run Two", author="A. Writer")
+    first.run_pipeline(book_path, title="Run One", author="A. Writer", episode_count=1)
+    second.run_pipeline(book_path, title="Run Two", author="A. Writer", episode_count=1)
 
     run_dirs = sorted(path.name for path in (tmp_path / "runs").iterdir() if path.is_dir())
     assert len(run_dirs) == 2
@@ -459,7 +505,7 @@ def test_run_log_captures_llm_prompts_and_artifact_writes(tmp_path: Path) -> Non
         settings=settings,
     )
 
-    orchestrator.run_pipeline(book_path, title="Logged Book", author="A. Writer")
+    orchestrator.run_pipeline(book_path, title="Logged Book", author="A. Writer", episode_count=1)
 
     run_log = tmp_path / "runs" / orchestrator.run_id / "run.log"
     lines = [json.loads(line) for line in run_log.read_text(encoding="utf-8").splitlines()]
@@ -467,6 +513,33 @@ def test_run_log_captures_llm_prompts_and_artifact_writes(tmp_path: Path) -> Non
     assert any(line["event_type"] == "llm_request" for line in lines)
     assert any(line["event_type"] == "artifact_written" for line in lines)
     assert any(line["event_type"] == "stage_start" for line in lines)
+
+
+def test_failed_beat_write_logs_stage_failure_and_skips_episode_output(tmp_path: Path) -> None:
+    book_path = tmp_path / "book.txt"
+    book_path.write_text(BOOK_TEXT, encoding="utf-8")
+    settings = Settings(pipeline=PipelineConfig(artifact_root=tmp_path / "runs", beat_parallelism=1))
+    orchestrator = PipelineOrchestrator(
+        repository=InMemoryRepository(),
+        llm=AlwaysFailBeatWritingLLM(),
+        settings=settings,
+    )
+
+    try:
+        orchestrator.run_pipeline(book_path, title="Broken Writing", author="A. Writer", episode_count=1)
+    except RuntimeError as exc:
+        assert "Beat writing failed" in str(exc)
+    else:
+        raise AssertionError("expected beat writing failure")
+
+    run_log = tmp_path / "runs" / orchestrator.run_id / "run.log"
+    lines = [json.loads(line) for line in run_log.read_text(encoding="utf-8").splitlines()]
+    assert any(line["event_type"] == "beat_write_failed" for line in lines)
+    stage_failures = [line for line in lines if line["event_type"] == "stage_failed"]
+    assert stage_failures
+    assert stage_failures[-1]["payload"]["stage"] == "write_episode"
+    episode_output_path = tmp_path / "runs" / orchestrator.run_id / "broken-writing" / "episode-1" / "episode_output.json"
+    assert not episode_output_path.exists()
 
 
 def test_incremental_structuring_logs_one_request_per_chapter(tmp_path: Path) -> None:
@@ -686,15 +759,15 @@ def test_planning_retries_after_non_compliant_series_plan(tmp_path: Path) -> Non
         settings=settings,
     )
 
-    result = orchestrator.run_pipeline(book_path, title="Retry Planned", author="A. Writer")
+    result = orchestrator.run_pipeline(book_path, title="Retry Planned", author="A. Writer", episode_count=2)
 
-    assert llm.series_plan_calls == 2
+    assert llm.series_plan_calls == 1
     assert result["series_plan"]["episodes"]
     run_log = tmp_path / "runs" / orchestrator.run_id / "run.log"
     lines = [json.loads(line) for line in run_log.read_text(encoding="utf-8").splitlines()]
     diagnostics = [line for line in lines if line["event_type"] == "planning_diagnostics"]
     assert diagnostics
-    assert diagnostics[0]["payload"]["violations"]
+    assert diagnostics[0]["payload"]["violations"] == []
 
 
 def test_analysis_retries_after_sparse_cluster_output(tmp_path: Path) -> None:
@@ -708,7 +781,7 @@ def test_analysis_retries_after_sparse_cluster_output(tmp_path: Path) -> None:
         settings=settings,
     )
 
-    result = orchestrator.run_pipeline(book_path, title="Retry Analysis", author="A. Writer")
+    result = orchestrator.run_pipeline(book_path, title="Retry Analysis", author="A. Writer", episode_count=2)
 
     assert llm.analysis_calls == 2
     assert result["analysis"]["episode_clusters"]
@@ -717,6 +790,35 @@ def test_analysis_retries_after_sparse_cluster_output(tmp_path: Path) -> None:
     diagnostics = [line for line in lines if line["event_type"] == "analysis_diagnostics"]
     assert diagnostics
     assert diagnostics[0]["payload"]["violations"]
+    assert diagnostics[-1]["payload"]["violations"] == []
+
+
+def test_analysis_retries_after_schema_incomplete_output(tmp_path: Path) -> None:
+    book_path = tmp_path / "book.txt"
+    book_path.write_text(ANALYSIS_BOOK_TEXT, encoding="utf-8")
+    settings = Settings(pipeline=PipelineConfig(artifact_root=tmp_path / "runs"))
+    llm = SchemaFlakyAnalysisLLM()
+    orchestrator = PipelineOrchestrator(
+        repository=InMemoryRepository(),
+        llm=llm,
+        settings=settings,
+    )
+
+    result = orchestrator.run_pipeline(book_path, title="Retry Schema Analysis", author="A. Writer", episode_count=2)
+
+    assert llm.analysis_calls == 2
+    assert result["analysis"]["episode_clusters"]
+    retry_instructions = llm.instructions_seen[1]
+    assert "full BookAnalysis object" in retry_instructions
+    assert "continuity_arcs and notable_claims arrays" in retry_instructions
+    assert "Previous schema/generation error" in retry_instructions
+    run_log = tmp_path / "runs" / orchestrator.run_id / "run.log"
+    lines = [json.loads(line) for line in run_log.read_text(encoding="utf-8").splitlines()]
+    retries = [line for line in lines if line["event_type"] == "analysis_retry"]
+    diagnostics = [line for line in lines if line["event_type"] == "analysis_diagnostics"]
+    assert retries
+    assert retries[0]["payload"]["error_type"] == "ValidationError"
+    assert diagnostics
     assert diagnostics[-1]["payload"]["violations"] == []
 
 
@@ -831,13 +933,13 @@ def test_planning_returns_single_episode_when_book_is_below_source_word_floor() 
             ),
         ],
     )
-    planner = EpisodePlanningAgent(HeuristicLLMClient())
+    planner = EpisodePlanningAgent(HeuristicLLMClient(), max_episode_minutes=1000)
 
-    normalized = planner._normalize_plan(plan, structure)
+    normalized = planner._normalize_plan(plan, structure, episode_count=1)
 
     assert len(normalized.episodes) == 1
     assert normalized.episodes[0].chapter_ids == ["medium-book-chapter-1", "medium-book-chapter-2"]
-    assert planner._compliance_violations(normalized, structure, analysis) == []
+    assert planner._compliance_violations(normalized, structure, analysis, episode_count=1) == []
 
 
 def test_planning_splits_large_books_only_when_each_episode_meets_source_floor() -> None:
@@ -918,16 +1020,138 @@ def test_planning_splits_large_books_only_when_each_episode_meets_source_floor()
             for index, chapter in enumerate(chapters, start=1)
         ],
     )
-    planner = EpisodePlanningAgent(HeuristicLLMClient())
+    planner = EpisodePlanningAgent(HeuristicLLMClient(), max_episode_minutes=1000)
 
-    normalized = planner._normalize_plan(plan, structure)
+    normalized = planner._normalize_plan(plan, structure, episode_count=2)
 
     assert len(normalized.episodes) == 2
     assert [episode.chapter_ids for episode in normalized.episodes] == [
         ["large-book-chapter-1", "large-book-chapter-2"],
         ["large-book-chapter-3", "large-book-chapter-4"],
     ]
-    assert planner._compliance_violations(normalized, structure, analysis) == []
+    assert planner._compliance_violations(normalized, structure, analysis, episode_count=2) == []
+
+
+def test_planning_rejects_episode_count_when_estimated_runtime_exceeds_cap() -> None:
+    def words(label: str, count: int) -> str:
+        return ((label + " ") * count).strip()
+
+    chapter_word_count = 12000
+    chapters = []
+    chunks = []
+    clusters = []
+    for index in range(1, 5):
+        chapter_id = f"runtime-book-chapter-{index}"
+        chunk_id = f"{chapter_id}-chunk-1"
+        chapters.append(
+            BookChapter(
+                chapter_id=chapter_id,
+                chapter_number=index,
+                title=f"Chapter {index}",
+                summary=f"Summary {index}",
+                chunk_ids=[chunk_id],
+            )
+        )
+        chunks.append(
+            BookChunk(
+                chunk_id=chunk_id,
+                chapter_id=chapter_id,
+                chapter_title=f"Chapter {index}",
+                chapter_number=index,
+                sequence=1,
+                text=words(f"chapter{index}", chapter_word_count),
+                start_word=0,
+                end_word=chapter_word_count,
+                source_offsets=[0, chapter_word_count],
+                themes=[f"theme-{index}"],
+            )
+        )
+        clusters.append(
+            EpisodeCluster(
+                cluster_id=f"cluster-{index}",
+                label=f"Cluster {index}",
+                rationale=f"Part {index}",
+                chapter_ids=[chapter_id],
+                chunk_ids=[chunk_id],
+                themes=[f"theme-{index}"],
+            )
+        )
+    structure = BookStructure(book_id="runtime-book", title="Runtime Book", chapters=chapters, chunks=chunks)
+    analysis = BookAnalysis(
+        book_id="runtime-book",
+        themes=["theme-1"],
+        continuity_arcs=[],
+        notable_claims=[],
+        episode_clusters=clusters,
+    )
+    planner = EpisodePlanningAgent(HeuristicLLMClient(), max_episode_minutes=58)
+
+    try:
+        planner.plan(structure, analysis, episode_count=1)
+    except RuntimeError as exc:
+        assert "above max 58" in str(exc)
+        assert "increase episode_count" in str(exc)
+    else:
+        raise AssertionError("Expected planning to fail for oversized episode runtime")
+
+
+def test_planning_allows_episode_count_when_estimated_runtime_is_within_cap() -> None:
+    def words(label: str, count: int) -> str:
+        return ((label + " ") * count).strip()
+
+    chapter_word_count = 11000
+    chapters = []
+    chunks = []
+    clusters = []
+    for index in range(1, 5):
+        chapter_id = f"runtime-ok-book-chapter-{index}"
+        chunk_id = f"{chapter_id}-chunk-1"
+        chapters.append(
+            BookChapter(
+                chapter_id=chapter_id,
+                chapter_number=index,
+                title=f"Chapter {index}",
+                summary=f"Summary {index}",
+                chunk_ids=[chunk_id],
+            )
+        )
+        chunks.append(
+            BookChunk(
+                chunk_id=chunk_id,
+                chapter_id=chapter_id,
+                chapter_title=f"Chapter {index}",
+                chapter_number=index,
+                sequence=1,
+                text=words(f"chapter{index}", chapter_word_count),
+                start_word=0,
+                end_word=chapter_word_count,
+                source_offsets=[0, chapter_word_count],
+                themes=[f"theme-{index}"],
+            )
+        )
+        clusters.append(
+            EpisodeCluster(
+                cluster_id=f"cluster-{index}",
+                label=f"Cluster {index}",
+                rationale=f"Part {index}",
+                chapter_ids=[chapter_id],
+                chunk_ids=[chunk_id],
+                themes=[f"theme-{index}"],
+            )
+        )
+    structure = BookStructure(book_id="runtime-ok-book", title="Runtime OK Book", chapters=chapters, chunks=chunks)
+    analysis = BookAnalysis(
+        book_id="runtime-ok-book",
+        themes=["theme-1"],
+        continuity_arcs=[],
+        notable_claims=[],
+        episode_clusters=clusters,
+    )
+    planner = EpisodePlanningAgent(HeuristicLLMClient(), max_episode_minutes=58)
+
+    plan = planner.plan(structure, analysis, episode_count=2)
+
+    assert len(plan.episodes) == 2
 
 
 def test_writing_retries_after_summary_length_script() -> None:
@@ -1059,7 +1283,7 @@ def test_planning_splits_long_chapter_into_section_beats() -> None:
         beat_evidence_window_size=3,
     )
 
-    normalized = planner._normalize_plan(plan, structure)
+    normalized = planner._normalize_plan(plan, structure, episode_count=1)
 
     assert len(normalized.episodes) == 1
     assert [beat.chunk_ids for beat in normalized.episodes[0].beats] == [
@@ -1104,7 +1328,7 @@ def test_analysis_agent_rejects_oversized_payload() -> None:
     )
 
     try:
-        AnalysisAgent(HeuristicLLMClient(), max_payload_bytes=200).analyze(structure)
+        AnalysisAgent(HeuristicLLMClient(), max_payload_bytes=200).analyze(structure, episode_count=1)
     except RuntimeError as exc:
         assert "Analysis payload exceeds the configured maximum size" in str(exc)
     else:
@@ -1177,7 +1401,7 @@ def test_pipeline_logs_payload_and_assignment_diagnostics(tmp_path: Path) -> Non
         settings=settings,
     )
 
-    orchestrator.run_pipeline(book_path, title="Diagnostic Book", author="A. Writer")
+    orchestrator.run_pipeline(book_path, title="Diagnostic Book", author="A. Writer", episode_count=2)
 
     run_log = tmp_path / "runs" / orchestrator.run_id / "run.log"
     lines = [json.loads(line) for line in run_log.read_text(encoding="utf-8").splitlines()]
