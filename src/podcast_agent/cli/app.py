@@ -40,10 +40,13 @@ def index_book(
     source_path: Path,
     title: str | None = None,
     author: str = "Unknown",
-    chapter_limit: int | None = typer.Option(
+    start_chapter: str | None = typer.Option(
         default=None,
-        min=1,
-        help="Limit processing to the first N detected chapters.",
+        help="Start from this detected chapter title, matched case-insensitively.",
+    ),
+    end_chapter: str | None = typer.Option(
+        default=None,
+        help="Stop at this detected chapter title, matched case-insensitively and included in the run.",
     ),
     database_url: str | None = typer.Option(
         default=None,
@@ -59,12 +62,17 @@ def index_book(
             "source_path": str(source_path),
             "title": title,
             "author": author,
-            "chapter_limit": chapter_limit,
+            "start_chapter": start_chapter,
+            "end_chapter": end_chapter,
             "database_url": database_url,
         },
     )
     ingestion = orchestrator.ingest_book(source_path=source_path, title=title, author=author)
-    structure = orchestrator.index_book(ingestion, chapter_limit=chapter_limit)
+    structure = orchestrator.index_book(
+        ingestion,
+        start_chapter=start_chapter,
+        end_chapter=end_chapter,
+    )
     typer.echo(structure.model_dump_json(indent=2))
 
 
@@ -78,10 +86,13 @@ def plan_episodes(
         min=1,
         help="Generate exactly this many episodes.",
     ),
-    chapter_limit: int | None = typer.Option(
+    start_chapter: str | None = typer.Option(
         default=None,
-        min=1,
-        help="Limit processing to the first N detected chapters.",
+        help="Start from this detected chapter title, matched case-insensitively.",
+    ),
+    end_chapter: str | None = typer.Option(
+        default=None,
+        help="Stop at this detected chapter title, matched case-insensitively and included in the run.",
     ),
     database_url: str | None = typer.Option(
         default=None,
@@ -98,12 +109,17 @@ def plan_episodes(
             "title": title,
             "author": author,
             "episode_count": episode_count,
-            "chapter_limit": chapter_limit,
+            "start_chapter": start_chapter,
+            "end_chapter": end_chapter,
             "database_url": database_url,
         },
     )
     ingestion = orchestrator.ingest_book(source_path=source_path, title=title, author=author)
-    structure = orchestrator.index_book(ingestion, chapter_limit=chapter_limit)
+    structure = orchestrator.index_book(
+        ingestion,
+        start_chapter=start_chapter,
+        end_chapter=end_chapter,
+    )
     _, plan = orchestrator.plan_episodes(structure, episode_count=episode_count)
     typer.echo(plan.model_dump_json(indent=2))
 
@@ -118,10 +134,13 @@ def run_pipeline(
         min=1,
         help="Generate exactly this many episodes.",
     ),
-    chapter_limit: int | None = typer.Option(
+    start_chapter: str | None = typer.Option(
         default=None,
-        min=1,
-        help="Limit processing to the first N detected chapters.",
+        help="Start from this detected chapter title, matched case-insensitively.",
+    ),
+    end_chapter: str | None = typer.Option(
+        default=None,
+        help="Stop at this detected chapter title, matched case-insensitively and included in the run.",
     ),
     with_audio: bool = typer.Option(
         default=False,
@@ -142,7 +161,8 @@ def run_pipeline(
             "title": title,
             "author": author,
             "episode_count": episode_count,
-            "chapter_limit": chapter_limit,
+            "start_chapter": start_chapter,
+            "end_chapter": end_chapter,
             "database_url": database_url,
             "with_audio": with_audio,
         },
@@ -151,7 +171,8 @@ def run_pipeline(
         source_path=source_path,
         title=title,
         author=author,
-        chapter_limit=chapter_limit,
+        start_chapter=start_chapter,
+        end_chapter=end_chapter,
         episode_count=episode_count,
         synthesize_audio=with_audio,
     )
@@ -168,10 +189,13 @@ def render_audio(
         min=1,
         help="Generate exactly this many episodes.",
     ),
-    chapter_limit: int | None = typer.Option(
+    start_chapter: str | None = typer.Option(
         default=None,
-        min=1,
-        help="Limit processing to the first N detected chapters.",
+        help="Start from this detected chapter title, matched case-insensitively.",
+    ),
+    end_chapter: str | None = typer.Option(
+        default=None,
+        help="Stop at this detected chapter title, matched case-insensitively and included in the run.",
     ),
     database_url: str | None = typer.Option(
         default=None,
@@ -188,7 +212,8 @@ def render_audio(
             "title": title,
             "author": author,
             "episode_count": episode_count,
-            "chapter_limit": chapter_limit,
+            "start_chapter": start_chapter,
+            "end_chapter": end_chapter,
             "database_url": database_url,
         },
     )
@@ -196,7 +221,8 @@ def render_audio(
         source_path=source_path,
         title=title,
         author=author,
-        chapter_limit=chapter_limit,
+        start_chapter=start_chapter,
+        end_chapter=end_chapter,
         episode_count=episode_count,
         synthesize_audio=True,
     )

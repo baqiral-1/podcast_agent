@@ -112,7 +112,7 @@ export OPENAI_API_KEY=...
 export OPENAI_BASE_URL=https://api.openai.com
 ```
 
-The default speech model is `gpt-4o-mini-tts`, the default voice is `alloy`, and audio is written as `mp3` unless `Settings.tts` is overridden in code.
+The default speech model is `gpt-4o-mini-tts`, the default voice is `alloy`, and audio is written as `mp3` unless `Settings.tts` is overridden in code. Audio synthesis now runs up to `4` concurrent TTS requests by default via `Settings.pipeline.audio_parallelism`, with `Settings.pipeline.audio_retry_attempts` controlling per-segment retries. Final episode audio is still assembled by concatenating synthesized segment bytes in manifest order, so the current output path should be treated as `mp3`-oriented.
 
 For offline tests or local deterministic runs, inject the heuristic adapter explicitly instead of relying on the default runtime client.
 
@@ -139,6 +139,8 @@ podcast-agent ingest-book ./examples/book.txt --title "Example Book" --author "A
 podcast-agent index-book ./examples/book.txt --title "Example Book" --author "Author" --database-url "$DATABASE_URL"
 podcast-agent plan-episodes ./examples/book.txt --title "Example Book" --author "Author" --episode-count 2 --database-url "$DATABASE_URL"
 podcast-agent run-pipeline ./examples/book.txt --title "Example Book" --author "Author" --episode-count 2 --database-url "$DATABASE_URL"
+podcast-agent run-pipeline ./examples/book.txt --title "Example Book" --author "Author" --end-chapter "Chapter 3: Turning Point" --episode-count 1
+podcast-agent run-pipeline ./examples/book.txt --title "Example Book" --author "Author" --start-chapter "Chapter 3: Turning Point" --end-chapter "Chapter 5: Resolution" --episode-count 1
 podcast-agent run-pipeline ./examples/book.txt --title "Example Book" --author "Author" --episode-count 2 --with-audio
 podcast-agent render-audio ./examples/book.txt --title "Example Book" --author "Author" --episode-count 2
 ```
@@ -151,10 +153,12 @@ podcast-agent run-pipeline ./examples/river_of_hours.txt --title "River of Hours
 
 Artifacts are written to a per-run subdirectory under `.podcast_agent/runs/<book-title>-<timestamp-to-minute>/`, with nested book and episode folders inside that run. Each run root also includes `run.log`, which records stage transitions, full prompts, responses, TTS requests, and command metadata for that run.
 
+When `--start-chapter` and/or `--end-chapter` is provided, the pipeline selects an inclusive range of detected section titles. `--start-chapter` runs from the matched title to the end of the book, `--end-chapter` runs from the beginning through the matched title, and using both processes the inclusive range between them. Matching is case-insensitive and requires the full detected title.
+
 Episode planning now requires an explicit episode count. With the default settings:
 
 - requested episode count is treated as exact
-- planning fails clearly if the request would create an episode longer than the default `180` spoken-minute cap
+- planning fails clearly if the request would create an episode longer than the default `240` spoken-minute cap
 - planning still preserves contiguous chapter coverage and deterministic beat construction inside each episode
 
 ## Outputs and Contracts

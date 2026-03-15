@@ -240,6 +240,7 @@ When you complete a task, provide:
 Do not stop early.
 Inspect surrounding code, tests, and docs, then make the safest reasonable implementation.
 Document assumptions in the final response.
+
 ## Commit Messages
 
 ### Required Format
@@ -259,6 +260,7 @@ Document assumptions in the final response.
 - Infer the intent from the actual diff; do not use generic summaries that are not supported by the changes.
 - Prefer describing why the change exists and what it changes over listing filenames.
 - Keep bullets specific to concrete behavioural changes.
+- Ignore changes to the README or any files under docs unless they're the only changes in the commit.
 
 ### Ordering Rules
 

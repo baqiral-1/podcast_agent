@@ -384,6 +384,7 @@ class WritingAgent(Agent):
                     payload=payload,
                     violations=[],
                     missing_chunk_ids=[],
+                    cited_without_claim_chunk_ids=[],
                     last_error=exc,
                 )
                 continue
@@ -406,6 +407,7 @@ class WritingAgent(Agent):
                 payload=payload,
                 violations=violations,
                 missing_chunk_ids=self._uncited_chunk_ids(beat_script, payload),
+                cited_without_claim_chunk_ids=self._cited_without_claim_evidence_chunk_ids(beat_script),
                 last_error=None,
             )
             attempt += 1
@@ -434,6 +436,7 @@ class WritingAgent(Agent):
         payload: dict,
         violations: list[str],
         missing_chunk_ids: list[str],
+        cited_without_claim_chunk_ids: list[str],
         last_error: Exception | None,
     ) -> str:
         assigned_chunk_ids = self._assigned_chunk_ids(payload)
@@ -444,6 +447,7 @@ class WritingAgent(Agent):
             "Every claim must include non-empty evidence_chunk_ids chosen from the assigned beat retrieval hits.",
             "Every segment must include citations.",
             "Each segment's citations must exactly match the union of its claims' evidence_chunk_ids.",
+            "Repair order: first fix claim evidence_chunk_ids, then derive segment.citations from claims; never use citations alone to satisfy coverage.",
             "Do not concentrate evidence in the first few chunks when later assigned chunks contain distinct material.",
             "Keep the response compact and JSON-only.",
             "Use at most two segments unless one segment would be clearly insufficient.",
@@ -459,9 +463,28 @@ class WritingAgent(Agent):
             )
         if missing_chunk_ids:
             coverage_instructions.append(
-                "You must explicitly cover these missing chunk ids in claims and segment citations: "
+                "You must explicitly cover these missing chunk ids by attaching each one to at least one claim's evidence_chunk_ids: "
                 + ", ".join(missing_chunk_ids)
                 + "."
+            )
+            coverage_instructions.append(
+                "A missing chunk is not covered if it appears only in narration or only in segment.citations."
+            )
+            coverage_instructions.append(
+                "Do not add any missing chunk_id directly to segment.citations unless it also appears in a claim's evidence_chunk_ids."
+            )
+            coverage_instructions.append(
+                "After you finish the claims, set each segment's citations to the deduplicated union of that segment's claim evidence_chunk_ids and nothing else."
+            )
+        if cited_without_claim_chunk_ids:
+            coverage_instructions.append(
+                "These chunk ids appear in segment citations but not in any claim evidence. "
+                "For each one, either add it to a claim's evidence_chunk_ids or remove it from segment citations: "
+                + ", ".join(cited_without_claim_chunk_ids)
+                + "."
+            )
+            coverage_instructions.append(
+                "Do not preserve any citation unless it appears in claim evidence after rewriting."
             )
         if last_error is not None:
             if "truncated because it hit the completion token limit" in str(last_error):
@@ -634,3 +657,11 @@ class WritingAgent(Agent):
                 for chunk_id in segment.citations
             }
         )
+
+    def _cited_without_claim_evidence_chunk_ids(self, script: BeatScript) -> list[str]:
+        claim_chunk_ids = set(self._claim_evidence_chunk_ids(script))
+        return [
+            chunk_id
+            for chunk_id in self._segment_citation_chunk_ids(script)
+            if chunk_id not in claim_chunk_ids
+        ]

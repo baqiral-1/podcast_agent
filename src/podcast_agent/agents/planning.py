@@ -3,9 +3,18 @@
 from __future__ import annotations
 
 from collections import Counter
+from json import JSONDecodeError
+
+from pydantic import ValidationError
 
 from podcast_agent.agents.base import Agent
-from podcast_agent.schemas.models import BookAnalysis, BookStructure, EpisodePlan, SeriesPlan
+from podcast_agent.schemas.models import (
+    BookAnalysis,
+    BookStructure,
+    EpisodePlan,
+    PlannerSeriesPlan,
+    SeriesPlan,
+)
 from podcast_agent.utils.planning_payloads import (
     build_analysis_summary,
     build_structure_summary,
@@ -24,7 +33,7 @@ class EpisodePlanningAgent(Agent):
         "source material as evenly as practical across the requested episodes. Chunk coverage will be expanded deterministically "
         "from those chapter spans."
     )
-    response_model = SeriesPlan
+    response_model = PlannerSeriesPlan
 
     def __init__(
         self,
@@ -67,13 +76,8 @@ class EpisodePlanningAgent(Agent):
             )
         payload = self.build_payload(structure, analysis, episode_count)
         self._check_payload_size(payload, structure, analysis, episode_count)
-        plan = self.llm.generate_json(
-            schema_name=self.schema_name,
-            instructions=self.instructions,
-            payload=payload,
-            response_model=self.response_model,
-        )
-        plan = self._normalize_plan(plan, structure, episode_count)
+        compact_plan = self._generate_compact_plan(payload=payload, episode_count=episode_count)
+        plan = self._normalize_plan(compact_plan, structure, episode_count)
         violations = self._compliance_violations(plan, structure, analysis, episode_count)
         self._log_planning_metrics(plan, structure, analysis, violations, retried=False, episode_count=episode_count)
         if not violations:
@@ -82,15 +86,16 @@ class EpisodePlanningAgent(Agent):
         retry_instructions = (
             f"{self.instructions} The previous plan violated these constraints: "
             f"{'; '.join(violations)}. Reuse or merge the provided analysis episode clusters instead of "
-            f"re-splitting into chapter-level episodes, and return exactly {episode_count} episodes."
+            f"re-splitting into chapter-level episodes, and return exactly {episode_count} episodes. "
+            "Return only episode metadata and chapter_ids; do not include chunk_ids or beats."
         )
-        retry_plan = self.llm.generate_json(
+        retry_compact_plan = self.llm.generate_json(
             schema_name=self.schema_name,
             instructions=retry_instructions,
             payload=payload,
             response_model=self.response_model,
         )
-        retry_plan = self._normalize_plan(retry_plan, structure, episode_count)
+        retry_plan = self._normalize_plan(retry_compact_plan, structure, episode_count)
         retry_violations = self._compliance_violations(retry_plan, structure, analysis, episode_count)
         self._log_planning_metrics(
             retry_plan,
@@ -106,6 +111,59 @@ class EpisodePlanningAgent(Agent):
                 + "; ".join(retry_violations)
             )
         return retry_plan
+
+    def _generate_compact_plan(self, *, payload: dict, episode_count: int) -> PlannerSeriesPlan:
+        run_logger = getattr(self.llm, "run_logger", None)
+        retry_instructions = self.instructions
+        last_error: Exception | None = None
+        for retried in (False, True):
+            try:
+                return self.llm.generate_json(
+                    schema_name=self.schema_name,
+                    instructions=retry_instructions,
+                    payload=payload,
+                    response_model=self.response_model,
+                )
+            except (ValidationError, JSONDecodeError, ValueError, RuntimeError) as exc:
+                last_error = exc
+                if run_logger is not None:
+                    run_logger.log(
+                        "planning_retry",
+                        retried=retried,
+                        error_type=type(exc).__name__,
+                        error_message=str(exc),
+                    )
+                if retried:
+                    break
+                retry_instructions = self._build_retry_instructions(
+                    payload=payload,
+                    episode_count=episode_count,
+                    last_error=exc,
+                )
+        raise RuntimeError(f"Series plan generation failed after retry: {last_error}") from last_error
+
+    def _build_retry_instructions(
+        self,
+        *,
+        payload: dict,
+        episode_count: int,
+        last_error: Exception,
+    ) -> str:
+        correction_instructions = [
+            "The previous series plan was invalid or incomplete.",
+            "Return the compact planner output only.",
+            f"Set book_id to {payload['structure']['book_id']}.",
+            f"Return exactly {episode_count} episodes.",
+            "Use chapter_ids as the authoritative contiguous partition of the selected chapters.",
+            "Return only episode metadata and chapter_ids; do not include chunk_ids or beats.",
+            "Keep strategy_summary, title, synopsis, and themes concise.",
+        ]
+        if "truncated because it hit the completion token limit" in str(last_error):
+            correction_instructions.append(
+                "The previous response was truncated. Reduce output length substantially and avoid unnecessary detail."
+            )
+        correction_instructions.append(f"Previous schema/generation error: {last_error}.")
+        return f"{self.instructions} {' '.join(correction_instructions)}"
 
     def _compliance_violations(
         self,
@@ -164,7 +222,7 @@ class EpisodePlanningAgent(Agent):
                 )
         return violations
 
-    def _normalize_plan(self, plan: SeriesPlan, structure: BookStructure, episode_count: int) -> SeriesPlan:
+    def _normalize_plan(self, plan: PlannerSeriesPlan | SeriesPlan, structure: BookStructure, episode_count: int) -> SeriesPlan:
         chapter_order = {chapter.chapter_id: chapter.chapter_number for chapter in structure.chapters}
         chapter_to_chunks = {chapter.chapter_id: list(chapter.chunk_ids) for chapter in structure.chapters}
         chapter_titles = {chapter.chapter_id: chapter.title for chapter in structure.chapters}

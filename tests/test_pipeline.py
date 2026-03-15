@@ -1,9 +1,12 @@
 """Integration and unit tests for the podcast pipeline."""
 
 from __future__ import annotations
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import threading
+import time
 
+import pytest
 from typer.testing import CliRunner
 
 from podcast_agent.cli.app import app
@@ -11,7 +14,14 @@ from podcast_agent.config import Settings
 from podcast_agent.db import InMemoryRepository
 from podcast_agent.llm import HeuristicLLMClient
 from podcast_agent.pipeline.orchestrator import PipelineOrchestrator
-from podcast_agent.schemas.models import EpisodeOutput, EpisodePlan, EpisodeScript, GroundingReport
+from podcast_agent.schemas.models import (
+    EpisodeOutput,
+    EpisodePlan,
+    EpisodeScript,
+    GroundingReport,
+    RenderManifest,
+    RenderSegment,
+)
 from podcast_agent.tts import TTSClient
 
 
@@ -35,6 +45,106 @@ class FakeTTSClient(TTSClient):
 
     def synthesize(self, text: str, voice: str | None = None, audio_format: str | None = None) -> bytes:
         return f"{voice or 'default'}::{audio_format or 'mp3'}::{text}".encode("utf-8")
+
+
+class DelayedTTSClient(TTSClient):
+    """TTS stub that finishes segments out of order."""
+
+    def __init__(self, delays: dict[str, float]) -> None:
+        super().__init__()
+        self.delays = delays
+
+    def synthesize(self, text: str, voice: str | None = None, audio_format: str | None = None) -> bytes:
+        del voice, audio_format
+        time.sleep(self.delays[text])
+        return text.encode("utf-8")
+
+
+class RetryingTTSClient(TTSClient):
+    """TTS stub with per-text transient or permanent failures."""
+
+    def __init__(self, failures: dict[str, int]) -> None:
+        super().__init__()
+        self.failures = failures
+        self.call_counts: dict[str, int] = {}
+
+    def synthesize(self, text: str, voice: str | None = None, audio_format: str | None = None) -> bytes:
+        del voice, audio_format
+        self.call_counts[text] = self.call_counts.get(text, 0) + 1
+        if self.call_counts[text] <= self.failures.get(text, 0):
+            raise RuntimeError(f"planned failure for {text}")
+        return text.encode("utf-8")
+
+
+class ConcurrencyTrackingTTSClient(TTSClient):
+    """TTS stub that records peak concurrent synthesize calls."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._lock = threading.Lock()
+        self.active_calls = 0
+        self.max_active_calls = 0
+
+    def synthesize(self, text: str, voice: str | None = None, audio_format: str | None = None) -> bytes:
+        del text, voice, audio_format
+        with self._lock:
+            self.active_calls += 1
+            self.max_active_calls = max(self.max_active_calls, self.active_calls)
+        try:
+            time.sleep(0.05)
+            return b"audio"
+        finally:
+            with self._lock:
+                self.active_calls -= 1
+
+
+def _build_render_manifest(episode_id: str, segment_texts: list[str]) -> RenderManifest:
+    return RenderManifest(
+        episode_id=episode_id,
+        title=f"Episode {episode_id}",
+        narrator="Narrator",
+        segments=[
+            RenderSegment(
+                segment_id=f"{episode_id}-segment-{index}",
+                speaker="Narrator",
+                text=text,
+                ssml=f"<speak>{text}</speak>",
+                grounded_claim_ids=[f"claim-{index}"],
+            )
+            for index, text in enumerate(segment_texts, start=1)
+        ],
+    )
+
+
+def _build_audio_orchestrator(
+    tmp_path: Path,
+    tts: TTSClient,
+    *,
+    audio_parallelism: int = 4,
+    audio_retry_attempts: int = 2,
+) -> PipelineOrchestrator:
+    settings = Settings()
+    settings = settings.model_copy(
+        update={
+            "pipeline": settings.pipeline.model_copy(
+                update={
+                    "artifact_root": tmp_path / "runs",
+                    "audio_parallelism": audio_parallelism,
+                    "audio_retry_attempts": audio_retry_attempts,
+                }
+            )
+        }
+    )
+    orchestrator = PipelineOrchestrator(
+        repository=InMemoryRepository(),
+        llm=HeuristicLLMClient(),
+        tts=tts,
+        settings=settings,
+    )
+    orchestrator.current_book_id = "observatory-book"
+    orchestrator.run_id = "audio-run"
+    orchestrator.run_logger.bind_run(orchestrator.run_id)
+    return orchestrator
 
 
 def test_pipeline_creates_multi_chapter_episode_and_manifest(tmp_path: Path) -> None:
@@ -82,7 +192,7 @@ def test_index_book_persists_chunks_and_embeddings(tmp_path: Path) -> None:
     assert len(repository.structures[structure.book_id].chunks) == len(repository.embeddings[structure.book_id])
 
 
-def test_index_book_can_limit_detected_chapters(tmp_path: Path) -> None:
+def test_index_book_can_end_at_matching_chapter_title(tmp_path: Path) -> None:
     book_path = tmp_path / "book.txt"
     book_path.write_text(BOOK_TEXT, encoding="utf-8")
     repository = InMemoryRepository()
@@ -97,7 +207,7 @@ def test_index_book_can_limit_detected_chapters(tmp_path: Path) -> None:
     )
 
     ingestion = orchestrator.ingest_book(book_path, title="Observatory Book", author="A. Writer")
-    structure = orchestrator.index_book(ingestion, chapter_limit=2)
+    structure = orchestrator.index_book(ingestion, end_chapter="chapter 2: signals")
 
     assert len(structure.chapters) == 2
     assert [chapter.chapter_number for chapter in structure.chapters] == [1, 2]
@@ -108,15 +218,114 @@ def test_index_book_can_limit_detected_chapters(tmp_path: Path) -> None:
     assert '"chapter_number": 3' not in run_log
 
 
+def test_index_book_can_start_from_matching_chapter_title(tmp_path: Path) -> None:
+    book_path = tmp_path / "book.txt"
+    book_path.write_text(BOOK_TEXT, encoding="utf-8")
+    settings = Settings()
+    settings = settings.model_copy(
+        update={"pipeline": settings.pipeline.model_copy(update={"artifact_root": tmp_path / "runs"})}
+    )
+    orchestrator = PipelineOrchestrator(
+        repository=InMemoryRepository(),
+        llm=HeuristicLLMClient(),
+        settings=settings,
+    )
+
+    ingestion = orchestrator.ingest_book(book_path, title="Observatory Book", author="A. Writer")
+    structure = orchestrator.index_book(ingestion, start_chapter="chapter 2: signals")
+
+    assert [chapter.title for chapter in structure.chapters] == [
+        "Chapter 2: Signals",
+        "Chapter 3: Fracture",
+        "Chapter 4: Legacy",
+    ]
+    assert [chapter.chapter_number for chapter in structure.chapters] == [1, 2, 3]
+
+
+def test_index_book_can_apply_inclusive_chapter_range(tmp_path: Path) -> None:
+    book_path = tmp_path / "book.txt"
+    book_path.write_text(BOOK_TEXT, encoding="utf-8")
+    settings = Settings()
+    settings = settings.model_copy(
+        update={"pipeline": settings.pipeline.model_copy(update={"artifact_root": tmp_path / "runs"})}
+    )
+    orchestrator = PipelineOrchestrator(
+        repository=InMemoryRepository(),
+        llm=HeuristicLLMClient(),
+        settings=settings,
+    )
+
+    ingestion = orchestrator.ingest_book(book_path, title="Observatory Book", author="A. Writer")
+    structure = orchestrator.index_book(
+        ingestion,
+        start_chapter="chapter 2: signals",
+        end_chapter="chapter 3: fracture",
+    )
+
+    assert [chapter.title for chapter in structure.chapters] == [
+        "Chapter 2: Signals",
+        "Chapter 3: Fracture",
+    ]
+    assert [chapter.chapter_number for chapter in structure.chapters] == [1, 2]
+
+
+def test_index_book_raises_for_unknown_start_chapter(tmp_path: Path) -> None:
+    book_path = tmp_path / "book.txt"
+    book_path.write_text(BOOK_TEXT, encoding="utf-8")
+    orchestrator = PipelineOrchestrator(
+        repository=InMemoryRepository(),
+        llm=HeuristicLLMClient(),
+    )
+
+    ingestion = orchestrator.ingest_book(book_path, title="Observatory Book", author="A. Writer")
+
+    with pytest.raises(ValueError, match="Unable to find start chapter"):
+        orchestrator.index_book(ingestion, start_chapter="Chapter 9: Missing")
+
+
+def test_index_book_raises_for_unknown_end_chapter(tmp_path: Path) -> None:
+    book_path = tmp_path / "book.txt"
+    book_path.write_text(BOOK_TEXT, encoding="utf-8")
+    orchestrator = PipelineOrchestrator(
+        repository=InMemoryRepository(),
+        llm=HeuristicLLMClient(),
+    )
+
+    ingestion = orchestrator.ingest_book(book_path, title="Observatory Book", author="A. Writer")
+
+    with pytest.raises(ValueError, match="Unable to find end chapter"):
+        orchestrator.index_book(ingestion, end_chapter="Chapter 9: Missing")
+
+
+def test_index_book_raises_when_end_precedes_start(tmp_path: Path) -> None:
+    book_path = tmp_path / "book.txt"
+    book_path.write_text(BOOK_TEXT, encoding="utf-8")
+    orchestrator = PipelineOrchestrator(
+        repository=InMemoryRepository(),
+        llm=HeuristicLLMClient(),
+    )
+
+    ingestion = orchestrator.ingest_book(book_path, title="Observatory Book", author="A. Writer")
+
+    with pytest.raises(ValueError, match="appears before start chapter"):
+        orchestrator.index_book(
+            ingestion,
+            start_chapter="Chapter 3: Fracture",
+            end_chapter="Chapter 2: Signals",
+        )
+
+
 def test_pipeline_defaults_raise_parallelism() -> None:
     settings = Settings()
 
     assert settings.pipeline.episode_parallelism == 3
+    assert settings.pipeline.audio_parallelism == 4
+    assert settings.pipeline.audio_retry_attempts == 2
     assert settings.pipeline.beat_parallelism == 4
     assert settings.pipeline.beat_write_timeout_seconds == 120.0
     assert settings.pipeline.grounding_parallelism == 3
     assert settings.pipeline.structuring_parallelism == 3
-    assert settings.pipeline.max_episode_minutes == 180
+    assert settings.pipeline.max_episode_minutes == 240
     assert settings.pipeline.max_structuring_llm_chapter_words == 42232
 
 
@@ -227,7 +436,70 @@ def test_pipeline_can_synthesize_audio_manifest(tmp_path: Path) -> None:
     assert Path(audio_manifest["audio_path"]).exists()
 
 
-def test_run_pipeline_can_limit_detected_chapters(tmp_path: Path) -> None:
+def test_synthesize_audio_preserves_manifest_order_when_parallel(tmp_path: Path) -> None:
+    orchestrator = _build_audio_orchestrator(
+        tmp_path,
+        DelayedTTSClient({"first": 0.03, "second": 0.01, "third": 0.02}),
+        audio_parallelism=3,
+    )
+    manifest = _build_render_manifest("episode-1", ["first", "second", "third"])
+
+    audio_manifest = orchestrator.synthesize_audio(manifest)
+
+    assert [segment["text"] for segment in audio_manifest.model_dump(mode="json")["segments"]] == [
+        "first",
+        "second",
+        "third",
+    ]
+    assert Path(audio_manifest.audio_path).read_bytes() == b"firstsecondthird"
+
+
+def test_synthesize_audio_retries_failed_segment_then_succeeds(tmp_path: Path) -> None:
+    tts = RetryingTTSClient({"retry-me": 1})
+    orchestrator = _build_audio_orchestrator(tmp_path, tts, audio_parallelism=2, audio_retry_attempts=2)
+    manifest = _build_render_manifest("episode-1", ["retry-me", "steady"])
+
+    audio_manifest = orchestrator.synthesize_audio(manifest)
+
+    assert tts.call_counts["retry-me"] == 2
+    assert tts.call_counts["steady"] == 1
+    assert Path(audio_manifest.audio_path).read_bytes() == b"retry-mesteady"
+
+
+def test_synthesize_audio_fails_episode_after_retries_and_skips_artifact(tmp_path: Path) -> None:
+    tts = RetryingTTSClient({"always-fail": 3})
+    orchestrator = _build_audio_orchestrator(tmp_path, tts, audio_parallelism=2, audio_retry_attempts=2)
+    manifest = _build_render_manifest("episode-1", ["always-fail", "steady"])
+    expected_audio_path = tmp_path / "runs" / "audio-run" / "observatory-book" / "episode-1" / "episode-1.mp3"
+
+    try:
+        orchestrator.synthesize_audio(manifest)
+    except RuntimeError as exc:
+        assert "episode-1-segment-1" in str(exc)
+    else:
+        raise AssertionError("Expected audio synthesis to fail after exhausting retries")
+
+    assert tts.call_counts["always-fail"] == 3
+    assert not expected_audio_path.exists()
+
+
+def test_synthesize_audio_uses_global_parallelism_cap_across_episodes(tmp_path: Path) -> None:
+    tts = ConcurrencyTrackingTTSClient()
+    orchestrator = _build_audio_orchestrator(tmp_path, tts, audio_parallelism=2)
+    manifests = [
+        _build_render_manifest("episode-1", ["a1", "a2", "a3"]),
+        _build_render_manifest("episode-2", ["b1", "b2", "b3"]),
+    ]
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(orchestrator.synthesize_audio, manifest) for manifest in manifests]
+        for future in futures:
+            future.result()
+
+    assert tts.max_active_calls == 2
+
+
+def test_run_pipeline_can_end_at_matching_chapter_title(tmp_path: Path) -> None:
     book_path = tmp_path / "book.txt"
     book_path.write_text(BOOK_TEXT, encoding="utf-8")
     settings = Settings()
@@ -242,7 +514,7 @@ def test_run_pipeline_can_limit_detected_chapters(tmp_path: Path) -> None:
         book_path,
         title="Observatory Book",
         author="A. Writer",
-        chapter_limit=2,
+        end_chapter="chapter 2: signals",
         episode_count=1,
     )
 
@@ -252,6 +524,64 @@ def test_run_pipeline_can_limit_detected_chapters(tmp_path: Path) -> None:
     assert structure_path.exists()
     structure_payload = structure_path.read_text(encoding="utf-8")
     assert '"chapter_number": 3' not in structure_payload
+
+
+def test_run_pipeline_can_start_from_matching_chapter_title(tmp_path: Path) -> None:
+    book_path = tmp_path / "book.txt"
+    book_path.write_text(BOOK_TEXT, encoding="utf-8")
+    settings = Settings()
+    settings = settings.model_copy(update={"pipeline": settings.pipeline.model_copy(update={"artifact_root": tmp_path / "runs"})})
+    orchestrator = PipelineOrchestrator(
+        repository=InMemoryRepository(),
+        llm=HeuristicLLMClient(),
+        settings=settings,
+    )
+
+    result = orchestrator.run_pipeline(
+        book_path,
+        title="Observatory Book",
+        author="A. Writer",
+        start_chapter="chapter 2: signals",
+        episode_count=1,
+    )
+
+    planned_chapters = result["series_plan"]["episodes"][0]["chapter_ids"]
+    assert len(planned_chapters) == 3
+    structure_path = tmp_path / "runs" / orchestrator.run_id / "observatory-book" / "structure.json"
+    assert structure_path.exists()
+    structure_payload = structure_path.read_text(encoding="utf-8")
+    assert '"title": "Chapter 2: Signals"' in structure_payload
+    assert '"title": "Chapter 1: Arrival"' not in structure_payload
+
+
+def test_run_pipeline_can_apply_inclusive_chapter_range(tmp_path: Path) -> None:
+    book_path = tmp_path / "book.txt"
+    book_path.write_text(BOOK_TEXT, encoding="utf-8")
+    settings = Settings()
+    settings = settings.model_copy(update={"pipeline": settings.pipeline.model_copy(update={"artifact_root": tmp_path / "runs"})})
+    orchestrator = PipelineOrchestrator(
+        repository=InMemoryRepository(),
+        llm=HeuristicLLMClient(),
+        settings=settings,
+    )
+
+    result = orchestrator.run_pipeline(
+        book_path,
+        title="Observatory Book",
+        author="A. Writer",
+        start_chapter="chapter 2: signals",
+        end_chapter="chapter 3: fracture",
+        episode_count=1,
+    )
+
+    planned_chapters = result["series_plan"]["episodes"][0]["chapter_ids"]
+    assert len(planned_chapters) == 2
+    structure_path = tmp_path / "runs" / orchestrator.run_id / "observatory-book" / "structure.json"
+    assert structure_path.exists()
+    structure_payload = structure_path.read_text(encoding="utf-8")
+    assert '"title": "Chapter 2: Signals"' in structure_payload
+    assert '"title": "Chapter 3: Fracture"' in structure_payload
+    assert '"title": "Chapter 4: Legacy"' not in structure_payload
 
 
 def test_run_pipeline_processes_episodes_in_parallel_when_enabled(tmp_path: Path, monkeypatch) -> None:

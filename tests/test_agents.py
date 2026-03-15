@@ -6,6 +6,7 @@ from threading import Event, Lock
 import json
 import time
 
+import pytest
 from pydantic import ValidationError
 
 from podcast_agent.llm.base import LLMClient
@@ -399,6 +400,64 @@ class CoverageAwareRetryWritingLLM(LLMClient):
         return HeuristicLLMClient().generate_json(schema_name, instructions, payload, response_model)
 
 
+class CitationMismatchRetryWritingLLM(LLMClient):
+    """LLM stub that cites a chunk without attaching it to claim evidence, then repairs on retry."""
+
+    def __init__(self) -> None:
+        self.instructions_seen: list[str] = []
+
+    def generate_json(self, schema_name, instructions, payload, response_model):
+        if schema_name == "beat_script":
+            self.instructions_seen.append(instructions)
+            beat = payload["beat"]
+            chunk_ids = [hit["chunk_id"] for hit in payload["retrieval_hits"]]
+            if len(self.instructions_seen) == 1:
+                return response_model.model_validate(
+                    {
+                        "beat_id": beat["beat_id"],
+                        "segments": [
+                            {
+                                "segment_id": f"{beat['beat_id']}-segment-1",
+                                "beat_id": beat["beat_id"],
+                                "heading": beat["title"],
+                                "narration": ("A grounded narration with mismatched citations. " * 8).strip(),
+                                "claims": [
+                                    {
+                                        "claim_id": f"{beat['beat_id']}-claim-1",
+                                        "text": "Grounded claim one.",
+                                        "evidence_chunk_ids": [chunk_ids[1]],
+                                    }
+                                ],
+                                "citations": chunk_ids[:2],
+                            }
+                        ],
+                    }
+                )
+            return response_model.model_validate(
+                {
+                    "beat_id": beat["beat_id"],
+                    "segments": [
+                        {
+                            "segment_id": f"{beat['beat_id']}-segment-1",
+                            "beat_id": beat["beat_id"],
+                            "heading": beat["title"],
+                            "narration": ("A repaired grounded narration that fully covers the assigned material in compact spoken form. " * 8).strip(),
+                            "claims": [
+                                {
+                                    "claim_id": f"{beat['beat_id']}-claim-{index}",
+                                    "text": f"Grounded claim {index}.",
+                                    "evidence_chunk_ids": [chunk_id],
+                                }
+                                for index, chunk_id in enumerate(chunk_ids, start=1)
+                            ],
+                            "citations": chunk_ids,
+                        }
+                    ],
+                }
+            )
+        return HeuristicLLMClient().generate_json(schema_name, instructions, payload, response_model)
+
+
 class TruncatingThenValidWritingLLM(LLMClient):
     """LLM stub that truncates once before succeeding."""
 
@@ -664,8 +723,56 @@ def test_writing_retry_instructions_include_missing_chunk_ids() -> None:
     assert len(llm.instructions_seen) == 2
     retry_instructions = llm.instructions_seen[1]
     assert "every assigned chunk_id must appear in claim evidence_chunk_ids" in retry_instructions
+    assert "Repair order: first fix claim evidence_chunk_ids, then derive segment.citations from claims; never use citations alone to satisfy coverage." in retry_instructions
+    assert "A missing chunk is not covered if it appears only in narration or only in segment.citations." in retry_instructions
+    assert "Do not add any missing chunk_id directly to segment.citations unless it also appears in a claim's evidence_chunk_ids." in retry_instructions
+    assert "After you finish the claims, set each segment's citations to the deduplicated union of that segment's claim evidence_chunk_ids and nothing else." in retry_instructions
     for chunk_id in beat.chunk_ids[1:]:
         assert chunk_id in retry_instructions
+
+
+def test_writing_retry_instructions_include_cited_only_chunk_ids() -> None:
+    llm = CitationMismatchRetryWritingLLM()
+    writer = WritingAgent(llm, beat_parallelism=1)
+    retrieval_hits = [
+        RetrievalHit(
+            chunk_id=f"chunk-{index}",
+            chapter_id="chapter-1",
+            chapter_title="Chapter 1",
+            score=1.0,
+            text=("word " * 120).strip(),
+        )
+        for index in range(1, 4)
+    ]
+    episode = EpisodePlan(
+        episode_id="episode-1",
+        sequence=1,
+        title="Episode 1",
+        synopsis="Synopsis",
+        chapter_ids=["chapter-1"],
+        chunk_ids=[hit.chunk_id for hit in retrieval_hits],
+        themes=["alpha"],
+        beats=[
+            EpisodeBeat(
+                beat_id="beat-1",
+                title="Beat 1",
+                objective="Objective",
+                chunk_ids=[hit.chunk_id for hit in retrieval_hits],
+                claim_requirements=[],
+            )
+        ],
+    )
+    payload = writer.build_payload(episode, retrieval_hits)
+    beat_payload = writer._build_beat_payloads(payload)[0]
+
+    beat_script = writer._write_beat(beat_payload)
+
+    assert beat_script.segments
+    assert len(llm.instructions_seen) == 2
+    retry_instructions = llm.instructions_seen[1]
+    assert "appear in segment citations but not in any claim evidence" in retry_instructions
+    assert "chunk-1" in retry_instructions
+    assert "Do not preserve any citation unless it appears in claim evidence after rewriting." in retry_instructions
 
 
 def test_writing_instructions_use_simplified_hard_rules_prompt() -> None:
@@ -794,6 +901,71 @@ def test_split_into_chapters_falls_back_when_headings_are_too_sparse() -> None:
     assert len(sections) >= 2
     assert sections[0].title == "Section 1"
     assert all("citation" not in section.body for section in sections)
+
+
+def test_structuring_can_start_from_matching_chapter_title() -> None:
+    structure = StructuringAgent(HeuristicLLMClient()).structure(
+        _build_ingestion(),
+        start_chapter="chapter 3: fracture",
+    )
+
+    assert [chapter.title for chapter in structure.chapters] == [
+        "Chapter 3: Fracture",
+        "Chapter 4: Legacy",
+    ]
+    assert [chapter.chapter_number for chapter in structure.chapters] == [1, 2]
+
+
+def test_structuring_can_end_at_matching_chapter_title() -> None:
+    structure = StructuringAgent(HeuristicLLMClient()).structure(
+        _build_ingestion(),
+        end_chapter="chapter 2: signals",
+    )
+
+    assert [chapter.title for chapter in structure.chapters] == [
+        "Chapter 1: Arrival",
+        "Chapter 2: Signals",
+    ]
+    assert [chapter.chapter_number for chapter in structure.chapters] == [1, 2]
+
+
+def test_structuring_can_apply_inclusive_chapter_range() -> None:
+    structure = StructuringAgent(HeuristicLLMClient()).structure(
+        _build_ingestion(),
+        start_chapter="chapter 2: signals",
+        end_chapter="chapter 3: fracture",
+    )
+
+    assert [chapter.title for chapter in structure.chapters] == [
+        "Chapter 2: Signals",
+        "Chapter 3: Fracture",
+    ]
+    assert [chapter.chapter_number for chapter in structure.chapters] == [1, 2]
+
+
+def test_structuring_raises_when_start_chapter_is_missing() -> None:
+    agent = StructuringAgent(HeuristicLLMClient())
+
+    with pytest.raises(ValueError, match="Unable to find start chapter"):
+        agent.structure(_build_ingestion(), start_chapter="Chapter 9: Missing")
+
+
+def test_structuring_raises_when_end_chapter_is_missing() -> None:
+    agent = StructuringAgent(HeuristicLLMClient())
+
+    with pytest.raises(ValueError, match="Unable to find end chapter"):
+        agent.structure(_build_ingestion(), end_chapter="Chapter 9: Missing")
+
+
+def test_structuring_raises_when_end_precedes_start() -> None:
+    agent = StructuringAgent(HeuristicLLMClient())
+
+    with pytest.raises(ValueError, match="appears before start chapter"):
+        agent.structure(
+            _build_ingestion(),
+            start_chapter="Chapter 3: Fracture",
+            end_chapter="Chapter 2: Signals",
+        )
 
 
 def test_structuring_skips_ocr_normalization_for_text_sources(monkeypatch) -> None:

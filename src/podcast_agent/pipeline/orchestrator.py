@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 import re
+import threading
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -55,6 +56,7 @@ class PipelineOrchestrator:
         self.run_logger = RunLogger(self.settings.pipeline.artifact_root)
         self.run_id: str | None = None
         self.current_book_id: str | None = None
+        self._audio_semaphore = threading.BoundedSemaphore(self.settings.pipeline.audio_parallelism)
         if hasattr(self.llm, "set_run_logger"):
             self.llm.set_run_logger(self.run_logger)
         self.tts = tts or build_tts_client(self.settings)
@@ -162,17 +164,23 @@ class PipelineOrchestrator:
         self,
         ingestion: BookIngestionResult,
         *,
-        chapter_limit: int | None = None,
+        start_chapter: str | None = None,
+        end_chapter: str | None = None,
     ):
         """Structure the book and store chunks plus embeddings in the repository."""
 
         self.run_logger.log("stage_start", stage="index_book", book_id=ingestion.book_id)
-        structure = self.structuring_agent.structure(ingestion, chapter_limit=chapter_limit)
-        if chapter_limit is not None:
+        structure = self.structuring_agent.structure(
+            ingestion,
+            start_chapter=start_chapter,
+            end_chapter=end_chapter,
+        )
+        if start_chapter is not None or end_chapter is not None:
             self.run_logger.log(
-                "chapter_limit_applied",
+                "chapter_selection_applied",
                 book_id=structure.book_id,
-                chapter_limit=chapter_limit,
+                start_chapter=start_chapter,
+                end_chapter=end_chapter,
                 chapter_count=len(structure.chapters),
                 chunk_count=len(structure.chunks),
             )
@@ -357,19 +365,31 @@ class PipelineOrchestrator:
             book_id=self.current_book_id,
             episode_id=manifest.episode_id,
         )
-        audio_segments = []
+        if len(manifest.segments) <= 1 or self.settings.pipeline.audio_parallelism == 1:
+            synthesized_segments = [
+                self._synthesize_audio_segment(index, manifest.episode_id, segment)
+                for index, segment in enumerate(manifest.segments)
+            ]
+        else:
+            max_workers = min(len(manifest.segments), self.settings.pipeline.audio_parallelism)
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = [
+                    executor.submit(self._synthesize_audio_segment, index, manifest.episode_id, segment)
+                    for index, segment in enumerate(manifest.segments)
+                ]
+                synthesized_segments = []
+                try:
+                    for future in futures:
+                        synthesized_segments.append(future.result())
+                except Exception:
+                    for future in futures:
+                        future.cancel()
+                    raise
+        synthesized_segments.sort(key=lambda item: item[0])
+        audio_segments = [audio_segment for _, _, audio_segment in synthesized_segments]
         combined_audio = bytearray()
-        for index, segment in enumerate(manifest.segments, start=1):
-            audio_bytes = self.tts.synthesize(segment.text)
+        for _, audio_bytes, _ in synthesized_segments:
             combined_audio.extend(audio_bytes)
-            audio_segments.append(
-                AudioSegmentFile(
-                    segment_id=segment.segment_id,
-                    speaker=segment.speaker,
-                    text=segment.text,
-                    grounded_claim_ids=segment.grounded_claim_ids,
-                )
-            )
         extension = self.settings.tts.audio_format
         file_name = f"{manifest.episode_id}.{extension}"
         relative_dir = self._episode_artifact_key(self.current_book_id, manifest.episode_id)
@@ -397,12 +417,71 @@ class PipelineOrchestrator:
         )
         return audio_manifest
 
+    def _synthesize_audio_segment(
+        self,
+        index: int,
+        episode_id: str,
+        segment: RenderSegment,
+    ) -> tuple[int, bytes, AudioSegmentFile]:
+        audio_bytes = self._synthesize_segment_with_retry(episode_id, segment)
+        return (
+            index,
+            audio_bytes,
+            AudioSegmentFile(
+                segment_id=segment.segment_id,
+                speaker=segment.speaker,
+                text=segment.text,
+                grounded_claim_ids=segment.grounded_claim_ids,
+            ),
+        )
+
+    def _synthesize_segment_with_retry(self, episode_id: str, segment: RenderSegment) -> bytes:
+        total_attempts = self.settings.pipeline.audio_retry_attempts + 1
+        for attempt in range(1, total_attempts + 1):
+            self.run_logger.log(
+                "tts_segment_attempt",
+                book_id=self.current_book_id,
+                episode_id=episode_id,
+                segment_id=segment.segment_id,
+                attempt=attempt,
+                total_attempts=total_attempts,
+            )
+            try:
+                with self._audio_semaphore:
+                    return self.tts.synthesize(segment.text)
+            except Exception as exc:
+                if attempt == total_attempts:
+                    self.run_logger.log(
+                        "tts_segment_failed",
+                        book_id=self.current_book_id,
+                        episode_id=episode_id,
+                        segment_id=segment.segment_id,
+                        attempt=attempt,
+                        error_type=type(exc).__name__,
+                        error_message=str(exc),
+                    )
+                    raise RuntimeError(
+                        f"Audio synthesis failed for segment '{segment.segment_id}' in episode "
+                        f"'{episode_id}' after {attempt} attempts."
+                    ) from exc
+                self.run_logger.log(
+                    "tts_segment_retry",
+                    book_id=self.current_book_id,
+                    episode_id=episode_id,
+                    segment_id=segment.segment_id,
+                    attempt=attempt,
+                    error_type=type(exc).__name__,
+                    error_message=str(exc),
+                )
+        raise RuntimeError(f"Audio synthesis exhausted retries for segment '{segment.segment_id}'.")
+
     def run_pipeline(
         self,
         source_path: str | Path,
         title: str | None = None,
         author: str = "Unknown",
-        chapter_limit: int | None = None,
+        start_chapter: str | None = None,
+        end_chapter: str | None = None,
         episode_count: int | None = None,
         synthesize_audio: bool = False,
     ) -> dict:
@@ -411,7 +490,11 @@ class PipelineOrchestrator:
         if episode_count is None:
             raise TypeError("episode_count is required for run_pipeline")
         ingestion = self.ingest_book(source_path=source_path, title=title, author=author)
-        structure = self.index_book(ingestion, chapter_limit=chapter_limit)
+        structure = self.index_book(
+            ingestion,
+            start_chapter=start_chapter,
+            end_chapter=end_chapter,
+        )
         analysis, plan = self.plan_episodes(structure, episode_count=episode_count)
         self.run_logger.log(
             "episode_parallelism_configured",
@@ -567,20 +650,6 @@ def _detect_source_type(path: Path) -> SourceType:
     if suffix == ".md":
         return SourceType.MARKDOWN
     return SourceType.TEXT
-
-
-def _limit_structure(structure: BookStructure, chapter_limit: int) -> BookStructure:
-    limited_chapters = list(structure.chapters[:chapter_limit])
-    allowed_chapter_ids = {chapter.chapter_id for chapter in limited_chapters}
-    limited_chunks = [chunk for chunk in structure.chunks if chunk.chapter_id in allowed_chapter_ids]
-    return BookStructure(
-        book_id=structure.book_id,
-        title=structure.title,
-        chapters=limited_chapters,
-        chunks=limited_chunks,
-        created_at=structure.created_at,
-    )
-
 
 def _new_run_id(book_id: str) -> str:
     timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M")

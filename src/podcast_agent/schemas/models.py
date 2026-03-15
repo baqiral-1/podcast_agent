@@ -166,6 +166,17 @@ class EpisodePlan(StrictModel):
     beats: list[EpisodeBeat] = Field(default_factory=list)
 
 
+class PlannerEpisodePlan(StrictModel):
+    """Compact planner output used before deterministic episode expansion."""
+
+    episode_id: str
+    sequence: int = Field(ge=1)
+    title: str
+    synopsis: str
+    chapter_ids: list[str]
+    themes: list[str] = Field(default_factory=list)
+
+
 class SeriesPlan(StrictModel):
     """Series-level plan for the full book adaptation."""
 
@@ -173,6 +184,16 @@ class SeriesPlan(StrictModel):
     format: Literal["single_narrator"]
     strategy_summary: str
     episodes: list[EpisodePlan]
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class PlannerSeriesPlan(StrictModel):
+    """Compact series plan emitted by the planner LLM."""
+
+    book_id: str
+    format: Literal["single_narrator"]
+    strategy_summary: str
+    episodes: list[PlannerEpisodePlan]
     created_at: datetime = Field(default_factory=utc_now)
 
 

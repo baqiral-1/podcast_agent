@@ -124,6 +124,41 @@ class FlakyPlanningLLM(LLMClient):
         return self.delegate.generate_json(schema_name, instructions, payload, response_model)
 
 
+class TruncatingPlanningLLM(LLMClient):
+    """LLM stub that truncates once before returning a compact valid series plan."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+        self.instructions_seen: list[str] = []
+
+    def generate_json(self, schema_name, instructions, payload, response_model):
+        if schema_name == "series_plan":
+            self.calls += 1
+            self.instructions_seen.append(instructions)
+            if self.calls == 1:
+                raise RuntimeError("LLM response was truncated because it hit the completion token limit.")
+            structure = payload["structure"]
+            chapter_ids = [chapter["chapter_id"] for chapter in structure["chapters"]]
+            return response_model.model_validate(
+                {
+                    "book_id": structure["book_id"],
+                    "format": "single_narrator",
+                    "strategy_summary": "Compact retry plan.",
+                    "episodes": [
+                        {
+                            "episode_id": "episode-1",
+                            "sequence": 1,
+                            "title": "Episode 1",
+                            "synopsis": "Recovered after truncation.",
+                            "chapter_ids": chapter_ids,
+                            "themes": ["test"],
+                        }
+                    ],
+                }
+            )
+        return HeuristicLLMClient().generate_json(schema_name, instructions, payload, response_model)
+
+
 class FlakyAnalysisLLM(LLMClient):
     """LLM stub that returns one invalid book analysis before recovering."""
 
@@ -763,11 +798,39 @@ def test_planning_retries_after_non_compliant_series_plan(tmp_path: Path) -> Non
 
     assert llm.series_plan_calls == 1
     assert result["series_plan"]["episodes"]
+    assert result["series_plan"]["episodes"][0]["chunk_ids"]
+    assert result["series_plan"]["episodes"][0]["beats"]
     run_log = tmp_path / "runs" / orchestrator.run_id / "run.log"
     lines = [json.loads(line) for line in run_log.read_text(encoding="utf-8").splitlines()]
     diagnostics = [line for line in lines if line["event_type"] == "planning_diagnostics"]
     assert diagnostics
     assert diagnostics[0]["payload"]["violations"] == []
+
+
+def test_planning_retries_after_truncation_with_compact_retry_instructions(tmp_path: Path) -> None:
+    book_path = tmp_path / "book.txt"
+    book_path.write_text(ANALYSIS_BOOK_TEXT, encoding="utf-8")
+    settings = Settings(pipeline=PipelineConfig(artifact_root=tmp_path / "runs"))
+    llm = TruncatingPlanningLLM()
+    orchestrator = PipelineOrchestrator(
+        repository=InMemoryRepository(),
+        llm=llm,
+        settings=settings,
+    )
+
+    result = orchestrator.run_pipeline(book_path, title="Retry Truncation Plan", author="A. Writer", episode_count=1)
+
+    assert llm.calls == 2
+    retry_instructions = llm.instructions_seen[1]
+    assert "The previous response was truncated." in retry_instructions
+    assert "Return only episode metadata and chapter_ids; do not include chunk_ids or beats." in retry_instructions
+    assert result["series_plan"]["episodes"][0]["chunk_ids"]
+    assert result["series_plan"]["episodes"][0]["beats"]
+    run_log = tmp_path / "runs" / orchestrator.run_id / "run.log"
+    lines = [json.loads(line) for line in run_log.read_text(encoding="utf-8").splitlines()]
+    retries = [line for line in lines if line["event_type"] == "planning_retry"]
+    assert retries
+    assert retries[0]["payload"]["error_type"] == "RuntimeError"
 
 
 def test_analysis_retries_after_sparse_cluster_output(tmp_path: Path) -> None:

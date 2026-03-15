@@ -116,7 +116,8 @@ class StructuringAgent(Agent):
         self,
         ingestion: BookIngestionResult,
         *,
-        chapter_limit: int | None = None,
+        start_chapter: str | None = None,
+        end_chapter: str | None = None,
     ) -> BookStructure:
         """Generate the canonical structure for a book."""
 
@@ -145,10 +146,28 @@ class StructuringAgent(Agent):
                 section_count=len(sections),
                 message="No reliable chapter headings detected; using deterministic fallback sectioning.",
             )
-        if chapter_limit is not None:
-            sections = sections[:chapter_limit]
+        start_index = 0
+        end_index = len(sections) - 1
+        if start_chapter is not None:
+            start_index = _find_section_index(sections, start_chapter, "start")
+        if end_chapter is not None:
+            end_index = _find_section_index(sections, end_chapter, "end")
+        if end_index < start_index:
+            raise ValueError(
+                f"End chapter '{end_chapter}' appears before start chapter '{start_chapter}'."
+            )
+        selected_sections = sections[start_index : end_index + 1]
+        if start_chapter is not None or end_chapter is not None:
+            self._log(
+                "structuring_chapter_range_applied",
+                requested_start_chapter=start_chapter,
+                matched_start_chapter=selected_sections[0].title if selected_sections else None,
+                requested_end_chapter=end_chapter,
+                matched_end_chapter=selected_sections[-1].title if selected_sections else None,
+                selected_section_count=len(selected_sections),
+            )
         chapter_inputs = []
-        for chapter_number, section in enumerate(sections, start=1):
+        for chapter_number, section in enumerate(selected_sections, start=1):
             chapter_inputs.append((chapter_number, section.title, section.body))
         self._log(
             "structuring_schedule",
@@ -229,7 +248,6 @@ class StructuringAgent(Agent):
             chapters=chapters,
             chunks=chunks,
         )
-
     def _structure_chapter(
         self,
         chapter_number: int,
@@ -493,6 +511,19 @@ def _merge_structured_chapter_windows(
         title=chapter_title,
         summary=summary,
         chunks=merged_chunks,
+    )
+
+
+def _find_section_index(sections: list[object], requested_title: str, bound_name: str) -> int:
+    normalized_requested_title = requested_title.strip().casefold()
+    for index, section in enumerate(sections):
+        section_title = getattr(section, "title", "").strip().casefold()
+        if section_title == normalized_requested_title:
+            return index
+    available_titles = ", ".join(getattr(section, "title", "") for section in sections)
+    raise ValueError(
+        f"Unable to find {bound_name} chapter '{requested_title}'. "
+        f"Available detected chapters: {available_titles}"
     )
 
 
