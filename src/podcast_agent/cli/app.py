@@ -40,6 +40,11 @@ def index_book(
     source_path: Path,
     title: str | None = None,
     author: str = "Unknown",
+    chapter_limit: int | None = typer.Option(
+        default=None,
+        min=1,
+        help="Limit processing to the first N detected chapters.",
+    ),
     database_url: str | None = typer.Option(
         default=None,
         help="PostgreSQL database URL. If omitted, falls back to DATABASE_URL when set.",
@@ -50,10 +55,16 @@ def index_book(
     orchestrator = _build_orchestrator(database_url)
     orchestrator.log_command(
         "index-book",
-        {"source_path": str(source_path), "title": title, "author": author, "database_url": database_url},
+        {
+            "source_path": str(source_path),
+            "title": title,
+            "author": author,
+            "chapter_limit": chapter_limit,
+            "database_url": database_url,
+        },
     )
     ingestion = orchestrator.ingest_book(source_path=source_path, title=title, author=author)
-    structure = orchestrator.index_book(ingestion)
+    structure = orchestrator.index_book(ingestion, chapter_limit=chapter_limit)
     typer.echo(structure.model_dump_json(indent=2))
 
 
@@ -62,6 +73,11 @@ def plan_episodes(
     source_path: Path,
     title: str | None = None,
     author: str = "Unknown",
+    chapter_limit: int | None = typer.Option(
+        default=None,
+        min=1,
+        help="Limit processing to the first N detected chapters.",
+    ),
     database_url: str | None = typer.Option(
         default=None,
         help="PostgreSQL database URL. If omitted, falls back to DATABASE_URL when set.",
@@ -72,10 +88,16 @@ def plan_episodes(
     orchestrator = _build_orchestrator(database_url)
     orchestrator.log_command(
         "plan-episodes",
-        {"source_path": str(source_path), "title": title, "author": author, "database_url": database_url},
+        {
+            "source_path": str(source_path),
+            "title": title,
+            "author": author,
+            "chapter_limit": chapter_limit,
+            "database_url": database_url,
+        },
     )
     ingestion = orchestrator.ingest_book(source_path=source_path, title=title, author=author)
-    structure = orchestrator.index_book(ingestion)
+    structure = orchestrator.index_book(ingestion, chapter_limit=chapter_limit)
     _, plan = orchestrator.plan_episodes(structure)
     typer.echo(plan.model_dump_json(indent=2))
 
@@ -85,6 +107,11 @@ def run_pipeline(
     source_path: Path,
     title: str | None = None,
     author: str = "Unknown",
+    chapter_limit: int | None = typer.Option(
+        default=None,
+        min=1,
+        help="Limit processing to the first N detected chapters.",
+    ),
     with_audio: bool = typer.Option(
         default=False,
         help="Synthesize audio files after render-manifest generation.",
@@ -103,6 +130,7 @@ def run_pipeline(
             "source_path": str(source_path),
             "title": title,
             "author": author,
+            "chapter_limit": chapter_limit,
             "database_url": database_url,
             "with_audio": with_audio,
         },
@@ -111,6 +139,7 @@ def run_pipeline(
         source_path=source_path,
         title=title,
         author=author,
+        chapter_limit=chapter_limit,
         synthesize_audio=with_audio,
     )
     typer.echo(json.dumps(result, indent=2, default=str))
@@ -121,6 +150,11 @@ def render_audio(
     source_path: Path,
     title: str | None = None,
     author: str = "Unknown",
+    chapter_limit: int | None = typer.Option(
+        default=None,
+        min=1,
+        help="Limit processing to the first N detected chapters.",
+    ),
     database_url: str | None = typer.Option(
         default=None,
         help="PostgreSQL database URL. If omitted, falls back to DATABASE_URL when set.",
@@ -131,12 +165,19 @@ def render_audio(
     orchestrator = _build_orchestrator(database_url)
     orchestrator.log_command(
         "render-audio",
-        {"source_path": str(source_path), "title": title, "author": author, "database_url": database_url},
+        {
+            "source_path": str(source_path),
+            "title": title,
+            "author": author,
+            "chapter_limit": chapter_limit,
+            "database_url": database_url,
+        },
     )
     result = orchestrator.run_pipeline(
         source_path=source_path,
         title=title,
         author=author,
+        chapter_limit=chapter_limit,
         synthesize_audio=True,
     )
     typer.echo(json.dumps(result, indent=2, default=str))

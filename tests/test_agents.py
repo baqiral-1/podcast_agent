@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import json
+
+from pydantic import ValidationError
+
 from podcast_agent.llm.base import LLMClient
 from podcast_agent.agents import (
     AnalysisAgent,
@@ -12,11 +16,17 @@ from podcast_agent.agents import (
     WritingAgent,
 )
 from podcast_agent.llm import HeuristicLLMClient
+from podcast_agent.run_logging import RunLogger
 from podcast_agent.schemas.models import (
+    BeatScript,
     BookIngestionResult,
+    EpisodeBeat,
+    EpisodePlan,
+    EpisodeSegment,
     EpisodeScript,
     GroundingReport,
     RetrievalHit,
+    ScriptClaim,
     SourceType,
 )
 from podcast_agent.utils import split_into_chapters
@@ -147,6 +157,172 @@ class FailingStructuringBoundaryLLM(LLMClient):
         return HeuristicLLMClient().generate_json(schema_name, instructions, payload, response_model)
 
 
+class CitationLoggingLLM(LLMClient):
+    """LLM stub that cites via segment citations but leaves claim evidence empty."""
+
+    def generate_json(self, schema_name, instructions, payload, response_model):
+        if schema_name == "beat_script":
+            beat = payload["beat"]
+            cited_chunk_ids = [hit["chunk_id"] for hit in payload["retrieval_hits"][:2]]
+            return response_model.model_construct(
+                beat_id=beat["beat_id"],
+                segments=[
+                    EpisodeSegment.model_construct(
+                        segment_id="segment-1",
+                        beat_id=beat["beat_id"],
+                        heading=beat["title"],
+                        narration="A grounded narration.",
+                        claims=[
+                            ScriptClaim.model_construct(
+                                claim_id=f"{beat['beat_id']}-claim-1",
+                                text="A claim with no evidence ids.",
+                                evidence_chunk_ids=[],
+                            )
+                        ],
+                        citations=cited_chunk_ids,
+                    )
+                ],
+            )
+        return HeuristicLLMClient().generate_json(schema_name, instructions, payload, response_model)
+
+
+class RetryingClaimWritingLLM(LLMClient):
+    """LLM stub that fails the first beat attempt, then returns valid claim evidence."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def generate_json(self, schema_name, instructions, payload, response_model):
+        if schema_name == "beat_script":
+            self.calls += 1
+            beat = payload["beat"]
+            chunk_ids = [hit["chunk_id"] for hit in payload["retrieval_hits"][:2]]
+            if self.calls == 1:
+                raise ValidationError.from_exception_data(
+                    "BeatScript",
+                    [
+                        {
+                            "type": "too_short",
+                            "loc": ("segments", 0, "claims"),
+                            "msg": "List should have at least 1 item after validation, not 0",
+                            "input": [],
+                            "ctx": {"field_type": "List", "min_length": 1, "actual_length": 0},
+                        }
+                    ],
+                )
+            return response_model.model_validate(
+                {
+                    "beat_id": beat["beat_id"],
+                    "segments": [
+                        {
+                            "segment_id": f"{beat['beat_id']}-segment-1",
+                            "beat_id": beat["beat_id"],
+                            "heading": beat["title"],
+                            "narration": "A longer grounded narration for the retry path." * 8,
+                            "claims": [
+                                {
+                                    "claim_id": f"{beat['beat_id']}-claim-1",
+                                    "text": "Grounded claim one.",
+                                    "evidence_chunk_ids": [chunk_ids[0]],
+                                },
+                            ]
+                            + (
+                                [
+                                    {
+                                        "claim_id": f"{beat['beat_id']}-claim-2",
+                                        "text": "Grounded claim two.",
+                                        "evidence_chunk_ids": [chunk_ids[1]],
+                                    }
+                                ]
+                                if len(chunk_ids) > 1
+                                else []
+                            ),
+                            "citations": chunk_ids,
+                        }
+                    ],
+                }
+            )
+        return HeuristicLLMClient().generate_json(schema_name, instructions, payload, response_model)
+
+
+class AlwaysInvalidClaimWritingLLM(LLMClient):
+    """LLM stub that never returns valid claim evidence for a beat."""
+
+    def generate_json(self, schema_name, instructions, payload, response_model):
+        if schema_name == "beat_script":
+            raise ValidationError.from_exception_data(
+                "BeatScript",
+                [
+                    {
+                        "type": "too_short",
+                        "loc": ("segments", 0, "claims"),
+                        "msg": "List should have at least 1 item after validation, not 0",
+                        "input": [],
+                        "ctx": {"field_type": "List", "min_length": 1, "actual_length": 0},
+                    }
+                ],
+            )
+        return HeuristicLLMClient().generate_json(schema_name, instructions, payload, response_model)
+
+
+class CoverageAwareRetryWritingLLM(LLMClient):
+    """LLM stub that under-covers first, then succeeds after receiving retry guidance."""
+
+    def __init__(self) -> None:
+        self.instructions_seen: list[str] = []
+
+    def generate_json(self, schema_name, instructions, payload, response_model):
+        if schema_name == "beat_script":
+            self.instructions_seen.append(instructions)
+            beat = payload["beat"]
+            chunk_ids = [hit["chunk_id"] for hit in payload["retrieval_hits"]]
+            if len(self.instructions_seen) == 1:
+                return response_model.model_validate(
+                    {
+                        "beat_id": beat["beat_id"],
+                        "segments": [
+                            {
+                                "segment_id": f"{beat['beat_id']}-segment-1",
+                                "beat_id": beat["beat_id"],
+                                "heading": beat["title"],
+                                "narration": "A grounded but too narrow narration." * 6,
+                                "claims": [
+                                    {
+                                        "claim_id": f"{beat['beat_id']}-claim-1",
+                                        "text": "Only covers the first chunk.",
+                                        "evidence_chunk_ids": [chunk_ids[0]],
+                                    }
+                                ],
+                                "citations": [chunk_ids[0]],
+                            }
+                        ],
+                    }
+                )
+            return response_model.model_validate(
+                {
+                    "beat_id": beat["beat_id"],
+                    "segments": [
+                        {
+                            "segment_id": f"{beat['beat_id']}-segment-{index}",
+                            "beat_id": beat["beat_id"],
+                            "heading": beat["title"],
+                            "narration": ("A grounded narration covering one assigned chunk in detail. " * 8).strip(),
+                            "claims": [
+                                {
+                                    "claim_id": f"{beat['beat_id']}-claim-{index}",
+                                    "text": f"Covers assigned chunk {index}.",
+                                    "evidence_chunk_ids": [chunk_id],
+                                }
+                            ],
+                            "citations": [chunk_id],
+                        }
+                        for index, chunk_id in enumerate(chunk_ids, start=1)
+                    ],
+                }
+            )
+        return HeuristicLLMClient().generate_json(schema_name, instructions, payload, response_model)
+
+
 def test_structuring_agent_creates_chapters_and_chunks() -> None:
     structure = _build_structure()
 
@@ -205,6 +381,142 @@ def test_structuring_skips_oversized_chapters() -> None:
     chapter = agent._structure_chapter(1, "Chapter 1: Giant", ("observatory " * 43000).strip())
 
     assert chapter is None
+
+
+def test_writing_diagnostics_distinguish_claim_and_segment_citations(tmp_path) -> None:
+    llm = CitationLoggingLLM()
+    run_logger = RunLogger(tmp_path / "runs")
+    run_logger.bind_run("citation-run")
+    llm.set_run_logger(run_logger)
+    writer = WritingAgent(llm, beat_parallelism=1)
+    retrieval_hits = [
+        RetrievalHit(
+            chunk_id=f"chunk-{index}",
+            chapter_id="chapter-1",
+            chapter_title="Chapter 1",
+            score=1.0,
+            text=("word " * 120).strip(),
+        )
+        for index in range(1, 4)
+    ]
+    episode = EpisodePlan(
+        episode_id="episode-1",
+        sequence=1,
+        title="Episode 1",
+        synopsis="Synopsis",
+        chapter_ids=["chapter-1"],
+        chunk_ids=[hit.chunk_id for hit in retrieval_hits],
+        themes=["alpha"],
+        beats=[
+            EpisodeBeat(
+                beat_id="beat-1",
+                title="Beat 1",
+                objective="Objective",
+                chunk_ids=[hit.chunk_id for hit in retrieval_hits],
+                claim_requirements=[],
+            )
+            ],
+        )
+
+    payload = writer.build_payload(episode, retrieval_hits)
+    beat_payload = writer._build_beat_payloads(payload)[0]
+    beat_script = llm.generate_json("beat_script", writer.instructions, beat_payload, BeatScript)
+    violations = writer._compliance_violations(beat_script, beat_payload)
+    writer._log_writing_metrics(beat_script, beat_payload, violations, retried=False)
+
+    lines = [
+        json.loads(line)
+        for line in (tmp_path / "runs" / "citation-run" / "run.log").read_text(encoding="utf-8").splitlines()
+    ]
+    diagnostics = [line for line in lines if line["event_type"] == "writing_diagnostics"]
+    assert diagnostics
+    payload = diagnostics[-1]["payload"]
+    assert payload["claim_cited_chunk_count"] == 0
+    assert payload["segment_citation_chunk_count"] == 2
+    assert payload["cited_chunk_count"] == 2
+    assert payload["segments_with_zero_citations"] == []
+    assert payload["claims_with_zero_evidence"] == ["beat-1-claim-1"]
+
+
+def test_writing_retries_when_initial_script_has_no_claims() -> None:
+    llm = RetryingClaimWritingLLM()
+    writer = WritingAgent(llm, beat_parallelism=1)
+    structure, _, plan = _build_analysis_and_plan()
+    episode = plan.episodes[0]
+    beat = episode.beats[0]
+    retrieval_hits = _build_retrieval_hits(structure, beat.chunk_ids)
+    payload = writer.build_payload(episode, retrieval_hits)
+    beat_payload = writer._build_beat_payloads(payload)[0]
+
+    beat_script = writer._write_beat(beat_payload)
+
+    assert llm.calls == 2
+    assert beat_script.segments
+    assert all(segment.claims for segment in beat_script.segments)
+    assert all(claim.evidence_chunk_ids for segment in beat_script.segments for claim in segment.claims)
+
+
+def test_writing_fails_after_retry_when_claims_remain_invalid() -> None:
+    llm = AlwaysInvalidClaimWritingLLM()
+    writer = WritingAgent(llm, beat_parallelism=1)
+    structure, _, plan = _build_analysis_and_plan()
+    episode = plan.episodes[0]
+    beat = episode.beats[0]
+    retrieval_hits = _build_retrieval_hits(structure, beat.chunk_ids)
+    payload = writer.build_payload(episode, retrieval_hits)
+    beat_payload = writer._build_beat_payloads(payload)[0]
+
+    try:
+        writer._write_beat(beat_payload)
+    except RuntimeError as exc:
+        assert "Beat script generation failed after retry" in str(exc)
+    else:
+        raise AssertionError("expected invalid claim-only beat script generation to fail")
+
+
+def test_writing_retry_instructions_include_missing_chunk_ids() -> None:
+    llm = CoverageAwareRetryWritingLLM()
+    writer = WritingAgent(llm, beat_parallelism=1)
+    retrieval_hits = [
+        RetrievalHit(
+            chunk_id=f"chunk-{index}",
+            chapter_id="chapter-1",
+            chapter_title="Chapter 1",
+            score=1.0,
+            text=("word " * 120).strip(),
+        )
+        for index in range(1, 4)
+    ]
+    episode = EpisodePlan(
+        episode_id="episode-1",
+        sequence=1,
+        title="Episode 1",
+        synopsis="Synopsis",
+        chapter_ids=["chapter-1"],
+        chunk_ids=[hit.chunk_id for hit in retrieval_hits],
+        themes=["alpha"],
+        beats=[
+            EpisodeBeat(
+                beat_id="beat-1",
+                title="Beat 1",
+                objective="Objective",
+                chunk_ids=[hit.chunk_id for hit in retrieval_hits],
+                claim_requirements=[],
+            )
+        ],
+    )
+    beat = episode.beats[0]
+    payload = writer.build_payload(episode, retrieval_hits)
+    beat_payload = writer._build_beat_payloads(payload)[0]
+
+    beat_script = writer._write_beat(beat_payload)
+
+    assert beat_script.segments
+    assert len(llm.instructions_seen) == 2
+    retry_instructions = llm.instructions_seen[1]
+    assert "every assigned chunk_id must appear in claim evidence_chunk_ids" in retry_instructions
+    for chunk_id in beat.chunk_ids[1:]:
+        assert chunk_id in retry_instructions
 
 
 def test_split_into_chapters_handles_front_matter_roman_and_appendix() -> None:
@@ -339,9 +651,10 @@ def test_analysis_payload_uses_compact_chunk_summaries() -> None:
 
     payload = AnalysisAgent(HeuristicLLMClient()).build_payload(structure)
 
-    assert payload["structure"]["chunks"]
-    assert "text" not in payload["structure"]["chunks"][0]
-    assert payload["structure"]["chunks"][0]["excerpt"]
+    assert "chunks" not in payload["structure"]
+    assert payload["structure"]["chapters"][0]["sections"]
+    assert payload["structure"]["chapters"][0]["sections"][0]["excerpt"]
+    assert "chunk_ids" not in payload["structure"]["chapters"][0]
 
 
 def test_episode_planning_agent_creates_hierarchical_plan() -> None:
@@ -376,26 +689,27 @@ def test_grounding_validation_agent_returns_claim_assessments() -> None:
 
 def test_repair_agent_targets_only_failed_segments() -> None:
     llm = HeuristicLLMClient()
-    script, report, _ = _build_script_and_report()
+    script, _, retrieval_hits = _build_script_and_report()
 
-    weakened_script = EpisodeScript.model_validate(
-        {
+    weakened_first_segment = script.segments[0].model_copy(
+        update={
+            "claims": [
+                script.segments[0].claims[0].model_copy(
+                    update={"text": "This claim now describes an unrelated volcanic eruption in a distant empire."}
+                )
+            ]
+        }
+    )
+    weakened_script = EpisodeScript.model_construct(
+        **{
             **script.model_dump(mode="python"),
             "segments": [
-                {
-                    **script.segments[0].model_dump(mode="python"),
-                    "claims": [
-                        {
-                            **script.segments[0].claims[0].model_dump(mode="python"),
-                            "evidence_chunk_ids": [],
-                        }
-                    ],
-                },
-                *[segment.model_dump(mode="python") for segment in script.segments[1:]],
+                weakened_first_segment,
+                *script.segments[1:],
             ],
         }
     )
-    weakened_report = GroundingValidationAgent(llm).validate(weakened_script, [])
+    weakened_report = GroundingValidationAgent(llm).validate(weakened_script, retrieval_hits)
 
     repair = RepairAgent(llm).repair(weakened_script, weakened_report, attempt=1)
 

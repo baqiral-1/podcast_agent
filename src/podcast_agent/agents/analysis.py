@@ -38,6 +38,7 @@ class AnalysisAgent(Agent):
             payload=payload,
             response_model=self.response_model,
         )
+        analysis = self._normalize_analysis(analysis, structure)
         violations = self._compliance_violations(analysis, structure)
         self._log_analysis_metrics(analysis, structure, violations, retried=False)
         if not violations:
@@ -53,6 +54,7 @@ class AnalysisAgent(Agent):
             payload=payload,
             response_model=self.response_model,
         )
+        retry_analysis = self._normalize_analysis(retry_analysis, structure)
         retry_violations = self._compliance_violations(retry_analysis, structure)
         self._log_analysis_metrics(retry_analysis, structure, retry_violations, retried=True)
         if retry_violations:
@@ -61,6 +63,44 @@ class AnalysisAgent(Agent):
                 + "; ".join(retry_violations)
             )
         return retry_analysis
+
+    def _normalize_analysis(self, analysis: BookAnalysis, structure: BookStructure) -> BookAnalysis:
+        chapter_to_chunks = {chapter.chapter_id: list(chapter.chunk_ids) for chapter in structure.chapters}
+        chapter_to_themes = {
+            chapter.chapter_id: _ordered_unique(
+                theme
+                for chunk in structure.chunks
+                if chunk.chapter_id == chapter.chapter_id
+                for theme in chunk.themes
+            )
+            for chapter in structure.chapters
+        }
+        normalized_clusters = []
+        for cluster in analysis.episode_clusters:
+            chapter_ids = list(cluster.chapter_ids)
+            chunk_ids = list(cluster.chunk_ids) or [
+                chunk_id
+                for chapter_id in chapter_ids
+                for chunk_id in chapter_to_chunks.get(chapter_id, [])
+            ]
+            themes = list(cluster.themes) or _ordered_unique(
+                theme
+                for chapter_id in chapter_ids
+                for theme in chapter_to_themes.get(chapter_id, [])
+            )[:4]
+            normalized_clusters.append(
+                {
+                    **cluster.model_dump(mode="python"),
+                    "chunk_ids": chunk_ids,
+                    "themes": themes,
+                }
+            )
+        return BookAnalysis.model_validate(
+            {
+                **analysis.model_dump(mode="python"),
+                "episode_clusters": normalized_clusters,
+            }
+        )
 
     def _check_payload_size(self, payload: dict, structure: BookStructure) -> None:
         run_logger = getattr(self.llm, "run_logger", None)
@@ -164,3 +204,14 @@ class AnalysisAgent(Agent):
             missing_chunk_count=len(all_chunk_ids - assigned_chunks),
             violations=violations,
         )
+
+
+def _ordered_unique(values) -> list[str]:
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        ordered.append(value)
+    return ordered

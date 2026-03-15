@@ -128,8 +128,8 @@ class EpisodeCluster(StrictModel):
     label: str
     rationale: str
     chapter_ids: list[str]
-    chunk_ids: list[str]
-    themes: list[str]
+    chunk_ids: list[str] = Field(default_factory=list)
+    themes: list[str] = Field(default_factory=list)
 
 
 class BookAnalysis(StrictModel):
@@ -149,8 +149,8 @@ class EpisodeBeat(StrictModel):
     beat_id: str
     title: str
     objective: str
-    chunk_ids: list[str]
-    claim_requirements: list[str]
+    chunk_ids: list[str] = Field(default_factory=list)
+    claim_requirements: list[str] = Field(default_factory=list)
 
 
 class EpisodePlan(StrictModel):
@@ -161,9 +161,9 @@ class EpisodePlan(StrictModel):
     title: str
     synopsis: str
     chapter_ids: list[str]
-    chunk_ids: list[str]
-    themes: list[str]
-    beats: list[EpisodeBeat]
+    chunk_ids: list[str] = Field(default_factory=list)
+    themes: list[str] = Field(default_factory=list)
+    beats: list[EpisodeBeat] = Field(default_factory=list)
 
 
 class SeriesPlan(StrictModel):
@@ -191,7 +191,7 @@ class ScriptClaim(StrictModel):
 
     claim_id: str
     text: str
-    evidence_chunk_ids: list[str]
+    evidence_chunk_ids: list[str] = Field(min_length=1)
 
 
 class EpisodeSegment(StrictModel):
@@ -201,7 +201,7 @@ class EpisodeSegment(StrictModel):
     beat_id: str
     heading: str
     narration: str
-    claims: list[ScriptClaim]
+    claims: list[ScriptClaim] = Field(min_length=1)
     citations: list[str]
 
 

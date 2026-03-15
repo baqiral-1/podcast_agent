@@ -80,6 +80,32 @@ def test_index_book_persists_chunks_and_embeddings(tmp_path: Path) -> None:
     assert len(repository.structures[structure.book_id].chunks) == len(repository.embeddings[structure.book_id])
 
 
+def test_index_book_can_limit_detected_chapters(tmp_path: Path) -> None:
+    book_path = tmp_path / "book.txt"
+    book_path.write_text(BOOK_TEXT, encoding="utf-8")
+    repository = InMemoryRepository()
+    settings = Settings()
+    settings = settings.model_copy(
+        update={"pipeline": settings.pipeline.model_copy(update={"artifact_root": tmp_path / "runs"})}
+    )
+    orchestrator = PipelineOrchestrator(
+        repository=repository,
+        llm=HeuristicLLMClient(),
+        settings=settings,
+    )
+
+    ingestion = orchestrator.ingest_book(book_path, title="Observatory Book", author="A. Writer")
+    structure = orchestrator.index_book(ingestion, chapter_limit=2)
+
+    assert len(structure.chapters) == 2
+    assert [chapter.chapter_number for chapter in structure.chapters] == [1, 2]
+    assert all(chunk.chapter_number in {1, 2} for chunk in structure.chunks)
+    assert len(repository.embeddings[structure.book_id]) == len(structure.chunks)
+    run_log = (tmp_path / "runs" / orchestrator.run_id / "run.log").read_text(encoding="utf-8")
+    assert '"event_type": "structuring_chapter_started"' in run_log
+    assert '"chapter_number": 3' not in run_log
+
+
 def test_pipeline_defaults_raise_parallelism() -> None:
     settings = Settings()
 
@@ -191,6 +217,32 @@ def test_pipeline_can_synthesize_audio_manifest(tmp_path: Path) -> None:
     assert audio_manifest["segments"]
     assert audio_manifest["audio_path"].endswith(".mp3")
     assert Path(audio_manifest["audio_path"]).exists()
+
+
+def test_run_pipeline_can_limit_detected_chapters(tmp_path: Path) -> None:
+    book_path = tmp_path / "book.txt"
+    book_path.write_text(BOOK_TEXT, encoding="utf-8")
+    settings = Settings()
+    settings = settings.model_copy(update={"pipeline": settings.pipeline.model_copy(update={"artifact_root": tmp_path / "runs"})})
+    orchestrator = PipelineOrchestrator(
+        repository=InMemoryRepository(),
+        llm=HeuristicLLMClient(),
+        settings=settings,
+    )
+
+    result = orchestrator.run_pipeline(
+        book_path,
+        title="Observatory Book",
+        author="A. Writer",
+        chapter_limit=2,
+    )
+
+    planned_chapters = result["series_plan"]["episodes"][0]["chapter_ids"]
+    assert len(planned_chapters) == 2
+    structure_path = tmp_path / "runs" / orchestrator.run_id / "observatory-book" / "structure.json"
+    assert structure_path.exists()
+    structure_payload = structure_path.read_text(encoding="utf-8")
+    assert '"chapter_number": 3' not in structure_payload
 
 
 def test_run_pipeline_processes_episodes_in_parallel_when_enabled(tmp_path: Path, monkeypatch) -> None:

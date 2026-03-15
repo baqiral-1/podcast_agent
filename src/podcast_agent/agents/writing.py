@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from json import JSONDecodeError
+from typing import Any
+
+from pydantic import ValidationError
 
 from podcast_agent.agents.base import Agent
 from podcast_agent.schemas.models import BeatScript, EpisodeBeat, EpisodePlan, EpisodeScript, EpisodeSegment, RetrievalHit
@@ -16,7 +20,14 @@ class WritingAgent(Agent):
         "Write a grounded single-narrator podcast script section for the provided beat with claim-level citations. "
         "Use only the provided beat and retrieval hits. "
         "Develop the beat into a substantial spoken section rather than summarizing it away, and keep the narration "
-        "proportional to the assigned source volume."
+        "proportional to the assigned source volume. "
+        "Cover the assigned retrieval hits comprehensively; when the beat has 7 or fewer assigned chunks, cite all of them "
+        "across the beat's claims. Do not concentrate coverage in the first few chunks if later chunks contain distinct material. "
+        "Prefer multiple grounded segments when that is needed to cover the full beat. "
+        "Every segment must include at least one claim, and every claim must include one or more evidence_chunk_ids "
+        "chosen from the assigned beat retrieval hits. "
+        "Every segment must include citations, and each segment's citations must match the union of its claims' evidence_chunk_ids. "
+        "Segment-level citations alone are not sufficient."
     )
     response_model = BeatScript
 
@@ -90,26 +101,52 @@ class WritingAgent(Agent):
         violations: list[str] = []
         target_script_words = payload["target_script_words"]
         assigned_source_words = payload["assigned_source_words"]
+        assigned_chunk_ids = set(self._assigned_chunk_ids(payload))
         if not script.segments:
             violations.append(f"beat {payload['beat']['beat_id']} produced no segments")
         covered_beat_ids = {segment.beat_id for segment in script.segments}
         if payload["beat"]["beat_id"] not in covered_beat_ids:
             violations.append(f"script omitted beat: {payload['beat']['beat_id']}")
+        for segment in script.segments:
+            if not segment.claims:
+                violations.append(f"segment {segment.segment_id} has no claims")
+            if segment.citations and not any(claim.evidence_chunk_ids for claim in segment.claims):
+                violations.append(
+                    f"segment {segment.segment_id} has citations but no claim evidence"
+                )
+            claim_chunk_ids = {
+                chunk_id
+                for claim in segment.claims
+                for chunk_id in claim.evidence_chunk_ids
+            }
+            if segment.citations and not claim_chunk_ids:
+                violations.append(
+                    f"segment {segment.segment_id} has segment citations without claim evidence"
+                )
+            if segment.citations and claim_chunk_ids and set(segment.citations) != claim_chunk_ids:
+                violations.append(
+                    f"segment {segment.segment_id} citations do not match claim evidence ids"
+                )
+            for claim in segment.claims:
+                if not claim.evidence_chunk_ids:
+                    violations.append(f"claim {claim.claim_id} has no evidence chunk ids")
+                invalid_chunk_ids = [
+                    chunk_id for chunk_id in claim.evidence_chunk_ids if chunk_id not in assigned_chunk_ids
+                ]
+                if invalid_chunk_ids:
+                    violations.append(
+                        f"claim {claim.claim_id} cites invalid chunk ids: {', '.join(invalid_chunk_ids)}"
+                    )
         script_word_count = sum(len(segment.narration.split()) for segment in script.segments)
         if script_word_count < target_script_words:
             violations.append(
                 f"script contains only {script_word_count} words for {assigned_source_words} assigned source words; target is {target_script_words}"
             )
-        retrieval_chunk_ids = {hit["chunk_id"] for hit in payload["retrieval_hits"]}
-        cited_chunk_ids = {
-            chunk_id
-            for segment in script.segments
-            for claim in segment.claims
-            for chunk_id in claim.evidence_chunk_ids
-        }
-        if retrieval_chunk_ids and len(cited_chunk_ids) < max(1, int(len(retrieval_chunk_ids) * 0.6)):
+        retrieval_chunk_ids = assigned_chunk_ids
+        claim_evidence_chunk_ids = set(self._claim_evidence_chunk_ids(script))
+        if retrieval_chunk_ids and len(claim_evidence_chunk_ids) < max(1, int(len(retrieval_chunk_ids) * 0.6)):
             violations.append(
-                f"script cites only {len(cited_chunk_ids)} of {len(retrieval_chunk_ids)} assigned chunks"
+                f"script cites only {len(claim_evidence_chunk_ids)} of {len(retrieval_chunk_ids)} assigned chunks"
             )
         return violations
 
@@ -117,6 +154,27 @@ class WritingAgent(Agent):
         run_logger = getattr(self.llm, "run_logger", None)
         if run_logger is None:
             return
+        claim_evidence_chunk_ids = self._claim_evidence_chunk_ids(script)
+        segment_citation_chunk_ids = self._segment_citation_chunk_ids(script)
+        cited_chunk_ids = sorted(set(claim_evidence_chunk_ids) | set(segment_citation_chunk_ids))
+        assigned_chunk_ids = self._assigned_chunk_ids(payload)
+        missing_assigned_chunk_ids = [
+            chunk_id for chunk_id in assigned_chunk_ids if chunk_id not in cited_chunk_ids
+        ]
+        extra_cited_chunk_ids = [
+            chunk_id for chunk_id in cited_chunk_ids if chunk_id not in set(assigned_chunk_ids)
+        ]
+        claims_with_zero_evidence = [
+            claim.claim_id
+            for segment in script.segments
+            for claim in segment.claims
+            if not claim.evidence_chunk_ids
+        ]
+        segments_with_zero_citations = [
+            segment.segment_id
+            for segment in script.segments
+            if not segment.citations
+        ]
         run_logger.log(
             "writing_diagnostics",
             retried=retried,
@@ -125,31 +183,50 @@ class WritingAgent(Agent):
             assigned_source_words=payload["assigned_source_words"],
             target_script_words=payload["target_script_words"],
             segment_count=len(script.segments),
+            claim_count=sum(len(segment.claims) for segment in script.segments),
             script_word_count=sum(len(segment.narration.split()) for segment in script.segments),
             beat_count=1,
             covered_beat_count=len({segment.beat_id for segment in script.segments}),
-            cited_chunk_count=len({
-                chunk_id
-                for segment in script.segments
-                for claim in segment.claims
-                for chunk_id in claim.evidence_chunk_ids
-            }),
+            cited_chunk_count=len(cited_chunk_ids),
+            claim_cited_chunk_count=len(set(claim_evidence_chunk_ids)),
+            segment_citation_chunk_count=len(set(segment_citation_chunk_ids)),
             assigned_chunk_count=len(payload["retrieval_hits"]),
-            uncited_chunk_count=len(self._uncited_chunk_ids(script, payload)),
+            claim_to_evidence_coverage_ratio=(
+                len(set(claim_evidence_chunk_ids)) / len(assigned_chunk_ids) if assigned_chunk_ids else 0.0
+            ),
+            segment_citation_coverage_ratio=(
+                len(set(segment_citation_chunk_ids)) / len(assigned_chunk_ids) if assigned_chunk_ids else 0.0
+            ),
+            uncited_chunk_count=len(missing_assigned_chunk_ids),
             dropped_chunk_count=len(payload["beat"]["chunk_ids"]) - len(payload["retrieval_hits"]),
+            assigned_chunk_ids=assigned_chunk_ids,
+            claim_evidence_chunk_ids=claim_evidence_chunk_ids,
+            segment_citation_chunk_ids=segment_citation_chunk_ids,
+            missing_assigned_chunk_ids=missing_assigned_chunk_ids,
+            extra_cited_chunk_ids=extra_cited_chunk_ids,
+            claims_with_zero_evidence=claims_with_zero_evidence,
+            segments_with_zero_citations=segments_with_zero_citations,
             violations=violations,
+        )
+        run_logger.log(
+            "citation_audit",
+            stage="writing",
+            episode_id=payload["episode"]["episode_id"],
+            beat_id=payload["beat"]["beat_id"],
+            assigned_chunk_ids=assigned_chunk_ids,
+            claim_evidence_chunk_ids=claim_evidence_chunk_ids,
+            segment_citation_chunk_ids=segment_citation_chunk_ids,
+            missing_assigned_chunk_ids=missing_assigned_chunk_ids,
+            extra_cited_chunk_ids=extra_cited_chunk_ids,
+            claims_with_zero_evidence=claims_with_zero_evidence,
+            segments_with_zero_citations=segments_with_zero_citations,
         )
         if self.coverage_warning_min_ratio is None:
             return
-        assigned_count = len(payload["retrieval_hits"])
+        assigned_count = len(assigned_chunk_ids)
         if assigned_count == 0:
             return
-        cited_count = len({
-            chunk_id
-            for segment in script.segments
-            for claim in segment.claims
-            for chunk_id in claim.evidence_chunk_ids
-        })
+        cited_count = len(set(claim_evidence_chunk_ids))
         cited_ratio = cited_count / assigned_count
         if cited_ratio < self.coverage_warning_min_ratio:
             run_logger.log(
@@ -158,7 +235,7 @@ class WritingAgent(Agent):
                 beat_id=payload["beat"]["beat_id"],
                 cited_ratio=cited_ratio,
                 minimum_ratio=self.coverage_warning_min_ratio,
-                uncited_chunk_ids=self._uncited_chunk_ids(script, payload),
+                uncited_chunk_ids=missing_assigned_chunk_ids,
             )
 
     def _build_beat_payloads(self, payload: dict) -> list[dict]:
@@ -251,43 +328,204 @@ class WritingAgent(Agent):
                 selected_chunk_count=len(payload["retrieval_hits"]),
                 assigned_chunk_count=len(payload["beat"]["chunk_ids"]),
             )
-        beat_script = self.run(payload)
-        violations = self._compliance_violations(beat_script, payload)
-        self._log_writing_metrics(beat_script, payload, violations, retried=False)
-        if not violations:
-            if run_logger is not None:
-                run_logger.log("beat_write_completed", episode_id=episode_id, beat_id=beat_id, retried=False)
-            return beat_script
-        retry_instructions = (
-            f"{self.instructions} The previous beat script violated these constraints: {'; '.join(violations)}. "
-            "Rewrite only this beat so the narration is substantially longer and grounded in most of the provided retrieval hits."
-        )
-        retry_script = self.llm.generate_json(
-            schema_name=self.schema_name,
-            instructions=retry_instructions,
-            payload=payload,
-            response_model=self.response_model,
-        )
-        retry_violations = self._compliance_violations(retry_script, payload)
-        self._log_writing_metrics(retry_script, payload, retry_violations, retried=True)
-        if retry_violations:
-            raise RuntimeError(
-                f"Beat script violated coverage constraints after retry for {beat_id}: "
-                + "; ".join(retry_violations)
+        last_error: Exception | None = None
+        last_violations: list[str] = []
+        retry_instructions = self.instructions
+        for retried in (False, True):
+            try:
+                beat_script = self.llm.generate_json(
+                    schema_name=self.schema_name,
+                    instructions=retry_instructions,
+                    payload=payload,
+                    response_model=self.response_model,
+                )
+            except (ValidationError, JSONDecodeError, ValueError, RuntimeError) as exc:
+                last_error = exc
+                if run_logger is not None:
+                    run_logger.log(
+                        "beat_write_retry",
+                        episode_id=episode_id,
+                        beat_id=beat_id,
+                        retried=retried,
+                        error_type=type(exc).__name__,
+                        error_message=str(exc),
+                    )
+                if retried:
+                    break
+                retry_instructions = self._build_retry_instructions(
+                    payload=payload,
+                    violations=[],
+                    missing_chunk_ids=[],
+                    last_error=exc,
+                )
+                continue
+            violations = self._compliance_violations(beat_script, payload)
+            self._log_writing_metrics(beat_script, payload, violations, retried=retried)
+            if not violations:
+                if run_logger is not None:
+                    run_logger.log("beat_write_completed", episode_id=episode_id, beat_id=beat_id, retried=retried)
+                return beat_script
+            last_violations = violations
+            if retried:
+                break
+            retry_instructions = self._build_retry_instructions(
+                payload=payload,
+                violations=violations,
+                missing_chunk_ids=self._uncited_chunk_ids(beat_script, payload),
+                last_error=None,
             )
-        if run_logger is not None:
-            run_logger.log("beat_write_completed", episode_id=episode_id, beat_id=beat_id, retried=True)
-        return retry_script
+        if last_error is not None and not last_violations:
+            raise RuntimeError(
+                f"Beat script generation failed after retry for {beat_id}: {last_error}"
+            ) from last_error
+        raise RuntimeError(
+            f"Beat script violated coverage constraints after retry for {beat_id}: "
+            + "; ".join(last_violations)
+        )
+
+    def _build_retry_instructions(
+        self,
+        *,
+        payload: dict,
+        violations: list[str],
+        missing_chunk_ids: list[str],
+        last_error: Exception | None,
+    ) -> str:
+        assigned_chunk_ids = self._assigned_chunk_ids(payload)
+        coverage_instructions = [
+            "The previous beat script was invalid or violated constraints.",
+            "Rewrite only this beat.",
+            "Every segment must contain one or more claims.",
+            "Every claim must include non-empty evidence_chunk_ids chosen from the assigned beat retrieval hits.",
+            "Every segment must include citations.",
+            "Each segment's citations must exactly match the union of its claims' evidence_chunk_ids.",
+            "Do not concentrate evidence in the first few chunks when later assigned chunks contain distinct material.",
+        ]
+        if len(assigned_chunk_ids) <= 7:
+            coverage_instructions.append(
+                "This beat has 7 or fewer assigned chunks, so every assigned chunk_id must appear in claim evidence_chunk_ids."
+            )
+        if violations:
+            coverage_instructions.append(
+                "Previous violations: " + "; ".join(violations) + "."
+            )
+        if missing_chunk_ids:
+            coverage_instructions.append(
+                "You must explicitly cover these missing chunk ids in claims and segment citations: "
+                + ", ".join(missing_chunk_ids)
+                + "."
+            )
+        if last_error is not None:
+            coverage_instructions.append(
+                f"Previous schema/generation error: {last_error}."
+            )
+        return f"{self.instructions} {' '.join(coverage_instructions)}"
 
     def _uncited_chunk_ids(self, script: BeatScript, payload: dict) -> list[str]:
-        cited_chunk_ids = {
-            chunk_id
-            for segment in script.segments
-            for claim in segment.claims
-            for chunk_id in claim.evidence_chunk_ids
-        }
+        cited_chunk_ids = set(self._claim_evidence_chunk_ids(script)) | set(
+            self._segment_citation_chunk_ids(script)
+        )
         return [
             hit["chunk_id"]
             for hit in payload["retrieval_hits"]
             if hit["chunk_id"] not in cited_chunk_ids
         ]
+
+    def build_citation_audit(
+        self,
+        episode_plan: EpisodePlan,
+        script: EpisodeScript,
+        retrieval_hits: list[RetrievalHit],
+    ) -> dict[str, Any]:
+        retrieval_hit_map = {hit.chunk_id: hit for hit in retrieval_hits}
+        beat_segments: dict[str, list[EpisodeSegment]] = {}
+        for segment in script.segments:
+            beat_segments.setdefault(segment.beat_id, []).append(segment)
+        beat_audits = []
+        for beat in episode_plan.beats:
+            segments = beat_segments.get(beat.beat_id, [])
+            claim_evidence_chunk_ids = sorted(
+                {
+                    chunk_id
+                    for segment in segments
+                    for claim in segment.claims
+                    for chunk_id in claim.evidence_chunk_ids
+                }
+            )
+            segment_citation_chunk_ids = sorted(
+                {chunk_id for segment in segments for chunk_id in segment.citations}
+            )
+            assigned_chunk_ids = list(beat.chunk_ids)
+            beat_audits.append(
+                {
+                    "beat_id": beat.beat_id,
+                    "beat_title": beat.title,
+                    "assigned_chunk_ids": assigned_chunk_ids,
+                    "assigned_chunks": [
+                        {
+                            "chunk_id": chunk_id,
+                            "chapter_title": retrieval_hit_map[chunk_id].chapter_title,
+                            "excerpt": retrieval_hit_map[chunk_id].text[:240],
+                        }
+                        for chunk_id in assigned_chunk_ids
+                        if chunk_id in retrieval_hit_map
+                    ],
+                    "claim_evidence_chunk_ids": claim_evidence_chunk_ids,
+                    "segment_citation_chunk_ids": segment_citation_chunk_ids,
+                    "missing_assigned_chunk_ids": [
+                        chunk_id
+                        for chunk_id in assigned_chunk_ids
+                        if chunk_id not in set(claim_evidence_chunk_ids) | set(segment_citation_chunk_ids)
+                    ],
+                    "extra_cited_chunk_ids": [
+                        chunk_id
+                        for chunk_id in set(claim_evidence_chunk_ids) | set(segment_citation_chunk_ids)
+                        if chunk_id not in set(assigned_chunk_ids)
+                    ],
+                    "claims": [
+                        {
+                            "claim_id": claim.claim_id,
+                            "text": claim.text,
+                            "evidence_chunk_ids": list(claim.evidence_chunk_ids),
+                        }
+                        for segment in segments
+                        for claim in segment.claims
+                    ],
+                    "segments": [
+                        {
+                            "segment_id": segment.segment_id,
+                            "heading": segment.heading,
+                            "citations": list(segment.citations),
+                            "narration_excerpt": segment.narration[:240],
+                        }
+                        for segment in segments
+                    ],
+                }
+            )
+        return {
+            "episode_id": episode_plan.episode_id,
+            "episode_title": episode_plan.title,
+            "beat_audits": beat_audits,
+        }
+
+    def _assigned_chunk_ids(self, payload: dict) -> list[str]:
+        return [hit["chunk_id"] for hit in payload["retrieval_hits"]]
+
+    def _claim_evidence_chunk_ids(self, script: BeatScript) -> list[str]:
+        return sorted(
+            {
+                chunk_id
+                for segment in script.segments
+                for claim in segment.claims
+                for chunk_id in claim.evidence_chunk_ids
+            }
+        )
+
+    def _segment_citation_chunk_ids(self, script: BeatScript) -> list[str]:
+        return sorted(
+            {
+                chunk_id
+                for segment in script.segments
+                for chunk_id in segment.citations
+            }
+        )

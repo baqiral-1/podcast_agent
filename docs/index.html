@@ -3,22 +3,17 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Podcast Agent Architecture</title>
+  <title>India After Gandhi Audio</title>
   <style>
     :root {
-      --bg: #ffffff;
-      --surface: #f6f8fa;
-      --surface-alt: #f0f4f8;
-      --border: #d0d7de;
-      --border-strong: #b8c2cc;
-      --text: #24292f;
-      --muted: #57606a;
-      --link: #0969da;
-      --det-accent: #2da44e;
-      --agent-accent: #1f6feb;
-      --artifact-accent: #9a6700;
-      --log-accent: #8250df;
-      --shadow: 0 1px 2px rgba(27, 31, 36, 0.04);
+      --bg: #000;
+      --panel: #121212;
+      --panel-soft: #1b1b1b;
+      --text: #fff;
+      --muted: #b3b3b3;
+      --green: #1ed760;
+      --line: rgba(255, 255, 255, 0.08);
+      --shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
     }
 
     * {
@@ -27,483 +22,305 @@
 
     body {
       margin: 0;
-      background: var(--bg);
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background:
+        radial-gradient(circle at top left, rgba(141, 63, 18, 0.72), transparent 28%),
+        linear-gradient(180deg, rgba(92, 43, 10, 0.88) 0%, rgba(24, 24, 24, 0.9) 32%, #000 100%);
       color: var(--text);
-      font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      font: 16px/1.5 "Helvetica Neue", Arial, sans-serif;
+      padding: 24px;
     }
 
-    a {
-      color: var(--link);
+    main {
+      width: min(1040px, 100%);
+      display: grid;
+      grid-template-columns: 320px minmax(0, 1fr);
+      gap: 28px;
+      padding: 28px;
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02));
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(12px);
     }
 
-    code {
-      font-family: ui-monospace, SFMono-Regular, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: 0.92em;
-      background: rgba(175, 184, 193, 0.2);
-      border-radius: 6px;
-      padding: 0.1em 0.35em;
+    .cover {
+      aspect-ratio: 1;
+      border-radius: 18px;
+      position: relative;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 22% 18%, rgba(255, 255, 255, 0.22), transparent 22%),
+        linear-gradient(135deg, #cb7c2f 0%, #7f3412 52%, #31170d 100%);
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.38);
     }
 
-    h1,
-    h2,
-    h3,
-    p,
-    ul,
-    ol {
+    .cover::before,
+    .cover::after {
+      content: "";
+      position: absolute;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .cover::before {
+      width: 240px;
+      height: 240px;
+      right: -70px;
+      top: 26px;
+    }
+
+    .cover::after {
+      width: 120px;
+      height: 120px;
+      left: -24px;
+      bottom: 18px;
+    }
+
+    .cover-inner {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      padding: 24px;
+      background: linear-gradient(180deg, rgba(0, 0, 0, 0.04), rgba(0, 0, 0, 0.46));
+    }
+
+    .cover-kicker,
+    .eyebrow {
       margin: 0;
+      color: rgba(255, 255, 255, 0.8);
+      font-size: 0.76rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
     }
 
-    h1,
-    h2,
-    h3 {
-      line-height: 1.25;
-      font-weight: 600;
+    .cover-title {
+      margin: 10px 0 0;
+      font-size: 2rem;
+      line-height: 0.94;
+      letter-spacing: -0.04em;
+      font-weight: 800;
     }
 
-    h1 {
-      font-size: 2.2rem;
-      margin-bottom: 12px;
-    }
-
-    h2 {
-      font-size: 1.35rem;
-      margin-bottom: 12px;
-      padding-bottom: 8px;
-      border-bottom: 1px solid var(--border);
-    }
-
-    h3 {
-      font-size: 1rem;
-    }
-
-    .page {
-      max-width: 1080px;
-      margin: 0 auto;
-      padding: 32px 24px 64px;
-    }
-
-    .header {
-      margin-bottom: 32px;
+    .content {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      min-width: 0;
     }
 
     .eyebrow {
-      margin-bottom: 8px;
-      color: var(--muted);
-      font-size: 0.8rem;
-      font-weight: 600;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
+      margin-bottom: 14px;
     }
 
-    .summary {
-      max-width: 78ch;
-      color: var(--muted);
+    h1 {
+      margin: 0 0 14px;
+      font-size: clamp(2.8rem, 7vw, 5.8rem);
+      line-height: 0.92;
+      letter-spacing: -0.06em;
     }
 
-    .toc {
+    .meta {
+      margin: 0 0 24px;
+      color: rgba(255, 255, 255, 0.86);
+      font-size: 0.95rem;
+      font-weight: 700;
+    }
+
+    .meta span {
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    .play-row {
       display: flex;
-      flex-wrap: wrap;
-      gap: 12px 20px;
-      margin-top: 16px;
-      padding: 12px 0 0;
-      border-top: 1px solid var(--border);
+      align-items: center;
+      gap: 18px;
+      margin-bottom: 22px;
+    }
+
+    .play {
+      width: 64px;
+      height: 64px;
+      border-radius: 999px;
+      border: 0;
+      display: grid;
+      place-items: center;
+      background: var(--green);
+      color: #000;
+      font-size: 1.2rem;
+      font-weight: 800;
+      box-shadow: 0 12px 24px rgba(30, 215, 96, 0.24);
+      cursor: pointer;
+    }
+
+    .play-note {
+      color: var(--muted);
       font-size: 0.95rem;
     }
 
-    .section {
-      margin-top: 36px;
+    .player {
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: var(--panel);
     }
 
-    .grid {
+    audio {
+      width: 100%;
+      display: block;
+      margin-bottom: 18px;
+    }
+
+    .controls {
       display: grid;
-      grid-template-columns: 1.05fr 0.95fr;
-      gap: 24px;
-      align-items: start;
+      gap: 12px;
     }
 
-    .panel {
-      background: var(--bg);
-    }
-
-    .table {
+    .timeline {
       width: 100%;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      overflow: hidden;
-      box-shadow: var(--shadow);
+      margin: 0;
+      accent-color: var(--green);
+      cursor: pointer;
     }
 
-    .table table {
-      width: 100%;
-      border-collapse: collapse;
+    .time-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      color: var(--muted);
+      font-size: 0.88rem;
+      font-variant-numeric: tabular-nums;
     }
 
-    .table th,
-    .table td {
-      padding: 12px 14px;
-      border-top: 1px solid var(--border);
-      text-align: left;
-      vertical-align: top;
-    }
-
-    .table tr:first-child th,
-    .table tr:first-child td {
-      border-top: 0;
-    }
-
-    .table th {
-      width: 220px;
-      background: var(--surface);
-      font-weight: 600;
-    }
-
-    .legend {
+    .links {
       display: flex;
       flex-wrap: wrap;
-      gap: 10px;
-      margin: 12px 0 18px;
-    }
-
-    .legend-item {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      color: var(--muted);
-      font-size: 0.92rem;
-    }
-
-    .swatch {
-      width: 12px;
-      height: 12px;
-      border-radius: 999px;
-      background: var(--border-strong);
-    }
-
-    .flow {
-      list-style: none;
-      padding: 0;
-      margin: 0;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      overflow: hidden;
-      box-shadow: var(--shadow);
-    }
-
-    .stage {
-      position: relative;
-      padding: 16px 18px 16px 24px;
-      border-top: 1px solid var(--border);
-      background: var(--bg);
-    }
-
-    .stage:first-child {
-      border-top: 0;
-    }
-
-    .stage::before {
-      content: "";
-      position: absolute;
-      left: 0;
-      top: 0;
-      bottom: 0;
-      width: 4px;
-      background: var(--border-strong);
-    }
-
-    .stage.det::before {
-      background: var(--det-accent);
-    }
-
-    .stage.agent::before {
-      background: var(--agent-accent);
-    }
-
-    .stage-header {
-      display: flex;
       gap: 14px;
-      align-items: baseline;
-      margin-bottom: 6px;
-    }
-
-    .step {
-      min-width: 56px;
       color: var(--muted);
-      font-size: 0.82rem;
-      font-weight: 600;
-      text-transform: uppercase;
-    }
-
-    .stage-body {
-      color: var(--muted);
-    }
-
-    .artifact {
-      margin-top: 8px;
       font-size: 0.92rem;
+    }
+
+    .links a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .links a:hover {
       color: var(--text);
     }
 
-    .artifact .label {
-      color: var(--muted);
-      font-weight: 600;
-    }
-
-    .side-stack {
-      display: grid;
-      gap: 18px;
-    }
-
-    .note {
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 16px;
-      background: var(--surface);
-      box-shadow: var(--shadow);
-    }
-
-    .note h3 {
-      margin-bottom: 8px;
-    }
-
-    .note p,
-    .note li {
-      color: var(--muted);
-    }
-
-    .note ul {
-      padding-left: 20px;
-    }
-
-    .note li + li {
-      margin-top: 6px;
-    }
-
-    .two-col {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 24px;
-    }
-
-    @media (max-width: 900px) {
-      .grid,
-      .two-col {
+    @media (max-width: 820px) {
+      main {
         grid-template-columns: 1fr;
       }
 
-      .table th,
-      .table td {
-        display: block;
-        width: 100%;
-      }
-
-      .table th {
-        border-bottom: 0;
+      .cover {
+        max-width: 360px;
       }
     }
   </style>
 </head>
 <body>
-  <main class="page">
-    <header class="header">
-      <p class="eyebrow">Podcast Agent Documentation</p>
-      <h1>Architecture Overview</h1>
-      <p class="summary">
-        <code>podcast-agent</code> is a staged Python library and CLI for converting a source book into structured
-        episode plans, grounded scripts, render manifests, and optional synthesized audio. This document describes the
-        execution model, stage boundaries, canonical artifacts, and repository layout.
-      </p>
-      <nav class="toc" aria-label="Contents">
-        <a href="#system-summary">System Summary</a>
-        <a href="#execution-flow">Execution Flow</a>
-        <a href="#artifacts">Artifacts</a>
-        <a href="#contracts">Contracts</a>
-        <a href="#layout">Project Layout</a>
-        <a href="#runtime">Runtime Notes</a>
-      </nav>
-    </header>
-
-    <section class="section" id="system-summary">
-      <h2>System Summary</h2>
-      <div class="table">
-        <table>
-          <tbody>
-            <tr>
-              <th scope="row">Primary entrypoints</th>
-              <td>Typer CLI commands and orchestration code under <code>src/podcast_agent/pipeline</code>.</td>
-            </tr>
-            <tr>
-              <th scope="row">Execution model</th>
-              <td>Deterministic stages handle ingestion, indexing, manifest generation, and audio synthesis. LLM-backed agents handle structure, analysis, planning, writing, validation, and repair.</td>
-            </tr>
-            <tr>
-              <th scope="row">Validation boundary</th>
-              <td>Stage outputs are Pydantic-validated and JSON-serializable before downstream use.</td>
-            </tr>
-            <tr>
-              <th scope="row">Persistence</th>
-              <td>Books, chapters, chunks, embeddings, plans, scripts, reports, and repairs may be stored through the repository layer.</td>
-            </tr>
-            <tr>
-              <th scope="row">Output root</th>
-              <td><code>.podcast_agent/runs/&lt;book-title&gt;-&lt;timestamp&gt;/</code></td>
-            </tr>
-          </tbody>
-        </table>
+  <main>
+    <section class="cover">
+      <div class="cover-inner">
+        <p class="cover-kicker">Generated Episode</p>
+        <h2 class="cover-title">India After Gandhi</h2>
       </div>
     </section>
 
-    <section class="section" id="execution-flow">
-      <h2>Execution Flow</h2>
-      <div class="grid">
-        <div class="panel">
-          <div class="legend" aria-label="Legend">
-            <span class="legend-item"><span class="swatch" style="background: var(--det-accent)"></span>Deterministic stage</span>
-            <span class="legend-item"><span class="swatch" style="background: var(--agent-accent)"></span>LLM-backed agent</span>
-            <span class="legend-item"><span class="swatch" style="background: var(--artifact-accent)"></span>Persisted artifact</span>
-            <span class="legend-item"><span class="swatch" style="background: var(--log-accent)"></span>Run-level log</span>
+    <section class="content">
+      <p class="eyebrow">Latest Output Audio</p>
+      <h1>Foundations of Indian Identity</h1>
+      <p class="meta">India After Gandhi <span>•</span> Chapter 1</p>
+
+      <div class="play-row">
+        <button class="play" id="hero-play" type="button" aria-label="Play audio">▶</button>
+        <div class="play-note">Final synthesized episode audio</div>
+      </div>
+
+      <section class="player">
+        <audio id="audio" preload="metadata">
+          <source src="./india-after-gandhi-latest-audio.mp3" type="audio/mpeg">
+          Your browser does not support the audio element.
+        </audio>
+        <div class="controls">
+          <input id="timeline" class="timeline" type="range" min="0" max="100" step="0.1" value="0" aria-label="Seek through audio">
+          <div class="time-row">
+            <span id="current-time">0:00</span>
+            <span id="duration">0:00</span>
           </div>
-          <ol class="flow">
-            <li class="stage det">
-              <div class="stage-header">
-                <span class="step">Step 1</span>
-                <h3>ingest-book</h3>
-              </div>
-              <p class="stage-body">Reads the source file, normalizes metadata, and creates <code>BookIngestionResult</code>.</p>
-              <p class="artifact"><span class="label">Artifact:</span> <code>ingestion.json</code></p>
-            </li>
-            <li class="stage agent">
-              <div class="stage-header">
-                <span class="step">Step 2</span>
-                <h3>structuring_agent</h3>
-              </div>
-              <p class="stage-body">Produces <code>BookStructure</code> with chapters, chunks, stable identifiers, and source offsets.</p>
-              <p class="artifact"><span class="label">Artifact:</span> <code>structure.json</code></p>
-            </li>
-            <li class="stage det">
-              <div class="stage-header">
-                <span class="step">Step 3</span>
-                <h3>index-book</h3>
-              </div>
-              <p class="stage-body">Stores chunks, computes embeddings, and prepares retrieval state for later stages.</p>
-              <p class="artifact"><span class="label">Artifact:</span> <code>embeddings.json</code> and repository rows</p>
-            </li>
-            <li class="stage agent">
-              <div class="stage-header">
-                <span class="step">Step 4</span>
-                <h3>analysis_agent</h3>
-              </div>
-              <p class="stage-body">Identifies themes, continuity arcs, notable claims, and candidate episode clusters.</p>
-              <p class="artifact"><span class="label">Artifact:</span> <code>analysis.json</code></p>
-            </li>
-            <li class="stage agent">
-              <div class="stage-header">
-                <span class="step">Step 5</span>
-                <h3>episode_planning_agent</h3>
-              </div>
-              <p class="stage-body">Converts analysis into <code>SeriesPlan</code> with episodes, beats, and claim requirements.</p>
-              <p class="artifact"><span class="label">Artifact:</span> <code>series_plan.json</code></p>
-            </li>
-            <li class="stage agent">
-              <div class="stage-header">
-                <span class="step">Step 6</span>
-                <h3>writing_agent</h3>
-              </div>
-              <p class="stage-body">Generates episode narration from the plan and retrieved source chunks.</p>
-              <p class="artifact"><span class="label">Artifact:</span> <code>script.json</code></p>
-            </li>
-            <li class="stage agent">
-              <div class="stage-header">
-                <span class="step">Step 7</span>
-                <h3>grounding_validation_agent</h3>
-              </div>
-              <p class="stage-body">Validates claim-bearing segments against cited evidence before rendering.</p>
-              <p class="artifact"><span class="label">Artifact:</span> <code>grounding_report.json</code></p>
-            </li>
-            <li class="stage agent">
-              <div class="stage-header">
-                <span class="step">Step 8</span>
-                <h3>repair_agent</h3>
-              </div>
-              <p class="stage-body">Repairs weak or unsupported sections and submits the result for revalidation.</p>
-              <p class="artifact"><span class="label">Artifact:</span> <code>repair_attempt_&lt;n&gt;.json</code> when required</p>
-            </li>
-            <li class="stage det">
-              <div class="stage-header">
-                <span class="step">Step 9</span>
-                <h3>render-manifest</h3>
-              </div>
-              <p class="stage-body">Creates TTS-ready render data with grounded text and SSML-ready content.</p>
-              <p class="artifact"><span class="label">Artifact:</span> <code>render_manifest.json</code></p>
-            </li>
-            <li class="stage det">
-              <div class="stage-header">
-                <span class="step">Step 10</span>
-                <h3>synthesize-audio</h3>
-              </div>
-              <p class="stage-body">Synthesizes final episode audio from validated render output when audio is enabled.</p>
-              <p class="artifact"><span class="label">Artifact:</span> final <code>.mp3</code> and audio metadata in <code>episode_output.json</code></p>
-            </li>
-          </ol>
         </div>
-        <aside class="side-stack">
-          <section class="note">
-            <h3>run.log</h3>
-            <p>Each run writes a log file alongside generated artifacts.</p>
-            <p>It records stage transitions, prompts, responses, TTS requests, and command metadata.</p>
-          </section>
-          <section class="note" id="artifacts">
-            <h3>Canonical Artifacts</h3>
-            <ul>
-              <li><code>BookIngestionResult</code></li>
-              <li><code>BookStructure</code></li>
-              <li><code>BookAnalysis</code></li>
-              <li><code>SeriesPlan</code></li>
-              <li><code>EpisodeScript</code></li>
-              <li><code>GroundingReport</code></li>
-              <li><code>RepairResult</code></li>
-              <li><code>RenderManifest</code></li>
-              <li><code>AudioManifest</code></li>
-              <li><code>EpisodeOutput</code></li>
-            </ul>
-          </section>
-          <section class="note" id="contracts">
-            <h3>Contract Rules</h3>
-            <ul>
-              <li>Artifacts are JSON-serializable.</li>
-              <li>Stage outputs are schema-validated before handoff.</li>
-              <li>Extra fields are rejected rather than ignored.</li>
-              <li>Render-manifest generation is blocked until grounding passes.</li>
-            </ul>
-          </section>
-        </aside>
-      </div>
-    </section>
-
-    <section class="section" id="layout">
-      <h2>Project Layout</h2>
-      <div class="two-col">
-        <section class="note">
-          <h3>Repository Structure</h3>
-          <ul>
-            <li><code>src/podcast_agent/agents</code> contains stage-specific agent logic.</li>
-            <li><code>src/podcast_agent/pipeline</code> contains orchestration code.</li>
-            <li><code>src/podcast_agent/db</code> contains repository and persistence logic.</li>
-            <li><code>src/podcast_agent/retrieval</code> contains embeddings and retrieval helpers.</li>
-            <li><code>src/podcast_agent/tts</code> contains speech synthesis clients.</li>
-          </ul>
-        </section>
-        <section class="note" id="runtime">
-          <h3>Runtime Notes</h3>
-          <ul>
-            <li>The default LLM and TTS path targets an OpenAI-compatible endpoint.</li>
-            <li>A heuristic adapter is available for offline tests and deterministic fallback runs.</li>
-            <li>Episodes target at least 30 minutes when source material supports it.</li>
-            <li>Short episodes are only merged away if they cannot remain above a 10-minute minimum.</li>
-            <li>Artifacts are written under <code>.podcast_agent/runs/</code>.</li>
-          </ul>
-        </section>
-      </div>
+        <div class="links">
+          <a href="./india-after-gandhi-latest-audio.mp3">Open MP3</a>
+        </div>
+      </section>
     </section>
   </main>
+  <script>
+    const audio = document.getElementById("audio");
+    const heroPlay = document.getElementById("hero-play");
+    const timeline = document.getElementById("timeline");
+    const currentTime = document.getElementById("current-time");
+    const duration = document.getElementById("duration");
+
+    function formatTime(value) {
+      if (!Number.isFinite(value) || value < 0) {
+        return "0:00";
+      }
+      const minutes = Math.floor(value / 60);
+      const seconds = Math.floor(value % 60).toString().padStart(2, "0");
+      return `${minutes}:${seconds}`;
+    }
+
+    function syncPlayButton() {
+      heroPlay.textContent = audio.paused ? "▶" : "❚❚";
+      heroPlay.setAttribute("aria-label", audio.paused ? "Play audio" : "Pause audio");
+    }
+
+    function syncTimeline() {
+      if (!audio.duration) {
+        timeline.value = "0";
+        currentTime.textContent = "0:00";
+        duration.textContent = "0:00";
+        return;
+      }
+
+      const percent = (audio.currentTime / audio.duration) * 100;
+      timeline.value = String(percent);
+      currentTime.textContent = formatTime(audio.currentTime);
+      duration.textContent = formatTime(audio.duration);
+    }
+
+    heroPlay.addEventListener("click", () => {
+      if (audio.paused) {
+        audio.play();
+      } else {
+        audio.pause();
+      }
+    });
+
+    audio.addEventListener("play", syncPlayButton);
+    audio.addEventListener("pause", syncPlayButton);
+    audio.addEventListener("loadedmetadata", syncTimeline);
+    audio.addEventListener("timeupdate", syncTimeline);
+    audio.addEventListener("ended", syncPlayButton);
+
+    timeline.addEventListener("input", () => {
+      if (!audio.duration) {
+        return;
+      }
+      audio.currentTime = (Number(timeline.value) / 100) * audio.duration;
+    });
+
+    syncPlayButton();
+    syncTimeline();
+  </script>
 </body>
 </html>

@@ -112,7 +112,12 @@ class StructuringAgent(Agent):
             },
         }
 
-    def structure(self, ingestion: BookIngestionResult) -> BookStructure:
+    def structure(
+        self,
+        ingestion: BookIngestionResult,
+        *,
+        chapter_limit: int | None = None,
+    ) -> BookStructure:
         """Generate the canonical structure for a book."""
 
         chapters = []
@@ -140,6 +145,8 @@ class StructuringAgent(Agent):
                 section_count=len(sections),
                 message="No reliable chapter headings detected; using deterministic fallback sectioning.",
             )
+        if chapter_limit is not None:
+            sections = sections[:chapter_limit]
         chapter_inputs = []
         for chapter_number, section in enumerate(sections, start=1):
             chapter_inputs.append((chapter_number, section.title, section.body))

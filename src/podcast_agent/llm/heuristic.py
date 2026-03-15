@@ -68,12 +68,11 @@ class HeuristicLLMClient(LLMClient):
     def _generate_book_analysis(self, payload: PromptPayload) -> dict[str, Any]:
         structure = payload["structure"]
         chapters = structure["chapters"]
-        chunks = structure["chunks"]
-        chapter_theme_map: dict[str, list[str]] = {}
         all_terms: list[str] = []
-        for chunk in chunks:
-            chapter_theme_map.setdefault(chunk["chapter_id"], []).extend(chunk.get("themes", []))
-            all_terms.extend(chunk.get("themes", []))
+        for chapter in chapters:
+            all_terms.extend(chapter.get("themes", []))
+            for section in chapter.get("sections", []):
+                all_terms.extend(section.get("themes", []))
         top_themes = [item for item, _ in Counter(all_terms).most_common(6)]
         continuity_arcs = []
         for index in range(max(0, len(chapters) - 1)):
@@ -93,28 +92,28 @@ class HeuristicLLMClient(LLMClient):
             if not chosen_chapters:
                 continue
             chapter_ids = [chapter["chapter_id"] for chapter in chosen_chapters]
-            chunk_ids = list(
-                itertools.chain.from_iterable(chapter["chunk_ids"] for chapter in chosen_chapters)
-            )
             cluster_themes = []
-            for chapter_id in chapter_ids:
-                cluster_themes.extend(chapter_theme_map.get(chapter_id, []))
+            for chapter in chosen_chapters:
+                cluster_themes.extend(chapter.get("themes", []))
             clusters.append(
                 {
                     "cluster_id": f"cluster-{sequence}",
                     "label": f"Episode Cluster {sequence}",
                     "rationale": "Grouped around adjacent chapters and shared themes.",
                     "chapter_ids": chapter_ids,
-                    "chunk_ids": chunk_ids,
                     "themes": [item for item, _ in Counter(cluster_themes).most_common(4)],
                 }
             )
         notable_claims = []
-        for chunk in chunks[:8]:
-            source_text = chunk.get("text") or chunk.get("excerpt", "")
-            sentence = source_text.split(".")[0].strip()
-            if sentence:
-                notable_claims.append(sentence)
+        for chapter in chapters:
+            for section in chapter.get("sections", [])[:2]:
+                sentence = section.get("excerpt", "").split(".")[0].strip()
+                if sentence:
+                    notable_claims.append(sentence)
+                if len(notable_claims) >= 8:
+                    break
+            if len(notable_claims) >= 8:
+                break
         return {
             "book_id": structure["book_id"],
             "themes": top_themes or ["summary", "narrative"],
@@ -128,22 +127,20 @@ class HeuristicLLMClient(LLMClient):
         structure = payload["structure"]
         minimum_source_words_per_episode = payload.get("minimum_source_words_per_episode", 50000)
         chapter_map = {chapter["chapter_id"]: chapter for chapter in structure["chapters"]}
-        chunk_map = {chunk["chunk_id"]: chunk for chunk in structure["chunks"]}
         pending_clusters = list(analysis["episode_clusters"])
         merged_clusters = []
         current_cluster: dict[str, Any] | None = None
 
         for cluster in pending_clusters:
             cluster_word_count = sum(
-                chunk_map[chunk_id].get("word_count", len(chunk_map[chunk_id].get("text", "").split()))
-                for chunk_id in cluster["chunk_ids"]
-                if chunk_id in chunk_map
+                chapter_map[chapter_id].get("word_count", 0)
+                for chapter_id in cluster["chapter_ids"]
+                if chapter_id in chapter_map
             )
             if current_cluster is None:
                 current_cluster = {
                     "cluster_id": f"cluster-{len(merged_clusters) + 1}",
                     "chapter_ids": list(cluster["chapter_ids"]),
-                    "chunk_ids": list(cluster["chunk_ids"]),
                     "themes": list(cluster["themes"]),
                     "rationale": [cluster["rationale"]],
                     "word_count": cluster_word_count,
@@ -151,7 +148,6 @@ class HeuristicLLMClient(LLMClient):
                 continue
             if current_cluster["word_count"] < minimum_source_words_per_episode:
                 current_cluster["chapter_ids"].extend(cluster["chapter_ids"])
-                current_cluster["chunk_ids"].extend(cluster["chunk_ids"])
                 current_cluster["themes"].extend(cluster["themes"])
                 current_cluster["rationale"].append(cluster["rationale"])
                 current_cluster["word_count"] += cluster_word_count
@@ -160,7 +156,6 @@ class HeuristicLLMClient(LLMClient):
                 current_cluster = {
                     "cluster_id": f"cluster-{len(merged_clusters) + 1}",
                     "chapter_ids": list(cluster["chapter_ids"]),
-                    "chunk_ids": list(cluster["chunk_ids"]),
                     "themes": list(cluster["themes"]),
                     "rationale": [cluster["rationale"]],
                     "word_count": cluster_word_count,
@@ -168,7 +163,6 @@ class HeuristicLLMClient(LLMClient):
         if current_cluster is not None:
             if merged_clusters and current_cluster["word_count"] < minimum_source_words_per_episode:
                 merged_clusters[-1]["chapter_ids"].extend(current_cluster["chapter_ids"])
-                merged_clusters[-1]["chunk_ids"].extend(current_cluster["chunk_ids"])
                 merged_clusters[-1]["themes"].extend(current_cluster["themes"])
                 merged_clusters[-1]["rationale"].extend(current_cluster["rationale"])
                 merged_clusters[-1]["word_count"] += current_cluster["word_count"]
@@ -177,20 +171,6 @@ class HeuristicLLMClient(LLMClient):
 
         episodes = []
         for sequence, cluster in enumerate(merged_clusters, start=1):
-            beats = []
-            grouped_chunk_ids = cluster["chunk_ids"]
-            for beat_sequence, chunk_id_group in enumerate(_group(grouped_chunk_ids, 2), start=1):
-                beats.append(
-                    {
-                        "beat_id": f"{cluster['cluster_id']}-beat-{beat_sequence}",
-                        "title": f"Beat {beat_sequence}",
-                        "objective": "Advance the episode through grounded synthesis.",
-                        "chunk_ids": chunk_id_group,
-                        "claim_requirements": [
-                            f"Explain the significance of {chunk_id_group[0]}."
-                        ],
-                    }
-                )
             chapter_titles = [chapter_map[chapter_id]["title"] for chapter_id in cluster["chapter_ids"]]
             if len(chapter_titles) > 2:
                 episode_title = f"{chapter_titles[0]} / {chapter_titles[-1]}"
@@ -203,10 +183,8 @@ class HeuristicLLMClient(LLMClient):
                     "title": episode_title,
                     "synopsis": " ".join(cluster["rationale"]),
                     "chapter_ids": cluster["chapter_ids"],
-                    "chunk_ids": cluster["chunk_ids"],
                     "themes": [item for item, _ in Counter(cluster["themes"]).most_common(4)]
                     or analysis["themes"][:3],
-                    "beats": beats,
                 }
             )
         return {

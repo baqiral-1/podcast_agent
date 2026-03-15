@@ -116,17 +116,7 @@ class FlakyPlanningLLM(LLMClient):
                                 "title": chapter["title"],
                                 "synopsis": "Too short and chapter-scoped.",
                                 "chapter_ids": [chapter["chapter_id"]],
-                                "chunk_ids": chapter["chunk_ids"][:1],
                                 "themes": ["test"],
-                                "beats": [
-                                    {
-                                        "beat_id": "beat-1",
-                                        "title": "Beat 1",
-                                        "objective": "Test objective.",
-                                        "chunk_ids": chapter["chunk_ids"][:1],
-                                        "claim_requirements": ["Test claim."],
-                                    }
-                                ],
                             }
                         ],
                     }
@@ -173,7 +163,6 @@ class FlakyAnalysisLLM(LLMClient):
                                     structure["chapters"][1]["chapter_id"],
                                     structure["chapters"][3]["chapter_id"],
                                 ],
-                                "chunk_ids": [structure["chapters"][1]["chunk_ids"][0]],
                                 "themes": ["identity"],
                             }
                         ],
@@ -1197,6 +1186,22 @@ def test_pipeline_logs_payload_and_assignment_diagnostics(tmp_path: Path) -> Non
     assert any(line["event_type"] == "planning_payload_diagnostics" for line in lines)
     assignment_events = [line for line in lines if line["event_type"] == "episode_assignment_diagnostics"]
     assert assignment_events
+    assert any(line["event_type"] == "citation_audit" for line in lines)
+    validation_events = [line for line in lines if line["event_type"] == "validation_diagnostics"]
+    assert validation_events
+    assert "grounded_claim_count" in validation_events[-1]["payload"]
+    citation_audit_path = (
+        tmp_path
+        / "runs"
+        / orchestrator.run_id
+        / "diagnostic-book"
+        / "episode-1"
+        / "citation_audit.json"
+    )
+    assert citation_audit_path.exists()
+    citation_audit = json.loads(citation_audit_path.read_text(encoding="utf-8"))
+    assert citation_audit["writing"]["beat_audits"]
+    assert "validation" in citation_audit
     assert assignment_events[0]["payload"]["beat_chunk_counts"]
     repair_events = [line for line in lines if line["event_type"] == "repair_summary"]
     assert repair_events

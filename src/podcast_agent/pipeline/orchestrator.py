@@ -25,6 +25,7 @@ from podcast_agent.schemas.models import (
     AudioManifest,
     AudioSegmentFile,
     BookIngestionResult,
+    BookStructure,
     EpisodeOutput,
     EpisodePlan,
     EpisodeScript,
@@ -148,11 +149,24 @@ class PipelineOrchestrator:
         self.run_logger.log("stage_end", stage="ingest_book", book_id=book_id)
         return ingestion
 
-    def index_book(self, ingestion: BookIngestionResult):
+    def index_book(
+        self,
+        ingestion: BookIngestionResult,
+        *,
+        chapter_limit: int | None = None,
+    ):
         """Structure the book and store chunks plus embeddings in the repository."""
 
         self.run_logger.log("stage_start", stage="index_book", book_id=ingestion.book_id)
-        structure = self.structuring_agent.structure(ingestion)
+        structure = self.structuring_agent.structure(ingestion, chapter_limit=chapter_limit)
+        if chapter_limit is not None:
+            self.run_logger.log(
+                "chapter_limit_applied",
+                book_id=structure.book_id,
+                chapter_limit=chapter_limit,
+                chapter_count=len(structure.chapters),
+                chunk_count=len(structure.chunks),
+            )
         self.repository.save_structure(structure)
         embeddings = {
             chunk.chunk_id: embed_text(
@@ -378,12 +392,13 @@ class PipelineOrchestrator:
         source_path: str | Path,
         title: str | None = None,
         author: str = "Unknown",
+        chapter_limit: int | None = None,
         synthesize_audio: bool = False,
     ) -> dict:
         """Run the end-to-end pipeline for every episode in the series plan."""
 
         ingestion = self.ingest_book(source_path=source_path, title=title, author=author)
-        structure = self.index_book(ingestion)
+        structure = self.index_book(ingestion, chapter_limit=chapter_limit)
         analysis, plan = self.plan_episodes(structure)
         self.run_logger.log(
             "episode_parallelism_configured",
@@ -438,13 +453,16 @@ class PipelineOrchestrator:
         synthesize_audio: bool,
     ) -> EpisodeOutput:
         script = self.write_episode(book_id, episode_plan)
+        self._write_citation_audit(book_id, episode_plan, script)
         report = self.validate_episode(book_id, script)
+        self._write_citation_audit(book_id, episode_plan, script, report)
         repair_attempts: list[RepairResult] = []
         if report.overall_status != "pass":
             repair = self.repair_episode(book_id, script, report)
             script = repair.script
             report = repair.report
             repair_attempts.append(repair)
+            self._write_citation_audit(book_id, episode_plan, script, report)
         self.run_logger.log(
             "repair_summary",
             book_id=book_id,
@@ -472,6 +490,29 @@ class PipelineOrchestrator:
             episode_output.model_dump(mode="json"),
         )
         return episode_output
+
+    def _write_citation_audit(
+        self,
+        book_id: str,
+        episode_plan: EpisodePlan,
+        script: EpisodeScript,
+        report: GroundingReport | None = None,
+    ) -> None:
+        retrieval_hits = self.retrieval.fetch_for_episode(book_id=book_id, chunk_ids=episode_plan.chunk_ids)
+        payload = {
+            "episode_id": episode_plan.episode_id,
+            "writing": self.writing_agent.build_citation_audit(episode_plan, script, retrieval_hits),
+            "validation": (
+                self.validation_agent.build_citation_audit(script, report)
+                if report is not None
+                else None
+            ),
+        }
+        self._write_artifact(
+            self._episode_artifact_key(book_id, episode_plan.episode_id),
+            "citation_audit",
+            payload,
+        )
 
     def _write_artifact(self, run_key: str, name: str, payload: dict) -> None:
         artifact_path = self.artifacts.write_json(run_key, name, payload)
@@ -501,6 +542,19 @@ def _detect_source_type(path: Path) -> SourceType:
     if suffix == ".md":
         return SourceType.MARKDOWN
     return SourceType.TEXT
+
+
+def _limit_structure(structure: BookStructure, chapter_limit: int) -> BookStructure:
+    limited_chapters = list(structure.chapters[:chapter_limit])
+    allowed_chapter_ids = {chapter.chapter_id for chapter in limited_chapters}
+    limited_chunks = [chunk for chunk in structure.chunks if chunk.chapter_id in allowed_chapter_ids]
+    return BookStructure(
+        book_id=structure.book_id,
+        title=structure.title,
+        chapters=limited_chapters,
+        chunks=limited_chunks,
+        created_at=structure.created_at,
+    )
 
 
 def _new_run_id(book_id: str) -> str:

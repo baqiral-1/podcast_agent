@@ -21,8 +21,8 @@ class EpisodePlanningAgent(Agent):
         "Create a hierarchical series and episode plan for a single-narrator podcast. "
         "Episodes should usually span multiple chapters, preserve the multi-chapter clusters from analysis, "
         "and assign enough contiguous source material to each episode to satisfy the requested minimum source-word budget "
-        "when the book is large enough. Return a contiguous partition of the full chapter order, avoid sparse chunk "
-        "selection, and keep all assigned chunks for each chosen chapter span. If the full book is shorter than the "
+        "when the book is large enough. Return a contiguous partition of the full chapter order and choose episode spans "
+        "by chapter_ids only; chunk coverage will be expanded deterministically from those chapter spans. If the full book is shorter than the "
         "minimum source-word budget, return a single episode covering the entire book."
     )
     response_model = SeriesPlan
