@@ -25,6 +25,9 @@ class WritingAgent(Agent):
         "If the beat has 7 or fewer assigned chunk_ids, every assigned chunk_id must appear in at least one claim's evidence_chunk_ids. "
         "Do not focus only on early chunks if later chunks contain distinct material. "
         "Use 1 or 2 segments unless more are clearly necessary. "
+        "Grounding rules:"
+        "1. Do not turn suspicion, rumor, belief, allegation, or interpretation into fact."
+        "2. Do not infer motive, causality, or significance unless the cited evidence states it explicitly."
         "Hard rules: "
         "1. Every segment must contain at least one claim. "
         "2. Every claim must include one or more evidence_chunk_ids taken only from the assigned beat retrieval hits. "
@@ -451,7 +454,8 @@ class WritingAgent(Agent):
             "Do not concentrate evidence in the first few chunks when later assigned chunks contain distinct material.",
             "Keep the response compact and JSON-only.",
             "Use at most two segments unless one segment would be clearly insufficient.",
-            "Keep narration concise and avoid repeating or quoting source text at length.",
+            "Keep narration concise and avoid repeating or quoting source text at length."
+            "When evidence is partial or ambiguous, prefer omission or weaker wording over a more vivid summary."
         ]
         if len(assigned_chunk_ids) <= 7:
             coverage_instructions.append(
