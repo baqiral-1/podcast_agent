@@ -39,6 +39,7 @@ class EpisodePlanningAgent(Agent):
         self,
         llm,
         minimum_source_words_per_episode: int = 50000,
+        min_episode_source_ratio: float = 0.3,
         spoken_words_per_minute: int = 130,
         max_episode_minutes: int = 58,
         max_payload_bytes: int = 500000,
@@ -48,6 +49,7 @@ class EpisodePlanningAgent(Agent):
     ) -> None:
         super().__init__(llm)
         self.minimum_source_words_per_episode = minimum_source_words_per_episode
+        self.min_episode_source_ratio = min_episode_source_ratio
         self.spoken_words_per_minute = spoken_words_per_minute
         self.max_episode_minutes = max_episode_minutes
         self.max_payload_bytes = max_payload_bytes
@@ -61,6 +63,7 @@ class EpisodePlanningAgent(Agent):
             "structure": build_structure_summary(structure),
             "analysis": build_analysis_summary(analysis),
             "minimum_source_words_per_episode": self.minimum_source_words_per_episode,
+            "min_episode_source_ratio": self.min_episode_source_ratio,
             "episode_count": episode_count,
             "target_source_words_per_episode": target_source_words_per_episode,
             "max_episode_minutes": self.max_episode_minutes,
@@ -189,6 +192,7 @@ class EpisodePlanningAgent(Agent):
             violations.append("planner expanded multi-chapter analysis into chapter-level episodes")
         total_words = sum(chunk_word_counts.values())
         target_source_words_per_episode = self._target_source_words_per_episode(structure, episode_count)
+        min_episode_source_words = max(1, int(target_source_words_per_episode * self.min_episode_source_ratio))
         all_chapter_ids = {chapter.chapter_id for chapter in structure.chapters}
         assigned_chapter_ids = [chapter_id for episode in plan.episodes for chapter_id in episode.chapter_ids]
         missing_chapters = sorted(all_chapter_ids - set(assigned_chapter_ids))
@@ -210,7 +214,7 @@ class EpisodePlanningAgent(Agent):
             )
         for episode in plan.episodes:
             episode_words = sum(chunk_word_counts.get(chunk_id, 0) for chunk_id in episode.chunk_ids)
-            if episode_words < max(1, target_source_words_per_episode // 2):
+            if episode_words < min_episode_source_words:
                 violations.append(
                     f"{episode.episode_id} estimated at {episode_words} source words, too small for target {target_source_words_per_episode}"
                 )
@@ -548,6 +552,7 @@ class EpisodePlanningAgent(Agent):
             retried=retried,
             requested_episode_count=episode_count,
             minimum_source_words_per_episode=self.minimum_source_words_per_episode,
+            min_episode_source_ratio=self.min_episode_source_ratio,
             target_source_words_per_episode=self._target_source_words_per_episode(structure, episode_count),
             max_episode_minutes=self.max_episode_minutes,
             max_episode_script_words=self._max_episode_script_words(),

@@ -56,7 +56,7 @@ class TTSConfig(BaseModel):
             "and especially before the final line, to enhance suspense dramatically."
         )
     )
-    speed: float = Field(default=1.05, gt=0.0, le=4.0)
+    speed: float = Field(default=1.1, gt=0.0, le=4.0)
     timeout_seconds: float = Field(default=300.0, gt=0.0)
 
 
@@ -74,9 +74,11 @@ class PipelineConfig(BaseModel):
     audio_parallelism: int = Field(default=8, ge=1)
     audio_retry_attempts: int = Field(default=2, ge=0)
     beat_parallelism: int = Field(default=4, ge=1)
+    beat_write_retry_attempts: int = Field(default=2, ge=0)
     beat_write_timeout_seconds: float = Field(default=120.0, gt=0.0)
     grounding_parallelism: int = Field(default=3, ge=1)
     minimum_source_words_per_episode: int = Field(default=50000, ge=1000)
+    min_episode_source_ratio: float = Field(default=0.3, gt=0.0, le=1.0)
     spoken_words_per_minute: int = Field(default=130, ge=80)
     max_episode_minutes: int = Field(default=360, ge=1)
     max_analysis_payload_bytes: int = Field(default=500000, ge=10000)
@@ -87,8 +89,8 @@ class PipelineConfig(BaseModel):
     beat_evidence_window_size: int = Field(default=8, ge=1)
     coverage_warning_min_ratio: float | None = Field(default=None, ge=0.0, le=1.0)
     max_structuring_chapter_words: int = Field(default=2500, ge=500)
-    max_structuring_llm_chapter_words: int = Field(default=42232, ge=1000)
-    structuring_parallelism: int = Field(default=3, ge=1)
+    max_structuring_llm_chapter_words: int = Field(default=75000, ge=1000)
+    structuring_parallelism: int = Field(default=10, ge=1)
     structuring_window_words: int = Field(default=1800, ge=300)
     structuring_window_overlap_words: int = Field(default=150, ge=0)
 

@@ -23,14 +23,19 @@ from podcast_agent.run_logging import RunLogger
 from podcast_agent.schemas.models import (
     BeatScript,
     BookAnalysis,
+    BookChapter,
+    BookChunk,
     BookIngestionResult,
+    BookStructure,
     EpisodeBeat,
+    EpisodeCluster,
     EpisodePlan,
     EpisodeSegment,
     EpisodeScript,
     GroundingReport,
     GroundingStatus,
     RetrievalHit,
+    SeriesPlan,
     ScriptClaim,
     SourceType,
 )
@@ -162,31 +167,70 @@ class FailingStructuringBoundaryLLM(LLMClient):
         return HeuristicLLMClient().generate_json(schema_name, instructions, payload, response_model)
 
 
+class ParallelWindowStructuringLLM(LLMClient):
+    """LLM stub that records whether windowed structuring overlaps in flight."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.active_calls = 0
+        self.max_active_calls = 0
+        self._lock = Lock()
+        self._overlap_ready = Event()
+
+    def generate_json(self, schema_name, instructions, payload, response_model):
+        if schema_name == "structured_chapter":
+            with self._lock:
+                self.active_calls += 1
+                self.max_active_calls = max(self.max_active_calls, self.active_calls)
+                if self.active_calls >= 2:
+                    self._overlap_ready.set()
+            try:
+                if payload.get("window") is not None and self.max_active_calls == 1:
+                    self._overlap_ready.wait(timeout=0.5)
+                time.sleep(0.05)
+                draft = payload["draft"]
+                return response_model.model_validate(
+                    {
+                        "chapter_number": draft["chapter_number"],
+                        "title": draft["title"],
+                        "summary": draft["summary"],
+                        "chunks": [
+                            {
+                                "start_word": chunk["start_word"],
+                                "end_word": chunk["end_word"],
+                                "themes": chunk.get("themes", []),
+                            }
+                            for chunk in draft["chunks"]
+                        ],
+                    }
+                )
+            finally:
+                with self._lock:
+                    self.active_calls -= 1
+        return HeuristicLLMClient().generate_json(schema_name, instructions, payload, response_model)
+
+
 class CitationLoggingLLM(LLMClient):
-    """LLM stub that cites via segment citations but leaves claim evidence empty."""
+    """LLM stub that leaves claim evidence empty so derived citations stay empty."""
 
     def generate_json(self, schema_name, instructions, payload, response_model):
         if schema_name == "beat_script":
             beat = payload["beat"]
-            cited_chunk_ids = [hit["chunk_id"] for hit in payload["retrieval_hits"][:2]]
-            return response_model.model_construct(
-                beat_id=beat["beat_id"],
-                segments=[
-                    EpisodeSegment.model_construct(
-                        segment_id="segment-1",
-                        beat_id=beat["beat_id"],
-                        heading=beat["title"],
-                        narration="A grounded narration.",
-                        claims=[
-                            ScriptClaim.model_construct(
-                                claim_id=f"{beat['beat_id']}-claim-1",
-                                text="A claim with no evidence ids.",
-                                evidence_chunk_ids=[],
-                            )
-                        ],
-                        citations=cited_chunk_ids,
-                    )
-                ],
+            return response_model.model_validate(
+                {
+                    "segments": [
+                        {
+                            "heading": beat["title"],
+                            "narration": "A grounded narration.",
+                            "claims": [
+                                {
+                                    "text": "A claim with no evidence ids.",
+                                    "evidence_chunk_ids": [],
+                                }
+                            ],
+                        }
+                    ],
+                }
             )
         return HeuristicLLMClient().generate_json(schema_name, instructions, payload, response_model)
 
@@ -199,13 +243,27 @@ class CapturingRepairLLM(LLMClient):
 
     def generate_json(self, schema_name, instructions, payload, response_model):
         if schema_name == "episode_repair":
+            failed_segments = []
+            for segment in payload["failed_segments"]:
+                repaired = dict(segment)
+                repaired.pop("segment_id", None)
+                repaired.pop("beat_id", None)
+                repaired.pop("citations", None)
+                repaired["claims"] = [
+                    {
+                        "text": claim["text"],
+                        "evidence_chunk_ids": claim["evidence_chunk_ids"],
+                    }
+                    for claim in repaired["claims"]
+                ]
+                failed_segments.append(repaired)
             self.payloads.append(payload)
             return response_model.model_validate(
                 {
                     "episode_id": payload["episode_id"],
                     "attempt": payload["attempt"],
                     "repaired_segment_ids": [segment["segment_id"] for segment in payload["failed_segments"]],
-                    "repaired_segments": payload["failed_segments"],
+                    "repaired_segments": failed_segments,
                 }
             )
         return HeuristicLLMClient().generate_json(schema_name, instructions, payload, response_model)
@@ -237,16 +295,12 @@ class RetryingClaimWritingLLM(LLMClient):
                 )
             return response_model.model_validate(
                 {
-                    "beat_id": beat["beat_id"],
                     "segments": [
                         {
-                            "segment_id": f"{beat['beat_id']}-segment-1",
-                            "beat_id": beat["beat_id"],
                             "heading": beat["title"],
                             "narration": "A longer grounded narration for the retry path." * 8,
                             "claims": [
                                 {
-                                    "claim_id": f"{beat['beat_id']}-claim-1",
                                     "text": "Grounded claim one.",
                                     "evidence_chunk_ids": [chunk_ids[0]],
                                 },
@@ -254,7 +308,6 @@ class RetryingClaimWritingLLM(LLMClient):
                             + (
                                 [
                                     {
-                                        "claim_id": f"{beat['beat_id']}-claim-2",
                                         "text": "Grounded claim two.",
                                         "evidence_chunk_ids": [chunk_ids[1]],
                                     }
@@ -262,7 +315,6 @@ class RetryingClaimWritingLLM(LLMClient):
                                 if len(chunk_ids) > 1
                                 else []
                             ),
-                            "citations": chunk_ids,
                         }
                     ],
                 }
@@ -376,42 +428,32 @@ class CoverageAwareRetryWritingLLM(LLMClient):
             if len(self.instructions_seen) == 1:
                 return response_model.model_validate(
                     {
-                        "beat_id": beat["beat_id"],
                         "segments": [
                             {
-                                "segment_id": f"{beat['beat_id']}-segment-1",
-                                "beat_id": beat["beat_id"],
                                 "heading": beat["title"],
                                 "narration": "A grounded but too narrow narration." * 6,
                                 "claims": [
                                     {
-                                        "claim_id": f"{beat['beat_id']}-claim-1",
                                         "text": "Only covers the first chunk.",
                                         "evidence_chunk_ids": [chunk_ids[0]],
                                     }
                                 ],
-                                "citations": [chunk_ids[0]],
                             }
                         ],
                     }
                 )
             return response_model.model_validate(
                 {
-                    "beat_id": beat["beat_id"],
                     "segments": [
                         {
-                            "segment_id": f"{beat['beat_id']}-segment-{index}",
-                            "beat_id": beat["beat_id"],
                             "heading": beat["title"],
                             "narration": ("A grounded narration covering one assigned chunk in detail. " * 8).strip(),
                             "claims": [
                                 {
-                                    "claim_id": f"{beat['beat_id']}-claim-{index}",
                                     "text": f"Covers assigned chunk {index}.",
                                     "evidence_chunk_ids": [chunk_id],
                                 }
                             ],
-                            "citations": [chunk_id],
                         }
                         for index, chunk_id in enumerate(chunk_ids, start=1)
                     ],
@@ -434,43 +476,33 @@ class CitationMismatchRetryWritingLLM(LLMClient):
             if len(self.instructions_seen) == 1:
                 return response_model.model_validate(
                     {
-                        "beat_id": beat["beat_id"],
                         "segments": [
                             {
-                                "segment_id": f"{beat['beat_id']}-segment-1",
-                                "beat_id": beat["beat_id"],
                                 "heading": beat["title"],
                                 "narration": ("A grounded narration with mismatched citations. " * 8).strip(),
                                 "claims": [
                                     {
-                                        "claim_id": f"{beat['beat_id']}-claim-1",
                                         "text": "Grounded claim one.",
                                         "evidence_chunk_ids": [chunk_ids[1]],
                                     }
                                 ],
-                                "citations": chunk_ids[:2],
                             }
                         ],
                     }
                 )
             return response_model.model_validate(
                 {
-                    "beat_id": beat["beat_id"],
                     "segments": [
                         {
-                            "segment_id": f"{beat['beat_id']}-segment-1",
-                            "beat_id": beat["beat_id"],
                             "heading": beat["title"],
                             "narration": ("A repaired grounded narration that fully covers the assigned material in compact spoken form. " * 8).strip(),
                             "claims": [
                                 {
-                                    "claim_id": f"{beat['beat_id']}-claim-{index}",
                                     "text": f"Grounded claim {index}.",
                                     "evidence_chunk_ids": [chunk_id],
                                 }
                                 for index, chunk_id in enumerate(chunk_ids, start=1)
                             ],
-                            "citations": chunk_ids,
                         }
                     ],
                 }
@@ -495,22 +527,17 @@ class TruncatingThenValidWritingLLM(LLMClient):
             chunk_ids = [hit["chunk_id"] for hit in payload["retrieval_hits"]]
             return response_model.model_validate(
                 {
-                    "beat_id": beat["beat_id"],
                     "segments": [
                         {
-                            "segment_id": f"{beat['beat_id']}-segment-1",
-                            "beat_id": beat["beat_id"],
                             "heading": beat["title"],
                             "narration": ("Compact grounded narration. " * 16).strip(),
                             "claims": [
                                 {
-                                    "claim_id": f"{beat['beat_id']}-claim-{index}",
                                     "text": f"Grounded claim {index}.",
                                     "evidence_chunk_ids": [chunk_id],
                                 }
                                 for index, chunk_id in enumerate(chunk_ids, start=1)
                             ],
-                            "citations": chunk_ids,
                         }
                     ],
                 }
@@ -529,21 +556,16 @@ class OutOfOrderWritingLLM(LLMClient):
             chunk_ids = [hit["chunk_id"] for hit in payload["retrieval_hits"]]
             return response_model.model_validate(
                 {
-                    "beat_id": beat["beat_id"],
                     "segments": [
                         {
-                            "segment_id": f"{beat['beat_id']}-segment-1",
-                            "beat_id": beat["beat_id"],
                             "heading": beat["title"],
                             "narration": ("Ordered grounded narration. " * 12).strip(),
                             "claims": [
                                 {
-                                    "claim_id": f"{beat['beat_id']}-claim-1",
                                     "text": "Grounded claim.",
                                     "evidence_chunk_ids": chunk_ids[:1],
                                 }
                             ],
-                            "citations": chunk_ids[:1],
                         }
                     ],
                 }
@@ -603,12 +625,30 @@ def test_structuring_skips_oversized_chapters() -> None:
         FailingStructuringBoundaryLLM(),
         max_chunk_words=200,
         chunk_overlap_words=0,
-        max_structuring_llm_chapter_words=42232,
+        max_structuring_llm_chapter_words=75000,
     )
 
-    chapter = agent._structure_chapter(1, "Chapter 1: Giant", ("observatory " * 43000).strip())
+    chapter = agent._structure_chapter(1, "Chapter 1: Giant", ("observatory " * 76000).strip())
 
     assert chapter is None
+
+
+def test_structuring_parallelizes_window_fallback_calls() -> None:
+    llm = ParallelWindowStructuringLLM()
+    long_ingestion = _build_ingestion().model_copy(
+        update={
+            "raw_text": "Chapter 1: Arrival\n" + ("observatory signals legacy " * 1100).strip(),
+        }
+    )
+    StructuringAgent(
+        llm,
+        max_structuring_chapter_words=500,
+        structuring_parallelism=3,
+        structuring_window_words=600,
+        structuring_window_overlap_words=0,
+    ).structure(long_ingestion)
+
+    assert llm.max_active_calls >= 2
 
 
 def test_writing_diagnostics_distinguish_claim_and_segment_citations(tmp_path) -> None:
@@ -648,7 +688,25 @@ def test_writing_diagnostics_distinguish_claim_and_segment_citations(tmp_path) -
 
     payload = writer.build_payload(episode, retrieval_hits)
     beat_payload = writer._build_beat_payloads(payload)[0]
-    beat_script = llm.generate_json("beat_script", writer.instructions, beat_payload, BeatScript)
+    beat_script = BeatScript.model_construct(
+        beat_id="beat-1",
+        segments=[
+            EpisodeSegment.model_construct(
+                segment_id="segment-1",
+                beat_id="beat-1",
+                heading="Beat 1",
+                narration="A grounded narration.",
+                claims=[
+                    ScriptClaim.model_construct(
+                        claim_id="beat-1-claim-1",
+                        text="A claim with no evidence ids.",
+                        evidence_chunk_ids=[],
+                    )
+                ],
+                citations=[],
+            )
+        ],
+    )
     violations = writer._compliance_violations(beat_script, beat_payload)
     writer._log_writing_metrics(beat_script, beat_payload, violations, retried=False)
 
@@ -660,9 +718,9 @@ def test_writing_diagnostics_distinguish_claim_and_segment_citations(tmp_path) -
     assert diagnostics
     payload = diagnostics[-1]["payload"]
     assert payload["claim_cited_chunk_count"] == 0
-    assert payload["segment_citation_chunk_count"] == 2
-    assert payload["cited_chunk_count"] == 2
-    assert payload["segments_with_zero_citations"] == []
+    assert payload["segment_citation_chunk_count"] == 0
+    assert payload["cited_chunk_count"] == 0
+    assert payload["segments_with_zero_citations"] == ["segment-1"]
     assert payload["claims_with_zero_evidence"] == ["beat-1-claim-1"]
 
 
@@ -680,8 +738,12 @@ def test_writing_retries_when_initial_script_has_no_claims() -> None:
 
     assert llm.calls == 2
     assert beat_script.segments
+    assert beat_script.beat_id == beat.beat_id
+    assert beat_script.segments[0].segment_id == f"{beat.beat_id}-segment-1"
+    assert all(segment.beat_id == beat.beat_id for segment in beat_script.segments)
     assert all(segment.claims for segment in beat_script.segments)
     assert all(claim.evidence_chunk_ids for segment in beat_script.segments for claim in segment.claims)
+    assert all(claim.claim_id.startswith(f"{beat.beat_id}-claim-") for segment in beat_script.segments for claim in segment.claims)
 
 
 def test_writing_fails_after_retry_when_claims_remain_invalid() -> None:
@@ -743,10 +805,9 @@ def test_writing_retry_instructions_include_missing_chunk_ids() -> None:
     assert len(llm.instructions_seen) == 2
     retry_instructions = llm.instructions_seen[1]
     assert "every assigned chunk_id must appear in claim evidence_chunk_ids" in retry_instructions
-    assert "Repair order: first fix claim evidence_chunk_ids, then derive segment.citations from claims; never use citations alone to satisfy coverage." in retry_instructions
-    assert "A missing chunk is not covered if it appears only in narration or only in segment.citations." in retry_instructions
-    assert "Do not add any missing chunk_id directly to segment.citations unless it also appears in a claim's evidence_chunk_ids." in retry_instructions
-    assert "After you finish the claims, set each segment's citations to the deduplicated union of that segment's claim evidence_chunk_ids and nothing else." in retry_instructions
+    assert "Revise and expand the previous draft instead of restarting from a blank outline." in retry_instructions
+    assert "Preserve valid narration from the previous draft while fixing missing claim evidence." in retry_instructions
+    assert "A missing chunk is not covered if it appears only in narration without being attached to a claim." in retry_instructions
     for chunk_id in beat.chunk_ids[1:]:
         assert chunk_id in retry_instructions
 
@@ -790,9 +851,8 @@ def test_writing_retry_instructions_include_cited_only_chunk_ids() -> None:
     assert beat_script.segments
     assert len(llm.instructions_seen) == 2
     retry_instructions = llm.instructions_seen[1]
-    assert "appear in segment citations but not in any claim evidence" in retry_instructions
     assert "chunk-1" in retry_instructions
-    assert "Do not preserve any citation unless it appears in claim evidence after rewriting." in retry_instructions
+    assert "Revise and expand the previous draft instead of restarting from a blank outline." in retry_instructions
 
 
 def test_writing_instructions_use_simplified_hard_rules_prompt() -> None:
@@ -803,7 +863,7 @@ def test_writing_instructions_use_simplified_hard_rules_prompt() -> None:
     assert "Hard rules:" in instructions
     assert "1. Every segment must contain at least one claim." in instructions
     assert "If the beat has 7 or fewer assigned chunk_ids" in instructions
-    assert "segment.citations == union(segment.claims[*].evidence_chunk_ids)" in instructions
+    assert "Do not invent, rename, or omit assigned chunk ids in claim evidence." in instructions
 
 
 def test_writing_retries_after_truncation_with_compact_retry_instructions() -> None:
@@ -822,6 +882,7 @@ def test_writing_retries_after_truncation_with_compact_retry_instructions() -> N
     assert beat_script.segments
     assert "The previous response was truncated." in llm.instructions_seen[-1]
     assert "Use at most two segments" in llm.instructions_seen[-1]
+    assert "Keep the narration at or above" in llm.instructions_seen[-1]
 
 
 def test_writing_preserves_plan_order_when_beats_finish_out_of_order() -> None:
@@ -1079,6 +1140,124 @@ def test_episode_planning_agent_creates_hierarchical_plan() -> None:
     assert plan.book_id == structure.book_id
     assert len(plan.episodes) == 2
     assert all(episode.beats for episode in plan.episodes)
+
+
+def test_episode_planning_uses_configured_min_episode_source_ratio() -> None:
+    def words(label: str, count: int) -> str:
+        return ((label + " ") * count).strip()
+
+    chapter_sizes = [47500, 47500, 25000]
+    chapters = []
+    chunks = []
+    clusters = []
+    for index, chapter_word_count in enumerate(chapter_sizes, start=1):
+        chapter_id = f"ratio-book-chapter-{index}"
+        chunk_id = f"{chapter_id}-chunk-1"
+        title = f"Chapter {index}"
+        chapters.append(
+            BookChapter(
+                chapter_id=chapter_id,
+                chapter_number=index,
+                title=title,
+                summary=f"Summary {index}",
+                chunk_ids=[chunk_id],
+            )
+        )
+        chunks.append(
+            BookChunk(
+                chunk_id=chunk_id,
+                chapter_id=chapter_id,
+                chapter_title=title,
+                chapter_number=index,
+                sequence=1,
+                text=words(f"chapter{index}", chapter_word_count),
+                start_word=0,
+                end_word=chapter_word_count,
+                source_offsets=[0, chapter_word_count],
+                themes=[f"theme-{index}"],
+            )
+        )
+        clusters.append(
+            EpisodeCluster(
+                cluster_id=f"cluster-{index}",
+                label=f"Cluster {index}",
+                rationale=f"Part {index}",
+                chapter_ids=[chapter_id],
+                chunk_ids=[chunk_id],
+                themes=[f"theme-{index}"],
+            )
+        )
+
+    structure = BookStructure(book_id="ratio-book", title="Ratio Book", chapters=chapters, chunks=chunks)
+    analysis = BookAnalysis(
+        book_id="ratio-book",
+        themes=["theme-1"],
+        continuity_arcs=[],
+        notable_claims=[],
+        episode_clusters=clusters,
+    )
+    plan = SeriesPlan.model_validate(
+        {
+            "book_id": "ratio-book",
+            "format": "single_narrator",
+            "strategy_summary": "Summary",
+            "episodes": [
+                {
+                    "episode_id": "episode-1",
+                    "sequence": 1,
+                    "title": "Episode 1",
+                    "synopsis": "Part 1",
+                    "chapter_ids": ["ratio-book-chapter-1", "ratio-book-chapter-2"],
+                    "chunk_ids": ["ratio-book-chapter-1-chunk-1", "ratio-book-chapter-2-chunk-1"],
+                    "themes": ["theme-1", "theme-2"],
+                    "beats": [
+                        {
+                            "beat_id": "episode-1-beat-1",
+                            "title": "Beat 1",
+                            "objective": "Objective",
+                            "chunk_ids": ["ratio-book-chapter-1-chunk-1", "ratio-book-chapter-2-chunk-1"],
+                            "claim_requirements": [],
+                        }
+                    ],
+                },
+                {
+                    "episode_id": "episode-2",
+                    "sequence": 2,
+                    "title": "Episode 2",
+                    "synopsis": "Part 2",
+                    "chapter_ids": ["ratio-book-chapter-3"],
+                    "chunk_ids": ["ratio-book-chapter-3-chunk-1"],
+                    "themes": ["theme-3"],
+                    "beats": [
+                        {
+                            "beat_id": "episode-2-beat-1",
+                            "title": "Beat 2",
+                            "objective": "Objective",
+                            "chunk_ids": ["ratio-book-chapter-3-chunk-1"],
+                            "claim_requirements": [],
+                        }
+                    ],
+                },
+            ],
+        }
+    )
+
+    planner = EpisodePlanningAgent(
+        HeuristicLLMClient(),
+        min_episode_source_ratio=0.3,
+        max_episode_minutes=1000,
+    )
+    strict_planner = EpisodePlanningAgent(
+        HeuristicLLMClient(),
+        min_episode_source_ratio=0.5,
+        max_episode_minutes=1000,
+    )
+
+    assert planner._target_source_words_per_episode(structure, episode_count=2) == 60000
+    assert planner._compliance_violations(plan, structure, analysis, episode_count=2) == []
+    assert strict_planner._compliance_violations(plan, structure, analysis, episode_count=2) == [
+        "episode-2 estimated at 25000 source words, too small for target 60000"
+    ]
 
 
 def test_analysis_and_planning_reject_episode_count_above_chapter_count() -> None:

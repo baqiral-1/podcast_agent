@@ -85,6 +85,7 @@ class PipelineOrchestrator:
         self.planning_agent = EpisodePlanningAgent(
             self.llm,
             minimum_source_words_per_episode=self.settings.pipeline.minimum_source_words_per_episode,
+            min_episode_source_ratio=self.settings.pipeline.min_episode_source_ratio,
             spoken_words_per_minute=self.settings.pipeline.spoken_words_per_minute,
             max_episode_minutes=self.settings.pipeline.max_episode_minutes,
             max_payload_bytes=self.settings.pipeline.max_planning_payload_bytes,
@@ -98,6 +99,7 @@ class PipelineOrchestrator:
             spoken_words_per_minute=self.settings.pipeline.spoken_words_per_minute,
             coverage_warning_min_ratio=self.settings.pipeline.coverage_warning_min_ratio,
             beat_parallelism=self.settings.pipeline.beat_parallelism,
+            beat_write_retry_attempts=self.settings.pipeline.beat_write_retry_attempts,
             beat_write_timeout_seconds=self.settings.pipeline.beat_write_timeout_seconds,
         )
         self.validation_agent = GroundingValidationAgent(

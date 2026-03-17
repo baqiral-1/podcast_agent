@@ -215,6 +215,13 @@ class ScriptClaim(StrictModel):
     evidence_chunk_ids: list[str] = Field(min_length=1)
 
 
+class ScriptClaimDraft(StrictModel):
+    """LLM-authored claim before ids are derived locally."""
+
+    text: str
+    evidence_chunk_ids: list[str] = Field(min_length=1)
+
+
 class EpisodeSegment(StrictModel):
     """One narratable segment in an episode script."""
 
@@ -226,11 +233,25 @@ class EpisodeSegment(StrictModel):
     citations: list[str]
 
 
+class EpisodeSegmentDraft(StrictModel):
+    """LLM-authored segment before citations are derived locally."""
+
+    heading: str
+    narration: str
+    claims: list[ScriptClaimDraft] = Field(min_length=1)
+
+
 class BeatScript(StrictModel):
     """Intermediate beat-scoped script emitted during writing."""
 
     beat_id: str
     segments: list[EpisodeSegment]
+
+
+class BeatScriptDraft(StrictModel):
+    """LLM-authored beat script before citations are derived locally."""
+
+    segments: list[EpisodeSegmentDraft]
 
 
 class EpisodeScript(StrictModel):
@@ -287,6 +308,15 @@ class SegmentRepairResult(StrictModel):
     attempt: int = Field(ge=1)
     repaired_segment_ids: list[str]
     repaired_segments: list[EpisodeSegment]
+
+
+class SegmentRepairDraftResult(StrictModel):
+    """LLM-scoped repair response before citations are derived locally."""
+
+    episode_id: str
+    attempt: int = Field(ge=1)
+    repaired_segment_ids: list[str]
+    repaired_segments: list[EpisodeSegmentDraft]
 
 
 class RenderSegment(StrictModel):

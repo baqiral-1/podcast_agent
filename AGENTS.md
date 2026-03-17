@@ -269,5 +269,5 @@ Document assumptions in the final response.
 
 ### Amend Rules
 
-- When amending a commit, rewrite the message so it covers the full amended diff across all files in the commit.
+- When amending a commit, rewrite both the description and the message so they cover the full amended diff across all files in the commit. Do not anchor it in the existing commit message at all.
 - Do not reuse the previous message unchanged if the amended diff adds or changes the commit scope.

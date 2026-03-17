@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Podcast Agent | Return of a King</title>
+  <meta name="description" content="Stories and analyses adapted from Return of a King.">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css?family=Muli:300,400,400i,700&amp;display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Muli:300,400,400i,700&amp;display=swap">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkR4j8CGY1l6ar3E1N4CeL4gyWjvFIm3hmTA==" crossorigin="anonymous" referrerpolicy="no-referrer">
+  <style>
+    :root {
+      --body-bg-color: #000000;
+      --body-font-color: #ffffff;
+      --primary-font: "Muli", -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Helvetica Neue", Arial, sans-serif;
+      --primary-body-font-size: 1.12rem;
+      --primary-body-font-weight: 300;
+      --primary-color: #c86e34;
+      --primary-hover-color: #c86e34;
+      --body-padding: 1.4375rem;
+      --header-bg: #000000;
+      --nav-color: #ffffff;
+      --nav-color-hover: #c86e34;
+      --nav-font-size: 1rem;
+      --header-padding: 1.25rem;
+      --nav-horizontal-margin: 1.25rem;
+      --show-header-padding-top: 5.9375rem;
+      --show-header-padding-bottom: 0rem;
+      --show-header-title-font-size: 2.1875rem;
+      --show-header-show-host-width: 2.5rem;
+      --episode-margin: 0.75rem;
+      --episode-inner-spacing: 1rem;
+      --episode-title-font-size: 1.5rem;
+      --episode-meta-color: #c86e34;
+      --audio-player-progressed: #ffffff;
+      --audio-player-runtime-color: #ffffff;
+      --max-width: 1180px;
+    }
+
+    * {
+      box-sizing: border-box;
+      border: 0 solid transparent;
+    }
+
+    html {
+      line-height: 1.5;
+      -webkit-text-size-adjust: 100%;
+    }
+
+    body {
+      margin: 0;
+      background: var(--body-bg-color);
+      color: var(--body-font-color);
+      font-family: var(--primary-font);
+      font-size: var(--primary-body-font-size);
+      font-weight: var(--primary-body-font-weight);
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .shell {
+      width: min(calc(100% - (var(--body-padding) * 2)), var(--max-width));
+      margin: 0 auto;
+    }
+
+    .site-header {
+      background: var(--header-bg);
+      padding: var(--header-padding) 0;
+    }
+
+    .site-header-inner {
+      min-height: 3rem;
+      display: flex;
+      justify-content: center;
+    }
+
+    .brand-lockup {
+      width: 15.625rem;
+      margin: 0 auto;
+      text-align: center;
+    }
+
+    .brand-mark {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      min-height: 2.8rem;
+      color: #ffffff;
+      font-size: 1.6rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .show-header {
+      background: #000000;
+      padding-top: var(--show-header-padding-top);
+      padding-bottom: var(--show-header-padding-bottom);
+    }
+
+    .show-header-grid {
+      display: grid;
+      grid-template-columns: minmax(240px, 28%) minmax(0, 1fr);
+      gap: 2.2rem;
+      align-items: center;
+    }
+
+    .show-art {
+      width: 100%;
+      max-width: 420px;
+      margin: 0 auto;
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .show-copy {
+      color: #ffffff;
+    }
+
+    .show-title {
+      margin: 0;
+      color: #ffffff;
+      font-size: var(--show-header-title-font-size);
+      line-height: 1.2;
+      font-weight: 700;
+    }
+
+    .show-description {
+      max-width: 44rem;
+      margin: 1.35rem 0 0;
+      color: #ffffff;
+    }
+
+    .episodes-section {
+      padding: 2.6rem 0 4rem;
+      background: #000000;
+    }
+
+    .episode-list {
+      display: grid;
+      gap: var(--episode-margin);
+    }
+
+    .episode-card {
+      padding: var(--episode-inner-spacing) 0;
+      background: #000000;
+      text-align: left;
+    }
+
+    .episode-meta {
+      margin: 0 0 0.55rem;
+      color: var(--episode-meta-color);
+      font-size: 0.94rem;
+      font-weight: 700;
+    }
+
+    .episode-title {
+      margin: 0;
+      color: #ffffff;
+      font-size: var(--episode-title-font-size);
+      line-height: 1.35;
+      font-weight: 700;
+    }
+
+    .episode-details {
+      margin-top: 0.9rem;
+    }
+
+    .description-toggle {
+      margin-top: 0;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: var(--primary-color);
+      font-weight: 700;
+      cursor: pointer;
+      font: inherit;
+    }
+
+    .episode-description-preview {
+      max-width: 68rem;
+      margin: 0.9rem 0 0;
+      color: #ffffff;
+      font-size: 0.95rem;
+      line-height: 1.7;
+    }
+
+    .episode-description-more {
+      display: none;
+      max-width: 68rem;
+      margin: 0;
+      color: #ffffff;
+      font-size: 0.95rem;
+      line-height: 1.7;
+    }
+
+    .episode-details.is-open .episode-description-more {
+      display: block;
+    }
+
+    .episode-player {
+      margin-top: 1.15rem;
+      padding: 0.9rem 0 0;
+    }
+
+    .audio-shell {
+      display: grid;
+      gap: 0.85rem;
+    }
+
+    .player-row {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      width: 100%;
+    }
+
+    .play-toggle {
+      width: 3rem;
+      height: 3rem;
+      flex: 0 0 auto;
+      border-radius: 999px;
+      background: transparent;
+      color: #ffffff;
+      border: 2px solid rgba(255, 255, 255, 0.95);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+    }
+
+    .play-toggle:hover,
+    .play-toggle:focus-visible {
+      color: var(--primary-color);
+      border-color: var(--primary-color);
+      transform: translateY(-1px);
+    }
+
+    .play-toggle svg {
+      width: 1rem;
+      height: 1rem;
+      fill: currentColor;
+    }
+
+    .progress-cluster {
+      flex: 1 1 auto;
+      display: grid;
+      gap: 0.45rem;
+      align-items: center;
+    }
+
+    .timeline {
+      width: 100%;
+      margin: 0;
+      accent-color: var(--audio-player-progressed);
+      cursor: pointer;
+    }
+
+    .player-meta-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+      color: var(--audio-player-runtime-color);
+      font-size: 0.86rem;
+      line-height: 1.4;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .player-utility {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .player-utility button {
+      min-width: 3rem;
+      padding: 0.25rem 0.65rem;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+      color: #ffffff;
+      cursor: pointer;
+      font: inherit;
+    }
+
+    .native-audio {
+      display: none;
+    }
+
+    @media screen and (max-width: 767px) {
+      html {
+        font-size: 12px;
+        line-height: 1.7;
+      }
+
+      .show-header-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .show-art {
+        max-width: 22rem;
+      }
+
+      .player-row {
+        align-items: flex-start;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="shell site-header-inner">
+      <div class="brand-lockup">
+        <a class="brand-mark" href="./index.html">Podcast Agent</a>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="show-header">
+      <div class="shell show-header-grid">
+        <div class="show-art">
+          <img
+            alt="Return of a King cover art"
+            src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%230d0b0b'/><stop offset='0.42' stop-color='%23602a16'/><stop offset='1' stop-color='%23c86e34'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.45)' stroke-width='3'/><text x='110' y='690' fill='white' font-family='Muli, Arial, sans-serif' font-size='38' letter-spacing='8'>PODCAST AGENT</text><text x='110' y='785' fill='white' font-family='Muli, Arial, sans-serif' font-size='98' font-weight='700'>Return of</text><text x='110' y='870' fill='white' font-family='Muli, Arial, sans-serif' font-size='98' font-weight='700'>a King</text></svg>"
+          >
+        </div>
+
+        <div class="show-copy">
+          <h1 class="show-title">Return of a King</h1>
+          <p class="show-description">
+            A narrative history collection tracing the rise of Shah Shuja, the First Afghan War, and the imperial disaster that reshaped Afghanistan and Britain alike.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="episodes-section" id="episodes">
+      <div class="shell episode-list">
+        <article class="episode-card">
+          <p class="episode-meta">Episode 1</p>
+          <h2 class="episode-title">Shah Shuja, Empire, and the Road to Invasion</h2>
+          <p class="episode-description-preview">
+            This episode follows the long, unstable rise of Shah Shuja, from dynastic intrigue and exile to the widening imperial contest that drew Afghanistan into the Great Game.
+          </p>
+          <div class="episode-details">
+            <span class="episode-description-more" data-role="episode-description-more">
+              We trace the recovery of the Koh-i-Nur, the fracture of the Durrani world, British anxiety over Napoleon, Russia, and Persia, and the strategic calculations that turned Afghan succession into an imperial project. As diplomats, spies, and rival courts maneuver across Kabul, Lahore, and British India, the story builds toward invasion. What begins as a struggle over legitimacy and alliance becomes the opening act of a much larger war, shaped by ambition, misreading, and the dangerous confidence of empire.
+            </span>
+            <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
+          </div>
+          <div class="episode-player">
+            <div class="audio-shell">
+              <audio class="native-audio" preload="metadata">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/return-of-a-king-episodes-1-3/return-of-a-king-episode-1.mp3" type="audio/mpeg">
+                Your browser does not support the audio element.
+              </audio>
+              <div class="player-row">
+                <button class="play-toggle" data-role="hero-play" type="button" aria-label="Play audio">
+                  <svg data-role="play-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M8 5.14v13.72L19 12 8 5.14z"></path>
+                  </svg>
+                </button>
+                <div class="progress-cluster">
+                  <input class="timeline" data-role="timeline" type="range" min="0" max="100" step="0.1" value="0" aria-label="Seek through audio">
+                  <div class="player-meta-row">
+                    <div><span data-role="current-time">0:00</span> / <span data-role="duration">0:00</span></div>
+                    <div class="player-utility">
+                      <button data-role="speed-toggle" type="button">1x</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+        <article class="episode-card">
+          <p class="episode-meta">Episode 2</p>
+          <h2 class="episode-title">Occupation, Revolt, and the Catastrophe in Kabul</h2>
+          <p class="episode-description-preview">
+            This episode follows the First Afghan War as invasion hardens into occupation and occupation collapses into revolt.
+          </p>
+          <div class="episode-details">
+            <span class="episode-description-more" data-role="episode-description-more">
+              Shah Shuja returns, British armies seize key strongholds, and the politics of Kabul grow steadily more brittle as imperial confidence outruns local reality. We move through court intrigue, Russian and British rivalry, military misjudgment, and the daily humiliations that turn discontent into open resistance. From the uprising in Kabul to the murder of Macnaghten and the disastrous retreat through the passes, the war becomes a study in overreach, indecision, and catastrophic command. By the end, the occupying force that entered Afghanistan in triumph is broken, and the logic of the campaign lies in ruins.
+            </span>
+            <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
+          </div>
+          <div class="episode-player">
+            <div class="audio-shell">
+              <audio class="native-audio" preload="metadata">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/return-of-a-king-episodes-1-3/return-of-a-king-episode-2.mp3" type="audio/mpeg">
+                Your browser does not support the audio element.
+              </audio>
+              <div class="player-row">
+                <button class="play-toggle" data-role="hero-play" type="button" aria-label="Play audio">
+                  <svg data-role="play-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M8 5.14v13.72L19 12 8 5.14z"></path>
+                  </svg>
+                </button>
+                <div class="progress-cluster">
+                  <input class="timeline" data-role="timeline" type="range" min="0" max="100" step="0.1" value="0" aria-label="Seek through audio">
+                  <div class="player-meta-row">
+                    <div><span data-role="current-time">0:00</span> / <span data-role="duration">0:00</span></div>
+                    <div class="player-utility">
+                      <button data-role="speed-toggle" type="button">1x</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+        <article class="episode-card">
+          <p class="episode-meta">Episode 3</p>
+          <h2 class="episode-title">Retribution, Return, and the War's Long Shadow</h2>
+          <p class="episode-description-preview">
+            This episode traces the war's violent finale and its enduring aftermath.
+          </p>
+          <div class="episode-details">
+            <span class="episode-description-more" data-role="episode-description-more">
+              We begin with Jalalabad, where British forces recover their nerve, then follow Pollock and Nott through the punitive march back to Kabul, the release of prisoners, the destruction of cities and bazaars, and the retaliatory massacres that expose the moral cost of imperial revenge. From there the story turns outward: Shah Shuja is gone, Dost Mohammad returns, British victory parades ring hollow, and the conflict leaves behind financial waste, political humiliation, and a country no easier to control than before. The episode closes on the war's long echo, from Crimea to modern Afghanistan, where the same illusions return.
+            </span>
+            <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
+          </div>
+          <div class="episode-player">
+            <div class="audio-shell">
+              <audio class="native-audio" preload="metadata">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/return-of-a-king-episodes-1-3/return-of-a-king-episode-3.mp3" type="audio/mpeg">
+                Your browser does not support the audio element.
+              </audio>
+              <div class="player-row">
+                <button class="play-toggle" data-role="hero-play" type="button" aria-label="Play audio">
+                  <svg data-role="play-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M8 5.14v13.72L19 12 8 5.14z"></path>
+                  </svg>
+                </button>
+                <div class="progress-cluster">
+                  <input class="timeline" data-role="timeline" type="range" min="0" max="100" step="0.1" value="0" aria-label="Seek through audio">
+                  <div class="player-meta-row">
+                    <div><span data-role="current-time">0:00</span> / <span data-role="duration">0:00</span></div>
+                    <div class="player-utility">
+                      <button data-role="speed-toggle" type="button">1x</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const speeds = [1, 1.5, 2];
+
+    function formatTime(value) {
+      if (!Number.isFinite(value) || value < 0) {
+        return "0:00";
+      }
+
+      const totalSeconds = Math.floor(value);
+      const hours = Math.floor(totalSeconds / 3600);
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = totalSeconds % 60;
+      if (hours > 0) {
+        const remainingMinutes = Math.floor((totalSeconds % 3600) / 60);
+        return `${hours}:${String(remainingMinutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+      }
+      return `${minutes}:${String(seconds).padStart(2, "0")}`;
+    }
+
+    document.querySelectorAll(".episode-card").forEach((episodeCard) => {
+      const audio = episodeCard.querySelector("audio");
+      const heroPlay = episodeCard.querySelector('[data-role="hero-play"]');
+      const playIcon = episodeCard.querySelector('[data-role="play-icon"]');
+      const timeline = episodeCard.querySelector('[data-role="timeline"]');
+      const currentTime = episodeCard.querySelector('[data-role="current-time"]');
+      const duration = episodeCard.querySelector('[data-role="duration"]');
+      const speedToggle = episodeCard.querySelector('[data-role="speed-toggle"]');
+      const descriptionToggle = episodeCard.querySelector('[data-role="description-toggle"]');
+      const episodeDetails = episodeCard.querySelector(".episode-details");
+
+      let speedIndex = 0;
+
+      function syncPlayState() {
+        const isPaused = audio.paused;
+        playIcon.innerHTML = isPaused
+          ? '<path d="M8 5.14v13.72L19 12 8 5.14z"></path>'
+          : '<path d="M7 5h3v14H7zm7 0h3v14h-3z"></path>';
+        heroPlay.setAttribute("aria-label", isPaused ? "Play audio" : "Pause audio");
+      }
+
+      function updateTimeline() {
+        if (!Number.isFinite(audio.duration) || audio.duration <= 0) {
+          timeline.value = 0;
+          duration.textContent = "0:00";
+          return;
+        }
+
+        timeline.value = (audio.currentTime / audio.duration) * 100;
+        currentTime.textContent = formatTime(audio.currentTime);
+        duration.textContent = formatTime(audio.duration);
+      }
+
+      heroPlay.addEventListener("click", () => {
+        if (audio.paused) {
+          document.querySelectorAll(".native-audio").forEach((otherAudio) => {
+            if (otherAudio !== audio) {
+              otherAudio.pause();
+            }
+          });
+          audio.play();
+        } else {
+          audio.pause();
+        }
+      });
+
+      audio.addEventListener("play", syncPlayState);
+      audio.addEventListener("pause", syncPlayState);
+      audio.addEventListener("ended", syncPlayState);
+      audio.addEventListener("timeupdate", updateTimeline);
+      audio.addEventListener("loadedmetadata", updateTimeline);
+
+      timeline.addEventListener("input", () => {
+        if (!Number.isFinite(audio.duration) || audio.duration <= 0) {
+          return;
+        }
+        audio.currentTime = (Number(timeline.value) / 100) * audio.duration;
+      });
+
+      speedToggle.addEventListener("click", () => {
+        speedIndex = (speedIndex + 1) % speeds.length;
+        audio.playbackRate = speeds[speedIndex];
+        speedToggle.textContent = `${speeds[speedIndex]}x`;
+      });
+
+      descriptionToggle.addEventListener("click", () => {
+        const isOpen = episodeDetails.classList.toggle("is-open");
+        descriptionToggle.textContent = isOpen ? "Read less" : "Read more";
+        descriptionToggle.setAttribute("aria-expanded", String(isOpen));
+      });
+
+      syncPlayState();
+      updateTimeline();
+    });
+  </script>
+</body>
+</html>

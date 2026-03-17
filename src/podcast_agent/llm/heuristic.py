@@ -196,7 +196,6 @@ class HeuristicLLMClient(LLMClient):
         beat = payload["beat"]
         chunks_by_id = {chunk["chunk_id"]: chunk for chunk in payload["retrieval_hits"]}
         beat_chunks = [chunks_by_id[chunk_id] for chunk_id in beat["chunk_ids"] if chunk_id in chunks_by_id]
-        citations = [chunk["chunk_id"] for chunk in beat_chunks]
         claims = []
         narration_parts = []
         for claim_sequence, chunk in enumerate(beat_chunks, start=1):
@@ -204,22 +203,17 @@ class HeuristicLLMClient(LLMClient):
             if claim_text:
                 claims.append(
                     {
-                        "claim_id": f"{beat['beat_id']}-claim-{claim_sequence}",
                         "text": claim_text,
                         "evidence_chunk_ids": [chunk["chunk_id"]],
                     }
                 )
             narration_parts.append(chunk["text"].strip())
         return {
-            "beat_id": beat["beat_id"],
             "segments": [
                 {
-                    "segment_id": f"{beat['beat_id']}-segment-1",
-                    "beat_id": beat["beat_id"],
                     "heading": beat["title"],
                     "narration": " ".join(narration_parts) or beat["objective"],
                     "claims": claims,
-                    "citations": citations,
                 }
             ],
         }
@@ -274,6 +268,17 @@ class HeuristicLLMClient(LLMClient):
             if segment_claim_ids & weak_claims:
                 repaired_segment_ids.append(segment["segment_id"])
                 segment["narration"] = " ".join(claim["text"] for claim in segment["claims"])
+            segment = dict(segment)
+            segment.pop("segment_id", None)
+            segment.pop("beat_id", None)
+            segment.pop("citations", None)
+            segment["claims"] = [
+                {
+                    "text": claim["text"],
+                    "evidence_chunk_ids": claim["evidence_chunk_ids"],
+                }
+                for claim in segment["claims"]
+            ]
             repaired_segments.append(segment)
         return {
             "episode_id": payload["episode_id"],

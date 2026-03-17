@@ -10,7 +10,17 @@ from pydantic import ValidationError
 
 from podcast_agent.agents.base import Agent
 from podcast_agent.llm.openai_compatible import OpenAICompatibleLLMClient
-from podcast_agent.schemas.models import BeatScript, EpisodeBeat, EpisodePlan, EpisodeScript, EpisodeSegment, RetrievalHit
+from podcast_agent.schemas.models import (
+    BeatScript,
+    BeatScriptDraft,
+    EpisodeBeat,
+    EpisodePlan,
+    EpisodeScript,
+    EpisodeSegment,
+    EpisodeSegmentDraft,
+    RetrievalHit,
+    ScriptClaim,
+)
 
 
 class WritingAgent(Agent):
@@ -31,13 +41,10 @@ class WritingAgent(Agent):
         "Hard rules: "
         "1. Every segment must contain at least one claim. "
         "2. Every claim must include one or more evidence_chunk_ids taken only from the assigned beat retrieval hits. "
-        "3. Every segment must include citations. "
-        "4. For each segment, citations must be exactly the union of all evidence_chunk_ids used by that segment's claims. "
-        "5. Do not include any citation in a segment unless that citation also appears in one of that segment's claims. "
-        "6. Do not omit any claim evidence_chunk_id from that segment's citations. "
-        "Before finalizing each segment, check that segment.citations == union(segment.claims[*].evidence_chunk_ids)."
+        "3. Do not invent, rename, or omit assigned chunk ids in claim evidence. "
+        "4. Cover later assigned chunks when they contain distinct material."
     )
-    response_model = BeatScript
+    response_model = BeatScriptDraft
 
     def __init__(
         self,
@@ -46,6 +53,7 @@ class WritingAgent(Agent):
         spoken_words_per_minute: int = 130,
         coverage_warning_min_ratio: float | None = None,
         beat_parallelism: int = 4,
+        beat_write_retry_attempts: int = 2,
         beat_write_timeout_seconds: float = 120.0,
     ) -> None:
         super().__init__(llm)
@@ -53,6 +61,7 @@ class WritingAgent(Agent):
         self.spoken_words_per_minute = spoken_words_per_minute
         self.coverage_warning_min_ratio = coverage_warning_min_ratio
         self.beat_parallelism = beat_parallelism
+        self.beat_write_retry_attempts = beat_write_retry_attempts
         self.beat_write_timeout_seconds = beat_write_timeout_seconds
 
     def build_payload(self, episode_plan: EpisodePlan, retrieval_hits: list[RetrievalHit]) -> dict:
@@ -76,6 +85,7 @@ class WritingAgent(Agent):
                 episode_id=episode_plan.episode_id,
                 beat_count=len(beat_payloads),
                 concurrency=self.beat_parallelism,
+                beat_write_retry_attempts=self.beat_write_retry_attempts,
                 beat_write_timeout_seconds=self.beat_write_timeout_seconds,
                 assigned_chunk_count=len(retrieval_hits),
                 beat_chunk_counts=[len(payload["retrieval_hits"]) for payload in beat_payloads],
@@ -107,9 +117,7 @@ class WritingAgent(Agent):
         for beat_script in beat_scripts:
             for segment in beat_script.segments:
                 merged_segments.append(
-                    segment.model_copy(
-                        update={"segment_id": f"{episode_plan.episode_id}-segment-{segment_sequence}"}
-                    )
+                    segment.model_copy(update={"segment_id": f"{episode_plan.episode_id}-segment-{segment_sequence}"})
                 )
                 segment_sequence += 1
         return EpisodeScript(
@@ -133,25 +141,16 @@ class WritingAgent(Agent):
         assigned_chunk_ids = set(self._assigned_chunk_ids(payload))
         if not script.segments:
             violations.append(f"beat {payload['beat']['beat_id']} produced no segments")
-        covered_beat_ids = {segment.beat_id for segment in script.segments}
-        if payload["beat"]["beat_id"] not in covered_beat_ids:
-            violations.append(f"script omitted beat: {payload['beat']['beat_id']}")
         for segment in script.segments:
             if not segment.claims:
                 violations.append(f"segment {segment.segment_id} has no claims")
-            if segment.citations and not any(claim.evidence_chunk_ids for claim in segment.claims):
-                violations.append(
-                    f"segment {segment.segment_id} has citations but no claim evidence"
-                )
             claim_chunk_ids = {
                 chunk_id
                 for claim in segment.claims
                 for chunk_id in claim.evidence_chunk_ids
             }
-            if segment.citations and not claim_chunk_ids:
-                violations.append(
-                    f"segment {segment.segment_id} has segment citations without claim evidence"
-                )
+            if not segment.citations:
+                violations.append(f"segment {segment.segment_id} has no citations")
             if segment.citations and claim_chunk_ids and set(segment.citations) != claim_chunk_ids:
                 violations.append(
                     f"segment {segment.segment_id} citations do not match claim evidence ids"
@@ -235,6 +234,7 @@ class WritingAgent(Agent):
             extra_cited_chunk_ids=extra_cited_chunk_ids,
             claims_with_zero_evidence=claims_with_zero_evidence,
             segments_with_zero_citations=segments_with_zero_citations,
+            citations_derived=True,
             violations=violations,
         )
         run_logger.log(
@@ -249,6 +249,7 @@ class WritingAgent(Agent):
             extra_cited_chunk_ids=extra_cited_chunk_ids,
             claims_with_zero_evidence=claims_with_zero_evidence,
             segments_with_zero_citations=segments_with_zero_citations,
+            citations_derived=True,
         )
         if self.coverage_warning_min_ratio is None:
             return
@@ -356,12 +357,16 @@ class WritingAgent(Agent):
                 beat_id=beat_id,
                 selected_chunk_count=len(payload["retrieval_hits"]),
                 assigned_chunk_count=len(payload["beat"]["chunk_ids"]),
+                total_attempts=self.beat_write_retry_attempts + 1,
             )
         last_error: Exception | None = None
         last_violations: list[str] = []
         retry_instructions = self.instructions
+        previous_script: BeatScript | None = None
+        total_attempts = self.beat_write_retry_attempts + 1
         attempt = 1
-        for retried in (False, True):
+        for attempt in range(1, total_attempts + 1):
+            retried = attempt > 1
             try:
                 beat_script = self._generate_beat_script(
                     schema_name=self.schema_name,
@@ -380,8 +385,9 @@ class WritingAgent(Agent):
                         error_type=type(exc).__name__,
                         error_message=str(exc),
                         attempt=attempt,
+                        total_attempts=total_attempts,
                     )
-                if retried:
+                if attempt == total_attempts:
                     break
                 retry_instructions = self._build_retry_instructions(
                     payload=payload,
@@ -389,6 +395,7 @@ class WritingAgent(Agent):
                     missing_chunk_ids=[],
                     cited_without_claim_chunk_ids=[],
                     last_error=exc,
+                    previous_script=previous_script,
                 )
                 continue
             violations = self._compliance_violations(beat_script, payload)
@@ -401,10 +408,12 @@ class WritingAgent(Agent):
                         beat_id=beat_id,
                         retried=retried,
                         attempt=attempt,
+                        total_attempts=total_attempts,
                     )
                 return beat_script
+            previous_script = beat_script
             last_violations = violations
-            if retried:
+            if attempt == total_attempts:
                 break
             retry_instructions = self._build_retry_instructions(
                 payload=payload,
@@ -412,8 +421,8 @@ class WritingAgent(Agent):
                 missing_chunk_ids=self._uncited_chunk_ids(beat_script, payload),
                 cited_without_claim_chunk_ids=self._cited_without_claim_evidence_chunk_ids(beat_script),
                 last_error=None,
+                previous_script=previous_script,
             )
-            attempt += 1
             continue
         if run_logger is not None:
             self._log_terminal_beat_failure(
@@ -441,6 +450,7 @@ class WritingAgent(Agent):
         missing_chunk_ids: list[str],
         cited_without_claim_chunk_ids: list[str],
         last_error: Exception | None,
+        previous_script: BeatScript | None,
     ) -> str:
         assigned_chunk_ids = self._assigned_chunk_ids(payload)
         coverage_instructions = [
@@ -448,14 +458,14 @@ class WritingAgent(Agent):
             "Rewrite only this beat.",
             "Every segment must contain one or more claims.",
             "Every claim must include non-empty evidence_chunk_ids chosen from the assigned beat retrieval hits.",
-            "Every segment must include citations.",
-            "Each segment's citations must exactly match the union of its claims' evidence_chunk_ids.",
-            "Repair order: first fix claim evidence_chunk_ids, then derive segment.citations from claims; never use citations alone to satisfy coverage.",
             "Do not concentrate evidence in the first few chunks when later assigned chunks contain distinct material.",
             "Keep the response compact and JSON-only.",
             "Use at most two segments unless one segment would be clearly insufficient.",
-            "Keep narration concise and avoid repeating or quoting source text at length."
-            "When evidence is partial or ambiguous, prefer omission or weaker wording over a more vivid summary."
+            "Revise and expand the previous draft instead of restarting from a blank outline.",
+            "Preserve valid narration from the previous draft while fixing missing claim evidence.",
+            f"Keep the narration at or above {payload['target_script_words']} words.",
+            "Keep narration concise and avoid repeating or quoting source text at length.",
+            "When evidence is partial or ambiguous, prefer omission or weaker wording over a more vivid summary.",
         ]
         if len(assigned_chunk_ids) <= 7:
             coverage_instructions.append(
@@ -472,23 +482,14 @@ class WritingAgent(Agent):
                 + "."
             )
             coverage_instructions.append(
-                "A missing chunk is not covered if it appears only in narration or only in segment.citations."
-            )
-            coverage_instructions.append(
-                "Do not add any missing chunk_id directly to segment.citations unless it also appears in a claim's evidence_chunk_ids."
-            )
-            coverage_instructions.append(
-                "After you finish the claims, set each segment's citations to the deduplicated union of that segment's claim evidence_chunk_ids and nothing else."
+                "A missing chunk is not covered if it appears only in narration without being attached to a claim."
             )
         if cited_without_claim_chunk_ids:
             coverage_instructions.append(
-                "These chunk ids appear in segment citations but not in any claim evidence. "
-                "For each one, either add it to a claim's evidence_chunk_ids or remove it from segment citations: "
+                "These chunk ids were cited in claims inconsistently across the previous draft. "
+                "For each one, either add it to a claim's evidence_chunk_ids or remove it from the rewritten draft: "
                 + ", ".join(cited_without_claim_chunk_ids)
                 + "."
-            )
-            coverage_instructions.append(
-                "Do not preserve any citation unless it appears in claim evidence after rewriting."
             )
         if last_error is not None:
             if "truncated because it hit the completion token limit" in str(last_error):
@@ -497,6 +498,11 @@ class WritingAgent(Agent):
                 )
             coverage_instructions.append(
                 f"Previous schema/generation error: {last_error}."
+            )
+        if previous_script is not None:
+            previous_word_count = sum(len(segment.narration.split()) for segment in previous_script.segments)
+            coverage_instructions.append(
+                f"The previous draft had {previous_word_count} narration words. Do not return fewer than {payload['target_script_words']} words."
             )
         return f"{self.instructions} {' '.join(coverage_instructions)}"
 
@@ -516,12 +522,13 @@ class WritingAgent(Agent):
             )
             if getattr(self.llm, "run_logger", None) is not None:
                 llm.set_run_logger(self.llm.run_logger)
-        return llm.generate_json(
+        beat_script_draft = llm.generate_json(
             schema_name=schema_name,
             instructions=instructions,
             payload=payload,
             response_model=response_model,
         )
+        return self._materialize_beat_script(beat_script_draft, payload["beat"]["beat_id"])
 
     def _log_terminal_beat_failure(
         self,
@@ -669,3 +676,54 @@ class WritingAgent(Agent):
             for chunk_id in self._segment_citation_chunk_ids(script)
             if chunk_id not in claim_chunk_ids
         ]
+
+    def _materialize_beat_script(self, draft: BeatScriptDraft, beat_id: str) -> BeatScript:
+        claim_sequence = 1
+        segments: list[EpisodeSegment] = []
+        for segment_index, segment in enumerate(draft.segments, start=1):
+            materialized_segment, claim_sequence = self._materialize_segment(
+                segment,
+                beat_id=beat_id,
+                segment_index=segment_index,
+                claim_sequence_start=claim_sequence,
+            )
+            segments.append(materialized_segment)
+        return BeatScript(
+            beat_id=beat_id,
+            segments=segments,
+        )
+
+    def _materialize_segment(
+        self,
+        draft: EpisodeSegmentDraft,
+        *,
+        beat_id: str,
+        segment_index: int,
+        claim_sequence_start: int,
+    ) -> tuple[EpisodeSegment, int]:
+        claims: list[ScriptClaim] = []
+        claim_sequence = claim_sequence_start
+        for claim in draft.claims:
+            claims.append(
+                ScriptClaim(
+                    claim_id=f"{beat_id}-claim-{claim_sequence}",
+                    text=claim.text,
+                    evidence_chunk_ids=list(claim.evidence_chunk_ids),
+                )
+            )
+            claim_sequence += 1
+        citations = sorted(
+            {
+                chunk_id
+                for claim in claims
+                for chunk_id in claim.evidence_chunk_ids
+            }
+        )
+        return EpisodeSegment(
+            segment_id=f"{beat_id}-segment-{segment_index}",
+            beat_id=beat_id,
+            heading=draft.heading,
+            narration=draft.narration,
+            claims=claims,
+            citations=citations,
+        ), claim_sequence

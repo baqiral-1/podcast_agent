@@ -55,7 +55,7 @@ class StructuringAgent(Agent):
         max_chunk_words: int = 180,
         chunk_overlap_words: int = 30,
         max_structuring_chapter_words: int = 2500,
-        max_structuring_llm_chapter_words: int = 42232,
+        max_structuring_llm_chapter_words: int = 75000,
         structuring_parallelism: int = 10,
         structuring_window_words: int = 1800,
         structuring_window_overlap_words: int = 150,
@@ -303,36 +303,68 @@ class StructuringAgent(Agent):
             chapter_title=chapter_title,
             window_count=len(windows),
         )
-        for window_index, (start_word, end_word) in enumerate(windows, start=1):
-            payload = self.build_window_payload(
-                chapter_number=chapter_number,
-                chapter_title=chapter_title,
-                chapter_body=chapter_body,
-                window_start_word=start_word,
-                window_end_word=end_word,
-            )
-            draft = StructuredChapter.model_validate(payload["draft"])
-            window_text, window_start_char, _ = _slice_words(
-                chapter_body,
-                start_word,
-                end_word,
-            )
-            result = self._structure_payload_with_retry(
-                payload=payload,
-                draft=draft,
-                source_text=window_text,
-                chapter_number=chapter_number,
-                chapter_title=chapter_title,
-                body_start_word=start_word,
-                body_start_char=window_start_char,
-                context_label=f"window-{window_index}",
-            )
-            window_outputs.append((window_index, result))
+        window_parallelism = min(len(windows), max(1, min(self.structuring_parallelism, 3)))
+        self._log(
+            "structuring_window_schedule",
+            chapter_number=chapter_number,
+            chapter_title=chapter_title,
+            window_count=len(windows),
+            concurrency=window_parallelism,
+        )
+        with ThreadPoolExecutor(max_workers=window_parallelism) as executor:
+            future_map = {
+                executor.submit(
+                    self._structure_window,
+                    chapter_number,
+                    chapter_title,
+                    chapter_body,
+                    window_index,
+                    start_word,
+                    end_word,
+                ): window_index
+                for window_index, (start_word, end_word) in enumerate(windows, start=1)
+            }
+            for future in as_completed(future_map):
+                window_outputs.append((future_map[future], future.result()))
+        window_outputs.sort(key=lambda item: item[0])
         return _merge_structured_chapter_windows(
             chapter_number=chapter_number,
             chapter_title=chapter_title,
             chapter_body=chapter_body,
             windows=window_outputs,
+        )
+
+    def _structure_window(
+        self,
+        chapter_number: int,
+        chapter_title: str,
+        chapter_body: str,
+        window_index: int,
+        start_word: int,
+        end_word: int,
+    ) -> StructuredChapter:
+        payload = self.build_window_payload(
+            chapter_number=chapter_number,
+            chapter_title=chapter_title,
+            chapter_body=chapter_body,
+            window_start_word=start_word,
+            window_end_word=end_word,
+        )
+        draft = StructuredChapter.model_validate(payload["draft"])
+        window_text, window_start_char, _ = _slice_words(
+            chapter_body,
+            start_word,
+            end_word,
+        )
+        return self._structure_payload_with_retry(
+            payload=payload,
+            draft=draft,
+            source_text=window_text,
+            chapter_number=chapter_number,
+            chapter_title=chapter_title,
+            body_start_word=start_word,
+            body_start_char=window_start_char,
+            context_label=f"window-{window_index}",
         )
 
     def _log(self, event_type: str, **payload: object) -> None:
