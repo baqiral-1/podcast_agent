@@ -3,24 +3,20 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Podcast Agent | The Last Mughal</title>
+  <title>Agentic Podcasts | The Last Mughal</title>
   <meta name="description" content="Stories and analyses adapted from The Last Mughal.">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="preload" as="style" href="https://fonts.googleapis.com/css?family=Muli:300,400,400i,700&amp;display=swap">
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Muli:300,400,400i,700&amp;display=swap">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkR4j8CGY1l6ar3E1N4CeL4gyWjvFIm3hmTA==" crossorigin="anonymous" referrerpolicy="no-referrer">
   <style>
     :root {
-      --body-bg-color: #000000;
-      --body-font-color: #ffffff;
-      --primary-font: "Muli", -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Helvetica Neue", Arial, sans-serif;
+      --body-bg-color: #17110d;
+      --body-font-color: #f5efe6;
+      --primary-font: "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
       --primary-body-font-size: 1.12rem;
       --primary-body-font-weight: 300;
       --primary-color: #d9a23d;
-      --primary-hover-color: #d9a23d;
+      --primary-hover-color: #e5b55d;
       --body-padding: 1.4375rem;
       --header-bg: #000000;
-      --nav-color: #ffffff;
+      --nav-color: #f5efe6;
       --nav-color-hover: #d9a23d;
       --nav-font-size: 1rem;
       --header-padding: 1.25rem;
@@ -33,9 +29,11 @@
       --episode-inner-spacing: 1rem;
       --episode-title-font-size: 1.5rem;
       --episode-meta-color: #d9a23d;
-      --audio-player-progressed: #ffffff;
-      --audio-player-runtime-color: #ffffff;
+      --audio-player-progressed: #f5efe6;
+      --audio-player-runtime-color: #ddd1c1;
       --max-width: 1180px;
+      --footer-border: rgba(245, 239, 230, 0.1);
+      --footer-copy: rgba(245, 239, 230, 0.72);
     }
 
     * {
@@ -50,7 +48,9 @@
 
     body {
       margin: 0;
-      background: var(--body-bg-color);
+      background:
+        radial-gradient(circle at top, rgba(217, 162, 61, 0.12), transparent 36%),
+        linear-gradient(180deg, #201712 0%, #17110d 46%, #110d0a 100%);
       color: var(--body-font-color);
       font-family: var(--primary-font);
       font-size: var(--primary-body-font-size);
@@ -91,14 +91,14 @@
       width: 100%;
       min-height: 2.8rem;
       color: #ffffff;
-      font-size: 1.6rem;
+      font-size: 1.42rem;
       font-weight: 700;
-      letter-spacing: 0.06em;
+      letter-spacing: 0.08em;
       text-transform: uppercase;
     }
 
     .show-header {
-      background: #000000;
+      background: transparent;
       padding-top: var(--show-header-padding-top);
       padding-bottom: var(--show-header-padding-bottom);
     }
@@ -116,15 +116,16 @@
       margin: 0 auto;
       border-radius: 2px;
       overflow: hidden;
+      box-shadow: 0 22px 60px rgba(0, 0, 0, 0.28);
     }
 
     .show-copy {
-      color: #ffffff;
+      color: #f5efe6;
     }
 
     .show-title {
       margin: 0;
-      color: #ffffff;
+      color: #f5efe6;
       font-size: var(--show-header-title-font-size);
       line-height: 1.2;
       font-weight: 700;
@@ -133,12 +134,12 @@
     .show-description {
       max-width: 44rem;
       margin: 1.35rem 0 0;
-      color: #ffffff;
+      color: #ddd1c1;
     }
 
     .episodes-section {
       padding: 2.6rem 0 4rem;
-      background: #000000;
+      background: transparent;
     }
 
     .episode-list {
@@ -148,7 +149,7 @@
 
     .episode-card {
       padding: var(--episode-inner-spacing) 0;
-      background: #000000;
+      background: transparent;
       text-align: left;
     }
 
@@ -226,8 +227,8 @@
       flex: 0 0 auto;
       border-radius: 999px;
       background: transparent;
-      color: #ffffff;
-      border: 2px solid rgba(255, 255, 255, 0.95);
+      color: #f5efe6;
+      border: 2px solid rgba(245, 239, 230, 0.95);
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -266,7 +267,7 @@
 
     .timeline::-webkit-slider-runnable-track {
       height: 3px;
-      background: rgba(255, 255, 255, 0.28);
+      background: rgba(245, 239, 230, 0.28);
       border-radius: 999px;
     }
 
@@ -276,12 +277,12 @@
       height: 14px;
       margin-top: -5.5px;
       border-radius: 999px;
-      background: #ffffff;
+      background: #f5efe6;
     }
 
     .timeline::-moz-range-track {
       height: 3px;
-      background: rgba(255, 255, 255, 0.28);
+      background: rgba(245, 239, 230, 0.28);
       border-radius: 999px;
     }
 
@@ -290,7 +291,7 @@
       height: 14px;
       border-radius: 999px;
       border: 0;
-      background: #ffffff;
+      background: #f5efe6;
     }
 
     .player-meta-row {
@@ -313,7 +314,7 @@
     .player-utility a {
       padding: 0;
       background: transparent;
-      color: #ffffff;
+      color: #f5efe6;
       font-size: 0.95rem;
       cursor: pointer;
     }
@@ -327,6 +328,70 @@
 
     .native-audio {
       display: none;
+    }
+
+    .transcript-block {
+      margin-top: 1rem;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      padding-top: 0.95rem;
+    }
+
+    .transcript-toggle {
+      list-style: none;
+      cursor: pointer;
+      color: var(--primary-color);
+      font-weight: 700;
+    }
+
+    .transcript-toggle::-webkit-details-marker {
+      display: none;
+    }
+
+    .transcript-toggle:hover,
+    .transcript-toggle:focus-visible {
+      color: #ffffff;
+    }
+
+    .transcript-content {
+      max-width: 68rem;
+      margin-top: 0.75rem;
+      color: #ddd1c1;
+      font-size: 0.95rem;
+      line-height: 1.7;
+    }
+
+    .site-footer {
+      border-top: 1px solid var(--footer-border);
+      background: transparent;
+    }
+
+    .site-footer-inner {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.7rem;
+      padding: 1.1rem 0 1.6rem;
+      color: var(--footer-copy);
+      font-size: 0.92rem;
+    }
+
+    .github-footer-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      color: inherit;
+    }
+
+    .github-footer-link:hover,
+    .github-footer-link:focus-visible {
+      color: #ffffff;
+    }
+
+    .github-mark {
+      width: 1.1rem;
+      height: 1.1rem;
+      display: block;
+      fill: currentColor;
     }
 
     @media screen and (max-width: 1024px) {
@@ -369,7 +434,7 @@
   <header class="site-header">
     <div class="shell site-header-inner">
       <div class="brand-lockup">
-        <a class="brand-mark" href="./index.html">Podcast Agent</a>
+        <a class="brand-mark" href="./index.html">Agentic Podcasts</a>
       </div>
     </div>
   </header>
@@ -380,7 +445,7 @@
         <div class="show-art">
           <img
             alt="The Last Mughal cover art"
-            src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%23111010'/><stop offset='0.45' stop-color='%23692a1a'/><stop offset='1' stop-color='%23d9a23d'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.5)' stroke-width='3'/><text x='110' y='690' fill='white' font-family='Muli, Arial, sans-serif' font-size='38' letter-spacing='8'>PODCAST AGENT</text><text x='110' y='785' fill='white' font-family='Muli, Arial, sans-serif' font-size='98' font-weight='700'>The Last</text><text x='110' y='870' fill='white' font-family='Muli, Arial, sans-serif' font-size='98' font-weight='700'>Mughal</text></svg>"
+            src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%23111010'/><stop offset='0.45' stop-color='%23692a1a'/><stop offset='1' stop-color='%23d9a23d'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.5)' stroke-width='3'/><text x='850' y='798' text-anchor='end' fill='white' font-family='Muli, Arial, sans-serif' font-size='34' letter-spacing='6'>AGENTIC</text><text x='850' y='842' text-anchor='end' fill='white' font-family='Muli, Arial, sans-serif' font-size='34' letter-spacing='6'>PODCASTS</text><text x='110' y='770' fill='white' font-family='Muli, Arial, sans-serif' font-size='98' font-weight='700'>The Last</text><text x='110' y='870' fill='white' font-family='Muli, Arial, sans-serif' font-size='98' font-weight='700'>Mughal</text></svg>"
           >
         </div>
 
@@ -431,6 +496,12 @@
               </div>
             </div>
           </div>
+          <details class="transcript-block">
+            <summary class="transcript-toggle">Transcript</summary>
+            <div class="transcript-content">
+              Add the episode transcript here as speaker paragraphs or timestamped sections. This slot is ready for inline transcript text or generated transcript content later.
+            </div>
+          </details>
         </article>
         <article class="episode-card">
           <p class="episode-meta">Episode 2</p>
@@ -468,6 +539,12 @@
               </div>
             </div>
           </div>
+          <details class="transcript-block">
+            <summary class="transcript-toggle">Transcript</summary>
+            <div class="transcript-content">
+              Add the episode transcript here as speaker paragraphs or timestamped sections. This slot is ready for inline transcript text or generated transcript content later.
+            </div>
+          </details>
         </article>
         <article class="episode-card">
           <p class="episode-meta">Episode 3</p>
@@ -505,10 +582,26 @@
               </div>
             </div>
           </div>
+          <details class="transcript-block">
+            <summary class="transcript-toggle">Transcript</summary>
+            <div class="transcript-content">
+              Add the episode transcript here as speaker paragraphs or timestamped sections. This slot is ready for inline transcript text or generated transcript content later.
+            </div>
+          </details>
         </article>
       </div>
     </section>
   </main>
+  <footer class="site-footer">
+    <div class="shell site-footer-inner">
+      <a class="github-footer-link" href="https://github.com/baqiral-1/podcast_agent" aria-label="Hosted on GitHub: open the podcast_agent repository">
+        <svg class="github-mark" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 .5C5.65.5.5 5.65.5 12A11.5 11.5 0 0 0 8.36 22.93c.58.1.79-.25.79-.56v-1.96c-3.2.69-3.87-1.36-3.87-1.36-.52-1.33-1.28-1.68-1.28-1.68-1.05-.72.08-.71.08-.71 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.36.96.1-.75.4-1.25.73-1.54-2.56-.29-5.26-1.28-5.26-5.68 0-1.25.45-2.27 1.18-3.08-.12-.29-.51-1.46.12-3.02 0 0 .96-.31 3.15 1.18a10.9 10.9 0 0 1 5.74 0c2.18-1.49 3.14-1.18 3.14-1.18.63 1.56.24 2.73.12 3.02.74.81 1.18 1.83 1.18 3.08 0 4.41-2.7 5.38-5.28 5.67.41.35.77 1.03.77 2.08v3.08c0 .31.21.67.8.56A11.5 11.5 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5z"></path>
+        </svg>
+        <span>Hosted on GitHub</span>
+      </a>
+    </div>
+  </footer>
 
   <script>
     const speeds = [1, 1.5, 2];

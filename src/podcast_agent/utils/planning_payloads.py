@@ -66,11 +66,6 @@ def payload_size_bytes(payload: dict) -> int:
     return len(json.dumps(payload, ensure_ascii=True, sort_keys=True).encode("utf-8"))
 
 
-def _chunk_excerpt(text: str, word_limit: int = 24) -> str:
-    words = text.split()
-    return " ".join(words[:word_limit])
-
-
 def _ordered_unique(values) -> list[str]:
     seen: set[str] = set()
     ordered: list[str] = []
@@ -91,7 +86,6 @@ def _chapter_chunk_map(structure: BookStructure) -> dict[str, list[dict]]:
                 "sequence": chunk.sequence,
                 "word_count": len(chunk.text.split()),
                 "themes": chunk.themes,
-                "excerpt": _chunk_excerpt(chunk.text),
             }
         )
     for chapter_id in chunk_map:
@@ -132,9 +126,6 @@ def _build_section_summaries(
                 "chunk_count": len(section_chunks),
                 "word_count": sum(chunk["word_count"] for chunk in section_chunks),
                 "themes": section_themes[:4],
-                "excerpt": " ".join(
-                    chunk["excerpt"] for chunk in section_chunks[:2] if chunk.get("excerpt")
-                ).strip(),
             }
         )
     return summaries

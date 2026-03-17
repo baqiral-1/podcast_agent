@@ -56,7 +56,7 @@ class StructuringAgent(Agent):
         chunk_overlap_words: int = 30,
         max_structuring_chapter_words: int = 2500,
         max_structuring_llm_chapter_words: int = 75000,
-        structuring_parallelism: int = 10,
+        structuring_parallelism: int = 5,
         structuring_window_words: int = 1800,
         structuring_window_overlap_words: int = 150,
     ) -> None:
@@ -393,6 +393,7 @@ class StructuringAgent(Agent):
             ("retry", retry_instructions),
         ]
         last_error: Exception | None = None
+        used_transport_retry = False
         for attempt_label, instructions in attempts:
             try:
                 plan = self.llm.generate_json(
@@ -425,6 +426,21 @@ class StructuringAgent(Agent):
                 )
                 if attempt_label == "retry":
                     break
+            except RuntimeError as exc:
+                last_error = exc
+                is_retryable_400 = "status 400" in str(exc)
+                self._log(
+                    "structuring_llm_retry",
+                    chapter_number=chapter_number,
+                    chapter_title=chapter_title,
+                    context=context_label,
+                    attempt=attempt_label,
+                    error_type=type(exc).__name__,
+                    error_message=str(exc),
+                )
+                if not is_retryable_400 or used_transport_retry:
+                    break
+                used_transport_retry = True
         self._log(
             "structuring_llm_fallback",
             chapter_number=chapter_number,

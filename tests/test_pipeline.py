@@ -409,8 +409,8 @@ def test_pipeline_defaults_raise_parallelism() -> None:
     assert settings.pipeline.beat_parallelism == 4
     assert settings.pipeline.beat_write_retry_attempts == 2
     assert settings.pipeline.beat_write_timeout_seconds == 120.0
-    assert settings.pipeline.grounding_parallelism == 3
-    assert settings.pipeline.structuring_parallelism == 10
+    assert settings.pipeline.grounding_parallelism == 5
+    assert settings.pipeline.structuring_parallelism == 5
     assert settings.pipeline.max_episode_minutes == 360
     assert settings.pipeline.max_structuring_llm_chapter_words == 75000
     assert settings.pipeline.min_episode_source_ratio == 0.3

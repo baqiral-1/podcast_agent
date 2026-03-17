@@ -210,6 +210,65 @@ class ParallelWindowStructuringLLM(LLMClient):
         return HeuristicLLMClient().generate_json(schema_name, instructions, payload, response_model)
 
 
+class RetryableStructuring400LLM(LLMClient):
+    """LLM stub that raises one transport-style 400 before succeeding."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.calls = 0
+
+    def generate_json(self, schema_name, instructions, payload, response_model):
+        if schema_name == "structured_chapter":
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError("LLM request failed with status 400: parse error")
+            draft = payload["draft"]
+            return response_model.model_validate(
+                {
+                    "chapter_number": draft["chapter_number"],
+                    "title": draft["title"],
+                    "summary": draft["summary"],
+                    "chunks": [
+                        {
+                            "start_word": chunk["start_word"],
+                            "end_word": chunk["end_word"],
+                            "themes": chunk.get("themes", []),
+                        }
+                        for chunk in draft["chunks"]
+                    ],
+                }
+            )
+        return HeuristicLLMClient().generate_json(schema_name, instructions, payload, response_model)
+
+
+class Always400StructuringLLM(LLMClient):
+    """LLM stub that always raises the transport-style 400 error."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.calls = 0
+
+    def generate_json(self, schema_name, instructions, payload, response_model):
+        if schema_name == "structured_chapter":
+            self.calls += 1
+            raise RuntimeError("LLM request failed with status 400: parse error")
+        return HeuristicLLMClient().generate_json(schema_name, instructions, payload, response_model)
+
+
+class NonRetryableStructuringRuntimeLLM(LLMClient):
+    """LLM stub that raises a non-400 runtime error without the extra retry."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.calls = 0
+
+    def generate_json(self, schema_name, instructions, payload, response_model):
+        if schema_name == "structured_chapter":
+            self.calls += 1
+            raise RuntimeError("LLM request timed out after 300 seconds")
+        return HeuristicLLMClient().generate_json(schema_name, instructions, payload, response_model)
+
+
 class CitationLoggingLLM(LLMClient):
     """LLM stub that leaves claim evidence empty so derived citations stay empty."""
 
@@ -649,6 +708,38 @@ def test_structuring_parallelizes_window_fallback_calls() -> None:
     ).structure(long_ingestion)
 
     assert llm.max_active_calls >= 2
+
+
+def test_structuring_retries_once_after_retryable_400() -> None:
+    llm = RetryableStructuring400LLM()
+    agent = StructuringAgent(llm, max_structuring_chapter_words=5000)
+
+    chapter = agent._structure_chapter(1, "Chapter 1: Signals", ("observatory " * 300).strip())
+
+    assert chapter is not None
+    assert llm.calls == 2
+
+
+def test_structuring_falls_back_after_second_retryable_400() -> None:
+    llm = Always400StructuringLLM()
+    agent = StructuringAgent(llm, max_structuring_chapter_words=5000)
+
+    chapter = agent._structure_chapter(1, "Chapter 1: Signals", ("observatory " * 300).strip())
+
+    assert chapter is not None
+    assert chapter.title == "Chapter 1: Signals"
+    assert llm.calls == 2
+
+
+def test_structuring_does_not_extra_retry_non_400_runtime_errors() -> None:
+    llm = NonRetryableStructuringRuntimeLLM()
+    agent = StructuringAgent(llm, max_structuring_chapter_words=5000)
+
+    chapter = agent._structure_chapter(1, "Chapter 1: Signals", ("observatory " * 300).strip())
+
+    assert chapter is not None
+    assert chapter.title == "Chapter 1: Signals"
+    assert llm.calls == 1
 
 
 def test_writing_diagnostics_distinguish_claim_and_segment_citations(tmp_path) -> None:
@@ -1099,7 +1190,7 @@ def test_analysis_payload_uses_compact_chunk_summaries() -> None:
     assert "chunks" not in payload["structure"]
     assert payload["episode_count"] == 2
     assert payload["structure"]["chapters"][0]["sections"]
-    assert payload["structure"]["chapters"][0]["sections"][0]["excerpt"]
+    assert "excerpt" not in payload["structure"]["chapters"][0]["sections"][0]
     assert "chunk_ids" not in payload["structure"]["chapters"][0]
 
 

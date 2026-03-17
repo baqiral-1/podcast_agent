@@ -3,21 +3,21 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Agentic Podcasts | India After Gandhi</title>
-  <meta name="description" content="Stories and analyses adapted from India After Gandhi.">
+  <title>Agentic Podcasts | The Great War for Civilisation</title>
+  <meta name="description" content="Stories and analyses adapted from The Great War for Civilisation.">
   <style>
     :root {
-      --body-bg-color: #14111d;
-      --body-font-color: #f4eefc;
+      --body-bg-color: #0f1418;
+      --body-font-color: #f4efe7;
       --primary-font: "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
       --primary-body-font-size: 1.12rem;
       --primary-body-font-weight: 300;
-      --primary-color: #9d57ea;
-      --primary-hover-color: #ba84ff;
+      --primary-color: #c9a56a;
+      --primary-hover-color: #d8b57a;
       --body-padding: 1.4375rem;
-      --header-bg: #000000;
-      --nav-color: #f4eefc;
-      --nav-color-hover: #9d57ea;
+      --header-bg: #0f1418;
+      --nav-color: #f4efe7;
+      --nav-color-hover: #c9a56a;
       --nav-font-size: 1rem;
       --header-padding: 1.25rem;
       --nav-horizontal-margin: 1.25rem;
@@ -28,12 +28,12 @@
       --episode-margin: 0.75rem;
       --episode-inner-spacing: 1rem;
       --episode-title-font-size: 1.5rem;
-      --episode-meta-color: #9d57ea;
-      --audio-player-progressed: #f4eefc;
-      --audio-player-runtime-color: #ded5eb;
+      --episode-meta-color: #c9a56a;
+      --audio-player-progressed: #f4efe7;
+      --audio-player-runtime-color: #d8d2c7;
       --max-width: 1180px;
-      --footer-border: rgba(244, 238, 252, 0.1);
-      --footer-copy: rgba(244, 238, 252, 0.72);
+      --footer-border: rgba(244, 239, 231, 0.1);
+      --footer-copy: rgba(244, 239, 231, 0.72);
     }
 
     * {
@@ -49,8 +49,8 @@
     body {
       margin: 0;
       background:
-        radial-gradient(circle at top, rgba(157, 87, 234, 0.12), transparent 36%),
-        linear-gradient(180deg, #1a1525 0%, #14111d 46%, #0e0b14 100%);
+        radial-gradient(circle at top, rgba(201, 165, 106, 0.12), transparent 36%),
+        linear-gradient(180deg, #151b20 0%, #0f1418 46%, #0b0f13 100%);
       color: var(--body-font-color);
       font-family: var(--primary-font);
       font-size: var(--primary-body-font-size);
@@ -90,7 +90,7 @@
       justify-content: center;
       width: 100%;
       min-height: 2.8rem;
-      color: #ffffff;
+      color: #f4efe7;
       font-size: 1.42rem;
       font-weight: 700;
       letter-spacing: 0.08em;
@@ -120,12 +120,12 @@
     }
 
     .show-copy {
-      color: #f4eefc;
+      color: #f4efe7;
     }
 
     .show-title {
       margin: 0;
-      color: #f4eefc;
+      color: #f4efe7;
       font-size: var(--show-header-title-font-size);
       line-height: 1.2;
       font-weight: 700;
@@ -134,7 +134,7 @@
     .show-description {
       max-width: 44rem;
       margin: 1.35rem 0 0;
-      color: #ddd2ee;
+      color: #ddd5ca;
     }
 
     .episodes-section {
@@ -162,18 +162,10 @@
 
     .episode-title {
       margin: 0;
-      color: #f4eefc;
+      color: #f4efe7;
       font-size: var(--episode-title-font-size);
       line-height: 1.35;
       font-weight: 700;
-    }
-
-    .episode-description {
-      max-width: 68rem;
-      margin: 0;
-      color: #ddd2ee;
-      font-size: 0.95rem;
-      line-height: 1.7;
     }
 
     .episode-details {
@@ -194,7 +186,7 @@
     .episode-description-preview {
       max-width: 68rem;
       margin: 0.9rem 0 0;
-      color: #ddd2ee;
+      color: #ddd5ca;
       font-size: 0.95rem;
       line-height: 1.7;
     }
@@ -203,7 +195,7 @@
       display: none;
       max-width: 68rem;
       margin: 0;
-      color: #ffffff;
+      color: #ddd5ca;
       font-size: 0.95rem;
       line-height: 1.7;
     }
@@ -235,8 +227,8 @@
       flex: 0 0 auto;
       border-radius: 999px;
       background: transparent;
-      color: #f4eefc;
-      border: 2px solid rgba(244, 238, 252, 0.95);
+      color: #f4efe7;
+      border: 2px solid rgba(244, 239, 231, 0.95);
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -267,71 +259,35 @@
     .timeline {
       width: 100%;
       margin: 0;
-      appearance: none;
-      background: transparent;
       accent-color: var(--audio-player-progressed);
       cursor: pointer;
-    }
-
-    .timeline::-webkit-slider-runnable-track {
-      height: 3px;
-      background: rgba(244, 238, 252, 0.28);
-      border-radius: 999px;
-    }
-
-    .timeline::-webkit-slider-thumb {
-      appearance: none;
-      width: 14px;
-      height: 14px;
-      margin-top: -5.5px;
-      border-radius: 999px;
-      background: #f4eefc;
-    }
-
-    .timeline::-moz-range-track {
-      height: 3px;
-      background: rgba(244, 238, 252, 0.28);
-      border-radius: 999px;
-    }
-
-    .timeline::-moz-range-thumb {
-      width: 14px;
-      height: 14px;
-      border-radius: 999px;
-      border: 0;
-      background: #f4eefc;
     }
 
     .player-meta-row {
       display: flex;
       justify-content: space-between;
-      gap: 1rem;
       align-items: center;
+      gap: 1rem;
       color: var(--audio-player-runtime-color);
-      font-size: 0.9rem;
+      font-size: 0.86rem;
+      line-height: 1.4;
+      font-variant-numeric: tabular-nums;
     }
 
     .player-utility {
-      display: flex;
+      display: inline-flex;
       align-items: center;
-      gap: 0.75rem;
-      flex: 0 0 auto;
+      gap: 0.5rem;
     }
 
-    .player-utility button,
-    .player-utility a {
-      padding: 0;
-      background: transparent;
-      color: #f4eefc;
-      font-size: 0.95rem;
+    .player-utility button {
+      min-width: 3rem;
+      padding: 0.25rem 0.65rem;
+      border-radius: 999px;
+      background: rgba(244, 239, 231, 0.08);
+      color: #f4efe7;
       cursor: pointer;
-    }
-
-    .player-utility button:hover,
-    .player-utility a:hover,
-    .player-utility button:focus-visible,
-    .player-utility a:focus-visible {
-      color: var(--primary-color);
+      font: inherit;
     }
 
     .native-audio {
@@ -340,7 +296,7 @@
 
     .transcript-block {
       margin-top: 1rem;
-      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      border-top: 1px solid rgba(244, 239, 231, 0.08);
       padding-top: 0.95rem;
     }
 
@@ -357,13 +313,13 @@
 
     .transcript-toggle:hover,
     .transcript-toggle:focus-visible {
-      color: #f4eefc;
+      color: #f4efe7;
     }
 
     .transcript-content {
       max-width: 68rem;
       margin-top: 0.75rem;
-      color: #ddd2ee;
+      color: #ddd5ca;
       font-size: 0.95rem;
       line-height: 1.7;
     }
@@ -392,7 +348,7 @@
 
     .github-footer-link:hover,
     .github-footer-link:focus-visible {
-      color: #ffffff;
+      color: #f4efe7;
     }
 
     .github-mark {
@@ -402,38 +358,22 @@
       fill: currentColor;
     }
 
-    @media screen and (max-width: 1024px) {
-      html {
-        font-size: 13px;
-      }
-    }
-
     @media screen and (max-width: 767px) {
       html {
         font-size: 12px;
         line-height: 1.7;
       }
 
-      .site-header {
-        padding-bottom: 1rem;
-      }
-
       .show-header-grid {
         grid-template-columns: 1fr;
-        align-items: start;
       }
 
       .show-art {
-        max-width: 23rem;
+        max-width: 22rem;
       }
 
       .player-row {
         align-items: flex-start;
-      }
-
-      .player-meta-row {
-        align-items: flex-start;
-        flex-direction: column;
       }
     }
   </style>
@@ -452,15 +392,15 @@
       <div class="shell show-header-grid">
         <div class="show-art">
           <img
-            alt="India After Gandhi cover art"
-            src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%2318112a'/><stop offset='0.52' stop-color='%239d57ea'/><stop offset='1' stop-color='%23f0a04b'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.5)' stroke-width='3'/><text x='110' y='770' fill='white' font-family='Muli, Arial, sans-serif' font-size='98' font-weight='700'>India After</text><text x='110' y='870' fill='white' font-family='Muli, Arial, sans-serif' font-size='98' font-weight='700'>Gandhi</text><text x='850' y='798' text-anchor='end' fill='white' font-family='Muli, Arial, sans-serif' font-size='34' letter-spacing='6'>AGENTIC</text><text x='850' y='842' text-anchor='end' fill='white' font-family='Muli, Arial, sans-serif' font-size='34' letter-spacing='6'>PODCASTS</text></svg>"
+            alt="The Great War for Civilisation cover art"
+            src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%230e1418'/><stop offset='0.48' stop-color='%23394a55'/><stop offset='1' stop-color='%23c9a56a'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.45)' stroke-width='3'/><text x='110' y='678' fill='white' font-family='Muli, Arial, sans-serif' font-size='82' font-weight='700'>The Great</text><text x='110' y='778' fill='white' font-family='Muli, Arial, sans-serif' font-size='82' font-weight='700'>War For</text><text x='110' y='878' fill='white' font-family='Muli, Arial, sans-serif' font-size='72' font-weight='700'>Civilization</text><text x='850' y='798' text-anchor='end' fill='white' font-family='Muli, Arial, sans-serif' font-size='34' letter-spacing='6'>AGENTIC</text><text x='850' y='842' text-anchor='end' fill='white' font-family='Muli, Arial, sans-serif' font-size='34' letter-spacing='6'>PODCASTS</text></svg>"
           >
         </div>
 
         <div class="show-copy">
-          <h1 class="show-title">India After Gandhi</h1>
+          <h1 class="show-title">The Great War for Civilisation</h1>
           <p class="show-description">
-            Stories and analyses adapted from Ramachandra Guha's history of modern India.
+            An eight-episode narrative history drawn from Robert Fisk's eyewitness chronicle of the modern Middle East, tracing imperial collapse, intervention, occupation, and the human wreckage left behind.
           </p>
         </div>
       </div>
@@ -470,26 +410,20 @@
       <div class="shell episode-list">
         <article class="episode-card">
           <p class="episode-meta">Episode 1</p>
-          <h2 class="episode-title">Nation, Partition, and the Making of the Republic</h2>
+          <h2 class="episode-title">Empire, Insurgency, and the Road to Catastrophe</h2>
           <p class="episode-description-preview">
-            In this episode, we trace the dramatic and often painful formation of modern India, from the idea of
-            the country as an unlikely and deeply divided civilization to the political struggle that brought
-            independence.
+            We open with the fault lines that shape the modern Middle East: imperial ambition, Afghan resistance, and the collapse of easy colonial myths.
           </p>
           <div class="episode-details">
             <span class="episode-description-more" data-role="episode-description-more">
-              We follow the collapse of empire, the trauma of Partition, Gandhi's final efforts to
-              contain communal bloodshed, and Nehru's attempt to define India as a secular democratic state. Along
-              the way, the story explores the arguments for and against division, the human cost of freedom, the
-              pressures of refugee resettlement, and the enormous challenge of holding together a nation many
-              believed could never endure.
+              Moving from the Soviet war in Afghanistan through the rise of armed movements and the politics of intervention, this episode follows the region as outside powers learn the wrong lessons from violence they only partly understand. Fisk's reporting keeps the story close to the ground, where grand strategy repeatedly breaks against memory, terrain, and rage. By the end, the path to a wider regional war is already visible: great powers are committed, local societies are destabilized, and the language of liberation has begun to mask a much darker future.
             </span>
             <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
           </div>
           <div class="episode-player">
             <div class="audio-shell">
               <audio class="native-audio" preload="metadata">
-                <source src="./india-after-gandhi-episode-1.mp3" type="audio/mpeg">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/the-great-war-for-civilisation-episodes-1-8/the-great-war-for-civilisation-episode-1.mp3" type="audio/mpeg">
                 Your browser does not support the audio element.
               </audio>
               <div class="player-row">
@@ -517,28 +451,23 @@
             </div>
           </details>
         </article>
+
         <article class="episode-card">
           <p class="episode-meta">Episode 2</p>
-          <h2 class="episode-title">Democracy, Development, and the Fractures of a New Nation</h2>
+          <h2 class="episode-title">Desert Storm and the Manufacture of Victory</h2>
           <p class="episode-description-preview">
-            In this episode, we follow India through one of the most consequential stretches of its early post-independence
-            history, as the new republic struggles to hold together political authority, democratic ambition, and regional
-            diversity.
+            This episode follows the rush from crisis to war as Iraq's invasion of Kuwait becomes a proving ground for a new kind of televised conflict.
           </p>
           <div class="episode-details">
             <span class="episode-description-more" data-role="episode-description-more">
-              The story moves from Congress infighting and the gamble of the first general election to Cold War
-              pressures abroad, economic modernization at home, linguistic conflict, and the uneasy integration of
-              Kashmir and tribal borderlands. Along the way, it shows how Nehru's India was built not through
-              consensus alone, but through argument, improvisation, and repeated tests of the state's legitimacy. It
-              is a portrait of a nation trying to define itself under extraordinary strain.
+              We trace the buildup to the Gulf War, the choreography of alliance politics, the language of precision and inevitability, and the brutal human cost concealed behind images of clean military success. Fisk stays with the civilians, conscripts, and wrecked landscapes that triumphal narratives prefer to skip. The story is not only about battlefield victory, but about how modern war is narrated, sold, and remembered. What looks like resolution in 1991 leaves deeper grievances behind, setting the stage for future occupations, sanctions, and permanent instability.
             </span>
             <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
           </div>
           <div class="episode-player">
             <div class="audio-shell">
               <audio class="native-audio" preload="metadata">
-                <source src="./india-after-gandhi-episode-2.mp3" type="audio/mpeg">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/the-great-war-for-civilisation-episodes-1-8/the-great-war-for-civilisation-episode-2.mp3" type="audio/mpeg">
                 Your browser does not support the audio element.
               </audio>
               <div class="player-row">
@@ -566,28 +495,23 @@
             </div>
           </details>
         </article>
+
         <article class="episode-card">
           <p class="episode-meta">Episode 3</p>
-          <h2 class="episode-title">Power, Nationhood, and the Strains of Democracy</h2>
+          <h2 class="episode-title">From Ruin to Reckoning in the Arab World</h2>
           <p class="episode-description-preview">
-            We follow India through a decisive phase of its early republic, when independence gave way to the
-            harder work of governing a vast and divided nation.
+            As the aftermath of war spreads, this episode moves through massacre, repression, exile, and the long memory of abandoned promises.
           </p>
           <div class="episode-details">
             <span class="episode-description-more" data-role="episode-description-more">
-              The story moves from Congress infighting and the first democratic election to Cold War diplomacy,
-              state-led development, linguistic conflict, the Kashmir dispute, and unrest in India's tribal
-              borderlands. At the center is Jawaharlal Nehru's effort to hold together democracy, national unity,
-              and social transformation under immense pressure. What emerges is not a smooth nation-building
-              story, but a portrait of a state repeatedly tested by regional demands, ideological rivalry, and the
-              challenge of turning freedom into a durable political order.
+              Fisk's reporting connects state violence, colonial residue, and regional humiliation into a broader story about how the Middle East was pushed toward repeated crisis. We move across the politics of atrocity, the burden placed on refugees and survivors, and the way official histories erase the people forced to live through their consequences. The episode also widens geographically, showing how the same habits of denial and intervention travel from one conflict to the next. By the close, the region is not stabilizing but hardening, with every settlement already carrying the seeds of another war.
             </span>
             <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
           </div>
           <div class="episode-player">
             <div class="audio-shell">
               <audio class="native-audio" preload="metadata">
-                <source src="./india-after-gandhi-episode-3.mp3" type="audio/mpeg">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/the-great-war-for-civilisation-episodes-1-8/the-great-war-for-civilisation-episode-3.mp3" type="audio/mpeg">
                 Your browser does not support the audio element.
               </audio>
               <div class="player-row">
@@ -615,28 +539,23 @@
             </div>
           </details>
         </article>
+
         <article class="episode-card">
           <p class="episode-meta">Episode 4</p>
-          <h2 class="episode-title">From Succession to Upheaval: India's Long Political Reckoning</h2>
+          <h2 class="episode-title">Sanctions, Airstrikes, and the New Permanence of War</h2>
           <p class="episode-description-preview">
-            We trace India's turbulent political journey from the aftermath of Nehru's death to the unstable
-            close of the 1980s.
+            This episode charts the grim years when war no longer arrives as a single event but settles into everyday life through sanctions, bombing campaigns, and open-ended coercion.
           </p>
           <div class="episode-details">
             <span class="episode-description-more" data-role="episode-description-more">
-              The story moves through war, succession struggles, Indira Gandhi's rise, her populist reinvention
-              of Congress, and the mounting pressures that reshaped Indian democracy. Along the way, we follow
-              regional unrest, opposition coalitions, the strains on institutions, and the changing relationship
-              between national power and popular anger. By the time Rajiv Gandhi enters center stage, the old
-              order is visibly fraying. What emerges is a portrait of a democracy under pressure, improvising
-              through crisis, ambition, violence, and reinvention.
+              Fisk follows the logic of punishment as it moves from military doctrine into hospitals, infrastructure, and ordinary homes, exposing the gap between humanitarian rhetoric and lived reality. We examine how international legitimacy is claimed, how moral language is weaponized, and how suffering becomes background noise for distant audiences. The Gulf War's aftermath turns into a system rather than an exception. What emerges is a portrait of a region held in suspension: formally managed from abroad, steadily broken from within, and pushed toward still more explosive confrontations.
             </span>
             <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
           </div>
           <div class="episode-player">
             <div class="audio-shell">
               <audio class="native-audio" preload="metadata">
-                <source src="./india-after-gandhi-episode-4.mp3" type="audio/mpeg">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/the-great-war-for-civilisation-episodes-1-8/the-great-war-for-civilisation-episode-4.mp3" type="audio/mpeg">
                 Your browser does not support the audio element.
               </audio>
               <div class="player-row">
@@ -664,28 +583,155 @@
             </div>
           </details>
         </article>
+
         <article class="episode-card">
           <p class="episode-meta">Episode 5</p>
-          <h2 class="episode-title">Mandal, Markets, and the Movies: India's Next Great Transformation</h2>
+          <h2 class="episode-title">Graves, Plague, and the Machinery of Endless Conflict</h2>
           <p class="episode-description-preview">
-            This episode follows India as politics spills into every part of public life.
+            This episode uses the rerun covering Chapters 17 through 20 and should be published as podcast episode 5.
           </p>
           <div class="episode-details">
             <span class="episode-description-more" data-role="episode-description-more">
-              We move through the Mandal moment and the reshaping of caste politics, the rise of new parties and
-              social coalitions, and the unrest that exposed how fragile state power could be. From Bihar's
-              breakdowns to militancy in Kashmir, the story shows a democracy under strain but constantly
-              reinventing itself. It also tracks another revolution unfolding in parallel: the transformation of
-              culture, entertainment, and national aspiration through film, music, and cricket. The result is a
-              portrait of modern India at a turning point, where identity, power, and popular culture begin to
-              define the country's next era.
+              Fisk moves through landscapes filled with death, disease, profiteering, and exhausted political illusions, tracing how war degrades not only cities and institutions but the moral imagination of everyone involved. We follow the trade in arms, the spread of fear, the bureaucracies that normalize mass suffering, and the stubborn political habits that keep drawing rulers back to violence. The story is cumulative rather than episodic: each campaign inherits the lies of the last one. By the end, war has become both industry and ritual, sustained by memory, money, and leaders who keep mistaking devastation for order.
             </span>
             <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
           </div>
           <div class="episode-player">
             <div class="audio-shell">
               <audio class="native-audio" preload="metadata">
-                <source src="./india-after-gandhi-episode-5.mp3" type="audio/mpeg">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/the-great-war-for-civilisation-episodes-1-8/the-great-war-for-civilisation-episode-5.mp3" type="audio/mpeg">
+                Your browser does not support the audio element.
+              </audio>
+              <div class="player-row">
+                <button class="play-toggle" data-role="hero-play" type="button" aria-label="Play audio">
+                  <svg data-role="play-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M8 5.14v13.72L19 12 8 5.14z"></path>
+                  </svg>
+                </button>
+                <div class="progress-cluster">
+                  <input class="timeline" data-role="timeline" type="range" min="0" max="100" step="0.1" value="0" aria-label="Seek through audio">
+                  <div class="player-meta-row">
+                    <div><span data-role="current-time">0:00</span> / <span data-role="duration">0:00</span></div>
+                    <div class="player-utility">
+                      <button data-role="speed-toggle" type="button">1x</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <details class="transcript-block">
+            <summary class="transcript-toggle">Transcript</summary>
+            <div class="transcript-content">
+              Add the episode transcript here as speaker paragraphs or timestamped sections. This slot is ready for inline transcript text or generated transcript content later.
+            </div>
+          </details>
+        </article>
+
+        <article class="episode-card">
+          <p class="episode-meta">Episode 6</p>
+          <h2 class="episode-title">Israel, Palestine, and a Conflict Without End</h2>
+          <p class="episode-description-preview">
+            Here the series narrows its focus to the Israeli-Palestinian conflict, but the larger themes of empire, memory, and impunity remain central.
+          </p>
+          <div class="episode-details">
+            <span class="episode-description-more" data-role="episode-description-more">
+              Fisk traces the accumulation of grievances across occupation, uprising, retaliation, and failed diplomacy, refusing the false symmetry that often obscures who bears the weight of daily violence. The episode stays close to the lived consequences of checkpoints, settlement expansion, military force, and political theater, showing how each promised breakthrough deepens disillusionment. This is also a story about language: security, terrorism, peace, and history itself are all contested terrain. What emerges is not a frozen conflict, but an active system of domination and resistance that shapes the region's political conscience.
+            </span>
+            <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
+          </div>
+          <div class="episode-player">
+            <div class="audio-shell">
+              <audio class="native-audio" preload="metadata">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/the-great-war-for-civilisation-episodes-1-8/the-great-war-for-civilisation-episode-6.mp3" type="audio/mpeg">
+                Your browser does not support the audio element.
+              </audio>
+              <div class="player-row">
+                <button class="play-toggle" data-role="hero-play" type="button" aria-label="Play audio">
+                  <svg data-role="play-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M8 5.14v13.72L19 12 8 5.14z"></path>
+                  </svg>
+                </button>
+                <div class="progress-cluster">
+                  <input class="timeline" data-role="timeline" type="range" min="0" max="100" step="0.1" value="0" aria-label="Seek through audio">
+                  <div class="player-meta-row">
+                    <div><span data-role="current-time">0:00</span> / <span data-role="duration">0:00</span></div>
+                    <div class="player-utility">
+                      <button data-role="speed-toggle" type="button">1x</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <details class="transcript-block">
+            <summary class="transcript-toggle">Transcript</summary>
+            <div class="transcript-content">
+              Add the episode transcript here as speaker paragraphs or timestamped sections. This slot is ready for inline transcript text or generated transcript content later.
+            </div>
+          </details>
+        </article>
+
+        <article class="episode-card">
+          <p class="episode-meta">Episode 7</p>
+          <h2 class="episode-title">9/11 and the Architecture of the War on Terror</h2>
+          <p class="episode-description-preview">
+            This episode follows the shock of September 11 and the global response that quickly transformed grief into doctrine.
+          </p>
+          <div class="episode-details">
+            <span class="episode-description-more" data-role="episode-description-more">
+              Fisk places the attacks inside a much longer history of intervention, resentment, and strategic blindness, challenging the idea that the new war began from nowhere. We trace the political uses of fear, the expansion of military power, and the speed with which complexity is flattened into slogans about civilization and barbarism. The result is a world newly organized around permanent emergency. Yet Fisk's reporting insists on continuity: the war on terror did not replace older conflicts, it absorbed them. The episode captures the moment when exception became policy and retaliation became a governing principle.
+            </span>
+            <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
+          </div>
+          <div class="episode-player">
+            <div class="audio-shell">
+              <audio class="native-audio" preload="metadata">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/the-great-war-for-civilisation-episodes-1-8/the-great-war-for-civilisation-episode-7.mp3" type="audio/mpeg">
+                Your browser does not support the audio element.
+              </audio>
+              <div class="player-row">
+                <button class="play-toggle" data-role="hero-play" type="button" aria-label="Play audio">
+                  <svg data-role="play-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M8 5.14v13.72L19 12 8 5.14z"></path>
+                  </svg>
+                </button>
+                <div class="progress-cluster">
+                  <input class="timeline" data-role="timeline" type="range" min="0" max="100" step="0.1" value="0" aria-label="Seek through audio">
+                  <div class="player-meta-row">
+                    <div><span data-role="current-time">0:00</span> / <span data-role="duration">0:00</span></div>
+                    <div class="player-utility">
+                      <button data-role="speed-toggle" type="button">1x</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <details class="transcript-block">
+            <summary class="transcript-toggle">Transcript</summary>
+            <div class="transcript-content">
+              Add the episode transcript here as speaker paragraphs or timestamped sections. This slot is ready for inline transcript text or generated transcript content later.
+            </div>
+          </details>
+        </article>
+
+        <article class="episode-card">
+          <p class="episode-meta">Episode 8</p>
+          <h2 class="episode-title">Into the Wilderness: Witness, Memory, and the Meaning of War</h2>
+          <p class="episode-description-preview">
+            The final episode closes the series in a reflective register without losing sight of the bodies, ruins, and betrayals that fill the book.
+          </p>
+          <div class="episode-details">
+            <span class="episode-description-more" data-role="episode-description-more">
+              Fisk returns to the question that runs underneath every chapter: what does war do to truth, to memory, and to the people who are asked to survive its aftermath? The episode gathers the long arc of the series into a meditation on reporting, denial, accountability, and the dangerous comfort of official narratives. It is about the persistence of civilians, the failures of power, and the historian's duty to resist simplification. The end is not consoling. It is a reckoning with how modern states wage war and how civilization repeatedly excuses it.
+            </span>
+            <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
+          </div>
+          <div class="episode-player">
+            <div class="audio-shell">
+              <audio class="native-audio" preload="metadata">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/the-great-war-for-civilisation-episodes-1-8/the-great-war-for-civilisation-episode-8.mp3" type="audio/mpeg">
                 Your browser does not support the audio element.
               </audio>
               <div class="player-row">
@@ -735,15 +781,15 @@
         return "0:00";
       }
 
-      const hours = Math.floor(value / 3600);
-      const minutes = Math.floor((value % 3600) / 60);
-      const seconds = Math.floor(value % 60).toString().padStart(2, "0");
-
+      const totalSeconds = Math.floor(value);
+      const hours = Math.floor(totalSeconds / 3600);
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = totalSeconds % 60;
       if (hours > 0) {
-        return `${hours}:${minutes.toString().padStart(2, "0")}:${seconds}`;
+        const remainingMinutes = Math.floor((totalSeconds % 3600) / 60);
+        return `${hours}:${String(remainingMinutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
       }
-
-      return `${minutes}:${seconds}`;
+      return `${minutes}:${String(seconds).padStart(2, "0")}`;
     }
 
     document.querySelectorAll(".episode-card").forEach((episodeCard) => {
@@ -756,105 +802,69 @@
       const speedToggle = episodeCard.querySelector('[data-role="speed-toggle"]');
       const descriptionToggle = episodeCard.querySelector('[data-role="description-toggle"]');
       const episodeDetails = episodeCard.querySelector(".episode-details");
-      let isSeeking = false;
 
-      function syncPlayButton() {
-        const paused = audio.paused;
-        heroPlay.setAttribute("aria-label", paused ? "Play audio" : "Pause audio");
-        playIcon.innerHTML = paused
+      let speedIndex = 0;
+
+      function syncPlayState() {
+        const isPaused = audio.paused;
+        playIcon.innerHTML = isPaused
           ? '<path d="M8 5.14v13.72L19 12 8 5.14z"></path>'
-          : '<path d="M7 5h4v14H7zM13 5h4v14h-4z"></path>';
+          : '<path d="M7 5h3v14H7zm7 0h3v14h-3z"></path>';
+        heroPlay.setAttribute("aria-label", isPaused ? "Play audio" : "Pause audio");
       }
 
-      function syncTimeline() {
+      function updateTimeline() {
         if (!Number.isFinite(audio.duration) || audio.duration <= 0) {
-          timeline.disabled = true;
-          timeline.max = "0";
-          timeline.value = "0";
-          currentTime.textContent = "0:00";
+          timeline.value = 0;
           duration.textContent = "0:00";
           return;
         }
 
-        timeline.disabled = false;
-        timeline.max = String(audio.duration);
-
-        if (!isSeeking) {
-          timeline.value = String(audio.currentTime);
-          currentTime.textContent = formatTime(audio.currentTime);
-        }
-
-        duration.textContent = formatTime(audio.duration);
-      }
-
-      function commitSeek() {
-        if (!Number.isFinite(audio.duration) || audio.duration <= 0) {
-          return;
-        }
-
-        audio.currentTime = Math.min(Number(timeline.value), audio.duration);
+        timeline.value = (audio.currentTime / audio.duration) * 100;
         currentTime.textContent = formatTime(audio.currentTime);
+        duration.textContent = formatTime(audio.duration);
       }
 
       heroPlay.addEventListener("click", () => {
         if (audio.paused) {
-          void audio.play();
+          document.querySelectorAll(".native-audio").forEach((otherAudio) => {
+            if (otherAudio !== audio) {
+              otherAudio.pause();
+            }
+          });
+          audio.play();
         } else {
           audio.pause();
         }
       });
 
-      timeline.addEventListener("pointerdown", () => {
-        isSeeking = true;
-      });
+      audio.addEventListener("play", syncPlayState);
+      audio.addEventListener("pause", syncPlayState);
+      audio.addEventListener("ended", syncPlayState);
+      audio.addEventListener("timeupdate", updateTimeline);
+      audio.addEventListener("loadedmetadata", updateTimeline);
 
       timeline.addEventListener("input", () => {
         if (!Number.isFinite(audio.duration) || audio.duration <= 0) {
           return;
         }
-
-        if (isSeeking) {
-          currentTime.textContent = formatTime(Number(timeline.value));
-          return;
-        }
-
-        commitSeek();
-      });
-
-      timeline.addEventListener("change", () => {
-        commitSeek();
-        isSeeking = false;
-        syncTimeline();
-      });
-
-      timeline.addEventListener("pointerup", () => {
-        commitSeek();
-        isSeeking = false;
-        syncTimeline();
+        audio.currentTime = (Number(timeline.value) / 100) * audio.duration;
       });
 
       speedToggle.addEventListener("click", () => {
-        const currentIndex = speeds.indexOf(audio.playbackRate);
-        const nextRate = speeds[(currentIndex + 1) % speeds.length];
-        audio.playbackRate = nextRate;
-        speedToggle.textContent = `${nextRate}x`;
+        speedIndex = (speedIndex + 1) % speeds.length;
+        audio.playbackRate = speeds[speedIndex];
+        speedToggle.textContent = `${speeds[speedIndex]}x`;
       });
 
       descriptionToggle.addEventListener("click", () => {
         const isOpen = episodeDetails.classList.toggle("is-open");
         descriptionToggle.textContent = isOpen ? "Read less" : "Read more";
-        descriptionToggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
+        descriptionToggle.setAttribute("aria-expanded", String(isOpen));
       });
 
-      audio.addEventListener("loadedmetadata", syncTimeline);
-      audio.addEventListener("durationchange", syncTimeline);
-      audio.addEventListener("timeupdate", syncTimeline);
-      audio.addEventListener("play", syncPlayButton);
-      audio.addEventListener("pause", syncPlayButton);
-      audio.addEventListener("ended", syncPlayButton);
-
-      syncPlayButton();
-      syncTimeline();
+      syncPlayState();
+      updateTimeline();
     });
   </script>
 </body>

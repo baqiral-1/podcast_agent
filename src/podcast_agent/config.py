@@ -76,7 +76,7 @@ class PipelineConfig(BaseModel):
     beat_parallelism: int = Field(default=4, ge=1)
     beat_write_retry_attempts: int = Field(default=2, ge=0)
     beat_write_timeout_seconds: float = Field(default=120.0, gt=0.0)
-    grounding_parallelism: int = Field(default=3, ge=1)
+    grounding_parallelism: int = Field(default=5, ge=1)
     minimum_source_words_per_episode: int = Field(default=50000, ge=1000)
     min_episode_source_ratio: float = Field(default=0.3, gt=0.0, le=1.0)
     spoken_words_per_minute: int = Field(default=130, ge=80)
@@ -90,7 +90,7 @@ class PipelineConfig(BaseModel):
     coverage_warning_min_ratio: float | None = Field(default=None, ge=0.0, le=1.0)
     max_structuring_chapter_words: int = Field(default=2500, ge=500)
     max_structuring_llm_chapter_words: int = Field(default=75000, ge=1000)
-    structuring_parallelism: int = Field(default=10, ge=1)
+    structuring_parallelism: int = Field(default=5, ge=1)
     structuring_window_words: int = Field(default=1800, ge=300)
     structuring_window_overlap_words: int = Field(default=150, ge=0)
 

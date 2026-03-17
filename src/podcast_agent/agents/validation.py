@@ -22,7 +22,7 @@ class GroundingValidationAgent(Agent):
     instructions = "Validate each claim against the cited evidence and classify grounding strength."
     response_model = GroundingReport
 
-    def __init__(self, llm, grounding_parallelism: int = 3) -> None:
+    def __init__(self, llm, grounding_parallelism: int = 5) -> None:
         super().__init__(llm)
         self.grounding_parallelism = grounding_parallelism
 
