@@ -23,6 +23,15 @@ class HTTPResponse:
     body: dict[str, Any]
 
 
+class LLMTransportHTTPError(RuntimeError):
+    """Transport error raised when the OpenAI-compatible API returns an HTTP error."""
+
+    def __init__(self, status_code: int, response_text: str) -> None:
+        self.status_code = status_code
+        self.response_text = response_text
+        super().__init__(f"LLM request failed with status {status_code}: {response_text}")
+
+
 class HTTPTransport:
     """Minimal JSON transport for OpenAI-compatible APIs."""
 
@@ -43,7 +52,7 @@ class HTTPTransport:
                 return HTTPResponse(status_code=response.status, body=body)
         except HTTPError as exc:
             message = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"LLM request failed with status {exc.code}: {message}") from exc
+            raise LLMTransportHTTPError(status_code=exc.code, response_text=message) from exc
         except URLError as exc:
             raise RuntimeError(f"LLM request failed: {exc.reason}") from exc
         except (TimeoutError, socket.timeout) as exc:

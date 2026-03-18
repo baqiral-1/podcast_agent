@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+import pytest
+
 from podcast_agent.config import LLMConfig, TTSConfig
 from podcast_agent.llm.base import LLMContentFilterError
-from podcast_agent.llm.openai_compatible import HTTPResponse, OpenAICompatibleLLMClient
+from podcast_agent.llm.openai_compatible import (
+    HTTPResponse,
+    LLMTransportHTTPError,
+    OpenAICompatibleLLMClient,
+)
 from podcast_agent.schemas.models import GroundingReport
 from podcast_agent.tts.openai_compatible import BinaryHTTPTransport, OpenAICompatibleTTSClient
 
@@ -31,6 +37,13 @@ class FakeBinaryTransport(BinaryHTTPTransport):
     def post_json_for_bytes(self, url: str, headers: dict[str, str], payload: dict, timeout_seconds: float) -> bytes:
         self.last_payload = payload
         return self.data
+
+
+class FailingHTTPTransport:
+    """Fake transport that raises a typed HTTP transport error."""
+
+    def post_json(self, url: str, headers: dict, payload: dict, timeout_seconds: float) -> HTTPResponse:
+        raise LLMTransportHTTPError(status_code=400, response_text='{"error":"parse error"}')
 
 
 def test_openai_compatible_client_parses_schema_constrained_json() -> None:
@@ -152,6 +165,25 @@ def test_openai_compatible_client_raises_for_length_finish_reason() -> None:
         assert "completion token limit" in str(exc)
     else:
         raise AssertionError("Expected length truncation error to be raised")
+
+
+def test_openai_compatible_client_preserves_http_status_and_body() -> None:
+    client = OpenAICompatibleLLMClient(
+        config=LLMConfig(api_key="test-key"),
+        transport=FailingHTTPTransport(),
+    )
+
+    with pytest.raises(LLMTransportHTTPError) as exc_info:
+        client.generate_json(
+            schema_name="grounding_report",
+            instructions="Validate the claims.",
+            payload={"script": {"episode_id": "episode-1"}},
+            response_model=GroundingReport,
+        )
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.response_text == '{"error":"parse error"}'
+    assert str(exc_info.value) == 'LLM request failed with status 400: {"error":"parse error"}'
 
 
 def test_openai_compatible_tts_client_returns_audio_bytes(monkeypatch) -> None:

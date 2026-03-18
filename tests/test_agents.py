@@ -20,6 +20,7 @@ from podcast_agent.agents import (
 )
 from podcast_agent.llm import HeuristicLLMClient
 from podcast_agent.run_logging import RunLogger
+from podcast_agent.llm.openai_compatible import LLMTransportHTTPError
 from podcast_agent.schemas.models import (
     BeatScript,
     BookAnalysis,
@@ -221,7 +222,7 @@ class RetryableStructuring400LLM(LLMClient):
         if schema_name == "structured_chapter":
             self.calls += 1
             if self.calls == 1:
-                raise RuntimeError("LLM request failed with status 400: parse error")
+                raise LLMTransportHTTPError(status_code=400, response_text="parse error")
             draft = payload["draft"]
             return response_model.model_validate(
                 {
@@ -251,7 +252,21 @@ class Always400StructuringLLM(LLMClient):
     def generate_json(self, schema_name, instructions, payload, response_model):
         if schema_name == "structured_chapter":
             self.calls += 1
-            raise RuntimeError("LLM request failed with status 400: parse error")
+            raise LLMTransportHTTPError(status_code=400, response_text="parse error")
+        return HeuristicLLMClient().generate_json(schema_name, instructions, payload, response_model)
+
+
+class NonRetryableStructuring500LLM(LLMClient):
+    """LLM stub that raises a non-retryable transport-style 500 error."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.calls = 0
+
+    def generate_json(self, schema_name, instructions, payload, response_model):
+        if schema_name == "structured_chapter":
+            self.calls += 1
+            raise LLMTransportHTTPError(status_code=500, response_text="server error")
         return HeuristicLLMClient().generate_json(schema_name, instructions, payload, response_model)
 
 
@@ -733,6 +748,17 @@ def test_structuring_falls_back_after_second_retryable_400() -> None:
 
 def test_structuring_does_not_extra_retry_non_400_runtime_errors() -> None:
     llm = NonRetryableStructuringRuntimeLLM()
+    agent = StructuringAgent(llm, max_structuring_chapter_words=5000)
+
+    chapter = agent._structure_chapter(1, "Chapter 1: Signals", ("observatory " * 300).strip())
+
+    assert chapter is not None
+    assert chapter.title == "Chapter 1: Signals"
+    assert llm.calls == 1
+
+
+def test_structuring_does_not_extra_retry_non_400_transport_errors() -> None:
+    llm = NonRetryableStructuring500LLM()
     agent = StructuringAgent(llm, max_structuring_chapter_words=5000)
 
     chapter = agent._structure_chapter(1, "Chapter 1: Signals", ("observatory " * 300).strip())

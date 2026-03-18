@@ -9,6 +9,7 @@ from json import JSONDecodeError
 from podcast_agent.agents.base import Agent
 from podcast_agent.ingestion import normalize_source_text
 from podcast_agent.llm.base import LLMContentFilterError
+from podcast_agent.llm.openai_compatible import LLMTransportHTTPError
 from podcast_agent.schemas.models import (
     BookChapter,
     BookChunk,
@@ -428,7 +429,9 @@ class StructuringAgent(Agent):
                     break
             except RuntimeError as exc:
                 last_error = exc
-                is_retryable_400 = "status 400" in str(exc)
+                is_retryable_400 = (
+                    isinstance(exc, LLMTransportHTTPError) and exc.status_code == 400
+                )
                 self._log(
                     "structuring_llm_retry",
                     chapter_number=chapter_number,
