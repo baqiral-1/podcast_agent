@@ -259,6 +259,31 @@ def render_audio_from_manifest(
     typer.echo(result.model_dump_json(indent=2))
 
 
+@app.command("spoken-delivery")
+def spoken_delivery(
+    artifact_path: Path,
+    database_url: str | None = typer.Option(
+        default=None,
+        help="PostgreSQL database URL. If omitted, falls back to DATABASE_URL when set.",
+    ),
+) -> None:
+    """Rewrite a saved factual script artifact into spoken-form delivery."""
+
+    orchestrator = _build_orchestrator(database_url)
+    orchestrator.log_command(
+        "spoken-delivery",
+        {
+            "artifact_path": str(artifact_path),
+            "database_url": database_url,
+        },
+    )
+    try:
+        result = orchestrator.spoken_delivery_from_artifact(artifact_path=artifact_path)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc), param_hint="artifact_path") from exc
+    typer.echo(json.dumps(result, indent=2, default=str))
+
+
 def main() -> None:
     """Entrypoint used by the console script."""
 

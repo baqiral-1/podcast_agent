@@ -57,7 +57,7 @@ class StructuringAgent(Agent):
         chunk_overlap_words: int = 30,
         max_structuring_chapter_words: int = 2500,
         max_structuring_llm_chapter_words: int = 75000,
-        structuring_parallelism: int = 5,
+        structuring_parallelism: int = 6,
         structuring_window_words: int = 1800,
         structuring_window_overlap_words: int = 150,
     ) -> None:

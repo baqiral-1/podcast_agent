@@ -258,7 +258,9 @@ def test_pipeline_creates_multi_chapter_episode_and_manifest(tmp_path: Path) -> 
         / "episode_output.json"
     )
     assert episode_output_path.exists()
-    assert not episode_output_path.with_name("script.json").exists()
+    assert episode_output_path.with_name("factual_script.json").exists()
+    assert episode_output_path.with_name("spoken_script.json").exists()
+    assert episode_output_path.with_name("spoken_delivery.json").exists()
     assert not episode_output_path.with_name("grounding_report.json").exists()
     assert not episode_output_path.with_name("render_manifest.json").exists()
 
@@ -404,16 +406,20 @@ def test_pipeline_defaults_raise_parallelism() -> None:
     settings = Settings()
 
     assert settings.pipeline.episode_parallelism == 3
-    assert settings.pipeline.audio_parallelism == 8
+    assert settings.pipeline.audio_parallelism == 6
     assert settings.pipeline.audio_retry_attempts == 2
-    assert settings.pipeline.beat_parallelism == 4
+    assert settings.pipeline.beat_parallelism == 6
     assert settings.pipeline.beat_write_retry_attempts == 2
     assert settings.pipeline.beat_write_timeout_seconds == 120.0
-    assert settings.pipeline.grounding_parallelism == 5
-    assert settings.pipeline.structuring_parallelism == 5
+    assert settings.pipeline.grounding_parallelism == 6
+    assert settings.pipeline.spoken_delivery_parallelism == 6
+    assert settings.pipeline.structuring_parallelism == 6
     assert settings.pipeline.max_episode_minutes == 360
     assert settings.pipeline.max_structuring_llm_chapter_words == 75000
     assert settings.pipeline.min_episode_source_ratio == 0.3
+    assert settings.spoken_delivery.enabled is True
+    assert settings.spoken_delivery.target_expansion_ratio == 1.1
+    assert settings.spoken_delivery.max_expansion_ratio == 1.2
 
 
 def test_ingest_book_reads_pdf_source_and_persists_artifact(tmp_path: Path, monkeypatch) -> None:
@@ -912,3 +918,53 @@ def test_render_audio_from_manifest_cli_uses_saved_episode_output(tmp_path: Path
     payload = json.loads(result.output)
     assert payload["audio_manifest"]["audio_path"].endswith("episode-1.mp3")
     assert payload["manifest"]["episode_id"] == "episode-1"
+
+
+def test_spoken_delivery_cli_writes_sibling_artifacts(tmp_path: Path, monkeypatch) -> None:
+    orchestrator = PipelineOrchestrator(
+        repository=InMemoryRepository(),
+        llm=HeuristicLLMClient(),
+        settings=Settings().model_copy(
+            update={"pipeline": Settings().pipeline.model_copy(update={"artifact_root": tmp_path / "runs"})}
+        ),
+    )
+    source_path = tmp_path / "source-run" / "observatory-book" / "episode-1" / "episode_output.json"
+    source_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest = _build_render_manifest("episode-1", ["First fact. Second fact.", "Third fact follows."])
+    _write_episode_output_artifact(source_path, manifest)
+
+    monkeypatch.setattr("podcast_agent.cli.app._build_orchestrator", lambda database_url: orchestrator)
+
+    result = CliRunner().invoke(app, ["spoken-delivery", str(source_path)])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["spoken_script"]["episode_id"] == "episode-1"
+    assert (source_path.parent / "spoken_script.json").exists()
+    assert (source_path.parent / "spoken_delivery.json").exists()
+
+
+def test_spoken_delivery_cli_rejects_failed_grounding_episode_output(tmp_path: Path, monkeypatch) -> None:
+    orchestrator = PipelineOrchestrator(
+        repository=InMemoryRepository(),
+        llm=HeuristicLLMClient(),
+        settings=Settings().model_copy(
+            update={"pipeline": Settings().pipeline.model_copy(update={"artifact_root": tmp_path / "runs"})}
+        ),
+    )
+    source_path = tmp_path / "source-run" / "observatory-book" / "episode-1" / "episode_output.json"
+    source_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest = _build_render_manifest("episode-1", ["cli first", "cli second"])
+    _write_episode_output_artifact(source_path, manifest)
+    payload = json.loads(source_path.read_text(encoding="utf-8"))
+    payload["report"]["overall_status"] = "fail"
+    source_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    monkeypatch.setattr("podcast_agent.cli.app._build_orchestrator", lambda database_url: orchestrator)
+
+    result = CliRunner().invoke(app, ["spoken-delivery", str(source_path)])
+
+    assert result.exit_code != 0
+    assert "grounding did not pass" in result.output
+    assert not (source_path.parent / "spoken_script.json").exists()
+    assert not (source_path.parent / "spoken_delivery.json").exists()

@@ -13,6 +13,7 @@ The current implementation is designed around a few fixed principles:
 - Chunk storage happens during `index-book`, immediately after `BookStructure` is created.
 - Grounding validation happens before render-manifest generation, and repair is a separate targeted step.
 - Audio synthesis is optional and runs only after a validated render manifest exists.
+- Spoken delivery is a separate post-grounding transformation that improves spoken clarity without replacing factual writing.
 - Episodes are sized by assigned source-book volume, with a default minimum of `50,000` source words per episode when the book is large enough.
 - Books shorter than that source-word floor collapse to one episode that covers the full book.
 - Writing validates that the generated script is proportional to the assigned source material before rendering or TTS.
@@ -33,8 +34,9 @@ At a high level, the pipeline alternates between deterministic orchestration ste
 6. `writing_agent`
 7. `grounding_validation_agent`
 8. `repair_agent`
-9. `render-manifest`
-10. `synthesize-audio`
+9. `spoken_delivery_agent`
+10. `render-manifest`
+11. `synthesize-audio`
 
 ## Project Layout
 
@@ -144,6 +146,7 @@ podcast-agent run-pipeline ./examples/book.txt --title "Example Book" --author "
 podcast-agent run-pipeline ./examples/book.txt --title "Example Book" --author "Author" --episode-count 2 --with-audio
 podcast-agent render-audio ./examples/book.txt --title "Example Book" --author "Author" --episode-count 2
 podcast-agent render-audio-from-manifest ./.podcast_agent/runs/example-book-20260315T1106/example-book/episode-1/episode_output.json
+podcast-agent spoken-delivery ./.podcast_agent/runs/example-book-20260315T1106/example-book/episode-1/episode_output.json
 ```
 
 Example with one of the included sample books:
@@ -173,6 +176,8 @@ Important stage artifacts include:
 - `BookAnalysis`
 - `SeriesPlan`
 - `EpisodeScript`
+- `SpokenEpisodeScript`
+- `SpokenDeliveryResult`
 - `GroundingReport`
 - `RepairResult`
 - `RenderManifest`
@@ -189,6 +194,9 @@ The contracts are intentionally strict:
 Each episode directory now contains:
 
 - `episode_output.json`: the single canonical JSON artifact with plan, script, validation, render, repair, and audio metadata
+- `factual_script.json`: the validated factual script used for grounding and repair
+- `spoken_script.json`: the spoken-delivery script used for render and audio when spoken delivery is enabled
+- `spoken_delivery.json`: per-segment spoken-delivery metrics and provenance
 - `<episode-id>.mp3`: one final episode audio file when audio synthesis is enabled
 
 ## Development

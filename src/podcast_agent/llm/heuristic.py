@@ -255,20 +255,18 @@ class HeuristicLLMClient(LLMClient):
 
     def _generate_episode_repair(self, payload: PromptPayload) -> dict[str, Any]:
         failed_segments = payload["failed_segments"]
-        report = payload["report"]
-        weak_claims = {
-            assessment["claim_id"]
-            for assessment in report["claim_assessments"]
-            if assessment["status"] != "grounded"
-        }
-        repaired_segment_ids = []
-        repaired_segments = []
-        for segment in failed_segments:
-            segment_claim_ids = {claim["claim_id"] for claim in segment["claims"]}
-            if segment_claim_ids & weak_claims:
-                repaired_segment_ids.append(segment["segment_id"])
-                segment["narration"] = " ".join(claim["text"] for claim in segment["claims"])
+        failed_segment_ids = payload.get("failed_segment_ids")
+        if not failed_segment_ids:
+            # Backwards compatibility with older payload shape.
+            failed_segment_ids = [segment.get("segment_id") for segment in failed_segments if segment.get("segment_id")]
+
+        repaired_segment_ids: list[str] = []
+        repaired_segments: list[dict[str, Any]] = []
+        for segment_id, segment in zip(failed_segment_ids, failed_segments, strict=False):
+            if segment_id:
+                repaired_segment_ids.append(segment_id)
             segment = dict(segment)
+            segment["narration"] = " ".join(claim["text"] for claim in segment.get("claims", [])) or segment.get("narration", "")
             segment.pop("segment_id", None)
             segment.pop("beat_id", None)
             segment.pop("citations", None)
@@ -277,7 +275,7 @@ class HeuristicLLMClient(LLMClient):
                     "text": claim["text"],
                     "evidence_chunk_ids": claim["evidence_chunk_ids"],
                 }
-                for claim in segment["claims"]
+                for claim in segment.get("claims", [])
             ]
             repaired_segments.append(segment)
         return {
@@ -286,6 +284,15 @@ class HeuristicLLMClient(LLMClient):
             "repaired_segment_ids": repaired_segment_ids,
             "repaired_segments": repaired_segments,
         }
+
+    def _generate_spoken_delivery_segment(self, payload: PromptPayload) -> dict[str, Any]:
+        current_segment = payload["current_segment"]
+        narration = current_segment["narration"].strip()
+        cleaned = " ".join(narration.split())
+        cleaned = cleaned.replace("; ", ". ")
+        if payload.get("previous_segment") is not None and not cleaned.lower().startswith(("meanwhile", "now", "at this point")):
+            cleaned = f"At this point, {cleaned[:1].lower()}{cleaned[1:]}" if cleaned else cleaned
+        return {"narration": cleaned}
 
 
 def _group(values: list[str], group_size: int) -> list[list[str]]:

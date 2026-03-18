@@ -52,7 +52,7 @@ class WritingAgent(Agent):
         minimum_source_words_per_episode: int = 50000,
         spoken_words_per_minute: int = 130,
         coverage_warning_min_ratio: float | None = None,
-        beat_parallelism: int = 4,
+        beat_parallelism: int = 6,
         beat_write_retry_attempts: int = 2,
         beat_write_timeout_seconds: float = 120.0,
     ) -> None:

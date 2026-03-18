@@ -16,6 +16,7 @@ from podcast_agent.agents import (
     EpisodePlanningAgent,
     GroundingValidationAgent,
     RepairAgent,
+    SpokenDeliveryAgent,
     StructuringAgent,
     WritingAgent,
 )
@@ -38,6 +39,8 @@ from podcast_agent.schemas.models import (
     RenderSegment,
     RepairResult,
     EpisodeSegment,
+    SpokenDeliveryResult,
+    SpokenEpisodeScript,
     SourceType,
 )
 from podcast_agent.tts import TTSClient, build_tts_client
@@ -107,6 +110,14 @@ class PipelineOrchestrator:
             grounding_parallelism=self.settings.pipeline.grounding_parallelism,
         )
         self.repair_agent = RepairAgent(self.llm)
+        self.spoken_delivery_agent = SpokenDeliveryAgent(
+            self.llm,
+            tone_preset=self.settings.spoken_delivery.tone_preset,
+            target_expansion_ratio=self.settings.spoken_delivery.target_expansion_ratio,
+            max_expansion_ratio=self.settings.spoken_delivery.max_expansion_ratio,
+            retry_enabled=self.settings.spoken_delivery.retry_enabled,
+            spoken_delivery_parallelism=self.settings.pipeline.spoken_delivery_parallelism,
+        )
 
     def log_command(self, command_name: str, arguments: dict) -> None:
         """Record the CLI command or orchestration entrypoint."""
@@ -274,6 +285,26 @@ class PipelineOrchestrator:
         )
         return report
 
+    def spoken_delivery_episode(
+        self,
+        book_id: str,
+        script: EpisodeScript,
+    ) -> tuple[SpokenEpisodeScript | None, SpokenDeliveryResult | None]:
+        """Rewrite a validated factual script into spoken-form delivery."""
+
+        if not self.settings.spoken_delivery.enabled:
+            return None, None
+        self.run_logger.log("stage_start", stage="spoken_delivery_episode", book_id=book_id, episode_id=script.episode_id)
+        spoken_script, spoken_delivery = self.spoken_delivery_agent.rewrite(script)
+        self.run_logger.log(
+            "stage_end",
+            stage="spoken_delivery_episode",
+            book_id=book_id,
+            episode_id=script.episode_id,
+            segment_count=len(spoken_script.segments),
+        )
+        return spoken_script, spoken_delivery
+
     def repair_episode(
         self,
         book_id: str,
@@ -408,7 +439,12 @@ class PipelineOrchestrator:
             repaired_beat_ids=repaired_beat_ids,
         )
 
-    def render_manifest(self, script: EpisodeScript, report: GroundingReport) -> RenderManifest:
+    def render_manifest(
+        self,
+        script: EpisodeScript,
+        report: GroundingReport,
+        spoken_script: SpokenEpisodeScript | None = None,
+    ) -> RenderManifest:
         """Build the TTS-ready manifest from a validated script."""
 
         if report.overall_status != "pass":
@@ -421,16 +457,23 @@ class PipelineOrchestrator:
             if assessment.status.value == "grounded"
         }
         segments = []
+        spoken_by_id = (
+            {segment.segment_id: segment for segment in spoken_script.segments}
+            if spoken_script is not None
+            else {}
+        )
         for segment in script.segments:
             claims = [claim.claim_id for claim in segment.claims if claim.claim_id in grounded_claim_ids]
             if not claims:
                 continue
-            ssml = f"<speak>{segment.narration}</speak>"
+            spoken_segment = spoken_by_id.get(segment.segment_id)
+            text = spoken_segment.narration if spoken_segment is not None else segment.narration
+            ssml = f"<speak>{text}</speak>"
             segments.append(
                 RenderSegment(
                     segment_id=segment.segment_id,
                     speaker=script.narrator,
-                    text=segment.narration,
+                    text=text,
                     ssml=ssml,
                     grounded_claim_ids=claims,
                 )
@@ -562,6 +605,38 @@ class PipelineOrchestrator:
             episode_output.model_dump(mode="json"),
         )
         return episode_output
+
+    def spoken_delivery_from_artifact(
+        self,
+        artifact_path: str | Path,
+    ) -> dict:
+        """Run spoken delivery from a saved factual script or episode output artifact."""
+
+        path = Path(artifact_path)
+        payload = self._load_manifest_source(path)
+        if "script" in payload and "report" in payload:
+            report = GroundingReport.model_validate_json(json.dumps(payload["report"]))
+            if report.overall_status != "pass":
+                raise ValueError(
+                    f"Cannot run spoken delivery from artifact '{artifact_path}' because grounding did not pass."
+                )
+        try:
+            if "script" in payload:
+                script = EpisodeScript.model_validate_json(json.dumps(payload["script"]))
+            else:
+                script = EpisodeScript.model_validate_json(json.dumps(payload))
+        except ValidationError as exc:
+            raise ValueError(f"Artifact '{artifact_path}' does not contain a valid factual script: {exc}") from exc
+        spoken_script, spoken_delivery = self.spoken_delivery_agent.rewrite(script)
+        script_path = path.parent / "spoken_script.json"
+        delivery_path = path.parent / "spoken_delivery.json"
+        script_path.write_text(spoken_script.model_dump_json(indent=2), encoding="utf-8")
+        delivery_path.write_text(spoken_delivery.model_dump_json(indent=2), encoding="utf-8")
+        return {
+            "factual_script": script.model_dump(mode="json"),
+            "spoken_script": spoken_script.model_dump(mode="json"),
+            "spoken_delivery": spoken_delivery.model_dump(mode="json"),
+        }
 
     def _synthesize_audio_segment(
         self,
@@ -729,16 +804,38 @@ class PipelineOrchestrator:
             repair_attempt_count=len(repair_attempts),
             final_status=report.overall_status,
         )
+        self._write_artifact(
+            self._episode_artifact_key(book_id, episode_plan.episode_id),
+            "factual_script",
+            script.model_dump(mode="json"),
+        )
+        spoken_script = None
+        spoken_delivery = None
+        if report.overall_status == "pass":
+            spoken_script, spoken_delivery = self.spoken_delivery_episode(book_id, script)
+            if spoken_script is not None and spoken_delivery is not None:
+                self._write_artifact(
+                    self._episode_artifact_key(book_id, episode_plan.episode_id),
+                    "spoken_script",
+                    spoken_script.model_dump(mode="json"),
+                )
+                self._write_artifact(
+                    self._episode_artifact_key(book_id, episode_plan.episode_id),
+                    "spoken_delivery",
+                    spoken_delivery.model_dump(mode="json"),
+                )
         manifest = None
         audio_manifest = None
         if report.overall_status == "pass":
-            manifest = self.render_manifest(script, report)
+            manifest = self.render_manifest(script, report, spoken_script=spoken_script)
             if synthesize_audio:
                 audio_manifest = self.synthesize_audio(manifest)
         episode_output = EpisodeOutput(
             plan=episode_plan,
             script=script,
             report=report,
+            spoken_script=spoken_script,
+            spoken_delivery=spoken_delivery,
             manifest=manifest,
             audio_manifest=audio_manifest,
             repair_attempts=repair_attempts,

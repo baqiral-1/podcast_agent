@@ -60,6 +60,18 @@ class TTSConfig(BaseModel):
     timeout_seconds: float = Field(default=300.0, gt=0.0)
 
 
+class SpokenDeliveryConfig(BaseModel):
+    """Textual spoken-delivery rewrite settings."""
+
+    model_config = ConfigDict(frozen=True)
+
+    enabled: bool = Field(default=True)
+    max_expansion_ratio: float = Field(default=1.2, gt=0.0)
+    target_expansion_ratio: float = Field(default=1.1, gt=0.0)
+    retry_enabled: bool = Field(default=True)
+    tone_preset: str = Field(default="educational_suspenseful")
+
+
 class PipelineConfig(BaseModel):
     """Top-level configuration for orchestration."""
 
@@ -71,12 +83,13 @@ class PipelineConfig(BaseModel):
     chunk_overlap_words: int = Field(default=30, ge=0)
     max_repair_attempts: int = Field(default=2, ge=0)
     episode_parallelism: int = Field(default=3, ge=1)
-    audio_parallelism: int = Field(default=8, ge=1)
+    audio_parallelism: int = Field(default=6, ge=1)
     audio_retry_attempts: int = Field(default=2, ge=0)
-    beat_parallelism: int = Field(default=4, ge=1)
+    beat_parallelism: int = Field(default=6, ge=1)
     beat_write_retry_attempts: int = Field(default=2, ge=0)
     beat_write_timeout_seconds: float = Field(default=120.0, gt=0.0)
-    grounding_parallelism: int = Field(default=5, ge=1)
+    grounding_parallelism: int = Field(default=6, ge=1)
+    spoken_delivery_parallelism: int = Field(default=6, ge=1)
     minimum_source_words_per_episode: int = Field(default=50000, ge=1000)
     min_episode_source_ratio: float = Field(default=0.3, gt=0.0, le=1.0)
     spoken_words_per_minute: int = Field(default=130, ge=80)
@@ -90,7 +103,7 @@ class PipelineConfig(BaseModel):
     coverage_warning_min_ratio: float | None = Field(default=None, ge=0.0, le=1.0)
     max_structuring_chapter_words: int = Field(default=2500, ge=500)
     max_structuring_llm_chapter_words: int = Field(default=75000, ge=1000)
-    structuring_parallelism: int = Field(default=5, ge=1)
+    structuring_parallelism: int = Field(default=6, ge=1)
     structuring_window_words: int = Field(default=1800, ge=300)
     structuring_window_overlap_words: int = Field(default=150, ge=0)
 
@@ -103,4 +116,5 @@ class Settings(BaseModel):
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
     tts: TTSConfig = Field(default_factory=TTSConfig)
+    spoken_delivery: SpokenDeliveryConfig = Field(default_factory=SpokenDeliveryConfig)
     pipeline: PipelineConfig = Field(default_factory=PipelineConfig)

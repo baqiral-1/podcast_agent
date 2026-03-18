@@ -317,27 +317,101 @@ class CapturingRepairLLM(LLMClient):
 
     def generate_json(self, schema_name, instructions, payload, response_model):
         if schema_name == "episode_repair":
-            failed_segments = []
-            for segment in payload["failed_segments"]:
-                repaired = dict(segment)
-                repaired.pop("segment_id", None)
-                repaired.pop("beat_id", None)
-                repaired.pop("citations", None)
-                repaired["claims"] = [
-                    {
-                        "text": claim["text"],
-                        "evidence_chunk_ids": claim["evidence_chunk_ids"],
-                    }
-                    for claim in repaired["claims"]
-                ]
-                failed_segments.append(repaired)
             self.payloads.append(payload)
             return response_model.model_validate(
                 {
                     "episode_id": payload["episode_id"],
                     "attempt": payload["attempt"],
-                    "repaired_segment_ids": [segment["segment_id"] for segment in payload["failed_segments"]],
-                    "repaired_segments": failed_segments,
+                    "repaired_segment_ids": list(payload["failed_segment_ids"]),
+                    "repaired_segments": list(payload["failed_segments"]),
+                }
+            )
+        return HeuristicLLMClient().generate_json(schema_name, instructions, payload, response_model)
+
+
+class RetryingSchemaErrorRepairLLM(LLMClient):
+    """LLM stub that returns a schema-invalid repair once, then a valid retry."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+        self.instructions: list[str] = []
+
+    def generate_json(self, schema_name, instructions, payload, response_model):
+        if schema_name == "episode_repair":
+            self.calls += 1
+            self.instructions.append(instructions)
+            if self.calls == 1:
+                # Simulate an LLM echoing forbidden keys, which should trigger a retry.
+                return response_model.model_validate(
+                    {
+                        "episode_id": payload["episode_id"],
+                        "attempt": payload["attempt"],
+                        "repaired_segment_ids": list(payload["failed_segment_ids"]),
+                        "repaired_segments": [
+                            {
+                                **payload["failed_segments"][0],
+                                "segment_id": "episode-1-segment-1",
+                            }
+                        ],
+                    }
+                )
+            return response_model.model_validate(
+                {
+                    "episode_id": payload["episode_id"],
+                    "attempt": payload["attempt"],
+                    "repaired_segment_ids": list(payload["failed_segment_ids"]),
+                    "repaired_segments": list(payload["failed_segments"]),
+                }
+            )
+        return HeuristicLLMClient().generate_json(schema_name, instructions, payload, response_model)
+
+
+class RetryingMappingErrorRepairLLM(LLMClient):
+    """LLM stub that returns schema-valid but mapping-invalid ids once, then a valid retry."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+        self.instructions: list[str] = []
+
+    def generate_json(self, schema_name, instructions, payload, response_model):
+        if schema_name == "episode_repair":
+            self.calls += 1
+            self.instructions.append(instructions)
+            if self.calls == 1:
+                return response_model.model_validate(
+                    {
+                        "episode_id": payload["episode_id"],
+                        "attempt": payload["attempt"],
+                        "repaired_segment_ids": ["episode-unknown-segment-999"],
+                        "repaired_segments": list(payload["failed_segments"][:1]),
+                    }
+                )
+            return response_model.model_validate(
+                {
+                    "episode_id": payload["episode_id"],
+                    "attempt": payload["attempt"],
+                    "repaired_segment_ids": list(payload["failed_segment_ids"]),
+                    "repaired_segments": list(payload["failed_segments"]),
+                }
+            )
+        return HeuristicLLMClient().generate_json(schema_name, instructions, payload, response_model)
+
+
+class InstructionCapturingRepairLLM(LLMClient):
+    """LLM stub that records repair instructions for assertions."""
+
+    def __init__(self) -> None:
+        self.instructions: list[str] = []
+
+    def generate_json(self, schema_name, instructions, payload, response_model):
+        if schema_name == "episode_repair":
+            self.instructions.append(instructions)
+            return response_model.model_validate(
+                {
+                    "episode_id": payload["episode_id"],
+                    "attempt": payload["attempt"],
+                    "repaired_segment_ids": list(payload["failed_segment_ids"]),
+                    "repaired_segments": list(payload["failed_segments"]),
                 }
             )
         return HeuristicLLMClient().generate_json(schema_name, instructions, payload, response_model)
@@ -1475,9 +1549,107 @@ def test_repair_agent_targets_only_failed_segments() -> None:
     assert repair.repaired_segment_ids[0] == weakened_script.segments[0].segment_id
     payload = llm.payloads[0]
     assert payload["episode_id"] == weakened_script.episode_id
+    assert payload["failed_segment_ids"] == [weakened_script.segments[0].segment_id]
     assert len(payload["failed_segments"]) == 1
-    assert payload["failed_segments"][0]["segment_id"] == weakened_script.segments[0].segment_id
-    assert payload["failed_segments"][0]["beat_id"] == weakened_script.segments[0].beat_id
-    assert {assessment["claim_id"] for assessment in payload["report"]["claim_assessments"]} == {
-        weakened_script.segments[0].claims[0].claim_id
+    assert "segment_id" not in payload["failed_segments"][0]
+    assert "beat_id" not in payload["failed_segments"][0]
+    assert "citations" not in payload["failed_segments"][0]
+    assert {assessment["text"] for assessment in payload["report"]["claim_assessments"]} == {
+        weakened_script.segments[0].claims[0].text
     }
+
+
+def test_repair_agent_retries_on_schema_validation_error() -> None:
+    llm = RetryingSchemaErrorRepairLLM()
+    script, _, retrieval_hits = _build_script_and_report()
+
+    weakened_first_segment = script.segments[0].model_copy(
+        update={
+            "claims": [
+                script.segments[0].claims[0].model_copy(
+                    update={"text": "This claim now describes an unrelated volcanic eruption in a distant empire."}
+                )
+            ]
+        }
+    )
+    weakened_script = EpisodeScript.model_construct(
+        **{
+            **script.model_dump(mode="python"),
+            "segments": [
+                weakened_first_segment,
+                *script.segments[1:],
+            ],
+        }
+    )
+    weakened_report = GroundingValidationAgent(llm).validate(weakened_script, retrieval_hits)
+
+    repair = RepairAgent(llm).repair(weakened_script, weakened_report, attempt=1)
+
+    assert repair.repaired_segment_ids == [weakened_script.segments[0].segment_id]
+    assert llm.calls == 2
+    assert "Previous schema/mapping error" in llm.instructions[-1]
+
+
+def test_repair_agent_retries_on_mapping_validation_error() -> None:
+    llm = RetryingMappingErrorRepairLLM()
+    script, _, retrieval_hits = _build_script_and_report()
+
+    weakened_first_segment = script.segments[0].model_copy(
+        update={
+            "claims": [
+                script.segments[0].claims[0].model_copy(
+                    update={"text": "This claim now describes an unrelated volcanic eruption in a distant empire."}
+                )
+            ]
+        }
+    )
+    weakened_script = EpisodeScript.model_construct(
+        **{
+            **script.model_dump(mode="python"),
+            "segments": [
+                weakened_first_segment,
+                *script.segments[1:],
+            ],
+        }
+    )
+    weakened_report = GroundingValidationAgent(llm).validate(weakened_script, retrieval_hits)
+
+    repair = RepairAgent(llm).repair(weakened_script, weakened_report, attempt=1)
+
+    assert repair.repaired_segment_ids == [weakened_script.segments[0].segment_id]
+    assert llm.calls == 2
+    assert "Previous schema/mapping error" in llm.instructions[-1]
+
+
+def test_repair_agent_instructions_include_schema_template() -> None:
+    llm = InstructionCapturingRepairLLM()
+    script, _, retrieval_hits = _build_script_and_report()
+
+    weakened_first_segment = script.segments[0].model_copy(
+        update={
+            "claims": [
+                script.segments[0].claims[0].model_copy(
+                    update={"text": "This claim now describes an unrelated volcanic eruption in a distant empire."}
+                )
+            ]
+        }
+    )
+    weakened_script = EpisodeScript.model_construct(
+        **{
+            **script.model_dump(mode="python"),
+            "segments": [
+                weakened_first_segment,
+                *script.segments[1:],
+            ],
+        }
+    )
+    weakened_report = GroundingValidationAgent(llm).validate(weakened_script, retrieval_hits)
+
+    RepairAgent(llm).repair(weakened_script, weakened_report, attempt=1)
+
+    assert llm.instructions
+    instructions = llm.instructions[0]
+    assert "Output JSON shape" in instructions
+    assert "Forbidden keys" in instructions
+    assert '"repaired_segment_ids"' in instructions
+    assert '"repaired_segments"' in instructions

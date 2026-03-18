@@ -241,6 +241,12 @@ class EpisodeSegmentDraft(StrictModel):
     claims: list[ScriptClaimDraft] = Field(min_length=1)
 
 
+class SpokenSegmentRewriteDraft(StrictModel):
+    """LLM-authored spoken delivery rewrite for one factual segment."""
+
+    narration: str
+
+
 class BeatScript(StrictModel):
     """Intermediate beat-scoped script emitted during writing."""
 
@@ -261,6 +267,46 @@ class EpisodeScript(StrictModel):
     title: str
     narrator: str
     segments: list[EpisodeSegment]
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class RewriteMetrics(StrictModel):
+    """Lightweight rewrite metrics for spoken-delivery evaluation."""
+
+    source_word_count: int = Field(ge=0)
+    spoken_word_count: int = Field(ge=0)
+    expansion_ratio: float = Field(ge=0.0)
+    source_sentence_count: int = Field(ge=0)
+    spoken_sentence_count: int = Field(ge=0)
+    source_average_sentence_length: float = Field(ge=0.0)
+    spoken_average_sentence_length: float = Field(ge=0.0)
+    source_paragraph_count: int = Field(ge=0)
+    spoken_paragraph_count: int = Field(ge=0)
+
+
+class SpokenSegment(StrictModel):
+    """Spoken-delivery version of a factual script segment."""
+
+    segment_id: str
+    beat_id: str
+    heading: str
+    narration: str
+    rewrite_mode: Literal["spoken_delivery"] = "spoken_delivery"
+    source_word_count: int = Field(ge=0)
+    spoken_word_count: int = Field(ge=0)
+    expansion_ratio: float = Field(ge=0.0)
+    retry_applied: bool = False
+    fidelity_passed: bool = True
+    fallback_used: bool = False
+
+
+class SpokenEpisodeScript(StrictModel):
+    """Single-episode spoken-delivery script derived from a factual script."""
+
+    episode_id: str
+    title: str
+    narrator: str
+    segments: list[SpokenSegment]
     created_at: datetime = Field(default_factory=utc_now)
 
 
@@ -319,6 +365,45 @@ class SegmentRepairDraftResult(StrictModel):
     repaired_segments: list[EpisodeSegmentDraft]
 
 
+class SpokenDeliverySegmentResult(StrictModel):
+    """Detailed spoken-delivery outcome for one segment."""
+
+    segment_id: str
+    beat_id: str
+    metrics: RewriteMetrics
+    retry_applied: bool = False
+    fidelity_passed: bool = True
+    fallback_used: bool = False
+    missing_names: list[str] = Field(default_factory=list)
+    missing_numbers: list[str] = Field(default_factory=list)
+    attempts: list["SpokenDeliveryAttemptResult"] = Field(default_factory=list)
+
+
+class SpokenDeliveryAttemptResult(StrictModel):
+    """Diagnostics for one spoken-delivery draft attempt."""
+
+    attempt: Literal["initial", "retry", "fallback"]
+    narration: str
+    metrics: RewriteMetrics
+    fidelity_passed: bool = True
+    missing_names: list[str] = Field(default_factory=list)
+    missing_numbers: list[str] = Field(default_factory=list)
+    source_paragraph_count: int = Field(ge=0)
+    spoken_paragraph_count: int = Field(ge=0)
+    failure_reasons: list[str] = Field(default_factory=list)
+
+
+class SpokenDeliveryResult(StrictModel):
+    """Episode-level spoken-delivery provenance and metrics."""
+
+    episode_id: str
+    tone_preset: Literal["educational", "educational_suspenseful", "reflective_history"]
+    target_expansion_ratio: float = Field(gt=0.0)
+    max_expansion_ratio: float = Field(gt=0.0)
+    segments: list[SpokenDeliverySegmentResult]
+    generated_at: datetime = Field(default_factory=utc_now)
+
+
 class RenderSegment(StrictModel):
     """Final renderable segment."""
 
@@ -367,6 +452,8 @@ class EpisodeOutput(StrictModel):
     plan: EpisodePlan
     script: EpisodeScript
     report: GroundingReport
+    spoken_script: SpokenEpisodeScript | None = None
+    spoken_delivery: SpokenDeliveryResult | None = None
     manifest: RenderManifest | None = None
     audio_manifest: AudioManifest | None = None
     repair_attempts: list[RepairResult] = Field(default_factory=list)

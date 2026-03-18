@@ -261,6 +261,7 @@ Document assumptions in the final response.
 - Prefer describing why the change exists and what it changes over listing filenames.
 - Keep bullets specific to concrete behavioural changes.
 - Ignore changes to the README or any files under docs unless they're the only changes in the commit.
+- There should be no newlines between bullets.
 
 ### Ordering Rules
 
