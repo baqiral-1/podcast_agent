@@ -105,7 +105,7 @@ def check_fidelity(source_text: str, spoken_text: str, *, check_paragraph_drift:
     spoken_paragraphs = paragraph_count(spoken_text)
     passed = not missing_numbers and len(missing_names) <= max(1, len(source_names) // 5)
     if check_paragraph_drift:
-        passed = passed and abs(spoken_paragraphs - source_paragraphs) <= 1
+        passed = passed and spoken_paragraphs == source_paragraphs
     return FidelityCheckResult(
         passed=passed,
         missing_names=missing_names,

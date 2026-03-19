@@ -107,6 +107,15 @@ export OPENAI_BASE_URL=https://api.openai.com
 `OPENAI_BASE_URL` can point at any OpenAI-compatible server. The default model name is `gpt-4o-mini`; override it through `Settings.llm.model_name` in code if needed.
 The default request timeout for live model calls is 300 seconds.
 
+You can also override the model from the CLI:
+
+```bash
+podcast-agent run-pipeline ./examples/book.txt --title "Example Book" --author "Author" --episode-count 2 --model gpt-5-mini
+podcast-agent run-pipeline ./examples/book.txt --title "Example Book" --author "Author" --episode-count 2 --agent-model validation=gpt-4.1 --agent-model spoken_delivery=gpt-4o
+```
+
+`--agent-model` values are keyed by pipeline agent name: `structuring`, `analysis`, `planning`, `writing`, `validation`, `repair`, `spoken_delivery`.
+
 TTS uses the same OpenAI-compatible endpoint family by default:
 
 ```bash

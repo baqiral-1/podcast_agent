@@ -26,6 +26,13 @@ class LLMConfig(BaseModel):
 
     provider: str = Field(default="openai-compatible")
     model_name: str = Field(default="gpt-4o-mini")
+    model_overrides: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Optional per-schema model overrides keyed by schema_name. "
+            "When present, schema_name-specific entries take precedence over model_name."
+        ),
+    )
     temperature: float = Field(default=0.1, ge=0.0, le=2.0)
     api_key: str | None = Field(default_factory=lambda: os.getenv("OPENAI_API_KEY"))
     base_url: str = Field(
@@ -56,7 +63,7 @@ class TTSConfig(BaseModel):
             "and especially before the final line, to enhance suspense dramatically."
         )
     )
-    speed: float = Field(default=1.1, gt=0.0, le=4.0)
+    speed: float = Field(default=1, gt=0.0, le=4.0)
     timeout_seconds: float = Field(default=300.0, gt=0.0)
 
 
@@ -98,13 +105,15 @@ class PipelineConfig(BaseModel):
     max_planning_payload_bytes: int = Field(default=500000, ge=10000)
     max_analysis_payload_bytes_with_episode_count: int = Field(default=1000000, ge=10000)
     max_planning_payload_bytes_with_episode_count: int = Field(default=1000000, ge=10000)
-    section_beat_target_words: int = Field(default=1200, ge=200)
-    beat_evidence_window_size: int = Field(default=8, ge=1)
+    target_script_source_ratio: float = Field(default=0.25, gt=0.0, le=1.0)
+    max_target_script_words: int = Field(default=20000, ge=300)
+    section_beat_target_words: int = Field(default=3000, ge=200)
+    beat_evidence_window_size: int = Field(default=20, ge=1)
     coverage_warning_min_ratio: float | None = Field(default=None, ge=0.0, le=1.0)
     max_structuring_chapter_words: int = Field(default=2500, ge=500)
     max_structuring_llm_chapter_words: int = Field(default=75000, ge=1000)
     structuring_parallelism: int = Field(default=6, ge=1)
-    structuring_window_words: int = Field(default=1800, ge=300)
+    structuring_window_words: int = Field(default=3600, ge=300)
     structuring_window_overlap_words: int = Field(default=150, ge=0)
 
 

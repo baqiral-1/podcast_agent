@@ -101,6 +101,8 @@ class PipelineOrchestrator:
             minimum_source_words_per_episode=self.settings.pipeline.minimum_source_words_per_episode,
             spoken_words_per_minute=self.settings.pipeline.spoken_words_per_minute,
             coverage_warning_min_ratio=self.settings.pipeline.coverage_warning_min_ratio,
+            target_script_source_ratio=self.settings.pipeline.target_script_source_ratio,
+            max_target_script_words=self.settings.pipeline.max_target_script_words,
             beat_parallelism=self.settings.pipeline.beat_parallelism,
             beat_write_retry_attempts=self.settings.pipeline.beat_write_retry_attempts,
             beat_write_timeout_seconds=self.settings.pipeline.beat_write_timeout_seconds,

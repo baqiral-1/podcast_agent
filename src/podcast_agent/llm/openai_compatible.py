@@ -82,9 +82,10 @@ class OpenAICompatibleLLMClient(LLMClient):
             raise RuntimeError(
                 "OPENAI_API_KEY is required for the default OpenAI-compatible LLM client."
             )
+        selected_model = self.config.model_overrides.get(schema_name, self.config.model_name)
         endpoint = f"{self.config.base_url.rstrip('/')}/v1/chat/completions"
         request_payload = {
-            "model": self.config.model_name,
+            "model": selected_model,
             "temperature": self.config.temperature,
             "messages": [
                 {
@@ -121,7 +122,7 @@ class OpenAICompatibleLLMClient(LLMClient):
                 schema_name=schema_name,
                 instructions=request_payload["messages"][0]["content"],
                 payload=request_payload["messages"][1]["content"],
-                model=self.config.model_name,
+                model=selected_model,
                 timeout_seconds=self.config.timeout_seconds,
             )
         try:

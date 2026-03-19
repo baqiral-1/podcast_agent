@@ -910,7 +910,10 @@ def test_render_audio_from_manifest_cli_uses_saved_episode_output(tmp_path: Path
     manifest = _build_render_manifest("episode-1", ["cli first", "cli second"])
     _write_episode_output_artifact(source_path, manifest)
 
-    monkeypatch.setattr("podcast_agent.cli.app._build_orchestrator", lambda database_url: orchestrator)
+    monkeypatch.setattr(
+        "podcast_agent.cli.app._build_orchestrator",
+        lambda database_url, **kwargs: orchestrator,
+    )
 
     result = CliRunner().invoke(app, ["render-audio-from-manifest", str(source_path)])
 
@@ -933,7 +936,10 @@ def test_spoken_delivery_cli_writes_sibling_artifacts(tmp_path: Path, monkeypatc
     manifest = _build_render_manifest("episode-1", ["First fact. Second fact.", "Third fact follows."])
     _write_episode_output_artifact(source_path, manifest)
 
-    monkeypatch.setattr("podcast_agent.cli.app._build_orchestrator", lambda database_url: orchestrator)
+    monkeypatch.setattr(
+        "podcast_agent.cli.app._build_orchestrator",
+        lambda database_url, **kwargs: orchestrator,
+    )
 
     result = CliRunner().invoke(app, ["spoken-delivery", str(source_path)])
 
@@ -960,7 +966,10 @@ def test_spoken_delivery_cli_rejects_failed_grounding_episode_output(tmp_path: P
     payload["report"]["overall_status"] = "fail"
     source_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
-    monkeypatch.setattr("podcast_agent.cli.app._build_orchestrator", lambda database_url: orchestrator)
+    monkeypatch.setattr(
+        "podcast_agent.cli.app._build_orchestrator",
+        lambda database_url, **kwargs: orchestrator,
+    )
 
     result = CliRunner().invoke(app, ["spoken-delivery", str(source_path)])
 

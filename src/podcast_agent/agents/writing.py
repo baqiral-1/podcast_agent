@@ -52,6 +52,8 @@ class WritingAgent(Agent):
         minimum_source_words_per_episode: int = 50000,
         spoken_words_per_minute: int = 130,
         coverage_warning_min_ratio: float | None = None,
+        target_script_source_ratio: float = 0.25,
+        max_target_script_words: int = 20000,
         beat_parallelism: int = 6,
         beat_write_retry_attempts: int = 2,
         beat_write_timeout_seconds: float = 120.0,
@@ -60,6 +62,8 @@ class WritingAgent(Agent):
         self.minimum_source_words_per_episode = minimum_source_words_per_episode
         self.spoken_words_per_minute = spoken_words_per_minute
         self.coverage_warning_min_ratio = coverage_warning_min_ratio
+        self.target_script_source_ratio = target_script_source_ratio
+        self.max_target_script_words = max_target_script_words
         self.beat_parallelism = beat_parallelism
         self.beat_write_retry_attempts = beat_write_retry_attempts
         self.beat_write_timeout_seconds = beat_write_timeout_seconds
@@ -128,11 +132,9 @@ class WritingAgent(Agent):
         )
 
     def _target_script_words(self, assigned_source_words: int) -> int:
-        if assigned_source_words <= 300:
-            return max(40, assigned_source_words // 2)
-        if assigned_source_words <= 600:
-            return max(120, assigned_source_words // 2)
-        return max(300, min(6000, assigned_source_words // 3))
+        minimum_target_words = 300
+        ratio_target = int(assigned_source_words * self.target_script_source_ratio)
+        return max(minimum_target_words, min(self.max_target_script_words, ratio_target))
 
     def _compliance_violations(self, script: BeatScript, payload: dict) -> list[str]:
         violations: list[str] = []

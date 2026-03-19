@@ -44,8 +44,8 @@ class EpisodePlanningAgent(Agent):
         max_episode_minutes: int = 58,
         max_payload_bytes: int = 500000,
         max_payload_bytes_with_episode_count: int | None = None,
-        section_beat_target_words: int = 1200,
-        beat_evidence_window_size: int = 8,
+        section_beat_target_words: int = 3000,
+        beat_evidence_window_size: int = 20,
     ) -> None:
         super().__init__(llm)
         self.minimum_source_words_per_episode = minimum_source_words_per_episode

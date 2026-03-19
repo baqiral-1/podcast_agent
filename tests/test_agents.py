@@ -446,7 +446,7 @@ class RetryingClaimWritingLLM(LLMClient):
                     "segments": [
                         {
                             "heading": beat["title"],
-                            "narration": "A longer grounded narration for the retry path." * 8,
+                            "narration": ("A longer grounded narration for the retry path. " * 20).strip(),
                             "claims": [
                                 {
                                     "text": "Grounded claim one.",
@@ -579,7 +579,7 @@ class CoverageAwareRetryWritingLLM(LLMClient):
                         "segments": [
                             {
                                 "heading": beat["title"],
-                                "narration": "A grounded but too narrow narration." * 6,
+                                "narration": ("A grounded but too narrow narration. " * 20).strip(),
                                 "claims": [
                                     {
                                         "text": "Only covers the first chunk.",
@@ -627,7 +627,7 @@ class CitationMismatchRetryWritingLLM(LLMClient):
                         "segments": [
                             {
                                 "heading": beat["title"],
-                                "narration": ("A grounded narration with mismatched citations. " * 8).strip(),
+                                "narration": ("A grounded narration with mismatched citations. " * 10).strip(),
                                 "claims": [
                                     {
                                         "text": "Grounded claim one.",
@@ -643,7 +643,10 @@ class CitationMismatchRetryWritingLLM(LLMClient):
                     "segments": [
                         {
                             "heading": beat["title"],
-                            "narration": ("A repaired grounded narration that fully covers the assigned material in compact spoken form. " * 8).strip(),
+                            "narration": (
+                                "A repaired grounded narration that fully covers the assigned material in compact spoken form. "
+                                * 12
+                            ).strip(),
                             "claims": [
                                 {
                                     "text": f"Grounded claim {index}.",
@@ -678,7 +681,7 @@ class TruncatingThenValidWritingLLM(LLMClient):
                     "segments": [
                         {
                             "heading": beat["title"],
-                            "narration": ("Compact grounded narration. " * 16).strip(),
+                            "narration": ("Compact grounded narration. " * 40).strip(),
                             "claims": [
                                 {
                                     "text": f"Grounded claim {index}.",
@@ -707,7 +710,7 @@ class OutOfOrderWritingLLM(LLMClient):
                     "segments": [
                         {
                             "heading": beat["title"],
-                            "narration": ("Ordered grounded narration. " * 12).strip(),
+                            "narration": ("Ordered grounded narration. " * 20).strip(),
                             "claims": [
                                 {
                                     "text": "Grounded claim.",
@@ -1088,6 +1091,18 @@ def test_writing_preserves_plan_order_when_beats_finish_out_of_order() -> None:
     observed = [segment.beat_id for segment in script.segments]
     expected = [beat.beat_id for beat in episode.beats[: len(script.segments)]]
     assert observed == expected
+
+
+def test_target_script_words_uses_ratio_and_cap() -> None:
+    writer = WritingAgent(
+        HeuristicLLMClient(),
+        target_script_source_ratio=0.25,
+        max_target_script_words=20000,
+    )
+
+    assert writer._target_script_words(80000) == 20000
+    assert writer._target_script_words(2000) == 500
+    assert writer._target_script_words(100) == 300
 
 
 def test_split_into_chapters_handles_front_matter_roman_and_appendix() -> None:

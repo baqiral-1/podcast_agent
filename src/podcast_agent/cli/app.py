@@ -13,12 +13,65 @@ from podcast_agent.pipeline.orchestrator import PipelineOrchestrator
 
 app = typer.Typer(help="Book-to-podcast pipeline with strict stage artifacts.")
 
+_AGENT_SCHEMA_OVERRIDES: dict[str, str] = {
+    "structuring": "structured_chapter",
+    "analysis": "book_analysis",
+    "planning": "series_plan",
+    "writing": "beat_script",
+    "validation": "grounding_report",
+    "repair": "episode_repair",
+    "spoken_delivery": "spoken_delivery_segment",
+}
+
+
+def _parse_agent_model_overrides(raw_overrides: list[str] | None) -> dict[str, str]:
+    if not raw_overrides:
+        return {}
+    overrides: dict[str, str] = {}
+    for entry in raw_overrides:
+        if "=" not in entry:
+            raise typer.BadParameter(
+                f"Invalid --agent-model value '{entry}'. Expected AGENT=MODEL.",
+                param_hint="agent-model",
+            )
+        raw_agent, raw_model = entry.split("=", 1)
+        agent = raw_agent.strip().lower().replace("-", "_")
+        model = raw_model.strip()
+        if not agent:
+            raise typer.BadParameter(
+                f"Invalid --agent-model value '{entry}'. Agent name is empty.",
+                param_hint="agent-model",
+            )
+        if not model:
+            raise typer.BadParameter(
+                f"Invalid --agent-model value '{entry}'. Model name is empty.",
+                param_hint="agent-model",
+            )
+        schema_name = _AGENT_SCHEMA_OVERRIDES.get(agent)
+        if schema_name is None:
+            allowed = ", ".join(sorted(_AGENT_SCHEMA_OVERRIDES))
+            raise typer.BadParameter(
+                f"Unknown agent '{agent}' in --agent-model. Allowed agents: {allowed}.",
+                param_hint="agent-model",
+            )
+        overrides[schema_name] = model
+    return overrides
+
 
 @app.command("ingest-book")
 def ingest_book(
     source_path: Path,
     title: str | None = None,
     author: str = "Unknown",
+    model: str | None = typer.Option(
+        default=None,
+        help="Override the default chat model name for all LLM calls.",
+    ),
+    agent_model: list[str] | None = typer.Option(
+        None,
+        "--agent-model",
+        help="Per-agent model override as AGENT=MODEL (repeatable).",
+    ),
     database_url: str | None = typer.Option(
         default=None,
         help="PostgreSQL database URL. If omitted, falls back to DATABASE_URL when set.",
@@ -26,10 +79,17 @@ def ingest_book(
 ) -> None:
     """Ingest a book source file."""
 
-    orchestrator = _build_orchestrator(database_url)
+    orchestrator = _build_orchestrator(database_url, model=model, agent_model=agent_model)
     orchestrator.log_command(
         "ingest-book",
-        {"source_path": str(source_path), "title": title, "author": author, "database_url": database_url},
+        {
+            "source_path": str(source_path),
+            "title": title,
+            "author": author,
+            "database_url": database_url,
+            "model": model,
+            "agent_model": agent_model,
+        },
     )
     result = orchestrator.ingest_book(source_path=source_path, title=title, author=author)
     typer.echo(result.model_dump_json(indent=2))
@@ -48,6 +108,15 @@ def index_book(
         default=None,
         help="Stop at this detected chapter title, matched case-insensitively and included in the run.",
     ),
+    model: str | None = typer.Option(
+        default=None,
+        help="Override the default chat model name for all LLM calls.",
+    ),
+    agent_model: list[str] | None = typer.Option(
+        None,
+        "--agent-model",
+        help="Per-agent model override as AGENT=MODEL (repeatable).",
+    ),
     database_url: str | None = typer.Option(
         default=None,
         help="PostgreSQL database URL. If omitted, falls back to DATABASE_URL when set.",
@@ -55,7 +124,7 @@ def index_book(
 ) -> None:
     """Structure a book and persist chunks plus embeddings."""
 
-    orchestrator = _build_orchestrator(database_url)
+    orchestrator = _build_orchestrator(database_url, model=model, agent_model=agent_model)
     orchestrator.log_command(
         "index-book",
         {
@@ -65,6 +134,8 @@ def index_book(
             "start_chapter": start_chapter,
             "end_chapter": end_chapter,
             "database_url": database_url,
+            "model": model,
+            "agent_model": agent_model,
         },
     )
     ingestion = orchestrator.ingest_book(source_path=source_path, title=title, author=author)
@@ -94,6 +165,15 @@ def plan_episodes(
         default=None,
         help="Stop at this detected chapter title, matched case-insensitively and included in the run.",
     ),
+    model: str | None = typer.Option(
+        default=None,
+        help="Override the default chat model name for all LLM calls.",
+    ),
+    agent_model: list[str] | None = typer.Option(
+        None,
+        "--agent-model",
+        help="Per-agent model override as AGENT=MODEL (repeatable).",
+    ),
     database_url: str | None = typer.Option(
         default=None,
         help="PostgreSQL database URL. If omitted, falls back to DATABASE_URL when set.",
@@ -101,7 +181,7 @@ def plan_episodes(
 ) -> None:
     """Create a series plan from a source book."""
 
-    orchestrator = _build_orchestrator(database_url)
+    orchestrator = _build_orchestrator(database_url, model=model, agent_model=agent_model)
     orchestrator.log_command(
         "plan-episodes",
         {
@@ -112,6 +192,8 @@ def plan_episodes(
             "start_chapter": start_chapter,
             "end_chapter": end_chapter,
             "database_url": database_url,
+            "model": model,
+            "agent_model": agent_model,
         },
     )
     ingestion = orchestrator.ingest_book(source_path=source_path, title=title, author=author)
@@ -146,6 +228,15 @@ def run_pipeline(
         default=False,
         help="Synthesize audio files after render-manifest generation.",
     ),
+    model: str | None = typer.Option(
+        default=None,
+        help="Override the default chat model name for all LLM calls.",
+    ),
+    agent_model: list[str] | None = typer.Option(
+        None,
+        "--agent-model",
+        help="Per-agent model override as AGENT=MODEL (repeatable).",
+    ),
     database_url: str | None = typer.Option(
         default=None,
         help="PostgreSQL database URL. If omitted, falls back to DATABASE_URL when set.",
@@ -153,7 +244,7 @@ def run_pipeline(
 ) -> None:
     """Run the full pipeline and print the resulting artifacts."""
 
-    orchestrator = _build_orchestrator(database_url)
+    orchestrator = _build_orchestrator(database_url, model=model, agent_model=agent_model)
     orchestrator.log_command(
         "run-pipeline",
         {
@@ -165,6 +256,8 @@ def run_pipeline(
             "end_chapter": end_chapter,
             "database_url": database_url,
             "with_audio": with_audio,
+            "model": model,
+            "agent_model": agent_model,
         },
     )
     result = orchestrator.run_pipeline(
@@ -197,6 +290,15 @@ def render_audio(
         default=None,
         help="Stop at this detected chapter title, matched case-insensitively and included in the run.",
     ),
+    model: str | None = typer.Option(
+        default=None,
+        help="Override the default chat model name for all LLM calls.",
+    ),
+    agent_model: list[str] | None = typer.Option(
+        None,
+        "--agent-model",
+        help="Per-agent model override as AGENT=MODEL (repeatable).",
+    ),
     database_url: str | None = typer.Option(
         default=None,
         help="PostgreSQL database URL. If omitted, falls back to DATABASE_URL when set.",
@@ -204,7 +306,7 @@ def render_audio(
 ) -> None:
     """Run the pipeline and synthesize one audio file per episode."""
 
-    orchestrator = _build_orchestrator(database_url)
+    orchestrator = _build_orchestrator(database_url, model=model, agent_model=agent_model)
     orchestrator.log_command(
         "render-audio",
         {
@@ -215,6 +317,8 @@ def render_audio(
             "start_chapter": start_chapter,
             "end_chapter": end_chapter,
             "database_url": database_url,
+            "model": model,
+            "agent_model": agent_model,
         },
     )
     result = orchestrator.run_pipeline(
@@ -236,6 +340,15 @@ def render_audio_from_manifest(
         default=None,
         help="Book ID fallback when it cannot be inferred from the artifact path.",
     ),
+    model: str | None = typer.Option(
+        default=None,
+        help="Override the default chat model name for all LLM calls.",
+    ),
+    agent_model: list[str] | None = typer.Option(
+        None,
+        "--agent-model",
+        help="Per-agent model override as AGENT=MODEL (repeatable).",
+    ),
     database_url: str | None = typer.Option(
         default=None,
         help="PostgreSQL database URL. If omitted, falls back to DATABASE_URL when set.",
@@ -243,13 +356,15 @@ def render_audio_from_manifest(
 ) -> None:
     """Synthesize episode audio directly from a saved render manifest artifact."""
 
-    orchestrator = _build_orchestrator(database_url)
+    orchestrator = _build_orchestrator(database_url, model=model, agent_model=agent_model)
     orchestrator.log_command(
         "render-audio-from-manifest",
         {
             "artifact_path": str(artifact_path),
             "book_id": book_id,
             "database_url": database_url,
+            "model": model,
+            "agent_model": agent_model,
         },
     )
     try:
@@ -262,6 +377,15 @@ def render_audio_from_manifest(
 @app.command("spoken-delivery")
 def spoken_delivery(
     artifact_path: Path,
+    model: str | None = typer.Option(
+        default=None,
+        help="Override the default chat model name for all LLM calls.",
+    ),
+    agent_model: list[str] | None = typer.Option(
+        None,
+        "--agent-model",
+        help="Per-agent model override as AGENT=MODEL (repeatable).",
+    ),
     database_url: str | None = typer.Option(
         default=None,
         help="PostgreSQL database URL. If omitted, falls back to DATABASE_URL when set.",
@@ -269,12 +393,14 @@ def spoken_delivery(
 ) -> None:
     """Rewrite a saved factual script artifact into spoken-form delivery."""
 
-    orchestrator = _build_orchestrator(database_url)
+    orchestrator = _build_orchestrator(database_url, model=model, agent_model=agent_model)
     orchestrator.log_command(
         "spoken-delivery",
         {
             "artifact_path": str(artifact_path),
             "database_url": database_url,
+            "model": model,
+            "agent_model": agent_model,
         },
     )
     try:
@@ -290,7 +416,12 @@ def main() -> None:
     app()
 
 
-def _build_orchestrator(database_url: str | None) -> PipelineOrchestrator:
+def _build_orchestrator(
+    database_url: str | None,
+    *,
+    model: str | None = None,
+    agent_model: list[str] | None = None,
+) -> PipelineOrchestrator:
     settings = Settings()
     resolved_database_url = database_url or settings.database.dsn
     repository = (
@@ -298,11 +429,19 @@ def _build_orchestrator(database_url: str | None) -> PipelineOrchestrator:
         if resolved_database_url
         else InMemoryRepository()
     )
-    settings = settings.model_copy(
-        update={
-            "database": settings.database.model_copy(update={"dsn": resolved_database_url}),
-        }
-    )
+    llm_updates: dict[str, object] = {}
+    agent_model_overrides = _parse_agent_model_overrides(agent_model)
+    if model is not None:
+        llm_updates["model_name"] = model
+    if agent_model_overrides:
+        llm_updates["model_overrides"] = {**settings.llm.model_overrides, **agent_model_overrides}
+
+    settings_updates: dict[str, object] = {
+        "database": settings.database.model_copy(update={"dsn": resolved_database_url}),
+    }
+    if llm_updates:
+        settings_updates["llm"] = settings.llm.model_copy(update=llm_updates)
+    settings = settings.model_copy(update=settings_updates)
     return PipelineOrchestrator(settings=settings, repository=repository)
 
 

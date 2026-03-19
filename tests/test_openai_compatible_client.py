@@ -109,6 +109,42 @@ def test_openai_compatible_client_unwraps_payload_echoes() -> None:
     assert result.episode_id == "episode-1"
 
 
+def test_openai_compatible_client_uses_schema_model_override() -> None:
+    transport = FakeTransport(
+        {
+            "choices": [
+                {
+                    "message": {
+                        "content": (
+                            '{"episode_id":"episode-1","overall_status":"pass",'
+                            '"claim_assessments":[],"validated_at":"2026-03-13T00:00:00Z"}'
+                        )
+                    }
+                }
+            ]
+        }
+    )
+    client = OpenAICompatibleLLMClient(
+        config=LLMConfig(
+            api_key="test-key",
+            model_name="gpt-4o-mini",
+            model_overrides={"grounding_report": "gpt-4o"},
+        ),
+        transport=transport,
+    )
+
+    result = client.generate_json(
+        schema_name="grounding_report",
+        instructions="Validate the claims.",
+        payload={"script": {"episode_id": "episode-1"}},
+        response_model=GroundingReport,
+    )
+
+    assert result.episode_id == "episode-1"
+    assert transport.last_payload is not None
+    assert transport.last_payload["model"] == "gpt-4o"
+
+
 def test_openai_compatible_client_raises_for_content_filter_finish_reason() -> None:
     transport = FakeTransport(
         {
