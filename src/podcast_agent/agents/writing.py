@@ -517,13 +517,16 @@ class WritingAgent(Agent):
         response_model: type[BeatScript],
     ) -> BeatScript:
         llm = self.llm
-        if isinstance(self.llm, OpenAICompatibleLLMClient):
+        if hasattr(llm, "client_for_schema"):
+            llm = llm.client_for_schema(schema_name)
+        if isinstance(llm, OpenAICompatibleLLMClient):
+            run_logger = getattr(llm, "run_logger", None)
             llm = OpenAICompatibleLLMClient(
-                self.llm.config.model_copy(update={"timeout_seconds": self.beat_write_timeout_seconds}),
-                transport=self.llm.transport,
+                llm.config.model_copy(update={"timeout_seconds": self.beat_write_timeout_seconds}),
+                transport=llm.transport,
             )
-            if getattr(self.llm, "run_logger", None) is not None:
-                llm.set_run_logger(self.llm.run_logger)
+            if run_logger is not None:
+                llm.set_run_logger(run_logger)
         beat_script_draft = llm.generate_json(
             schema_name=schema_name,
             instructions=instructions,

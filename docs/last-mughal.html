@@ -7,17 +7,17 @@
   <meta name="description" content="Stories and analyses adapted from The Last Mughal.">
   <style>
     :root {
-      --body-bg-color: #17110d;
-      --body-font-color: #f5efe6;
+      --body-bg-color: #0b1320;
+      --body-font-color: #f4efe6;
       --primary-font: "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
       --primary-body-font-size: 1.12rem;
       --primary-body-font-weight: 300;
-      --primary-color: #d9a23d;
-      --primary-hover-color: #e5b55d;
+      --primary-color: #d6c28d;
+      --primary-hover-color: #e2d0a5;
       --body-padding: 1.4375rem;
-      --header-bg: #000000;
-      --nav-color: #f5efe6;
-      --nav-color-hover: #d9a23d;
+      --header-bg: #070c14;
+      --nav-color: #f4efe6;
+      --nav-color-hover: #d6c28d;
       --nav-font-size: 1rem;
       --header-padding: 1.25rem;
       --nav-horizontal-margin: 1.25rem;
@@ -28,12 +28,12 @@
       --episode-margin: 0.75rem;
       --episode-inner-spacing: 1rem;
       --episode-title-font-size: 1.5rem;
-      --episode-meta-color: #d9a23d;
-      --audio-player-progressed: #f5efe6;
-      --audio-player-runtime-color: #ddd1c1;
+      --episode-meta-color: #d6c28d;
+      --audio-player-progressed: #f4efe6;
+      --audio-player-runtime-color: #cfc4b2;
       --max-width: 1180px;
-      --footer-border: rgba(245, 239, 230, 0.1);
-      --footer-copy: rgba(245, 239, 230, 0.72);
+      --footer-border: rgba(244, 239, 230, 0.1);
+      --footer-copy: rgba(244, 239, 230, 0.72);
     }
 
     * {
@@ -49,8 +49,8 @@
     body {
       margin: 0;
       background:
-        radial-gradient(circle at top, rgba(217, 162, 61, 0.12), transparent 36%),
-        linear-gradient(180deg, #201712 0%, #17110d 46%, #110d0a 100%);
+        radial-gradient(circle at top, rgba(214, 194, 141, 0.12), transparent 36%),
+        linear-gradient(180deg, #121a2a 0%, #0b1320 46%, #060a12 100%);
       color: var(--body-font-color);
       font-family: var(--primary-font);
       font-size: var(--primary-body-font-size);
@@ -120,12 +120,12 @@
     }
 
     .show-copy {
-      color: #f5efe6;
+      color: #f4efe6;
     }
 
     .show-title {
       margin: 0;
-      color: #f5efe6;
+      color: #f4efe6;
       font-size: var(--show-header-title-font-size);
       line-height: 1.2;
       font-weight: 700;
@@ -134,7 +134,7 @@
     .show-description {
       max-width: 44rem;
       margin: 1.35rem 0 0;
-      color: #ddd1c1;
+      color: #cfc4b2;
     }
 
     .episodes-section {
@@ -558,7 +558,7 @@
         <div class="show-art">
           <img
             alt="The Last Mughal cover art"
-            src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%23111010'/><stop offset='0.45' stop-color='%23692a1a'/><stop offset='1' stop-color='%23d9a23d'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.5)' stroke-width='3'/><text x='850' y='798' text-anchor='end' fill='white' font-family='Muli, Arial, sans-serif' font-size='34' letter-spacing='6'>AGENTIC</text><text x='850' y='842' text-anchor='end' fill='white' font-family='Muli, Arial, sans-serif' font-size='34' letter-spacing='6'>PODCASTS</text><text x='110' y='770' fill='white' font-family='Muli, Arial, sans-serif' font-size='98' font-weight='700'>The Last</text><text x='110' y='870' fill='white' font-family='Muli, Arial, sans-serif' font-size='98' font-weight='700'>Mughal</text></svg>"
+            src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%230b1320'/><stop offset='0.45' stop-color='%2315304a'/><stop offset='1' stop-color='%23d6c28d'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.5)' stroke-width='3'/><text x='850' y='798' text-anchor='end' fill='white' font-family='Muli, Arial, sans-serif' font-size='34' letter-spacing='6'>AGENTIC</text><text x='850' y='842' text-anchor='end' fill='white' font-family='Muli, Arial, sans-serif' font-size='34' letter-spacing='6'>PODCASTS</text><text x='110' y='770' fill='white' font-family='Muli, Arial, sans-serif' font-size='98' font-weight='700'>The Last</text><text x='110' y='870' fill='white' font-family='Muli, Arial, sans-serif' font-size='98' font-weight='700'>Mughal</text></svg>"
           >
         </div>
 
@@ -575,21 +575,20 @@
       <div class="shell episode-list">
         <article class="episode-card">
           <p class="episode-meta">Episode 1</p>
-          <h2 class="episode-title">The Last Mughal World Before the Storm</h2>
+          <h2 class="episode-title">A Dying Court: Delhi Before the Storm</h2>
           <p class="episode-description-preview">
-            Delhi in the 1840s and 1850s still glows with poetry, court ritual, and the fragile charisma of Bahadur Shah Zafar, even as British power narrows the space around him.
-            We follow Zinat Mahal’s succession ambitions, rivalries among princes and courtiers, and a city balanced between Mughal legitimacy and an expanding empire.
+            The series opens in the fading world of the Mughal court, where ceremonial splendor, poetry, and urban sophistication endure even as sovereignty ebbs away.
           </p>
           <div class="episode-details">
             <span class="episode-description-more" data-role="episode-description-more">
-              A wedding procession in the Red Fort and a court still performing itself mask a thinning sovereignty. Missionary pressure, annexations, and daily humiliations harden attitudes, while sepoys face blocked promotions, pay cuts, and rumors around the Enfield cartridges. Through Indian records and lived detail, the episode rebuilds a composite urban world and shows how confidence erodes. By spring 1857, warnings multiply and the ground begins to shift.
+              The series opens in the fading world of the Mughal court, where ceremonial splendor, poetry, and urban sophistication endure even as sovereignty ebbs away. The episode introduces Bahadur Shah Zafar's household, the politics of succession, Delhi's mixed religious culture, and the widening gulf between British and Indo-Muslim society.
             </span>
             <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
           </div>
           <div class="episode-player">
             <div class="audio-shell">
               <audio class="native-audio" preload="metadata">
-                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/last-mughal-episodes-1-3-20260319-tts1/episode-1.mp3?v=20260319" type="audio/mpeg">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/last-mughal-episodes-1-3-20260320/episode-1.mp3" type="audio/mpeg">
                 Your browser does not support the audio element.
               </audio>
               <div class="player-row">
@@ -619,21 +618,20 @@
         </article>
         <article class="episode-card">
           <p class="episode-meta">Episode 2</p>
-          <h2 class="episode-title">Delhi in Revolt and Under Siege</h2>
+          <h2 class="episode-title">Revolt and Siege: The Struggle for Delhi</h2>
           <p class="episode-description-preview">
-            May 1857 detonates as the Meerut mutiny spills into Delhi, British authority collapses, and Bahadur Shah Zafar is pressed into symbolic leadership.
-            Inside the restored court, Mirza Mughal and rival factions struggle to impose order while refugees flood the streets and rumors race ahead of fact.
+            Warnings accumulate, then explode into the uprising of May 1857.
           </p>
           <div class="episode-details">
             <span class="episode-description-more" data-role="episode-description-more">
-              Outside the walls, the British regroup on the Ridge, build intelligence networks, and tighten the siege. Hunger rises, morale frays, and violence multiplies as hope collides with poor coordination and divided aims. The episode tracks telegram delays, escapes, and desperate governance as the city becomes a battlefield. Reinforcements and Nicholson’s arrival tip the balance toward assault.
+              Warnings accumulate, then explode into the uprising of May 1857. As sepoys, princes, civilians, and zealots pull the city in different directions, Delhi becomes both rebel capital and contested battleground, with symbolic imperial authority repeatedly failing to impose order under the pressures of siege, scarcity, and military reversal.
             </span>
             <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
           </div>
           <div class="episode-player">
             <div class="audio-shell">
               <audio class="native-audio" preload="metadata">
-                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/last-mughal-episodes-1-3-20260319-tts1/episode-2.mp3?v=20260319" type="audio/mpeg">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/last-mughal-episodes-1-3-20260320/episode-2.mp3" type="audio/mpeg">
                 Your browser does not support the audio element.
               </audio>
               <div class="player-row">
@@ -663,21 +661,20 @@
         </article>
         <article class="episode-card">
           <p class="episode-meta">Episode 3</p>
-          <h2 class="episode-title">Conquest, Retribution, and the End of the Mughals</h2>
+          <h2 class="episode-title">The Fall of Delhi and the End of the Mughals</h2>
           <p class="episode-description-preview">
-            The British storm Delhi and unleash a campaign of retribution: executions, looting, and scorched neighborhoods that shatter the city’s social fabric.
-            Zafar is captured at Humayun’s Tomb, his sons are killed, and the surviving court is hunted down or forced into exile.
+            A single sweeping narrative follows the capture of Bahadur Shah Zafar, the killing of the princes, British reprisals and looting in conquered Delhi, the emperor's trial and conviction, and the long afterlife of Mughal collapse in exile, memory, and communal politics.
           </p>
           <div class="episode-details">
             <span class="episode-description-more" data-role="episode-description-more">
-              We follow the trials that recast the uprising as conspiracy, the seizure of property, and the slow dismantling of Delhi’s composite culture. British officers debate vengeance and legality as the ruined city becomes a test case for empire. Refugees scatter, loyalists are punished, and the emperor is sent to Rangoon, where his grave is kept unmarked. The episode closes on how violence and memory reshaped the end of Mughal sovereignty.
+              A single sweeping narrative follows the capture of Bahadur Shah Zafar, the killing of the princes, British reprisals and looting in conquered Delhi, the emperor's trial and conviction, and the long afterlife of Mughal collapse in exile, memory, and communal politics.
             </span>
             <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
           </div>
           <div class="episode-player">
             <div class="audio-shell">
               <audio class="native-audio" preload="metadata">
-                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/last-mughal-episodes-1-3-20260319-tts1/episode-3.mp3?v=20260319" type="audio/mpeg">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/last-mughal-episodes-1-3-20260320/episode-3.mp3" type="audio/mpeg">
                 Your browser does not support the audio element.
               </audio>
               <div class="player-row">

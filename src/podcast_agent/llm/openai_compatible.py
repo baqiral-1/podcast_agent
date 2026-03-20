@@ -156,17 +156,119 @@ class OpenAICompatibleLLMClient(LLMClient):
             raise
 
 
+class RoutingLLMClient(LLMClient):
+    """Routes LLM requests to provider-specific clients."""
+
+    def __init__(
+        self,
+        *,
+        default_provider: str,
+        clients: dict[str, LLMClient],
+        provider_overrides: dict[str, str],
+    ) -> None:
+        super().__init__()
+        self.default_provider = default_provider
+        self.clients = clients
+        self.provider_overrides = provider_overrides
+
+    def set_run_logger(self, run_logger: Any) -> None:
+        self.run_logger = run_logger
+        for client in self.clients.values():
+            if hasattr(client, "set_run_logger"):
+                client.set_run_logger(run_logger)
+
+    def client_for_schema(self, schema_name: str) -> LLMClient:
+        provider = self.provider_overrides.get(schema_name, self.default_provider)
+        client = self.clients.get(provider)
+        if client is None:
+            raise ValueError(f"Unsupported LLM provider '{provider}' for schema '{schema_name}'.")
+        return client
+
+    def generate_json(
+        self,
+        schema_name: str,
+        instructions: str,
+        payload: PromptPayload,
+        response_model: type[BaseModel],
+    ) -> BaseModel:
+        return self.client_for_schema(schema_name).generate_json(
+            schema_name=schema_name,
+            instructions=instructions,
+            payload=payload,
+            response_model=response_model,
+        )
+
+
 def build_llm_client(settings: Settings) -> LLMClient:
     """Construct the configured LLM client."""
 
-    provider = settings.llm.provider.lower()
+    config = settings.llm
+    default_provider = _resolve_default_provider(config)
+    provider_overrides = {
+        schema_name: _normalize_provider(provider)
+        for schema_name, provider in config.provider_overrides.items()
+    }
+    if provider_overrides:
+        _validate_provider_overrides(provider_overrides, config.model_overrides)
+        providers = set(provider_overrides.values())
+        providers.add(default_provider)
+        clients = {provider: _build_llm_client_for_provider(provider, config) for provider in providers}
+        return RoutingLLMClient(
+            default_provider=default_provider,
+            clients=clients,
+            provider_overrides=provider_overrides,
+        )
+    return _build_llm_client_for_provider(default_provider, config)
+
+
+def _build_llm_client_for_provider(provider: str, config: LLMConfig) -> LLMClient:
     if provider == "heuristic":
         from podcast_agent.llm.heuristic import HeuristicLLMClient
 
         return HeuristicLLMClient()
+    if provider == "anthropic":
+        from podcast_agent.llm.anthropic import AnthropicLLMClient
+
+        return AnthropicLLMClient(config)
     if provider == "openai-compatible":
-        return OpenAICompatibleLLMClient(settings.llm)
-    raise ValueError(f"Unsupported LLM provider '{settings.llm.provider}'.")
+        return OpenAICompatibleLLMClient(config)
+    raise ValueError(f"Unsupported LLM provider '{provider}'.")
+
+
+def _resolve_default_provider(config: LLMConfig) -> str:
+    llm_provider = _normalize_provider(config.llm_provider)
+    provider = _normalize_provider(config.provider)
+    if llm_provider == "heuristic" or provider == "heuristic":
+        return "heuristic"
+    if llm_provider == "anthropic" or provider == "anthropic":
+        return "anthropic"
+    if llm_provider == "openai-compatible" or provider == "openai-compatible":
+        return "openai-compatible"
+    raise ValueError(f"Unsupported LLM provider '{config.llm_provider}'.")
+
+
+def _normalize_provider(provider: str) -> str:
+    normalized = provider.strip().lower()
+    if normalized == "openai":
+        return "openai-compatible"
+    return normalized
+
+
+def _validate_provider_overrides(
+    provider_overrides: dict[str, str], model_overrides: dict[str, str]
+) -> None:
+    supported = {"openai-compatible", "anthropic", "heuristic"}
+    for schema_name, provider in provider_overrides.items():
+        if provider not in supported:
+            raise ValueError(
+                f"Unsupported LLM provider '{provider}' for schema '{schema_name}'. "
+                f"Supported providers: {', '.join(sorted(supported))}."
+            )
+        if schema_name not in model_overrides:
+            raise ValueError(
+                f"Schema '{schema_name}' specifies provider '{provider}' but has no model override. "
+                "Use --agent-model AGENT=PROVIDER:MODEL to set both."
+            )
 
 
 def _extract_message_content(body: dict[str, Any]) -> str:

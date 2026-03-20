@@ -909,18 +909,22 @@ def test_render_audio_from_manifest_cli_uses_saved_episode_output(tmp_path: Path
     source_path.parent.mkdir(parents=True, exist_ok=True)
     manifest = _build_render_manifest("episode-1", ["cli first", "cli second"])
     _write_episode_output_artifact(source_path, manifest)
+    seen_llm_provider: list[str | None] = []
 
     monkeypatch.setattr(
         "podcast_agent.cli.app._build_orchestrator",
-        lambda database_url, **kwargs: orchestrator,
+        lambda database_url, **kwargs: (seen_llm_provider.append(kwargs.get("llm_provider")) or orchestrator),
     )
 
-    result = CliRunner().invoke(app, ["render-audio-from-manifest", str(source_path)])
+    result = CliRunner().invoke(
+        app, ["render-audio-from-manifest", str(source_path), "--llm-provider", "anthropic"]
+    )
 
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload["audio_manifest"]["audio_path"].endswith("episode-1.mp3")
     assert payload["manifest"]["episode_id"] == "episode-1"
+    assert seen_llm_provider == ["anthropic"]
 
 
 def test_spoken_delivery_cli_writes_sibling_artifacts(tmp_path: Path, monkeypatch) -> None:

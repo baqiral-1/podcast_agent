@@ -1,3 +1,16 @@
+Metadata-Version: 2.4
+Name: podcast-agent
+Version: 0.1.0
+Summary: Modular agentic book-to-podcast pipeline with Postgres-backed retrieval.
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: pypdf<6,>=5
+Requires-Dist: pydantic<3,>=2.12
+Requires-Dist: psycopg[binary]<4,>=3.3
+Requires-Dist: typer<1,>=0.12
+Provides-Extra: dev
+Requires-Dist: pytest<9,>=8.3; extra == "dev"
+
 # Podcast Agent
 
 `podcast-agent` is a modular book-to-podcast pipeline that converts a source book into grounded podcast episode plans, episode scripts, TTS-ready render manifests, and optional synthesized audio output. The project is library-first with a Typer CLI, PostgreSQL-backed retrieval, strict JSON contracts between stages, and specialized sub-agents for structure, analysis, planning, writing, validation, and repair.
@@ -121,12 +134,10 @@ You can also override the model from the CLI:
 ```bash
 podcast-agent run-pipeline ./examples/book.txt --title "Example Book" --author "Author" --episode-count 2 --model gpt-5-mini
 podcast-agent run-pipeline ./examples/book.txt --title "Example Book" --author "Author" --episode-count 2 --agent-model validation=gpt-4.1 --agent-model spoken_delivery=gpt-4o
-podcast-agent run-pipeline ./examples/book.txt --title "Example Book" --author "Author" --episode-count 2 --agent-model analysis=anthropic:claude-3-5-sonnet-20240620 --agent-model writing=openai:gpt-5-mini
 podcast-agent run-pipeline ./examples/book.txt --title "Example Book" --author "Author" --episode-count 2 --llm-provider anthropic --model claude-3-5-sonnet-20240620
 ```
 
 `--agent-model` values are keyed by pipeline agent name: `structuring`, `analysis`, `planning`, `writing`, `validation`, `repair`, `spoken_delivery`.
-Use `AGENT=PROVIDER:MODEL` to mix providers per stage.
 
 TTS uses the same OpenAI-compatible endpoint family by default:
 

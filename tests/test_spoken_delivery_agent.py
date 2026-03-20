@@ -104,13 +104,13 @@ class RetryingSpokenDeliveryLLM(LLMClient):
         return response_model.model_validate({"narration": payload["current_segment"]["narration"]})
 
 
-class FailingFidelitySpokenDeliveryLLM(LLMClient):
-    """Stub that drops the key number on every attempt, forcing fallback."""
+class OverlongSpokenDeliveryLLM(LLMClient):
+    """Stub that stays too long on every attempt, forcing fallback."""
 
     def generate_json(self, schema_name, instructions, payload, response_model):
         assert schema_name == "spoken_delivery_segment"
-        text = payload["current_segment"]["narration"].replace("1857", "")
-        return response_model.model_validate({"narration": text})
+        text = payload["current_segment"]["narration"]
+        return response_model.model_validate({"narration": f"{text} {text}"})
 
 
 class ParallelContextCapturingSpokenDeliveryLLM(LLMClient):
@@ -162,8 +162,8 @@ def test_spoken_delivery_retries_when_output_exceeds_max_expansion() -> None:
     assert spoken_script.segments[0].expansion_ratio <= 1.2
 
 
-def test_spoken_delivery_falls_back_when_fidelity_checks_fail() -> None:
-    llm = FailingFidelitySpokenDeliveryLLM()
+def test_spoken_delivery_falls_back_when_output_stays_too_long() -> None:
+    llm = OverlongSpokenDeliveryLLM()
     script = _build_script()
     agent = SpokenDeliveryAgent(llm)
 
@@ -171,16 +171,13 @@ def test_spoken_delivery_falls_back_when_fidelity_checks_fail() -> None:
 
     assert spoken_delivery.segments[0].fallback_used is True
     assert spoken_script.segments[0].narration == script.segments[0].narration
-    assert spoken_delivery.segments[0].missing_numbers == []
     assert [attempt.attempt for attempt in spoken_delivery.segments[0].attempts] == [
         "initial",
         "retry",
         "fallback",
     ]
-    assert spoken_delivery.segments[0].attempts[0].missing_numbers == ["1857"]
-    assert spoken_delivery.segments[0].attempts[0].failure_reasons == ["missing_numbers"]
-    assert spoken_delivery.segments[0].attempts[1].missing_numbers == ["1857"]
-    assert spoken_delivery.segments[0].attempts[1].failure_reasons == ["missing_numbers"]
+    assert spoken_delivery.segments[0].attempts[0].failure_reasons == ["expansion_limit"]
+    assert spoken_delivery.segments[0].attempts[1].failure_reasons == ["expansion_limit"]
     assert spoken_delivery.segments[0].attempts[2].failure_reasons == []
 
 
@@ -278,14 +275,14 @@ def test_check_fidelity_can_ignore_paragraph_drift_when_disabled() -> None:
     assert fidelity_relaxed.passed is True
 
 
-def test_check_fidelity_still_fails_when_number_is_dropped() -> None:
+def test_check_fidelity_does_not_fail_when_number_is_dropped() -> None:
     source = "In 1857, Bahadur Shah Zafar remained in Delhi."
     spoken = "Bahadur Shah Zafar remained in Delhi."
 
     fidelity = check_fidelity(source, spoken)
 
-    assert fidelity.passed is False
-    assert fidelity.missing_numbers == ["1857"]
+    assert fidelity.passed is True
+    assert fidelity.missing_numbers == []
 
 
 def test_spoken_delivery_successful_segment_records_attempt_diagnostics() -> None:

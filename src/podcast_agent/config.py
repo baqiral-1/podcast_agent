@@ -24,8 +24,11 @@ class LLMConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    provider: str = Field(default="openai-compatible")
-    model_name: str = Field(default="gpt-4o-mini")
+    llm_provider: str = Field(
+        default_factory=lambda: os.getenv("LLM_PROVIDER") or os.getenv("LLM_TYPE") or "openai"
+    )
+    provider: str = Field(default_factory=lambda: os.getenv("LLM_PROVIDER", "openai-compatible"))
+    model_name: str = Field(default_factory=lambda: os.getenv("LLM_MODEL_NAME", "gpt-4o-mini"))
     model_overrides: dict[str, str] = Field(
         default_factory=dict,
         description=(
@@ -33,10 +36,24 @@ class LLMConfig(BaseModel):
             "When present, schema_name-specific entries take precedence over model_name."
         ),
     )
-    temperature: float = Field(default=0.1, ge=0.0, le=2.0)
+    provider_overrides: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Optional per-schema LLM provider overrides keyed by schema_name. "
+            "Values should be one of: openai-compatible, openai, anthropic, heuristic."
+        ),
+    )
+    temperature: float = Field(default=1.0, ge=0.0, le=2.0)
     api_key: str | None = Field(default_factory=lambda: os.getenv("OPENAI_API_KEY"))
     base_url: str = Field(
         default_factory=lambda: os.getenv("OPENAI_BASE_URL", "https://api.openai.com"),
+    )
+    anthropic_api_key: str | None = Field(default_factory=lambda: os.getenv("ANTHROPIC_API_KEY"))
+    anthropic_base_url: str = Field(
+        default_factory=lambda: os.getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com"),
+    )
+    anthropic_max_tokens: int = Field(
+        default_factory=lambda: int(os.getenv("ANTHROPIC_MAX_TOKENS", "16384")), ge=1
     )
     timeout_seconds: float = Field(default=300.0, gt=0.0)
 
@@ -76,7 +93,7 @@ class SpokenDeliveryConfig(BaseModel):
     max_expansion_ratio: float = Field(default=1.2, gt=0.0)
     target_expansion_ratio: float = Field(default=1.1, gt=0.0)
     retry_enabled: bool = Field(default=True)
-    tone_preset: str = Field(default="educational_suspenseful")
+    tone_preset: str = Field(default="documentary_podcast")
 
 
 class PipelineConfig(BaseModel):
@@ -94,7 +111,7 @@ class PipelineConfig(BaseModel):
     audio_retry_attempts: int = Field(default=2, ge=0)
     beat_parallelism: int = Field(default=6, ge=1)
     beat_write_retry_attempts: int = Field(default=2, ge=0)
-    beat_write_timeout_seconds: float = Field(default=120.0, gt=0.0)
+    beat_write_timeout_seconds: float = Field(default=180.0, gt=0.0)
     grounding_parallelism: int = Field(default=6, ge=1)
     spoken_delivery_parallelism: int = Field(default=6, ge=1)
     minimum_source_words_per_episode: int = Field(default=50000, ge=1000)
@@ -107,13 +124,13 @@ class PipelineConfig(BaseModel):
     max_planning_payload_bytes_with_episode_count: int = Field(default=1000000, ge=10000)
     target_script_source_ratio: float = Field(default=0.25, gt=0.0, le=1.0)
     max_target_script_words: int = Field(default=20000, ge=300)
-    section_beat_target_words: int = Field(default=3000, ge=200)
-    beat_evidence_window_size: int = Field(default=20, ge=1)
+    section_beat_target_words: int = Field(default=6000, ge=200)
+    beat_evidence_window_size: int = Field(default=40, ge=1)
     coverage_warning_min_ratio: float | None = Field(default=None, ge=0.0, le=1.0)
     max_structuring_chapter_words: int = Field(default=2500, ge=500)
     max_structuring_llm_chapter_words: int = Field(default=75000, ge=1000)
     structuring_parallelism: int = Field(default=6, ge=1)
-    structuring_window_words: int = Field(default=3600, ge=300)
+    structuring_window_words: int = Field(default=5000, ge=300)
     structuring_window_overlap_words: int = Field(default=150, ge=0)
 
 

@@ -1,0 +1,2 @@
+[console_scripts]
+podcast-agent = podcast_agent.cli.app:main

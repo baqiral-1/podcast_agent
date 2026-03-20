@@ -397,7 +397,12 @@ class SpokenDeliveryResult(StrictModel):
     """Episode-level spoken-delivery provenance and metrics."""
 
     episode_id: str
-    tone_preset: Literal["educational", "educational_suspenseful", "reflective_history"]
+    tone_preset: Literal[
+        "documentary_podcast",
+        "educational",
+        "educational_suspenseful",
+        "reflective_history",
+    ]
     target_expansion_ratio: float = Field(gt=0.0)
     max_expansion_ratio: float = Field(gt=0.0)
     segments: list[SpokenDeliverySegmentResult]

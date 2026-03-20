@@ -24,14 +24,18 @@ _AGENT_SCHEMA_OVERRIDES: dict[str, str] = {
 }
 
 
-def _parse_agent_model_overrides(raw_overrides: list[str] | None) -> dict[str, str]:
+def _parse_agent_model_overrides(
+    raw_overrides: list[str] | None,
+) -> tuple[dict[str, str], dict[str, str]]:
     if not raw_overrides:
-        return {}
-    overrides: dict[str, str] = {}
+        return {}, {}
+    model_overrides: dict[str, str] = {}
+    provider_overrides: dict[str, str] = {}
+    supported_providers = {"openai", "openai-compatible", "anthropic", "heuristic"}
     for entry in raw_overrides:
         if "=" not in entry:
             raise typer.BadParameter(
-                f"Invalid --agent-model value '{entry}'. Expected AGENT=MODEL.",
+                f"Invalid --agent-model value '{entry}'. Expected AGENT=MODEL or AGENT=PROVIDER:MODEL.",
                 param_hint="agent-model",
             )
         raw_agent, raw_model = entry.split("=", 1)
@@ -47,6 +51,17 @@ def _parse_agent_model_overrides(raw_overrides: list[str] | None) -> dict[str, s
                 f"Invalid --agent-model value '{entry}'. Model name is empty.",
                 param_hint="agent-model",
             )
+        provider = None
+        if ":" in model:
+            provider_candidate, model_candidate = (part.strip() for part in model.split(":", 1))
+            if provider_candidate.lower() in supported_providers:
+                if not model_candidate:
+                    raise typer.BadParameter(
+                        f"Invalid --agent-model value '{entry}'. Expected AGENT=PROVIDER:MODEL.",
+                        param_hint="agent-model",
+                    )
+                provider = provider_candidate.lower()
+                model = model_candidate
         schema_name = _AGENT_SCHEMA_OVERRIDES.get(agent)
         if schema_name is None:
             allowed = ", ".join(sorted(_AGENT_SCHEMA_OVERRIDES))
@@ -54,8 +69,10 @@ def _parse_agent_model_overrides(raw_overrides: list[str] | None) -> dict[str, s
                 f"Unknown agent '{agent}' in --agent-model. Allowed agents: {allowed}.",
                 param_hint="agent-model",
             )
-        overrides[schema_name] = model
-    return overrides
+        model_overrides[schema_name] = model
+        if provider is not None:
+            provider_overrides[schema_name] = provider
+    return model_overrides, provider_overrides
 
 
 @app.command("ingest-book")
@@ -67,10 +84,14 @@ def ingest_book(
         default=None,
         help="Override the default chat model name for all LLM calls.",
     ),
+    llm_provider: str | None = typer.Option(
+        default=None,
+        help="Override the LLM provider (openai, anthropic, heuristic).",
+    ),
     agent_model: list[str] | None = typer.Option(
         None,
         "--agent-model",
-        help="Per-agent model override as AGENT=MODEL (repeatable).",
+        help="Per-agent model override as AGENT=MODEL or AGENT=PROVIDER:MODEL (repeatable).",
     ),
     database_url: str | None = typer.Option(
         default=None,
@@ -79,7 +100,9 @@ def ingest_book(
 ) -> None:
     """Ingest a book source file."""
 
-    orchestrator = _build_orchestrator(database_url, model=model, agent_model=agent_model)
+    orchestrator = _build_orchestrator(
+        database_url, model=model, agent_model=agent_model, llm_provider=llm_provider
+    )
     orchestrator.log_command(
         "ingest-book",
         {
@@ -88,6 +111,7 @@ def ingest_book(
             "author": author,
             "database_url": database_url,
             "model": model,
+            "llm_provider": llm_provider,
             "agent_model": agent_model,
         },
     )
@@ -112,10 +136,14 @@ def index_book(
         default=None,
         help="Override the default chat model name for all LLM calls.",
     ),
+    llm_provider: str | None = typer.Option(
+        default=None,
+        help="Override the LLM provider (openai, anthropic, heuristic).",
+    ),
     agent_model: list[str] | None = typer.Option(
         None,
         "--agent-model",
-        help="Per-agent model override as AGENT=MODEL (repeatable).",
+        help="Per-agent model override as AGENT=MODEL or AGENT=PROVIDER:MODEL (repeatable).",
     ),
     database_url: str | None = typer.Option(
         default=None,
@@ -124,7 +152,9 @@ def index_book(
 ) -> None:
     """Structure a book and persist chunks plus embeddings."""
 
-    orchestrator = _build_orchestrator(database_url, model=model, agent_model=agent_model)
+    orchestrator = _build_orchestrator(
+        database_url, model=model, agent_model=agent_model, llm_provider=llm_provider
+    )
     orchestrator.log_command(
         "index-book",
         {
@@ -135,6 +165,7 @@ def index_book(
             "end_chapter": end_chapter,
             "database_url": database_url,
             "model": model,
+            "llm_provider": llm_provider,
             "agent_model": agent_model,
         },
     )
@@ -169,10 +200,14 @@ def plan_episodes(
         default=None,
         help="Override the default chat model name for all LLM calls.",
     ),
+    llm_provider: str | None = typer.Option(
+        default=None,
+        help="Override the LLM provider (openai, anthropic, heuristic).",
+    ),
     agent_model: list[str] | None = typer.Option(
         None,
         "--agent-model",
-        help="Per-agent model override as AGENT=MODEL (repeatable).",
+        help="Per-agent model override as AGENT=MODEL or AGENT=PROVIDER:MODEL (repeatable).",
     ),
     database_url: str | None = typer.Option(
         default=None,
@@ -181,7 +216,9 @@ def plan_episodes(
 ) -> None:
     """Create a series plan from a source book."""
 
-    orchestrator = _build_orchestrator(database_url, model=model, agent_model=agent_model)
+    orchestrator = _build_orchestrator(
+        database_url, model=model, agent_model=agent_model, llm_provider=llm_provider
+    )
     orchestrator.log_command(
         "plan-episodes",
         {
@@ -193,6 +230,7 @@ def plan_episodes(
             "end_chapter": end_chapter,
             "database_url": database_url,
             "model": model,
+            "llm_provider": llm_provider,
             "agent_model": agent_model,
         },
     )
@@ -232,10 +270,14 @@ def run_pipeline(
         default=None,
         help="Override the default chat model name for all LLM calls.",
     ),
+    llm_provider: str | None = typer.Option(
+        default=None,
+        help="Override the LLM provider (openai, anthropic, heuristic).",
+    ),
     agent_model: list[str] | None = typer.Option(
         None,
         "--agent-model",
-        help="Per-agent model override as AGENT=MODEL (repeatable).",
+        help="Per-agent model override as AGENT=MODEL or AGENT=PROVIDER:MODEL (repeatable).",
     ),
     database_url: str | None = typer.Option(
         default=None,
@@ -244,7 +286,9 @@ def run_pipeline(
 ) -> None:
     """Run the full pipeline and print the resulting artifacts."""
 
-    orchestrator = _build_orchestrator(database_url, model=model, agent_model=agent_model)
+    orchestrator = _build_orchestrator(
+        database_url, model=model, agent_model=agent_model, llm_provider=llm_provider
+    )
     orchestrator.log_command(
         "run-pipeline",
         {
@@ -257,6 +301,7 @@ def run_pipeline(
             "database_url": database_url,
             "with_audio": with_audio,
             "model": model,
+            "llm_provider": llm_provider,
             "agent_model": agent_model,
         },
     )
@@ -294,10 +339,14 @@ def render_audio(
         default=None,
         help="Override the default chat model name for all LLM calls.",
     ),
+    llm_provider: str | None = typer.Option(
+        default=None,
+        help="Override the LLM provider (openai, anthropic, heuristic).",
+    ),
     agent_model: list[str] | None = typer.Option(
         None,
         "--agent-model",
-        help="Per-agent model override as AGENT=MODEL (repeatable).",
+        help="Per-agent model override as AGENT=MODEL or AGENT=PROVIDER:MODEL (repeatable).",
     ),
     database_url: str | None = typer.Option(
         default=None,
@@ -306,7 +355,9 @@ def render_audio(
 ) -> None:
     """Run the pipeline and synthesize one audio file per episode."""
 
-    orchestrator = _build_orchestrator(database_url, model=model, agent_model=agent_model)
+    orchestrator = _build_orchestrator(
+        database_url, model=model, agent_model=agent_model, llm_provider=llm_provider
+    )
     orchestrator.log_command(
         "render-audio",
         {
@@ -318,6 +369,7 @@ def render_audio(
             "end_chapter": end_chapter,
             "database_url": database_url,
             "model": model,
+            "llm_provider": llm_provider,
             "agent_model": agent_model,
         },
     )
@@ -344,10 +396,14 @@ def render_audio_from_manifest(
         default=None,
         help="Override the default chat model name for all LLM calls.",
     ),
+    llm_provider: str | None = typer.Option(
+        default=None,
+        help="Override the LLM provider (openai, anthropic, heuristic).",
+    ),
     agent_model: list[str] | None = typer.Option(
         None,
         "--agent-model",
-        help="Per-agent model override as AGENT=MODEL (repeatable).",
+        help="Per-agent model override as AGENT=MODEL or AGENT=PROVIDER:MODEL (repeatable).",
     ),
     database_url: str | None = typer.Option(
         default=None,
@@ -356,7 +412,9 @@ def render_audio_from_manifest(
 ) -> None:
     """Synthesize episode audio directly from a saved render manifest artifact."""
 
-    orchestrator = _build_orchestrator(database_url, model=model, agent_model=agent_model)
+    orchestrator = _build_orchestrator(
+        database_url, model=model, agent_model=agent_model, llm_provider=llm_provider
+    )
     orchestrator.log_command(
         "render-audio-from-manifest",
         {
@@ -364,6 +422,7 @@ def render_audio_from_manifest(
             "book_id": book_id,
             "database_url": database_url,
             "model": model,
+            "llm_provider": llm_provider,
             "agent_model": agent_model,
         },
     )
@@ -381,10 +440,14 @@ def spoken_delivery(
         default=None,
         help="Override the default chat model name for all LLM calls.",
     ),
+    llm_provider: str | None = typer.Option(
+        default=None,
+        help="Override the LLM provider (openai, anthropic, heuristic).",
+    ),
     agent_model: list[str] | None = typer.Option(
         None,
         "--agent-model",
-        help="Per-agent model override as AGENT=MODEL (repeatable).",
+        help="Per-agent model override as AGENT=MODEL or AGENT=PROVIDER:MODEL (repeatable).",
     ),
     database_url: str | None = typer.Option(
         default=None,
@@ -393,13 +456,16 @@ def spoken_delivery(
 ) -> None:
     """Rewrite a saved factual script artifact into spoken-form delivery."""
 
-    orchestrator = _build_orchestrator(database_url, model=model, agent_model=agent_model)
+    orchestrator = _build_orchestrator(
+        database_url, model=model, agent_model=agent_model, llm_provider=llm_provider
+    )
     orchestrator.log_command(
         "spoken-delivery",
         {
             "artifact_path": str(artifact_path),
             "database_url": database_url,
             "model": model,
+            "llm_provider": llm_provider,
             "agent_model": agent_model,
         },
     )
@@ -420,6 +486,7 @@ def _build_orchestrator(
     database_url: str | None,
     *,
     model: str | None = None,
+    llm_provider: str | None = None,
     agent_model: list[str] | None = None,
 ) -> PipelineOrchestrator:
     settings = Settings()
@@ -430,11 +497,18 @@ def _build_orchestrator(
         else InMemoryRepository()
     )
     llm_updates: dict[str, object] = {}
-    agent_model_overrides = _parse_agent_model_overrides(agent_model)
+    agent_model_overrides, provider_overrides = _parse_agent_model_overrides(agent_model)
     if model is not None:
         llm_updates["model_name"] = model
+    if llm_provider is not None:
+        llm_updates["llm_provider"] = llm_provider
     if agent_model_overrides:
         llm_updates["model_overrides"] = {**settings.llm.model_overrides, **agent_model_overrides}
+    if provider_overrides:
+        llm_updates["provider_overrides"] = {
+            **settings.llm.provider_overrides,
+            **provider_overrides,
+        }
 
     settings_updates: dict[str, object] = {
         "database": settings.database.model_copy(update={"dsn": resolved_database_url}),

@@ -1,0 +1,7 @@
+pypdf<6,>=5
+pydantic<3,>=2.12
+psycopg[binary]<4,>=3.3
+typer<1,>=0.12
+
+[dev]
+pytest<9,>=8.3
