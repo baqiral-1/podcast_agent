@@ -7,17 +7,17 @@
   <meta name="description" content="Stories and analyses adapted from The Last Mughal.">
   <style>
     :root {
-      --body-bg-color: #0b1320;
-      --body-font-color: #f4efe6;
+      --body-bg-color: #130d0b;
+      --body-font-color: #f6efe3;
       --primary-font: "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
       --primary-body-font-size: 1.12rem;
       --primary-body-font-weight: 300;
-      --primary-color: #d6c28d;
-      --primary-hover-color: #e2d0a5;
-      --body-padding: 1.4375rem;
-      --header-bg: #070c14;
-      --nav-color: #f4efe6;
-      --nav-color-hover: #d6c28d;
+      --primary-color: #c49a46;
+      --primary-hover-color: #e3c27a;
+      --body-padding: 1.5rem;
+      --header-bg: #0b0a0a;
+      --nav-color: #f6efe3;
+      --nav-color-hover: #c49a46;
       --nav-font-size: 1rem;
       --header-padding: 1.25rem;
       --nav-horizontal-margin: 1.25rem;
@@ -28,12 +28,12 @@
       --episode-margin: 0.75rem;
       --episode-inner-spacing: 1rem;
       --episode-title-font-size: 1.5rem;
-      --episode-meta-color: #d6c28d;
-      --audio-player-progressed: #f4efe6;
-      --audio-player-runtime-color: #cfc4b2;
-      --max-width: 1180px;
-      --footer-border: rgba(244, 239, 230, 0.1);
-      --footer-copy: rgba(244, 239, 230, 0.72);
+      --episode-meta-color: #d9b15c;
+      --audio-player-progressed: #f6efe3;
+      --audio-player-runtime-color: #d7c4a6;
+      --max-width: 1220px;
+      --footer-border: rgba(255, 255, 255, 0.08);
+      --footer-copy: rgba(255, 255, 255, 0.64);
     }
 
     * {
@@ -49,8 +49,8 @@
     body {
       margin: 0;
       background:
-        radial-gradient(circle at top, rgba(214, 194, 141, 0.12), transparent 36%),
-        linear-gradient(180deg, #121a2a 0%, #0b1320 46%, #060a12 100%);
+        radial-gradient(circle at top, rgba(196, 154, 70, 0.14), transparent 36%),
+        linear-gradient(180deg, #2b1a16 0%, #130d0b 46%, #0b0a0a 100%);
       color: var(--body-font-color);
       font-family: var(--primary-font);
       font-size: var(--primary-body-font-size);
@@ -68,31 +68,23 @@
     }
 
     .site-header {
-      background: var(--header-bg);
-      padding: var(--header-padding) 0;
+      padding: 1.3rem 0 1.1rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      backdrop-filter: blur(14px);
+      background: #151b20;
     }
 
     .site-header-inner {
-      min-height: 3rem;
       display: flex;
-      justify-content: center;
-    }
-
-    .brand-lockup {
-      width: 15.625rem;
-      margin: 0 auto;
-      text-align: center;
+      align-items: center;
+      gap: 1rem;
     }
 
     .brand-mark {
       display: inline-flex;
       align-items: center;
-      justify-content: center;
-      width: 100%;
-      min-height: 2.8rem;
-      color: #ffffff;
-      font-size: 1.42rem;
-      font-weight: 700;
+      font-size: 1.3rem;
+      font-weight: 800;
       letter-spacing: 0.08em;
       text-transform: uppercase;
     }
@@ -120,12 +112,12 @@
     }
 
     .show-copy {
-      color: #f4efe6;
+      color: var(--body-font-color);
     }
 
     .show-title {
       margin: 0;
-      color: #f4efe6;
+      color: var(--body-font-color);
       font-size: var(--show-header-title-font-size);
       line-height: 1.2;
       font-weight: 700;
@@ -134,7 +126,7 @@
     .show-description {
       max-width: 44rem;
       margin: 1.35rem 0 0;
-      color: #cfc4b2;
+      color: rgba(246, 239, 227, 0.78);
     }
 
     .episodes-section {
@@ -330,38 +322,8 @@
       display: none;
     }
 
-    .transcript-block {
-      margin-top: 1rem;
-      border-top: 1px solid rgba(255, 255, 255, 0.08);
-      padding-top: 0.95rem;
-    }
-
-    .transcript-toggle {
-      list-style: none;
-      cursor: pointer;
-      color: var(--primary-color);
-      font-weight: 700;
-    }
-
-    .transcript-toggle::-webkit-details-marker {
-      display: none;
-    }
-
-    .transcript-toggle:hover,
-    .transcript-toggle:focus-visible {
-      color: #ffffff;
-    }
-
-    .transcript-content {
-      max-width: 68rem;
-      margin-top: 0.75rem;
-      color: #ddd1c1;
-      font-size: 0.95rem;
-      line-height: 1.7;
-    }
-
     .site-footer {
-      border-top: 1px solid var(--footer-border);
+      border-top: 1px solid rgba(247, 241, 233, 0.1);
       background: transparent;
     }
 
@@ -371,7 +333,7 @@
       justify-content: center;
       gap: 0.7rem;
       padding: 1.1rem 0 1.6rem;
-      color: var(--footer-copy);
+      color: rgba(255, 255, 255, 0.64);
       font-size: 0.92rem;
     }
 
@@ -410,14 +372,9 @@
         padding-bottom: 1.15rem;
       }
 
-      .brand-lockup {
-        width: 17.5rem;
-      }
-
-      .brand-mark {
-        min-height: 3.25rem;
-        font-size: 1.6rem;
-        letter-spacing: 0.1em;
+      .site-header-inner {
+        align-items: flex-start;
+        flex-direction: column;
       }
 
       .show-header {
@@ -532,23 +489,13 @@
 
       .player-utility button,
       .player-utility a,
-      .transcript-toggle {
-        font-size: 1rem;
-      }
-
-      .transcript-content {
-        font-size: 1rem;
-        line-height: 1.8;
-      }
     }
   </style>
 </head>
 <body>
   <header class="site-header">
     <div class="shell site-header-inner">
-      <div class="brand-lockup">
-        <a class="brand-mark" href="./index.html">Agentic Podcasts</a>
-      </div>
+      <a class="brand-mark" href="./index.html">Agentic Podcasts</a>
     </div>
   </header>
 
@@ -558,7 +505,7 @@
         <div class="show-art">
           <img
             alt="The Last Mughal cover art"
-            src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%230b1320'/><stop offset='0.45' stop-color='%2315304a'/><stop offset='1' stop-color='%23d6c28d'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.5)' stroke-width='3'/><text x='850' y='798' text-anchor='end' fill='white' font-family='Muli, Arial, sans-serif' font-size='34' letter-spacing='6'>AGENTIC</text><text x='850' y='842' text-anchor='end' fill='white' font-family='Muli, Arial, sans-serif' font-size='34' letter-spacing='6'>PODCASTS</text><text x='110' y='770' fill='white' font-family='Muli, Arial, sans-serif' font-size='98' font-weight='700'>The Last</text><text x='110' y='870' fill='white' font-family='Muli, Arial, sans-serif' font-size='98' font-weight='700'>Mughal</text></svg>"
+            src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%232b1a16'/><stop offset='0.45' stop-color='%238b3a2b'/><stop offset='1' stop-color='%23c49a46'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.5)' stroke-width='3'/><text x='850' y='798' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>AGENTIC</text><text x='850' y='842' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>PODCASTS</text><text x='110' y='730' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>The Last</text><text x='110' y='830' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>Mughal</text></svg>"
           >
         </div>
 
@@ -571,24 +518,24 @@
       </div>
     </section>
 
-    <section class="episodes-section" id="episodes">
+                <section class="episodes-section" id="episodes">
       <div class="shell episode-list">
         <article class="episode-card">
           <p class="episode-meta">Episode 1</p>
-          <h2 class="episode-title">A Dying Court: Delhi Before the Storm</h2>
+          <h2 class="episode-title">The Last Mughal Court Before the Storm</h2>
           <p class="episode-description-preview">
-            The series opens in the fading world of the Mughal court, where ceremonial splendor, poetry, and urban sophistication endure even as sovereignty ebbs away.
+            Ramadan morning in 1857 turns Delhi upside down as mutineers from Meerut ride into the Mughal capital and force Bahadur Shah Zafar to decide how to respond.
           </p>
           <div class="episode-details">
             <span class="episode-description-more" data-role="episode-description-more">
-              The series opens in the fading world of the Mughal court, where ceremonial splendor, poetry, and urban sophistication endure even as sovereignty ebbs away. The episode introduces Bahadur Shah Zafar's household, the politics of succession, Delhi's mixed religious culture, and the widening gulf between British and Indo-Muslim society.
+              Delhi in the spring of 1857 is still a city of poetry, ceremony, and fading imperial authority. The episode follows Bahadur Shah Zafar’s court through the Ramadan morning when mutinous sepoys from Meerut ride into the Mughal capital, killing Company officials and forcing the emperor to choose between defiance and survival. We trace the fragile balance between palace factions, British residents, and the sepoys’ grievances over pay, caste, and the Company’s racial order. As gates close and rumors race, Delhi’s old elite scrambles to control a rebellion that has already outrun them. The uprising is not yet a unified war of independence; it is a chaotic collision of faith, honor, and fear that begins to tear the city apart from within.
             </span>
             <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
           </div>
           <div class="episode-player">
             <div class="audio-shell">
               <audio class="native-audio" preload="metadata">
-                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/last-mughal-episodes-1-3-20260320/episode-1.mp3" type="audio/mpeg">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/last-mughal-episodes-1-3-20260320T2214/episode-1.mp3" type="audio/mpeg">
                 Your browser does not support the audio element.
               </audio>
               <div class="player-row">
@@ -609,29 +556,24 @@
               </div>
             </div>
           </div>
-          <details class="transcript-block">
-            <summary class="transcript-toggle">Transcript</summary>
-            <div class="transcript-content">
-              Add the episode transcript here as speaker paragraphs or timestamped sections. This slot is ready for inline transcript text or generated transcript content later.
-            </div>
-          </details>
         </article>
+
         <article class="episode-card">
           <p class="episode-meta">Episode 2</p>
-          <h2 class="episode-title">Revolt and Siege: The Struggle for Delhi</h2>
+          <h2 class="episode-title">Delhi in Revolt and Under Siege</h2>
           <p class="episode-description-preview">
-            Warnings accumulate, then explode into the uprising of May 1857.
+            British columns breach Kashmiri Gate and fight block by block as the old city becomes a battlefield.
           </p>
           <div class="episode-details">
             <span class="episode-description-more" data-role="episode-description-more">
-              Warnings accumulate, then explode into the uprising of May 1857. As sepoys, princes, civilians, and zealots pull the city in different directions, Delhi becomes both rebel capital and contested battleground, with symbolic imperial authority repeatedly failing to impose order under the pressures of siege, scarcity, and military reversal.
+              British columns assault Delhi in September 1857, breaching the walls at Kashmiri Gate and fighting street by street toward the Jama Masjid and Red Fort. The episode tracks the chaos of the siege: sappers blown apart as they ignite charges, officers improvising under fire, and rebel defenders shifting from barricade to barricade. We follow Nicholson’s push along the ramparts, Metcalfe’s route through back lanes, and the terrible cost to civilians trapped between artillery and reprisals. The old city’s neighborhoods become battlefields and then killing zones as British troops reenter a capital they believe has betrayed them. Nicholson is mortally wounded, and the surviving defenders retreat toward the Red Fort amid disease and exhaustion. The revolt splinters, and Delhi’s fate turns on a brutal mix of discipline, improvisation, and vengeance.
             </span>
             <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
           </div>
           <div class="episode-player">
             <div class="audio-shell">
               <audio class="native-audio" preload="metadata">
-                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/last-mughal-episodes-1-3-20260320/episode-2.mp3" type="audio/mpeg">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/last-mughal-episodes-1-3-20260320T2214/episode-2.mp3" type="audio/mpeg">
                 Your browser does not support the audio element.
               </audio>
               <div class="player-row">
@@ -652,29 +594,24 @@
               </div>
             </div>
           </div>
-          <details class="transcript-block">
-            <summary class="transcript-toggle">Transcript</summary>
-            <div class="transcript-content">
-              Add the episode transcript here as speaker paragraphs or timestamped sections. This slot is ready for inline transcript text or generated transcript content later.
-            </div>
-          </details>
         </article>
+
         <article class="episode-card">
           <p class="episode-meta">Episode 3</p>
           <h2 class="episode-title">The Fall of Delhi and the End of the Mughals</h2>
           <p class="episode-description-preview">
-            A single sweeping narrative follows the capture of Bahadur Shah Zafar, the killing of the princes, British reprisals and looting in conquered Delhi, the emperor's trial and conviction, and the long afterlife of Mughal collapse in exile, memory, and communal politics.
+            The last emperor is captured at Humayun’s Tomb, and the Mughal world collapses under British retribution.
           </p>
           <div class="episode-details">
             <span class="episode-description-more" data-role="episode-description-more">
-              A single sweeping narrative follows the capture of Bahadur Shah Zafar, the killing of the princes, British reprisals and looting in conquered Delhi, the emperor's trial and conviction, and the long afterlife of Mughal collapse in exile, memory, and communal politics.
+              The capture of Bahadur Shah Zafar begins at Humayun’s Tomb, where the last Mughal hides among refugees and armed followers. William Hodson’s negotiations, the surrender, and the immediate execution of the princes signal that mercy is no longer on offer. From there, the episode follows Zafar’s humiliating return to the Red Fort, his trial for rebellion, and the British decision to end the dynasty altogether. Delhi is punished: neighborhoods are razed, property seized, and survivors forced into exile. Zafar is sent to Rangoon, an emperor without a court, while the Company rewrites the uprising as treason and justifies mass retribution. Imperial symbols are dismantled, and the city’s cultural world is scattered. The Mughal world ends not with a ceremonial handover, but with a captive king and a city in ruins.
             </span>
             <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
           </div>
           <div class="episode-player">
             <div class="audio-shell">
               <audio class="native-audio" preload="metadata">
-                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/last-mughal-episodes-1-3-20260320/episode-3.mp3" type="audio/mpeg">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/last-mughal-episodes-1-3-20260320T2214/episode-3.mp3" type="audio/mpeg">
                 Your browser does not support the audio element.
               </audio>
               <div class="player-row">
@@ -695,12 +632,6 @@
               </div>
             </div>
           </div>
-          <details class="transcript-block">
-            <summary class="transcript-toggle">Transcript</summary>
-            <div class="transcript-content">
-              Add the episode transcript here as speaker paragraphs or timestamped sections. This slot is ready for inline transcript text or generated transcript content later.
-            </div>
-          </details>
         </article>
       </div>
     </section>
