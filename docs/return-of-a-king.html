@@ -7,17 +7,17 @@
   <meta name="description" content="Stories and analyses adapted from Return of a King.">
   <style>
     :root {
-      --body-bg-color: #101520;
-      --body-font-color: #eef0f7;
+      --body-bg-color: #10161c;
+      --body-font-color: #f3efe6;
       --primary-font: "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
       --primary-body-font-size: 1.12rem;
       --primary-body-font-weight: 300;
-      --primary-color: #c6a35f;
-      --primary-hover-color: #d5b374;
-      --body-padding: 1.4375rem;
-      --header-bg: #000000;
-      --nav-color: #eef0f7;
-      --nav-color-hover: #c6a35f;
+      --primary-color: #b1864b;
+      --primary-hover-color: #d1ad6a;
+      --body-padding: 1.5rem;
+      --header-bg: #0b0f12;
+      --nav-color: #f3efe6;
+      --nav-color-hover: #b1864b;
       --nav-font-size: 1rem;
       --header-padding: 1.25rem;
       --nav-horizontal-margin: 1.25rem;
@@ -28,12 +28,12 @@
       --episode-margin: 0.75rem;
       --episode-inner-spacing: 1rem;
       --episode-title-font-size: 1.5rem;
-      --episode-meta-color: #c6a35f;
-      --audio-player-progressed: #eef0f7;
-      --audio-player-runtime-color: #cfd6e5;
-      --max-width: 1180px;
-      --footer-border: rgba(238, 240, 247, 0.1);
-      --footer-copy: rgba(238, 240, 247, 0.72);
+      --episode-meta-color: #b1864b;
+      --audio-player-progressed: #f3efe6;
+      --audio-player-runtime-color: #d7c8b4;
+      --max-width: 1220px;
+      --footer-border: rgba(255, 255, 255, 0.08);
+      --footer-copy: rgba(255, 255, 255, 0.64);
     }
 
     * {
@@ -49,8 +49,8 @@
     body {
       margin: 0;
       background:
-        radial-gradient(circle at top, rgba(198, 163, 95, 0.11), transparent 36%),
-        linear-gradient(180deg, #161d2b 0%, #101520 46%, #0b0f16 100%);
+        radial-gradient(circle at top, rgba(177, 134, 75, 0.12), transparent 36%),
+        linear-gradient(180deg, #273241 0%, #10161c 46%, #0f1318 100%);
       color: var(--body-font-color);
       font-family: var(--primary-font);
       font-size: var(--primary-body-font-size);
@@ -68,31 +68,23 @@
     }
 
     .site-header {
-      background: var(--header-bg);
-      padding: var(--header-padding) 0;
+      padding: 1.3rem 0 1.1rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      backdrop-filter: blur(14px);
+      background: #151b20;
     }
 
     .site-header-inner {
-      min-height: 3rem;
       display: flex;
-      justify-content: center;
-    }
-
-    .brand-lockup {
-      width: 15.625rem;
-      margin: 0 auto;
-      text-align: center;
+      align-items: center;
+      gap: 1rem;
     }
 
     .brand-mark {
       display: inline-flex;
       align-items: center;
-      justify-content: center;
-      width: 100%;
-      min-height: 2.8rem;
-      color: #ffffff;
-      font-size: 1.42rem;
-      font-weight: 700;
+      font-size: 1.3rem;
+      font-weight: 800;
       letter-spacing: 0.08em;
       text-transform: uppercase;
     }
@@ -120,12 +112,12 @@
     }
 
     .show-copy {
-      color: #eef0f7;
+      color: var(--body-font-color);
     }
 
     .show-title {
       margin: 0;
-      color: #eef0f7;
+      color: var(--body-font-color);
       font-size: var(--show-header-title-font-size);
       line-height: 1.2;
       font-weight: 700;
@@ -134,7 +126,7 @@
     .show-description {
       max-width: 44rem;
       margin: 1.35rem 0 0;
-      color: #cfd6e5;
+      color: rgba(243, 239, 230, 0.78);
     }
 
     .episodes-section {
@@ -294,38 +286,8 @@
       display: none;
     }
 
-    .transcript-block {
-      margin-top: 1rem;
-      border-top: 1px solid rgba(255, 255, 255, 0.08);
-      padding-top: 0.95rem;
-    }
-
-    .transcript-toggle {
-      list-style: none;
-      cursor: pointer;
-      color: var(--primary-color);
-      font-weight: 700;
-    }
-
-    .transcript-toggle::-webkit-details-marker {
-      display: none;
-    }
-
-    .transcript-toggle:hover,
-    .transcript-toggle:focus-visible {
-      color: #ffffff;
-    }
-
-    .transcript-content {
-      max-width: 68rem;
-      margin-top: 0.75rem;
-      color: #cfd6e5;
-      font-size: 0.95rem;
-      line-height: 1.7;
-    }
-
     .site-footer {
-      border-top: 1px solid var(--footer-border);
+      border-top: 1px solid rgba(247, 241, 233, 0.1);
       background: transparent;
     }
 
@@ -335,7 +297,7 @@
       justify-content: center;
       gap: 0.7rem;
       padding: 1.1rem 0 1.6rem;
-      color: var(--footer-copy);
+      color: rgba(255, 255, 255, 0.64);
       font-size: 0.92rem;
     }
 
@@ -368,14 +330,9 @@
         padding-bottom: 1.15rem;
       }
 
-      .brand-lockup {
-        width: 17.5rem;
-      }
-
-      .brand-mark {
-        min-height: 3.25rem;
-        font-size: 1.6rem;
-        letter-spacing: 0.1em;
+      .site-header-inner {
+        align-items: flex-start;
+        flex-direction: column;
       }
 
       .show-header {
@@ -486,23 +443,13 @@
 
       .player-utility button,
       .player-utility a,
-      .transcript-toggle {
-        font-size: 1rem;
-      }
-
-      .transcript-content {
-        font-size: 1rem;
-        line-height: 1.8;
-      }
     }
   </style>
 </head>
 <body>
   <header class="site-header">
     <div class="shell site-header-inner">
-      <div class="brand-lockup">
-        <a class="brand-mark" href="./index.html">Agentic Podcasts</a>
-      </div>
+      <a class="brand-mark" href="./index.html">Agentic Podcasts</a>
     </div>
   </header>
 
@@ -512,7 +459,7 @@
         <div class="show-art">
           <img
             alt="Return of a King cover art"
-            src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%230d1320'/><stop offset='0.45' stop-color='%23324867'/><stop offset='1' stop-color='%23c6a35f'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.45)' stroke-width='3'/><text x='850' y='798' text-anchor='end' fill='white' font-family='Muli, Arial, sans-serif' font-size='34' letter-spacing='6'>AGENTIC</text><text x='850' y='842' text-anchor='end' fill='white' font-family='Muli, Arial, sans-serif' font-size='34' letter-spacing='6'>PODCASTS</text><text x='110' y='770' fill='white' font-family='Muli, Arial, sans-serif' font-size='98' font-weight='700'>Return of</text><text x='110' y='870' fill='white' font-family='Muli, Arial, sans-serif' font-size='98' font-weight='700'>a King</text></svg>"
+            src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%23273241'/><stop offset='0.45' stop-color='%237a6b4e'/><stop offset='1' stop-color='%23b1864b'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.45)' stroke-width='3'/><text x='850' y='798' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>AGENTIC</text><text x='850' y='842' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>PODCASTS</text><text x='110' y='730' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>Return of</text><text x='110' y='830' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>a King</text></svg>"
           >
         </div>
 
@@ -525,24 +472,24 @@
       </div>
     </section>
 
-    <section class="episodes-section" id="episodes">
+                <section class="episodes-section" id="episodes">
       <div class="shell episode-list">
         <article class="episode-card">
           <p class="episode-meta">Episode 1</p>
-          <h2 class="episode-title">Shah Shuja, Empire, and the Road to Invasion</h2>
+          <h2 class="episode-title">Exile, Intrigue, and the Road to Intervention</h2>
           <p class="episode-description-preview">
-            This episode follows the long, unstable rise of Shah Shuja, from dynastic intrigue and exile to the widening imperial contest that drew Afghanistan into the Great Game.
+            Shah Shuja returns to Kabul under British protection, a restoration that already carries the seeds of occupation.
           </p>
           <div class="episode-details">
             <span class="episode-description-more" data-role="episode-description-more">
-              We trace the recovery of the Koh-i-Nur, the fracture of the Durrani world, British anxiety over Napoleon, Russia, and Persia, and the strategic calculations that turned Afghan succession into an imperial project. As diplomats, spies, and rival courts maneuver across Kabul, Lahore, and British India, the story builds toward invasion. What begins as a struggle over legitimacy and alliance becomes the opening act of a much larger war, shaped by ambition, misreading, and the dangerous confidence of empire.
+              Shah Shuja’s return to Kabul in 1839 looks like restoration, but it is powered by British bayonets and imperial anxiety about Russia and Persia. We rewind through his earlier reign, the loss of the Koh-i-Noor, exile, and the long intrigue with Sikh and British officials who see Afghanistan as a buffer state. The episode traces how the East India Company chooses to reinstall a pliant monarch, assembling the Army of the Indus and bargaining with Ranjit Singh for passage. Kabul is entered without celebration, and the price of occupation begins to show even before the fighting starts. The story is one of misplaced confidence: an empire convinced it can engineer legitimacy by force, and an Afghan court that returns home tethered to foreign power.
             </span>
             <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
           </div>
           <div class="episode-player">
             <div class="audio-shell">
               <audio class="native-audio" preload="metadata">
-                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/return-of-a-king-episodes-1-3/return-of-a-king-episode-1.mp3" type="audio/mpeg">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/return-of-a-king-episodes-1-3-20260321T0020/episode-1.mp3" type="audio/mpeg">
                 Your browser does not support the audio element.
               </audio>
               <div class="player-row">
@@ -563,29 +510,24 @@
               </div>
             </div>
           </div>
-          <details class="transcript-block">
-            <summary class="transcript-toggle">Transcript</summary>
-            <div class="transcript-content">
-              Add the episode transcript here as speaker paragraphs or timestamped sections. This slot is ready for inline transcript text or generated transcript content later.
-            </div>
-          </details>
         </article>
+
         <article class="episode-card">
           <p class="episode-meta">Episode 2</p>
-          <h2 class="episode-title">Occupation, Revolt, and the Catastrophe in Kabul</h2>
+          <h2 class="episode-title">Conquest, Occupation, and Revolt in Kabul</h2>
           <p class="episode-description-preview">
-            This episode follows the First Afghan War as invasion hardens into occupation and occupation collapses into revolt.
+            An occupation built on misreading local anger collapses as Kabul turns on its British garrison.
           </p>
           <div class="episode-details">
             <span class="episode-description-more" data-role="episode-description-more">
-              Shah Shuja returns, British armies seize key strongholds, and the politics of Kabul grow steadily more brittle as imperial confidence outruns local reality. We move through court intrigue, Russian and British rivalry, military misjudgment, and the daily humiliations that turn discontent into open resistance. From the uprising in Kabul to the murder of Macnaghten and the disastrous retreat through the passes, the war becomes a study in overreach, indecision, and catastrophic command. By the end, the occupying force that entered Afghanistan in triumph is broken, and the logic of the campaign lies in ruins.
+              The occupation of Kabul quickly curdles into revolt. British officers misread local anger, levy new taxes, and camp outside the city in an exposed cantonment while Shah Shuja’s authority withers. The episode centers on November 1841, when Alexander Burnes is besieged in his house and killed while commanders hesitate. As mobs surge through Kabul, officers debate half-measures and ignore warnings from allies who urge decisive action. Shah Shuja retreats to the Bala Hisar as Akbar Khan and tribal leaders close the roads, leaving the garrison isolated. We trace the unraveling of the occupation: assassinations, supply failures, and the inability of the garrison to control a city that no longer consents. By the time the British agree to withdraw, they are already bargaining from weakness. The Afghan uprising is not sudden chaos; it is a response to arrogance, interference, and the collapse of an imposed order.
             </span>
             <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
           </div>
           <div class="episode-player">
             <div class="audio-shell">
               <audio class="native-audio" preload="metadata">
-                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/return-of-a-king-episodes-1-3/return-of-a-king-episode-2.mp3" type="audio/mpeg">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/return-of-a-king-episodes-1-3-20260321T0020/episode-2.mp3" type="audio/mpeg">
                 Your browser does not support the audio element.
               </audio>
               <div class="player-row">
@@ -606,29 +548,24 @@
               </div>
             </div>
           </div>
-          <details class="transcript-block">
-            <summary class="transcript-toggle">Transcript</summary>
-            <div class="transcript-content">
-              Add the episode transcript here as speaker paragraphs or timestamped sections. This slot is ready for inline transcript text or generated transcript content later.
-            </div>
-          </details>
         </article>
+
         <article class="episode-card">
           <p class="episode-meta">Episode 3</p>
-          <h2 class="episode-title">Retribution, Return, and the War's Long Shadow</h2>
+          <h2 class="episode-title">Retreat, Retribution, and the War's Long Shadow</h2>
           <p class="episode-description-preview">
-            This episode traces the war's violent finale and its enduring aftermath.
+            The winter retreat from Kabul becomes legend, followed by a punitive return that cannot erase the defeat.
           </p>
           <div class="episode-details">
             <span class="episode-description-more" data-role="episode-description-more">
-              We begin with Jalalabad, where British forces recover their nerve, then follow Pollock and Nott through the punitive march back to Kabul, the release of prisoners, the destruction of cities and bazaars, and the retaliatory massacres that expose the moral cost of imperial revenge. From there the story turns outward: Shah Shuja is gone, Dost Mohammad returns, British victory parades ring hollow, and the conflict leaves behind financial waste, political humiliation, and a country no easier to control than before. The episode closes on the war's long echo, from Crimea to modern Afghanistan, where the same illusions return.
+              The retreat from Kabul becomes a catastrophe. British and Indian troops, camp followers, and hostages attempt to march through winter passes toward Jalalabad, only to be cut down in ambush after ambush. Inside Jalalabad, a besieged garrison debates whether to hold out or escape, while captives such as Lady Sale maneuver for survival. Only a handful of survivors reach safety, turning the retreat into imperial legend. The episode follows the disaster’s aftermath: Pollock’s relief force, a punitive march back to Kabul, and the burning of bazaars in retribution. The punitive expedition rescues prisoners but cannot erase the humiliation. The war ends not with victory but with exhaustion and a chastened empire that restores the old Afghan order it tried to displace. The long shadow is a warning about occupation, arrogance, and the limits of imperial rescue narratives.
             </span>
             <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
           </div>
           <div class="episode-player">
             <div class="audio-shell">
               <audio class="native-audio" preload="metadata">
-                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/return-of-a-king-episodes-1-3/return-of-a-king-episode-3.mp3" type="audio/mpeg">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/return-of-a-king-episodes-1-3-20260321T0020/episode-3.mp3" type="audio/mpeg">
                 Your browser does not support the audio element.
               </audio>
               <div class="player-row">
@@ -649,12 +586,6 @@
               </div>
             </div>
           </div>
-          <details class="transcript-block">
-            <summary class="transcript-toggle">Transcript</summary>
-            <div class="transcript-content">
-              Add the episode transcript here as speaker paragraphs or timestamped sections. This slot is ready for inline transcript text or generated transcript content later.
-            </div>
-          </details>
         </article>
       </div>
     </section>

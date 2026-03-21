@@ -917,6 +917,12 @@ class PipelineOrchestrator:
         if "script" in payload and "report" in payload:
             report = GroundingReport.model_validate_json(json.dumps(payload["report"]))
             if report.overall_status != "pass":
+                for artifact_name in (
+                    "spoken_script.json",
+                    "spoken_delivery.json",
+                    "spoken_delivery_arc_plan.json",
+                ):
+                    (path.parent / artifact_name).unlink(missing_ok=True)
                 raise ValueError(
                     f"Cannot run spoken delivery from artifact '{artifact_path}' because grounding did not pass."
                 )

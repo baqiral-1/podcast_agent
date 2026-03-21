@@ -7,29 +7,21 @@
   <meta name="description" content="Collection hub for Agentic Podcasts audio series.">
   <style>
     :root {
-      --body-bg-color: #10161b;
-      --body-font-color: #ffffff;
-      --primary-font: "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-      --primary-body-font-size: 1.12rem;
-      --primary-body-font-weight: 300;
-      --primary-color: #9d57ea;
-      --body-padding: 1.4375rem;
-      --header-bg: #000000;
-      --nav-color: #ffffff;
-      --nav-color-hover: #9d57ea;
-      --nav-font-size: 1rem;
-      --header-padding: 1.25rem;
-      --nav-horizontal-margin: 1.25rem;
-      --max-width: 1180px;
-      --card-bg: rgba(255, 255, 255, 0.06);
-      --card-border: rgba(255, 255, 255, 0.08);
-      --footer-border: rgba(255, 255, 255, 0.1);
-      --footer-copy: rgba(255, 255, 255, 0.72);
+      --bg-top: #161d23;
+      --bg-bottom: #0b1014;
+      --text: #f7f1e9;
+      --muted: rgba(247, 241, 233, 0.76);
+      --line: rgba(247, 241, 233, 0.1);
+      --panel: rgba(255, 255, 255, 0.05);
+      --panel-strong: rgba(255, 255, 255, 0.08);
+      --font: "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+      --max-width: 1220px;
+      --page-pad: 1.5rem;
+      --shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
     }
 
     * {
       box-sizing: border-box;
-      border: 0 solid transparent;
     }
 
     html {
@@ -39,14 +31,12 @@
 
     body {
       margin: 0;
-      background:
-        radial-gradient(circle at top, rgba(201, 165, 106, 0.08), transparent 34%),
-        linear-gradient(180deg, #131a20 0%, #10161b 56%, #0c1115 100%);
-      color: var(--body-font-color);
-      font-family: var(--primary-font);
-      font-size: var(--primary-body-font-size);
-      font-weight: var(--primary-body-font-weight);
       min-height: 100vh;
+      color: var(--text);
+      font-family: var(--font);
+      background:
+        radial-gradient(circle at top, rgba(201, 165, 106, 0.14), transparent 32%),
+        linear-gradient(180deg, var(--bg-top) 0%, #11171d 38%, var(--bg-bottom) 100%);
       display: flex;
       flex-direction: column;
     }
@@ -56,72 +46,52 @@
       text-decoration: none;
     }
 
+    img {
+      display: block;
+      max-width: 100%;
+    }
+
     .shell {
-      width: min(calc(100% - (var(--body-padding) * 2)), var(--max-width));
+      width: min(calc(100% - (var(--page-pad) * 2)), var(--max-width));
       margin: 0 auto;
     }
 
     .site-header {
-      background: var(--header-bg);
-      padding: var(--header-padding) 0;
+      padding: 1.3rem 0 1.1rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      backdrop-filter: blur(14px);
+      background: #151b20;
     }
 
     .site-header-inner {
-      min-height: 3rem;
       display: flex;
-      justify-content: center;
-    }
-
-    .brand-lockup {
-      width: 15.625rem;
-      margin: 0 auto;
-      text-align: center;
+      align-items: center;
+      gap: 1rem;
     }
 
     .brand-mark {
       display: inline-flex;
       align-items: center;
-      justify-content: center;
-      width: 100%;
-      min-height: 2.8rem;
-      color: #ffffff;
-      font-size: 1.42rem;
-      font-weight: 700;
+      font-size: 1.3rem;
+      font-weight: 800;
       letter-spacing: 0.08em;
       text-transform: uppercase;
     }
 
-    .site-nav {
-      display: none;
-    }
-
-    .site-nav ul {
+    .section-heading {
       display: flex;
-      flex-wrap: wrap;
-      justify-content: center;
-      gap: 0;
+      align-items: baseline;
+      margin-bottom: 1rem;
+    }
+
+    .section-title {
       margin: 0;
-      padding: 0;
-      list-style: none;
+      font-size: 1.55rem;
+      line-height: 1.15;
     }
 
-    .site-nav a {
-      display: inline-block;
-      padding: 0.94rem var(--nav-horizontal-margin);
-      color: var(--nav-color);
-      font-size: var(--nav-font-size);
-      font-weight: 700;
-      text-transform: capitalize;
-    }
-
-    .site-nav a:hover,
-    .site-nav a:focus-visible {
-      color: var(--nav-color-hover);
-    }
-
-    .collection-section {
-      padding: 5.2rem 0 4rem;
-      background: transparent;
+    .collections {
+      padding: 2.8rem 0 4rem;
     }
 
     main {
@@ -130,91 +100,113 @@
 
     .collection-grid {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 1rem;
     }
 
     .collection-card {
-      --card-accent: var(--primary-color);
-      --card-icon-start: rgba(157, 87, 234, 0.92);
-      --card-icon-end: rgba(240, 160, 75, 0.8);
-      min-height: 9.72rem;
-      padding: 0.95rem;
-      border: 1px solid var(--card-border);
-      border-radius: 1.1rem;
-      background: var(--card-bg);
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      transition: border-color 0.2s ease, transform 0.2s ease, background-color 0.2s ease;
-    }
-
-    .collection-card-main {
-      display: grid;
-      gap: 0.55rem;
-    }
-
-    .collection-card-header {
-      display: grid;
-      grid-template-columns: auto minmax(0, 1fr);
-      align-items: center;
-      gap: 1rem;
-    }
-
-    .collection-card-copy {
-      min-width: 0;
-      align-self: stretch;
-      display: flex;
-      flex-direction: column;
-      justify-content: flex-end;
-      align-items: flex-start;
-      text-align: left;
+      --accent: #c9a56a;
+      --accent-weak: rgba(201, 165, 106, 0.14);
+      position: relative;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 1.35rem;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.03)),
+        var(--panel);
+      transition: transform 0.18s ease, border-color 0.18s ease, background-color 0.18s ease;
     }
 
     .collection-card:hover,
-    .collection-card:focus-visible {
-      border-color: var(--card-accent);
-      background: rgba(255, 255, 255, 0.08);
+    .collection-card:focus-within {
       transform: translateY(-2px);
+      border-color: var(--accent);
+      background-color: var(--panel-strong);
     }
 
-    .collection-icon {
-      width: 7.32rem;
-      height: 7.32rem;
-      border-radius: 2px;
+    .collection-link {
+      display: grid;
+      grid-template-columns: 8.2rem minmax(0, 1fr);
+      gap: 1rem;
+      height: 100%;
+      padding: 1rem;
+    }
+
+    .collection-art {
+      border-radius: 0.9rem;
+      overflow: hidden;
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
+      align-self: start;
+    }
+
+    .collection-copy {
+      min-width: 0;
+      display: grid;
+      gap: 0.75rem;
+    }
+
+    .collection-topline {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.55rem;
+      color: var(--muted);
+      font-size: 0.82rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .runtime-pill {
       display: inline-flex;
       align-items: center;
-      justify-content: center;
-      overflow: hidden;
-      color: #ffffff;
-      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.24);
-    }
-
-    .collection-icon img {
-      width: 108%;
-      height: 108%;
-      display: block;
-      object-fit: cover;
+      min-height: 1.7rem;
+      padding: 0.18rem 0.6rem;
+      border-radius: 999px;
+      background: var(--accent-weak);
+      color: var(--accent);
+      font-size: 0.78rem;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
     }
 
     .collection-title {
       margin: 0;
-      color: #ffffff;
-      font-size: 1.25rem;
-      line-height: 1.2;
-      font-weight: 700;
+      font-size: 1.42rem;
+      line-height: 1.15;
     }
 
-    .collection-meta {
-      margin: 0.38rem 0 0;
-      color: var(--card-accent);
-      font-size: 0.82rem;
+    .collection-author {
+      margin: -0.15rem 0 0;
+      color: rgba(255, 255, 255, 0.82);
+      font-size: 0.98rem;
+      font-weight: 500;
+      font-style: italic;
+    }
+
+    .collection-summary {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.95rem;
+      line-height: 1.7;
+    }
+
+    .meta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      color: rgba(255, 255, 255, 0.76);
+      font-size: 0.92rem;
       font-weight: 700;
+      padding-top: 0.3rem;
     }
 
     .site-footer {
-      border-top: 1px solid var(--footer-border);
-      background: #000000;
+      border-top: 1px solid var(--line);
+      padding: 1.15rem 0 1.6rem;
+      color: rgba(255, 255, 255, 0.64);
+      font-size: 0.92rem;
       margin-top: auto;
     }
 
@@ -223,9 +215,6 @@
       align-items: center;
       justify-content: center;
       gap: 0.7rem;
-      padding: 1.1rem 0 1.6rem;
-      color: var(--footer-copy);
-      font-size: 0.92rem;
     }
 
     .github-footer-link {
@@ -235,11 +224,6 @@
       color: inherit;
     }
 
-    .github-footer-link:hover,
-    .github-footer-link:focus-visible {
-      color: #ffffff;
-    }
-
     .github-mark {
       width: 1.1rem;
       height: 1.1rem;
@@ -247,157 +231,173 @@
       fill: currentColor;
     }
 
-    @media screen and (max-width: 1024px) {
-      html {
-        font-size: 13px;
-      }
+    .site-footer a:hover,
+    .site-footer a:focus-visible {
+      color: #ffffff;
+    }
 
+    @media screen and (max-width: 1040px) {
       .collection-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: 1fr;
       }
     }
 
-    @media screen and (max-width: 767px) {
+    @media screen and (max-width: 720px) {
       html {
-        font-size: 13px;
-        line-height: 1.75;
+        font-size: 14px;
       }
 
-      .site-header {
-        padding-bottom: 1.2rem;
+      .site-header-inner,
+      .section-heading {
+        align-items: flex-start;
+        flex-direction: column;
       }
 
-      .brand-lockup {
-        width: 17.5rem;
-      }
-
-      .brand-mark {
-        min-height: 3.4rem;
-        font-size: 1.68rem;
-        letter-spacing: 0.1em;
-      }
-
-      .collection-section {
-        padding: 4.4rem 0 3.4rem;
-      }
-
-      .collection-grid {
+      .collection-link {
         grid-template-columns: 1fr;
-        gap: 1rem;
       }
 
-      .collection-card {
-        min-height: 0;
-        padding: 1rem;
-        border-radius: 1.2rem;
+      .collection-art {
+        max-width: 14rem;
       }
-
-      .collection-card-header {
-        gap: 0.9rem;
-      }
-
-      .collection-icon {
-        width: 6.4rem;
-        height: 6.4rem;
-      }
-
-      .collection-title {
-        font-size: 1.52rem;
-        line-height: 1.22;
-      }
-
-      .collection-meta {
-        margin-top: 0.45rem;
-        font-size: 1rem;
-        line-height: 1.35;
-      }
-
     }
   </style>
 </head>
 <body>
   <header class="site-header">
     <div class="shell site-header-inner">
-      <div class="brand-lockup">
-        <div class="brand-mark">Agentic Podcasts</div>
-      </div>
-      <nav class="site-nav" aria-label="Primary">
-        <ul>
-        </ul>
-      </nav>
+      <a class="brand-mark" href="./index.html">Agentic Podcasts</a>
     </div>
   </header>
 
   <main>
-    <section class="collection-section" id="collections">
-      <div class="shell collection-grid">
-        <a class="collection-card" href="./india-after-gandhi.html" aria-label="Open India After Gandhi collection" style="--card-accent:#9d57ea; --card-icon-start:rgba(157, 87, 234, 0.96); --card-icon-end:rgba(110, 62, 188, 0.9);">
-          <div class="collection-card-main">
-            <div class="collection-card-header">
-              <span class="collection-icon" aria-hidden="true">
+    <section class="collections">
+      <div class="shell">
+        <div class="section-heading">
+          <h2 class="section-title">Browse Collections</h2>
+        </div>
+
+        <div class="collection-grid">
+          <article class="collection-card" style="--accent:#d47a2c; --accent-weak:rgba(212, 122, 44, 0.16);">
+            <a class="collection-link" href="./india-after-gandhi.html">
+              <div class="collection-art">
                 <img
-                  alt=""
-                  src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%23311b52'/><stop offset='0.52' stop-color='%239d57ea'/><stop offset='1' stop-color='%23f0a04b'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.5)' stroke-width='3'/><text x='850' y='798' text-anchor='end' fill='white' font-family='Muli, Arial, sans-serif' font-size='34' letter-spacing='6'>AGENTIC</text><text x='850' y='842' text-anchor='end' fill='white' font-family='Muli, Arial, sans-serif' font-size='34' letter-spacing='6'>PODCASTS</text><text x='110' y='770' fill='white' font-family='Muli, Arial, sans-serif' font-size='98' font-weight='700'>India After</text><text x='110' y='870' fill='white' font-family='Muli, Arial, sans-serif' font-size='98' font-weight='700'>Gandhi</text></svg>"
+                  alt="India After Gandhi cover art"
+                  src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%2318132f'/><stop offset='0.52' stop-color='%235a4a8a'/><stop offset='1' stop-color='%231d2f5f'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.5)' stroke-width='3'/><text x='110' y='730' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>India After</text><text x='110' y='830' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>Gandhi</text><text x='850' y='798' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>AGENTIC</text><text x='850' y='842' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>PODCASTS</text></svg>"
                 >
-              </span>
-              <div class="collection-card-copy">
-                <h2 class="collection-title">India After Gandhi</h2>
-                <p class="collection-meta">5 episodes</p>
               </div>
-            </div>
-          </div>
-        </a>
-        <a class="collection-card" href="./last-mughal.html" aria-label="Open The Last Mughal collection" style="--card-accent:#d6c28d; --card-icon-start:rgba(11, 19, 32, 0.96); --card-icon-end:rgba(214, 194, 141, 0.9);">
-          <div class="collection-card-main">
-            <div class="collection-card-header">
-              <span class="collection-icon" aria-hidden="true">
+              <div class="collection-copy">
+                <div class="collection-topline">
+                  <span>Modern India</span>
+                  <span class="runtime-pill">6h 59m</span>
+                </div>
+                <div>
+                  <h3 class="collection-title">India After Gandhi</h3>
+                  <p class="collection-author">Ramachandra Guha</p>
+                </div>
+                <p class="collection-summary">
+                  A sweeping post-1947 chronicle: Partition’s scars, state-building, wars, Emergency rule, economic
+                  liberalization, and the mass culture that rewired public life. It follows how a fragile republic kept
+                  reinventing itself under pressure.
+                </p>
+                <div class="meta-row">
+                  <span>5 episodes</span>
+                </div>
+              </div>
+            </a>
+          </article>
+
+          <article class="collection-card" style="--accent:#c49a46; --accent-weak:rgba(196, 154, 70, 0.16);">
+            <a class="collection-link" href="./last-mughal.html">
+              <div class="collection-art">
                 <img
-                  alt=""
-                  src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%230b1320'/><stop offset='0.45' stop-color='%2315304a'/><stop offset='1' stop-color='%23d6c28d'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.5)' stroke-width='3'/><text x='850' y='798' text-anchor='end' fill='white' font-family='Muli, Arial, sans-serif' font-size='34' letter-spacing='6'>AGENTIC</text><text x='850' y='842' text-anchor='end' fill='white' font-family='Muli, Arial, sans-serif' font-size='34' letter-spacing='6'>PODCASTS</text><text x='110' y='770' fill='white' font-family='Muli, Arial, sans-serif' font-size='98' font-weight='700'>The Last</text><text x='110' y='870' fill='white' font-family='Muli, Arial, sans-serif' font-size='98' font-weight='700'>Mughal</text></svg>"
+                  alt="The Last Mughal cover art"
+                  src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%232b1a16'/><stop offset='0.45' stop-color='%238b3a2b'/><stop offset='1' stop-color='%23c49a46'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.5)' stroke-width='3'/><text x='850' y='798' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>AGENTIC</text><text x='850' y='842' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>PODCASTS</text><text x='110' y='730' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>The Last</text><text x='110' y='830' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>Mughal</text></svg>"
                 >
-              </span>
-              <div class="collection-card-copy">
-                <h2 class="collection-title">The Last Mughal</h2>
-                <p class="collection-meta">3 episodes</p>
               </div>
-            </div>
-          </div>
-        </a>
-        <a class="collection-card" href="./return-of-a-king.html" aria-label="Open Return of a King collection" style="--card-accent:#c6a35f; --card-icon-start:rgba(50, 72, 103, 0.96); --card-icon-end:rgba(198, 163, 95, 0.9);">
-          <div class="collection-card-main">
-            <div class="collection-card-header">
-              <span class="collection-icon" aria-hidden="true">
+              <div class="collection-copy">
+                <div class="collection-topline">
+                  <span>Delhi, 1857</span>
+                  <span class="runtime-pill">3h 30m</span>
+                </div>
+                <div>
+                  <h3 class="collection-title">The Last Mughal</h3>
+                  <p class="collection-author">William Dalrymple</p>
+                </div>
+                <p class="collection-summary">
+                  From the poetry salons of Shahjahanabad to the siege and sack of 1857, this series tracks the collapse
+                  of a courtly world and the brutal reordering that followed. A capital’s last days as an imperial city,
+                  told through its people and its ruins.
+                </p>
+                <div class="meta-row">
+                  <span>3 episodes</span>
+                </div>
+              </div>
+            </a>
+          </article>
+
+          <article class="collection-card" style="--accent:#b1864b; --accent-weak:rgba(177, 134, 75, 0.16);">
+            <a class="collection-link" href="./return-of-a-king.html">
+              <div class="collection-art">
                 <img
-                  alt=""
-                  src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%230d1320'/><stop offset='0.45' stop-color='%23324867'/><stop offset='1' stop-color='%23c6a35f'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.45)' stroke-width='3'/><text x='850' y='798' text-anchor='end' fill='white' font-family='Muli, Arial, sans-serif' font-size='34' letter-spacing='6'>AGENTIC</text><text x='850' y='842' text-anchor='end' fill='white' font-family='Muli, Arial, sans-serif' font-size='34' letter-spacing='6'>PODCASTS</text><text x='110' y='770' fill='white' font-family='Muli, Arial, sans-serif' font-size='98' font-weight='700'>Return of</text><text x='110' y='870' fill='white' font-family='Muli, Arial, sans-serif' font-size='98' font-weight='700'>a King</text></svg>"
+                  alt="Return of a King cover art"
+                  src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%23273241'/><stop offset='0.45' stop-color='%237a6b4e'/><stop offset='1' stop-color='%23b1864b'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.45)' stroke-width='3'/><text x='850' y='798' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>AGENTIC</text><text x='850' y='842' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>PODCASTS</text><text x='110' y='730' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>Return of</text><text x='110' y='830' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>a King</text></svg>"
                 >
-              </span>
-              <div class="collection-card-copy">
-                <h2 class="collection-title">Return of a King</h2>
-                <p class="collection-meta">3 episodes</p>
               </div>
-            </div>
-          </div>
-        </a>
-        <a class="collection-card" href="./the-great-war-for-civilisation.html" aria-label="Open The Great War for Civilisation collection" style="--card-accent:#c9a56a; --card-icon-start:rgba(57, 74, 85, 0.98); --card-icon-end:rgba(201, 165, 106, 0.9);">
-          <div class="collection-card-main">
-            <div class="collection-card-header">
-              <span class="collection-icon" aria-hidden="true">
+              <div class="collection-copy">
+                <div class="collection-topline">
+                  <span>Afghanistan</span>
+                  <span class="runtime-pill">3h 34m</span>
+                </div>
+                <div>
+                  <h3 class="collection-title">Return of a King</h3>
+                  <p class="collection-author">William Dalrymple</p>
+                </div>
+                <p class="collection-summary">
+                  Afghanistan becomes the empire’s test case: a restored king, a foreign occupation, and a rebellion
+                  that turns retreat into legend. Three episodes on miscalculation, resistance, and the long afterlife
+                  of imperial defeat.
+                </p>
+                <div class="meta-row">
+                  <span>3 episodes</span>
+                </div>
+              </div>
+            </a>
+          </article>
+
+          <article class="collection-card" style="--accent:#c9863f; --accent-weak:rgba(201, 134, 63, 0.16);">
+            <a class="collection-link" href="./the-great-war-for-civilisation.html">
+              <div class="collection-art">
                 <img
-                  alt=""
-                  src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%230e1418'/><stop offset='0.48' stop-color='%23394a55'/><stop offset='1' stop-color='%23c9a56a'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.45)' stroke-width='3'/><text x='850' y='798' text-anchor='end' fill='white' font-family='Muli, Arial, sans-serif' font-size='34' letter-spacing='6'>AGENTIC</text><text x='850' y='842' text-anchor='end' fill='white' font-family='Muli, Arial, sans-serif' font-size='34' letter-spacing='6'>PODCASTS</text><text x='110' y='678' fill='white' font-family='Muli, Arial, sans-serif' font-size='82' font-weight='700'>The Great</text><text x='110' y='778' fill='white' font-family='Muli, Arial, sans-serif' font-size='82' font-weight='700'>War For</text><text x='110' y='878' fill='white' font-family='Muli, Arial, sans-serif' font-size='72' font-weight='700'>Civilization</text></svg>"
+                  alt="The Great War for Civilisation cover art"
+                  src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%230f1417'/><stop offset='0.48' stop-color='%2339454f'/><stop offset='1' stop-color='%23c9863f'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.45)' stroke-width='3'/><text x='850' y='798' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>AGENTIC</text><text x='850' y='842' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>PODCASTS</text><text x='110' y='630' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='82' font-weight='700'>The Great</text><text x='110' y='730' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='82' font-weight='700'>War For</text><text x='110' y='830' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='82' font-weight='700'>Civilization</text></svg>"
                 >
-              </span>
-              <div class="collection-card-copy">
-                <h2 class="collection-title">The Great War for Civilisation</h2>
-                <p class="collection-meta">8 episodes</p>
               </div>
-            </div>
-          </div>
-        </a>
+              <div class="collection-copy">
+                <div class="collection-topline">
+                  <span>Middle East</span>
+                  <span class="runtime-pill">13h 7m</span>
+                </div>
+                <div>
+                  <h3 class="collection-title">The Great War for Civilisation</h3>
+                  <p class="collection-author">Robert Fisk</p>
+                </div>
+                <p class="collection-summary">
+                  A long, heavy account of intervention and occupation across Afghanistan, Iran, Palestine, Iraq, and
+                  beyond, told through the civilians who pay the bill. Wars sold as clarity become decades of
+                  casualties, cover-ups, and unfinished grief.
+                </p>
+                <div class="meta-row">
+                  <span>10 episodes</span>
+                </div>
+              </div>
+            </a>
+          </article>
+        </div>
       </div>
     </section>
   </main>
+
   <footer class="site-footer">
     <div class="shell site-footer-inner">
       <a class="github-footer-link" href="https://github.com/baqiral-1/podcast_agent" aria-label="Hosted on GitHub: open the podcast_agent repository">
@@ -408,5 +408,6 @@
       </a>
     </div>
   </footer>
+
 </body>
 </html>

@@ -7,17 +7,17 @@
   <meta name="description" content="Stories and analyses adapted from India After Gandhi.">
   <style>
     :root {
-      --body-bg-color: #14111d;
-      --body-font-color: #f4eefc;
+      --body-bg-color: #0f1420;
+      --body-font-color: #f6efe6;
       --primary-font: "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
       --primary-body-font-size: 1.12rem;
       --primary-body-font-weight: 300;
-      --primary-color: #9d57ea;
-      --primary-hover-color: #ba84ff;
-      --body-padding: 1.4375rem;
-      --header-bg: #000000;
-      --nav-color: #f4eefc;
-      --nav-color-hover: #9d57ea;
+      --primary-color: #d47a2c;
+      --primary-hover-color: #f0a44d;
+      --body-padding: 1.5rem;
+      --header-bg: #0b0f18;
+      --nav-color: #f6efe6;
+      --nav-color-hover: #d47a2c;
       --nav-font-size: 1rem;
       --header-padding: 1.25rem;
       --nav-horizontal-margin: 1.25rem;
@@ -28,12 +28,12 @@
       --episode-margin: 0.75rem;
       --episode-inner-spacing: 1rem;
       --episode-title-font-size: 1.5rem;
-      --episode-meta-color: #9d57ea;
-      --audio-player-progressed: #f4eefc;
-      --audio-player-runtime-color: #ded5eb;
-      --max-width: 1180px;
-      --footer-border: rgba(244, 238, 252, 0.1);
-      --footer-copy: rgba(244, 238, 252, 0.72);
+      --episode-meta-color: #e38b3d;
+      --audio-player-progressed: #f6efe6;
+      --audio-player-runtime-color: #e0d6c8;
+      --max-width: 1220px;
+      --footer-border: rgba(255, 255, 255, 0.08);
+      --footer-copy: rgba(255, 255, 255, 0.64);
     }
 
     * {
@@ -49,8 +49,8 @@
     body {
       margin: 0;
       background:
-        radial-gradient(circle at top, rgba(157, 87, 234, 0.12), transparent 36%),
-        linear-gradient(180deg, #1a1525 0%, #14111d 46%, #0e0b14 100%);
+        radial-gradient(circle at top, rgba(212, 122, 44, 0.12), transparent 36%),
+        linear-gradient(180deg, #14223a 0%, #0f1420 46%, #0b0f18 100%);
       color: var(--body-font-color);
       font-family: var(--primary-font);
       font-size: var(--primary-body-font-size);
@@ -68,31 +68,23 @@
     }
 
     .site-header {
-      background: var(--header-bg);
-      padding: var(--header-padding) 0;
+      padding: 1.3rem 0 1.1rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      backdrop-filter: blur(14px);
+      background: #151b20;
     }
 
     .site-header-inner {
-      min-height: 3rem;
       display: flex;
-      justify-content: center;
-    }
-
-    .brand-lockup {
-      width: 15.625rem;
-      margin: 0 auto;
-      text-align: center;
+      align-items: center;
+      gap: 1rem;
     }
 
     .brand-mark {
       display: inline-flex;
       align-items: center;
-      justify-content: center;
-      width: 100%;
-      min-height: 2.8rem;
-      color: #ffffff;
-      font-size: 1.42rem;
-      font-weight: 700;
+      font-size: 1.3rem;
+      font-weight: 800;
       letter-spacing: 0.08em;
       text-transform: uppercase;
     }
@@ -120,12 +112,12 @@
     }
 
     .show-copy {
-      color: #f4eefc;
+      color: var(--body-font-color);
     }
 
     .show-title {
       margin: 0;
-      color: #f4eefc;
+      color: var(--body-font-color);
       font-size: var(--show-header-title-font-size);
       line-height: 1.2;
       font-weight: 700;
@@ -134,7 +126,7 @@
     .show-description {
       max-width: 44rem;
       margin: 1.35rem 0 0;
-      color: #ddd2ee;
+      color: rgba(246, 239, 230, 0.78);
     }
 
     .episodes-section {
@@ -338,38 +330,8 @@
       display: none;
     }
 
-    .transcript-block {
-      margin-top: 1rem;
-      border-top: 1px solid rgba(255, 255, 255, 0.08);
-      padding-top: 0.95rem;
-    }
-
-    .transcript-toggle {
-      list-style: none;
-      cursor: pointer;
-      color: var(--primary-color);
-      font-weight: 700;
-    }
-
-    .transcript-toggle::-webkit-details-marker {
-      display: none;
-    }
-
-    .transcript-toggle:hover,
-    .transcript-toggle:focus-visible {
-      color: #f4eefc;
-    }
-
-    .transcript-content {
-      max-width: 68rem;
-      margin-top: 0.75rem;
-      color: #ddd2ee;
-      font-size: 0.95rem;
-      line-height: 1.7;
-    }
-
     .site-footer {
-      border-top: 1px solid var(--footer-border);
+      border-top: 1px solid rgba(247, 241, 233, 0.1);
       background: transparent;
     }
 
@@ -379,7 +341,7 @@
       justify-content: center;
       gap: 0.7rem;
       padding: 1.1rem 0 1.6rem;
-      color: var(--footer-copy);
+      color: rgba(255, 255, 255, 0.64);
       font-size: 0.92rem;
     }
 
@@ -418,14 +380,9 @@
         padding-bottom: 1.15rem;
       }
 
-      .brand-lockup {
-        width: 17.5rem;
-      }
-
-      .brand-mark {
-        min-height: 3.25rem;
-        font-size: 1.6rem;
-        letter-spacing: 0.1em;
+      .site-header-inner {
+        align-items: flex-start;
+        flex-direction: column;
       }
 
       .show-header {
@@ -540,23 +497,13 @@
 
       .player-utility button,
       .player-utility a,
-      .transcript-toggle {
-        font-size: 1rem;
-      }
-
-      .transcript-content {
-        font-size: 1rem;
-        line-height: 1.8;
-      }
     }
   </style>
 </head>
 <body>
   <header class="site-header">
     <div class="shell site-header-inner">
-      <div class="brand-lockup">
-        <a class="brand-mark" href="./index.html">Agentic Podcasts</a>
-      </div>
+      <a class="brand-mark" href="./index.html">Agentic Podcasts</a>
     </div>
   </header>
 
@@ -566,7 +513,7 @@
         <div class="show-art">
           <img
             alt="India After Gandhi cover art"
-            src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%2318112a'/><stop offset='0.52' stop-color='%239d57ea'/><stop offset='1' stop-color='%23f0a04b'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.5)' stroke-width='3'/><text x='110' y='770' fill='white' font-family='Muli, Arial, sans-serif' font-size='98' font-weight='700'>India After</text><text x='110' y='870' fill='white' font-family='Muli, Arial, sans-serif' font-size='98' font-weight='700'>Gandhi</text><text x='850' y='798' text-anchor='end' fill='white' font-family='Muli, Arial, sans-serif' font-size='34' letter-spacing='6'>AGENTIC</text><text x='850' y='842' text-anchor='end' fill='white' font-family='Muli, Arial, sans-serif' font-size='34' letter-spacing='6'>PODCASTS</text></svg>"
+            src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%2318132f'/><stop offset='0.52' stop-color='%235a4a8a'/><stop offset='1' stop-color='%231d2f5f'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.5)' stroke-width='3'/><text x='110' y='730' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>India After</text><text x='110' y='830' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>Gandhi</text><text x='850' y='798' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>AGENTIC</text><text x='850' y='842' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>PODCASTS</text></svg>"
           >
         </div>
 
@@ -579,30 +526,24 @@
       </div>
     </section>
 
-    <section class="episodes-section" id="episodes">
+                <section class="episodes-section" id="episodes">
       <div class="shell episode-list">
         <article class="episode-card">
           <p class="episode-meta">Episode 1</p>
-          <h2 class="episode-title">Nation, Partition, and the Making of the Republic</h2>
+          <h2 class="episode-title">Birth in Fire: Partition, Integration, and the Making of the Republic</h2>
           <p class="episode-description-preview">
-            In this episode, we trace the dramatic and often painful formation of modern India, from the idea of
-            the country as an unlikely and deeply divided civilization to the political struggle that brought
-            independence.
+            Partition violence, refugee columns, and the rush to build a new state define India’s first years of freedom.
           </p>
           <div class="episode-details">
             <span class="episode-description-more" data-role="episode-description-more">
-              We follow the collapse of empire, the trauma of Partition, Gandhi's final efforts to
-              contain communal bloodshed, and Nehru's attempt to define India as a secular democratic state. Along
-              the way, the story explores the arguments for and against division, the human cost of freedom, the
-              pressures of refugee resettlement, and the enormous challenge of holding together a nation many
-              believed could never endure.
+              Independence arrives under fire. Lahore burns on the night of 15 August 1947 as Partition unleashes massacres, refugee columns, and the largest displacement in modern South Asian history. The episode follows the first years of the republic: the emergency of refugee resettlement, the integration of princely states, and the struggle to keep India unified while Kashmir erupts and Hyderabad resists. Gandhi’s assassination tests the new state’s moral claim, while Patel and Nehru race to stitch a shattered map together. We end with the Constitution and the first general election, a leap of faith that makes universal franchise real in a poor and traumatized country. The republic is not born whole; it is built through crisis, improvisation, and a decision to trust ordinary citizens with power.
             </span>
             <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
           </div>
           <div class="episode-player">
             <div class="audio-shell">
               <audio class="native-audio" preload="metadata">
-                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/india-after-gandhi-episodes-1-5/india-after-gandhi-episode-1.mp3" type="audio/mpeg">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/india-after-gandhi-episodes-1-5-20260321T1103/episode-1.mp3" type="audio/mpeg">
                 Your browser does not support the audio element.
               </audio>
               <div class="player-row">
@@ -623,35 +564,24 @@
               </div>
             </div>
           </div>
-          <details class="transcript-block">
-            <summary class="transcript-toggle">Transcript</summary>
-            <div class="transcript-content">
-              Add the episode transcript here as speaker paragraphs or timestamped sections. This slot is ready for inline transcript text or generated transcript content later.
-            </div>
-          </details>
         </article>
+
         <article class="episode-card">
           <p class="episode-meta">Episode 2</p>
-          <h2 class="episode-title">Democracy, Development, and the Fractures of a New Nation</h2>
+          <h2 class="episode-title">Nehru’s India: Development, Non-Alignment, and the Recasting of the Union</h2>
           <p class="episode-description-preview">
-            In this episode, we follow India through one of the most consequential stretches of its early post-independence
-            history, as the new republic struggles to hold together political authority, democratic ambition, and regional
-            diversity.
+            Linguistic states, planning, and non-alignment define a confident decade that ends in a hard border war.
           </p>
           <div class="episode-details">
             <span class="episode-description-more" data-role="episode-description-more">
-              The story moves from Congress infighting and the gamble of the first general election to Cold War
-              pressures abroad, economic modernization at home, linguistic conflict, and the uneasy integration of
-              Kashmir and tribal borderlands. Along the way, it shows how Nehru's India was built not through
-              consensus alone, but through argument, improvisation, and repeated tests of the state's legitimacy. It
-              is a portrait of a nation trying to define itself under extraordinary strain.
+              Potti Sriramulu’s death forces Nehru to create Andhra and opens the era of linguistic states, redrawing India’s internal map from below. The States Reorganisation Commission and the creation of Andhra become a template, while Nehru projects non-alignment at Bandung and the United Nations. The episode tracks the Nehruvian project: planning commissions, dams and steel plants, non-alignment abroad, and a tightrope between idealism and hard power. We move from Kashmir and Pakistan to the emerging conflict with China, where diplomatic confidence collides with a brutal border war in 1962. Inside India, Congress dominance masks regional pressures, while the state expands education, industry, and bureaucracy. The Nehru years leave a paradoxical legacy: a democratic and developmental vision that enlarges the Union, even as external shocks and internal demands begin to fray its certainties.
             </span>
             <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
           </div>
           <div class="episode-player">
             <div class="audio-shell">
               <audio class="native-audio" preload="metadata">
-                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/india-after-gandhi-episodes-1-5/india-after-gandhi-episode-2.mp3" type="audio/mpeg">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/india-after-gandhi-episodes-1-5-20260321T1103/episode-2.mp3" type="audio/mpeg">
                 Your browser does not support the audio element.
               </audio>
               <div class="player-row">
@@ -672,35 +602,24 @@
               </div>
             </div>
           </div>
-          <details class="transcript-block">
-            <summary class="transcript-toggle">Transcript</summary>
-            <div class="transcript-content">
-              Add the episode transcript here as speaker paragraphs or timestamped sections. This slot is ready for inline transcript text or generated transcript content later.
-            </div>
-          </details>
         </article>
+
         <article class="episode-card">
           <p class="episode-meta">Episode 3</p>
-          <h2 class="episode-title">Power, Nationhood, and the Strains of Democracy</h2>
+          <h2 class="episode-title">After Nehru: Succession, Populism, and the Emergency State</h2>
           <p class="episode-description-preview">
-            We follow India through a decisive phase of its early republic, when independence gave way to the
-            harder work of governing a vast and divided nation.
+            Succession battles and mass politics lead to the 1975 Emergency and the suspension of civil liberties.
           </p>
           <div class="episode-details">
             <span class="episode-description-more" data-role="episode-description-more">
-              The story moves from Congress infighting and the first democratic election to Cold War diplomacy,
-              state-led development, linguistic conflict, the Kashmir dispute, and unrest in India's tribal
-              borderlands. At the center is Jawaharlal Nehru's effort to hold together democracy, national unity,
-              and social transformation under immense pressure. What emerges is not a smooth nation-building
-              story, but a portrait of a state repeatedly tested by regional demands, ideological rivalry, and the
-              challenge of turning freedom into a durable political order.
+              After the 1962 China war, Nehru’s authority ebbs and succession politics takes over. Shastri’s brief tenure, the 1965 war, and Indira Gandhi’s rise set the stage for a more personal style of rule. The episode follows the 1967 electoral shock, factional battles inside Congress, and the populist turn that culminates in the 1971 victory and a centralized executive. The Bangladesh war and the rhetoric of Garibi Hatao deepen Indira’s authority even as institutions strain. By 1975, economic strain and mass protests meet a court verdict that threatens Indira’s seat. The response is the Emergency: press censorship, arrests, and the suspension of civil liberties. The narrative shows how a constitutional democracy chose coercion over compromise and how that choice reshaped Indian politics for decades.
             </span>
             <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
           </div>
           <div class="episode-player">
             <div class="audio-shell">
               <audio class="native-audio" preload="metadata">
-                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/india-after-gandhi-episodes-1-5/india-after-gandhi-episode-3.mp3" type="audio/mpeg">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/india-after-gandhi-episodes-1-5-20260321T1103/episode-3.mp3" type="audio/mpeg">
                 Your browser does not support the audio element.
               </audio>
               <div class="player-row">
@@ -721,35 +640,24 @@
               </div>
             </div>
           </div>
-          <details class="transcript-block">
-            <summary class="transcript-toggle">Transcript</summary>
-            <div class="transcript-content">
-              Add the episode transcript here as speaker paragraphs or timestamped sections. This slot is ready for inline transcript text or generated transcript content later.
-            </div>
-          </details>
         </article>
+
         <article class="episode-card">
           <p class="episode-meta">Episode 4</p>
-          <h2 class="episode-title">From Succession to Upheaval: India's Long Political Reckoning</h2>
+          <h2 class="episode-title">Democracy Unsettled: Post-Congress Politics, Identity, and Violence</h2>
           <p class="episode-description-preview">
-            We trace India's turbulent political journey from the aftermath of Nehru's death to the unstable
-            close of the 1980s.
+            After the Emergency, India becomes more competitive and more fragmented, with rising regional and communal tensions.
           </p>
           <div class="episode-details">
             <span class="episode-description-more" data-role="episode-description-more">
-              The story moves through war, succession struggles, Indira Gandhi's rise, her populist reinvention
-              of Congress, and the mounting pressures that reshaped Indian democracy. Along the way, we follow
-              regional unrest, opposition coalitions, the strains on institutions, and the changing relationship
-              between national power and popular anger. By the time Rajiv Gandhi enters center stage, the old
-              order is visibly fraying. What emerges is a portrait of a democracy under pressure, improvising
-              through crisis, ambition, violence, and reinvention.
+              The Emergency’s violence is captured in Turkman Gate, where bulldozers, tear gas, and bullets cleared a Delhi neighborhood in the name of order. From there the episode traces the post-Emergency landscape: the Janata experiment, Congress’s return, and a democracy that becomes more competitive yet more fragmented. Regional parties rise and state governments become the arena for experimentation and conflict. We follow the rise of identity politics and the spread of coercive state power into Punjab, Kashmir, and the Northeast, alongside communal riots that test the secular promise of the republic. The story is one of contradiction: widening participation and local power on the one hand, and recurring episodes of repression on the other. India’s institutions survive, but the social fabric is repeatedly strained by violence, impunity, and the politics of fear.
             </span>
             <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
           </div>
           <div class="episode-player">
             <div class="audio-shell">
               <audio class="native-audio" preload="metadata">
-                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/india-after-gandhi-episodes-1-5/india-after-gandhi-episode-4.mp3" type="audio/mpeg">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/india-after-gandhi-episodes-1-5-20260321T1103/episode-4.mp3" type="audio/mpeg">
                 Your browser does not support the audio element.
               </audio>
               <div class="player-row">
@@ -770,35 +678,24 @@
               </div>
             </div>
           </div>
-          <details class="transcript-block">
-            <summary class="transcript-toggle">Transcript</summary>
-            <div class="transcript-content">
-              Add the episode transcript here as speaker paragraphs or timestamped sections. This slot is ready for inline transcript text or generated transcript content later.
-            </div>
-          </details>
         </article>
+
         <article class="episode-card">
           <p class="episode-meta">Episode 5</p>
-          <h2 class="episode-title">Mandal, Markets, and the Movies: India's Next Great Transformation</h2>
+          <h2 class="episode-title">New India? Coalition Rule, Liberalization, and Popular Culture</h2>
           <p class="episode-description-preview">
-            This episode follows India as politics spills into every part of public life.
+            Coalition politics, market reforms, and mass media remake public life without resolving India’s inequalities.
           </p>
           <div class="episode-details">
             <span class="episode-description-more" data-role="episode-description-more">
-              We move through the Mandal moment and the reshaping of caste politics, the rise of new parties and
-              social coalitions, and the unrest that exposed how fragile state power could be. From Bihar's
-              breakdowns to militancy in Kashmir, the story shows a democracy under strain but constantly
-              reinventing itself. It also tracks another revolution unfolding in parallel: the transformation of
-              culture, entertainment, and national aspiration through film, music, and cricket. The result is a
-              portrait of modern India at a turning point, where identity, power, and popular culture begin to
-              define the country's next era.
+              Coalition rule replaces one-party dominance as the economy opens to liberalization. The episode moves from the Mandal era and the rise of the BJP to the reforms of the 1990s, tracking how market growth and globalization coexist with stubborn hunger and inequality. We see politics recalibrated around region, caste, and media spectacle, while satellite television and Bollywood knit together a sprawling, multilingual public. The narrative follows the country into the Vajpayee years, with technology, consumer culture, and diaspora influence rising alongside communal tension. Economic growth accelerates, but rural distress and corruption keep the political mood volatile. India is neither the failed state of pessimists nor the superpower of glossy headlines. It is louder, richer, more democratic, more unequal, and harder to govern — a complex republic still arguing about who it is.
             </span>
             <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
           </div>
           <div class="episode-player">
             <div class="audio-shell">
               <audio class="native-audio" preload="metadata">
-                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/india-after-gandhi-episodes-1-5/india-after-gandhi-episode-5.mp3" type="audio/mpeg">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/india-after-gandhi-episodes-1-5-20260321T1103/episode-5.mp3" type="audio/mpeg">
                 Your browser does not support the audio element.
               </audio>
               <div class="player-row">
@@ -819,12 +716,6 @@
               </div>
             </div>
           </div>
-          <details class="transcript-block">
-            <summary class="transcript-toggle">Transcript</summary>
-            <div class="transcript-content">
-              Add the episode transcript here as speaker paragraphs or timestamped sections. This slot is ready for inline transcript text or generated transcript content later.
-            </div>
-          </details>
         </article>
       </div>
     </section>
