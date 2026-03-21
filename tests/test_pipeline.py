@@ -16,7 +16,7 @@ from podcast_agent.cli.app import app
 from podcast_agent.config import Settings
 from podcast_agent.db import InMemoryRepository
 from podcast_agent.llm import HeuristicLLMClient
-from podcast_agent.pipeline.orchestrator import PipelineOrchestrator
+from podcast_agent.pipeline.orchestrator import EpisodePreparation, PipelineOrchestrator
 from podcast_agent.schemas.models import (
     ClaimAssessment,
     EpisodeOutput,
@@ -1083,8 +1083,8 @@ def test_run_pipeline_processes_episodes_in_parallel_when_enabled(tmp_path: Path
     thread_names: list[str] = []
     lock = threading.Lock()
 
-    def fake_run_episode_plan(book_id: str, episode_plan: EpisodePlan, *, synthesize_audio: bool) -> EpisodeOutput:
-        del book_id, synthesize_audio
+    def fake_prepare_episode_plan(book_id: str, episode_plan: EpisodePlan) -> EpisodePreparation:
+        del book_id
         with lock:
             thread_names.append(threading.current_thread().name)
         barrier.wait(timeout=1)
@@ -1099,9 +1099,29 @@ def test_run_pipeline_processes_episodes_in_parallel_when_enabled(tmp_path: Path
             overall_status="pass",
             claim_assessments=[],
         )
-        return EpisodeOutput(plan=episode_plan, script=script, report=report)
+        return EpisodePreparation(
+            plan=episode_plan,
+            script=script,
+            report=report,
+            repair_attempts=[],
+        )
 
-    monkeypatch.setattr(orchestrator, "_run_episode_plan", fake_run_episode_plan)
+    def fake_finalize_episode_plan(
+        book_id: str,
+        preparation: EpisodePreparation,
+        *,
+        synthesize_audio: bool,
+        allow_downstream: bool,
+    ) -> EpisodeOutput:
+        del book_id, synthesize_audio, allow_downstream
+        return EpisodeOutput(
+            plan=preparation.plan,
+            script=preparation.script,
+            report=preparation.report,
+        )
+
+    monkeypatch.setattr(orchestrator, "_prepare_episode_plan", fake_prepare_episode_plan)
+    monkeypatch.setattr(orchestrator, "_finalize_episode_plan", fake_finalize_episode_plan)
 
     result = orchestrator.run_pipeline(book_path, title="Observatory Book", author="A. Writer", episode_count=2)
 
@@ -1109,6 +1129,234 @@ def test_run_pipeline_processes_episodes_in_parallel_when_enabled(tmp_path: Path
     assert result["episodes"][0]["plan"]["sequence"] == 1
     assert result["episodes"][1]["plan"]["sequence"] == 2
     assert len(set(thread_names)) == 2
+
+
+def test_run_pipeline_defers_spoken_delivery_until_grounding_barrier(tmp_path: Path, monkeypatch) -> None:
+    book_path = tmp_path / "book.txt"
+    book_path.write_text(BOOK_TEXT, encoding="utf-8")
+    settings = Settings()
+    settings = settings.model_copy(
+        update={
+            "pipeline": settings.pipeline.model_copy(
+                update={
+                    "artifact_root": tmp_path / "runs",
+                    "minimum_source_words_per_episode": 50,
+                    "episode_parallelism": 2,
+                }
+            )
+        }
+    )
+    orchestrator = PipelineOrchestrator(
+        repository=InMemoryRepository(),
+        llm=HeuristicLLMClient(),
+        settings=settings,
+    )
+    prepared_count = 0
+    prepared_lock = threading.Lock()
+    all_prepared = threading.Event()
+
+    def fake_prepare_episode_plan(book_id: str, episode_plan: EpisodePlan) -> EpisodePreparation:
+        nonlocal prepared_count
+        del book_id
+        with prepared_lock:
+            prepared_count += 1
+            if prepared_count == 2:
+                all_prepared.set()
+        script = EpisodeScript(
+            episode_id=episode_plan.episode_id,
+            title=episode_plan.title,
+            narrator="Narrator",
+            segments=[],
+        )
+        report = GroundingReport(
+            episode_id=episode_plan.episode_id,
+            overall_status="pass",
+            claim_assessments=[],
+        )
+        return EpisodePreparation(
+            plan=episode_plan,
+            script=script,
+            report=report,
+            repair_attempts=[],
+        )
+
+    def fake_spoken_delivery_episode(book_id: str, script: EpisodeScript):
+        del book_id, script
+        assert all_prepared.is_set()
+        return None, None, None
+
+    def fake_finalize_episode_plan(
+        book_id: str,
+        preparation: EpisodePreparation,
+        *,
+        synthesize_audio: bool,
+        allow_downstream: bool,
+    ) -> EpisodeOutput:
+        del synthesize_audio
+        if allow_downstream:
+            orchestrator.spoken_delivery_episode(book_id, preparation.script)
+        return EpisodeOutput(
+            plan=preparation.plan,
+            script=preparation.script,
+            report=preparation.report,
+        )
+
+    monkeypatch.setattr(orchestrator, "_prepare_episode_plan", fake_prepare_episode_plan)
+    monkeypatch.setattr(orchestrator, "_finalize_episode_plan", fake_finalize_episode_plan)
+    monkeypatch.setattr(orchestrator, "spoken_delivery_episode", fake_spoken_delivery_episode)
+
+    result = orchestrator.run_pipeline(book_path, title="Observatory Book", author="A. Writer", episode_count=2)
+
+    assert len(result["episodes"]) == 2
+
+
+def test_run_pipeline_skips_downstream_when_any_episode_fails_grounding(tmp_path: Path, monkeypatch) -> None:
+    book_path = tmp_path / "book.txt"
+    book_path.write_text(BOOK_TEXT, encoding="utf-8")
+    settings = Settings()
+    settings = settings.model_copy(
+        update={
+            "pipeline": settings.pipeline.model_copy(
+                update={
+                    "artifact_root": tmp_path / "runs",
+                    "minimum_source_words_per_episode": 50,
+                    "episode_parallelism": 2,
+                }
+            )
+        }
+    )
+    orchestrator = PipelineOrchestrator(
+        repository=InMemoryRepository(),
+        llm=HeuristicLLMClient(),
+        settings=settings,
+    )
+
+    def fake_prepare_episode_plan(book_id: str, episode_plan: EpisodePlan) -> EpisodePreparation:
+        del book_id
+        script = EpisodeScript(
+            episode_id=episode_plan.episode_id,
+            title=episode_plan.title,
+            narrator="Narrator",
+            segments=[],
+        )
+        report = GroundingReport(
+            episode_id=episode_plan.episode_id,
+            overall_status="fail" if episode_plan.sequence == 2 else "pass",
+            claim_assessments=[],
+        )
+        return EpisodePreparation(
+            plan=episode_plan,
+            script=script,
+            report=report,
+            repair_attempts=[],
+        )
+
+    def forbidden_spoken_delivery_episode(book_id: str, script: EpisodeScript):
+        del book_id, script
+        raise AssertionError("spoken delivery should be skipped when grounding fails")
+
+    def forbidden_render_manifest(script: EpisodeScript, report: GroundingReport, spoken_script=None):
+        del script, report, spoken_script
+        raise AssertionError("render manifest should be skipped when grounding fails")
+
+    monkeypatch.setattr(orchestrator, "_prepare_episode_plan", fake_prepare_episode_plan)
+    monkeypatch.setattr(orchestrator, "spoken_delivery_episode", forbidden_spoken_delivery_episode)
+    monkeypatch.setattr(orchestrator, "render_manifest", forbidden_render_manifest)
+
+    result = orchestrator.run_pipeline(book_path, title="Observatory Book", author="A. Writer", episode_count=2)
+
+    assert len(result["episodes"]) == 2
+    for episode in result["episodes"]:
+        assert episode["spoken_script"] is None
+        assert episode["spoken_delivery"] is None
+        assert episode["manifest"] is None
+        assert episode["audio_manifest"] is None
+
+
+def test_grounding_rolls_forward_with_limited_parallelism(tmp_path: Path, monkeypatch) -> None:
+    settings = Settings()
+    settings = settings.model_copy(
+        update={
+            "pipeline": settings.pipeline.model_copy(
+                update={
+                    "artifact_root": tmp_path / "runs",
+                    "episode_parallelism": 2,
+                }
+            )
+        }
+    )
+    orchestrator = PipelineOrchestrator(
+        repository=InMemoryRepository(),
+        llm=HeuristicLLMClient(),
+        settings=settings,
+    )
+    episode_plans = [
+        EpisodePlan(
+            episode_id=f"episode-{index}",
+            sequence=index,
+            title=f"Episode {index}",
+            synopsis="Test",
+            chapter_ids=[],
+            beats=[],
+        )
+        for index in range(1, 4)
+    ]
+    start_times: dict[str, float] = {}
+    finish_times: dict[str, float] = {}
+    lock = threading.Lock()
+    barrier = threading.Barrier(2)
+
+    def fake_prepare_episode_plan(book_id: str, episode_plan: EpisodePlan) -> EpisodePreparation:
+        del book_id
+        start = time.monotonic()
+        with lock:
+            start_times[episode_plan.episode_id] = start
+        if episode_plan.sequence in (1, 2):
+            barrier.wait(timeout=1)
+            time.sleep(0.05 if episode_plan.sequence == 1 else 0.2)
+        else:
+            time.sleep(0.01)
+        finish = time.monotonic()
+        with lock:
+            finish_times[episode_plan.episode_id] = finish
+        script = EpisodeScript(
+            episode_id=episode_plan.episode_id,
+            title=episode_plan.title,
+            narrator="Narrator",
+            segments=[],
+        )
+        report = GroundingReport(
+            episode_id=episode_plan.episode_id,
+            overall_status="pass",
+            claim_assessments=[],
+        )
+        return EpisodePreparation(
+            plan=episode_plan,
+            script=script,
+            report=report,
+            repair_attempts=[],
+        )
+
+    def fake_finalize_episode_plan(
+        book_id: str,
+        preparation: EpisodePreparation,
+        *,
+        synthesize_audio: bool,
+        allow_downstream: bool,
+    ) -> EpisodeOutput:
+        del book_id, synthesize_audio, allow_downstream
+        return EpisodeOutput(
+            plan=preparation.plan,
+            script=preparation.script,
+            report=preparation.report,
+        )
+
+    monkeypatch.setattr(orchestrator, "_prepare_episode_plan", fake_prepare_episode_plan)
+    monkeypatch.setattr(orchestrator, "_finalize_episode_plan", fake_finalize_episode_plan)
+
+    orchestrator._process_episode_plans("test-book", episode_plans, synthesize_audio=False)
+
+    assert start_times["episode-3"] < finish_times["episode-2"]
 
 
 def test_run_pipeline_requires_episode_count_cli(tmp_path: Path) -> None:

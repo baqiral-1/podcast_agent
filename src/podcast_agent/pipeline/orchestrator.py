@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from datetime import UTC, datetime
 import io
 import json
@@ -58,6 +59,14 @@ class WavMergeError(RuntimeError):
     def __init__(self, message: str, diagnostics: list[dict[str, object]]) -> None:
         super().__init__(message)
         self.diagnostics = diagnostics
+
+
+@dataclass
+class EpisodePreparation:
+    plan: EpisodePlan
+    script: EpisodeScript
+    report: GroundingReport
+    repair_attempts: list[RepairResult]
 
 
 class PipelineOrchestrator:
@@ -1058,32 +1067,64 @@ class PipelineOrchestrator:
         *,
         synthesize_audio: bool,
     ) -> list[EpisodeOutput]:
+        preparations: list[EpisodePreparation] = []
         if self.settings.pipeline.episode_parallelism == 1 or len(episode_plans) <= 1:
-            return [
-                self._run_episode_plan(book_id, episode_plan, synthesize_audio=synthesize_audio)
-                for episode_plan in episode_plans
-            ]
-        with ThreadPoolExecutor(max_workers=self.settings.pipeline.episode_parallelism) as executor:
-            episode_outputs = list(
-                executor.map(
-                    lambda episode_plan: self._run_episode_plan(
-                        book_id,
-                        episode_plan,
-                        synthesize_audio=synthesize_audio,
-                    ),
-                    episode_plans,
+            preparations = [self._prepare_episode_plan(book_id, episode_plan) for episode_plan in episode_plans]
+        else:
+            with ThreadPoolExecutor(max_workers=self.settings.pipeline.episode_parallelism) as executor:
+                futures = [
+                    executor.submit(self._prepare_episode_plan, book_id, episode_plan)
+                    for episode_plan in episode_plans
+                ]
+                for future in as_completed(futures):
+                    preparations.append(future.result())
+
+        failed_episode_ids = [
+            preparation.plan.episode_id
+            for preparation in sorted(preparations, key=lambda prep: prep.plan.sequence)
+            if preparation.report.overall_status != "pass"
+        ]
+        grounding_passed = not failed_episode_ids
+        self.run_logger.log(
+            "episode_grounding_barrier",
+            book_id=book_id,
+            passed=grounding_passed,
+            failed_episode_ids=failed_episode_ids,
+        )
+
+        episode_outputs: list[EpisodeOutput] = []
+        if not grounding_passed or len(preparations) <= 1 or self.settings.pipeline.episode_parallelism == 1:
+            episode_outputs = [
+                self._finalize_episode_plan(
+                    book_id,
+                    preparation,
+                    synthesize_audio=synthesize_audio,
+                    allow_downstream=grounding_passed,
                 )
-            )
+                for preparation in preparations
+            ]
+        else:
+            with ThreadPoolExecutor(max_workers=self.settings.pipeline.episode_parallelism) as executor:
+                futures = [
+                    executor.submit(
+                        self._finalize_episode_plan,
+                        book_id,
+                        preparation,
+                        synthesize_audio=synthesize_audio,
+                        allow_downstream=grounding_passed,
+                    )
+                    for preparation in preparations
+                ]
+                for future in as_completed(futures):
+                    episode_outputs.append(future.result())
         episode_outputs.sort(key=lambda episode_output: episode_output.plan.sequence)
         return episode_outputs
 
-    def _run_episode_plan(
+    def _prepare_episode_plan(
         self,
         book_id: str,
         episode_plan: EpisodePlan,
-        *,
-        synthesize_audio: bool,
-    ) -> EpisodeOutput:
+    ) -> EpisodePreparation:
         try:
             script = self.write_episode(book_id, episode_plan)
         except Exception as exc:
@@ -1118,49 +1159,68 @@ class PipelineOrchestrator:
             "factual_script",
             script.model_dump(mode="json"),
         )
+        return EpisodePreparation(
+            plan=episode_plan,
+            script=script,
+            report=report,
+            repair_attempts=repair_attempts,
+        )
+
+    def _finalize_episode_plan(
+        self,
+        book_id: str,
+        preparation: EpisodePreparation,
+        *,
+        synthesize_audio: bool,
+        allow_downstream: bool,
+    ) -> EpisodeOutput:
         spoken_script = None
         spoken_delivery = None
         arc_plan = None
-        if report.overall_status == "pass":
-            spoken_script, spoken_delivery, arc_plan = self.spoken_delivery_episode(book_id, script)
+        if allow_downstream and preparation.report.overall_status == "pass":
+            spoken_script, spoken_delivery, arc_plan = self.spoken_delivery_episode(book_id, preparation.script)
             if spoken_script is not None and spoken_delivery is not None:
                 self._write_artifact(
-                    self._episode_artifact_key(book_id, episode_plan.episode_id),
+                    self._episode_artifact_key(book_id, preparation.plan.episode_id),
                     "spoken_script",
                     spoken_script.model_dump(mode="json"),
                 )
                 self._write_artifact(
-                    self._episode_artifact_key(book_id, episode_plan.episode_id),
+                    self._episode_artifact_key(book_id, preparation.plan.episode_id),
                     "spoken_delivery",
                     spoken_delivery.model_dump(mode="json"),
                 )
                 if arc_plan is not None:
                     self._write_artifact(
-                        self._episode_artifact_key(book_id, episode_plan.episode_id),
+                        self._episode_artifact_key(book_id, preparation.plan.episode_id),
                         "spoken_delivery_arc_plan",
                         arc_plan.model_dump(mode="json"),
                     )
         manifest = None
         audio_manifest = None
-        if report.overall_status == "pass":
-            manifest = self.render_manifest(script, report, spoken_script=spoken_script)
+        if allow_downstream and preparation.report.overall_status == "pass":
+            manifest = self.render_manifest(
+                preparation.script,
+                preparation.report,
+                spoken_script=spoken_script,
+            )
             if synthesize_audio:
-                spoken_script_artifact = self._load_spoken_script_artifact(book_id, episode_plan.episode_id)
-                manifest = self._render_manifest_from_spoken_script(spoken_script_artifact, report)
+                spoken_script_artifact = self._load_spoken_script_artifact(book_id, preparation.plan.episode_id)
+                manifest = self._render_manifest_from_spoken_script(spoken_script_artifact, preparation.report)
                 manifest = self._prepare_manifest_for_audio(manifest)
                 audio_manifest = self.synthesize_audio(manifest)
         episode_output = EpisodeOutput(
-            plan=episode_plan,
-            script=script,
-            report=report,
+            plan=preparation.plan,
+            script=preparation.script,
+            report=preparation.report,
             spoken_script=spoken_script,
             spoken_delivery=spoken_delivery,
             manifest=manifest,
             audio_manifest=audio_manifest,
-            repair_attempts=repair_attempts,
+            repair_attempts=preparation.repair_attempts,
         )
         self._write_artifact(
-            self._episode_artifact_key(book_id, episode_plan.episode_id),
+            self._episode_artifact_key(book_id, preparation.plan.episode_id),
             "episode_output",
             episode_output.model_dump(mode="json"),
         )
