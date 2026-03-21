@@ -90,10 +90,9 @@ class SpokenDeliveryConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     enabled: bool = Field(default=True)
-    max_expansion_ratio: float = Field(default=1.2, gt=0.0)
-    target_expansion_ratio: float = Field(default=1.1, gt=0.0)
-    retry_enabled: bool = Field(default=True)
-    tone_preset: str = Field(default="documentary_podcast")
+    timeout_seconds: float = Field(default=1200.0, gt=0.0)
+    chunk_min_words: int = Field(default=700, ge=100)
+    chunk_max_words: int = Field(default=900, ge=100)
 
 
 class PipelineConfig(BaseModel):
@@ -113,7 +112,6 @@ class PipelineConfig(BaseModel):
     beat_write_retry_attempts: int = Field(default=2, ge=0)
     beat_write_timeout_seconds: float = Field(default=180.0, gt=0.0)
     grounding_parallelism: int = Field(default=6, ge=1)
-    spoken_delivery_parallelism: int = Field(default=6, ge=1)
     minimum_source_words_per_episode: int = Field(default=50000, ge=1000)
     min_episode_source_ratio: float = Field(default=0.3, gt=0.0, le=1.0)
     spoken_words_per_minute: int = Field(default=130, ge=80)

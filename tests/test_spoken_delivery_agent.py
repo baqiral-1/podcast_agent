@@ -1,14 +1,10 @@
-"""Tests for the spoken-delivery agent."""
+"""Tests for the full-episode spoken-delivery agent."""
 
 from __future__ import annotations
-
-import threading
-import time
 
 from podcast_agent.agents.spoken_delivery_agent import SpokenDeliveryAgent
 from podcast_agent.eval.rewrite_metrics import check_fidelity, extract_names
 from podcast_agent.llm.base import LLMClient
-from podcast_agent.prompts.spoken_delivery import build_spoken_delivery_instructions
 from podcast_agent.schemas.models import EpisodeScript, EpisodeSegment, ScriptClaim
 
 
@@ -49,180 +45,68 @@ def _build_script() -> EpisodeScript:
                 ],
                 citations=["chunk-2"],
             ),
-            EpisodeSegment(
-                segment_id="episode-1-segment-3",
-                beat_id="beat-2",
-                heading="Aftermath",
-                narration="The struggle left the city shattered, and survivors faced reprisals in the months that followed.",
-                claims=[
-                    ScriptClaim(
-                        claim_id="beat-2-claim-1",
-                        text="Survivors faced reprisals.",
-                        evidence_chunk_ids=["chunk-3"],
-                    )
-                ],
-                citations=["chunk-3"],
-            ),
         ],
     )
 
 
-class ContextCapturingSpokenDeliveryLLM(LLMClient):
-    """Stub that records adjacent context and returns a bounded rewrite."""
+class TwoCallSpokenDeliveryLLM(LLMClient):
+    """Stub that returns a plan then narration for full-episode flow."""
 
     def __init__(self) -> None:
         super().__init__()
-        self.payloads: list[dict] = []
+        self.calls: list[tuple[str, dict]] = []
 
     def generate_json(self, schema_name, instructions, payload, response_model):
-        assert schema_name == "spoken_delivery_segment"
-        self.payloads.append(payload)
-        current = payload["current_segment"]["narration"]
-        return response_model.model_validate({"narration": f"At this point, {current}"})
-
-
-class RetryingSpokenDeliveryLLM(LLMClient):
-    """Stub that over-expands once, then returns a bounded retry."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.calls = 0
-
-    def generate_json(self, schema_name, instructions, payload, response_model):
-        assert schema_name == "spoken_delivery_segment"
-        self.calls += 1
-        if self.calls == 1:
+        self.calls.append((schema_name, payload))
+        if schema_name == "spoken_delivery_plan":
             return response_model.model_validate(
                 {
-                    "narration": (
-                        payload["current_segment"]["narration"]
-                        + " This elaborates the same facts again and again without adding useful clarity."
-                    )
-                    * 2
+                    "theme": "Test theme",
+                    "threads": [
+                        {
+                            "name": "Thread",
+                            "introduced": "Act 1",
+                            "developed": "Act 2",
+                            "payoff": "Act 3",
+                            "listener_feeling": "Relief",
+                        }
+                    ],
+                    "opening": {
+                        "scene": "Opening scene",
+                        "why": "Hook",
+                        "pullback_transition": "Pull back.",
+                    },
+                    "acts": [
+                        {
+                            "number": 1,
+                            "title": "Act 1",
+                            "source_material": "Opening",
+                            "why_here": "Start here",
+                            "driving_tension": "Why now",
+                            "transition_to_next": "Next",
+                        }
+                    ],
+                    "plants_and_payoffs": [],
+                    "key_moments": [],
                 }
             )
-        return response_model.model_validate({"narration": payload["current_segment"]["narration"]})
+        if schema_name == "spoken_delivery_narration":
+            narration = payload.get("source_script", "").strip()
+            return response_model.model_validate({"narration": narration})
+        raise AssertionError(f"Unexpected schema name: {schema_name}")
 
 
-class OverlongSpokenDeliveryLLM(LLMClient):
-    """Stub that stays too long on every attempt, forcing fallback."""
+def test_spoken_delivery_full_episode_two_call_flow() -> None:
+    llm = TwoCallSpokenDeliveryLLM()
+    agent = SpokenDeliveryAgent(llm, chunk_min_words=1, chunk_max_words=50)
 
-    def generate_json(self, schema_name, instructions, payload, response_model):
-        assert schema_name == "spoken_delivery_segment"
-        text = payload["current_segment"]["narration"]
-        return response_model.model_validate({"narration": f"{text} {text}"})
+    spoken_script, spoken_delivery, arc_plan = agent.rewrite_full_episode_two_call(_build_script())
 
-
-class ParallelContextCapturingSpokenDeliveryLLM(LLMClient):
-    """Stub that proves rewrite order is preserved under concurrent execution."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.payloads: list[dict] = []
-        self._lock = threading.Lock()
-
-    def generate_json(self, schema_name, instructions, payload, response_model):
-        assert schema_name == "spoken_delivery_segment"
-        with self._lock:
-            self.payloads.append(payload)
-        segment_id = payload["current_segment"]["segment_id"]
-        if segment_id == "episode-1-segment-1":
-            time.sleep(0.03)
-        elif segment_id == "episode-1-segment-2":
-            time.sleep(0.01)
-        current = payload["current_segment"]["narration"]
-        return response_model.model_validate({"narration": f"{current} [{segment_id}]"})
-
-
-def test_spoken_delivery_uses_previous_and_next_context() -> None:
-    llm = ContextCapturingSpokenDeliveryLLM()
-    agent = SpokenDeliveryAgent(llm, spoken_delivery_parallelism=1)
-
-    spoken_script, spoken_delivery = agent.rewrite(_build_script())
-
-    assert len(llm.payloads) == 3
-    assert llm.payloads[0]["previous_segment"] is None
-    assert llm.payloads[0]["next_segment"]["segment_id"] == "episode-1-segment-2"
-    assert llm.payloads[1]["previous_segment"]["segment_id"] == "episode-1-segment-1"
-    assert llm.payloads[1]["next_segment"]["segment_id"] == "episode-1-segment-3"
-    assert llm.payloads[2]["next_segment"] is None
-    assert spoken_script.segments[1].segment_id == "episode-1-segment-2"
-    assert spoken_script.segments[1].beat_id == "beat-1"
-    assert spoken_delivery.segments[1].fidelity_passed is True
-
-
-def test_spoken_delivery_retries_when_output_exceeds_max_expansion() -> None:
-    llm = RetryingSpokenDeliveryLLM()
-    agent = SpokenDeliveryAgent(llm, max_expansion_ratio=1.2, target_expansion_ratio=1.1)
-
-    spoken_script, spoken_delivery = agent.rewrite(_build_script())
-
-    assert llm.calls == 4
-    assert spoken_delivery.segments[0].retry_applied is True
-    assert spoken_script.segments[0].expansion_ratio <= 1.2
-
-
-def test_spoken_delivery_falls_back_when_output_stays_too_long() -> None:
-    llm = OverlongSpokenDeliveryLLM()
-    script = _build_script()
-    agent = SpokenDeliveryAgent(llm)
-
-    spoken_script, spoken_delivery = agent.rewrite(script)
-
-    assert spoken_delivery.segments[0].fallback_used is True
-    assert spoken_script.segments[0].narration == script.segments[0].narration
-    assert [attempt.attempt for attempt in spoken_delivery.segments[0].attempts] == [
-        "initial",
-        "retry",
-        "fallback",
-    ]
-    assert spoken_delivery.segments[0].attempts[0].failure_reasons == ["expansion_limit"]
-    assert spoken_delivery.segments[0].attempts[1].failure_reasons == ["expansion_limit"]
-    assert spoken_delivery.segments[0].attempts[2].failure_reasons == []
-
-
-def test_spoken_delivery_prompt_uses_structural_transformation_wording() -> None:
-    instructions = build_spoken_delivery_instructions(
-        tone_preset="educational_suspenseful",
-        target_expansion_ratio=1.1,
-        max_expansion_ratio=1.2,
-    )
-
-    assert "Rewrite the following text for spoken podcast delivery." in instructions
-    assert "Your task is a STRUCTURAL TRANSFORMATION, not a creative rewrite." in instructions
-    assert "Preserve ALL original meaning, facts, and details" in instructions
-    assert "Maintain the same paragraph structure and ordering" in instructions
-    assert "AVOID:" in instructions
-    assert "MENTAL MODEL:" in instructions
-    assert "Previous and next segments are provided only as read-only context" in instructions
-    assert "Return only the rewritten narration for the current segment." in instructions
-    assert "110% to 120%" in instructions
-    assert "If longer than 120%" in instructions
-
-
-def test_spoken_delivery_parallel_rewrite_preserves_segment_order() -> None:
-    llm = ParallelContextCapturingSpokenDeliveryLLM()
-    agent = SpokenDeliveryAgent(llm, spoken_delivery_parallelism=4)
-    script = _build_script()
-
-    spoken_script, spoken_delivery = agent.rewrite(script)
-
-    assert [segment.segment_id for segment in spoken_script.segments] == [
-        "episode-1-segment-1",
-        "episode-1-segment-2",
-        "episode-1-segment-3",
-    ]
-    assert [segment.narration for segment in spoken_script.segments] == [
-        script.segments[0].narration + " [episode-1-segment-1]",
-        script.segments[1].narration + " [episode-1-segment-2]",
-        script.segments[2].narration + " [episode-1-segment-3]",
-    ]
-    assert [segment_result.segment_id for segment_result in spoken_delivery.segments] == [
-        "episode-1-segment-1",
-        "episode-1-segment-2",
-        "episode-1-segment-3",
-    ]
-    assert len(llm.payloads) == 3
+    assert arc_plan.theme == "Test theme"
+    assert spoken_delivery.chunk_count >= 1
+    assert spoken_script.narration != ""
+    assert llm.calls[0][0] == "spoken_delivery_plan"
+    assert llm.calls[1][0] == "spoken_delivery_narration"
 
 
 def test_extract_names_filters_discourse_tokens_and_keeps_real_entities() -> None:
@@ -283,15 +167,3 @@ def test_check_fidelity_does_not_fail_when_number_is_dropped() -> None:
 
     assert fidelity.passed is True
     assert fidelity.missing_numbers == []
-
-
-def test_spoken_delivery_successful_segment_records_attempt_diagnostics() -> None:
-    llm = ContextCapturingSpokenDeliveryLLM()
-    agent = SpokenDeliveryAgent(llm, spoken_delivery_parallelism=1)
-
-    _, spoken_delivery = agent.rewrite(_build_script())
-
-    attempts = spoken_delivery.segments[0].attempts
-    assert [attempt.attempt for attempt in attempts] == ["initial"]
-    assert attempts[0].fidelity_passed is True
-    assert attempts[0].failure_reasons == []

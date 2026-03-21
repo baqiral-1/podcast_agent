@@ -285,14 +285,43 @@ class HeuristicLLMClient(LLMClient):
             "repaired_segments": repaired_segments,
         }
 
-    def _generate_spoken_delivery_segment(self, payload: PromptPayload) -> dict[str, Any]:
-        current_segment = payload["current_segment"]
-        narration = current_segment["narration"].strip()
-        cleaned = " ".join(narration.split())
-        cleaned = cleaned.replace("; ", ". ")
-        if payload.get("previous_segment") is not None and not cleaned.lower().startswith(("meanwhile", "now", "at this point")):
-            cleaned = f"At this point, {cleaned[:1].lower()}{cleaned[1:]}" if cleaned else cleaned
-        return {"narration": cleaned}
+    def _generate_spoken_delivery_plan(self, payload: PromptPayload) -> dict[str, Any]:
+        source_script = payload.get("source_script", "")
+        opening_phrase = source_script.split("\n", 1)[0][:120] if source_script else "Opening scene"
+        return {
+            "theme": "A high-level dramatic arc from the provided material.",
+            "threads": [
+                {
+                    "name": "Primary thread",
+                    "introduced": "Act 1",
+                    "developed": "Acts 2-4",
+                    "payoff": "Final act",
+                    "listener_feeling": "Tension turning to release",
+                }
+            ],
+            "opening": {
+                "scene": opening_phrase or "Opening scene",
+                "why": "It immediately signals the central stakes.",
+                "pullback_transition": "To understand how this moment arrived, we need to go back.",
+            },
+            "acts": [
+                {
+                    "number": 1,
+                    "title": "Act 1",
+                    "source_material": "Opening setup",
+                    "why_here": "Establish stakes early.",
+                    "driving_tension": "How did events reach this point?",
+                    "transition_to_next": "Which leads into the deeper context.",
+                }
+            ],
+            "plants_and_payoffs": [],
+            "key_moments": [],
+        }
+
+    def _generate_spoken_delivery_narration(self, payload: PromptPayload) -> dict[str, Any]:
+        source_script = payload.get("source_script", "")
+        narration = " ".join(source_script.split())
+        return {"narration": narration}
 
 
 def _group(values: list[str], group_size: int) -> list[list[str]]:

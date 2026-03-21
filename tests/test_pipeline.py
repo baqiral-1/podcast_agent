@@ -410,16 +410,16 @@ def test_pipeline_defaults_raise_parallelism() -> None:
     assert settings.pipeline.audio_retry_attempts == 2
     assert settings.pipeline.beat_parallelism == 6
     assert settings.pipeline.beat_write_retry_attempts == 2
-    assert settings.pipeline.beat_write_timeout_seconds == 120.0
+    assert settings.pipeline.beat_write_timeout_seconds == 180.0
     assert settings.pipeline.grounding_parallelism == 6
-    assert settings.pipeline.spoken_delivery_parallelism == 6
     assert settings.pipeline.structuring_parallelism == 6
     assert settings.pipeline.max_episode_minutes == 360
     assert settings.pipeline.max_structuring_llm_chapter_words == 75000
     assert settings.pipeline.min_episode_source_ratio == 0.3
     assert settings.spoken_delivery.enabled is True
-    assert settings.spoken_delivery.target_expansion_ratio == 1.1
-    assert settings.spoken_delivery.max_expansion_ratio == 1.2
+    assert settings.spoken_delivery.timeout_seconds == 1200.0
+    assert settings.spoken_delivery.chunk_min_words == 700
+    assert settings.spoken_delivery.chunk_max_words == 900
 
 
 def test_ingest_book_reads_pdf_source_and_persists_artifact(tmp_path: Path, monkeypatch) -> None:
@@ -952,6 +952,7 @@ def test_spoken_delivery_cli_writes_sibling_artifacts(tmp_path: Path, monkeypatc
     assert payload["spoken_script"]["episode_id"] == "episode-1"
     assert (source_path.parent / "spoken_script.json").exists()
     assert (source_path.parent / "spoken_delivery.json").exists()
+    assert (source_path.parent / "spoken_delivery_arc_plan.json").exists()
 
 
 def test_spoken_delivery_cli_rejects_failed_grounding_episode_output(tmp_path: Path, monkeypatch) -> None:

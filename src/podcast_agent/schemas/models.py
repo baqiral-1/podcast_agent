@@ -241,8 +241,66 @@ class EpisodeSegmentDraft(StrictModel):
     claims: list[ScriptClaimDraft] = Field(min_length=1)
 
 
-class SpokenSegmentRewriteDraft(StrictModel):
-    """LLM-authored spoken delivery rewrite for one factual segment."""
+class SpokenDeliveryThread(StrictModel):
+    """Dramatic thread descriptor for a full-episode arc plan."""
+
+    name: str
+    introduced: str
+    developed: str
+    payoff: str
+    listener_feeling: str
+
+
+class SpokenDeliveryOpening(StrictModel):
+    """Opening scene selection for a full-episode arc plan."""
+
+    scene: str
+    why: str
+    pullback_transition: str
+
+
+class SpokenDeliveryAct(StrictModel):
+    """Act-level structure for a full-episode arc plan."""
+
+    number: int = Field(ge=1)
+    title: str
+    source_material: str
+    why_here: str
+    driving_tension: str
+    transition_to_next: str
+
+
+class SpokenDeliveryPlantPayoff(StrictModel):
+    """Plant/payoff mapping for arc-level callbacks."""
+
+    fact: str
+    plant_in_act: int = Field(ge=1)
+    payoff_in_act: int = Field(ge=1)
+    bridging_language: str
+
+
+class SpokenDeliveryKeyMoment(StrictModel):
+    """Key moment to land with a specific technique."""
+
+    moment: str
+    why_it_matters: str
+    how_to_land: str
+    in_act: int = Field(ge=1)
+
+
+class SpokenDeliveryArcPlan(StrictModel):
+    """Full-episode arc plan produced by the narration planner."""
+
+    theme: str
+    threads: list[SpokenDeliveryThread]
+    opening: SpokenDeliveryOpening
+    acts: list[SpokenDeliveryAct]
+    plants_and_payoffs: list[SpokenDeliveryPlantPayoff]
+    key_moments: list[SpokenDeliveryKeyMoment]
+
+
+class SpokenDeliveryNarrationDraft(StrictModel):
+    """LLM-authored full-episode narration draft."""
 
     narration: str
 
@@ -284,29 +342,22 @@ class RewriteMetrics(StrictModel):
     spoken_paragraph_count: int = Field(ge=0)
 
 
-class SpokenSegment(StrictModel):
-    """Spoken-delivery version of a factual script segment."""
+class SpokenNarrationChunk(StrictModel):
+    """Chunked narration segment for TTS rendering."""
 
-    segment_id: str
-    beat_id: str
-    heading: str
-    narration: str
-    rewrite_mode: Literal["spoken_delivery"] = "spoken_delivery"
-    source_word_count: int = Field(ge=0)
-    spoken_word_count: int = Field(ge=0)
-    expansion_ratio: float = Field(ge=0.0)
-    retry_applied: bool = False
-    fidelity_passed: bool = True
-    fallback_used: bool = False
+    chunk_id: str
+    text: str
+    word_count: int = Field(ge=0)
 
 
-class SpokenEpisodeScript(StrictModel):
-    """Single-episode spoken-delivery script derived from a factual script."""
+class SpokenEpisodeNarration(StrictModel):
+    """Full-episode narration plus chunked output for TTS."""
 
     episode_id: str
     title: str
     narrator: str
-    segments: list[SpokenSegment]
+    narration: str
+    chunks: list[SpokenNarrationChunk]
     created_at: datetime = Field(default_factory=utc_now)
 
 
@@ -365,47 +416,16 @@ class SegmentRepairDraftResult(StrictModel):
     repaired_segments: list[EpisodeSegmentDraft]
 
 
-class SpokenDeliverySegmentResult(StrictModel):
-    """Detailed spoken-delivery outcome for one segment."""
-
-    segment_id: str
-    beat_id: str
-    metrics: RewriteMetrics
-    retry_applied: bool = False
-    fidelity_passed: bool = True
-    fallback_used: bool = False
-    missing_names: list[str] = Field(default_factory=list)
-    missing_numbers: list[str] = Field(default_factory=list)
-    attempts: list["SpokenDeliveryAttemptResult"] = Field(default_factory=list)
-
-
-class SpokenDeliveryAttemptResult(StrictModel):
-    """Diagnostics for one spoken-delivery draft attempt."""
-
-    attempt: Literal["initial", "retry", "fallback"]
-    narration: str
-    metrics: RewriteMetrics
-    fidelity_passed: bool = True
-    missing_names: list[str] = Field(default_factory=list)
-    missing_numbers: list[str] = Field(default_factory=list)
-    source_paragraph_count: int = Field(ge=0)
-    spoken_paragraph_count: int = Field(ge=0)
-    failure_reasons: list[str] = Field(default_factory=list)
-
-
-class SpokenDeliveryResult(StrictModel):
-    """Episode-level spoken-delivery provenance and metrics."""
+class SpokenDeliveryEpisodeResult(StrictModel):
+    """Episode-level spoken-delivery outcome for full rewrites."""
 
     episode_id: str
-    tone_preset: Literal[
-        "documentary_podcast",
-        "educational",
-        "educational_suspenseful",
-        "reflective_history",
-    ]
-    target_expansion_ratio: float = Field(gt=0.0)
-    max_expansion_ratio: float = Field(gt=0.0)
-    segments: list[SpokenDeliverySegmentResult]
+    mode: Literal["full"]
+    metrics: RewriteMetrics
+    fidelity_passed: bool = True
+    missing_names: list[str] = Field(default_factory=list)
+    missing_numbers: list[str] = Field(default_factory=list)
+    chunk_count: int = Field(ge=0)
     generated_at: datetime = Field(default_factory=utc_now)
 
 
@@ -457,8 +477,8 @@ class EpisodeOutput(StrictModel):
     plan: EpisodePlan
     script: EpisodeScript
     report: GroundingReport
-    spoken_script: SpokenEpisodeScript | None = None
-    spoken_delivery: SpokenDeliveryResult | None = None
+    spoken_script: SpokenEpisodeNarration | None = None
+    spoken_delivery: SpokenDeliveryEpisodeResult | None = None
     manifest: RenderManifest | None = None
     audio_manifest: AudioManifest | None = None
     repair_attempts: list[RepairResult] = Field(default_factory=list)

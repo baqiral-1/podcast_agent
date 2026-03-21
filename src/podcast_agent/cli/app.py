@@ -20,7 +20,9 @@ _AGENT_SCHEMA_OVERRIDES: dict[str, str] = {
     "writing": "beat_script",
     "validation": "grounding_report",
     "repair": "episode_repair",
-    "spoken_delivery": "spoken_delivery_segment",
+    "spoken_delivery": "spoken_delivery_narration",
+    "spoken_delivery_plan": "spoken_delivery_plan",
+    "spoken_delivery_narration": "spoken_delivery_narration",
 }
 
 
@@ -287,7 +289,10 @@ def run_pipeline(
     """Run the full pipeline and print the resulting artifacts."""
 
     orchestrator = _build_orchestrator(
-        database_url, model=model, agent_model=agent_model, llm_provider=llm_provider
+        database_url,
+        model=model,
+        agent_model=agent_model,
+        llm_provider=llm_provider,
     )
     orchestrator.log_command(
         "run-pipeline",
@@ -457,7 +462,10 @@ def spoken_delivery(
     """Rewrite a saved factual script artifact into spoken-form delivery."""
 
     orchestrator = _build_orchestrator(
-        database_url, model=model, agent_model=agent_model, llm_provider=llm_provider
+        database_url,
+        model=model,
+        agent_model=agent_model,
+        llm_provider=llm_provider,
     )
     orchestrator.log_command(
         "spoken-delivery",
