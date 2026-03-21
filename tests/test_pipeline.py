@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
+import io
 import json
 from pathlib import Path
 import threading
 import time
+import wave
 
 import pytest
 from typer.testing import CliRunner
@@ -25,6 +27,8 @@ from podcast_agent.schemas.models import (
     GroundingStatus,
     RenderManifest,
     RenderSegment,
+    SpokenEpisodeNarration,
+    SpokenNarrationChunk,
     SegmentRepairResult,
     ScriptClaim,
 )
@@ -58,6 +62,35 @@ class FakeTTSClient(TTSClient):
     ) -> bytes:
         del instructions
         return f"{voice or 'default'}::{audio_format or 'mp3'}::{text}".encode("utf-8")
+
+
+def _build_wav_bytes(*, framerate: int = 16000, frame_count: int = 200) -> bytes:
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as wav_handle:
+        wav_handle.setnchannels(1)
+        wav_handle.setsampwidth(2)
+        wav_handle.setframerate(framerate)
+        wav_handle.writeframes(b"\x00\x00" * frame_count)
+    return buffer.getvalue()
+
+
+class WavTTSClient(TTSClient):
+    """TTS stub that returns valid WAV bytes per segment."""
+
+    def __init__(self, sample_rates: dict[str, int] | None = None) -> None:
+        super().__init__()
+        self.sample_rates = sample_rates or {}
+
+    def synthesize(
+        self,
+        text: str,
+        voice: str | None = None,
+        audio_format: str | None = None,
+        instructions: str | None = None,
+    ) -> bytes:
+        del voice, audio_format, instructions
+        framerate = self.sample_rates.get(text, 16000)
+        return _build_wav_bytes(framerate=framerate)
 
 
 class DelayedTTSClient(TTSClient):
@@ -129,6 +162,34 @@ class ConcurrencyTrackingTTSClient(TTSClient):
                 self.active_calls -= 1
 
 
+class WavConcurrencyTrackingTTSClient(TTSClient):
+    """WAV-producing TTS stub that records peak concurrent synthesize calls."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._lock = threading.Lock()
+        self.active_calls = 0
+        self.max_active_calls = 0
+
+    def synthesize(
+        self,
+        text: str,
+        voice: str | None = None,
+        audio_format: str | None = None,
+        instructions: str | None = None,
+    ) -> bytes:
+        del text, voice, audio_format, instructions
+        with self._lock:
+            self.active_calls += 1
+            self.max_active_calls = max(self.max_active_calls, self.active_calls)
+        try:
+            time.sleep(0.05)
+            return _build_wav_bytes()
+        finally:
+            with self._lock:
+                self.active_calls -= 1
+
+
 def _build_render_manifest(episode_id: str, segment_texts: list[str]) -> RenderManifest:
     return RenderManifest(
         episode_id=episode_id,
@@ -153,8 +214,24 @@ def _build_audio_orchestrator(
     *,
     audio_parallelism: int = 4,
     audio_retry_attempts: int = 2,
+    tts_provider: str | None = None,
+    tts_audio_format: str | None = None,
+    tts_kokoro_parallelism: int | None = None,
+    tts_kokoro_chunk_min_words: int | None = None,
+    tts_kokoro_chunk_max_words: int | None = None,
 ) -> PipelineOrchestrator:
     settings = Settings()
+    tts_updates: dict[str, str | int] = {}
+    if tts_provider is not None:
+        tts_updates["provider"] = tts_provider
+    if tts_audio_format is not None:
+        tts_updates["audio_format"] = tts_audio_format
+    if tts_kokoro_parallelism is not None:
+        tts_updates["kokoro_parallelism"] = tts_kokoro_parallelism
+    if tts_kokoro_chunk_min_words is not None:
+        tts_updates["kokoro_chunk_min_words"] = tts_kokoro_chunk_min_words
+    if tts_kokoro_chunk_max_words is not None:
+        tts_updates["kokoro_chunk_max_words"] = tts_kokoro_chunk_max_words
     settings = settings.model_copy(
         update={
             "pipeline": settings.pipeline.model_copy(
@@ -163,7 +240,8 @@ def _build_audio_orchestrator(
                     "audio_parallelism": audio_parallelism,
                     "audio_retry_attempts": audio_retry_attempts,
                 }
-            )
+            ),
+            "tts": settings.tts.model_copy(update=tts_updates) if tts_updates else settings.tts,
         }
     )
     orchestrator = PipelineOrchestrator(
@@ -230,6 +308,29 @@ def _write_episode_output_artifact(path: Path, manifest: RenderManifest) -> None
         "repair_attempts": [],
     }
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    _write_spoken_script_artifact(path.parent, manifest)
+
+
+def _write_spoken_script_artifact(episode_dir: Path, manifest: RenderManifest) -> None:
+    chunks = [
+        SpokenNarrationChunk(
+            chunk_id=segment.segment_id,
+            text=segment.text,
+            word_count=len(segment.text.split()),
+        )
+        for segment in manifest.segments
+    ]
+    spoken_script = SpokenEpisodeNarration(
+        episode_id=manifest.episode_id,
+        title=manifest.title,
+        narrator=manifest.narrator,
+        narration=" ".join(segment.text for segment in manifest.segments),
+        chunks=chunks,
+    )
+    (episode_dir / "spoken_script.json").write_text(
+        spoken_script.model_dump_json(indent=2),
+        encoding="utf-8",
+    )
 
 
 def test_pipeline_creates_multi_chapter_episode_and_manifest(tmp_path: Path) -> None:
@@ -420,6 +521,10 @@ def test_pipeline_defaults_raise_parallelism() -> None:
     assert settings.spoken_delivery.timeout_seconds == 1200.0
     assert settings.spoken_delivery.chunk_min_words == 700
     assert settings.spoken_delivery.chunk_max_words == 900
+    assert settings.tts.kokoro_parallelism == 2
+    assert settings.tts.kokoro_worker_threads == 4
+    assert settings.tts.kokoro_chunk_min_words == 550
+    assert settings.tts.kokoro_chunk_max_words == 600
 
 
 def test_ingest_book_reads_pdf_source_and_persists_artifact(tmp_path: Path, monkeypatch) -> None:
@@ -547,6 +652,121 @@ def test_synthesize_audio_preserves_manifest_order_when_parallel(tmp_path: Path)
     assert Path(audio_manifest.audio_path).read_bytes() == b"firstsecondthird"
 
 
+def test_synthesize_audio_kokoro_converts_wav_to_mp3(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    tts = WavTTSClient()
+    orchestrator = _build_audio_orchestrator(
+        tmp_path,
+        tts,
+        tts_provider="kokoro",
+        tts_audio_format="mp3",
+    )
+    manifest = _build_render_manifest("episode-1", ["alpha", "beta"])
+
+    def fake_convert(_self: PipelineOrchestrator, wav_bytes: bytes) -> bytes:
+        assert wav_bytes[:4] == b"RIFF"
+        return b"mp3-bytes"
+
+    monkeypatch.setattr(PipelineOrchestrator, "_convert_wav_to_mp3_bytes", fake_convert)
+
+    audio_manifest = orchestrator.synthesize_audio(manifest)
+
+    assert audio_manifest.audio_path.endswith(".mp3")
+    assert Path(audio_manifest.audio_path).read_bytes() == b"mp3-bytes"
+
+
+def test_synthesize_audio_kokoro_logs_merge_diagnostics_on_failure(tmp_path: Path) -> None:
+    tts = WavTTSClient({"alpha": 16000, "beta": 22050})
+    orchestrator = _build_audio_orchestrator(
+        tmp_path,
+        tts,
+        tts_provider="kokoro",
+        tts_audio_format="mp3",
+    )
+    manifest = _build_render_manifest("episode-1", ["alpha", "beta"])
+
+    with pytest.raises(RuntimeError):
+        orchestrator.synthesize_audio(manifest)
+
+    run_log_path = tmp_path / "runs" / "audio-run" / "run.log"
+    events = [json.loads(line) for line in run_log_path.read_text(encoding="utf-8").splitlines()]
+    merge_events = [event for event in events if event["event_type"] == "audio_merge_failed"]
+    assert merge_events
+    payload = merge_events[-1]["payload"]
+    assert payload["episode_id"] == manifest.episode_id
+    assert payload["provider"] == "kokoro"
+    assert payload["diagnostics"]
+
+
+def test_synthesize_audio_kokoro_caps_parallelism_at_two_workers(tmp_path: Path) -> None:
+    tts = WavConcurrencyTrackingTTSClient()
+    orchestrator = _build_audio_orchestrator(
+        tmp_path,
+        tts,
+        audio_parallelism=4,
+        tts_provider="kokoro",
+        tts_audio_format="wav",
+        tts_kokoro_parallelism=2,
+    )
+    manifest = _build_render_manifest("episode-1", ["first", "second", "third", "fourth"])
+
+    orchestrator.synthesize_audio(manifest)
+
+    assert tts.max_active_calls == 2
+
+
+def test_synthesize_audio_kokoro_rechunks_to_configured_max_words(tmp_path: Path) -> None:
+    tts = WavTTSClient()
+    orchestrator = _build_audio_orchestrator(
+        tmp_path,
+        tts,
+        tts_provider="kokoro",
+        tts_audio_format="wav",
+        tts_kokoro_chunk_max_words=450,
+    )
+    long_text = "word " * 1201
+    manifest = _build_render_manifest("episode-1", [long_text])
+
+    audio_manifest = orchestrator.synthesize_audio(manifest)
+
+    assert len(audio_manifest.segments) == 3
+    word_counts = [len(segment.text.split()) for segment in audio_manifest.segments]
+    assert word_counts == [450, 450, 301]
+    with wave.open(str(Path(audio_manifest.audio_path))) as wav_handle:
+        assert wav_handle.getnframes() == 200 * 3
+        assert wav_handle.getframerate() == 16000
+        assert wav_handle.getnchannels() == 1
+
+
+def test_orchestrator_uses_kokoro_specific_spoken_delivery_chunk_bounds() -> None:
+    settings = Settings().model_copy(
+        update={
+            "tts": Settings().tts.model_copy(update={"provider": "kokoro"}),
+        }
+    )
+
+    orchestrator = PipelineOrchestrator(
+        repository=InMemoryRepository(),
+        llm=HeuristicLLMClient(),
+        settings=settings,
+    )
+
+    assert orchestrator.spoken_delivery_agent.chunk_min_words == settings.tts.kokoro_chunk_min_words
+    assert orchestrator.spoken_delivery_agent.chunk_max_words == settings.tts.kokoro_chunk_max_words
+
+
+def test_orchestrator_keeps_default_spoken_delivery_chunk_bounds_for_non_kokoro() -> None:
+    settings = Settings()
+
+    orchestrator = PipelineOrchestrator(
+        repository=InMemoryRepository(),
+        llm=HeuristicLLMClient(),
+        settings=settings,
+    )
+
+    assert orchestrator.spoken_delivery_agent.chunk_min_words == settings.spoken_delivery.chunk_min_words
+    assert orchestrator.spoken_delivery_agent.chunk_max_words == settings.spoken_delivery.chunk_max_words
+
+
 def test_synthesize_audio_retries_failed_segment_then_succeeds(tmp_path: Path) -> None:
     tts = RetryingTTSClient({"retry-me": 1})
     orchestrator = _build_audio_orchestrator(tmp_path, tts, audio_parallelism=2, audio_retry_attempts=2)
@@ -602,7 +822,7 @@ def test_regenerate_audio_from_episode_output_artifact(tmp_path: Path) -> None:
     result = orchestrator.regenerate_audio_from_artifact(source_path)
 
     assert result.manifest is not None
-    assert result.manifest.model_dump(mode="json") == manifest.model_dump(mode="json")
+    assert [segment.text for segment in result.manifest.segments] == ["first line", "second line"]
     assert result.audio_manifest is not None
     assert Path(result.audio_manifest.audio_path).exists()
     persisted_output = (
@@ -620,6 +840,7 @@ def test_regenerate_audio_from_standalone_manifest_artifact(tmp_path: Path) -> N
     source_path.parent.mkdir(parents=True, exist_ok=True)
     manifest = _build_render_manifest("episode-1", ["alpha", "beta"])
     source_path.write_text(manifest.model_dump_json(indent=2), encoding="utf-8")
+    _write_spoken_script_artifact(source_path.parent, manifest)
 
     result = orchestrator.regenerate_audio_from_artifact(source_path, book_id="observatory-book")
 
@@ -634,7 +855,7 @@ def test_regenerate_audio_requires_valid_manifest_payload(tmp_path: Path) -> Non
     source_path.parent.mkdir(parents=True, exist_ok=True)
     source_path.write_text(json.dumps({"manifest": {"episode_id": "episode-1"}}), encoding="utf-8")
 
-    with pytest.raises(ValueError, match="does not contain a valid render manifest"):
+    with pytest.raises(RuntimeError, match="spoken_script.json not found"):
         orchestrator.regenerate_audio_from_artifact(source_path)
 
 

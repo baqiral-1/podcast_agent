@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class DatabaseConfig(BaseModel):
@@ -82,6 +82,16 @@ class TTSConfig(BaseModel):
     )
     speed: float = Field(default=1, gt=0.0, le=4.0)
     timeout_seconds: float = Field(default=300.0, gt=0.0)
+    kokoro_parallelism: int = Field(default=2, ge=1)
+    kokoro_worker_threads: int = Field(default=4, ge=1)
+    kokoro_chunk_min_words: int = Field(default=550, ge=100)
+    kokoro_chunk_max_words: int = Field(default=600, ge=100)
+
+    @model_validator(mode="after")
+    def validate_kokoro_chunk_bounds(self) -> "TTSConfig":
+        if self.kokoro_chunk_max_words < self.kokoro_chunk_min_words:
+            raise ValueError("kokoro_chunk_max_words must be greater than or equal to kokoro_chunk_min_words")
+        return self
 
 
 class SpokenDeliveryConfig(BaseModel):

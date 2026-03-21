@@ -77,6 +77,20 @@ def _parse_agent_model_overrides(
     return model_overrides, provider_overrides
 
 
+def _normalize_tts_provider(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    if normalized == "openai":
+        return "openai-compatible"
+    if normalized in {"openai-compatible", "kokoro"}:
+        return normalized
+    raise typer.BadParameter(
+        f"Invalid --tts-provider value '{value}'. Expected openai-compatible or kokoro.",
+        param_hint="tts-provider",
+    )
+
+
 @app.command("ingest-book")
 def ingest_book(
     source_path: Path,
@@ -268,6 +282,10 @@ def run_pipeline(
         default=False,
         help="Synthesize audio files after render-manifest generation.",
     ),
+    tts_provider: str | None = typer.Option(
+        default=None,
+        help="TTS provider for audio synthesis (openai-compatible, kokoro).",
+    ),
     model: str | None = typer.Option(
         default=None,
         help="Override the default chat model name for all LLM calls.",
@@ -293,6 +311,7 @@ def run_pipeline(
         model=model,
         agent_model=agent_model,
         llm_provider=llm_provider,
+        tts_provider=_normalize_tts_provider(tts_provider),
     )
     orchestrator.log_command(
         "run-pipeline",
@@ -305,6 +324,7 @@ def run_pipeline(
             "end_chapter": end_chapter,
             "database_url": database_url,
             "with_audio": with_audio,
+            "tts_provider": tts_provider,
             "model": model,
             "llm_provider": llm_provider,
             "agent_model": agent_model,
@@ -340,6 +360,10 @@ def render_audio(
         default=None,
         help="Stop at this detected chapter title, matched case-insensitively and included in the run.",
     ),
+    tts_provider: str | None = typer.Option(
+        default=None,
+        help="TTS provider for audio synthesis (openai-compatible, kokoro).",
+    ),
     model: str | None = typer.Option(
         default=None,
         help="Override the default chat model name for all LLM calls.",
@@ -361,7 +385,11 @@ def render_audio(
     """Run the pipeline and synthesize one audio file per episode."""
 
     orchestrator = _build_orchestrator(
-        database_url, model=model, agent_model=agent_model, llm_provider=llm_provider
+        database_url,
+        model=model,
+        agent_model=agent_model,
+        llm_provider=llm_provider,
+        tts_provider=_normalize_tts_provider(tts_provider),
     )
     orchestrator.log_command(
         "render-audio",
@@ -376,6 +404,7 @@ def render_audio(
             "model": model,
             "llm_provider": llm_provider,
             "agent_model": agent_model,
+            "tts_provider": tts_provider,
         },
     )
     result = orchestrator.run_pipeline(
@@ -410,15 +439,23 @@ def render_audio_from_manifest(
         "--agent-model",
         help="Per-agent model override as AGENT=MODEL or AGENT=PROVIDER:MODEL (repeatable).",
     ),
+    tts_provider: str | None = typer.Option(
+        default=None,
+        help="TTS provider for audio synthesis (openai-compatible, kokoro).",
+    ),
     database_url: str | None = typer.Option(
         default=None,
         help="PostgreSQL database URL. If omitted, falls back to DATABASE_URL when set.",
     ),
 ) -> None:
-    """Synthesize episode audio directly from a saved render manifest artifact."""
+    """Synthesize episode audio from a saved artifact directory using spoken_script.json."""
 
     orchestrator = _build_orchestrator(
-        database_url, model=model, agent_model=agent_model, llm_provider=llm_provider
+        database_url,
+        model=model,
+        agent_model=agent_model,
+        llm_provider=llm_provider,
+        tts_provider=_normalize_tts_provider(tts_provider),
     )
     orchestrator.log_command(
         "render-audio-from-manifest",
@@ -429,6 +466,7 @@ def render_audio_from_manifest(
             "model": model,
             "llm_provider": llm_provider,
             "agent_model": agent_model,
+            "tts_provider": tts_provider,
         },
     )
     try:
@@ -496,6 +534,7 @@ def _build_orchestrator(
     model: str | None = None,
     llm_provider: str | None = None,
     agent_model: list[str] | None = None,
+    tts_provider: str | None = None,
 ) -> PipelineOrchestrator:
     settings = Settings()
     resolved_database_url = database_url or settings.database.dsn
@@ -523,6 +562,8 @@ def _build_orchestrator(
     }
     if llm_updates:
         settings_updates["llm"] = settings.llm.model_copy(update=llm_updates)
+    if tts_provider is not None:
+        settings_updates["tts"] = settings.tts.model_copy(update={"provider": tts_provider})
     settings = settings.model_copy(update=settings_updates)
     return PipelineOrchestrator(settings=settings, repository=repository)
 

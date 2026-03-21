@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-import re
-import threading
 from datetime import UTC, datetime
+import io
 import json
 from pathlib import Path
+import re
+import shutil
+import subprocess
+import tempfile
+import threading
+import wave
 
 from pydantic import ValidationError
 
@@ -45,6 +50,14 @@ from podcast_agent.schemas.models import (
     SourceType,
 )
 from podcast_agent.tts import TTSClient, build_tts_client
+
+
+class WavMergeError(RuntimeError):
+    """Raised when WAV segments cannot be merged cleanly."""
+
+    def __init__(self, message: str, diagnostics: list[dict[str, object]]) -> None:
+        super().__init__(message)
+        self.diagnostics = diagnostics
 
 
 class PipelineOrchestrator:
@@ -113,11 +126,16 @@ class PipelineOrchestrator:
             grounding_parallelism=self.settings.pipeline.grounding_parallelism,
         )
         self.repair_agent = RepairAgent(self.llm)
+        spoken_chunk_min_words = self.settings.spoken_delivery.chunk_min_words
+        spoken_chunk_max_words = self.settings.spoken_delivery.chunk_max_words
+        if self.settings.tts.provider.lower() == "kokoro":
+            spoken_chunk_min_words = self.settings.tts.kokoro_chunk_min_words
+            spoken_chunk_max_words = self.settings.tts.kokoro_chunk_max_words
         self.spoken_delivery_agent = SpokenDeliveryAgent(
             self.llm,
             timeout_seconds=self.settings.spoken_delivery.timeout_seconds,
-            chunk_min_words=self.settings.spoken_delivery.chunk_min_words,
-            chunk_max_words=self.settings.spoken_delivery.chunk_max_words,
+            chunk_min_words=spoken_chunk_min_words,
+            chunk_max_words=spoken_chunk_max_words,
         )
 
     def log_command(self, command_name: str, arguments: dict) -> None:
@@ -514,18 +532,152 @@ class PipelineOrchestrator:
         )
         return manifest
 
+    def _load_spoken_script_artifact(
+        self,
+        book_id: str,
+        episode_id: str,
+        *,
+        episode_dir: Path | None = None,
+    ) -> SpokenEpisodeNarration:
+        if episode_dir is None:
+            episode_dir = self.settings.pipeline.artifact_root / self._episode_artifact_key(book_id, episode_id)
+        spoken_script_path = episode_dir / "spoken_script.json"
+        if not spoken_script_path.exists():
+            raise RuntimeError(
+                f"spoken_script.json not found at '{spoken_script_path}'. "
+                "Run spoken-delivery or enable spoken delivery before synthesizing audio."
+            )
+        try:
+            return SpokenEpisodeNarration.model_validate_json(
+                spoken_script_path.read_text(encoding="utf-8")
+            )
+        except ValidationError as exc:
+            raise ValueError(f"Invalid spoken_script.json at '{spoken_script_path}': {exc}") from exc
+
+    def _render_manifest_from_spoken_script(
+        self,
+        spoken_script: SpokenEpisodeNarration,
+        report: GroundingReport | None,
+    ) -> RenderManifest:
+        grounded_claim_ids: list[str] = []
+        if report is not None and report.overall_status == "pass":
+            grounded_claim_ids = sorted(
+                assessment.claim_id
+                for assessment in report.claim_assessments
+                if assessment.status.value == "grounded"
+            )
+        segments = []
+        for chunk in spoken_script.chunks:
+            text = chunk.text
+            ssml = f"<speak>{text}</speak>"
+            segments.append(
+                RenderSegment(
+                    segment_id=chunk.chunk_id,
+                    speaker=spoken_script.narrator,
+                    text=text,
+                    ssml=ssml,
+                    grounded_claim_ids=grounded_claim_ids,
+                )
+            )
+        return RenderManifest(
+            episode_id=spoken_script.episode_id,
+            title=spoken_script.title,
+            narrator=spoken_script.narrator,
+            segments=segments,
+        )
+
+    def _load_report_from_episode_dir(self, episode_dir: Path) -> GroundingReport | None:
+        episode_output_path = episode_dir / "episode_output.json"
+        if not episode_output_path.exists():
+            return None
+        try:
+            payload = json.loads(episode_output_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return None
+        report_payload = payload.get("report")
+        if report_payload is None:
+            return None
+        try:
+            return GroundingReport.model_validate_json(json.dumps(report_payload))
+        except ValidationError:
+            return None
+
+    def _prepare_manifest_for_audio(self, manifest: RenderManifest) -> RenderManifest:
+        if self.settings.tts.provider.lower() != "kokoro":
+            return manifest
+        chunk_size_words = self.settings.tts.kokoro_chunk_max_words
+        prepared_segments: list[RenderSegment] = []
+        for segment in manifest.segments:
+            chunks = self._split_text_into_chunks(segment.text, chunk_size_words)
+            if len(chunks) == 1:
+                prepared_segments.append(segment)
+                continue
+            for index, chunk_text in enumerate(chunks, start=1):
+                prepared_segments.append(
+                    RenderSegment(
+                        segment_id=f"{segment.segment_id}-chunk-{index}",
+                        speaker=segment.speaker,
+                        text=chunk_text,
+                        ssml=f"<speak>{chunk_text}</speak>",
+                        grounded_claim_ids=segment.grounded_claim_ids,
+                    )
+                )
+        return RenderManifest(
+            episode_id=manifest.episode_id,
+            title=manifest.title,
+            narrator=manifest.narrator,
+            segments=prepared_segments,
+        )
+
+    @staticmethod
+    def _split_text_into_chunks(text: str, chunk_size_words: int) -> list[str]:
+        words = text.split()
+        if len(words) <= chunk_size_words:
+            return [text]
+        return [
+            " ".join(words[index : index + chunk_size_words])
+            for index in range(0, len(words), chunk_size_words)
+        ]
+
     def synthesize_audio(self, manifest: RenderManifest) -> AudioManifest:
         """Synthesize audio files for each renderable segment."""
 
         if self.current_book_id is None:
             raise RuntimeError("Current book context is required to synthesize audio.")
+        manifest = self._prepare_manifest_for_audio(manifest)
         self.run_logger.log(
             "stage_start",
             stage="synthesize_audio",
             book_id=self.current_book_id,
             episode_id=manifest.episode_id,
         )
-        if len(manifest.segments) <= 1 or self.settings.pipeline.audio_parallelism == 1:
+        provider = self.settings.tts.provider.lower()
+        if provider == "kokoro":
+            effective_parallelism = min(
+                len(manifest.segments),
+                self.settings.pipeline.audio_parallelism,
+                self.settings.tts.kokoro_parallelism,
+            )
+            if effective_parallelism <= 1:
+                synthesized_segments = [
+                    self._synthesize_audio_segment(index, manifest.episode_id, segment)
+                    for index, segment in enumerate(manifest.segments)
+                ]
+            else:
+                with ThreadPoolExecutor(max_workers=effective_parallelism) as executor:
+                    futures = [
+                        executor.submit(self._synthesize_audio_segment, index, manifest.episode_id, segment)
+                        for index, segment in enumerate(manifest.segments)
+                    ]
+                    synthesized_segments = []
+                    try:
+                        for future in futures:
+                            synthesized_segments.append(future.result())
+                    except Exception:
+                        for future in futures:
+                            future.cancel()
+                        raise
+        elif len(manifest.segments) <= 1 or self.settings.pipeline.audio_parallelism == 1:
             synthesized_segments = [
                 self._synthesize_audio_segment(index, manifest.episode_id, segment)
                 for index, segment in enumerate(manifest.segments)
@@ -547,13 +699,35 @@ class PipelineOrchestrator:
                     raise
         synthesized_segments.sort(key=lambda item: item[0])
         audio_segments = [audio_segment for _, _, audio_segment in synthesized_segments]
-        combined_audio = bytearray()
-        for _, audio_bytes, _ in synthesized_segments:
-            combined_audio.extend(audio_bytes)
+        if provider == "kokoro":
+            wav_segments = [
+                (audio_segment.segment_id, audio_bytes)
+                for _, audio_bytes, audio_segment in synthesized_segments
+            ]
+            try:
+                combined_wav = self._combine_wav_segments(wav_segments)
+            except WavMergeError as exc:
+                self.run_logger.log(
+                    "audio_merge_failed",
+                    book_id=self.current_book_id,
+                    episode_id=manifest.episode_id,
+                    provider=provider,
+                    segment_count=len(wav_segments),
+                    error_type=type(exc).__name__,
+                    error_message=str(exc),
+                    diagnostics=exc.diagnostics,
+                )
+                raise
+            if self.settings.tts.audio_format.lower() == "mp3":
+                combined_audio = self._convert_wav_to_mp3_bytes(combined_wav)
+            else:
+                combined_audio = combined_wav
+        else:
+            combined_audio = b"".join(audio_bytes for _, audio_bytes, _ in synthesized_segments)
         extension = self.settings.tts.audio_format
         file_name = f"{manifest.episode_id}.{extension}"
         relative_dir = self._episode_artifact_key(self.current_book_id, manifest.episode_id)
-        audio_path = self.artifacts.write_bytes(relative_dir, file_name, bytes(combined_audio))
+        audio_path = self.artifacts.write_bytes(relative_dir, file_name, combined_audio)
         self.run_logger.log(
             "artifact_written",
             artifact_path=str(audio_path),
@@ -577,22 +751,134 @@ class PipelineOrchestrator:
         )
         return audio_manifest
 
+    def _combine_wav_segments(self, segments: list[tuple[str, bytes]]) -> bytes:
+        diagnostics: list[dict[str, object]] = []
+        expected_format: tuple[int, int, int, str, str] | None = None
+        expected_params: wave._wave_params | None = None
+        frame_chunks: list[bytes] = []
+
+        if not segments:
+            raise WavMergeError("No WAV segments provided for merge.", diagnostics)
+
+        for segment_id, audio_bytes in segments:
+            try:
+                with wave.open(io.BytesIO(audio_bytes)) as wav_handle:
+                    params = wav_handle.getparams()
+                    frames = wav_handle.readframes(wav_handle.getnframes())
+            except wave.Error as exc:
+                diagnostics.append(
+                    {
+                        "segment_id": segment_id,
+                        "byte_count": len(audio_bytes),
+                        "error": str(exc),
+                    }
+                )
+                raise WavMergeError(
+                    f"Failed to read WAV segment '{segment_id}': {exc}",
+                    diagnostics,
+                ) from exc
+            diagnostics.append(
+                {
+                    "segment_id": segment_id,
+                    "nchannels": params.nchannels,
+                    "sampwidth": params.sampwidth,
+                    "framerate": params.framerate,
+                    "nframes": params.nframes,
+                    "comptype": params.comptype,
+                    "compname": params.compname,
+                    "byte_count": len(audio_bytes),
+                }
+            )
+            format_key = (
+                params.nchannels,
+                params.sampwidth,
+                params.framerate,
+                params.comptype,
+                params.compname,
+            )
+            if expected_format is None:
+                expected_format = format_key
+                expected_params = params
+            elif format_key != expected_format:
+                raise WavMergeError(
+                    f"WAV segment format mismatch: expected {expected_format} got {format_key} "
+                    f"for segment '{segment_id}'.",
+                    diagnostics,
+                )
+            frame_chunks.append(frames)
+
+        if expected_params is None:
+            raise WavMergeError("No WAV segments available after parsing.", diagnostics)
+
+        output = io.BytesIO()
+        with wave.open(output, "wb") as wav_out:
+            wav_out.setnchannels(expected_params.nchannels)
+            wav_out.setsampwidth(expected_params.sampwidth)
+            wav_out.setframerate(expected_params.framerate)
+            wav_out.setcomptype(expected_params.comptype, expected_params.compname)
+            for frames in frame_chunks:
+                wav_out.writeframes(frames)
+        return output.getvalue()
+
+    def _convert_wav_to_mp3_bytes(self, wav_bytes: bytes) -> bytes:
+        ffmpeg_path = shutil.which("ffmpeg")
+        if ffmpeg_path is None:
+            raise RuntimeError("ffmpeg is required to convert WAV to MP3 but was not found on PATH.")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            input_path = temp_path / "input.wav"
+            output_path = temp_path / "output.mp3"
+            input_path.write_bytes(wav_bytes)
+            result = subprocess.run(
+                [
+                    ffmpeg_path,
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-y",
+                    "-i",
+                    str(input_path),
+                    "-codec:a",
+                    "libmp3lame",
+                    "-q:a",
+                    "2",
+                    str(output_path),
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            if result.returncode != 0:
+                message = result.stderr.decode("utf-8", errors="replace").strip()
+                raise RuntimeError(f"ffmpeg failed with exit code {result.returncode}: {message}")
+            if not output_path.exists():
+                raise RuntimeError("ffmpeg did not produce an output file.")
+            return output_path.read_bytes()
+
     def regenerate_audio_from_artifact(
         self,
         artifact_path: str | Path,
         *,
         book_id: str | None = None,
     ) -> EpisodeOutput:
-        """Regenerate episode audio from a saved manifest-bearing artifact."""
+        """Regenerate episode audio from a saved artifact, using spoken_script.json for synthesis."""
 
         path = Path(artifact_path)
         payload = self._load_manifest_source(path)
-        manifest = self._extract_render_manifest(payload, path)
         resolved_book_id = book_id or self._infer_book_id_from_artifact_path(path)
         if not resolved_book_id:
             raise ValueError(
                 "Unable to determine book ID from artifact path. Provide --book-id for manifest-only audio regeneration."
             )
+        episode_dir = path.parent
+        spoken_script = self._load_spoken_script_artifact(
+            resolved_book_id,
+            episode_dir.name,
+            episode_dir=episode_dir,
+        )
+        report = self._load_report_from_episode_dir(episode_dir)
+        manifest = self._render_manifest_from_spoken_script(spoken_script, report)
+        manifest = self._prepare_manifest_for_audio(manifest)
 
         self.current_book_id = resolved_book_id
         self.run_id = _new_run_id(resolved_book_id)
@@ -853,6 +1139,9 @@ class PipelineOrchestrator:
         if report.overall_status == "pass":
             manifest = self.render_manifest(script, report, spoken_script=spoken_script)
             if synthesize_audio:
+                spoken_script_artifact = self._load_spoken_script_artifact(book_id, episode_plan.episode_id)
+                manifest = self._render_manifest_from_spoken_script(spoken_script_artifact, report)
+                manifest = self._prepare_manifest_for_audio(manifest)
                 audio_manifest = self.synthesize_audio(manifest)
         episode_output = EpisodeOutput(
             plan=episode_plan,
