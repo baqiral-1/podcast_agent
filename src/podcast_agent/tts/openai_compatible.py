@@ -9,6 +9,7 @@ from urllib.error import HTTPError, URLError
 
 from podcast_agent.config import Settings, TTSConfig
 from podcast_agent.tts.base import TTSClient
+from podcast_agent.tts.kokoro import KokoroTTSClient
 
 
 class BinaryHTTPTransport:
@@ -97,6 +98,10 @@ class OpenAICompatibleTTSClient(TTSClient):
 
 def build_tts_client(settings: Settings) -> TTSClient:
     provider = settings.tts.provider.lower()
-    if provider == "openai-compatible":
+    if provider in {"openai-compatible", "openai"}:
         return OpenAICompatibleTTSClient(settings.tts)
+    if provider == "kokoro":
+        if settings.tts.voice == "ballad":
+            return KokoroTTSClient(settings.tts.model_copy(update={"voice": "af_heart"}))
+        return KokoroTTSClient(settings.tts)
     raise ValueError(f"Unsupported TTS provider '{settings.tts.provider}'.")
