@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import UTC, datetime
 import io
 import json
+from math import log
 from pathlib import Path
 import re
 import shutil
@@ -19,6 +21,7 @@ from pydantic import ValidationError
 
 from podcast_agent.agents import (
     AnalysisAgent,
+    EpisodeFramingAgent,
     EpisodePlanningAgent,
     GroundingValidationAgent,
     RepairAgent,
@@ -37,6 +40,7 @@ from podcast_agent.schemas.models import (
     AudioSegmentFile,
     BookIngestionResult,
     BookStructure,
+    EpisodeFraming,
     EpisodeOutput,
     EpisodePlan,
     EpisodeScript,
@@ -92,6 +96,7 @@ class PipelineOrchestrator:
         self.tts = tts or build_tts_client(self.settings)
         if hasattr(self.tts, "set_run_logger"):
             self.tts.set_run_logger(self.run_logger)
+        self._framing_next_script: EpisodeScript | None = None
         self.retrieval = RetrievalService(self.repository)
         self.structuring_agent = StructuringAgent(
             llm=self.llm,
@@ -146,6 +151,17 @@ class PipelineOrchestrator:
             chunk_min_words=spoken_chunk_min_words,
             chunk_max_words=spoken_chunk_max_words,
         )
+        self.framing_agent = EpisodeFramingAgent(
+            self.llm,
+            recap_words=self.settings.pipeline.framing_recap_words,
+            current_words=self.settings.pipeline.framing_current_words,
+            next_min_words=self.settings.pipeline.framing_next_min_words,
+            next_max_words=self.settings.pipeline.framing_next_max_words,
+            max_recap_source_words=self.settings.pipeline.framing_recap_source_max_words,
+        )
+        self._framing_previous_spoken_script: SpokenEpisodeNarration | None = None
+        self._framing_next_plan: EpisodePlan | None = None
+        self._framing_last_core_spoken_script: SpokenEpisodeNarration | None = None
 
     def log_command(self, command_name: str, arguments: dict) -> None:
         """Record the CLI command or orchestration entrypoint."""
@@ -325,7 +341,7 @@ class PipelineOrchestrator:
         """Rewrite a validated factual script into spoken-form delivery."""
 
         if not self.settings.spoken_delivery.enabled:
-            return None, None, None
+            raise RuntimeError("Spoken delivery is required to build a manifest.")
         self.run_logger.log("stage_start", stage="spoken_delivery_episode", book_id=book_id, episode_id=script.episode_id)
         spoken_script, spoken_delivery, arc_plan = self.spoken_delivery_agent.rewrite_full_episode_two_call(script)
         self.run_logger.log(
@@ -488,37 +504,22 @@ class PipelineOrchestrator:
             for assessment in report.claim_assessments
             if assessment.status.value == "grounded"
         }
+        if spoken_script is None:
+            raise RuntimeError("Spoken script is required to render a manifest.")
         segments = []
-        if spoken_script is not None:
-            claim_ids = sorted(grounded_claim_ids)
-            for chunk in spoken_script.chunks:
-                text = chunk.text
-                ssml = f"<speak>{text}</speak>"
-                segments.append(
-                    RenderSegment(
-                        segment_id=chunk.chunk_id,
-                        speaker=script.narrator,
-                        text=text,
-                        ssml=ssml,
-                        grounded_claim_ids=claim_ids,
-                    )
+        claim_ids = sorted(grounded_claim_ids)
+        for chunk in spoken_script.chunks:
+            text = chunk.text
+            ssml = f"<speak>{text}</speak>"
+            segments.append(
+                RenderSegment(
+                    segment_id=chunk.chunk_id,
+                    speaker=script.narrator,
+                    text=text,
+                    ssml=ssml,
+                    grounded_claim_ids=claim_ids,
                 )
-        else:
-            for segment in script.segments:
-                claims = [claim.claim_id for claim in segment.claims if claim.claim_id in grounded_claim_ids]
-                if not claims:
-                    continue
-                text = segment.narration
-                ssml = f"<speak>{text}</speak>"
-                segments.append(
-                    RenderSegment(
-                        segment_id=segment.segment_id,
-                        speaker=script.narrator,
-                        text=text,
-                        ssml=ssml,
-                        grounded_claim_ids=claims,
-                    )
-                )
+            )
         manifest = RenderManifest(
             episode_id=script.episode_id,
             title=script.title,
@@ -1093,30 +1094,28 @@ class PipelineOrchestrator:
         )
 
         episode_outputs: list[EpisodeOutput] = []
-        if not grounding_passed or len(preparations) <= 1 or self.settings.pipeline.episode_parallelism == 1:
-            episode_outputs = [
-                self._finalize_episode_plan(
-                    book_id,
-                    preparation,
-                    synthesize_audio=synthesize_audio,
-                    allow_downstream=grounding_passed,
-                )
-                for preparation in preparations
-            ]
-        else:
-            with ThreadPoolExecutor(max_workers=self.settings.pipeline.episode_parallelism) as executor:
-                futures = [
-                    executor.submit(
-                        self._finalize_episode_plan,
-                        book_id,
-                        preparation,
-                        synthesize_audio=synthesize_audio,
-                        allow_downstream=grounding_passed,
-                    )
-                    for preparation in preparations
-                ]
-                for future in as_completed(futures):
-                    episode_outputs.append(future.result())
+        ordered_preparations = sorted(preparations, key=lambda prep: prep.plan.sequence)
+        previous_spoken_script: SpokenEpisodeNarration | None = None
+        for index, preparation in enumerate(ordered_preparations):
+            self._framing_previous_spoken_script = previous_spoken_script
+            self._framing_next_plan = (
+                ordered_preparations[index + 1].plan if index + 1 < len(ordered_preparations) else None
+            )
+            self._framing_next_script = (
+                ordered_preparations[index + 1].script if index + 1 < len(ordered_preparations) else None
+            )
+            episode_output = self._finalize_episode_plan(
+                book_id,
+                preparation,
+                synthesize_audio=synthesize_audio,
+                allow_downstream=grounding_passed,
+            )
+            episode_outputs.append(episode_output)
+            previous_spoken_script = self._framing_last_core_spoken_script
+        self._framing_previous_spoken_script = None
+        self._framing_next_plan = None
+        self._framing_next_script = None
+        self._framing_last_core_spoken_script = None
         episode_outputs.sort(key=lambda episode_output: episode_output.plan.sequence)
         return episode_outputs
 
@@ -1177,9 +1176,24 @@ class PipelineOrchestrator:
         spoken_script = None
         spoken_delivery = None
         arc_plan = None
+        framing = None
+        self._framing_last_core_spoken_script = None
         if allow_downstream and preparation.report.overall_status == "pass":
             spoken_script, spoken_delivery, arc_plan = self.spoken_delivery_episode(book_id, preparation.script)
             if spoken_script is not None and spoken_delivery is not None:
+                self._framing_last_core_spoken_script = spoken_script
+                framing = self._build_episode_framing(
+                    preparation.plan,
+                    current_script=preparation.script,
+                    previous_spoken_script=self._framing_previous_spoken_script,
+                    next_plan=self._framing_next_plan,
+                    next_script=self._framing_next_script,
+                )
+                if framing is not None:
+                    spoken_script = self._apply_framing_to_spoken_script(spoken_script, framing)
+                    spoken_delivery = spoken_delivery.model_copy(
+                        update={"chunk_count": len(spoken_script.chunks)}
+                    )
                 self._write_artifact(
                     self._episode_artifact_key(book_id, preparation.plan.episode_id),
                     "spoken_script",
@@ -1196,6 +1210,14 @@ class PipelineOrchestrator:
                         "spoken_delivery_arc_plan",
                         arc_plan.model_dump(mode="json"),
                     )
+                if framing is not None:
+                    self._write_artifact(
+                        self._episode_artifact_key(book_id, preparation.plan.episode_id),
+                        "episode_framing",
+                        framing.model_dump(mode="json"),
+                    )
+            else:
+                raise RuntimeError("Spoken delivery did not return a script for manifest generation.")
         manifest = None
         audio_manifest = None
         if allow_downstream and preparation.report.overall_status == "pass":
@@ -1213,6 +1235,7 @@ class PipelineOrchestrator:
             plan=preparation.plan,
             script=preparation.script,
             report=preparation.report,
+            framing=framing,
             spoken_script=spoken_script,
             spoken_delivery=spoken_delivery,
             manifest=manifest,
@@ -1225,6 +1248,159 @@ class PipelineOrchestrator:
             episode_output.model_dump(mode="json"),
         )
         return episode_output
+
+    def _build_episode_framing(
+        self,
+        plan: EpisodePlan,
+        *,
+        current_script: EpisodeScript,
+        previous_spoken_script: SpokenEpisodeNarration | None,
+        next_plan: EpisodePlan | None,
+        next_script: EpisodeScript | None,
+    ) -> EpisodeFraming | None:
+        has_previous = previous_spoken_script is not None
+        has_next = next_plan is not None
+        recap_source = previous_spoken_script.narration if has_previous else ""
+        current_outline = self._build_beat_outline(plan, current_script)
+        next_outline = (
+            self._build_beat_outline(next_plan, next_script) if next_plan is not None else ""
+        )
+        payload = self.framing_agent.build_payload(
+            episode_id=plan.episode_id,
+            episode_title=plan.title,
+            recap_source=recap_source,
+            current_themes=plan.themes,
+            next_themes=next_plan.themes if next_plan is not None else None,
+            current_outline=current_outline,
+            next_outline=next_outline,
+            has_previous=has_previous,
+            has_next=has_next,
+        )
+        return self.framing_agent.generate(payload)
+
+    def _apply_framing_to_spoken_script(
+        self,
+        spoken_script: SpokenEpisodeNarration,
+        framing: EpisodeFraming,
+    ) -> SpokenEpisodeNarration:
+        intro_parts = []
+        if framing.recap.strip():
+            intro_parts.append(framing.recap.strip())
+        if framing.current_summary.strip():
+            intro_parts.append(framing.current_summary.strip())
+        intro_text = "\n\n".join(intro_parts).strip()
+        outro_text = framing.next_overview.strip()
+        narration_parts = [part for part in (intro_text, spoken_script.narration.strip(), outro_text) if part]
+        narration = "\n\n".join(narration_parts).strip()
+        chunks = self.spoken_delivery_agent.chunk_narration(spoken_script.episode_id, narration)
+        return spoken_script.model_copy(update={"narration": narration, "chunks": chunks})
+
+    def _build_beat_outline(self, plan: EpisodePlan | None, script: EpisodeScript | None) -> str:
+        if plan is None or script is None:
+            return ""
+        narration_by_beat: dict[str, list[str]] = defaultdict(list)
+        for segment in script.segments:
+            if segment.narration.strip():
+                narration_by_beat[segment.beat_id].append(segment.narration.strip())
+        lines: list[str] = []
+        for index, beat in enumerate(plan.beats, start=1):
+            narration = " ".join(narration_by_beat.get(beat.beat_id, [])).strip()
+            source_text = f"{beat.title}. {narration}".strip() if narration else beat.title.strip()
+            summary = self._extract_key_sentences(source_text, target_words=60)
+            if not summary:
+                summary = self._truncate_words(source_text, 60)
+            lines.append(f"{index}. {summary}")
+        return "\n".join(lines).strip()
+
+    @staticmethod
+    def _split_sentences(text: str) -> list[str]:
+        cleaned = " ".join(text.strip().split())
+        if not cleaned:
+            return []
+        parts = re.split(r"(?<=[.!?])\\s+", cleaned)
+        return [part.strip() for part in parts if part.strip()]
+
+    @staticmethod
+    def _tokenize_words(text: str) -> list[str]:
+        return re.findall(r"[A-Za-z0-9']+", text)
+
+    @classmethod
+    def _extract_key_sentences(cls, text: str, *, target_words: int = 60) -> str:
+        sentences = cls._split_sentences(text)
+        if not sentences:
+            return ""
+        tokenized = [cls._tokenize_words(sentence) for sentence in sentences]
+        lowered = [[token.lower() for token in tokens] for tokens in tokenized]
+        if not any(lowered):
+            return cls._truncate_words(text, target_words)
+        doc_freq: Counter[str] = Counter()
+        for tokens in lowered:
+            doc_freq.update(set(tokens))
+        sentence_scores: list[tuple[int, float]] = []
+        sentence_count = len(sentences)
+        for idx, tokens in enumerate(lowered):
+            if not tokens:
+                sentence_scores.append((idx, -1.0))
+                continue
+            tf = Counter(tokens)
+            tfidf_score = 0.0
+            for term, count in tf.items():
+                idf = log((1 + sentence_count) / (1 + doc_freq[term])) + 1.0
+                tfidf_score += count * idf
+            position_bonus = 0.15 * (1.0 - (idx / max(sentence_count - 1, 1)))
+            entity_tokens = [
+                token
+                for token in tokenized[idx]
+                if token[:1].isupper() and not token.isupper()
+            ]
+            entity_bonus = 0.02 * len(entity_tokens)
+            word_count = len(tokens)
+            length_penalty = (abs(word_count - 25) / 25.0) * 0.1
+            sentence_scores.append((idx, tfidf_score + position_bonus + entity_bonus - length_penalty))
+        ranked = [idx for idx, _ in sorted(sentence_scores, key=lambda item: item[1], reverse=True)]
+        selected: list[int] = []
+        selected_token_sets: list[set[str]] = []
+        total_words = 0
+        for idx in ranked:
+            if total_words >= target_words:
+                break
+            token_set = set(lowered[idx])
+            if token_set:
+                if any(cls._jaccard_similarity(token_set, existing) > 0.5 for existing in selected_token_sets):
+                    continue
+            selected.append(idx)
+            selected_token_sets.append(token_set)
+            total_words += len(lowered[idx])
+        if not selected:
+            selected = [0]
+        selected_sorted = sorted(selected)
+        summary = " ".join(sentences[idx] for idx in selected_sorted).strip()
+        summary_words = summary.split()
+        if len(summary_words) < target_words:
+            for idx, sentence in enumerate(sentences):
+                if idx in selected_sorted:
+                    continue
+                summary_words.extend(sentence.split())
+                if len(summary_words) >= target_words:
+                    break
+        if len(summary_words) > target_words:
+            summary_words = summary_words[:target_words]
+        return " ".join(summary_words).strip()
+
+    @staticmethod
+    def _jaccard_similarity(left: set[str], right: set[str]) -> float:
+        if not left or not right:
+            return 0.0
+        intersection = left.intersection(right)
+        union = left.union(right)
+        return len(intersection) / len(union)
+
+    @staticmethod
+    def _truncate_words(text: str, max_words: int) -> str:
+        words = text.split()
+        if len(words) <= max_words:
+            return text.strip()
+        return " ".join(words[:max_words]).strip()
 
     def _write_citation_audit(
         self,
