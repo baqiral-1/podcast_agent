@@ -262,7 +262,6 @@ def _write_episode_output_artifact(path: Path, manifest: RenderManifest) -> None
             "episode_id": manifest.episode_id,
             "sequence": 1,
             "title": manifest.title,
-            "synopsis": "Original episode output.",
             "chapter_ids": [],
             "themes": [],
         },
@@ -847,7 +846,6 @@ def test_regenerate_audio_from_standalone_manifest_artifact(tmp_path: Path) -> N
 
     assert result.audio_manifest is not None
     assert Path(result.audio_manifest.audio_path).read_bytes() == b"ballad::mp3::alphaballad::mp3::beta"
-    assert result.plan.synopsis == "Audio regenerated directly from an existing render manifest."
 
 
 def test_regenerate_audio_requires_valid_manifest_payload(tmp_path: Path) -> None:
@@ -1332,7 +1330,6 @@ def test_grounding_rolls_forward_with_limited_parallelism(tmp_path: Path, monkey
             episode_id=f"episode-{index}",
             sequence=index,
             title=f"Episode {index}",
-            synopsis="Test",
             chapter_ids=[],
             beats=[],
         )

@@ -865,7 +865,6 @@ def test_writing_diagnostics_distinguish_claim_and_segment_citations(tmp_path) -
         episode_id="episode-1",
         sequence=1,
         title="Episode 1",
-        synopsis="Synopsis",
         chapter_ids=["chapter-1"],
         chunk_ids=[hit.chunk_id for hit in retrieval_hits],
         themes=["alpha"],
@@ -873,9 +872,7 @@ def test_writing_diagnostics_distinguish_claim_and_segment_citations(tmp_path) -
             EpisodeBeat(
                 beat_id="beat-1",
                 title="Beat 1",
-                objective="Objective",
                 chunk_ids=[hit.chunk_id for hit in retrieval_hits],
-                claim_requirements=[],
             )
             ],
         )
@@ -975,7 +972,6 @@ def test_writing_retry_instructions_include_missing_chunk_ids() -> None:
         episode_id="episode-1",
         sequence=1,
         title="Episode 1",
-        synopsis="Synopsis",
         chapter_ids=["chapter-1"],
         chunk_ids=[hit.chunk_id for hit in retrieval_hits],
         themes=["alpha"],
@@ -983,9 +979,7 @@ def test_writing_retry_instructions_include_missing_chunk_ids() -> None:
             EpisodeBeat(
                 beat_id="beat-1",
                 title="Beat 1",
-                objective="Objective",
                 chunk_ids=[hit.chunk_id for hit in retrieval_hits],
-                claim_requirements=[],
             )
         ],
     )
@@ -1023,7 +1017,6 @@ def test_writing_retry_instructions_include_cited_only_chunk_ids() -> None:
         episode_id="episode-1",
         sequence=1,
         title="Episode 1",
-        synopsis="Synopsis",
         chapter_ids=["chapter-1"],
         chunk_ids=[hit.chunk_id for hit in retrieval_hits],
         themes=["alpha"],
@@ -1031,9 +1024,7 @@ def test_writing_retry_instructions_include_cited_only_chunk_ids() -> None:
             EpisodeBeat(
                 beat_id="beat-1",
                 title="Beat 1",
-                objective="Objective",
                 chunk_ids=[hit.chunk_id for hit in retrieval_hits],
-                claim_requirements=[],
             )
         ],
     )
@@ -1412,7 +1403,6 @@ def test_episode_planning_uses_configured_min_episode_source_ratio() -> None:
                     "episode_id": "episode-1",
                     "sequence": 1,
                     "title": "Episode 1",
-                    "synopsis": "Part 1",
                     "chapter_ids": ["ratio-book-chapter-1", "ratio-book-chapter-2"],
                     "chunk_ids": ["ratio-book-chapter-1-chunk-1", "ratio-book-chapter-2-chunk-1"],
                     "themes": ["theme-1", "theme-2"],
@@ -1420,9 +1410,7 @@ def test_episode_planning_uses_configured_min_episode_source_ratio() -> None:
                         {
                             "beat_id": "episode-1-beat-1",
                             "title": "Beat 1",
-                            "objective": "Objective",
                             "chunk_ids": ["ratio-book-chapter-1-chunk-1", "ratio-book-chapter-2-chunk-1"],
-                            "claim_requirements": [],
                         }
                     ],
                 },
@@ -1430,7 +1418,6 @@ def test_episode_planning_uses_configured_min_episode_source_ratio() -> None:
                     "episode_id": "episode-2",
                     "sequence": 2,
                     "title": "Episode 2",
-                    "synopsis": "Part 2",
                     "chapter_ids": ["ratio-book-chapter-3"],
                     "chunk_ids": ["ratio-book-chapter-3-chunk-1"],
                     "themes": ["theme-3"],
@@ -1438,9 +1425,7 @@ def test_episode_planning_uses_configured_min_episode_source_ratio() -> None:
                         {
                             "beat_id": "episode-2-beat-1",
                             "title": "Beat 2",
-                            "objective": "Objective",
                             "chunk_ids": ["ratio-book-chapter-3-chunk-1"],
-                            "claim_requirements": [],
                         }
                     ],
                 },

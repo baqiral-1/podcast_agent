@@ -167,9 +167,7 @@ class EpisodeBeat(StrictModel):
 
     beat_id: str
     title: str
-    objective: str
     chunk_ids: list[str] = Field(default_factory=list)
-    claim_requirements: list[str] = Field(default_factory=list)
 
 
 class EpisodePlan(StrictModel):
@@ -178,7 +176,6 @@ class EpisodePlan(StrictModel):
     episode_id: str
     sequence: int = Field(ge=1)
     title: str
-    synopsis: str
     chapter_ids: list[str]
     chunk_ids: list[str] = Field(default_factory=list)
     themes: list[str] = Field(default_factory=list)
@@ -191,7 +188,6 @@ class PlannerEpisodePlan(StrictModel):
     episode_id: str
     sequence: int = Field(ge=1)
     title: str
-    synopsis: str
     chapter_ids: list[str]
     themes: list[str] = Field(default_factory=list)
 

@@ -114,7 +114,6 @@ class FlakyPlanningLLM(LLMClient):
                                 "episode_id": "episode-1",
                                 "sequence": 1,
                                 "title": chapter["title"],
-                                "synopsis": "Too short and chapter-scoped.",
                                 "chapter_ids": [chapter["chapter_id"]],
                                 "themes": ["test"],
                             }
@@ -149,7 +148,6 @@ class TruncatingPlanningLLM(LLMClient):
                             "episode_id": "episode-1",
                             "sequence": 1,
                             "title": "Episode 1",
-                            "synopsis": "Recovered after truncation.",
                             "chapter_ids": chapter_ids,
                             "themes": ["test"],
                         }
@@ -962,7 +960,6 @@ def test_planning_returns_single_episode_when_book_is_below_source_word_floor() 
                 episode_id="episode-1",
                 sequence=1,
                 title="Episode 1",
-                synopsis="Part 1",
                 chapter_ids=["medium-book-chapter-1"],
                 chunk_ids=["c1"],
                 themes=["alpha"],
@@ -970,9 +967,7 @@ def test_planning_returns_single_episode_when_book_is_below_source_word_floor() 
                     EpisodeBeat(
                         beat_id="beat-1",
                         title="Beat 1",
-                        objective="Objective",
                         chunk_ids=["c1"],
-                        claim_requirements=["Claim"],
                     )
                 ],
             ),
@@ -980,7 +975,6 @@ def test_planning_returns_single_episode_when_book_is_below_source_word_floor() 
                 episode_id="episode-2",
                 sequence=2,
                 title="Episode 2",
-                synopsis="Part 2",
                 chapter_ids=["medium-book-chapter-2"],
                 chunk_ids=["c2"],
                 themes=["beta"],
@@ -988,9 +982,7 @@ def test_planning_returns_single_episode_when_book_is_below_source_word_floor() 
                     EpisodeBeat(
                         beat_id="beat-2",
                         title="Beat 2",
-                        objective="Objective",
                         chunk_ids=["c2"],
-                        claim_requirements=["Claim"],
                     )
                 ],
             ),
@@ -1066,7 +1058,6 @@ def test_planning_splits_large_books_only_when_each_episode_meets_source_floor()
                 episode_id=f"episode-{index}",
                 sequence=index,
                 title=f"Episode {index}",
-                synopsis=f"Part {index}",
                 chapter_ids=[chapter.chapter_id],
                 chunk_ids=[chapter.chunk_ids[0]],
                 themes=[f"theme-{index}"],
@@ -1074,9 +1065,7 @@ def test_planning_splits_large_books_only_when_each_episode_meets_source_floor()
                     EpisodeBeat(
                         beat_id=f"beat-{index}",
                         title="Beat",
-                        objective="Objective",
                         chunk_ids=[chapter.chunk_ids[0]],
-                        claim_requirements=[],
                     )
                 ],
             )
@@ -1236,13 +1225,12 @@ def test_writing_retries_after_summary_length_script() -> None:
         episode_id="episode-1",
         sequence=1,
         title="Episode 1",
-        synopsis="Full episode",
         chapter_ids=["writer-book-chapter-1", "writer-book-chapter-2"],
         chunk_ids=["c1", "c2", "c3", "c4"],
         themes=["alpha"],
         beats=[
-            EpisodeBeat(beat_id="beat-1", title="Beat 1", objective="Objective", chunk_ids=["c1", "c2"], claim_requirements=[]),
-            EpisodeBeat(beat_id="beat-2", title="Beat 2", objective="Objective", chunk_ids=["c3", "c4"], claim_requirements=[]),
+            EpisodeBeat(beat_id="beat-1", title="Beat 1", chunk_ids=["c1", "c2"]),
+            EpisodeBeat(beat_id="beat-2", title="Beat 2", chunk_ids=["c3", "c4"]),
         ],
     )
     retrieval_hits = [
@@ -1323,7 +1311,6 @@ def test_planning_splits_long_chapter_into_section_beats() -> None:
                 episode_id="episode-1",
                 sequence=1,
                 title="Episode 1",
-                synopsis="Long chapter",
                 chapter_ids=[chapter_id],
                 chunk_ids=chunk_ids,
                 themes=["march"],
@@ -1331,9 +1318,7 @@ def test_planning_splits_long_chapter_into_section_beats() -> None:
                     EpisodeBeat(
                         beat_id="beat-1",
                         title="Beat 1",
-                        objective="Objective",
                         chunk_ids=chunk_ids,
-                        claim_requirements=[],
                     )
                 ],
             )
@@ -1413,7 +1398,6 @@ def test_writing_runs_per_beat_with_assigned_evidence_windows() -> None:
         episode_id="episode-1",
         sequence=1,
         title="Episode 1",
-        synopsis="Full episode",
         chapter_ids=["chapter-1"],
         chunk_ids=[hit.chunk_id for hit in retrieval_hits],
         themes=["alpha"],
@@ -1421,16 +1405,12 @@ def test_writing_runs_per_beat_with_assigned_evidence_windows() -> None:
             EpisodeBeat(
                 beat_id="beat-1",
                 title="Beat 1",
-                objective="Objective 1",
                 chunk_ids=[hit.chunk_id for hit in retrieval_hits],
-                claim_requirements=[],
             ),
             EpisodeBeat(
                 beat_id="beat-2",
                 title="Beat 2",
-                objective="Objective 2",
                 chunk_ids=["chunk-3", "chunk-4", "chunk-5"],
-                claim_requirements=[],
             ),
         ],
     )

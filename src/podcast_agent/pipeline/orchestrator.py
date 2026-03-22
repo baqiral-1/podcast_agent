@@ -57,6 +57,7 @@ from podcast_agent.schemas.models import (
     SourceType,
 )
 from podcast_agent.tts import TTSClient, build_tts_client
+from podcast_agent.utils.text import truncate_words
 
 
 class WavMergeError(RuntimeError):
@@ -1584,7 +1585,7 @@ class PipelineOrchestrator:
             source_text = f"{beat.title}. {narration}".strip() if narration else beat.title.strip()
             summary = self._extract_key_sentences(source_text, target_words=60)
             if not summary:
-                summary = self._truncate_words(source_text, 60)
+                summary = truncate_words(source_text, 60)
             lines.append(f"{index}. {summary}")
         return "\n".join(lines).strip()
 
@@ -1608,7 +1609,7 @@ class PipelineOrchestrator:
         tokenized = [cls._tokenize_words(sentence) for sentence in sentences]
         lowered = [[token.lower() for token in tokens] for tokens in tokenized]
         if not any(lowered):
-            return cls._truncate_words(text, target_words)
+            return truncate_words(text, target_words)
         doc_freq: Counter[str] = Counter()
         for tokens in lowered:
             doc_freq.update(set(tokens))
@@ -1671,12 +1672,6 @@ class PipelineOrchestrator:
         union = left.union(right)
         return len(intersection) / len(union)
 
-    @staticmethod
-    def _truncate_words(text: str, max_words: int) -> str:
-        words = text.split()
-        if len(words) <= max_words:
-            return text.strip()
-        return " ".join(words[:max_words]).strip()
 
     def _write_citation_audit(
         self,
@@ -1774,7 +1769,6 @@ def _placeholder_episode_plan(book_id: str, manifest: RenderManifest) -> Episode
         episode_id=manifest.episode_id,
         sequence=1,
         title=manifest.title,
-        synopsis="Audio regenerated directly from an existing render manifest.",
         chapter_ids=[],
         themes=[],
     )

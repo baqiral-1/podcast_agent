@@ -17,19 +17,16 @@ def test_extract_key_sentences_hits_target_word_count() -> None:
     assert len(summary.split()) == 60
 
 
-def test_build_beat_outline_uses_narration_over_objective() -> None:
+def test_build_beat_outline_uses_narration() -> None:
     beat = EpisodeBeat(
         beat_id="beat-1",
         title="Beat Title",
-        objective="OBJECTIVEONLY should not appear.",
         chunk_ids=[],
-        claim_requirements=[],
     )
     plan = EpisodePlan(
         episode_id="episode-1",
         sequence=1,
         title="Episode Title",
-        synopsis="Synopsis",
         chapter_ids=["chapter-1"],
         chunk_ids=[],
         themes=[],
@@ -57,4 +54,3 @@ def test_build_beat_outline_uses_narration_over_objective() -> None:
     orchestrator = PipelineOrchestrator.__new__(PipelineOrchestrator)
     outline = PipelineOrchestrator._build_beat_outline(orchestrator, plan, script)
     assert "NARRATIONONLY" in outline
-    assert "OBJECTIVEONLY" not in outline

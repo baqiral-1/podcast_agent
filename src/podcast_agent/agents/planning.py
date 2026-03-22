@@ -159,7 +159,7 @@ class EpisodePlanningAgent(Agent):
             f"Return exactly {episode_count} episodes.",
             "Use chapter_ids as the authoritative contiguous partition of the selected chapters.",
             "Return only episode metadata and chapter_ids; do not include chunk_ids or beats.",
-            "Keep strategy_summary, title, synopsis, and themes concise.",
+            "Keep strategy_summary, title, and themes concise.",
         ]
         if "truncated because it hit the completion token limit" in str(last_error):
             correction_instructions.append(
@@ -294,7 +294,6 @@ class EpisodePlanningAgent(Agent):
             "episode_id": episode.episode_id,
             "sequence": episode.sequence,
             "title": episode.title,
-            "synopsis": episode.synopsis,
             "chapter_ids": chapter_ids,
             "chunk_ids": chunk_ids,
             "themes": themes or episode.themes,
@@ -325,7 +324,6 @@ class EpisodePlanningAgent(Agent):
             template = sequence_to_episode.get(sequence) or sequence_to_episode.get(min(sequence_to_episode, default=1), {
                 "episode_id": f"episode-{sequence}",
                 "title": f"Episode {sequence}",
-                "synopsis": "",
                 "themes": [],
                 "chunk_ids": [],
             })
@@ -340,7 +338,6 @@ class EpisodePlanningAgent(Agent):
                     "episode_id": f"episode-{sequence}",
                     "sequence": sequence,
                     "title": template["title"],
-                    "synopsis": template.get("synopsis", ""),
                     "chapter_ids": chapter_group,
                     "chunk_ids": chunk_ids,
                     "themes": template.get("themes", []),
@@ -392,12 +389,10 @@ class EpisodePlanningAgent(Agent):
         chapter_ids = [chapter_id for episode in episodes for chapter_id in episode["chapter_ids"]]
         chunk_ids = [chunk_id for episode in episodes for chunk_id in episode["chunk_ids"]]
         themes = [theme for episode in episodes for theme in episode["themes"]]
-        synopses = [episode["synopsis"] for episode in episodes if episode["synopsis"]]
         return {
             "episode_id": episode_id,
             "sequence": episodes[0]["sequence"],
             "title": title,
-            "synopsis": " ".join(dict.fromkeys(synopses)),
             "chapter_ids": chapter_ids,
             "chunk_ids": chunk_ids,
             "themes": [theme for theme, _ in Counter(themes).most_common(4)],
@@ -451,9 +446,7 @@ class EpisodePlanningAgent(Agent):
                     {
                         "beat_id": f"{episode_id}-beat-{beat_sequence}",
                         "title": section_label,
-                        "objective": f"Synthesize the grounded material from {section_label.lower()}.",
                         "chunk_ids": group_chunk_ids,
-                        "claim_requirements": [],
                     }
                 )
                 beat_sequence += 1

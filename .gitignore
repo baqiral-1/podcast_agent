@@ -1,4 +1,8 @@
 .podcast_agent/
+.podcast_agent/runs/
+downloaded_books/
 .pytest_cache/
 __pycache__/
+.DS_Store
+page-0001.png
 *.pyc

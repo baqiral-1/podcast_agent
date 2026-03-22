@@ -143,7 +143,6 @@ class HeuristicLLMClient(LLMClient):
                     "episode_id": f"episode-{sequence}",
                     "sequence": sequence,
                     "title": episode_title,
-                    "synopsis": " ".join(cluster["rationale"]),
                     "chapter_ids": cluster["chapter_ids"],
                     "themes": [item for item, _ in Counter(cluster["themes"]).most_common(4)]
                     or analysis["themes"][:3],
@@ -176,7 +175,7 @@ class HeuristicLLMClient(LLMClient):
                         }
                     )
                 narration_parts.append(chunk["text"].strip())
-            narration = " ".join(narration_parts) or beat["objective"]
+            narration = " ".join(narration_parts) or beat["title"]
             segments.append(
                 {
                     "segment_id": f"{episode['episode_id']}-segment-{sequence}",
@@ -214,7 +213,7 @@ class HeuristicLLMClient(LLMClient):
             "segments": [
                 {
                     "heading": beat["title"],
-                    "narration": " ".join(narration_parts) or beat["objective"],
+                    "narration": " ".join(narration_parts) or beat["title"],
                     "claims": claims,
                 }
             ],

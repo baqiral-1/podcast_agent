@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from podcast_agent.agents.base import Agent
 from podcast_agent.prompts.episode_framing import build_episode_framing_instructions
 from podcast_agent.schemas.models import EpisodeFraming
+from podcast_agent.utils.text import truncate_words
 
 
 class EpisodeFramingAgent(Agent):
@@ -53,7 +54,7 @@ class EpisodeFramingAgent(Agent):
         return {
             "episode_id": episode_id,
             "episode_title": episode_title,
-            "recap_source": self._truncate_words(recap_source, self.max_recap_source_words),
+            "recap_source": truncate_words(recap_source, self.max_recap_source_words),
             "current_themes": current_themes,
             "next_themes": next_themes or [],
             "current_outline": current_outline,
@@ -129,10 +130,3 @@ class EpisodeFramingAgent(Agent):
     @staticmethod
     def _word_count(text: str) -> int:
         return len(text.split())
-
-    @staticmethod
-    def _truncate_words(text: str, max_words: int) -> str:
-        words = text.split()
-        if len(words) <= max_words:
-            return text.strip()
-        return " ".join(words[:max_words]).strip()
