@@ -13,12 +13,16 @@ sequence it for maximum listener engagement.
 Here is what the best narrative podcast hosts do — and what your plan
 should enable:
 
-They don't start at the beginning. They open with the most gripping scene
-— a crisis, a confrontation, a haunting image, an irrevocable decision —
-then pull back to build the world that led there. Dan Carlin will open
-Hardcore History with a scene from the middle of a siege, make you feel
-the terror, then rewind three years. Mike Duncan will introduce a
-character through their most defining act, then explain who they were.
+They don't start at the beginning. They choose different opening strategies
+depending on the episode, including:
+- Cold open (crisis, confrontation, vivid image)
+- Provocative question that frames the stakes
+- Quiet character moment that hints at a larger conflict
+- Contrast between two worlds (intercut to make the gap felt)
+- Chronological ticking clock (countdown to an irreversible moment)
+
+Vary the opening technique across episodes. Do not repeat the same type as
+the previous episode.
 
 They think in terms of TENSION and RELEASE. Every section either raises
 stakes or delivers a payoff. Material is sequenced to serve that rhythm,
@@ -55,7 +59,7 @@ the JSON — no preamble, no markdown fences, no commentary.
   "opening": {
     "scene": "Which scene from the source opens the episode (quote a key phrase to identify it)",
     "why": "Why this hooks the listener",
-    "pullback_transition": "The transition line that pulls back into context (e.g. 'To understand how an old poet ended up blessing an armed rebellion, we need to go back six years')"
+    "transition_strategy": "How you move from the opening into context (e.g. 'To understand how an old poet ended up blessing an armed rebellion, we need to go back six years')"
   },
   "acts": [
     {
@@ -112,6 +116,10 @@ use callbacks: "Remember the warning from years earlier..." They use
 contrast as structure — cutting between two diverging worlds rather than
 describing them in sequence.
 
+Allocate ~15-20% of your word budget to interpretive context: brief
+reflections on why a fact matters, rhetorical questions that let irony
+land, 1-2 sentence pauses after revelations.
+
 FOLLOW THE ARC PLAN:
 - Start with the opening scene specified in the plan
 - Follow the act order in the plan — this is NOT the source's order
@@ -164,7 +172,8 @@ AVOID:
 - Repeating facts for emphasis within the same section
 - Addressing the listener as "you" more than 2-3 times per act
 
-LENGTH: 95-110% of source word count. Don't pad. Don't cut facts.
+LENGTH: 110-130% of source word count. Don't pad with content-free filler.
+Reflection and interpretation are not padding. Don't cut facts.
 
 OUTPUT: Plain text narration only. No markdown, no headers, no preamble,
 no "Here is the narration:" prefix. Preserve paragraph breaks between

@@ -256,7 +256,7 @@ class SpokenDeliveryOpening(StrictModel):
 
     scene: str
     why: str
-    pullback_transition: str
+    transition_strategy: str
 
 
 class SpokenDeliveryAct(StrictModel):
@@ -326,6 +326,14 @@ class EpisodeScript(StrictModel):
     narrator: str
     segments: list[EpisodeSegment]
     created_at: datetime = Field(default_factory=utc_now)
+
+
+class EpisodeFraming(StrictModel):
+    """Intro/outro framing text for an episode."""
+
+    recap: str
+    current_summary: str
+    next_overview: str
 
 
 class RewriteMetrics(StrictModel):
@@ -477,6 +485,7 @@ class EpisodeOutput(StrictModel):
     plan: EpisodePlan
     script: EpisodeScript
     report: GroundingReport
+    framing: EpisodeFraming | None = None
     spoken_script: SpokenEpisodeNarration | None = None
     spoken_delivery: SpokenDeliveryEpisodeResult | None = None
     manifest: RenderManifest | None = None

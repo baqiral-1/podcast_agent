@@ -74,7 +74,7 @@ class TwoCallSpokenDeliveryLLM(LLMClient):
                     "opening": {
                         "scene": "Opening scene",
                         "why": "Hook",
-                        "pullback_transition": "Pull back.",
+                        "transition_strategy": "Pull back.",
                     },
                     "acts": [
                         {
