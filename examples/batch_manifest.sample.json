@@ -1,0 +1,22 @@
+{
+  "run_id": "batch-20260322T1200",
+  "with_audio": false,
+  "books": [
+    {
+      "source_path": "downloaded_books/ghost_wars.cleaned.chapters.txt",
+      "title": "Ghost Wars",
+      "author": "Steve Coll",
+      "episode_count": 5,
+      "start_chapter": "We're 1. Going to Die Here and Subdue",
+      "end_chapter": "32. What an Unlucky Country."
+    },
+    {
+      "source_path": "downloaded_books/The_Crusades_authoritative_history.repo_ocr.with_chapters.intro_onward.txt",
+      "title": "The Crusades: An Authoritative History",
+      "author": "Thomas Asbridge",
+      "episode_count": 5,
+      "start_chapter": "Holy War, Holy Land",
+      "end_chapter": "The Holy Land Reclaimed"
+    }
+  ]
+}

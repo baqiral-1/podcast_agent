@@ -166,3 +166,6 @@ class SpokenDeliveryAgent(Agent):
                 )
             )
         return chunks
+
+    def chunk_narration(self, episode_id: str, narration: str) -> list[SpokenNarrationChunk]:
+        return self._chunk_narration(episode_id, narration)

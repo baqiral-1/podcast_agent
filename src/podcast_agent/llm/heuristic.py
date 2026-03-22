@@ -9,6 +9,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from podcast_agent.llm.base import LLMClient, PromptPayload
+from podcast_agent.llm.concurrency import llm_semaphore
 from podcast_agent.schemas.models import GroundingStatus
 
 
@@ -25,26 +26,27 @@ class HeuristicLLMClient(LLMClient):
         payload: PromptPayload,
         response_model: type[BaseModel],
     ) -> BaseModel:
-        if self.run_logger is not None:
-            self.run_logger.log(
-                "llm_request",
-                client="heuristic",
-                schema_name=schema_name,
-                instructions=instructions,
-                payload=payload,
-            )
-        generator = getattr(self, f"_generate_{schema_name}", None)
-        if generator is None:
-            raise ValueError(f"No heuristic generator available for schema '{schema_name}'.")
-        response = generator(payload)
-        if self.run_logger is not None:
-            self.run_logger.log(
-                "llm_response",
-                client="heuristic",
-                schema_name=schema_name,
-                response=response,
-            )
-        return response_model.model_validate(response)
+        with llm_semaphore():
+            if self.run_logger is not None:
+                self.run_logger.log(
+                    "llm_request",
+                    client="heuristic",
+                    schema_name=schema_name,
+                    instructions=instructions,
+                    payload=payload,
+                )
+            generator = getattr(self, f"_generate_{schema_name}", None)
+            if generator is None:
+                raise ValueError(f"No heuristic generator available for schema '{schema_name}'.")
+            response = generator(payload)
+            if self.run_logger is not None:
+                self.run_logger.log(
+                    "llm_response",
+                    client="heuristic",
+                    schema_name=schema_name,
+                    response=response,
+                )
+            return response_model.model_validate(response)
 
     def _generate_book_structure(self, payload: PromptPayload) -> dict[str, Any]:
         return payload["draft"]

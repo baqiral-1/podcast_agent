@@ -55,7 +55,7 @@ class LLMConfig(BaseModel):
     anthropic_max_tokens: int = Field(
         default_factory=lambda: int(os.getenv("ANTHROPIC_MAX_TOKENS", "16384")), ge=1
     )
-    timeout_seconds: float = Field(default=300.0, gt=0.0)
+    timeout_seconds: float = Field(default=600.0, gt=0.0)
 
 
 class TTSConfig(BaseModel):
@@ -116,12 +116,13 @@ class PipelineConfig(BaseModel):
     chunk_overlap_words: int = Field(default=30, ge=0)
     max_repair_attempts: int = Field(default=2, ge=0)
     episode_parallelism: int = Field(default=3, ge=1)
+    batch_parallelism: int = Field(default=3, ge=1)
     audio_parallelism: int = Field(default=6, ge=1)
     audio_retry_attempts: int = Field(default=2, ge=0)
     beat_parallelism: int = Field(default=6, ge=1)
     beat_write_retry_attempts: int = Field(default=2, ge=0)
     beat_write_timeout_seconds: float = Field(default=180.0, gt=0.0)
-    grounding_parallelism: int = Field(default=6, ge=1)
+    grounding_parallelism: int = Field(default=5, ge=1)
     minimum_source_words_per_episode: int = Field(default=50000, ge=1000)
     min_episode_source_ratio: float = Field(default=0.3, gt=0.0, le=1.0)
     spoken_words_per_minute: int = Field(default=130, ge=80)
@@ -140,6 +141,12 @@ class PipelineConfig(BaseModel):
     structuring_parallelism: int = Field(default=6, ge=1)
     structuring_window_words: int = Field(default=5000, ge=300)
     structuring_window_overlap_words: int = Field(default=150, ge=0)
+    framing_recap_words: int = Field(default=80, ge=10)
+    framing_current_words: int = Field(default=120, ge=10)
+    framing_next_min_words: int = Field(default=40, ge=10)
+    framing_next_max_words: int = Field(default=50, ge=10)
+    framing_recap_source_max_words: int = Field(default=900, ge=50)
+    framing_outline_max_words: int = Field(default=120, ge=20)
 
 
 class Settings(BaseModel):

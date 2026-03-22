@@ -507,12 +507,13 @@ def test_pipeline_defaults_raise_parallelism() -> None:
     settings = Settings()
 
     assert settings.pipeline.episode_parallelism == 3
+    assert settings.pipeline.batch_parallelism == 3
     assert settings.pipeline.audio_parallelism == 6
     assert settings.pipeline.audio_retry_attempts == 2
     assert settings.pipeline.beat_parallelism == 6
     assert settings.pipeline.beat_write_retry_attempts == 2
     assert settings.pipeline.beat_write_timeout_seconds == 180.0
-    assert settings.pipeline.grounding_parallelism == 6
+    assert settings.pipeline.grounding_parallelism == 5
     assert settings.pipeline.structuring_parallelism == 6
     assert settings.pipeline.max_episode_minutes == 360
     assert settings.pipeline.max_structuring_llm_chapter_words == 75000
@@ -1112,13 +1113,16 @@ def test_run_pipeline_processes_episodes_in_parallel_when_enabled(tmp_path: Path
         *,
         synthesize_audio: bool,
         allow_downstream: bool,
-    ) -> EpisodeOutput:
-        del book_id, synthesize_audio, allow_downstream
+        previous_spoken_script: SpokenEpisodeNarration | None,
+        next_plan: EpisodePlan | None,
+        next_script: EpisodeScript | None,
+    ) -> tuple[EpisodeOutput, SpokenEpisodeNarration | None]:
+        del book_id, synthesize_audio, allow_downstream, previous_spoken_script, next_plan, next_script
         return EpisodeOutput(
             plan=preparation.plan,
             script=preparation.script,
             report=preparation.report,
-        )
+        ), None
 
     monkeypatch.setattr(orchestrator, "_prepare_episode_plan", fake_prepare_episode_plan)
     monkeypatch.setattr(orchestrator, "_finalize_episode_plan", fake_finalize_episode_plan)
@@ -1191,15 +1195,18 @@ def test_run_pipeline_defers_spoken_delivery_until_grounding_barrier(tmp_path: P
         *,
         synthesize_audio: bool,
         allow_downstream: bool,
-    ) -> EpisodeOutput:
-        del synthesize_audio
+        previous_spoken_script: SpokenEpisodeNarration | None,
+        next_plan: EpisodePlan | None,
+        next_script: EpisodeScript | None,
+    ) -> tuple[EpisodeOutput, SpokenEpisodeNarration | None]:
+        del synthesize_audio, previous_spoken_script, next_plan, next_script
         if allow_downstream:
             orchestrator.spoken_delivery_episode(book_id, preparation.script)
         return EpisodeOutput(
             plan=preparation.plan,
             script=preparation.script,
             report=preparation.report,
-        )
+        ), None
 
     monkeypatch.setattr(orchestrator, "_prepare_episode_plan", fake_prepare_episode_plan)
     monkeypatch.setattr(orchestrator, "_finalize_episode_plan", fake_finalize_episode_plan)
@@ -1208,6 +1215,36 @@ def test_run_pipeline_defers_spoken_delivery_until_grounding_barrier(tmp_path: P
     result = orchestrator.run_pipeline(book_path, title="Observatory Book", author="A. Writer", episode_count=2)
 
     assert len(result["episodes"]) == 2
+
+
+def test_framing_failure_skips_manifest(tmp_path: Path, monkeypatch) -> None:
+    book_path = tmp_path / "book.txt"
+    book_path.write_text(BOOK_TEXT, encoding="utf-8")
+    settings = Settings().model_copy(
+        update={
+            "pipeline": Settings().pipeline.model_copy(
+                update={
+                    "artifact_root": tmp_path / "runs",
+                    "minimum_source_words_per_episode": 50,
+                    "episode_parallelism": 1,
+                }
+            )
+        }
+    )
+    orchestrator = PipelineOrchestrator(
+        repository=InMemoryRepository(),
+        llm=HeuristicLLMClient(),
+        settings=settings,
+    )
+
+    def fail_framing(*args, **kwargs):
+        raise RuntimeError("framing failed")
+
+    monkeypatch.setattr(orchestrator, "_build_episode_framing", fail_framing)
+
+    result = orchestrator.run_pipeline(book_path, title="Observatory Book", author="A. Writer", episode_count=1)
+
+    assert result["episodes"][0]["manifest"] is None
 
 
 def test_run_pipeline_skips_downstream_when_any_episode_fails_grounding(tmp_path: Path, monkeypatch) -> None:
@@ -1343,13 +1380,16 @@ def test_grounding_rolls_forward_with_limited_parallelism(tmp_path: Path, monkey
         *,
         synthesize_audio: bool,
         allow_downstream: bool,
-    ) -> EpisodeOutput:
-        del book_id, synthesize_audio, allow_downstream
+        previous_spoken_script: SpokenEpisodeNarration | None,
+        next_plan: EpisodePlan | None,
+        next_script: EpisodeScript | None,
+    ) -> tuple[EpisodeOutput, SpokenEpisodeNarration | None]:
+        del book_id, synthesize_audio, allow_downstream, previous_spoken_script, next_plan, next_script
         return EpisodeOutput(
             plan=preparation.plan,
             script=preparation.script,
             report=preparation.report,
-        )
+        ), None
 
     monkeypatch.setattr(orchestrator, "_prepare_episode_plan", fake_prepare_episode_plan)
     monkeypatch.setattr(orchestrator, "_finalize_episode_plan", fake_finalize_episode_plan)

@@ -41,6 +41,25 @@ class BookIngestionResult(StrictModel):
     ingested_at: datetime = Field(default_factory=utc_now)
 
 
+class BatchBookSpec(StrictModel):
+    """Input specification for one book in a batch run."""
+
+    source_path: str
+    episode_count: int = Field(ge=1)
+    title: str | None = None
+    author: str = "Unknown"
+    start_chapter: str | None = None
+    end_chapter: str | None = None
+
+
+class BatchRunManifest(StrictModel):
+    """Manifest describing a batch pipeline run."""
+
+    run_id: str | None = None
+    with_audio: bool = False
+    books: list[BatchBookSpec]
+
+
 class BookChunk(StrictModel):
     """Canonical chunk record derived from a chapter or section."""
 

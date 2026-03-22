@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from podcast_agent.config import LLMConfig, Settings
 from podcast_agent.llm.base import LLMClient, LLMContentFilterError, PromptPayload
+from podcast_agent.llm.concurrency import configure_llm_semaphore, llm_semaphore
 
 
 @dataclass(frozen=True)
@@ -82,78 +83,79 @@ class OpenAICompatibleLLMClient(LLMClient):
             raise RuntimeError(
                 "OPENAI_API_KEY is required for the default OpenAI-compatible LLM client."
             )
-        selected_model = self.config.model_overrides.get(schema_name, self.config.model_name)
-        endpoint = f"{self.config.base_url.rstrip('/')}/v1/chat/completions"
-        request_payload = {
-            "model": selected_model,
-            "temperature": self.config.temperature,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": (
-                        f"{instructions}\n"
-                        "Return only a JSON object that matches the requested schema. "
-                        "Do not wrap the response in markdown or prose. "
-                        "Do not repeat wrapper keys such as schema_name, payload, or expected_schema."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": json.dumps(
-                        {
-                            "schema_name": schema_name,
-                            "payload": payload,
-                            "expected_schema": response_model.model_json_schema(),
-                        },
-                        default=str,
-                    ),
-                },
-            ],
-            "response_format": {"type": "json_object"},
-        }
-        headers = {
-            "Authorization": f"Bearer {self.config.api_key}",
-            "Content-Type": "application/json",
-        }
-        if self.run_logger is not None:
-            self.run_logger.log(
-                "llm_request",
-                client="openai-compatible",
-                schema_name=schema_name,
-                instructions=request_payload["messages"][0]["content"],
-                payload=request_payload["messages"][1]["content"],
-                model=selected_model,
-                timeout_seconds=self.config.timeout_seconds,
-            )
-        try:
-            response = self.transport.post_json(
-                url=endpoint,
-                headers=headers,
-                payload=request_payload,
-                timeout_seconds=self.config.timeout_seconds,
-            )
+        with llm_semaphore():
+            selected_model = self.config.model_overrides.get(schema_name, self.config.model_name)
+            endpoint = f"{self.config.base_url.rstrip('/')}/v1/chat/completions"
+            request_payload = {
+                "model": selected_model,
+                "temperature": self.config.temperature,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            f"{instructions}\n"
+                            "Return only a JSON object that matches the requested schema. "
+                            "Do not wrap the response in markdown or prose. "
+                            "Do not repeat wrapper keys such as schema_name, payload, or expected_schema."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": json.dumps(
+                            {
+                                "schema_name": schema_name,
+                                "payload": payload,
+                                "expected_schema": response_model.model_json_schema(),
+                            },
+                            default=str,
+                        ),
+                    },
+                ],
+                "response_format": {"type": "json_object"},
+            }
+            headers = {
+                "Authorization": f"Bearer {self.config.api_key}",
+                "Content-Type": "application/json",
+            }
             if self.run_logger is not None:
                 self.run_logger.log(
-                    "llm_response",
+                    "llm_request",
                     client="openai-compatible",
                     schema_name=schema_name,
-                    response=response.body,
+                    instructions=request_payload["messages"][0]["content"],
+                    payload=request_payload["messages"][1]["content"],
+                    model=selected_model,
+                    timeout_seconds=self.config.timeout_seconds,
                 )
-            _raise_for_finish_reason(response.body)
-            content = _extract_message_content(response.body)
-            normalized_json = _normalize_json_content(content)
-            normalized_payload = _unwrap_response_payload(json.loads(normalized_json))
-            return response_model.model_validate_json(json.dumps(normalized_payload))
-        except Exception as exc:
-            if self.run_logger is not None:
-                self.run_logger.log(
-                    "llm_error",
-                    client="openai-compatible",
-                    schema_name=schema_name,
-                    error_type=type(exc).__name__,
-                    error_message=str(exc),
+            try:
+                response = self.transport.post_json(
+                    url=endpoint,
+                    headers=headers,
+                    payload=request_payload,
+                    timeout_seconds=self.config.timeout_seconds,
                 )
-            raise
+                if self.run_logger is not None:
+                    self.run_logger.log(
+                        "llm_response",
+                        client="openai-compatible",
+                        schema_name=schema_name,
+                        response=response.body,
+                    )
+                _raise_for_finish_reason(response.body)
+                content = _extract_message_content(response.body)
+                normalized_json = _normalize_json_content(content)
+                normalized_payload = _unwrap_response_payload(json.loads(normalized_json))
+                return response_model.model_validate_json(json.dumps(normalized_payload))
+            except Exception as exc:
+                if self.run_logger is not None:
+                    self.run_logger.log(
+                        "llm_error",
+                        client="openai-compatible",
+                        schema_name=schema_name,
+                        error_type=type(exc).__name__,
+                        error_message=str(exc),
+                    )
+                raise
 
 
 class RoutingLLMClient(LLMClient):
@@ -202,6 +204,7 @@ class RoutingLLMClient(LLMClient):
 def build_llm_client(settings: Settings) -> LLMClient:
     """Construct the configured LLM client."""
 
+    configure_llm_semaphore(_resolve_llm_parallelism(settings))
     config = settings.llm
     default_provider = _resolve_default_provider(config)
     provider_overrides = {
@@ -245,6 +248,19 @@ def _resolve_default_provider(config: LLMConfig) -> str:
     if llm_provider == "openai-compatible" or provider == "openai-compatible":
         return "openai-compatible"
     raise ValueError(f"Unsupported LLM provider '{config.llm_provider}'.")
+
+
+def _resolve_llm_parallelism(settings: Settings) -> int:
+    pipeline = settings.pipeline
+    return max(
+        1,
+        min(
+            pipeline.structuring_parallelism,
+            pipeline.beat_parallelism,
+            pipeline.grounding_parallelism,
+            pipeline.episode_parallelism,
+        ),
+    )
 
 
 def _normalize_provider(provider: str) -> str:

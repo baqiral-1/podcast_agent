@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from abc import ABC, abstractmethod
 from pathlib import Path
+import threading
 from typing import Any
 
 import psycopg
@@ -39,15 +40,19 @@ class InMemoryRepository(Repository):
         self.books: dict[str, BookIngestionResult] = {}
         self.structures: dict[str, BookStructure] = {}
         self.embeddings: dict[str, dict[str, list[float]]] = {}
+        self._lock = threading.Lock()
 
     def save_book(self, ingestion: BookIngestionResult) -> None:
-        self.books[ingestion.book_id] = ingestion
+        with self._lock:
+            self.books[ingestion.book_id] = ingestion
 
     def save_structure(self, structure: BookStructure) -> None:
-        self.structures[structure.book_id] = structure
+        with self._lock:
+            self.structures[structure.book_id] = structure
 
     def save_embeddings(self, book_id: str, embeddings: dict[str, list[float]]) -> None:
-        self.embeddings[book_id] = embeddings
+        with self._lock:
+            self.embeddings[book_id] = embeddings
 
     def fetch_chunks(self, book_id: str, chunk_ids: list[str] | None = None) -> list[RetrievalHit]:
         structure = self.structures[book_id]

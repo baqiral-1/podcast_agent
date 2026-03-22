@@ -6,10 +6,12 @@ import json
 from pathlib import Path
 
 import typer
+from pydantic import ValidationError
 
 from podcast_agent.config import Settings
 from podcast_agent.db import InMemoryRepository, PostgresRepository
 from podcast_agent.pipeline.orchestrator import PipelineOrchestrator
+from podcast_agent.schemas import BatchRunManifest
 
 app = typer.Typer(help="Book-to-podcast pipeline with strict stage artifacts.")
 
@@ -338,6 +340,82 @@ def run_pipeline(
         end_chapter=end_chapter,
         episode_count=episode_count,
         synthesize_audio=with_audio,
+    )
+    typer.echo(json.dumps(result, indent=2, default=str))
+
+
+@app.command("run-batch")
+def run_batch(
+    manifest_path: Path,
+    with_audio: bool | None = typer.Option(
+        None,
+        "--with-audio/--no-with-audio",
+        help="Override the manifest audio setting.",
+    ),
+    run_id: str | None = typer.Option(
+        default=None,
+        help="Override the manifest run ID.",
+    ),
+    batch_parallelism: int | None = typer.Option(
+        default=None,
+        help="Override the batch parallelism for per-stage book processing.",
+    ),
+    tts_provider: str | None = typer.Option(
+        default=None,
+        help="TTS provider for audio synthesis (openai-compatible, kokoro).",
+    ),
+    model: str | None = typer.Option(
+        default=None,
+        help="Override the default chat model name for all LLM calls.",
+    ),
+    llm_provider: str | None = typer.Option(
+        default=None,
+        help="Override the LLM provider (openai, anthropic, heuristic).",
+    ),
+    agent_model: list[str] | None = typer.Option(
+        None,
+        "--agent-model",
+        help="Per-agent model override as AGENT=MODEL or AGENT=PROVIDER:MODEL (repeatable).",
+    ),
+    database_url: str | None = typer.Option(
+        default=None,
+        help="PostgreSQL database URL. If omitted, falls back to DATABASE_URL when set.",
+    ),
+) -> None:
+    """Run the pipeline for multiple books described in a manifest file."""
+
+    orchestrator = _build_orchestrator(
+        database_url,
+        model=model,
+        agent_model=agent_model,
+        llm_provider=llm_provider,
+        tts_provider=_normalize_tts_provider(tts_provider),
+    )
+    try:
+        manifest = BatchRunManifest.model_validate_json(
+            manifest_path.read_text(encoding="utf-8")
+        )
+    except (OSError, ValidationError, json.JSONDecodeError, ValueError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="manifest_path") from exc
+    orchestrator.log_command(
+        "run-batch",
+        {
+            "manifest_path": str(manifest_path),
+            "database_url": database_url,
+            "with_audio": with_audio,
+            "run_id": run_id,
+            "batch_parallelism": batch_parallelism,
+            "model": model,
+            "llm_provider": llm_provider,
+            "agent_model": agent_model,
+            "tts_provider": tts_provider,
+        },
+    )
+    result = orchestrator.run_batch(
+        manifest,
+        synthesize_audio=with_audio,
+        run_id=run_id,
+        batch_parallelism=batch_parallelism,
     )
     typer.echo(json.dumps(result, indent=2, default=str))
 

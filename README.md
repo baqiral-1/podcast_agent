@@ -41,6 +41,7 @@ Notes:
 podcast-agent ingest-book ./examples/book.txt --title "Example Book" --author "Author"
 podcast-agent run-pipeline ./examples/book.txt --title "Example Book" --author "Author" --episode-count 2 --database-url "$DATABASE_URL"
 podcast-agent run-pipeline ./examples/book.txt --title "Example Book" --author "Author" --episode-count 2 --with-audio
+podcast-agent run-batch ./examples/batch_manifest.sample.json
 podcast-agent render-audio-from-manifest ./.podcast_agent/runs/example-book-20260315T1106/example-book/episode-1/episode_output.json
 ```
 

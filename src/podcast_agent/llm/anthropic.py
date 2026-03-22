@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from podcast_agent.config import LLMConfig
 from podcast_agent.llm.base import LLMClient, LLMContentFilterError, PromptPayload
+from podcast_agent.llm.concurrency import llm_semaphore
 from podcast_agent.llm.openai_compatible import (
     HTTPTransport,
     _unwrap_response_payload,
@@ -37,73 +38,74 @@ class AnthropicLLMClient(LLMClient):
         if not self.config.anthropic_api_key:
             raise RuntimeError("ANTHROPIC_API_KEY is required for the Anthropic LLM client.")
 
-        selected_model = self.config.model_overrides.get(schema_name, self.config.model_name)
-        endpoint = f"{self.config.anthropic_base_url.rstrip('/')}/v1/messages"
-        user_content = json.dumps(
-            {
-                "schema_name": schema_name,
-                "payload": payload,
-            },
-            default=str,
-        )
-        request_payload = {
-            "model": selected_model,
-            "temperature": self.config.temperature,
-            "max_tokens": self.config.anthropic_max_tokens,
-            "system": instructions,
-            "tools": [
+        with llm_semaphore():
+            selected_model = self.config.model_overrides.get(schema_name, self.config.model_name)
+            endpoint = f"{self.config.anthropic_base_url.rstrip('/')}/v1/messages"
+            user_content = json.dumps(
                 {
-                    "name": "respond",
-                    "description": "Respond with structured data matching the requested schema.",
-                    "input_schema": response_model.model_json_schema(),
-                }
-            ],
-            "tool_choice": {"type": "tool", "name": "respond"},
-            "messages": [{"role": "user", "content": user_content}],
-        }
-        headers = {
-            "x-api-key": self.config.anthropic_api_key,
-            "anthropic-version": ANTHROPIC_VERSION,
-            "Content-Type": "application/json",
-        }
-        if self.run_logger is not None:
-            self.run_logger.log(
-                "llm_request",
-                client="anthropic",
-                schema_name=schema_name,
-                instructions=instructions,
-                payload=user_content,
-                model=selected_model,
-                timeout_seconds=self.config.timeout_seconds,
+                    "schema_name": schema_name,
+                    "payload": payload,
+                },
+                default=str,
             )
-        try:
-            response = self.transport.post_json(
-                url=endpoint,
-                headers=headers,
-                payload=request_payload,
-                timeout_seconds=self.config.timeout_seconds,
-            )
+            request_payload = {
+                "model": selected_model,
+                "temperature": self.config.temperature,
+                "max_tokens": self.config.anthropic_max_tokens,
+                "system": instructions,
+                "tools": [
+                    {
+                        "name": "respond",
+                        "description": "Respond with structured data matching the requested schema.",
+                        "input_schema": response_model.model_json_schema(),
+                    }
+                ],
+                "tool_choice": {"type": "tool", "name": "respond"},
+                "messages": [{"role": "user", "content": user_content}],
+            }
+            headers = {
+                "x-api-key": self.config.anthropic_api_key,
+                "anthropic-version": ANTHROPIC_VERSION,
+                "Content-Type": "application/json",
+            }
             if self.run_logger is not None:
                 self.run_logger.log(
-                    "llm_response",
+                    "llm_request",
                     client="anthropic",
                     schema_name=schema_name,
-                    response=response.body,
+                    instructions=instructions,
+                    payload=user_content,
+                    model=selected_model,
+                    timeout_seconds=self.config.timeout_seconds,
                 )
-            _raise_for_anthropic_stop_reason(response.body)
-            tool_input = _extract_tool_use_input(response.body)
-            normalized_payload = _unwrap_response_payload(tool_input)
-            return response_model.model_validate_json(json.dumps(normalized_payload))
-        except Exception as exc:
-            if self.run_logger is not None:
-                self.run_logger.log(
-                    "llm_error",
-                    client="anthropic",
-                    schema_name=schema_name,
-                    error_type=type(exc).__name__,
-                    error_message=str(exc),
+            try:
+                response = self.transport.post_json(
+                    url=endpoint,
+                    headers=headers,
+                    payload=request_payload,
+                    timeout_seconds=self.config.timeout_seconds,
                 )
-            raise
+                if self.run_logger is not None:
+                    self.run_logger.log(
+                        "llm_response",
+                        client="anthropic",
+                        schema_name=schema_name,
+                        response=response.body,
+                    )
+                _raise_for_anthropic_stop_reason(response.body)
+                tool_input = _extract_tool_use_input(response.body)
+                normalized_payload = _unwrap_response_payload(tool_input)
+                return response_model.model_validate_json(json.dumps(normalized_payload))
+            except Exception as exc:
+                if self.run_logger is not None:
+                    self.run_logger.log(
+                        "llm_error",
+                        client="anthropic",
+                        schema_name=schema_name,
+                        error_type=type(exc).__name__,
+                        error_message=str(exc),
+                    )
+                raise
 
 
 def _extract_tool_use_input(body: dict[str, Any]) -> dict[str, Any]:
