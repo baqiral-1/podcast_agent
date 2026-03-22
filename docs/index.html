@@ -15,7 +15,7 @@
       --panel: rgba(255, 255, 255, 0.05);
       --panel-strong: rgba(255, 255, 255, 0.08);
       --font: "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-      --max-width: 1220px;
+      --max-width: 1537px;
       --page-pad: 1.5rem;
       --shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
     }
@@ -100,7 +100,7 @@
 
     .collection-grid {
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 1rem;
     }
 
@@ -127,6 +127,9 @@
     .collection-link {
       display: grid;
       grid-template-columns: 8.2rem minmax(0, 1fr);
+      grid-template-areas:
+        "art copy"
+        "summary summary";
       gap: 1rem;
       height: 100%;
       padding: 1rem;
@@ -137,12 +140,21 @@
       overflow: hidden;
       box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
       align-self: start;
+      grid-area: art;
+    }
+
+    .collection-art img {
+      display: block;
+      width: 100%;
+      height: auto;
+      object-fit: cover;
     }
 
     .collection-copy {
       min-width: 0;
       display: grid;
       gap: 0.75rem;
+      grid-area: copy;
     }
 
     .collection-topline {
@@ -190,6 +202,7 @@
       color: var(--muted);
       font-size: 0.95rem;
       line-height: 1.7;
+      grid-area: summary;
     }
 
     .meta-row {
@@ -236,7 +249,13 @@
       color: #ffffff;
     }
 
-    @media screen and (max-width: 1040px) {
+    @media screen and (max-width: 1200px) {
+      .collection-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media screen and (max-width: 860px) {
       .collection-grid {
         grid-template-columns: 1fr;
       }
@@ -254,11 +273,59 @@
       }
 
       .collection-link {
-        grid-template-columns: 1fr;
+        grid-template-columns: 5.5rem minmax(0, 1fr);
+        grid-template-areas:
+          "art copy"
+          "art summary";
+        gap: 0.65rem;
+        padding: 0.75rem;
+        align-items: center;
       }
 
       .collection-art {
-        max-width: 14rem;
+        width: 5.5rem;
+        height: 5.5rem;
+        max-width: none;
+      }
+
+      .collection-art img {
+        height: 100%;
+      }
+
+      .collection-copy {
+        gap: 0.45rem;
+      }
+
+      .collection-topline {
+        font-size: 0.7rem;
+      }
+
+      .runtime-pill {
+        min-height: 1.4rem;
+        padding: 0.12rem 0.45rem;
+        font-size: 0.7rem;
+      }
+
+      .collection-title {
+        font-size: 1.1rem;
+      }
+
+      .collection-author {
+        font-size: 0.85rem;
+      }
+
+      .collection-summary {
+        font-size: 0.85rem;
+        line-height: 1.5;
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+
+      .meta-row {
+        font-size: 0.82rem;
+        padding-top: 0;
       }
     }
   </style>
@@ -278,7 +345,65 @@
         </div>
 
         <div class="collection-grid">
-          <article class="collection-card" style="--accent:#d47a2c; --accent-weak:rgba(212, 122, 44, 0.16);">
+          <article class="collection-card" style="--accent:#e4572e; --accent-weak:rgba(228, 87, 46, 0.16);">
+            <a class="collection-link" href="./freedom-at-midnight.html">
+              <div class="collection-art">
+                <img
+                  alt="Freedom at Midnight cover art"
+                  src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%230b1b2b'/><stop offset='0.5' stop-color='%234b1a1a'/><stop offset='1' stop-color='%23d98b2b'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.5)' stroke-width='3'/><text x='850' y='798' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>AGENTIC</text><text x='850' y='842' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>PODCASTS</text><text x='110' y='730' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>Freedom at</text><text x='110' y='830' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>Midnight</text></svg>"
+                >
+              </div>
+              <div class="collection-copy">
+                <div class="collection-topline">
+                  <span>Partition 1947</span>
+                  <span class="runtime-pill">4h 4m</span>
+                </div>
+                <div>
+                  <h3 class="collection-title">Freedom at Midnight</h3>
+                  <p class="collection-author">Dominique Lapierre &amp; Larry Collins</p>
+                </div>
+                <div class="meta-row">
+                  <span>4 episodes</span>
+                </div>
+              </div>
+              <p class="collection-summary">
+                The final months of the Raj unfold as rival visions, hurried borders, and exhausted officials race
+                toward independence. Four episodes track the political bargaining, human catastrophe, and the
+                assassination that defined a nation’s birth.
+              </p>
+            </a>
+          </article>
+
+          <article class="collection-card" style="--accent:#2a9d8f; --accent-weak:rgba(42, 157, 143, 0.16);">
+            <a class="collection-link" href="./the-crusades-authoritative-history.html">
+              <div class="collection-art">
+                <img
+                  alt="The Crusades cover art"
+                  src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%231b2a24'/><stop offset='0.48' stop-color='%235b5a34'/><stop offset='1' stop-color='%23c9a56a'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.45)' stroke-width='3'/><text x='850' y='798' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>AGENTIC</text><text x='850' y='842' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>PODCASTS</text><text x='110' y='730' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>The</text><text x='110' y='830' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>Crusades</text></svg>"
+                >
+              </div>
+              <div class="collection-copy">
+                <div class="collection-topline">
+                  <span>Medieval Levant</span>
+                  <span class="runtime-pill">4h 31m</span>
+                </div>
+                <div>
+                  <h3 class="collection-title">The Crusades</h3>
+                  <p class="collection-author">Thomas Asbridge</p>
+                </div>
+                <div class="meta-row">
+                  <span>6 episodes</span>
+                </div>
+              </div>
+              <p class="collection-summary">
+                Six episodes cover the preaching of holy war, the creation of crusader states, and the Muslim
+                counteroffensive that reshaped the eastern Mediterranean. From the First Crusade to the loss of
+                Outremer, strategy and faith collide across two centuries.
+              </p>
+            </a>
+          </article>
+
+          <article class="collection-card" style="--accent:#3a7bd5; --accent-weak:rgba(58, 123, 213, 0.16);">
             <a class="collection-link" href="./india-after-gandhi.html">
               <div class="collection-art">
                 <img
@@ -295,19 +420,19 @@
                   <h3 class="collection-title">India After Gandhi</h3>
                   <p class="collection-author">Ramachandra Guha</p>
                 </div>
-                <p class="collection-summary">
-                  A sweeping post-1947 chronicle: Partition’s scars, state-building, wars, Emergency rule, economic
-                  liberalization, and the mass culture that rewired public life. It follows how a fragile republic kept
-                  reinventing itself under pressure.
-                </p>
                 <div class="meta-row">
                   <span>5 episodes</span>
                 </div>
               </div>
+              <p class="collection-summary">
+                A sweeping post-1947 chronicle: Partition’s scars, state-building, wars, Emergency rule, economic
+                liberalization, and the mass culture that rewired public life. It follows how a fragile republic kept
+                reinventing itself under pressure.
+              </p>
             </a>
           </article>
 
-          <article class="collection-card" style="--accent:#c49a46; --accent-weak:rgba(196, 154, 70, 0.16);">
+          <article class="collection-card" style="--accent:#8e44ad; --accent-weak:rgba(142, 68, 173, 0.16);">
             <a class="collection-link" href="./last-mughal.html">
               <div class="collection-art">
                 <img
@@ -324,19 +449,19 @@
                   <h3 class="collection-title">The Last Mughal</h3>
                   <p class="collection-author">William Dalrymple</p>
                 </div>
-                <p class="collection-summary">
-                  From the poetry salons of Shahjahanabad to the siege and sack of 1857, this series tracks the collapse
-                  of a courtly world and the brutal reordering that followed. A capital’s last days as an imperial city,
-                  told through its people and its ruins.
-                </p>
                 <div class="meta-row">
                   <span>3 episodes</span>
                 </div>
               </div>
+              <p class="collection-summary">
+                From the poetry salons of Shahjahanabad to the siege and sack of 1857, this series tracks the collapse
+                of a courtly world and the brutal reordering that followed. A capital’s last days as an imperial city,
+                told through its people and its ruins.
+              </p>
             </a>
           </article>
 
-          <article class="collection-card" style="--accent:#b1864b; --accent-weak:rgba(177, 134, 75, 0.16);">
+          <article class="collection-card" style="--accent:#c0392b; --accent-weak:rgba(192, 57, 43, 0.16);">
             <a class="collection-link" href="./return-of-a-king.html">
               <div class="collection-art">
                 <img
@@ -353,19 +478,19 @@
                   <h3 class="collection-title">Return of a King</h3>
                   <p class="collection-author">William Dalrymple</p>
                 </div>
-                <p class="collection-summary">
-                  Afghanistan becomes the empire’s test case: a restored king, a foreign occupation, and a rebellion
-                  that turns retreat into legend. Three episodes on miscalculation, resistance, and the long afterlife
-                  of imperial defeat.
-                </p>
                 <div class="meta-row">
                   <span>3 episodes</span>
                 </div>
               </div>
+              <p class="collection-summary">
+                Afghanistan becomes the empire’s test case: a restored king, a foreign occupation, and a rebellion
+                that turns retreat into legend. Three episodes on miscalculation, resistance, and the long afterlife
+                of imperial defeat.
+              </p>
             </a>
           </article>
 
-          <article class="collection-card" style="--accent:#c9863f; --accent-weak:rgba(201, 134, 63, 0.16);">
+          <article class="collection-card" style="--accent:#2f855a; --accent-weak:rgba(47, 133, 90, 0.16);">
             <a class="collection-link" href="./the-great-war-for-civilisation.html">
               <div class="collection-art">
                 <img
@@ -382,15 +507,15 @@
                   <h3 class="collection-title">The Great War for Civilisation</h3>
                   <p class="collection-author">Robert Fisk</p>
                 </div>
-                <p class="collection-summary">
-                  A long, heavy account of intervention and occupation across Afghanistan, Iran, Palestine, Iraq, and
-                  beyond, told through the civilians who pay the bill. Wars sold as clarity become decades of
-                  casualties, cover-ups, and unfinished grief.
-                </p>
                 <div class="meta-row">
                   <span>10 episodes</span>
                 </div>
               </div>
+              <p class="collection-summary">
+                A long, heavy account of intervention and occupation across Afghanistan, Iran, Palestine, Iraq, and
+                beyond, told through the civilians who pay the bill. Wars sold as clarity become decades of
+                casualties, cover-ups, and unfinished grief.
+              </p>
             </a>
           </article>
         </div>

@@ -3,21 +3,21 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Agentic Podcasts | The Last Mughal</title>
-  <meta name="description" content="Stories and analyses adapted from The Last Mughal.">
+  <title>Agentic Podcasts | Freedom at Midnight</title>
+  <meta name="description" content="Stories and analyses adapted from Freedom at Midnight.">
   <style>
     :root {
-      --body-bg-color: #130d0b;
-      --body-font-color: #f6efe3;
+      --body-bg-color: #0f131a;
+      --body-font-color: #f3efe6;
       --primary-font: "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
       --primary-body-font-size: 1.12rem;
       --primary-body-font-weight: 300;
-      --primary-color: #8e44ad;
-      --primary-hover-color: #a66bc8;
+      --primary-color: #e4572e;
+      --primary-hover-color: #f08a5d;
       --body-padding: 1.5rem;
-      --header-bg: #0b0a0a;
-      --nav-color: #f6efe3;
-      --nav-color-hover: #8e44ad;
+      --header-bg: #0b0f12;
+      --nav-color: #f3efe6;
+      --nav-color-hover: #e4572e;
       --nav-font-size: 1rem;
       --header-padding: 1.25rem;
       --nav-horizontal-margin: 1.25rem;
@@ -28,9 +28,9 @@
       --episode-margin: 0.75rem;
       --episode-inner-spacing: 1rem;
       --episode-title-font-size: 1.5rem;
-      --episode-meta-color: #8e44ad;
-      --audio-player-progressed: #f6efe3;
-      --audio-player-runtime-color: #d7c4a6;
+      --episode-meta-color: #e4572e;
+      --audio-player-progressed: #f3efe6;
+      --audio-player-runtime-color: #d7c8b4;
       --max-width: 1537px;
       --footer-border: rgba(255, 255, 255, 0.08);
       --footer-copy: rgba(255, 255, 255, 0.64);
@@ -49,8 +49,8 @@
     body {
       margin: 0;
       background:
-        radial-gradient(circle at top, rgba(196, 154, 70, 0.14), transparent 36%),
-        linear-gradient(180deg, #2b1a16 0%, #130d0b 46%, #0b0a0a 100%);
+        radial-gradient(circle at top, rgba(217, 139, 43, 0.14), transparent 36%),
+        linear-gradient(180deg, #1b2430 0%, #0f131a 46%, #0b0f14 100%);
       color: var(--body-font-color);
       font-family: var(--primary-font);
       font-size: var(--primary-body-font-size);
@@ -126,7 +126,7 @@
     .show-description {
       max-width: 44rem;
       margin: 1.35rem 0 0;
-      color: rgba(246, 239, 227, 0.78);
+      color: rgba(243, 239, 230, 0.78);
     }
 
     .episodes-section {
@@ -198,276 +198,149 @@
 
     .episode-player {
       margin-top: 1.15rem;
-      padding: 0.9rem 0 0;
     }
 
     .audio-shell {
-      display: grid;
-      gap: 0.85rem;
+      padding: 0.85rem 0;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
     }
 
     .player-row {
-      display: flex;
-      align-items: center;
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
       gap: 1rem;
-      width: 100%;
+      align-items: center;
     }
 
     .play-toggle {
-      width: 3rem;
-      height: 3rem;
-      flex: 0 0 auto;
+      width: 44px;
+      height: 44px;
       border-radius: 999px;
-      background: transparent;
-      color: #f5efe6;
-      border: 2px solid rgba(245, 239, 230, 0.95);
+      background: rgba(255, 255, 255, 0.1);
+      color: #ffffff;
       display: inline-flex;
       align-items: center;
       justify-content: center;
       cursor: pointer;
-      transition: color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
-    }
-
-    .play-toggle:hover,
-    .play-toggle:focus-visible {
-      color: var(--primary-color);
-      border-color: var(--primary-color);
-      transform: translateY(-1px);
     }
 
     .play-toggle svg {
-      width: 1rem;
-      height: 1rem;
+      width: 20px;
+      height: 20px;
       fill: currentColor;
     }
 
     .progress-cluster {
-      flex: 1 1 auto;
       display: grid;
-      gap: 0.45rem;
-      align-items: center;
+      gap: 0.55rem;
     }
 
     .timeline {
       width: 100%;
-      margin: 0;
+      -webkit-appearance: none;
       appearance: none;
-      background: transparent;
-      accent-color: var(--audio-player-progressed);
+      height: 4px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.15);
+      outline: none;
       cursor: pointer;
     }
 
-    .timeline::-webkit-slider-runnable-track {
-      height: 3px;
-      background: rgba(245, 239, 230, 0.28);
-      border-radius: 999px;
-    }
-
     .timeline::-webkit-slider-thumb {
+      -webkit-appearance: none;
       appearance: none;
       width: 14px;
       height: 14px;
-      margin-top: -5.5px;
-      border-radius: 999px;
-      background: #f5efe6;
-    }
-
-    .timeline::-moz-range-track {
-      height: 3px;
-      background: rgba(245, 239, 230, 0.28);
-      border-radius: 999px;
+      border-radius: 50%;
+      background: var(--primary-color);
     }
 
     .timeline::-moz-range-thumb {
       width: 14px;
       height: 14px;
-      border-radius: 999px;
-      border: 0;
-      background: #f5efe6;
+      border-radius: 50%;
+      background: var(--primary-color);
     }
 
     .player-meta-row {
       display: flex;
-      justify-content: space-between;
-      gap: 1rem;
       align-items: center;
-      color: var(--audio-player-runtime-color);
+      justify-content: space-between;
       font-size: 0.9rem;
+      color: var(--audio-player-runtime-color);
     }
 
     .player-utility {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      flex: 0 0 auto;
+      display: inline-flex;
+      gap: 0.5rem;
     }
 
-    .player-utility button,
-    .player-utility a {
-      padding: 0;
+    .player-utility button {
+      border: 1px solid rgba(255, 255, 255, 0.2);
       background: transparent;
-      color: #f5efe6;
-      font-size: 0.95rem;
+      color: inherit;
+      border-radius: 999px;
+      padding: 0.1rem 0.6rem;
       cursor: pointer;
-    }
-
-    .player-utility button:hover,
-    .player-utility a:hover,
-    .player-utility button:focus-visible,
-    .player-utility a:focus-visible {
-      color: var(--primary-color);
-    }
-
-    .native-audio {
-      display: none;
+      font-size: 0.85rem;
     }
 
     .site-footer {
-      border-top: 1px solid rgba(247, 241, 233, 0.1);
-      background: transparent;
+      border-top: 1px solid var(--footer-border);
+      padding: 2.2rem 0;
     }
 
     .site-footer-inner {
       display: flex;
-      align-items: center;
       justify-content: center;
-      gap: 0.7rem;
-      padding: 1.1rem 0 1.6rem;
-      color: rgba(255, 255, 255, 0.64);
-      font-size: 0.92rem;
     }
 
     .github-footer-link {
       display: inline-flex;
       align-items: center;
-      gap: 0.5rem;
-      color: inherit;
-    }
-
-    .github-footer-link:hover,
-    .github-footer-link:focus-visible {
-      color: #ffffff;
+      gap: 0.75rem;
+      color: var(--footer-copy);
+      font-size: 0.95rem;
     }
 
     .github-mark {
-      width: 1.1rem;
-      height: 1.1rem;
-      display: block;
+      width: 18px;
+      height: 18px;
       fill: currentColor;
     }
 
-    @media screen and (max-width: 1024px) {
-      html {
-        font-size: 13px;
-      }
-    }
-
-    @media screen and (max-width: 767px) {
-      html {
-        font-size: 13px;
-        line-height: 1.75;
-      }
-
-      .site-header {
-        padding-bottom: 1.15rem;
-      }
-
-      .site-header-inner {
-        align-items: flex-start;
-        flex-direction: column;
-      }
-
-      .show-header {
-        padding-top: 4.8rem;
-      }
-
+    @media (max-width: 900px) {
       .show-header-grid {
         grid-template-columns: 1fr;
-        align-items: start;
-        gap: 1.65rem;
       }
 
       .show-art {
-        max-width: 24rem;
-      }
-
-      .show-title {
-        font-size: 2.28rem;
-        line-height: 1.14;
-      }
-
-      .show-description {
-        margin-top: 1rem;
-        font-size: 1.08rem;
-        line-height: 1.78;
-      }
-
-      .episodes-section {
-        padding: 2.9rem 0 3.8rem;
-      }
-
-      .episode-card {
-        padding: 1.12rem 0;
-      }
-
-      .episode-meta {
-        margin-bottom: 0.65rem;
-        font-size: 0.98rem;
+        max-width: 320px;
       }
 
       .episode-title {
-        font-size: 1.62rem;
-        line-height: 1.3;
+        font-size: 1.3rem;
       }
+    }
 
-      .episode-description-preview,
-      .episode-description,
-      .episode-description-more {
-        font-size: 1.02rem;
-        line-height: 1.8;
-      }
-
-      .description-toggle {
-        font-size: 1rem;
-        line-height: 1.6;
-      }
-
-      .episode-player {
-        margin-top: 1.3rem;
-        padding-top: 1rem;
-      }
-
-      .audio-shell {
-        gap: 1rem;
+    @media (max-width: 640px) {
+      :root {
+        --body-padding: 1rem;
+        --show-header-padding-top: 4.5rem;
+        --show-header-title-font-size: 1.8rem;
       }
 
       .player-row {
-        align-items: flex-start;
-        gap: 1.05rem;
+        grid-template-columns: 1fr;
       }
 
       .play-toggle {
-        width: 3.35rem;
-        height: 3.35rem;
-      }
-
-      .play-toggle svg {
-        width: 1.08rem;
-        height: 1.08rem;
-      }
-
-      .timeline::-webkit-slider-runnable-track {
-        height: 4px;
+        justify-self: start;
       }
 
       .timeline::-webkit-slider-thumb {
         width: 16px;
         height: 16px;
-        margin-top: -6px;
-      }
-
-      .timeline::-moz-range-track {
-        height: 4px;
       }
 
       .timeline::-moz-range-thumb {
@@ -476,9 +349,6 @@
       }
 
       .player-meta-row {
-        align-items: flex-start;
-        flex-direction: column;
-        gap: 0.45rem;
         font-size: 0.98rem;
         line-height: 1.55;
       }
@@ -504,40 +374,47 @@
       <div class="shell show-header-grid">
         <div class="show-art">
           <img
-            alt="The Last Mughal cover art"
-            src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%232b1a16'/><stop offset='0.45' stop-color='%238b3a2b'/><stop offset='1' stop-color='%23c49a46'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.5)' stroke-width='3'/><text x='850' y='798' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>AGENTIC</text><text x='850' y='842' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>PODCASTS</text><text x='110' y='730' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>The Last</text><text x='110' y='830' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>Mughal</text></svg>"
+            alt="Freedom at Midnight cover art"
+            src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%23121b2a'/><stop offset='0.48' stop-color='%233a2a2c'/><stop offset='1' stop-color='%23d98b2b'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.45)' stroke-width='3'/><text x='850' y='798' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>AGENTIC</text><text x='850' y='842' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>PODCASTS</text><text x='110' y='730' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>Freedom at</text><text x='110' y='830' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>Midnight</text></svg>"
           >
         </div>
 
         <div class="show-copy">
-          <h1 class="show-title">The Last Mughal</h1>
+          <h1 class="show-title">Freedom at Midnight</h1>
           <p class="show-description">
-            From the poetry salons of Shahjahanabad to the siege and sack of 1857, this series tracks the collapse of a
-            courtly world and the brutal reordering that followed. A capital’s last days as an imperial city, told
-            through its people and its ruins.
+            The final months of the Raj unfold as rival visions, hurried borders, and exhausted officials race toward
+            independence. Four episodes track the political bargaining, human catastrophe, and the assassination that
+            defined a nation’s birth.
           </p>
         </div>
       </div>
     </section>
 
-                <section class="episodes-section" id="episodes">
+    <section class="episodes-section" id="episodes">
       <div class="shell episode-list">
         <article class="episode-card">
           <p class="episode-meta">Episode 1</p>
-          <h2 class="episode-title">The Last Mughal Court Before the Storm</h2>
+          <h2 class="episode-title">The Raj Unravels</h2>
           <p class="episode-description-preview">
-            Ramadan morning in 1857 turns Delhi upside down as mutineers from Meerut ride into the Mughal capital and force Bahadur Shah Zafar to decide how to respond.
+            An exhausted empire and irreconcilable demands push India toward Partition.
           </p>
           <div class="episode-details">
             <span class="episode-description-more" data-role="episode-description-more">
-              Delhi in the spring of 1857 is still a city of poetry, ceremony, and fading imperial authority. The episode follows Bahadur Shah Zafar’s court through the Ramadan morning when mutinous sepoys from Meerut ride into the Mughal capital, killing Company officials and forcing the emperor to choose between defiance and survival. We trace the fragile balance between palace factions, British residents, and the sepoys’ grievances over pay, caste, and the Company’s racial order. As gates close and rumors race, Delhi’s old elite scrambles to control a rebellion that has already outrun them. The uprising is not yet a unified war of independence; it is a chaotic collision of faith, honor, and fear that begins to tear the city apart from within.
+              Britain's war-drained empire reaches the end of its tether. London's Cabinet dithers, Congress and the
+              Muslim League harden their demands, and communal violence flares in Bengal. Gandhi walks through Noakhali,
+              insisting that independence means moral repair as well as political transfer. Into this storm steps Louis
+              Mountbatten, tasked with engineering a handover that the Raj no longer has the legitimacy or manpower to
+              control. The episode tracks how deadlock gives way to urgency: why a united India starts to look
+              impossible, how the timetable accelerates, and how Partition becomes thinkable, then inevitable. It is the
+              story of an empire that can no longer rule, leaders who can no longer agree, and a clock that begins to run
+              faster than any of them expect.
             </span>
             <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
           </div>
           <div class="episode-player">
             <div class="audio-shell">
               <audio class="native-audio" preload="metadata">
-                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/last-mughal-episodes-1-3-20260320T2214/episode-1.mp3" type="audio/mpeg">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/freedom-at-midnight-episodes-1-4-20260321T2042/episode-1.mp3" type="audio/mpeg">
                 Your browser does not support the audio element.
               </audio>
               <div class="player-row">
@@ -562,20 +439,27 @@
 
         <article class="episode-card">
           <p class="episode-meta">Episode 2</p>
-          <h2 class="episode-title">Delhi in Revolt and Under Siege</h2>
+          <h2 class="episode-title">Drawing the Lines of Freedom</h2>
           <p class="episode-description-preview">
-            British columns breach Kashmiri Gate and fight block by block as the old city becomes a battlefield.
+            Boundaries are drawn in haste, and secrecy becomes a strategy.
           </p>
           <div class="episode-details">
             <span class="episode-description-more" data-role="episode-description-more">
-              British columns assault Delhi in September 1857, breaching the walls at Kashmiri Gate and fighting street by street toward the Jama Masjid and Red Fort. The episode tracks the chaos of the siege: sappers blown apart as they ignite charges, officers improvising under fire, and rebel defenders shifting from barricade to barricade. We follow Nicholson’s push along the ramparts, Metcalfe’s route through back lanes, and the terrible cost to civilians trapped between artillery and reprisals. The old city’s neighborhoods become battlefields and then killing zones as British troops reenter a capital they believe has betrayed them. Nicholson is mortally wounded, and the surviving defenders retreat toward the Red Fort amid disease and exhaustion. The revolt splinters, and Delhi’s fate turns on a brutal mix of discipline, improvisation, and vengeance.
+              Independence now has a date, but its shape is still contested. The princes bargain for terms,
+              administrators weigh how to divide armies, assets, and civil services, and the Radcliffe boundary
+              commission is asked to draw lines on a map it barely knows. Mountbatten's plan requires speed, and speed
+              means secrecy: the borders will be announced only after power has already been transferred. The episode
+              follows the scramble to define Pakistan, the negotiations over Punjab and Bengal, and the mounting fear
+              that the act of drawing lines will ignite violence. Behind the scenes, officials attempt to choreograph a
+              peaceful handover while communities arm themselves. It is a story of statecraft under impossible
+              constraints, when legal precision and human lives are both sacrificed to the race against chaos.
             </span>
             <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
           </div>
           <div class="episode-player">
             <div class="audio-shell">
               <audio class="native-audio" preload="metadata">
-                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/last-mughal-episodes-1-3-20260320T2214/episode-2.mp3" type="audio/mpeg">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/freedom-at-midnight-episodes-1-4-20260321T2042/episode-2.mp3" type="audio/mpeg">
                 Your browser does not support the audio element.
               </audio>
               <div class="player-row">
@@ -600,20 +484,72 @@
 
         <article class="episode-card">
           <p class="episode-meta">Episode 3</p>
-          <h2 class="episode-title">The Fall of Delhi and the End of the Mughals</h2>
+          <h2 class="episode-title">Partition Inferno</h2>
           <p class="episode-description-preview">
-            The last emperor is captured at Humayun’s Tomb, and the Mughal world collapses under British retribution.
+            Partition unleashes mass violence and a refugee catastrophe across the new borders.
           </p>
           <div class="episode-details">
             <span class="episode-description-more" data-role="episode-description-more">
-              The capture of Bahadur Shah Zafar begins at Humayun’s Tomb, where the last Mughal hides among refugees and armed followers. William Hodson’s negotiations, the surrender, and the immediate execution of the princes signal that mercy is no longer on offer. From there, the episode follows Zafar’s humiliating return to the Red Fort, his trial for rebellion, and the British decision to end the dynasty altogether. Delhi is punished: neighborhoods are razed, property seized, and survivors forced into exile. Zafar is sent to Rangoon, an emperor without a court, while the Company rewrites the uprising as treason and justifies mass retribution. Imperial symbols are dismantled, and the city’s cultural world is scattered. The Mughal world ends not with a ceremonial handover, but with a captive king and a city in ruins.
+              Partition arrives as a human catastrophe. Punjab fractures into massacre and counter-massacre, trains
+              arrive packed with the dead, and refugee columns stretch across the new borders in both directions. The
+              episode traces how the administrative machinery buckles: police desert, local leaders lose control, and
+              rumors turn whole districts into killing grounds. In Bengal and Delhi the violence is different but no
+              less terrifying, and women become targets of abduction and vengeance. Amid the chaos, the new governments
+              struggle to protect their citizens while also trying to create themselves--issuing orders, moving troops,
+              and establishing authority in cities that are burning. The story is not just one of slaughter, but of the
+              birth of two states in the middle of it, and of the moral and political price that independence exacted.
             </span>
             <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
           </div>
           <div class="episode-player">
             <div class="audio-shell">
               <audio class="native-audio" preload="metadata">
-                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/last-mughal-episodes-1-3-20260320T2214/episode-3.mp3" type="audio/mpeg">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/freedom-at-midnight-episodes-1-4-20260321T2042/episode-3.mp3" type="audio/mpeg">
+                Your browser does not support the audio element.
+              </audio>
+              <div class="player-row">
+                <button class="play-toggle" data-role="hero-play" type="button" aria-label="Play audio">
+                  <svg data-role="play-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M8 5.14v13.72L19 12 8 5.14z"></path>
+                  </svg>
+                </button>
+                <div class="progress-cluster">
+                  <input class="timeline" data-role="timeline" type="range" min="0" max="100" step="0.1" value="0" aria-label="Seek through audio">
+                  <div class="player-meta-row">
+                    <div><span data-role="current-time">0:00</span> / <span data-role="duration">0:00</span></div>
+                    <div class="player-utility">
+                      <button data-role="speed-toggle" type="button">1x</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="episode-card">
+          <p class="episode-meta">Episode 4</p>
+          <h2 class="episode-title">The Death of the Mahatma</h2>
+          <p class="episode-description-preview">
+            Gandhi's final campaign meets a hardening extremist conspiracy.
+          </p>
+          <div class="episode-details">
+            <span class="episode-description-more" data-role="episode-description-more">
+              With independence achieved, Gandhi turns to the task he believes still unfinished: saving India's moral
+              center. He fasts to halt riots, presses leaders to protect minorities, and walks through neighborhoods
+              where fear still rules. His insistence that Pakistan be paid its promised funds inflames Hindu extremists
+              who see him as betraying the nation. The episode follows the tightening conspiracy, the atmosphere of
+              Delhi in early 1948, and Gandhi's final public appearances, where he pleads for reconciliation even as
+              threats mount around him. The assassination is sudden, but the build-up is long: a clash between
+              pluralism and ethno-religious nationalism. The episode closes on the shockwave his death sends through
+              India and Pakistan, and the brief, fragile unity it forces into being.
+            </span>
+            <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
+          </div>
+          <div class="episode-player">
+            <div class="audio-shell">
+              <audio class="native-audio" preload="metadata">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/freedom-at-midnight-episodes-1-4-20260321T2042/episode-4.mp3" type="audio/mpeg">
                 Your browser does not support the audio element.
               </audio>
               <div class="player-row">
@@ -657,15 +593,15 @@
         return "0:00";
       }
 
-      const hours = Math.floor(value / 3600);
-      const minutes = Math.floor((value % 3600) / 60);
-      const seconds = Math.floor(value % 60).toString().padStart(2, "0");
-
+      const totalSeconds = Math.floor(value);
+      const hours = Math.floor(totalSeconds / 3600);
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = totalSeconds % 60;
       if (hours > 0) {
-        return `${hours}:${minutes.toString().padStart(2, "0")}:${seconds}`;
+        const remainingMinutes = Math.floor((totalSeconds % 3600) / 60);
+        return `${hours}:${String(remainingMinutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
       }
-
-      return `${minutes}:${seconds}`;
+      return `${minutes}:${String(seconds).padStart(2, "0")}`;
     }
 
     document.querySelectorAll(".episode-card").forEach((episodeCard) => {
@@ -678,105 +614,69 @@
       const speedToggle = episodeCard.querySelector('[data-role="speed-toggle"]');
       const descriptionToggle = episodeCard.querySelector('[data-role="description-toggle"]');
       const episodeDetails = episodeCard.querySelector(".episode-details");
-      let isSeeking = false;
 
-      function syncPlayButton() {
-        const paused = audio.paused;
-        heroPlay.setAttribute("aria-label", paused ? "Play audio" : "Pause audio");
-        playIcon.innerHTML = paused
+      let speedIndex = 0;
+
+      function syncPlayState() {
+        const isPaused = audio.paused;
+        playIcon.innerHTML = isPaused
           ? '<path d="M8 5.14v13.72L19 12 8 5.14z"></path>'
-          : '<path d="M7 5h4v14H7zM13 5h4v14h-4z"></path>';
+          : '<path d="M7 5h3v14H7zm7 0h3v14h-3z"></path>';
+        heroPlay.setAttribute("aria-label", isPaused ? "Play audio" : "Pause audio");
       }
 
-      function syncTimeline() {
+      function updateTimeline() {
         if (!Number.isFinite(audio.duration) || audio.duration <= 0) {
-          timeline.disabled = true;
-          timeline.max = "0";
-          timeline.value = "0";
-          currentTime.textContent = "0:00";
+          timeline.value = 0;
           duration.textContent = "0:00";
           return;
         }
 
-        timeline.disabled = false;
-        timeline.max = String(audio.duration);
-
-        if (!isSeeking) {
-          timeline.value = String(audio.currentTime);
-          currentTime.textContent = formatTime(audio.currentTime);
-        }
-
-        duration.textContent = formatTime(audio.duration);
-      }
-
-      function commitSeek() {
-        if (!Number.isFinite(audio.duration) || audio.duration <= 0) {
-          return;
-        }
-
-        audio.currentTime = Math.min(Number(timeline.value), audio.duration);
+        timeline.value = (audio.currentTime / audio.duration) * 100;
         currentTime.textContent = formatTime(audio.currentTime);
+        duration.textContent = formatTime(audio.duration);
       }
 
       heroPlay.addEventListener("click", () => {
         if (audio.paused) {
-          void audio.play();
+          document.querySelectorAll(".native-audio").forEach((otherAudio) => {
+            if (otherAudio != audio) {
+              otherAudio.pause();
+            }
+          });
+          audio.play();
         } else {
           audio.pause();
         }
       });
 
-      timeline.addEventListener("pointerdown", () => {
-        isSeeking = true;
-      });
+      audio.addEventListener("play", syncPlayState);
+      audio.addEventListener("pause", syncPlayState);
+      audio.addEventListener("ended", syncPlayState);
+      audio.addEventListener("timeupdate", updateTimeline);
+      audio.addEventListener("loadedmetadata", updateTimeline);
 
       timeline.addEventListener("input", () => {
         if (!Number.isFinite(audio.duration) || audio.duration <= 0) {
           return;
         }
-
-        if (isSeeking) {
-          currentTime.textContent = formatTime(Number(timeline.value));
-          return;
-        }
-
-        commitSeek();
-      });
-
-      timeline.addEventListener("change", () => {
-        commitSeek();
-        isSeeking = false;
-        syncTimeline();
-      });
-
-      timeline.addEventListener("pointerup", () => {
-        commitSeek();
-        isSeeking = false;
-        syncTimeline();
+        audio.currentTime = (Number(timeline.value) / 100) * audio.duration;
       });
 
       speedToggle.addEventListener("click", () => {
-        const currentIndex = speeds.indexOf(audio.playbackRate);
-        const nextRate = speeds[(currentIndex + 1) % speeds.length];
-        audio.playbackRate = nextRate;
-        speedToggle.textContent = `${nextRate}x`;
+        speedIndex = (speedIndex + 1) % speeds.length;
+        audio.playbackRate = speeds[speedIndex];
+        speedToggle.textContent = `${speeds[speedIndex]}x`;
       });
 
       descriptionToggle.addEventListener("click", () => {
         const isOpen = episodeDetails.classList.toggle("is-open");
         descriptionToggle.textContent = isOpen ? "Read less" : "Read more";
-        descriptionToggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
+        descriptionToggle.setAttribute("aria-expanded", String(isOpen));
       });
 
-      audio.addEventListener("loadedmetadata", syncTimeline);
-      audio.addEventListener("durationchange", syncTimeline);
-      audio.addEventListener("timeupdate", syncTimeline);
-      audio.addEventListener("play", syncPlayButton);
-      audio.addEventListener("pause", syncPlayButton);
-      audio.addEventListener("ended", syncPlayButton);
-
-      syncPlayButton();
-      syncTimeline();
+      syncPlayState();
+      updateTimeline();
     });
   </script>
 </body>
