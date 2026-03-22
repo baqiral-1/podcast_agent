@@ -127,6 +127,7 @@ FOLLOW THE ARC PLAN:
 - Use the bridging language specified for callbacks
 - Land key moments using the techniques the plan specifies
 - Use the transitions the plan describes between acts
+- CHARACTERIZATION: When introducing a person for the first time, give the listener something to hold onto beyond their title — a physical detail, personality trait, telling habit, or quote from the source. Use only details present in the source.
 
 FIDELITY:
 - Every claim, fact, name, number, date in the source must appear
