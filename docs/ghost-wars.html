@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agentic Podcasts | Ghost Wars</title>
+  <meta name="description" content="Stories and analyses adapted from Ghost Wars.">
+  <style>
+    :root {
+      --body-bg-color: #0b1216;
+      --body-font-color: #e8f2f1;
+      --primary-font: "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+      --primary-body-font-size: 1.12rem;
+      --primary-body-font-weight: 300;
+      --primary-color: #4fb6ad;
+      --primary-hover-color: #6fd0c7;
+      --body-padding: 1.5rem;
+      --header-bg: #0a1013;
+      --nav-color: #e8f2f1;
+      --nav-color-hover: #4fb6ad;
+      --nav-font-size: 1rem;
+      --header-padding: 1.25rem;
+      --nav-horizontal-margin: 1.25rem;
+      --show-header-padding-top: 5.9375rem;
+      --show-header-padding-bottom: 0rem;
+      --show-header-title-font-size: 2.1875rem;
+      --show-header-show-host-width: 2.5rem;
+      --episode-margin: 0.75rem;
+      --episode-inner-spacing: 1rem;
+      --episode-title-font-size: 1.5rem;
+      --episode-meta-color: #4fb6ad;
+      --audio-player-progressed: #f3efe6;
+      --audio-player-runtime-color: #b9d7d4;
+      --max-width: 1537px;
+      --footer-border: rgba(255, 255, 255, 0.08);
+      --footer-copy: rgba(255, 255, 255, 0.64);
+    }
+
+    * {
+      box-sizing: border-box;
+      border: 0 solid transparent;
+    }
+
+    html {
+      line-height: 1.5;
+      -webkit-text-size-adjust: 100%;
+    }
+
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at top, rgba(79, 182, 173, 0.14), transparent 36%),
+        linear-gradient(180deg, #1b2b34 0%, #0b1216 50%, #080d10 100%);
+      color: var(--body-font-color);
+      font-family: var(--primary-font);
+      font-size: var(--primary-body-font-size);
+      font-weight: var(--primary-body-font-weight);
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .shell {
+      width: min(calc(100% - (var(--body-padding) * 2)), var(--max-width));
+      margin: 0 auto;
+    }
+
+    .site-header {
+      padding: 1.3rem 0 1.1rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      backdrop-filter: blur(14px);
+      background: #151b20;
+    }
+
+    .site-header-inner {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .brand-mark {
+      display: inline-flex;
+      align-items: center;
+      font-size: 1.3rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .show-header {
+      background: transparent;
+      padding-top: var(--show-header-padding-top);
+      padding-bottom: var(--show-header-padding-bottom);
+    }
+
+    .show-header-grid {
+      display: grid;
+      grid-template-columns: minmax(240px, 28%) minmax(0, 1fr);
+      gap: 2.2rem;
+      align-items: center;
+    }
+
+    .show-art {
+      width: 100%;
+      max-width: 420px;
+      margin: 0 auto;
+      border-radius: 2px;
+      overflow: hidden;
+      box-shadow: 0 22px 60px rgba(0, 0, 0, 0.28);
+    }
+
+    .show-copy {
+      color: var(--body-font-color);
+    }
+
+    .show-title {
+      margin: 0;
+      color: var(--body-font-color);
+      font-size: var(--show-header-title-font-size);
+      line-height: 1.2;
+      font-weight: 700;
+    }
+
+    .show-description {
+      max-width: 44rem;
+      margin: 1.35rem 0 0;
+      color: rgba(243, 239, 230, 0.78);
+    }
+
+    .episodes-section {
+      padding: 2.6rem 0 4rem;
+      background: transparent;
+    }
+
+    .episode-list {
+      display: grid;
+      gap: var(--episode-margin);
+    }
+
+    .episode-card {
+      padding: var(--episode-inner-spacing) 0;
+      background: transparent;
+      text-align: left;
+    }
+
+    .episode-meta {
+      margin: 0 0 0.55rem;
+      color: var(--episode-meta-color);
+      font-size: 0.94rem;
+      font-weight: 700;
+    }
+
+    .episode-title {
+      margin: 0;
+      color: #ffffff;
+      font-size: var(--episode-title-font-size);
+      line-height: 1.35;
+      font-weight: 700;
+    }
+
+    .episode-details {
+      margin-top: 0.9rem;
+    }
+
+    .description-toggle {
+      margin-top: 0;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: var(--primary-color);
+      font-weight: 700;
+      cursor: pointer;
+      font: inherit;
+    }
+
+    .episode-description-preview {
+      max-width: 68rem;
+      margin: 0.9rem 0 0;
+      color: #ffffff;
+      font-size: 0.95rem;
+      line-height: 1.7;
+    }
+
+    .episode-description-more {
+      display: none;
+      max-width: 68rem;
+      margin: 0;
+      color: #ffffff;
+      font-size: 0.95rem;
+      line-height: 1.7;
+    }
+
+    .episode-details.is-open .episode-description-more {
+      display: block;
+    }
+
+    .episode-player {
+      margin-top: 1.15rem;
+      padding: 0.9rem 0 0;
+    }
+
+    .audio-shell {
+      display: grid;
+      gap: 0.85rem;
+    }
+
+    .player-row {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      width: 100%;
+    }
+
+    .play-toggle {
+      width: 3rem;
+      height: 3rem;
+      flex: 0 0 auto;
+      border-radius: 999px;
+      background: transparent;
+      color: #eef0f7;
+      border: 2px solid rgba(238, 240, 247, 0.95);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+    }
+
+    .play-toggle:hover,
+    .play-toggle:focus-visible {
+      color: var(--primary-color);
+      border-color: var(--primary-color);
+      transform: translateY(-1px);
+    }
+
+    .play-toggle svg {
+      width: 1rem;
+      height: 1rem;
+      fill: currentColor;
+    }
+
+    .progress-cluster {
+      flex: 1 1 auto;
+      display: grid;
+      gap: 0.45rem;
+      align-items: center;
+    }
+
+    .timeline {
+      width: 100%;
+      margin: 0;
+      accent-color: var(--audio-player-progressed);
+      cursor: pointer;
+    }
+
+    .player-meta-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+      color: var(--audio-player-runtime-color);
+      font-size: 0.86rem;
+      line-height: 1.4;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .player-utility {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .player-utility button {
+      min-width: 3rem;
+      padding: 0.25rem 0.65rem;
+      border-radius: 999px;
+      background: rgba(238, 240, 247, 0.08);
+      color: #eef0f7;
+      cursor: pointer;
+      font: inherit;
+    }
+
+    .native-audio {
+      display: none;
+    }
+
+    .site-footer {
+      border-top: 1px solid rgba(247, 241, 233, 0.1);
+      background: transparent;
+    }
+
+    .site-footer-inner {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.7rem;
+      padding: 1.1rem 0 1.6rem;
+      color: rgba(255, 255, 255, 0.64);
+      font-size: 0.92rem;
+    }
+
+    .github-footer-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      color: inherit;
+    }
+
+    .github-footer-link:hover,
+    .github-footer-link:focus-visible {
+      color: #ffffff;
+    }
+
+    .github-mark {
+      width: 1.1rem;
+      height: 1.1rem;
+      display: block;
+      fill: currentColor;
+    }
+
+    @media screen and (max-width: 767px) {
+      html {
+        font-size: 13px;
+        line-height: 1.75;
+      }
+
+      .site-header {
+        padding-bottom: 1.15rem;
+      }
+
+      .site-header-inner {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .show-header {
+        padding-top: 4.8rem;
+      }
+
+      .show-header-grid {
+        grid-template-columns: 1fr;
+        gap: 1.65rem;
+      }
+
+      .show-art {
+        max-width: 24rem;
+      }
+
+      .show-title {
+        font-size: 2.28rem;
+        line-height: 1.14;
+      }
+
+      .show-description {
+        margin-top: 1rem;
+        font-size: 1.08rem;
+        line-height: 1.78;
+      }
+
+      .episodes-section {
+        padding: 2.9rem 0 3.8rem;
+      }
+
+      .episode-card {
+        padding: 1.12rem 0;
+      }
+
+      .episode-meta {
+        margin-bottom: 0.65rem;
+        font-size: 0.98rem;
+      }
+
+      .episode-title {
+        font-size: 1.62rem;
+        line-height: 1.3;
+      }
+
+      .episode-description-preview,
+      .episode-description,
+      .episode-description-more {
+        font-size: 1.02rem;
+        line-height: 1.8;
+      }
+
+      .description-toggle {
+        font-size: 1rem;
+        line-height: 1.6;
+      }
+
+      .episode-player {
+        margin-top: 1.3rem;
+        padding-top: 1rem;
+      }
+
+      .audio-shell {
+        gap: 1rem;
+      }
+
+      .player-row {
+        align-items: flex-start;
+        gap: 1.05rem;
+      }
+
+      .play-toggle {
+        width: 3.35rem;
+        height: 3.35rem;
+      }
+
+      .play-toggle svg {
+        width: 1.08rem;
+        height: 1.08rem;
+      }
+
+      .timeline::-webkit-slider-runnable-track {
+        height: 4px;
+      }
+
+      .timeline::-webkit-slider-thumb {
+        width: 16px;
+        height: 16px;
+        margin-top: -6px;
+      }
+
+      .timeline::-moz-range-track {
+        height: 4px;
+      }
+
+      .timeline::-moz-range-thumb {
+        width: 16px;
+        height: 16px;
+      }
+
+      .player-meta-row {
+        font-size: 0.98rem;
+        line-height: 1.55;
+      }
+
+      .player-utility {
+        gap: 0.85rem;
+      }
+
+      .player-utility button,
+      .player-utility a,
+    }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="shell site-header-inner">
+      <a class="brand-mark" href="./index.html">Agentic Podcasts</a>
+    </div>
+  </header>
+
+  <main>
+    <section class="show-header">
+      <div class="shell show-header-grid">
+        <div class="show-art">
+          <img
+            alt="Ghost Wars cover art"
+            src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%230b1520'/><stop offset='0.5' stop-color='%231f3645'/><stop offset='1' stop-color='%233f6b6a'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.45)' stroke-width='3'/><text x='850' y='798' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>AGENTIC</text><text x='850' y='842' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>PODCASTS</text><text x='110' y='730' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>Ghost</text><text x='110' y='830' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>Wars</text></svg>"
+          >
+        </div>
+
+        <div class="show-copy">
+          <h1 class="show-title">Ghost Wars</h1>
+          <p class="show-description">
+            From the late Cold War to the eve of 9/11, Ghost Wars tracks the covert war in Afghanistan and the networks it created. Five episodes follow the CIA-ISI partnership, the rise of the Taliban, bin Laden's return, and the policy drift that left warning lights flashing. A story of proxy war becoming permanent, and of choices that kept narrowing the path to security.
+          </p>
+        </div>
+      </div>
+    </section>
+
+                    <section class="episodes-section" id="episodes">
+      <div class="shell episode-list">
+        <article class="episode-card">
+          <p class="episode-meta">Episode 1</p>
+          <h2 class="episode-title">Origins: Revolution, Invasion, and the Anti-Soviet Jihad</h2>
+          <p class="episode-description-preview">
+            A revolution, a Soviet invasion, and the CIA's proxy pipeline set the terms of the long war.
+          </p>
+          <div class="episode-details">
+            <span class="episode-description-more" data-role="episode-description-more">
+              An embassy riot in Islamabad sets the tone for a war that will be fought mostly in shadows. This episode follows Afghanistan's revolution, the Soviet invasion, and the rapid construction of a CIA-backed resistance pipeline. Saudi money, Pakistani intelligence, and rival mujahedin commanders create a battlefield economy that rewards the most hard-line factions. We meet Ahmed Shah Massoud as a strategic counterweight to Gulbuddin Hekmatyar and track how U.S. policy choices privileged deniability over control. The ISI becomes a decisive gatekeeper, shaping who fights and who gets paid. By the time Stingers arrive and the Soviets begin to bleed, the coalition is already shaping a postwar order no one fully understands. The alliances forged here will define everything that follows.
+            </span>
+            <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
+          </div>
+          <div class="episode-player">
+            <div class="audio-shell">
+              <audio class="native-audio" preload="metadata">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/ghost-wars-cleaned-chapters-episodes-1-5-20260322T0200/episode-1.mp3" type="audio/mpeg">
+                Your browser does not support the audio element.
+              </audio>
+              <div class="player-row">
+                <button class="play-toggle" data-role="hero-play" type="button" aria-label="Play audio">
+                  <svg data-role="play-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M8 5.14v13.72L19 12 8 5.14z"></path>
+                  </svg>
+                </button>
+                <div class="progress-cluster">
+                  <input class="timeline" data-role="timeline" type="range" min="0" max="100" step="0.1" value="0" aria-label="Seek through audio">
+                  <div class="player-meta-row">
+                    <div><span data-role="current-time">0:00</span> / <span data-role="duration">0:00</span></div>
+                    <div class="player-utility">
+                      <button data-role="speed-toggle" type="button">1x</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="episode-card">
+          <p class="episode-meta">Episode 2</p>
+          <h2 class="episode-title">After Victory: Civil War, Neglect, and the Taliban's Rise</h2>
+          <p class="episode-description-preview">
+            Post-Soviet Afghanistan fractures as the Taliban rise and bin Laden's network grows in the shadows.
+          </p>
+          <div class="episode-details">
+            <span class="episode-description-more" data-role="episode-description-more">
+              The Soviets leave, but peace never arrives. Washington turns away as Kabul collapses into factional war, and the CIA's Afghan program shrinks into an afterthought. Pakistani intelligence backs a new force--students from religious schools--who promise order and deliver a ruthlessly narrow vision of rule. As the Taliban sweep across the south, their battlefield successes intersect with Saudi patrons, fractured Afghan commanders, and a growing cadre of Arab veterans. Kabul's streets become front lines, and the economy of war hardens into a way of life. Osama bin Laden's profile rises inside this vacuum, and American policymakers debate whether he is a nuisance or a strategic threat. The episode traces how postwar neglect and regional rivalries let a fragile proxy war harden into a new regime.
+            </span>
+            <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
+          </div>
+          <div class="episode-player">
+            <div class="audio-shell">
+              <audio class="native-audio" preload="metadata">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/ghost-wars-cleaned-chapters-episodes-1-5-20260322T0200/episode-2.mp3" type="audio/mpeg">
+                Your browser does not support the audio element.
+              </audio>
+              <div class="player-row">
+                <button class="play-toggle" data-role="hero-play" type="button" aria-label="Play audio">
+                  <svg data-role="play-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M8 5.14v13.72L19 12 8 5.14z"></path>
+                  </svg>
+                </button>
+                <div class="progress-cluster">
+                  <input class="timeline" data-role="timeline" type="range" min="0" max="100" step="0.1" value="0" aria-label="Seek through audio">
+                  <div class="player-meta-row">
+                    <div><span data-role="current-time">0:00</span> / <span data-role="duration">0:00</span></div>
+                    <div class="player-utility">
+                      <button data-role="speed-toggle" type="button">1x</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="episode-card">
+          <p class="episode-meta">Episode 3</p>
+          <h2 class="episode-title">Taliban Afghanistan and the Return of Bin Laden</h2>
+          <p class="episode-description-preview">
+            Taliban consolidation and bin Laden's return collide with hesitant CIA action and policy ambiguity.
+          </p>
+          <div class="episode-details">
+            <span class="episode-description-more" data-role="episode-description-more">
+              As the Taliban consolidate power, oil pipeline diplomacy and international recognition become the currency of leverage. Bin Laden returns to Afghanistan under Taliban protection, and the CIA begins to re-enter the fight with intelligence programs and capture plans. American officials wrestle with legal constraints, uncertain partners, and a policy split between engagement and isolation. The episode moves from Kandahar to Washington, following the push and pull between covert action proposals and diplomatic caution, including debates over a possible Taliban deal. As camps expand and threats sharpen, the question is no longer whether bin Laden is dangerous but whether the United States is willing to take risks to stop him. The result is a growing sense of urgency without a decisive instrument, and a widening gap between warning and action.
+            </span>
+            <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
+          </div>
+          <div class="episode-player">
+            <div class="audio-shell">
+              <audio class="native-audio" preload="metadata">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/ghost-wars-cleaned-chapters-episodes-1-5-20260322T0200/episode-3.mp3" type="audio/mpeg">
+                Your browser does not support the audio element.
+              </audio>
+              <div class="player-row">
+                <button class="play-toggle" data-role="hero-play" type="button" aria-label="Play audio">
+                  <svg data-role="play-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M8 5.14v13.72L19 12 8 5.14z"></path>
+                  </svg>
+                </button>
+                <div class="progress-cluster">
+                  <input class="timeline" data-role="timeline" type="range" min="0" max="100" step="0.1" value="0" aria-label="Seek through audio">
+                  <div class="player-meta-row">
+                    <div><span data-role="current-time">0:00</span> / <span data-role="duration">0:00</span></div>
+                    <div class="player-utility">
+                      <button data-role="speed-toggle" type="button">1x</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="episode-card">
+          <p class="episode-meta">Episode 4</p>
+          <h2 class="episode-title">Embassies Bombed: War Footing Without Resolution</h2>
+          <p class="episode-description-preview">
+            Embassy bombings spur strikes and surveillance, but strategy stalls amid legal and political caution.
+          </p>
+          <div class="episode-details">
+            <span class="episode-description-more" data-role="episode-description-more">
+              The 1998 embassy bombings force the United States onto a wartime footing, but strategy remains unsettled. Cruise-missile strikes hit Afghanistan and Sudan, intelligence warnings mount, and the Predator begins to haunt Taliban skies. Pakistan enters a period of coups and counter-coups, complicating every effort to pressure the Taliban or track al-Qaeda. Inside Washington, agencies exchange alarms while disagreements over rules, evidence, and targets delay action, and legal caution blunts aggressive options. The episode follows the signals that kept flashing--money trails, phone intercepts, and field reporting--while policymakers searched for a plan that matched the scale of the threat. The result is momentum without closure, a cycle of alarms and near-misses that leaves the adversary intact.
+            </span>
+            <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
+          </div>
+          <div class="episode-player">
+            <div class="audio-shell">
+              <audio class="native-audio" preload="metadata">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/ghost-wars-cleaned-chapters-episodes-1-5-20260322T0200/episode-4.mp3" type="audio/mpeg">
+                Your browser does not support the audio element.
+              </audio>
+              <div class="player-row">
+                <button class="play-toggle" data-role="hero-play" type="button" aria-label="Play audio">
+                  <svg data-role="play-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M8 5.14v13.72L19 12 8 5.14z"></path>
+                  </svg>
+                </button>
+                <div class="progress-cluster">
+                  <input class="timeline" data-role="timeline" type="range" min="0" max="100" step="0.1" value="0" aria-label="Seek through audio">
+                  <div class="player-meta-row">
+                    <div><span data-role="current-time">0:00</span> / <span data-role="duration">0:00</span></div>
+                    <div class="player-utility">
+                      <button data-role="speed-toggle" type="button">1x</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="episode-card">
+          <p class="episode-meta">Episode 5</p>
+          <h2 class="episode-title">The Last Summer: Policy Drift to September 10</h2>
+          <p class="episode-description-preview">
+            From the USS Cole to the summer of 2001, warnings mount while policy drifts toward catastrophe.
+          </p>
+          <div class="episode-details">
+            <span class="episode-description-more" data-role="episode-description-more">
+              The final episode opens with a new administration and a policy review that drifts while the threat accelerates. Taliban diplomacy stalls, sanctions creep forward, and CIA officers warn that time is running out. The USS Cole attack and the slow-moving response deepen the sense of drift. Ahmed Shah Massoud sends last-minute appeals, while intelligence traffic hints at something large, coordinated, and imminent. Inside the White House and the bureaucracy, uncertainty over authorities and priorities slows the response. The narrative ends in the long, tense summer of 2001--meetings, memos, and missed windows--until the eve of catastrophe. It is a story of warning lights, bureaucratic drag, and the cost of delay when the next move belongs to the attacker.
+            </span>
+            <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
+          </div>
+          <div class="episode-player">
+            <div class="audio-shell">
+              <audio class="native-audio" preload="metadata">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/ghost-wars-cleaned-chapters-episodes-1-5-20260322T0200/episode-5.mp3" type="audio/mpeg">
+                Your browser does not support the audio element.
+              </audio>
+              <div class="player-row">
+                <button class="play-toggle" data-role="hero-play" type="button" aria-label="Play audio">
+                  <svg data-role="play-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M8 5.14v13.72L19 12 8 5.14z"></path>
+                  </svg>
+                </button>
+                <div class="progress-cluster">
+                  <input class="timeline" data-role="timeline" type="range" min="0" max="100" step="0.1" value="0" aria-label="Seek through audio">
+                  <div class="player-meta-row">
+                    <div><span data-role="current-time">0:00</span> / <span data-role="duration">0:00</span></div>
+                    <div class="player-utility">
+                      <button data-role="speed-toggle" type="button">1x</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+  </main>
+  <footer class="site-footer">
+    <div class="shell site-footer-inner">
+      <a class="github-footer-link" href="https://github.com/baqiral-1/podcast_agent" aria-label="Hosted on GitHub: open the podcast_agent repository">
+        <svg class="github-mark" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 .5C5.65.5.5 5.65.5 12A11.5 11.5 0 0 0 8.36 22.93c.58.1.79-.25.79-.56v-1.96c-3.2.69-3.87-1.36-3.87-1.36-.52-1.33-1.28-1.68-1.28-1.68-1.05-.72.08-.71.08-.71 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.36.96.1-.75.4-1.25.73-1.54-2.56-.29-5.26-1.28-5.26-5.68 0-1.25.45-2.27 1.18-3.08-.12-.29-.51-1.46.12-3.02 0 0 .96-.31 3.15 1.18a10.9 10.9 0 0 1 5.74 0c2.18-1.49 3.14-1.18 3.14-1.18.63 1.56.24 2.73.12 3.02.74.81 1.18 1.83 1.18 3.08 0 4.41-2.7 5.38-5.28 5.67.41.35.77 1.03.77 2.08v3.08c0 .31.21.67.8.56A11.5 11.5 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5z"></path>
+        </svg>
+        <span>Hosted on GitHub</span>
+      </a>
+    </div>
+  </footer>
+
+  <script>
+    const speeds = [1, 1.5, 2];
+
+    function formatTime(value) {
+      if (!Number.isFinite(value) || value < 0) {
+        return "0:00";
+      }
+
+      const totalSeconds = Math.floor(value);
+      const hours = Math.floor(totalSeconds / 3600);
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = totalSeconds % 60;
+      if (hours > 0) {
+        const remainingMinutes = Math.floor((totalSeconds % 3600) / 60);
+        return `${hours}:${String(remainingMinutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+      }
+      return `${minutes}:${String(seconds).padStart(2, "0")}`;
+    }
+
+    document.querySelectorAll(".episode-card").forEach((episodeCard) => {
+      const audio = episodeCard.querySelector("audio");
+      const heroPlay = episodeCard.querySelector('[data-role="hero-play"]');
+      const playIcon = episodeCard.querySelector('[data-role="play-icon"]');
+      const timeline = episodeCard.querySelector('[data-role="timeline"]');
+      const currentTime = episodeCard.querySelector('[data-role="current-time"]');
+      const duration = episodeCard.querySelector('[data-role="duration"]');
+      const speedToggle = episodeCard.querySelector('[data-role="speed-toggle"]');
+      const descriptionToggle = episodeCard.querySelector('[data-role="description-toggle"]');
+      const episodeDetails = episodeCard.querySelector(".episode-details");
+
+      let speedIndex = 0;
+
+      function syncPlayState() {
+        const isPaused = audio.paused;
+        playIcon.innerHTML = isPaused
+          ? '<path d="M8 5.14v13.72L19 12 8 5.14z"></path>'
+          : '<path d="M7 5h3v14H7zm7 0h3v14h-3z"></path>';
+        heroPlay.setAttribute("aria-label", isPaused ? "Play audio" : "Pause audio");
+      }
+
+      function updateTimeline() {
+        if (!Number.isFinite(audio.duration) || audio.duration <= 0) {
+          timeline.value = 0;
+          duration.textContent = "0:00";
+          return;
+        }
+
+        timeline.value = (audio.currentTime / audio.duration) * 100;
+        currentTime.textContent = formatTime(audio.currentTime);
+        duration.textContent = formatTime(audio.duration);
+      }
+
+      heroPlay.addEventListener("click", () => {
+        if (audio.paused) {
+          document.querySelectorAll(".native-audio").forEach((otherAudio) => {
+            if (otherAudio !== audio) {
+              otherAudio.pause();
+            }
+          });
+          audio.play();
+        } else {
+          audio.pause();
+        }
+      });
+
+      audio.addEventListener("play", syncPlayState);
+      audio.addEventListener("pause", syncPlayState);
+      audio.addEventListener("ended", syncPlayState);
+      audio.addEventListener("timeupdate", updateTimeline);
+      audio.addEventListener("loadedmetadata", updateTimeline);
+
+      timeline.addEventListener("input", () => {
+        if (!Number.isFinite(audio.duration) || audio.duration <= 0) {
+          return;
+        }
+        audio.currentTime = (Number(timeline.value) / 100) * audio.duration;
+      });
+
+      speedToggle.addEventListener("click", () => {
+        speedIndex = (speedIndex + 1) % speeds.length;
+        audio.playbackRate = speeds[speedIndex];
+        speedToggle.textContent = `${speeds[speedIndex]}x`;
+      });
+
+      descriptionToggle.addEventListener("click", () => {
+        const isOpen = episodeDetails.classList.toggle("is-open");
+        descriptionToggle.textContent = isOpen ? "Read less" : "Read more";
+        descriptionToggle.setAttribute("aria-expanded", String(isOpen));
+      });
+
+      syncPlayState();
+      updateTimeline();
+    });
+  </script>
+</body>
+</html>
