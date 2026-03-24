@@ -24,6 +24,7 @@ from podcast_agent.utils import (
     split_into_chapters,
     split_into_detected_headings,
 )
+from podcast_agent.utils.chapter_utils import validate_chapter_range
 
 STOP_WORDS = {
     "about",
@@ -57,7 +58,7 @@ class StructuringAgent(Agent):
         chunk_overlap_words: int = 30,
         max_structuring_chapter_words: int = 2500,
         max_structuring_llm_chapter_words: int = 75000,
-        structuring_parallelism: int = 6,
+        structuring_parallelism: int = 30,
         structuring_window_words: int = 1800,
         structuring_window_overlap_words: int = 150,
     ) -> None:
@@ -147,16 +148,11 @@ class StructuringAgent(Agent):
                 section_count=len(sections),
                 message="No reliable chapter headings detected; using deterministic fallback sectioning.",
             )
-        start_index = 0
-        end_index = len(sections) - 1
-        if start_chapter is not None:
-            start_index = _find_section_index(sections, start_chapter, "start")
-        if end_chapter is not None:
-            end_index = _find_section_index(sections, end_chapter, "end")
-        if end_index < start_index:
-            raise ValueError(
-                f"End chapter '{end_chapter}' appears before start chapter '{start_chapter}'."
-            )
+        start_index, end_index = validate_chapter_range(
+            sections,
+            start_chapter=start_chapter,
+            end_chapter=end_chapter,
+        )
         selected_sections = sections[start_index : end_index + 1]
         if start_chapter is not None or end_chapter is not None:
             self._log(
@@ -395,6 +391,7 @@ class StructuringAgent(Agent):
         ]
         last_error: Exception | None = None
         used_transport_retry = False
+        used_timeout_retry = False
         for attempt_label, instructions in attempts:
             try:
                 plan = self.llm.generate_json(
@@ -432,6 +429,7 @@ class StructuringAgent(Agent):
                 is_retryable_400 = (
                     isinstance(exc, LLMTransportHTTPError) and exc.status_code == 400
                 )
+                is_timeout = self._is_timeout_error(exc)
                 self._log(
                     "structuring_llm_retry",
                     chapter_number=chapter_number,
@@ -441,9 +439,13 @@ class StructuringAgent(Agent):
                     error_type=type(exc).__name__,
                     error_message=str(exc),
                 )
-                if not is_retryable_400 or used_transport_retry:
-                    break
-                used_transport_retry = True
+                if is_retryable_400 and not used_transport_retry:
+                    used_transport_retry = True
+                    continue
+                if is_timeout and not used_timeout_retry:
+                    used_timeout_retry = True
+                    continue
+                break
         self._log(
             "structuring_llm_fallback",
             chapter_number=chapter_number,
@@ -452,6 +454,10 @@ class StructuringAgent(Agent):
             fallback_reason=type(last_error).__name__ if last_error is not None else "unknown",
         )
         return draft
+
+    @staticmethod
+    def _is_timeout_error(exc: Exception) -> bool:
+        return isinstance(exc, RuntimeError) and "timed out" in str(exc).lower()
 
 
 def _chunk_text(text: str, max_words: int, overlap_words: int) -> list[dict[str, int | str]]:
@@ -562,19 +568,6 @@ def _merge_structured_chapter_windows(
         title=chapter_title,
         summary=summary,
         chunks=merged_chunks,
-    )
-
-
-def _find_section_index(sections: list[object], requested_title: str, bound_name: str) -> int:
-    normalized_requested_title = requested_title.strip().casefold()
-    for index, section in enumerate(sections):
-        section_title = getattr(section, "title", "").strip().casefold()
-        if section_title == normalized_requested_title:
-            return index
-    available_titles = ", ".join(getattr(section, "title", "") for section in sections)
-    raise ValueError(
-        f"Unable to find {bound_name} chapter '{requested_title}'. "
-        f"Available detected chapters: {available_titles}"
     )
 
 

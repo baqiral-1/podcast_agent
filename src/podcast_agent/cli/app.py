@@ -284,6 +284,10 @@ def run_pipeline(
         default=False,
         help="Synthesize audio files after render-manifest generation.",
     ),
+    skip_grounding: bool = typer.Option(
+        default=False,
+        help="Skip grounding (validation and repair) and mark episodes as grounded-pass.",
+    ),
     tts_provider: str | None = typer.Option(
         default=None,
         help="TTS provider for audio synthesis (openai-compatible, kokoro).",
@@ -314,6 +318,7 @@ def run_pipeline(
         agent_model=agent_model,
         llm_provider=llm_provider,
         tts_provider=_normalize_tts_provider(tts_provider),
+        skip_grounding=skip_grounding,
     )
     orchestrator.log_command(
         "run-pipeline",
@@ -326,6 +331,7 @@ def run_pipeline(
             "end_chapter": end_chapter,
             "database_url": database_url,
             "with_audio": with_audio,
+            "skip_grounding": skip_grounding,
             "tts_provider": tts_provider,
             "model": model,
             "llm_provider": llm_provider,
@@ -351,6 +357,10 @@ def run_batch(
         None,
         "--with-audio/--no-with-audio",
         help="Override the manifest audio setting.",
+    ),
+    skip_grounding: bool = typer.Option(
+        default=False,
+        help="Skip grounding (validation and repair) and mark episodes as grounded-pass.",
     ),
     run_id: str | None = typer.Option(
         default=None,
@@ -390,6 +400,7 @@ def run_batch(
         agent_model=agent_model,
         llm_provider=llm_provider,
         tts_provider=_normalize_tts_provider(tts_provider),
+        skip_grounding=skip_grounding,
     )
     try:
         manifest = BatchRunManifest.model_validate_json(
@@ -403,6 +414,7 @@ def run_batch(
             "manifest_path": str(manifest_path),
             "database_url": database_url,
             "with_audio": with_audio,
+            "skip_grounding": skip_grounding,
             "run_id": run_id,
             "batch_parallelism": batch_parallelism,
             "model": model,
@@ -613,6 +625,7 @@ def _build_orchestrator(
     llm_provider: str | None = None,
     agent_model: list[str] | None = None,
     tts_provider: str | None = None,
+    skip_grounding: bool | None = None,
 ) -> PipelineOrchestrator:
     settings = Settings()
     resolved_database_url = database_url or settings.database.dsn
@@ -642,6 +655,10 @@ def _build_orchestrator(
         settings_updates["llm"] = settings.llm.model_copy(update=llm_updates)
     if tts_provider is not None:
         settings_updates["tts"] = settings.tts.model_copy(update={"provider": tts_provider})
+    if skip_grounding is not None:
+        settings_updates["pipeline"] = settings.pipeline.model_copy(
+            update={"skip_grounding": skip_grounding}
+        )
     settings = settings.model_copy(update=settings_updates)
     return PipelineOrchestrator(settings=settings, repository=repository)
 

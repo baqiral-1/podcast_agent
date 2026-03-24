@@ -93,6 +93,44 @@ def split_into_detected_headings(text: str) -> list[SectionInput]:
     return sections
 
 
+def find_section_index(
+    sections: list[SectionInput],
+    requested_title: str,
+    bound_name: str,
+) -> int:
+    normalized_requested_title = requested_title.strip().casefold()
+    for index, section in enumerate(sections):
+        section_title = section.title.strip().casefold()
+        if section_title == normalized_requested_title:
+            return index
+    available_titles = ", ".join(section.title for section in sections)
+    raise ValueError(
+        f"Unable to find {bound_name} chapter '{requested_title}'. "
+        f"Available detected chapters: {available_titles}"
+    )
+
+
+def validate_chapter_range(
+    sections: list[SectionInput],
+    *,
+    start_chapter: str | None = None,
+    end_chapter: str | None = None,
+) -> tuple[int, int]:
+    if not sections:
+        raise ValueError("No chapters detected in source text.")
+    start_index = 0
+    end_index = len(sections) - 1
+    if start_chapter is not None:
+        start_index = find_section_index(sections, start_chapter, "start")
+    if end_chapter is not None:
+        end_index = find_section_index(sections, end_chapter, "end")
+    if end_index < start_index:
+        raise ValueError(
+            f"End chapter '{end_chapter}' appears before start chapter '{start_chapter}'."
+        )
+    return start_index, end_index
+
+
 def requires_fallback_sectioning(sections: list[SectionInput]) -> bool:
     if len(sections) > 3:
         return False

@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 from podcast_agent.config import LLMConfig, Settings
 from podcast_agent.llm.base import LLMClient, LLMContentFilterError, PromptPayload
-from podcast_agent.llm.concurrency import configure_llm_semaphore, llm_semaphore
+from podcast_agent.llm.concurrency import configure_llm_semaphore, llm_semaphore_for
 
 
 @dataclass(frozen=True)
@@ -83,7 +83,7 @@ class OpenAICompatibleLLMClient(LLMClient):
             raise RuntimeError(
                 "OPENAI_API_KEY is required for the default OpenAI-compatible LLM client."
             )
-        with llm_semaphore():
+        with llm_semaphore_for(schema_name):
             selected_model = self.config.model_overrides.get(schema_name, self.config.model_name)
             endpoint = f"{self.config.base_url.rstrip('/')}/v1/chat/completions"
             request_payload = {
@@ -204,7 +204,14 @@ class RoutingLLMClient(LLMClient):
 def build_llm_client(settings: Settings) -> LLMClient:
     """Construct the configured LLM client."""
 
-    configure_llm_semaphore(_resolve_llm_parallelism(settings))
+    configure_llm_semaphore(
+        _resolve_llm_parallelism(settings),
+        per_schema={
+            "structured_chapter": settings.pipeline.structuring_parallelism,
+            "beat_script": settings.pipeline.beat_parallelism,
+            "grounding_report": settings.pipeline.grounding_parallelism,
+        },
+    )
     config = settings.llm
     default_provider = _resolve_default_provider(config)
     provider_overrides = {
@@ -252,15 +259,7 @@ def _resolve_default_provider(config: LLMConfig) -> str:
 
 def _resolve_llm_parallelism(settings: Settings) -> int:
     pipeline = settings.pipeline
-    return max(
-        1,
-        min(
-            pipeline.structuring_parallelism,
-            pipeline.beat_parallelism,
-            pipeline.grounding_parallelism,
-            pipeline.episode_parallelism,
-        ),
-    )
+    return max(1, pipeline.episode_parallelism)
 
 
 def _normalize_provider(provider: str) -> str:

@@ -505,15 +505,15 @@ def test_index_book_raises_when_end_precedes_start(tmp_path: Path) -> None:
 def test_pipeline_defaults_raise_parallelism() -> None:
     settings = Settings()
 
-    assert settings.pipeline.episode_parallelism == 3
+    assert settings.pipeline.episode_parallelism == 6
     assert settings.pipeline.batch_parallelism == 3
     assert settings.pipeline.audio_parallelism == 6
     assert settings.pipeline.audio_retry_attempts == 2
-    assert settings.pipeline.beat_parallelism == 6
+    assert settings.pipeline.beat_parallelism == 20
     assert settings.pipeline.beat_write_retry_attempts == 2
     assert settings.pipeline.beat_write_timeout_seconds == 180.0
-    assert settings.pipeline.grounding_parallelism == 5
-    assert settings.pipeline.structuring_parallelism == 6
+    assert settings.pipeline.grounding_parallelism == 9
+    assert settings.pipeline.structuring_parallelism == 30
     assert settings.pipeline.max_episode_minutes == 360
     assert settings.pipeline.max_structuring_llm_chapter_words == 75000
     assert settings.pipeline.min_episode_source_ratio == 0.3
@@ -1112,10 +1112,21 @@ def test_run_pipeline_processes_episodes_in_parallel_when_enabled(tmp_path: Path
         synthesize_audio: bool,
         allow_downstream: bool,
         previous_spoken_script: SpokenEpisodeNarration | None,
+        previous_plan: EpisodePlan | None,
+        previous_script: EpisodeScript | None,
         next_plan: EpisodePlan | None,
         next_script: EpisodeScript | None,
     ) -> tuple[EpisodeOutput, SpokenEpisodeNarration | None]:
-        del book_id, synthesize_audio, allow_downstream, previous_spoken_script, next_plan, next_script
+        del (
+            book_id,
+            synthesize_audio,
+            allow_downstream,
+            previous_spoken_script,
+            previous_plan,
+            previous_script,
+            next_plan,
+            next_script,
+        )
         return EpisodeOutput(
             plan=preparation.plan,
             script=preparation.script,
@@ -1194,10 +1205,19 @@ def test_run_pipeline_defers_spoken_delivery_until_grounding_barrier(tmp_path: P
         synthesize_audio: bool,
         allow_downstream: bool,
         previous_spoken_script: SpokenEpisodeNarration | None,
+        previous_plan: EpisodePlan | None,
+        previous_script: EpisodeScript | None,
         next_plan: EpisodePlan | None,
         next_script: EpisodeScript | None,
     ) -> tuple[EpisodeOutput, SpokenEpisodeNarration | None]:
-        del synthesize_audio, previous_spoken_script, next_plan, next_script
+        del (
+            synthesize_audio,
+            previous_spoken_script,
+            previous_plan,
+            previous_script,
+            next_plan,
+            next_script,
+        )
         if allow_downstream:
             orchestrator.spoken_delivery_episode(book_id, preparation.script)
         return EpisodeOutput(
@@ -1213,6 +1233,44 @@ def test_run_pipeline_defers_spoken_delivery_until_grounding_barrier(tmp_path: P
     result = orchestrator.run_pipeline(book_path, title="Observatory Book", author="A. Writer", episode_count=2)
 
     assert len(result["episodes"]) == 2
+
+
+def test_run_pipeline_skips_grounding_when_configured(tmp_path: Path, monkeypatch) -> None:
+    book_path = tmp_path / "book.txt"
+    book_path.write_text(BOOK_TEXT, encoding="utf-8")
+    settings = Settings()
+    settings = settings.model_copy(
+        update={
+            "pipeline": settings.pipeline.model_copy(
+                update={
+                    "artifact_root": tmp_path / "runs",
+                    "minimum_source_words_per_episode": 50,
+                    "episode_parallelism": 1,
+                    "skip_grounding": True,
+                }
+            )
+        }
+    )
+    orchestrator = PipelineOrchestrator(
+        repository=InMemoryRepository(),
+        llm=HeuristicLLMClient(),
+        settings=settings,
+    )
+
+    def forbidden_validate_episode(*args, **kwargs):
+        raise AssertionError("validate_episode should be skipped when skip_grounding is enabled")
+
+    def forbidden_repair_episode(*args, **kwargs):
+        raise AssertionError("repair_episode should be skipped when skip_grounding is enabled")
+
+    monkeypatch.setattr(orchestrator, "validate_episode", forbidden_validate_episode)
+    monkeypatch.setattr(orchestrator, "repair_episode", forbidden_repair_episode)
+
+    result = orchestrator.run_pipeline(book_path, title="Observatory Book", author="A. Writer", episode_count=1)
+
+    report = result["episodes"][0]["report"]
+    assert report["overall_status"] == "pass"
+    assert report["claim_assessments"] == []
 
 
 def test_framing_failure_skips_manifest(tmp_path: Path, monkeypatch) -> None:
@@ -1378,10 +1436,21 @@ def test_grounding_rolls_forward_with_limited_parallelism(tmp_path: Path, monkey
         synthesize_audio: bool,
         allow_downstream: bool,
         previous_spoken_script: SpokenEpisodeNarration | None,
+        previous_plan: EpisodePlan | None,
+        previous_script: EpisodeScript | None,
         next_plan: EpisodePlan | None,
         next_script: EpisodeScript | None,
     ) -> tuple[EpisodeOutput, SpokenEpisodeNarration | None]:
-        del book_id, synthesize_audio, allow_downstream, previous_spoken_script, next_plan, next_script
+        del (
+            book_id,
+            synthesize_audio,
+            allow_downstream,
+            previous_spoken_script,
+            previous_plan,
+            previous_script,
+            next_plan,
+            next_script,
+        )
         return EpisodeOutput(
             plan=preparation.plan,
             script=preparation.script,

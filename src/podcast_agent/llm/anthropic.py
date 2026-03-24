@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from podcast_agent.config import LLMConfig
 from podcast_agent.llm.base import LLMClient, LLMContentFilterError, PromptPayload
-from podcast_agent.llm.concurrency import llm_semaphore
+from podcast_agent.llm.concurrency import llm_semaphore_for
 from podcast_agent.llm.openai_compatible import (
     HTTPTransport,
     _unwrap_response_payload,
@@ -38,7 +38,7 @@ class AnthropicLLMClient(LLMClient):
         if not self.config.anthropic_api_key:
             raise RuntimeError("ANTHROPIC_API_KEY is required for the Anthropic LLM client.")
 
-        with llm_semaphore():
+        with llm_semaphore_for(schema_name):
             selected_model = self.config.model_overrides.get(schema_name, self.config.model_name)
             endpoint = f"{self.config.anthropic_base_url.rstrip('/')}/v1/messages"
             user_content = json.dumps(

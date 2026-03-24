@@ -1,6 +1,7 @@
 .podcast_agent/
 .podcast_agent/runs/
 downloaded_books/
+examples/
 .pytest_cache/
 __pycache__/
 .DS_Store

@@ -13,8 +13,8 @@ def _word_count(text: str) -> int:
 def test_episode_framing_agent_enforces_word_counts() -> None:
     agent = EpisodeFramingAgent(
         HeuristicLLMClient(),
-        recap_words=80,
-        current_words=120,
+        recap_min_words=80,
+        recap_max_words=100,
         next_min_words=40,
         next_max_words=50,
         max_recap_source_words=200,
@@ -31,16 +31,17 @@ def test_episode_framing_agent_enforces_word_counts() -> None:
         has_next=True,
     )
     framing = agent.generate(payload)
-    assert _word_count(framing.recap) == 80
-    assert _word_count(framing.current_summary) == 120
+    assert 80 <= _word_count(framing.recap) <= 100
+    assert any(framing.recap.startswith(opener) for opener in agent.recap_openers)
     assert 40 <= _word_count(framing.next_overview) <= 50
+    assert any(framing.next_overview.startswith(opener) for opener in agent.next_openers)
 
 
 def test_episode_framing_agent_handles_missing_neighbors() -> None:
     agent = EpisodeFramingAgent(
         HeuristicLLMClient(),
-        recap_words=80,
-        current_words=120,
+        recap_min_words=80,
+        recap_max_words=100,
         next_min_words=40,
         next_max_words=50,
     )
@@ -58,4 +59,3 @@ def test_episode_framing_agent_handles_missing_neighbors() -> None:
     framing = agent.generate(payload)
     assert framing.recap == ""
     assert framing.next_overview == ""
-    assert _word_count(framing.current_summary) == 120

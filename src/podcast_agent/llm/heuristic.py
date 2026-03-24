@@ -9,7 +9,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from podcast_agent.llm.base import LLMClient, PromptPayload
-from podcast_agent.llm.concurrency import llm_semaphore
+from podcast_agent.llm.concurrency import llm_semaphore_for
 from podcast_agent.schemas.models import GroundingStatus
 
 
@@ -26,7 +26,7 @@ class HeuristicLLMClient(LLMClient):
         payload: PromptPayload,
         response_model: type[BaseModel],
     ) -> BaseModel:
-        with llm_semaphore():
+        with llm_semaphore_for(schema_name):
             if self.run_logger is not None:
                 self.run_logger.log(
                     "llm_request",
@@ -325,25 +325,23 @@ class HeuristicLLMClient(LLMClient):
         return {"narration": narration}
 
     def _generate_episode_framing(self, payload: PromptPayload) -> dict[str, Any]:
-        def build_words(prefix: str, count: int) -> str:
+        def build_words(opener: str, count: int, label: str) -> str:
             if count <= 0:
                 return ""
-            words = [prefix] + [f"{prefix}{index}" for index in range(1, count)]
-            return " ".join(words)
+            opener_words = opener.split()
+            remaining = max(count - len(opener_words), 0)
+            words = opener_words + [f"{label}{index}" for index in range(1, remaining + 1)]
+            return " ".join(words[:count])
 
         has_previous = bool(payload.get("has_previous"))
         has_next = bool(payload.get("has_next"))
-        recap_words = int(payload.get("recap_words", 80))
-        current_words = int(payload.get("current_words", 120))
+        recap_min_words = int(payload.get("recap_min_words", 80))
         next_min_words = int(payload.get("next_min_words", 40))
-        recap = build_words("Recap", recap_words) if has_previous else ""
-        current_summary = build_words("Current", current_words)
-        next_overview = build_words("Next", next_min_words) if has_next else ""
-        return {
-            "recap": recap,
-            "current_summary": current_summary,
-            "next_overview": next_overview,
-        }
+        recap = (
+            build_words("In the previous episode,", recap_min_words, "Recap") if has_previous else ""
+        )
+        next_overview = build_words("Next time,", next_min_words, "Next") if has_next else ""
+        return {"recap": recap, "next_overview": next_overview}
 
 
 def _group(values: list[str], group_size: int) -> list[list[str]]:

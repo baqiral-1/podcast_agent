@@ -13,26 +13,50 @@ from podcast_agent.utils.text import truncate_words
 
 
 class EpisodeFramingAgent(Agent):
-    """Generate recap/current/next framing text for one episode."""
+    """Generate recap/next framing text for one episode."""
 
     schema_name = "episode_framing"
     instructions = ""
     response_model = EpisodeFraming
+    recap_openers = [
+        "In the previous episode,",
+        "Previously, in our story,",
+        "Last time, on this story,",
+        "Earlier in the series,",
+        "Earlier in our story,",
+        "Previously, we followed,",
+        "Last time, we followed,",
+        "Previously, we saw,",
+        "Last time, we saw,",
+        "Earlier, we saw,",
+    ]
+    next_openers = [
+        "Next time,",
+        "In the next episode,",
+        "Next, we follow,",
+        "Coming up next,",
+        "Next, we see,",
+        "Next, we turn to,",
+        "In the next chapter of this story,",
+        "Next on this journey,",
+        "Next in our story,",
+        "Next, the story moves to,",
+    ]
 
     def __init__(
         self,
         llm,
         *,
-        recap_words: int,
-        current_words: int,
+        recap_min_words: int,
+        recap_max_words: int,
         next_min_words: int,
         next_max_words: int,
         max_recap_source_words: int = 900,
         retry_attempts: int = 1,
     ) -> None:
         super().__init__(llm)
-        self.recap_words = recap_words
-        self.current_words = current_words
+        self.recap_min_words = recap_min_words
+        self.recap_max_words = recap_max_words
         self.next_min_words = next_min_words
         self.next_max_words = next_max_words
         self.max_recap_source_words = max_recap_source_words
@@ -61,18 +85,20 @@ class EpisodeFramingAgent(Agent):
             "next_outline": next_outline or "",
             "has_previous": has_previous,
             "has_next": has_next,
-            "recap_words": self.recap_words,
-            "current_words": self.current_words,
+            "recap_min_words": self.recap_min_words,
+            "recap_max_words": self.recap_max_words,
             "next_min_words": self.next_min_words,
             "next_max_words": self.next_max_words,
         }
 
     def generate(self, payload: dict) -> EpisodeFraming:
         instructions = build_episode_framing_instructions(
-            recap_words=self.recap_words,
-            current_words=self.current_words,
+            recap_min_words=self.recap_min_words,
+            recap_max_words=self.recap_max_words,
             next_min_words=self.next_min_words,
             next_max_words=self.next_max_words,
+            recap_openers=self.recap_openers,
+            next_openers=self.next_openers,
         )
         last_error: Exception | None = None
         for attempt in range(self.retry_attempts + 1):
@@ -87,7 +113,7 @@ class EpisodeFramingAgent(Agent):
                 last_error = exc
                 if attempt >= self.retry_attempts:
                     break
-                instructions = self._retry_instructions(instructions, payload, last_error)
+                instructions = self._retry_instructions(instructions, last_error)
                 continue
             violations = self._validate_word_counts(framing, payload)
             if not violations:
@@ -95,7 +121,7 @@ class EpisodeFramingAgent(Agent):
             last_error = ValueError("; ".join(violations))
             if attempt >= self.retry_attempts:
                 break
-            instructions = self._retry_instructions(instructions, payload, last_error)
+            instructions = self._retry_instructions(instructions, last_error)
         raise RuntimeError(f"Episode framing failed after retry: {last_error}") from last_error
 
     def _validate_word_counts(self, framing: EpisodeFraming, payload: dict) -> list[str]:
@@ -104,29 +130,33 @@ class EpisodeFramingAgent(Agent):
         has_next = payload.get("has_next", False)
         if has_previous:
             recap_words = self._word_count(framing.recap)
-            if recap_words != self.recap_words:
-                violations.append(f"recap has {recap_words} words (expected {self.recap_words})")
-        if framing.current_summary:
-            current_words = self._word_count(framing.current_summary)
-            if current_words != self.current_words:
+            if not (self.recap_min_words <= recap_words <= self.recap_max_words):
                 violations.append(
-                    f"current_summary has {current_words} words (expected {self.current_words})"
+                    f"recap has {recap_words} words (expected {self.recap_min_words}-{self.recap_max_words})"
                 )
+            if not self._starts_with_any(framing.recap, self.recap_openers):
+                violations.append("recap does not start with an approved opener")
         if has_next:
             next_words = self._word_count(framing.next_overview)
             if not (self.next_min_words <= next_words <= self.next_max_words):
                 violations.append(
                     f"next_overview has {next_words} words (expected {self.next_min_words}-{self.next_max_words})"
                 )
+            if not self._starts_with_any(framing.next_overview, self.next_openers):
+                violations.append("next_overview does not start with an approved opener")
         return violations
 
-    def _retry_instructions(self, instructions: str, payload: dict, error: Exception) -> str:
-        del payload
+    def _retry_instructions(self, instructions: str, error: Exception) -> str:
         return (
             f"{instructions} The previous output violated word-count requirements. "
-            f"Use exact counts and rewrite. Error: {error}."
+            f"Use the specified ranges and openers and rewrite. Error: {error}."
         )
 
     @staticmethod
     def _word_count(text: str) -> int:
         return len(text.split())
+
+    @classmethod
+    def _starts_with_any(cls, text: str, starters: list[str]) -> bool:
+        trimmed = text.strip()
+        return any(trimmed.startswith(starter) for starter in starters)

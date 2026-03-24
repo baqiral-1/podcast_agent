@@ -31,7 +31,7 @@ from podcast_agent.agents import (
 )
 from podcast_agent.config import Settings
 from podcast_agent.db.repository import ArtifactStore, InMemoryRepository, Repository
-from podcast_agent.ingestion import read_source_text
+from podcast_agent.ingestion import normalize_source_text, read_source_text
 from podcast_agent.llm import LLMClient, build_llm_client
 from podcast_agent.retrieval import RetrievalService, embed_text
 from podcast_agent.run_logging import RunLogger
@@ -57,6 +57,7 @@ from podcast_agent.schemas.models import (
     SourceType,
 )
 from podcast_agent.tts import TTSClient, build_tts_client
+from podcast_agent.utils.chapter_utils import split_into_chapters, validate_chapter_range
 from podcast_agent.utils.text import truncate_words
 
 
@@ -155,8 +156,8 @@ class PipelineOrchestrator:
         )
         self.framing_agent = EpisodeFramingAgent(
             self.llm,
-            recap_words=self.settings.pipeline.framing_recap_words,
-            current_words=self.settings.pipeline.framing_current_words,
+            recap_min_words=self.settings.pipeline.framing_recap_min_words,
+            recap_max_words=self.settings.pipeline.framing_recap_max_words,
             next_min_words=self.settings.pipeline.framing_next_min_words,
             next_max_words=self.settings.pipeline.framing_next_max_words,
             max_recap_source_words=self.settings.pipeline.framing_recap_source_max_words,
@@ -229,6 +230,32 @@ class PipelineOrchestrator:
     ):
         """Structure the book and store chunks plus embeddings in the repository."""
 
+        if start_chapter is not None or end_chapter is not None:
+            self.run_logger.log(
+                "stage_start",
+                stage="validate_chapter_range",
+                book_id=ingestion.book_id,
+            )
+            try:
+                self._validate_chapter_range(
+                    ingestion,
+                    start_chapter=start_chapter,
+                    end_chapter=end_chapter,
+                )
+            except Exception as exc:
+                self.run_logger.log(
+                    "stage_failed",
+                    stage="validate_chapter_range",
+                    book_id=ingestion.book_id,
+                    error_type=type(exc).__name__,
+                    error_message=str(exc),
+                )
+                raise
+            self.run_logger.log(
+                "stage_end",
+                stage="validate_chapter_range",
+                book_id=ingestion.book_id,
+            )
         self.run_logger.log("stage_start", stage="index_book", book_id=ingestion.book_id)
         structure = self.structuring_agent.structure(
             ingestion,
@@ -266,6 +293,25 @@ class PipelineOrchestrator:
             chunk_count=len(structure.chunks),
         )
         return structure
+
+    @staticmethod
+    def _validate_chapter_range(
+        ingestion: BookIngestionResult,
+        *,
+        start_chapter: str | None,
+        end_chapter: str | None,
+    ) -> None:
+        normalized_text = (
+            normalize_source_text(ingestion.raw_text)
+            if ingestion.source_type == SourceType.PDF
+            else ingestion.raw_text
+        )
+        sections = split_into_chapters(normalized_text)
+        validate_chapter_range(
+            sections,
+            start_chapter=start_chapter,
+            end_chapter=end_chapter,
+        )
 
     def plan_episodes(self, structure, *, episode_count: int):
         """Analyze the book and produce the series plan."""
@@ -1165,6 +1211,17 @@ class PipelineOrchestrator:
             lambda spec, result: result.book_id,
         )
 
+        run_stage(
+            "validate_chapter_range",
+            list(ingestion_by_book_id.values()),
+            lambda ingestion: self._validate_chapter_range(
+                ingestion,
+                start_chapter=spec_by_book_id[ingestion.book_id].start_chapter,
+                end_chapter=spec_by_book_id[ingestion.book_id].end_chapter,
+            ),
+            lambda ingestion, result: ingestion.book_id,
+        )
+
         structure_by_book_id = run_stage(
             "index_book",
             list(ingestion_by_book_id.values()),
@@ -1334,6 +1391,8 @@ class PipelineOrchestrator:
 
         episode_outputs: list[EpisodeOutput] = []
         previous_spoken_script: SpokenEpisodeNarration | None = None
+        previous_plan: EpisodePlan | None = None
+        previous_script: EpisodeScript | None = None
         for index, preparation in enumerate(ordered_preparations):
             next_plan = ordered_preparations[index + 1].plan if index + 1 < len(ordered_preparations) else None
             next_script = (
@@ -1345,12 +1404,16 @@ class PipelineOrchestrator:
                 synthesize_audio=synthesize_audio,
                 allow_downstream=grounding_passed,
                 previous_spoken_script=previous_spoken_script,
+                previous_plan=previous_plan,
+                previous_script=previous_script,
                 next_plan=next_plan,
                 next_script=next_script,
             )
             episode_outputs.append(episode_output)
             if core_spoken_script is not None:
                 previous_spoken_script = core_spoken_script
+            previous_plan = preparation.plan
+            previous_script = preparation.script
         episode_outputs.sort(key=lambda episode_output: episode_output.plan.sequence)
         return episode_outputs
 
@@ -1372,15 +1435,24 @@ class PipelineOrchestrator:
             )
             raise
         self._write_citation_audit(book_id, episode_plan, script)
-        report = self.validate_episode(book_id, script)
-        self._write_citation_audit(book_id, episode_plan, script, report)
-        repair_attempts: list[RepairResult] = []
-        if report.overall_status != "pass":
-            repair = self.repair_episode(book_id, script, report)
-            script = repair.script
-            report = repair.report
-            repair_attempts.append(repair)
+        if self.settings.pipeline.skip_grounding:
+            report = GroundingReport(
+                episode_id=episode_plan.episode_id,
+                overall_status="pass",
+                claim_assessments=[],
+            )
             self._write_citation_audit(book_id, episode_plan, script, report)
+            repair_attempts = []
+        else:
+            report = self.validate_episode(book_id, script)
+            self._write_citation_audit(book_id, episode_plan, script, report)
+            repair_attempts = []
+            if report.overall_status != "pass":
+                repair = self.repair_episode(book_id, script, report)
+                script = repair.script
+                report = repair.report
+                repair_attempts.append(repair)
+                self._write_citation_audit(book_id, episode_plan, script, report)
         self.run_logger.log(
             "repair_summary",
             book_id=book_id,
@@ -1408,6 +1480,8 @@ class PipelineOrchestrator:
         synthesize_audio: bool,
         allow_downstream: bool,
         previous_spoken_script: SpokenEpisodeNarration | None,
+        previous_plan: EpisodePlan | None,
+        previous_script: EpisodeScript | None,
         next_plan: EpisodePlan | None,
         next_script: EpisodeScript | None,
     ) -> tuple[EpisodeOutput, SpokenEpisodeNarration | None]:
@@ -1446,6 +1520,8 @@ class PipelineOrchestrator:
                         preparation.plan,
                         current_script=preparation.script,
                         previous_spoken_script=previous_spoken_script,
+                        previous_plan=previous_plan,
+                        previous_script=previous_script,
                         next_plan=next_plan,
                         next_script=next_script,
                     )
@@ -1532,12 +1608,19 @@ class PipelineOrchestrator:
         *,
         current_script: EpisodeScript,
         previous_spoken_script: SpokenEpisodeNarration | None,
+        previous_plan: EpisodePlan | None,
+        previous_script: EpisodeScript | None,
         next_plan: EpisodePlan | None,
         next_script: EpisodeScript | None,
     ) -> EpisodeFraming | None:
-        has_previous = previous_spoken_script is not None
+        has_previous = previous_plan is not None and previous_script is not None
         has_next = next_plan is not None
-        recap_source = previous_spoken_script.narration if has_previous else ""
+        recap_source = self._build_recap_source_from_previous(
+            previous_plan,
+            previous_script,
+            target_words=24,
+            max_words=self.settings.pipeline.framing_recap_source_max_words,
+        )
         current_outline = self._build_beat_outline(plan, current_script)
         next_outline = (
             self._build_beat_outline(next_plan, next_script) if next_plan is not None else ""
@@ -1555,6 +1638,32 @@ class PipelineOrchestrator:
         )
         return self.framing_agent.generate(payload)
 
+    @classmethod
+    def _build_recap_source_from_previous(
+        cls,
+        previous_plan: EpisodePlan | None,
+        previous_script: EpisodeScript | None,
+        *,
+        target_words: int,
+        max_words: int,
+    ) -> str:
+        if previous_plan is None or previous_script is None:
+            return ""
+        narration_by_beat: dict[str, list[str]] = defaultdict(list)
+        for segment in previous_script.segments:
+            if segment.narration.strip():
+                narration_by_beat[segment.beat_id].append(segment.narration.strip())
+        lines: list[str] = []
+        for index, beat in enumerate(previous_plan.beats, start=1):
+            narration = " ".join(narration_by_beat.get(beat.beat_id, [])).strip()
+            source_text = f"{beat.title}. {narration}".strip() if narration else beat.title.strip()
+            summary = cls._extract_key_sentences(source_text, target_words=target_words)
+            if not summary:
+                summary = truncate_words(source_text, target_words)
+            lines.append(f"{index}. {summary}")
+        recap_source = "\n".join(lines).strip()
+        return truncate_words(recap_source, max_words)
+
     def _apply_framing_to_spoken_script(
         self,
         spoken_script: SpokenEpisodeNarration,
@@ -1563,8 +1672,6 @@ class PipelineOrchestrator:
         intro_parts = []
         if framing.recap.strip():
             intro_parts.append(framing.recap.strip())
-        if framing.current_summary.strip():
-            intro_parts.append(framing.current_summary.strip())
         intro_text = "\n\n".join(intro_parts).strip()
         outro_text = framing.next_overview.strip()
         narration_parts = [part for part in (intro_text, spoken_script.narration.strip(), outro_text) if part]

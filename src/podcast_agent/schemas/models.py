@@ -347,7 +347,6 @@ class EpisodeFraming(StrictModel):
     """Intro/outro framing text for an episode."""
 
     recap: str
-    current_summary: str
     next_overview: str
 
 

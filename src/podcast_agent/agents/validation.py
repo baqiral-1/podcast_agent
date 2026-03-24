@@ -22,7 +22,7 @@ class GroundingValidationAgent(Agent):
     instructions = "Validate each claim against the cited evidence and classify grounding strength."
     response_model = GroundingReport
 
-    def __init__(self, llm, grounding_parallelism: int = 6) -> None:
+    def __init__(self, llm, grounding_parallelism: int = 9) -> None:
         super().__init__(llm)
         self.grounding_parallelism = grounding_parallelism
 
@@ -121,9 +121,33 @@ class GroundingValidationAgent(Agent):
     ) -> GroundingReport:
         segment_chunk_ids = list(dict.fromkeys(segment.citations))
         segment_hits = [retrieval_hit_map[chunk_id] for chunk_id in segment_chunk_ids if chunk_id in retrieval_hit_map]
-        report = self.run(self._build_segment_payload(script, segment, segment_hits))
-        self._log_segment_validation_metrics(script, segment, segment_hits, report)
-        return report
+        payload = self._build_segment_payload(script, segment, segment_hits)
+        run_logger = getattr(self.llm, "run_logger", None)
+        for attempt in range(2):
+            try:
+                report = self.run(payload)
+                self._log_segment_validation_metrics(script, segment, segment_hits, report)
+                return report
+            except Exception as exc:
+                if self._is_timeout_error(exc) and attempt == 0:
+                    if run_logger is not None:
+                        run_logger.log(
+                            "grounding_timeout_retry",
+                            episode_id=script.episode_id,
+                            segment_id=segment.segment_id,
+                            attempt=attempt + 1,
+                            error_type=type(exc).__name__,
+                            error_message=str(exc),
+                        )
+                    continue
+                raise
+        raise RuntimeError(
+            f"Grounding validation failed for episode '{script.episode_id}' segment '{segment.segment_id}'."
+        )
+
+    @staticmethod
+    def _is_timeout_error(exc: Exception) -> bool:
+        return isinstance(exc, RuntimeError) and "timed out" in str(exc).lower()
 
     def _aggregate_reports(
         self,

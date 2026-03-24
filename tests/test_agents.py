@@ -280,7 +280,38 @@ class NonRetryableStructuringRuntimeLLM(LLMClient):
     def generate_json(self, schema_name, instructions, payload, response_model):
         if schema_name == "structured_chapter":
             self.calls += 1
-            raise RuntimeError("LLM request timed out after 300 seconds")
+            raise RuntimeError("LLM request failed with an unexpected runtime error")
+        return HeuristicLLMClient().generate_json(schema_name, instructions, payload, response_model)
+
+
+class TimeoutRetryStructuringLLM(LLMClient):
+    """LLM stub that times out once before succeeding."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.calls = 0
+
+    def generate_json(self, schema_name, instructions, payload, response_model):
+        if schema_name == "structured_chapter":
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError("LLM request timed out after 300 seconds")
+            draft = payload["draft"]
+            return response_model.model_validate(
+                {
+                    "chapter_number": draft["chapter_number"],
+                    "title": draft["title"],
+                    "summary": "Retry summary.",
+                    "chunks": [
+                        {
+                            "start_word": chunk["start_word"],
+                            "end_word": chunk["end_word"],
+                            "themes": chunk.get("themes", []),
+                        }
+                        for chunk in draft["chunks"]
+                    ],
+                }
+            )
         return HeuristicLLMClient().generate_json(schema_name, instructions, payload, response_model)
 
 
@@ -532,6 +563,39 @@ class ParallelValidationLLM(LLMClient):
                     )
             with self._lock:
                 self._active -= 1
+            return response_model.model_validate(
+                {
+                    "episode_id": script["episode_id"],
+                    "overall_status": "pass",
+                    "claim_assessments": assessments,
+                }
+            )
+        return HeuristicLLMClient().generate_json(schema_name, instructions, payload, response_model)
+
+
+class TimeoutRetryValidationLLM(LLMClient):
+    """LLM stub that times out once before returning a valid grounding report."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def generate_json(self, schema_name, instructions, payload, response_model):
+        if schema_name == "grounding_report":
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError("LLM request timed out after 600.0 seconds")
+            script = payload["script"]
+            assessments = []
+            for segment in script["segments"]:
+                for claim in segment["claims"]:
+                    assessments.append(
+                        {
+                            "claim_id": claim["claim_id"],
+                            "status": GroundingStatus.GROUNDED,
+                            "reason": "Retry success.",
+                            "evidence_chunk_ids": claim["evidence_chunk_ids"],
+                        }
+                    )
             return response_model.model_validate(
                 {
                     "episode_id": script["episode_id"],
@@ -809,6 +873,17 @@ def test_structuring_retries_once_after_retryable_400() -> None:
     chapter = agent._structure_chapter(1, "Chapter 1: Signals", ("observatory " * 300).strip())
 
     assert chapter is not None
+    assert llm.calls == 2
+
+
+def test_structuring_retries_once_on_timeout() -> None:
+    llm = TimeoutRetryStructuringLLM()
+    agent = StructuringAgent(llm, max_structuring_chapter_words=5000)
+
+    chapter = agent._structure_chapter(1, "Chapter 1: Signals", ("observatory " * 300).strip())
+
+    assert chapter is not None
+    assert chapter.summary == "Retry summary."
     assert llm.calls == 2
 
 
@@ -1496,6 +1571,45 @@ def test_grounding_validation_agent_scopes_payloads_to_segment_citations() -> No
         assert len(payload["script"]["segments"]) == 1
         assert payload["script"]["segments"][0]["segment_id"] == segment.segment_id
         assert sorted(hit["chunk_id"] for hit in payload["retrieval_hits"]) == sorted(set(segment.citations))
+
+
+def test_grounding_validation_agent_retries_timeout() -> None:
+    script = EpisodeScript(
+        episode_id="episode-1",
+        title="Test Episode",
+        narrator="Narrator",
+        segments=[
+            EpisodeSegment(
+                segment_id="segment-1",
+                beat_id="beat-1",
+                heading="Heading",
+                narration="Narration.",
+                claims=[
+                    ScriptClaim(
+                        claim_id="claim-1",
+                        text="A claim.",
+                        evidence_chunk_ids=["chunk-1"],
+                    )
+                ],
+                citations=["chunk-1"],
+            )
+        ],
+    )
+    retrieval_hits = [
+        RetrievalHit(
+            chunk_id="chunk-1",
+            chapter_id="chapter-1",
+            chapter_title="Chapter 1",
+            score=1.0,
+            text="Evidence text.",
+        )
+    ]
+    llm = TimeoutRetryValidationLLM()
+
+    report = GroundingValidationAgent(llm, grounding_parallelism=1).validate(script, retrieval_hits)
+
+    assert report.overall_status == "pass"
+    assert llm.calls == 2
 
 
 def test_grounding_validation_agent_preserves_claim_order_across_segments() -> None:
