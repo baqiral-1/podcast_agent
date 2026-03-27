@@ -59,7 +59,7 @@ the JSON — no preamble, no markdown fences, no commentary.
   "opening": {
     "scene": "Which scene from the source opens the episode (quote a key phrase to identify it)",
     "why": "Why this hooks the listener",
-    "transition_strategy": "How you move from the opening into context (e.g. 'To understand how an old poet ended up blessing an armed rebellion, we need to go back six years')"
+    "transition_strategy": "How you move from the opening hook into context. Examples of different approaches (infer something similar, not necessarily these exact patterns): time jump ('It was a Tuesday in March when she made the decision that would eventually put her in that courtroom.'); slow zoom out ('But pull back from that scene and a different picture emerges — one nobody in the room could see yet.'); inherited problem ('But this wasn't really her disaster. It was one she'd inherited, twenty years in the making.'); contradiction ('At least, that's the version he told the jury. Almost none of it was true.'); second witness ('There was someone else in the room that night. And she remembers it very differently.'); quiet correction ('What nobody knew yet was that the letter had never been sent.'); unanswered question ('We'll come back to that moment. But first, you need to meet the person who made it possible.'); list of consequences ('Within six months, three people would be dead, a company would be bankrupt, and a law that had stood for forty years would be rewritten.'); next morning ('By the following morning, everything had changed. But to understand how it got to that point—'); parallel life ('Three thousand miles away, someone who had never heard that name was about to have her life upended by it.'); rule or principle ('There's a phenomenon in group psychology called pluralistic ignorance. It explains almost everything that happened next.'); the object ('The document had been sitting in a filing cabinet in Omaha for eleven years. It was about to travel a very long way.'); stay in scene (No cut — keep the opening scene going and weave context into the action as it unspools); character voice ('Years later, she would say the whole thing started with a wrong number.')"
   },
   "acts": [
     {
@@ -156,11 +156,21 @@ SPOKEN FORM:
 - Orienting connectives at section transitions, not every sentence
 
 TRANSITIONS:
-When moving material out of source order, bridge cleanly:
-- Time: "To understand that morning, we need to go back six years."
-- Space: "Meanwhile, two miles north in the cantonments..."
-- Theme: "That collision of faiths didn't come from nowhere."
-- Return: "Which brings us back to the smoke rising over the bridge."
+When moving material out of source order, bridge cleanly. Examples of different approaches (infer something similar, not necessarily these exact patterns):
+- Time jump: "It was a Tuesday in March when she made the decision that would eventually put her in that courtroom."
+- Slow zoom out: "But pull back from that scene and a different picture emerges — one nobody in the room could see yet."
+- Inherited problem: "But this wasn't really her disaster. It was one she'd inherited, twenty years in the making."
+- Contradiction: "At least, that's the version he told the jury. Almost none of it was true."
+- Second witness: "There was someone else in the room that night. And she remembers it very differently."
+- Quiet correction: "What nobody knew yet was that the letter had never been sent."
+- Unanswered question: "We'll come back to that moment. But first, you need to meet the person who made it possible."
+- List of consequences: "Within six months, three people would be dead, a company would be bankrupt, and a law that had stood for forty years would be rewritten."
+- Next morning: "By the following morning, everything had changed. But to understand how it got to that point—"
+- Parallel life: "Three thousand miles away, someone who had never heard that name was about to have her life upended by it."
+- Rule or principle: "There's a phenomenon in group psychology called pluralistic ignorance. It explains almost everything that happened next."
+- The object: "The document had been sitting in a filing cabinet in Omaha for eleven years. It was about to travel a very long way."
+- Stay in scene: No cut — keep the opening scene going and weave context into the action as it unspools.
+- Character voice: "Years later, she would say the whole thing started with a wrong number."
 
 AVOID:
 - Walking through the source in its original paragraph order

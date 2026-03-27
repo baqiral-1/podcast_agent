@@ -15,69 +15,6 @@ from podcast_agent.schemas import BatchRunManifest
 
 app = typer.Typer(help="Book-to-podcast pipeline with strict stage artifacts.")
 
-_AGENT_SCHEMA_OVERRIDES: dict[str, str] = {
-    "structuring": "structured_chapter",
-    "analysis": "book_analysis",
-    "planning": "series_plan",
-    "writing": "beat_script",
-    "validation": "grounding_report",
-    "repair": "episode_repair",
-    "spoken_delivery": "spoken_delivery_narration",
-    "spoken_delivery_plan": "spoken_delivery_plan",
-    "spoken_delivery_narration": "spoken_delivery_narration",
-}
-
-
-def _parse_agent_model_overrides(
-    raw_overrides: list[str] | None,
-) -> tuple[dict[str, str], dict[str, str]]:
-    if not raw_overrides:
-        return {}, {}
-    model_overrides: dict[str, str] = {}
-    provider_overrides: dict[str, str] = {}
-    supported_providers = {"openai", "openai-compatible", "anthropic", "heuristic"}
-    for entry in raw_overrides:
-        if "=" not in entry:
-            raise typer.BadParameter(
-                f"Invalid --agent-model value '{entry}'. Expected AGENT=MODEL or AGENT=PROVIDER:MODEL.",
-                param_hint="agent-model",
-            )
-        raw_agent, raw_model = entry.split("=", 1)
-        agent = raw_agent.strip().lower().replace("-", "_")
-        model = raw_model.strip()
-        if not agent:
-            raise typer.BadParameter(
-                f"Invalid --agent-model value '{entry}'. Agent name is empty.",
-                param_hint="agent-model",
-            )
-        if not model:
-            raise typer.BadParameter(
-                f"Invalid --agent-model value '{entry}'. Model name is empty.",
-                param_hint="agent-model",
-            )
-        provider = None
-        if ":" in model:
-            provider_candidate, model_candidate = (part.strip() for part in model.split(":", 1))
-            if provider_candidate.lower() in supported_providers:
-                if not model_candidate:
-                    raise typer.BadParameter(
-                        f"Invalid --agent-model value '{entry}'. Expected AGENT=PROVIDER:MODEL.",
-                        param_hint="agent-model",
-                    )
-                provider = provider_candidate.lower()
-                model = model_candidate
-        schema_name = _AGENT_SCHEMA_OVERRIDES.get(agent)
-        if schema_name is None:
-            allowed = ", ".join(sorted(_AGENT_SCHEMA_OVERRIDES))
-            raise typer.BadParameter(
-                f"Unknown agent '{agent}' in --agent-model. Allowed agents: {allowed}.",
-                param_hint="agent-model",
-            )
-        model_overrides[schema_name] = model
-        if provider is not None:
-            provider_overrides[schema_name] = provider
-    return model_overrides, provider_overrides
-
 
 def _normalize_tts_provider(value: str | None) -> str | None:
     if value is None:
@@ -98,18 +35,13 @@ def ingest_book(
     source_path: Path,
     title: str | None = None,
     author: str = "Unknown",
-    model: str | None = typer.Option(
-        default=None,
-        help="Override the default chat model name for all LLM calls.",
-    ),
     llm_provider: str | None = typer.Option(
         default=None,
         help="Override the LLM provider (openai, anthropic, heuristic).",
     ),
-    agent_model: list[str] | None = typer.Option(
-        None,
-        "--agent-model",
-        help="Per-agent model override as AGENT=MODEL or AGENT=PROVIDER:MODEL (repeatable).",
+    reasoning_effort: str | None = typer.Option(
+        default=None,
+        help="Reasoning effort for supported OpenAI reasoning models (none, low, medium, high, xhigh).",
     ),
     database_url: str | None = typer.Option(
         default=None,
@@ -119,7 +51,9 @@ def ingest_book(
     """Ingest a book source file."""
 
     orchestrator = _build_orchestrator(
-        database_url, model=model, agent_model=agent_model, llm_provider=llm_provider
+        database_url,
+        llm_provider=llm_provider,
+        reasoning_effort=reasoning_effort,
     )
     orchestrator.log_command(
         "ingest-book",
@@ -128,9 +62,8 @@ def ingest_book(
             "title": title,
             "author": author,
             "database_url": database_url,
-            "model": model,
             "llm_provider": llm_provider,
-            "agent_model": agent_model,
+            "reasoning_effort": reasoning_effort,
         },
     )
     result = orchestrator.ingest_book(source_path=source_path, title=title, author=author)
@@ -150,18 +83,13 @@ def index_book(
         default=None,
         help="Stop at this detected chapter title, matched case-insensitively and included in the run.",
     ),
-    model: str | None = typer.Option(
-        default=None,
-        help="Override the default chat model name for all LLM calls.",
-    ),
     llm_provider: str | None = typer.Option(
         default=None,
         help="Override the LLM provider (openai, anthropic, heuristic).",
     ),
-    agent_model: list[str] | None = typer.Option(
-        None,
-        "--agent-model",
-        help="Per-agent model override as AGENT=MODEL or AGENT=PROVIDER:MODEL (repeatable).",
+    reasoning_effort: str | None = typer.Option(
+        default=None,
+        help="Reasoning effort for supported OpenAI reasoning models (none, low, medium, high, xhigh).",
     ),
     database_url: str | None = typer.Option(
         default=None,
@@ -171,7 +99,9 @@ def index_book(
     """Structure a book and persist chunks plus embeddings."""
 
     orchestrator = _build_orchestrator(
-        database_url, model=model, agent_model=agent_model, llm_provider=llm_provider
+        database_url,
+        llm_provider=llm_provider,
+        reasoning_effort=reasoning_effort,
     )
     orchestrator.log_command(
         "index-book",
@@ -182,9 +112,8 @@ def index_book(
             "start_chapter": start_chapter,
             "end_chapter": end_chapter,
             "database_url": database_url,
-            "model": model,
             "llm_provider": llm_provider,
-            "agent_model": agent_model,
+            "reasoning_effort": reasoning_effort,
         },
     )
     ingestion = orchestrator.ingest_book(source_path=source_path, title=title, author=author)
@@ -214,18 +143,13 @@ def plan_episodes(
         default=None,
         help="Stop at this detected chapter title, matched case-insensitively and included in the run.",
     ),
-    model: str | None = typer.Option(
-        default=None,
-        help="Override the default chat model name for all LLM calls.",
-    ),
     llm_provider: str | None = typer.Option(
         default=None,
         help="Override the LLM provider (openai, anthropic, heuristic).",
     ),
-    agent_model: list[str] | None = typer.Option(
-        None,
-        "--agent-model",
-        help="Per-agent model override as AGENT=MODEL or AGENT=PROVIDER:MODEL (repeatable).",
+    reasoning_effort: str | None = typer.Option(
+        default=None,
+        help="Reasoning effort for supported OpenAI reasoning models (none, low, medium, high, xhigh).",
     ),
     database_url: str | None = typer.Option(
         default=None,
@@ -235,7 +159,9 @@ def plan_episodes(
     """Create a series plan from a source book."""
 
     orchestrator = _build_orchestrator(
-        database_url, model=model, agent_model=agent_model, llm_provider=llm_provider
+        database_url,
+        llm_provider=llm_provider,
+        reasoning_effort=reasoning_effort,
     )
     orchestrator.log_command(
         "plan-episodes",
@@ -247,9 +173,8 @@ def plan_episodes(
             "start_chapter": start_chapter,
             "end_chapter": end_chapter,
             "database_url": database_url,
-            "model": model,
             "llm_provider": llm_provider,
-            "agent_model": agent_model,
+            "reasoning_effort": reasoning_effort,
         },
     )
     ingestion = orchestrator.ingest_book(source_path=source_path, title=title, author=author)
@@ -292,18 +217,13 @@ def run_pipeline(
         default=None,
         help="TTS provider for audio synthesis (openai-compatible, kokoro).",
     ),
-    model: str | None = typer.Option(
-        default=None,
-        help="Override the default chat model name for all LLM calls.",
-    ),
     llm_provider: str | None = typer.Option(
         default=None,
         help="Override the LLM provider (openai, anthropic, heuristic).",
     ),
-    agent_model: list[str] | None = typer.Option(
-        None,
-        "--agent-model",
-        help="Per-agent model override as AGENT=MODEL or AGENT=PROVIDER:MODEL (repeatable).",
+    reasoning_effort: str | None = typer.Option(
+        default=None,
+        help="Reasoning effort for supported OpenAI reasoning models (none, low, medium, high, xhigh).",
     ),
     database_url: str | None = typer.Option(
         default=None,
@@ -314,9 +234,8 @@ def run_pipeline(
 
     orchestrator = _build_orchestrator(
         database_url,
-        model=model,
-        agent_model=agent_model,
         llm_provider=llm_provider,
+        reasoning_effort=reasoning_effort,
         tts_provider=_normalize_tts_provider(tts_provider),
         skip_grounding=skip_grounding,
     )
@@ -333,9 +252,8 @@ def run_pipeline(
             "with_audio": with_audio,
             "skip_grounding": skip_grounding,
             "tts_provider": tts_provider,
-            "model": model,
             "llm_provider": llm_provider,
-            "agent_model": agent_model,
+            "reasoning_effort": reasoning_effort,
         },
     )
     result = orchestrator.run_pipeline(
@@ -374,18 +292,13 @@ def run_batch(
         default=None,
         help="TTS provider for audio synthesis (openai-compatible, kokoro).",
     ),
-    model: str | None = typer.Option(
-        default=None,
-        help="Override the default chat model name for all LLM calls.",
-    ),
     llm_provider: str | None = typer.Option(
         default=None,
         help="Override the LLM provider (openai, anthropic, heuristic).",
     ),
-    agent_model: list[str] | None = typer.Option(
-        None,
-        "--agent-model",
-        help="Per-agent model override as AGENT=MODEL or AGENT=PROVIDER:MODEL (repeatable).",
+    reasoning_effort: str | None = typer.Option(
+        default=None,
+        help="Reasoning effort for supported OpenAI reasoning models (none, low, medium, high, xhigh).",
     ),
     database_url: str | None = typer.Option(
         default=None,
@@ -396,9 +309,8 @@ def run_batch(
 
     orchestrator = _build_orchestrator(
         database_url,
-        model=model,
-        agent_model=agent_model,
         llm_provider=llm_provider,
+        reasoning_effort=reasoning_effort,
         tts_provider=_normalize_tts_provider(tts_provider),
         skip_grounding=skip_grounding,
     )
@@ -417,9 +329,8 @@ def run_batch(
             "skip_grounding": skip_grounding,
             "run_id": run_id,
             "batch_parallelism": batch_parallelism,
-            "model": model,
             "llm_provider": llm_provider,
-            "agent_model": agent_model,
+            "reasoning_effort": reasoning_effort,
             "tts_provider": tts_provider,
         },
     )
@@ -454,18 +365,13 @@ def render_audio(
         default=None,
         help="TTS provider for audio synthesis (openai-compatible, kokoro).",
     ),
-    model: str | None = typer.Option(
-        default=None,
-        help="Override the default chat model name for all LLM calls.",
-    ),
     llm_provider: str | None = typer.Option(
         default=None,
         help="Override the LLM provider (openai, anthropic, heuristic).",
     ),
-    agent_model: list[str] | None = typer.Option(
-        None,
-        "--agent-model",
-        help="Per-agent model override as AGENT=MODEL or AGENT=PROVIDER:MODEL (repeatable).",
+    reasoning_effort: str | None = typer.Option(
+        default=None,
+        help="Reasoning effort for supported OpenAI reasoning models (none, low, medium, high, xhigh).",
     ),
     database_url: str | None = typer.Option(
         default=None,
@@ -476,9 +382,8 @@ def render_audio(
 
     orchestrator = _build_orchestrator(
         database_url,
-        model=model,
-        agent_model=agent_model,
         llm_provider=llm_provider,
+        reasoning_effort=reasoning_effort,
         tts_provider=_normalize_tts_provider(tts_provider),
     )
     orchestrator.log_command(
@@ -491,9 +396,8 @@ def render_audio(
             "start_chapter": start_chapter,
             "end_chapter": end_chapter,
             "database_url": database_url,
-            "model": model,
             "llm_provider": llm_provider,
-            "agent_model": agent_model,
+            "reasoning_effort": reasoning_effort,
             "tts_provider": tts_provider,
         },
     )
@@ -516,18 +420,13 @@ def render_audio_from_manifest(
         default=None,
         help="Book ID fallback when it cannot be inferred from the artifact path.",
     ),
-    model: str | None = typer.Option(
-        default=None,
-        help="Override the default chat model name for all LLM calls.",
-    ),
     llm_provider: str | None = typer.Option(
         default=None,
         help="Override the LLM provider (openai, anthropic, heuristic).",
     ),
-    agent_model: list[str] | None = typer.Option(
-        None,
-        "--agent-model",
-        help="Per-agent model override as AGENT=MODEL or AGENT=PROVIDER:MODEL (repeatable).",
+    reasoning_effort: str | None = typer.Option(
+        default=None,
+        help="Reasoning effort for supported OpenAI reasoning models (none, low, medium, high, xhigh).",
     ),
     tts_provider: str | None = typer.Option(
         default=None,
@@ -542,9 +441,8 @@ def render_audio_from_manifest(
 
     orchestrator = _build_orchestrator(
         database_url,
-        model=model,
-        agent_model=agent_model,
         llm_provider=llm_provider,
+        reasoning_effort=reasoning_effort,
         tts_provider=_normalize_tts_provider(tts_provider),
     )
     orchestrator.log_command(
@@ -553,9 +451,8 @@ def render_audio_from_manifest(
             "artifact_path": str(artifact_path),
             "book_id": book_id,
             "database_url": database_url,
-            "model": model,
             "llm_provider": llm_provider,
-            "agent_model": agent_model,
+            "reasoning_effort": reasoning_effort,
             "tts_provider": tts_provider,
         },
     )
@@ -569,18 +466,13 @@ def render_audio_from_manifest(
 @app.command("spoken-delivery")
 def spoken_delivery(
     artifact_path: Path,
-    model: str | None = typer.Option(
-        default=None,
-        help="Override the default chat model name for all LLM calls.",
-    ),
     llm_provider: str | None = typer.Option(
         default=None,
         help="Override the LLM provider (openai, anthropic, heuristic).",
     ),
-    agent_model: list[str] | None = typer.Option(
-        None,
-        "--agent-model",
-        help="Per-agent model override as AGENT=MODEL or AGENT=PROVIDER:MODEL (repeatable).",
+    reasoning_effort: str | None = typer.Option(
+        default=None,
+        help="Reasoning effort for supported OpenAI reasoning models (none, low, medium, high, xhigh).",
     ),
     database_url: str | None = typer.Option(
         default=None,
@@ -591,18 +483,16 @@ def spoken_delivery(
 
     orchestrator = _build_orchestrator(
         database_url,
-        model=model,
-        agent_model=agent_model,
         llm_provider=llm_provider,
+        reasoning_effort=reasoning_effort,
     )
     orchestrator.log_command(
         "spoken-delivery",
         {
             "artifact_path": str(artifact_path),
             "database_url": database_url,
-            "model": model,
             "llm_provider": llm_provider,
-            "agent_model": agent_model,
+            "reasoning_effort": reasoning_effort,
         },
     )
     try:
@@ -621,9 +511,8 @@ def main() -> None:
 def _build_orchestrator(
     database_url: str | None,
     *,
-    model: str | None = None,
     llm_provider: str | None = None,
-    agent_model: list[str] | None = None,
+    reasoning_effort: str | None = None,
     tts_provider: str | None = None,
     skip_grounding: bool | None = None,
 ) -> PipelineOrchestrator:
@@ -635,18 +524,10 @@ def _build_orchestrator(
         else InMemoryRepository()
     )
     llm_updates: dict[str, object] = {}
-    agent_model_overrides, provider_overrides = _parse_agent_model_overrides(agent_model)
-    if model is not None:
-        llm_updates["model_name"] = model
     if llm_provider is not None:
         llm_updates["llm_provider"] = llm_provider
-    if agent_model_overrides:
-        llm_updates["model_overrides"] = {**settings.llm.model_overrides, **agent_model_overrides}
-    if provider_overrides:
-        llm_updates["provider_overrides"] = {
-            **settings.llm.provider_overrides,
-            **provider_overrides,
-        }
+    if reasoning_effort is not None:
+        llm_updates["reasoning_effort"] = reasoning_effort
 
     settings_updates: dict[str, object] = {
         "database": settings.database.model_copy(update={"dsn": resolved_database_url}),

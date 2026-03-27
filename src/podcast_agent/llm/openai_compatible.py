@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 from urllib import request
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlparse
 
 from pydantic import BaseModel
 
@@ -65,10 +66,32 @@ class HTTPTransport:
 class OpenAICompatibleLLMClient(LLMClient):
     """Client that requests schema-constrained JSON from an OpenAI-compatible API."""
 
+    _reasoning_excluded_schemas = {"structured_chapter", "grounding_report"}
+    _allowed_reasoning_efforts = {"low", "medium", "high", "xhigh"}
+
     def __init__(self, config: LLMConfig, transport: HTTPTransport | None = None) -> None:
         super().__init__()
         self.config = config
         self.transport = transport or HTTPTransport()
+
+    def _should_use_responses_api(self) -> bool:
+        parsed = urlparse(self.config.base_url)
+        return parsed.netloc == "api.openai.com"
+
+    def _resolve_reasoning_effort(self, schema_name: str) -> str | None:
+        if schema_name in self._reasoning_excluded_schemas:
+            return None
+        raw_effort = self.config.reasoning_effort
+        if raw_effort is None:
+            return None
+        effort = raw_effort.strip().lower()
+        if effort == "none":
+            return None
+        if effort not in self._allowed_reasoning_efforts:
+            raise ValueError(
+                "Invalid reasoning effort. Expected one of: none, low, medium, high, xhigh."
+            )
+        return effort
 
     def generate_json(
         self,
@@ -85,34 +108,45 @@ class OpenAICompatibleLLMClient(LLMClient):
             )
         with llm_semaphore_for(schema_name):
             selected_model = self.config.model_overrides.get(schema_name, self.config.model_name)
-            endpoint = f"{self.config.base_url.rstrip('/')}/v1/chat/completions"
-            request_payload = {
-                "model": selected_model,
-                "temperature": self.config.temperature,
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": (
-                            f"{instructions}\n"
-                            "Return only a JSON object that matches the requested schema. "
-                            "Do not wrap the response in markdown or prose. "
-                            "Do not repeat wrapper keys such as schema_name, payload, or expected_schema."
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": json.dumps(
-                            {
-                                "schema_name": schema_name,
-                                "payload": payload,
-                                "expected_schema": response_model.model_json_schema(),
-                            },
-                            default=str,
-                        ),
-                    },
-                ],
-                "response_format": {"type": "json_object"},
-            }
+            reasoning_effort = self._resolve_reasoning_effort(schema_name)
+            use_responses_api = self._should_use_responses_api()
+            system_text = (
+                f"{instructions}\n"
+                "Return only a JSON object that matches the requested schema. "
+                "Do not wrap the response in markdown or prose. "
+                "Do not repeat wrapper keys such as schema_name, payload, or expected_schema."
+            )
+            user_text = json.dumps(
+                {
+                    "schema_name": schema_name,
+                    "payload": payload,
+                    "expected_schema": response_model.model_json_schema(),
+                },
+                default=str,
+            )
+            if use_responses_api:
+                endpoint = f"{self.config.base_url.rstrip('/')}/v1/responses"
+                request_payload = {
+                    "model": selected_model,
+                    "input": [
+                        {"role": "system", "content": [{"type": "input_text", "text": system_text}]},
+                        {"role": "user", "content": [{"type": "input_text", "text": user_text}]},
+                    ],
+                    "text": {"format": {"type": "json_object"}},
+                }
+                if reasoning_effort is not None:
+                    request_payload["reasoning"] = {"effort": reasoning_effort}
+            else:
+                endpoint = f"{self.config.base_url.rstrip('/')}/v1/chat/completions"
+                request_payload = {
+                    "model": selected_model,
+                    "temperature": self.config.temperature,
+                    "messages": [
+                        {"role": "system", "content": system_text},
+                        {"role": "user", "content": user_text},
+                    ],
+                    "response_format": {"type": "json_object"},
+                }
             headers = {
                 "Authorization": f"Bearer {self.config.api_key}",
                 "Content-Type": "application/json",
@@ -122,10 +156,12 @@ class OpenAICompatibleLLMClient(LLMClient):
                     "llm_request",
                     client="openai-compatible",
                     schema_name=schema_name,
-                    instructions=request_payload["messages"][0]["content"],
-                    payload=request_payload["messages"][1]["content"],
+                    instructions=system_text,
+                    payload=user_text,
                     model=selected_model,
                     timeout_seconds=self.config.timeout_seconds,
+                    api_mode="responses" if use_responses_api else "chat_completions",
+                    reasoning_effort=reasoning_effort or "none",
                 )
             try:
                 response = self.transport.post_json(
@@ -141,8 +177,11 @@ class OpenAICompatibleLLMClient(LLMClient):
                         schema_name=schema_name,
                         response=response.body,
                     )
-                _raise_for_finish_reason(response.body)
-                content = _extract_message_content(response.body)
+                if not use_responses_api:
+                    _raise_for_finish_reason(response.body)
+                    content = _extract_message_content(response.body)
+                else:
+                    content = _extract_responses_content(response.body)
                 normalized_json = _normalize_json_content(content)
                 normalized_payload = _unwrap_response_payload(json.loads(normalized_json))
                 return response_model.model_validate_json(json.dumps(normalized_payload))
@@ -282,7 +321,7 @@ def _validate_provider_overrides(
         if schema_name not in model_overrides:
             raise ValueError(
                 f"Schema '{schema_name}' specifies provider '{provider}' but has no model override. "
-                "Use --agent-model AGENT=PROVIDER:MODEL to set both."
+                "Set model_overrides and provider_overrides in configuration to set both."
             )
 
 
@@ -305,6 +344,27 @@ def _extract_message_content(body: dict[str, Any]) -> str:
         if text_parts:
             return "".join(text_parts)
     raise RuntimeError("LLM response did not include parseable content.")
+
+
+def _extract_responses_content(body: dict[str, Any]) -> str:
+    output_text = body.get("output_text")
+    if isinstance(output_text, str) and output_text:
+        return output_text
+    outputs = body.get("output", [])
+    if not outputs:
+        raise RuntimeError("LLM response did not include any output items.")
+    text_parts: list[str] = []
+    for item in outputs:
+        content = item.get("content", [])
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            block_type = block.get("type")
+            if block_type in {"output_text", "text"}:
+                text_parts.append(block.get("text", ""))
+    if text_parts:
+        return "".join(text_parts)
+    raise RuntimeError("LLM response did not include parseable output text.")
 
 
 def _raise_for_finish_reason(body: dict[str, Any]) -> None:

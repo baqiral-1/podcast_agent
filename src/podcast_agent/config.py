@@ -28,9 +28,12 @@ class LLMConfig(BaseModel):
         default_factory=lambda: os.getenv("LLM_PROVIDER") or os.getenv("LLM_TYPE") or "openai"
     )
     provider: str = Field(default_factory=lambda: os.getenv("LLM_PROVIDER", "openai-compatible"))
-    model_name: str = Field(default_factory=lambda: os.getenv("LLM_MODEL_NAME", "gpt-4o-mini"))
+    model_name: str = Field(default_factory=lambda: os.getenv("LLM_MODEL_NAME", "gpt-5.4"))
     model_overrides: dict[str, str] = Field(
-        default_factory=dict,
+        default_factory=lambda: {
+            "structured_chapter": "gpt-5-mini",
+            "grounding_report": "gpt-5-mini",
+        },
         description=(
             "Optional per-schema model overrides keyed by schema_name. "
             "When present, schema_name-specific entries take precedence over model_name."
@@ -44,6 +47,10 @@ class LLMConfig(BaseModel):
         ),
     )
     temperature: float = Field(default=1.0, ge=0.0, le=2.0)
+    reasoning_effort: str | None = Field(
+        default_factory=lambda: os.getenv("LLM_REASONING_EFFORT"),
+        description="Optional reasoning effort for supported OpenAI reasoning models.",
+    )
     api_key: str | None = Field(default_factory=lambda: os.getenv("OPENAI_API_KEY"))
     base_url: str = Field(
         default_factory=lambda: os.getenv("OPENAI_BASE_URL", "https://api.openai.com"),
@@ -82,8 +89,8 @@ class TTSConfig(BaseModel):
     )
     speed: float = Field(default=1, gt=0.0, le=4.0)
     timeout_seconds: float = Field(default=300.0, gt=0.0)
-    kokoro_parallelism: int = Field(default=2, ge=1)
-    kokoro_worker_threads: int = Field(default=4, ge=1)
+    kokoro_parallelism: int = Field(default=12, ge=1)
+    kokoro_worker_threads: int = Field(default=12, ge=1)
     kokoro_chunk_min_words: int = Field(default=550, ge=100)
     kokoro_chunk_max_words: int = Field(default=600, ge=100)
 
@@ -100,7 +107,7 @@ class SpokenDeliveryConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     enabled: bool = Field(default=True)
-    timeout_seconds: float = Field(default=1200.0, gt=0.0)
+    timeout_seconds: float = Field(default=7200.0, gt=0.0)
     chunk_min_words: int = Field(default=700, ge=100)
     chunk_max_words: int = Field(default=900, ge=100)
 
@@ -117,12 +124,14 @@ class PipelineConfig(BaseModel):
     max_repair_attempts: int = Field(default=2, ge=0)
     episode_parallelism: int = Field(default=6, ge=1)
     batch_parallelism: int = Field(default=3, ge=1)
-    audio_parallelism: int = Field(default=6, ge=1)
+    analysis_parallelism: int | None = Field(default=8, ge=1)
+    audio_parallelism: int = Field(default=12, ge=1)
     audio_retry_attempts: int = Field(default=2, ge=0)
-    beat_parallelism: int = Field(default=20, ge=1)
+    beat_parallelism: int = Field(default=36, ge=1)
     beat_write_retry_attempts: int = Field(default=2, ge=0)
-    beat_write_timeout_seconds: float = Field(default=180.0, gt=0.0)
+    beat_write_timeout_seconds: float = Field(default=600.0, gt=0.0)
     grounding_parallelism: int = Field(default=9, ge=1)
+    spoken_delivery_parallelism: int | None = Field(default=4, ge=1)
     minimum_source_words_per_episode: int = Field(default=50000, ge=1000)
     min_episode_source_ratio: float = Field(default=0.3, gt=0.0, le=1.0)
     spoken_words_per_minute: int = Field(default=130, ge=80)
@@ -138,7 +147,7 @@ class PipelineConfig(BaseModel):
     coverage_warning_min_ratio: float | None = Field(default=None, ge=0.0, le=1.0)
     max_structuring_chapter_words: int = Field(default=2500, ge=500)
     max_structuring_llm_chapter_words: int = Field(default=75000, ge=1000)
-    structuring_parallelism: int = Field(default=30, ge=1)
+    structuring_parallelism: int = Field(default=48, ge=1)
     structuring_window_words: int = Field(default=5000, ge=300)
     structuring_window_overlap_words: int = Field(default=150, ge=0)
     framing_recap_min_words: int = Field(default=80, ge=10)

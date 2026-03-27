@@ -1143,6 +1143,12 @@ class PipelineOrchestrator:
         resolved_run_id = run_id or manifest.run_id or _new_batch_run_id()
         resolved_with_audio = manifest.with_audio if synthesize_audio is None else synthesize_audio
         resolved_parallelism = batch_parallelism or self.settings.pipeline.batch_parallelism
+        resolved_analysis_parallelism = (
+            self.settings.pipeline.analysis_parallelism or resolved_parallelism
+        )
+        resolved_spoken_delivery_parallelism = (
+            self.settings.pipeline.spoken_delivery_parallelism or resolved_parallelism
+        )
 
         self.run_id = resolved_run_id
         self.run_logger.bind_run(resolved_run_id)
@@ -1151,6 +1157,8 @@ class PipelineOrchestrator:
             run_id=resolved_run_id,
             book_count=len(manifest.books),
             batch_parallelism=resolved_parallelism,
+            analysis_parallelism=resolved_analysis_parallelism,
+            spoken_delivery_parallelism=resolved_spoken_delivery_parallelism,
         )
 
         spec_by_book_id: dict[str, BatchBookSpec] = {}
@@ -1164,19 +1172,19 @@ class PipelineOrchestrator:
             spec_by_book_id[book_id] = spec
             book_ids.append(book_id)
 
-        def run_stage(stage: str, items: list, handler, key_fn):
+        def run_stage(stage: str, items: list, handler, key_fn, parallelism: int = resolved_parallelism):
             self.run_logger.log(
                 "batch_stage_start",
                 stage=stage,
                 item_count=len(items),
             )
             results: dict[str, object] = {}
-            if resolved_parallelism == 1 or len(items) <= 1:
+            if parallelism == 1 or len(items) <= 1:
                 for item in items:
                     result = handler(item)
                     results[key_fn(item, result)] = result
             else:
-                with ThreadPoolExecutor(max_workers=resolved_parallelism) as executor:
+                with ThreadPoolExecutor(max_workers=parallelism) as executor:
                     future_map = {executor.submit(handler, item): item for item in items}
                     for future in as_completed(future_map):
                         item = future_map[future]
@@ -1241,6 +1249,7 @@ class PipelineOrchestrator:
                 episode_count=spec_by_book_id[structure.book_id].episode_count,
             ),
             lambda structure, result: structure.book_id,
+            parallelism=resolved_analysis_parallelism,
         )
 
         def prepare_book(book_id: str) -> list[EpisodePreparation]:
@@ -1281,7 +1290,7 @@ class PipelineOrchestrator:
             item_count=len(book_ids),
         )
         episode_outputs_by_book_id: dict[str, list[EpisodeOutput]] = {}
-        if resolved_parallelism == 1 or len(book_ids) <= 1:
+        if resolved_spoken_delivery_parallelism == 1 or len(book_ids) <= 1:
             for book_id in book_ids:
                 episode_outputs_by_book_id[book_id] = self._finalize_episode_preparations(
                     book_id,
@@ -1289,7 +1298,7 @@ class PipelineOrchestrator:
                     synthesize_audio=resolved_with_audio,
                 )
         else:
-            with ThreadPoolExecutor(max_workers=resolved_parallelism) as executor:
+            with ThreadPoolExecutor(max_workers=resolved_spoken_delivery_parallelism) as executor:
                 future_map = {
                     executor.submit(
                         self._finalize_episode_preparations,

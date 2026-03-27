@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import BaseModel
 
 from podcast_agent.config import LLMConfig, TTSConfig
 from podcast_agent.llm.base import LLMContentFilterError
@@ -49,14 +50,18 @@ class FailingHTTPTransport:
 def test_openai_compatible_client_parses_schema_constrained_json() -> None:
     transport = FakeTransport(
         {
-            "choices": [
+            "output": [
                 {
-                    "message": {
-                        "content": (
-                            '{"episode_id":"episode-1","overall_status":"pass",'
-                            '"claim_assessments":[],"validated_at":"2026-03-13T00:00:00Z"}'
-                        )
-                    }
+                    "type": "message",
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": (
+                                '{"episode_id":"episode-1","overall_status":"pass",'
+                                '"claim_assessments":[],"validated_at":"2026-03-13T00:00:00Z"}'
+                            ),
+                        }
+                    ],
                 }
             ]
         }
@@ -75,21 +80,25 @@ def test_openai_compatible_client_parses_schema_constrained_json() -> None:
 
     assert result.episode_id == "episode-1"
     assert transport.last_payload is not None
-    assert transport.last_payload["response_format"]["type"] == "json_object"
+    assert transport.last_payload["text"]["format"]["type"] == "json_object"
 
 
 def test_openai_compatible_client_unwraps_payload_echoes() -> None:
     transport = FakeTransport(
         {
-            "choices": [
+            "output": [
                 {
-                    "message": {
-                        "content": (
-                            '{"schema_name":"grounding_report","payload":'
-                            '{"episode_id":"episode-1","overall_status":"pass",'
-                            '"claim_assessments":[],"validated_at":"2026-03-13T00:00:00Z"}}'
-                        )
-                    }
+                    "type": "message",
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": (
+                                '{"schema_name":"grounding_report","payload":'
+                                '{"episode_id":"episode-1","overall_status":"pass",'
+                                '"claim_assessments":[],"validated_at":"2026-03-13T00:00:00Z"}}'
+                            ),
+                        }
+                    ],
                 }
             ]
         }
@@ -112,14 +121,18 @@ def test_openai_compatible_client_unwraps_payload_echoes() -> None:
 def test_openai_compatible_client_uses_schema_model_override() -> None:
     transport = FakeTransport(
         {
-            "choices": [
+            "output": [
                 {
-                    "message": {
-                        "content": (
-                            '{"episode_id":"episode-1","overall_status":"pass",'
-                            '"claim_assessments":[],"validated_at":"2026-03-13T00:00:00Z"}'
-                        )
-                    }
+                    "type": "message",
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": (
+                                '{"episode_id":"episode-1","overall_status":"pass",'
+                                '"claim_assessments":[],"validated_at":"2026-03-13T00:00:00Z"}'
+                            ),
+                        }
+                    ],
                 }
             ]
         }
@@ -157,7 +170,7 @@ def test_openai_compatible_client_raises_for_content_filter_finish_reason() -> N
         }
     )
     client = OpenAICompatibleLLMClient(
-        config=LLMConfig(api_key="test-key"),
+        config=LLMConfig(api_key="test-key", base_url="https://example.com"),
         transport=transport,
     )
 
@@ -186,7 +199,7 @@ def test_openai_compatible_client_raises_for_length_finish_reason() -> None:
         }
     )
     client = OpenAICompatibleLLMClient(
-        config=LLMConfig(api_key="test-key"),
+        config=LLMConfig(api_key="test-key", base_url="https://example.com"),
         transport=transport,
     )
 
@@ -205,7 +218,7 @@ def test_openai_compatible_client_raises_for_length_finish_reason() -> None:
 
 def test_openai_compatible_client_preserves_http_status_and_body() -> None:
     client = OpenAICompatibleLLMClient(
-        config=LLMConfig(api_key="test-key"),
+        config=LLMConfig(api_key="test-key", base_url="https://example.com"),
         transport=FailingHTTPTransport(),
     )
 
@@ -249,3 +262,62 @@ def test_openai_compatible_tts_client_returns_audio_bytes(monkeypatch) -> None:
     assert transport.last_payload["format"] == "wav"
     assert transport.last_payload["instructions"] == "Deliver this with ominous gravity."
     assert transport.last_payload["input"] == "Testing the TTS path."
+
+
+def test_openai_compatible_client_sets_reasoning_effort_excluding_grounding() -> None:
+    class DummyResponse(BaseModel):
+        value: str
+
+    transport = FakeTransport(
+        {
+            "output": [
+                {
+                    "type": "message",
+                    "content": [
+                        {"type": "output_text", "text": '{"value":"ok"}'},
+                    ],
+                }
+            ]
+        }
+    )
+    client = OpenAICompatibleLLMClient(
+        config=LLMConfig(api_key="test-key", reasoning_effort="high"),
+        transport=transport,
+    )
+
+    result = client.generate_json(
+        schema_name="beat_script",
+        instructions="Respond with a value.",
+        payload={},
+        response_model=DummyResponse,
+    )
+
+    assert result.value == "ok"
+    assert transport.last_payload is not None
+    assert transport.last_payload["reasoning"]["effort"] == "high"
+
+    transport.last_payload = None
+    transport.body = {
+        "output": [
+            {
+                "type": "message",
+                "content": [
+                    {
+                        "type": "output_text",
+                        "text": (
+                            '{"episode_id":"episode-1","overall_status":"pass",'
+                            '"claim_assessments":[],"validated_at":"2026-03-13T00:00:00Z"}'
+                        ),
+                    }
+                ],
+            }
+        ]
+    }
+    client.generate_json(
+        schema_name="grounding_report",
+        instructions="Validate the claims.",
+        payload={"script": {"episode_id": "episode-1"}},
+        response_model=GroundingReport,
+    )
+    assert transport.last_payload is not None
+    assert "reasoning" not in transport.last_payload

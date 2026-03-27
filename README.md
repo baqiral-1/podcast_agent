@@ -32,7 +32,6 @@ export DATABASE_URL=postgresql://postgres:secret@localhost:5432/podcast_agent
 
 Notes:
 - `OPENAI_BASE_URL` can point at any OpenAI-compatible server.
-- Per-agent model overrides are supported via CLI `--agent-model`.
 - Use `--tts-provider kokoro` on audio commands to switch from OpenAI-compatible TTS.
 
 ## CLI Quickstart

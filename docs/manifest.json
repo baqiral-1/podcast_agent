@@ -1,0 +1,349 @@
+{
+  "version": 1,
+  "generatedFrom": "docs/*.html",
+  "collections": [
+    {
+      "id": "freedom-at-midnight",
+      "title": "Freedom at Midnight",
+      "author": "Dominique Lapierre & Larry Collins",
+      "tagline": "Partition 1947",
+      "runtime": "4h 4m",
+      "summary": "The final months of the Raj unfold as rival visions, hurried borders, and exhausted officials race toward independence. Four episodes track the political bargaining, human catastrophe, and the assassination that defined a nation’s birth.",
+      "accentColor": "#e4572e",
+      "episodeCount": 4,
+      "detailUrl": "https://baqiral-1.github.io/podcast_agent/freedom-at-midnight.html",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "The Raj Unravels",
+          "summary": "An exhausted empire and irreconcilable demands push India toward Partition.",
+          "description": "Britain's war-drained empire reaches the end of its tether. London's Cabinet dithers, Congress and the Muslim League harden their demands, and communal violence flares in Bengal. Gandhi walks through Noakhali, insisting that independence means moral repair as well as political transfer. Into this storm steps Louis Mountbatten, tasked with engineering a handover that the Raj no longer has the legitimacy or manpower to control. The episode tracks how deadlock gives way to urgency: why a united India starts to look impossible, how the timetable accelerates, and how Partition becomes thinkable, then inevitable. It is the story of an empire that can no longer rule, leaders who can no longer agree, and a clock that begins to run faster than any of them expect.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/freedom-at-midnight-episodes-1-4-20260321T2042/episode-1.mp3"
+        },
+        {
+          "number": 2,
+          "title": "Drawing the Lines of Freedom",
+          "summary": "Boundaries are drawn in haste, and secrecy becomes a strategy.",
+          "description": "Independence now has a date, but its shape is still contested. The princes bargain for terms, administrators weigh how to divide armies, assets, and civil services, and the Radcliffe boundary commission is asked to draw lines on a map it barely knows. Mountbatten's plan requires speed, and speed means secrecy: the borders will be announced only after power has already been transferred. The episode follows the scramble to define Pakistan, the negotiations over Punjab and Bengal, and the mounting fear that the act of drawing lines will ignite violence. Behind the scenes, officials attempt to choreograph a peaceful handover while communities arm themselves. It is a story of statecraft under impossible constraints, when legal precision and human lives are both sacrificed to the race against chaos.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/freedom-at-midnight-episodes-1-4-20260321T2042/episode-2.mp3"
+        },
+        {
+          "number": 3,
+          "title": "Partition Inferno",
+          "summary": "Partition unleashes mass violence and a refugee catastrophe across the new borders.",
+          "description": "Partition arrives as a human catastrophe. Punjab fractures into massacre and counter-massacre, trains arrive packed with the dead, and refugee columns stretch across the new borders in both directions. The episode traces how the administrative machinery buckles: police desert, local leaders lose control, and rumors turn whole districts into killing grounds. In Bengal and Delhi the violence is different but no less terrifying, and women become targets of abduction and vengeance. Amid the chaos, the new governments struggle to protect their citizens while also trying to create themselves--issuing orders, moving troops, and establishing authority in cities that are burning. The story is not just one of slaughter, but of the birth of two states in the middle of it, and of the moral and political price that independence exacted.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/freedom-at-midnight-episodes-1-4-20260321T2042/episode-3.mp3"
+        },
+        {
+          "number": 4,
+          "title": "The Death of the Mahatma",
+          "summary": "Gandhi's final campaign meets a hardening extremist conspiracy.",
+          "description": "With independence achieved, Gandhi turns to the task he believes still unfinished: saving India's moral center. He fasts to halt riots, presses leaders to protect minorities, and walks through neighborhoods where fear still rules. His insistence that Pakistan be paid its promised funds inflames Hindu extremists who see him as betraying the nation. The episode follows the tightening conspiracy, the atmosphere of Delhi in early 1948, and Gandhi's final public appearances, where he pleads for reconciliation even as threats mount around him. The assassination is sudden, but the build-up is long: a clash between pluralism and ethno-religious nationalism. The episode closes on the shockwave his death sends through India and Pakistan, and the brief, fragile unity it forces into being.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/freedom-at-midnight-episodes-1-4-20260321T2042/episode-4.mp3"
+        }
+      ]
+    },
+    {
+      "id": "the-crusades-authoritative-history",
+      "title": "The Crusades",
+      "author": "Thomas Asbridge",
+      "tagline": "Medieval Levant",
+      "runtime": "4h 31m",
+      "summary": "Six episodes cover the preaching of holy war, the creation of crusader states, and the Muslim counteroffensive that reshaped the eastern Mediterranean. From the First Crusade to the loss of Outremer, strategy and faith collide across two centuries.",
+      "accentColor": "#2a9d8f",
+      "episodeCount": 6,
+      "detailUrl": "https://baqiral-1.github.io/podcast_agent/the-crusades-authoritative-history.html",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "Origins and Triumph of the First Crusade",
+          "summary": "Urban II's call ignites a brutal journey that ends in Jerusalem.",
+          "description": "The series opens in the fractured world of the eleventh-century West: pious fear, feuding lords, and a Church struggling to command the violence it had long condemned. Urban II's call at Clermont transforms penitential pilgrimage into holy war, and tens of thousands set out for Jerusalem. The episode follows the First Crusade's brutal march across Anatolia, the desperate siege of Antioch, and the cascade of visions and rumors that kept the army moving. When the crusaders finally reach Jerusalem, the siege and assault reveal both their endurance and their ruthlessness. The victory is staggering, but it is also precarious: a thin Latin foothold in a distant land. This is the crusades' origin story--faith fused to arms, and a triumph that contains the seeds of everything that follows.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/the-crusades-authoritative-history-episodes-1-6-20260322T0113/episode-1.mp3"
+        },
+        {
+          "number": 2,
+          "title": "Building Outremer and the Second Crusade",
+          "summary": "Settlement and compromise collide with the failed rescue of Edessa.",
+          "description": "Conquest becomes settlement. The new crusader states build ports, castles, and courts while trying to govern a land where Franks are a small minority. Diplomacy and trade sit alongside raids and truces, and survival depends on alliances as much as swords. In Syria and Mesopotamia, Zangi's rise signals a Muslim revival, and the fall of Edessa in 1144 sends shockwaves across Europe. Bernard of Clairvaux helps ignite the Second Crusade, a vast expedition meant to restore the lost county. But the crusade collapses on the road and then at Damascus, where rival plans and local politics derail the campaign. The episode shows how Outremer is built through improvisation and compromise--and how Europe's first great rescue effort ends in humiliation, strengthening the very forces it aimed to defeat.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/the-crusades-authoritative-history-episodes-1-6-20260322T0113/episode-2.mp3"
+        },
+        {
+          "number": 3,
+          "title": "Nur al-Din, Egypt, and the Rise of Saladin",
+          "summary": "Muslim revival and Saladin's ascent tighten the ring around Outremer.",
+          "description": "A new Muslim leadership redefines the struggle. Nur al-Din consolidates power in Syria, champions jihad, and turns Damascus into the pivot of a counter-crusade. In Egypt, a dynastic crisis draws in Nur al-Din's commanders, including Shirkuh and his young nephew Saladin. The episode follows the contest for Cairo, the fall of the Fatimids, and Saladin's rapid ascent from lieutenant to sultan. Once in control, Saladin unites Egypt and Syria, reorients the politics of the region, and begins to isolate the crusader states. Damascus and Aleppo become prizes, and truce gives way to ambition. The crusaders' survival now depends on an increasingly fragile balance between their internal rivalries and the tightening ring around them. It is the hinge of the series: from scattered conflict to a coordinated struggle for Jerusalem itself.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/the-crusades-authoritative-history-episodes-1-6-20260322T0113/episode-3.mp3"
+        },
+        {
+          "number": 4,
+          "title": "Hattin, Jerusalem Lost, and the Third Crusade Begins",
+          "summary": "Hattin's disaster shocks Europe and opens the Third Crusade.",
+          "description": "In 1187 the balance breaks. Saladin draws the crusader army into the scorching trap of Hattin and destroys it, then retakes Jerusalem, shocking Latin Christendom. Europe responds with a Third Crusade led by emperors and kings, but even this grand coalition fractures. Frederick Barbarossa dies en route, and Richard the Lionheart and Philip of France arrive with competing agendas. The episode covers the brutal siege of Acre, Richard's victories at Arsuf and Jaffa, and the looming question of whether Jerusalem can actually be recovered. Europe raises money, vows, and new fleets as the news spreads. The Third Crusade begins with momentum and glory, but it is also a test of logistics, alliances, and political patience. The crusaders can win battles--but holding the Holy City proves far harder.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/the-crusades-authoritative-history-episodes-1-6-20260322T0113/episode-4.mp3"
+        },
+        {
+          "number": 5,
+          "title": "Richard, Saladin, and the Limits of Recovery",
+          "summary": "Jerusalem stays out of reach as diplomacy and rivalry take over.",
+          "description": "Richard's campaign becomes a contest of endurance, diplomacy, and limited goals. He fortifies the coast, rebuilds Ascalon, and negotiates with Saladin even as his own coalition frays. Twice the crusaders approach Jerusalem, and twice they turn back, convinced they cannot hold it against a mobile field army and fragile supply lines. The episode follows the failed Jerusalem campaigns, the internal Frankish rivalries that undercut strategy, and the eventual truce that grants pilgrims access but leaves the city in Muslim hands. It is a story of limits: the limits of crusader manpower, of European unity, and of what battlefield brilliance can actually achieve. The Third Crusade ends not with recovery but with a negotiated stalemate that foreshadows the long decline to come.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/the-crusades-authoritative-history-episodes-1-6-20260322T0113/episode-5.mp3"
+        },
+        {
+          "number": 6,
+          "title": "Afterlives of Crusading: New Crusades, Mamluks, and the Fall of Outremer",
+          "summary": "Later crusades, Mamluk power, and the fall of Acre end the frontier.",
+          "description": "After 1192, crusading changes shape. Popes reorganize the movement, new campaigns turn toward Egypt, and Frederick II briefly recovers Jerusalem through treaty rather than war. Yet the crusader states grow weaker as the Muslim world consolidates under the Mamluks. The episode traces the later expeditions of Louis IX, the rise of Baybars and the Mamluk military machine, and the looming Mongol threat that reshapes regional politics. Outremer survives through diplomacy and fortification, but the strategic tide has turned. In 1291 the last great stronghold, Acre, falls after a massive siege, ending two centuries of Latin rule in the Holy Land. Even as the frontier disappears, crusading rhetoric reshapes politics across Europe and the Mediterranean. The idea of crusade survives in memory, policy, and polemic long after Acre.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/the-crusades-authoritative-history-episodes-1-6-20260322T0113/episode-6.mp3"
+        }
+      ]
+    },
+    {
+      "id": "india-after-gandhi",
+      "title": "India After Gandhi",
+      "author": "Ramachandra Guha",
+      "tagline": "Modern India",
+      "runtime": "6h 59m",
+      "summary": "A sweeping post-1947 chronicle: Partition’s scars, state-building, wars, Emergency rule, economic liberalization, and the mass culture that rewired public life. It follows how a fragile republic kept reinventing itself under pressure.",
+      "accentColor": "#3a7bd5",
+      "episodeCount": 5,
+      "detailUrl": "https://baqiral-1.github.io/podcast_agent/india-after-gandhi.html",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "Birth in Fire: Partition, Integration, and the Making of the Republic",
+          "summary": "Partition violence, refugee columns, and the rush to build a new state define India’s first years of freedom.",
+          "description": "Independence arrives under fire. Lahore burns on the night of 15 August 1947 as Partition unleashes massacres, refugee columns, and the largest displacement in modern South Asian history. The episode follows the first years of the republic: the emergency of refugee resettlement, the integration of princely states, and the struggle to keep India unified while Kashmir erupts and Hyderabad resists. Gandhi’s assassination tests the new state’s moral claim, while Patel and Nehru race to stitch a shattered map together. We end with the Constitution and the first general election, a leap of faith that makes universal franchise real in a poor and traumatized country. The republic is not born whole; it is built through crisis, improvisation, and a decision to trust ordinary citizens with power.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/india-after-gandhi-episodes-1-5-20260321T1103/episode-1.mp3"
+        },
+        {
+          "number": 2,
+          "title": "Nehru’s India: Development, Non-Alignment, and the Recasting of the Union",
+          "summary": "Linguistic states, planning, and non-alignment define a confident decade that ends in a hard border war.",
+          "description": "Potti Sriramulu’s death forces Nehru to create Andhra and opens the era of linguistic states, redrawing India’s internal map from below. The States Reorganisation Commission and the creation of Andhra become a template, while Nehru projects non-alignment at Bandung and the United Nations. The episode tracks the Nehruvian project: planning commissions, dams and steel plants, non-alignment abroad, and a tightrope between idealism and hard power. We move from Kashmir and Pakistan to the emerging conflict with China, where diplomatic confidence collides with a brutal border war in 1962. Inside India, Congress dominance masks regional pressures, while the state expands education, industry, and bureaucracy. The Nehru years leave a paradoxical legacy: a democratic and developmental vision that enlarges the Union, even as external shocks and internal demands begin to fray its certainties.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/india-after-gandhi-episodes-1-5-20260321T1103/episode-2.mp3"
+        },
+        {
+          "number": 3,
+          "title": "After Nehru: Succession, Populism, and the Emergency State",
+          "summary": "Succession battles and mass politics lead to the 1975 Emergency and the suspension of civil liberties.",
+          "description": "After the 1962 China war, Nehru’s authority ebbs and succession politics takes over. Shastri’s brief tenure, the 1965 war, and Indira Gandhi’s rise set the stage for a more personal style of rule. The episode follows the 1967 electoral shock, factional battles inside Congress, and the populist turn that culminates in the 1971 victory and a centralized executive. The Bangladesh war and the rhetoric of Garibi Hatao deepen Indira’s authority even as institutions strain. By 1975, economic strain and mass protests meet a court verdict that threatens Indira’s seat. The response is the Emergency: press censorship, arrests, and the suspension of civil liberties. The narrative shows how a constitutional democracy chose coercion over compromise and how that choice reshaped Indian politics for decades.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/india-after-gandhi-episodes-1-5-20260321T1103/episode-3.mp3"
+        },
+        {
+          "number": 4,
+          "title": "Democracy Unsettled: Post-Congress Politics, Identity, and Violence",
+          "summary": "After the Emergency, India becomes more competitive and more fragmented, with rising regional and communal tensions.",
+          "description": "The Emergency’s violence is captured in Turkman Gate, where bulldozers, tear gas, and bullets cleared a Delhi neighborhood in the name of order. From there the episode traces the post-Emergency landscape: the Janata experiment, Congress’s return, and a democracy that becomes more competitive yet more fragmented. Regional parties rise and state governments become the arena for experimentation and conflict. We follow the rise of identity politics and the spread of coercive state power into Punjab, Kashmir, and the Northeast, alongside communal riots that test the secular promise of the republic. The story is one of contradiction: widening participation and local power on the one hand, and recurring episodes of repression on the other. India’s institutions survive, but the social fabric is repeatedly strained by violence, impunity, and the politics of fear.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/india-after-gandhi-episodes-1-5-20260321T1103/episode-4.mp3"
+        },
+        {
+          "number": 5,
+          "title": "New India? Coalition Rule, Liberalization, and Popular Culture",
+          "summary": "Coalition politics, market reforms, and mass media remake public life without resolving India’s inequalities.",
+          "description": "Coalition rule replaces one-party dominance as the economy opens to liberalization. The episode moves from the Mandal era and the rise of the BJP to the reforms of the 1990s, tracking how market growth and globalization coexist with stubborn hunger and inequality. We see politics recalibrated around region, caste, and media spectacle, while satellite television and Bollywood knit together a sprawling, multilingual public. The narrative follows the country into the Vajpayee years, with technology, consumer culture, and diaspora influence rising alongside communal tension. Economic growth accelerates, but rural distress and corruption keep the political mood volatile. India is neither the failed state of pessimists nor the superpower of glossy headlines. It is louder, richer, more democratic, more unequal, and harder to govern — a complex republic still arguing about who it is.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/india-after-gandhi-episodes-1-5-20260321T1103/episode-5.mp3"
+        }
+      ]
+    },
+    {
+      "id": "last-mughal",
+      "title": "The Last Mughal",
+      "author": "William Dalrymple",
+      "tagline": "Delhi, 1857",
+      "runtime": "3h 30m",
+      "summary": "A three-part portrait of Delhi before, during, and after the 1857 rebellion. Courtly life and cultural brilliance give way to siege, retribution, and exile as the last Mughal dynasty collapses.",
+      "accentColor": "#8e44ad",
+      "episodeCount": 3,
+      "detailUrl": "https://baqiral-1.github.io/podcast_agent/last-mughal.html",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "The World Before the Siege",
+          "summary": "Delhi's courtly world glitters even as rebellion gathers in the shadows.",
+          "description": "Delhi in the 1850s is a city of poetry, markets, and overlapping faiths, but also of British ambition and a court in slow decline. We meet Bahadur Shah Zafar, an emperor with little power and a palace full of poets, princes, and rival factions. The episode walks the rhythms of the city, from the Red Fort to the cantonment, and shows how older accommodations between Hindus and Muslims begin to fracture under evangelical confidence and imperial reform. A wedding procession tries to restage imperial splendor while the machinery of British rule tightens around it. Outside the palace walls, new religious currents, rumors, and resentments build a second Delhi alongside the first. This is a portrait of a capital that still believes in its own grandeur, even as it senses the end. Both courts listen for a storm. By the time the city wakes to another ordinary morning, the tinder for rebellion is already in place.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/last-mughal-episodes-1-3-20260327T0154/episode-1.mp3"
+        },
+        {
+          "number": 2,
+          "title": "Outbreak and Stalemate",
+          "summary": "The siege drags on as rival leaders and British forces grind a city to exhaustion.",
+          "description": "The mutiny reaches Delhi and everything stalls between fury and hesitation. British forces regroup on the Ridge while the city erupts, and Bahadur Shah becomes a reluctant symbol for a rebellion he cannot command. Princes rush to court, militias form, and Delhi turns into a city without a single authority. Outside the walls, Hodson and the British advance; inside, Mirza Mughal and Bakht Khan struggle to coordinate defense and politics. The besiegers become besieged as monsoon, disease, and exhaustion grind both camps. Reinforcements arrive, but unity does not. The episode follows the long, brutal summer of 1857 when victory is always promised and rarely delivered. Delhi is shelled, alliances wobble, and a decisive assault is delayed again and again. By the time the British are ready to strike, the city is starving, and the court is divided against itself. The question is not whether the siege will break, but how much will survive it.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/last-mughal-episodes-1-3-20260327T0154/episode-2.mp3"
+        },
+        {
+          "number": 3,
+          "title": "Fall of Delhi, Death of a Dynasty",
+          "summary": "The fall of Delhi ends a dynasty and leaves a city haunted by loss.",
+          "description": "The British finally storm Delhi, and the city becomes a site of retribution. Princes are executed at the Bloody Gate, neighborhoods are looted, and the emperor's court is caged and starved. Bahadur Shah Zafar is put on trial, reduced to a powerless defendant in a case built around conspiracy and vengeance. As British authority returns, the old capital is emptied and remade, while poets like Ghalib walk through ruins that no longer feel like home. The episode follows the fall of a dynasty: judgment, exile, and a long road to Rangoon. There, the last Mughal dies in a wooden prison, and Delhi is left to remember him in fragments. This is not just the end of a revolt, but the end of an imperial world. By the time the empire looks stable again, it has erased the city it claimed to save. What remains is a memory, and a question about who gets to write it.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/last-mughal-episodes-1-3-20260327T0154/episode-3.mp3"
+        }
+      ]
+    },
+    {
+      "id": "return-of-a-king",
+      "title": "Return of a King",
+      "author": "William Dalrymple",
+      "tagline": "Afghanistan",
+      "runtime": "3h 34m",
+      "summary": "Three episodes on the First Anglo-Afghan War: a restored king, a brittle occupation, and a retreat that became legend. The story traces imperial confidence, Afghan resistance, and the punitive return that followed.",
+      "accentColor": "#c0392b",
+      "episodeCount": 3,
+      "detailUrl": "https://baqiral-1.github.io/podcast_agent/return-of-a-king.html",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "Exile, Intrigue, and the Road to Invasion",
+          "summary": "Shah Shuja's restoration looks clean on paper and reckless on the ground.",
+          "description": "Shah Shuja returns to a kingdom held together by bargains, not loyalty. The British decide to restore him as a buffer against Russian influence, and their confidence grows as Alexander Burnes reports from Kabul. But the court is brittle, rival factions maneuver, and the price of asylum in Ludhiana turns into a plan for invasion. This episode moves from Lahore exile to Kabul intrigue: Burnes charms the frontier, the East India Company argues itself into action, and the illusion of control hardens into policy. As the British cross the passes, the restored king gains a throne but loses his country. The story follows how imperial certainty overrides local warning signs, and how a campaign sold as stabilization plants the seeds of disaster. By the time the army settles into Kabul, the occupation is already built on misreadings. What looks like a clean intervention is about to meet a city that remembers its own power.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/return-of-a-king-episodes-1-3-20260327T0215/episode-1.mp3"
+        },
+        {
+          "number": 2,
+          "title": "Conquest, Occupation, and Catastrophe",
+          "summary": "Occupation complacency cracks as Kabul rises and the siege closes in.",
+          "description": "British victory brings an occupation built for comfort, not defense. Kabul hosts two governments, while Dost Mohammad escapes north and waits. Subsidies shrink, insults accumulate, and the cantonment fills with families who believe the war is over. Warnings from the countryside are ignored as money runs out and the city turns. Burnes is besieged and killed, protests erupt, and the siege of the British position begins. Inside the occupation, paralysis replaces initiative; outside, the uprising organizes. Sale's column fights to Jalalabad, but relief turns into another siege. This episode traces the slow unravelling of a campaign that thought it had already won. From Purwan Darra to the spark in Kabul, the story is one of complacency meeting Afghan politics at full force. By the time the British decide to retreat, their lines of communication are broken and their allies are hedging. The catastrophe is no longer a surprise, but a countdown.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/return-of-a-king-episodes-1-3-20260327T0215/episode-2.mp3"
+        },
+        {
+          "number": 3,
+          "title": "Aftermath, Restoration, and Imperial Memory",
+          "summary": "Retreat becomes massacre, and retribution rewrites the memory of empire.",
+          "description": "A doomed retreat leaves the Kabul column frozen, starving, and cut to pieces in the passes. One by one, the last survivors fall at the mouth of the Khord Kabul and at Jagdalak, while hostages are marched into Akbar Khan's custody. Shock in India triggers retribution: Pollock's army advances, Jalalabad breaks its siege, and British forces fight back through the same passes that swallowed them. Shah Shuja clings to power and then is murdered; Kabul is revisited, and vengeance follows in villages like Istalif. Hostage negotiations, imperial theater at Ghazni, and the destruction of parts of the city leave a contradictory legacy. This episode follows the arc from catastrophe to punitive restoration, then asks what empire learned from the debacle. In London, officials call it a lesson. By the time the last prisoners are freed and the armies march out, the restoration is complete, but the memory of the disaster has already become its own warning.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/return-of-a-king-episodes-1-3-20260327T0215/episode-3.mp3"
+        }
+      ]
+    },
+    {
+      "id": "the-great-war-for-civilisation",
+      "title": "The Great War for Civilisation",
+      "author": "Robert Fisk",
+      "tagline": "Middle East",
+      "runtime": "13h 7m",
+      "summary": "A long, heavy account of intervention and occupation across Afghanistan, Iran, Palestine, Iraq, and beyond, told through the civilians who pay the bill. Wars sold as clarity become decades of casualties, cover-ups, and unfinished grief.",
+      "accentColor": "#2f855a",
+      "episodeCount": 10,
+      "detailUrl": "https://baqiral-1.github.io/podcast_agent/the-great-war-for-civilisation.html",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "Afghanistan Before the Reckoning",
+          "summary": "A 1997 journey to bin Laden’s mountain redoubt opens into the Soviet war and the jihad that followed.",
+          "description": "Fisk’s 1997 journey to an interview with Osama bin Laden opens the episode, then the story rewinds to the Soviet invasion and the brutal decade that followed. We trace how Afghan resistance was armed and financed, how Pakistan and Saudi Arabia became conduits, and how foreign myths about empire shaped the war. Civilians describe bombing, starvation, and the collapse of Kabul’s ordinary life, while warlords and clerics recast the conflict as a holy struggle. The episode connects earlier British interventions to the late-Cold War jihad and to the Taliban’s ascent, showing how violence was normalized and memory weaponized. By the time Fisk leaves through the Khyber Pass, the road itself feels like a witness — to an unfinished war that was already pointing toward the catastrophes of the next decade.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/the-great-war-for-civilisation-episodes-1-10-20260320T2244/episode-1.mp3"
+        },
+        {
+          "number": 2,
+          "title": "Iran: Coup, Revolution, and the Road to War",
+          "summary": "From Mossadeq’s overthrow to Saddam’s gamble, the region slides toward the Iran-Iraq War.",
+          "description": "Beginning with Saddam’s 1980 nuclear denials, the episode unspools the history that made war with Iran seem inevitable. It moves from the 1953 overthrow of Mossadeq and the Shah’s authoritarian modernization to the 1979 revolution and hostage crisis, then to Saddam’s gamble that Iran was weak. The story captures how early offensives stalled into attrition and trench warfare. Fisk follows the first years of the Iran-Iraq War: the river battles, the tanker war, and the global courtship of Baghdad even as poison gas and repression mount. Western navies enter the Gulf, oil and security blur, and missile strikes like the USS Stark expose the danger of “neutral” protection. The episode ends in the language of martyrdom that sustained the conflict — a war prolonged by fear, faith, and international bargains.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/the-great-war-for-civilisation-episodes-1-10-20260320T2244/episode-2.mp3"
+        },
+        {
+          "number": 3,
+          "title": "The Iran-Iraq Inferno",
+          "summary": "Civilian airliners fall, trenches grind on, and the war’s violence echoes older regional tragedies.",
+          "description": "Episode three opens with the wreckage of Iran Air 655, a civilian airliner shot down over the Gulf, and follows the war’s grind: trenches, mass assaults, chemical attacks, and brutal fighting around Basra and in Kurdistan. Fisk reports from both sides, contrasting Iranian narratives of sacrifice with Iraqi memories of exhaustion and terror. The conflict widens into a market: arms shipments, secrecy, and diplomatic cover that keep the killing going. He then steps back to older layers of violence, including the Armenian genocide and its survivors, to show how the region’s wars echo across generations. The episode is less about strategy than about bodies and memory — a portrait of a war that consumed civilians and left behind competing histories of grief.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/the-great-war-for-civilisation-episodes-1-10-20260320T2244/episode-3.mp3"
+        },
+        {
+          "number": 4,
+          "title": "Palestine: Betrayal, Leadership, and the Colonial Continuum",
+          "summary": "From the mandate’s double promises to Oslo’s stalemate, the Palestinian story becomes a battle over memory.",
+          "description": "Palestine is told through contested memory: Haj Amin al-Husseini’s grave, the British mandate’s double promises, and the long arc from 1948’s catastrophe to exile in Lebanon. Fisk traces the rise of the PLO, Arafat’s leadership, the Beirut sieges, and the compromises of Oslo, while settlements and checkpoints expand. The episode moves through the First Intifada, the birth of the Palestinian Authority, and security courts that police dissent as well as occupation. Refugee camps in Lebanon and Gaza become permanent cities, while settlements and bypass roads carve the land into fragments. Civilians live inside curfews, closures, and the politics of documentation, while history itself becomes a battlefield. The story insists on continuity: dispossession, resistance, and the fight over who is allowed to narrate the past.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/the-great-war-for-civilisation-episodes-1-10-20260320T2244/episode-4.mp3"
+        },
+        {
+          "number": 5,
+          "title": "Palestine Under Occupation and Algeria's Mirror",
+          "summary": "Khan Younis in 2001 opens into the Second Intifada, then Algeria’s civil war becomes a brutal parallel.",
+          "description": "Beginning in the ruins of Khan Younis in 2001, the episode follows life under occupation: house demolitions, targeted killings, and the political calculus of Hamas leaders like Abdel Aziz Rantissi. Civilians navigate curfews, checkpoints, and the fear of raids as the Second Intifada intensifies. Fisk then turns to Algeria’s civil war to show how state violence and insurgent terror blur into one another. In Blida, in the triangle of death, massacres and disappearances hollow out villages while security forces and militias trade accusations. The testimony of Lt. Habib Souaïdia, who breaks the code of silence, brings names and dates back into view. Algeria becomes a mirror that shows how terror and counterterror feed each other. The through-line is the same: the dead, and the refusal of euphemism to make them disappear.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/the-great-war-for-civilisation-episodes-1-10-20260320T2244/episode-5.mp3"
+        },
+        {
+          "number": 6,
+          "title": "After the Gulf War: The Abandoned Uprising",
+          "summary": "Western calls to rebel are followed by mass graves, crushed uprisings, and a war sold as clean.",
+          "description": "After the Gulf War, radio broadcasts and Western leaders urge Iraqis to rise against Saddam. Basra answers, and the Shia and Kurdish uprisings spread before being crushed while coalition forces stand aside. The crushed rebellion leaves towns scarred and the promise of liberation hollow. Fisk follows the consequences: mass graves, devastated cities, and the long abandonment of those who believed the promises. He also traces the war’s aftermath beyond Iraq — the treatment of Palestinians in Kuwait, the media pool system that sanitized combat, and the dependence of reporters on military access. The episode ends in the southern marshes, where Saddam’s regime drains the wetlands to punish the Marsh Arabs and erase a way of life. The “clean war” becomes a landscape of betrayal, euphemism, and slow violence.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/the-great-war-for-civilisation-episodes-1-10-20260320T2244/episode-6.mp3"
+        },
+        {
+          "number": 7,
+          "title": "Desert Triumph, Desert Crime",
+          "summary": "The Gulf War’s victory narrative masks mass graves, sanctions, and a weapons economy that keeps killing.",
+          "description": "Mutla Ridge and the Highway of Death frame the aftermath of 1991: a victory narrated as clean, a battlefield full of uncounted bodies. The episode tracks sanctions, inspections, and the long argument over weapons of mass destruction as Iraq is bombed and starved in the name of containment. Fisk follows the arms economy that feeds both war and peace — from Western sales to the moral language that rationalizes them — and the way media choreography turns graves into photo opportunities. The story widens to Lebanon and Palestine, where missiles and targeted killings show how weapons travel. By the end, war has become a permanent condition: sanctions as siege, bombing as routine, and memory as the only ledger for the dead.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/the-great-war-for-civilisation-episodes-1-10-20260320T2244/episode-7.mp3"
+        },
+        {
+          "number": 8,
+          "title": "Kings, Ruins, and the Long Road to 9/11",
+          "summary": "9/11 becomes a hinge into Lebanon’s wars, Arab nationalism, and the next round of “liberations.”",
+          "description": "On the morning of 9/11, Fisk is still writing about Sabra and Chatila, and the episode uses that hinge to move backward through Lebanon’s wars and the longer history of Arab nationalism. We revisit the 1916–18 martyrs of Beirut, the fractures of mandate rule, and the cycles of assassination and bombardment that followed. The story passes through the U.S. bombing of Beirut, the 1982 massacre, and the deaths of civilians such as Raafat, whose home was erased in 1986. The assassination of Ahmed Shah Massoud and the coming Afghanistan war cast a shadow over every scene. Afghanistan and Iraq hover ahead as the next “liberations.” The episode closes with a question about repetition: whether the region’s ruins are warnings or rehearsals for the wars still coming.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/the-great-war-for-civilisation-episodes-1-10-20260320T2244/episode-8.mp3"
+        },
+        {
+          "number": 9,
+          "title": "The Case for War",
+          "summary": "The statue falls in Fardus Square, but looting, casualties, and insurgency arrive with liberation.",
+          "description": "Fardus Square’s statue-toppling looks like liberation, but the same day brings looting, hospital chaos, and a new question: what do the Americans want? Fisk follows the first months of occupation as ministries are stripped, security collapses, and the first suicide attacks erupt. Civilians die in markets and on highways, while officials rename the violence as “collateral” and move on. The narrative pulls in older ghosts — British graves from 1921, the abandoned Shia of 1991, the poison gas of Halabja — to show that 2003 is a return, not a reset. The war of liberation ends as resistance begins, and figures like Ali Jaffar al-Nomani signal the insurgency to come. By the end, liberation has flipped into resistance, and the war has found its next form.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/the-great-war-for-civilisation-episodes-1-10-20260320T2244/episode-9.mp3"
+        },
+        {
+          "number": 10,
+          "title": "Baghdad Falls, the Occupation Begins",
+          "summary": "From Highway 8 to Fallujah, the fight over evidence and narrative becomes part of the war itself.",
+          "description": "An explosion in Beirut in 2005 prompts a question — was that Baghdad? — and the episode follows the widening arc of occupation violence from Iraq back into the region. We move along Highway 8, through Fallujah, kidnappings, and the market for execution videos, where images become instructions. Fisk digs into the struggle over evidence: disputed bullet holes, suppressed reports, and the fight to name the dead. Bin Laden tapes, staged briefings, and competing narratives blur what the public is allowed to see. The story ranges from Abu Ghraib to the second intifada’s contested footage, showing how language and narrative are weaponized alongside guns. What endures are documents, testimony, and graves — a stubborn archive that outlasts propaganda and insists the dead be counted.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/the-great-war-for-civilisation-episodes-1-10-20260320T2244/episode-10.mp3"
+        }
+      ]
+    },
+    {
+      "id": "ghost-wars",
+      "title": "Ghost Wars",
+      "author": "Steve Coll",
+      "tagline": "Afghanistan 1979-2001",
+      "runtime": "5h 33m",
+      "summary": "A five-part account of how the anti-Soviet jihad became a permanent shadow war. It follows the CIA-ISI pipeline, the Taliban's rise, bin Laden's sanctuary, and the warnings that went unheeded before 9/11.",
+      "accentColor": "#4fb6ad",
+      "episodeCount": 5,
+      "detailUrl": "https://baqiral-1.github.io/podcast_agent/ghost-wars.html",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "From Upheaval to Jihad: The War Is Built",
+          "summary": "Revolution, invasion, and a CIA pipeline set the rules of a war that will outgrow its architects.",
+          "description": "An embassy riot in Islamabad hints at how quickly Afghanistan's revolution will spill across borders. The episode follows the Soviet misreading of Afghan politics, the escalation from covert aid to full invasion, and the rapid build out of a CIA pipeline that runs through Pakistan. Zia bargains for control, Saudi money follows, and intelligence gatekeepers decide which Afghan factions get paid and armed. We meet rising commanders and the hard line networks that prosper inside the flow of cash, rifles, and logistics. Ahmed Shah Massoud appears as a strategic counterweight, even as Washington embraces deniability. As Washington celebrates a proxy war that seems to be working, the war's internal logic hardens into a system that rewards the most uncompromising players. By the time outsiders recognize what they have built, it is already larger than any one agency can steer. The question is not whether the Soviets can be bled, but what will inherit their battlefield.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/ghost-wars-episodes-1-5-20260327T0206/episode-1.mp3"
+        },
+        {
+          "number": 2,
+          "title": "Victory Without Settlement: Civil War, Disengagement, and the Taliban's Rise",
+          "summary": "Victory dissolves into civil war as Pakistan and new jihad networks reshape Afghanistan's future.",
+          "description": "The Soviets leave, but victory brings no settlement. The CIA pulls back as Kabul fractures, and the ISI shifts from partner to power broker, backing new factions and shaping who gets weapons, money, and legitimacy. Arab volunteers arrive in Peshawar, bin Laden's profile rises, and a jihad economy settles in. Washington debates whether to keep funding a war it has already \"won,\" while Afghan commanders battle for Kabul and the battlefield moves to Jalalabad. Inside the U.S. mission, policy arguments harden; inside Pakistan, the proxy network deepens. Assassinations, coups, and Saudi double games widen the rift, and the Taliban's outline begins to appear in the chaos. Azzam's death opens space, and bin Laden starts testing independence. The episode follows the slide from withdrawal to neglect, showing how a victory narrative masked the birth of a new conflict. By the end, the question is no longer who defeated Moscow, but who will rule the ruins.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/ghost-wars-episodes-1-5-20260327T0206/episode-2.mp3"
+        },
+        {
+          "number": 3,
+          "title": "Sanctuary and Illusion: Taliban Rule, Bin Laden, and First U.S. Countermoves",
+          "summary": "Taliban rule hardens and bin Laden returns as Washington debates engagement or pursuit.",
+          "description": "Khartoum, Manila, and a widening intelligence trail point to a network that is evolving faster than policy. The Taliban rise from Kandahar with Pakistani backing and Saudi money, and Washington flirts with engagement through a pipeline dream that promises stability. Hamid Karzai breaks with Kabul as Mullah Omar's movement gathers momentum. Inside Afghanistan, Kabul falls and a new regime offers order at a brutal price. Bin Laden leaves Sudan and finds sanctuary in Taliban territory, while U.S. counterterrorism units sharpen their focus but struggle for access. Missed manhunts, ambiguous warnings, and a hollowed out Afghan file leave Washington with a choice it cannot quite make. This episode tracks the collision between state building and jihadist sanctuary, and how the same actors can look like partners in one memo and targets in the next. By the time the Taliban rule hardens and bin Laden settles in, the warning lights are on, but the policy remains split.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/ghost-wars-episodes-1-5-20260327T0206/episode-3.mp3"
+        },
+        {
+          "number": 4,
+          "title": "At War in Fragments: Warnings, Missed Chances, and the Millennium",
+          "summary": "Embassy bombings bring retaliation, but missed chances and legal knots keep action at bay.",
+          "description": "The embassy bombings push Washington into cruise missile retaliation, but the strike leaves bin Laden alive and the window closing. Inside the CIA and White House, warnings surge while legal and political ambiguity harden into paralysis. A commando offer, a hunting camp, and targeting rules collide with fragile intelligence. The Taliban become both interlocutors and obstacles, and Pakistan's cooperation proves conditional. As Tenet declares war without a war budget, the system generates more memos than missions. Cofer Black pushes outward while policymakers insist on tighter rules. The episode moves through the late 1990s: Hamburg and Kandahar, aviation plots, Kargil, the vanished JAWBREAKER proposal, and the Millennium panic. Each missed chance sharpens the sense of inevitability without producing decisive action. By the end, the United States has a clear enemy and no clear mechanism to reach him. The question is not whether a strike is justified, but whether it will arrive in time.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/ghost-wars-episodes-1-5-20260327T0206/episode-4.mp3"
+        },
+        {
+          "number": 5,
+          "title": "The Last Summer: Policy Drift to the Eve of 9/11",
+          "summary": "Predator debates, Massoud's warnings, and policy drift carry the story into summer 2001.",
+          "description": "A new Pakistani liaison promises access, but every channel to Kandahar narrows. Massoud offers partnership, Washington hesitates, and a patchwork war takes shape with no settled policy. The Predator arrives as a proof of concept, then stalls as lawyers and operators debate rules for a strike. The USS Cole attack, the Tarnak farm, and the CIA's widening alarm push terrorism to the top of the agenda, yet decisions keep slipping. An interview request circles bin Laden's camp even as Washington still debates. Inside the bureaucracy, warnings multiply while Pakistan plays for leverage and bin Laden stays protected. As summer 2001 drains away, Massoud is isolated, the Taliban hold firm, and internal debates replace action. The episode traces how a decade of drift ends in a final warning the system cannot absorb. The last question before the catastrophe is painfully small: will anyone take the risk when the evidence is finally clear?",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/ghost-wars-episodes-1-5-20260327T0206/episode-5.mp3"
+        }
+      ]
+    }
+  ]
+}

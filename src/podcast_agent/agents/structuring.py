@@ -300,7 +300,7 @@ class StructuringAgent(Agent):
             chapter_title=chapter_title,
             window_count=len(windows),
         )
-        window_parallelism = min(len(windows), max(1, min(self.structuring_parallelism, 3)))
+        window_parallelism = min(len(windows), max(1, min(self.structuring_parallelism, 5)))
         self._log(
             "structuring_window_schedule",
             chapter_number=chapter_number,

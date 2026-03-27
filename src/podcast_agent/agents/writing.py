@@ -56,7 +56,7 @@ class WritingAgent(Agent):
         max_target_script_words: int = 20000,
         beat_parallelism: int = 6,
         beat_write_retry_attempts: int = 2,
-        beat_write_timeout_seconds: float = 120.0,
+        beat_write_timeout_seconds: float = 600.0,
     ) -> None:
         super().__init__(llm)
         self.minimum_source_words_per_episode = minimum_source_words_per_episode
@@ -168,9 +168,10 @@ class WritingAgent(Agent):
                         f"claim {claim.claim_id} cites invalid chunk ids: {', '.join(invalid_chunk_ids)}"
                     )
         script_word_count = sum(len(segment.narration.split()) for segment in script.segments)
-        if script_word_count < target_script_words:
+        minimum_script_words = int(target_script_words * 0.9)
+        if script_word_count < minimum_script_words:
             violations.append(
-                f"script contains only {script_word_count} words for {assigned_source_words} assigned source words; target is {target_script_words}"
+                f"script contains only {script_word_count} words for {assigned_source_words} assigned source words; target is {target_script_words} (minimum {minimum_script_words})"
             )
         retrieval_chunk_ids = assigned_chunk_ids
         claim_evidence_chunk_ids = set(self._claim_evidence_chunk_ids(script))
@@ -521,8 +522,10 @@ class WritingAgent(Agent):
             llm = llm.client_for_schema(schema_name)
         if isinstance(llm, OpenAICompatibleLLMClient):
             run_logger = getattr(llm, "run_logger", None)
+            llm_updates = {"timeout_seconds": self.beat_write_timeout_seconds}
+            llm_updates["reasoning_effort"] = "medium"
             llm = OpenAICompatibleLLMClient(
-                llm.config.model_copy(update={"timeout_seconds": self.beat_write_timeout_seconds}),
+                llm.config.model_copy(update=llm_updates),
                 transport=llm.transport,
             )
             if run_logger is not None:

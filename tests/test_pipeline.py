@@ -511,7 +511,7 @@ def test_pipeline_defaults_raise_parallelism() -> None:
     assert settings.pipeline.audio_retry_attempts == 2
     assert settings.pipeline.beat_parallelism == 20
     assert settings.pipeline.beat_write_retry_attempts == 2
-    assert settings.pipeline.beat_write_timeout_seconds == 180.0
+    assert settings.pipeline.beat_write_timeout_seconds == 600.0
     assert settings.pipeline.grounding_parallelism == 9
     assert settings.pipeline.structuring_parallelism == 30
     assert settings.pipeline.max_episode_minutes == 360

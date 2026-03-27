@@ -30,7 +30,7 @@ class SpokenDeliveryAgent(Agent):
         self,
         llm,
         *,
-        timeout_seconds: float = 1200.0,
+        timeout_seconds: float = 7200.0,
         chunk_min_words: int = 700,
         chunk_max_words: int = 900,
     ) -> None:

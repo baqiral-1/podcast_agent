@@ -9,6 +9,7 @@ import time
 import pytest
 from pydantic import ValidationError
 
+from podcast_agent.config import LLMConfig
 from podcast_agent.llm.base import LLMClient
 from podcast_agent.agents import (
     AnalysisAgent,
@@ -20,9 +21,14 @@ from podcast_agent.agents import (
 )
 from podcast_agent.llm import HeuristicLLMClient
 from podcast_agent.run_logging import RunLogger
-from podcast_agent.llm.openai_compatible import LLMTransportHTTPError
+from podcast_agent.llm.openai_compatible import (
+    HTTPResponse,
+    LLMTransportHTTPError,
+    OpenAICompatibleLLMClient,
+)
 from podcast_agent.schemas.models import (
     BeatScript,
+    BeatScriptDraft,
     BookAnalysis,
     BookChapter,
     BookChunk,
@@ -136,6 +142,64 @@ class BoundaryOnlyStructuringLLM(LLMClient):
                 }
             )
         return HeuristicLLMClient().generate_json(schema_name, instructions, payload, response_model)
+
+
+class BeatWritingTransport:
+    """Fake transport that returns a minimal beat script draft."""
+
+    def __init__(self) -> None:
+        self.last_payload: dict | None = None
+
+    def post_json(self, url: str, headers: dict, payload: dict, timeout_seconds: float) -> HTTPResponse:
+        self.last_payload = payload
+        body = {
+            "output": [
+                {
+                    "type": "message",
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": json.dumps(
+                                {
+                                    "segments": [
+                                        {
+                                            "heading": "Intro",
+                                            "narration": "Test narration.",
+                                            "claims": [
+                                                {
+                                                    "text": "Claim.",
+                                                    "evidence_chunk_ids": ["chunk-1"],
+                                                }
+                                            ],
+                                        }
+                                    ]
+                                }
+                            ),
+                        }
+                    ],
+                }
+            ]
+        }
+        return HTTPResponse(status_code=200, body=body)
+
+
+def test_writing_agent_forces_medium_reasoning_effort_for_beat_writing() -> None:
+    transport = BeatWritingTransport()
+    llm = OpenAICompatibleLLMClient(
+        config=LLMConfig(api_key="test-key", reasoning_effort="high"),
+        transport=transport,
+    )
+    writer = WritingAgent(llm, beat_parallelism=1)
+    result = writer._generate_beat_script(
+        schema_name=writer.schema_name,
+        instructions="Write a beat.",
+        payload={"beat": {"beat_id": "episode-1-beat-1"}},
+        response_model=BeatScriptDraft,
+    )
+
+    assert isinstance(result, BeatScript)
+    assert transport.last_payload is not None
+    assert transport.last_payload["reasoning"]["effort"] == "medium"
 
 
 class MissingMetadataStructuringLLM(LLMClient):
