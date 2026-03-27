@@ -7,28 +7,28 @@
   <meta name="description" content="Stories and analyses adapted from India After Gandhi.">
   <style>
     :root {
-      --body-bg-color: #0f1420;
-      --body-font-color: #f6efe6;
+      --body-bg-color: #080b0e;
+      --body-font-color: #f2ede4;
       --primary-font: "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
       --primary-body-font-size: 1.12rem;
       --primary-body-font-weight: 300;
-      --primary-color: #3a7bd5;
-      --primary-hover-color: #5a9bea;
+      --primary-color: #5b85b8;
+      --primary-hover-color: #789fd0;
       --body-padding: 1.5rem;
-      --header-bg: #0b0f18;
-      --nav-color: #f6efe6;
-      --nav-color-hover: #3a7bd5;
+      --header-bg: rgba(14, 19, 24, 0.82);
+      --nav-color: #f2ede4;
+      --nav-color-hover: #5b85b8;
       --nav-font-size: 1rem;
       --header-padding: 1.25rem;
       --nav-horizontal-margin: 1.25rem;
-      --show-header-padding-top: 5.9375rem;
+      --show-header-padding-top: 3rem;
       --show-header-padding-bottom: 0rem;
       --show-header-title-font-size: 2.1875rem;
       --show-header-show-host-width: 2.5rem;
       --episode-margin: 0.75rem;
       --episode-inner-spacing: 1rem;
       --episode-title-font-size: 1.5rem;
-      --episode-meta-color: #3a7bd5;
+      --episode-meta-color: #5b85b8;
       --audio-player-progressed: #f6efe6;
       --audio-player-runtime-color: #e0d6c8;
       --max-width: 1537px;
@@ -49,8 +49,8 @@
     body {
       margin: 0;
       background:
-        radial-gradient(circle at top, rgba(212, 122, 44, 0.12), transparent 36%),
-        linear-gradient(180deg, #14223a 0%, #0f1420 46%, #0b0f18 100%);
+        radial-gradient(circle at top, rgba(91, 133, 184, 0.13), transparent 36%),
+        linear-gradient(180deg, #0d1418 0%, #080b0e 50%, #060810 100%);
       color: var(--body-font-color);
       font-family: var(--primary-font);
       font-size: var(--primary-body-font-size);
@@ -68,10 +68,14 @@
     }
 
     .site-header {
-      padding: 1.3rem 0 1.1rem;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-      backdrop-filter: blur(14px);
-      background: #151b20;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      padding: 1.1rem 0;
+      background: rgba(14, 19, 24, 0.82);
+      backdrop-filter: blur(20px) saturate(1.4);
+      -webkit-backdrop-filter: blur(20px) saturate(1.4);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
     }
 
     .site-header-inner {

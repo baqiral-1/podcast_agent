@@ -4,29 +4,31 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Agentic Podcasts | Collections</title>
-  <meta name="description" content="Collection hub for Agentic Podcasts audio series.">
+  <meta name="description" content="In-depth audio series drawn from landmark works of narrative history.">
   <style>
     :root {
-      --bg-top: #161d23;
-      --bg-bottom: #0b1014;
-      --text: #f7f1e9;
-      --muted: rgba(247, 241, 233, 0.76);
-      --line: rgba(247, 241, 233, 0.1);
-      --panel: rgba(255, 255, 255, 0.05);
-      --panel-strong: rgba(255, 255, 255, 0.08);
-      --font: "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-      --max-width: 1537px;
-      --page-pad: 1.5rem;
-      --shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
+      --void:          #080b0e;
+      --surface:       #0e1318;
+      --elevated:      #141b22;
+      --text:          #f2ede4;
+      --muted:         rgba(242, 237, 228, 0.72);
+      --tertiary:      rgba(242, 237, 228, 0.44);
+      --line:          rgba(255, 255, 255, 0.06);
+      --brand-gold:    #c8922a;
+      --brand-gold-lt: #e0aa4a;
+      --brand-gold-dim:rgba(200, 146, 42, 0.16);
+      --font:          "Avenir Next", "SF Pro Text", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+      --font-display:  "Avenir Next Condensed", "Avenir Next", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+      --max-width:     1537px;
+      --page-pad:      1.75rem;
     }
 
-    * {
-      box-sizing: border-box;
-    }
+    *, *::before, *::after { box-sizing: border-box; }
 
     html {
       line-height: 1.5;
       -webkit-text-size-adjust: 100%;
+      scroll-behavior: smooth;
     }
 
     body {
@@ -35,522 +37,542 @@
       color: var(--text);
       font-family: var(--font);
       background:
-        radial-gradient(circle at top, rgba(201, 165, 106, 0.14), transparent 32%),
-        linear-gradient(180deg, var(--bg-top) 0%, #11171d 38%, var(--bg-bottom) 100%);
+        radial-gradient(ellipse 100% 55% at 50% 0%, rgba(200, 146, 42, 0.18) 0%, transparent 65%),
+        linear-gradient(180deg, #0b1016 0%, #080b0e 60%, #050709 100%);
       display: flex;
       flex-direction: column;
     }
 
-    a {
-      color: inherit;
-      text-decoration: none;
-    }
-
-    img {
-      display: block;
-      max-width: 100%;
-    }
+    a { color: inherit; text-decoration: none; }
+    img { display: block; max-width: 100%; }
 
     .shell {
       width: min(calc(100% - (var(--page-pad) * 2)), var(--max-width));
       margin: 0 auto;
     }
 
+    /* ─── HEADER ─────────────────────────────────────────────── */
+
     .site-header {
-      padding: 1.3rem 0 1.1rem;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-      backdrop-filter: blur(14px);
-      background: #151b20;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      padding: 1.1rem 0;
+      background: rgba(14, 19, 24, 0.82);
+      backdrop-filter: blur(20px) saturate(1.4);
+      -webkit-backdrop-filter: blur(20px) saturate(1.4);
+      border-bottom: 1px solid var(--line);
     }
 
     .site-header-inner {
       display: flex;
       align-items: center;
-      gap: 1rem;
     }
 
     .brand-mark {
       display: inline-flex;
       align-items: center;
-      font-size: 1.3rem;
+      font-size: 1.1rem;
       font-weight: 800;
-      letter-spacing: 0.08em;
+      letter-spacing: 0.1em;
       text-transform: uppercase;
+      color: var(--text);
     }
 
-    .section-heading {
+    /* ─── HERO ───────────────────────────────────────────────── */
+
+    .hero {
+      min-height: min(92vh, 820px);
       display: flex;
-      align-items: baseline;
-      margin-bottom: 1rem;
+      align-items: center;
+      padding: 5rem 0 4rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero-inner {
+      display: flex;
+      align-items: center;
+    }
+
+    .hero-copy { max-width: 640px; }
+
+    .hero-eyebrow {
+      display: block;
+      font-size: 0.72rem;
+      font-weight: 800;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--brand-gold);
+      margin-bottom: 1.4rem;
+    }
+
+    .hero-headline {
+      margin: 0 0 1.2rem;
+      font-family: var(--font-display);
+      font-size: clamp(3.4rem, 7vw, 6.2rem);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 0.92;
+      color: var(--text);
+    }
+
+    .hero-tagline {
+      margin: 0 0 2rem;
+      font-size: clamp(1rem, 1.8vw, 1.25rem);
+      font-weight: 400;
+      line-height: 1.6;
+      color: var(--muted);
+      max-width: 42rem;
+    }
+
+    .hero-stats {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem 1.6rem;
+      margin-bottom: 2.4rem;
+      font-size: 0.82rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--tertiary);
+    }
+
+    .hero-cta {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.55rem;
+      padding: 0.78rem 1.8rem;
+      border: 1.5px solid rgba(200, 146, 42, 0.65);
+      border-radius: 999px;
+      color: var(--brand-gold);
+      font-size: 0.85rem;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      transition: background 0.22s ease, border-color 0.22s ease, color 0.22s ease;
+    }
+    .hero-cta:hover {
+      background: rgba(200, 146, 42, 0.1);
+      border-color: var(--brand-gold-lt);
+      color: var(--brand-gold-lt);
+    }
+    .hero-cta-arrow { font-style: normal; }
+
+    /* ─── ANIMATIONS ─────────────────────────────────────────── */
+
+    @media (prefers-reduced-motion: no-preference) {
+      @keyframes fadeSlideUp {
+        from { opacity: 0; transform: translateY(28px); }
+        to   { opacity: 1; transform: translateY(0); }
+      }
+
+      .hero-eyebrow  { animation: fadeSlideUp 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.05s both; }
+      .hero-headline { animation: fadeSlideUp 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.12s both; }
+      .hero-tagline  { animation: fadeSlideUp 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.20s both; }
+      .hero-stats    { animation: fadeSlideUp 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.28s both; }
+      .hero-cta      { animation: fadeSlideUp 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.36s both; }
+    }
+
+    /* ─── SECTION STRUCTURE ──────────────────────────────────── */
+
+    main { flex: 1 0 auto; }
+
+    .collections {
+      padding: 5rem 0 7rem;
+      border-top: 1px solid var(--line);
+    }
+
+    .section-eyebrow {
+      display: block;
+      font-size: 0.72rem;
+      font-weight: 800;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--brand-gold);
+      margin-bottom: 0.5rem;
     }
 
     .section-title {
-      margin: 0;
-      font-size: 1.55rem;
-      line-height: 1.15;
+      margin: 0 0 2.5rem;
+      font-size: clamp(1.6rem, 3vw, 2.1rem);
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      line-height: 1.1;
     }
 
-    .collections {
-      padding: 2.8rem 0 4rem;
-    }
-
-    main {
-      flex: 1 0 auto;
-    }
+    /* ─── COLLECTION GRID ────────────────────────────────────── */
 
     .collection-grid {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 1rem;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 1.25rem;
     }
 
+    /* ─── CARD ───────────────────────────────────────────────── */
+
     .collection-card {
-      --accent: #c9a56a;
-      --accent-weak: rgba(201, 165, 106, 0.14);
-      position: relative;
-      overflow: hidden;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      border-radius: 1.35rem;
-      background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.03)),
-        var(--panel);
-      transition: transform 0.18s ease, border-color 0.18s ease, background-color 0.18s ease;
+      --accent: #c8922a;
+      --accent-weak: rgba(200, 146, 42, 0.16);
+      --accent-rgb: 200, 146, 42;
+      background: transparent;
+      transition: transform 0.22s cubic-bezier(0.25, 0.46, 0.45, 0.94);
     }
 
     .collection-card:hover,
     .collection-card:focus-within {
-      transform: translateY(-2px);
-      border-color: var(--accent);
-      background-color: var(--panel-strong);
+      transform: translateY(-5px);
     }
 
     .collection-link {
-      display: grid;
-      grid-template-columns: 8.2rem minmax(0, 1fr);
-      grid-template-areas:
-        "art copy"
-        "summary summary";
-      gap: 1rem;
-      height: 100%;
-      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.8rem;
+    }
+
+    .collection-art-wrap {
+      aspect-ratio: 1 / 1;
+      border-radius: 0.85rem;
+      overflow: hidden;
+      box-shadow: 0 8px 28px rgba(0, 0, 0, 0.38);
+      transition: box-shadow 0.22s ease;
+    }
+
+    .collection-card:hover .collection-art-wrap,
+    .collection-card:focus-within .collection-art-wrap {
+      box-shadow:
+        0 16px 48px rgba(0, 0, 0, 0.55),
+        0 0 0 1px rgba(var(--accent-rgb), 0.28);
     }
 
     .collection-art {
-      border-radius: 0.9rem;
-      overflow: hidden;
-      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
-      align-self: start;
-      grid-area: art;
+      width: 100%;
+      height: 100%;
     }
 
     .collection-art img {
-      display: block;
       width: 100%;
-      height: auto;
+      height: 100%;
       object-fit: cover;
+      object-position: left center;
+      display: block;
+      transition: transform 0.3s ease;
+    }
+
+    .collection-card:hover .collection-art img,
+    .collection-card:focus-within .collection-art img {
+      transform: scale(1.04);
     }
 
     .collection-copy {
-      min-width: 0;
-      display: grid;
-      gap: 0.75rem;
-      grid-area: copy;
+      padding: 0 0.15rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.28rem;
     }
 
     .collection-topline {
       display: flex;
       flex-wrap: wrap;
       align-items: center;
-      gap: 0.55rem;
-      color: var(--muted);
-      font-size: 0.82rem;
-      font-weight: 700;
-      letter-spacing: 0.04em;
+      gap: 0.4rem;
+      color: var(--tertiary);
+      font-size: 0.76rem;
+      font-weight: 800;
+      letter-spacing: 0.07em;
       text-transform: uppercase;
+      margin-bottom: 0.1rem;
     }
 
     .runtime-pill {
       display: inline-flex;
       align-items: center;
-      min-height: 1.7rem;
-      padding: 0.18rem 0.6rem;
+      padding: 0.12rem 0.5rem;
       border-radius: 999px;
-      background: var(--accent-weak);
+      background: rgba(var(--accent-rgb), 0.2);
       color: var(--accent);
-      font-size: 0.78rem;
+      border: 1px solid rgba(var(--accent-rgb), 0.3);
+      font-size: 0.72rem;
       font-weight: 800;
-      letter-spacing: 0.04em;
+      letter-spacing: 0.05em;
       text-transform: uppercase;
     }
 
     .collection-title {
       margin: 0;
-      font-size: 1.42rem;
-      line-height: 1.15;
+      font-size: 1.15rem;
+      font-weight: 700;
+      line-height: 1.2;
+      letter-spacing: -0.01em;
+      color: var(--text);
     }
 
     .collection-author {
-      margin: -0.15rem 0 0;
-      color: rgba(255, 255, 255, 0.82);
-      font-size: 0.98rem;
+      margin: 0;
+      font-size: 0.9rem;
       font-weight: 500;
       font-style: italic;
-    }
-
-    .collection-summary {
-      margin: 0;
       color: var(--muted);
-      font-size: 0.95rem;
-      line-height: 1.7;
-      grid-area: summary;
+      line-height: 1.3;
     }
 
     .meta-row {
       display: flex;
-      flex-wrap: wrap;
-      gap: 0.75rem;
-      color: rgba(255, 255, 255, 0.76);
-      font-size: 0.92rem;
+      gap: 0.5rem;
+      color: var(--tertiary);
+      font-size: 0.76rem;
       font-weight: 700;
-      padding-top: 0.3rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      margin-top: 0.1rem;
     }
+
+    /* ─── FOOTER ─────────────────────────────────────────────── */
 
     .site-footer {
       border-top: 1px solid var(--line);
-      padding: 1.15rem 0 1.6rem;
-      color: rgba(255, 255, 255, 0.64);
-      font-size: 0.92rem;
-      margin-top: auto;
+      padding: 1.4rem 0 2rem;
+      color: var(--tertiary);
+      font-size: 0.84rem;
     }
 
     .site-footer-inner {
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 0.7rem;
+      gap: 1rem;
     }
 
     .github-footer-link {
       display: inline-flex;
       align-items: center;
-      gap: 0.5rem;
+      gap: 0.45rem;
       color: inherit;
+      transition: color 0.18s ease;
     }
-
+    .github-footer-link:hover { color: var(--text); }
     .github-mark {
-      width: 1.1rem;
-      height: 1.1rem;
+      width: 1.05rem;
+      height: 1.05rem;
       display: block;
       fill: currentColor;
     }
 
-    .site-footer a:hover,
-    .site-footer a:focus-visible {
-      color: #ffffff;
-    }
+    /* ─── RESPONSIVE ─────────────────────────────────────────── */
 
     @media screen and (max-width: 1200px) {
-      .collection-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
+      .collection-grid { grid-template-columns: repeat(4, 1fr); }
     }
 
-    @media screen and (max-width: 860px) {
-      .collection-grid {
-        grid-template-columns: 1fr;
-      }
+    @media screen and (max-width: 900px) {
+      .hero-copy { max-width: 100%; }
+      .collection-grid { grid-template-columns: repeat(3, 1fr); }
     }
 
-    @media screen and (max-width: 720px) {
-      html {
-        font-size: 14px;
-      }
+    @media screen and (max-width: 640px) {
+      :root { --page-pad: 1.1rem; }
+      html { font-size: 15px; }
+      .hero { padding: 3.5rem 0 3rem; min-height: auto; }
+      .collection-grid { grid-template-columns: repeat(2, 1fr); gap: 0.75rem; }
+    }
 
-      .site-header-inner,
-      .section-heading {
-        align-items: flex-start;
-        flex-direction: column;
-      }
-
-      .collection-link {
-        grid-template-columns: 5.5rem minmax(0, 1fr);
-        grid-template-areas:
-          "art copy"
-          "art summary";
-        gap: 0.65rem;
-        padding: 0.75rem;
-        align-items: center;
-      }
-
-      .collection-art {
-        width: 5.5rem;
-        height: 5.5rem;
-        max-width: none;
-      }
-
-      .collection-art img {
-        height: 100%;
-      }
-
-      .collection-copy {
-        gap: 0.45rem;
-      }
-
-      .collection-topline {
-        font-size: 0.7rem;
-      }
-
-      .runtime-pill {
-        min-height: 1.4rem;
-        padding: 0.12rem 0.45rem;
-        font-size: 0.7rem;
-      }
-
-      .collection-title {
-        font-size: 1.1rem;
-      }
-
-      .collection-author {
-        font-size: 0.85rem;
-      }
-
-      .collection-summary {
-        font-size: 0.85rem;
-        line-height: 1.5;
-        display: -webkit-box;
-        -webkit-line-clamp: 3;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-      }
-
-      .meta-row {
-        font-size: 0.82rem;
-        padding-top: 0;
-      }
+    @media screen and (max-width: 360px) {
+      .collection-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
 <body>
+
+  <!-- HEADER -->
   <header class="site-header">
     <div class="shell site-header-inner">
       <a class="brand-mark" href="./index.html">Agentic Podcasts</a>
     </div>
   </header>
 
-  <main>
-    <section class="collections">
-      <div class="shell">
-        <div class="section-heading">
-          <h2 class="section-title">Browse Collections</h2>
+  <!-- HERO -->
+  <section class="hero">
+    <div class="shell hero-inner">
+
+      <div class="hero-copy">
+        <span class="hero-eyebrow">Agentic Podcasts</span>
+        <h1 class="hero-headline">History,<br>Retold.</h1>
+        <p class="hero-tagline">In-depth audio series drawn from landmark works of narrative history — from the fall of the Mughals to the shadow wars of Afghanistan.</p>
+        <div class="hero-stats">
+          <span>7 Collections</span>
+          <span>29 Episodes</span>
+          <span>~42 Hours</span>
         </div>
+        <a class="hero-cta" href="#collections">
+          Browse Collections
+          <span class="hero-cta-arrow" aria-hidden="true">→</span>
+        </a>
+      </div>
+
+
+    </div>
+  </section>
+
+  <!-- COLLECTIONS -->
+  <main>
+    <section class="collections" id="collections">
+      <div class="shell">
+        <span class="section-eyebrow">Browse Collections</span>
+        <h2 class="section-title">All Series</h2>
 
         <div class="collection-grid">
-          <article class="collection-card" style="--accent:#e4572e; --accent-weak:rgba(228, 87, 46, 0.16);">
-            <a class="collection-link" href="./freedom-at-midnight.html">
-              <div class="collection-art">
-                <img
-                  alt="Freedom at Midnight cover art"
-                  src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%230b1b2b'/><stop offset='0.5' stop-color='%234b1a1a'/><stop offset='1' stop-color='%23d98b2b'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.5)' stroke-width='3'/><text x='850' y='798' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>AGENTIC</text><text x='850' y='842' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>PODCASTS</text><text x='110' y='730' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>Freedom at</text><text x='110' y='830' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>Midnight</text></svg>"
-                >
+
+          <!-- Freedom at Midnight -->
+          <article class="collection-card" style="--accent:#c97a45; --accent-weak:rgba(201,122,69,0.16); --accent-rgb:201,122,69;">
+            <a class="collection-link" href="./freedom-at-midnight.html" aria-label="Freedom at Midnight — Dominique Lapierre &amp; Larry Collins">
+              <div class="collection-art-wrap">
+                <div class="collection-art">
+                  <img alt="Freedom at Midnight cover art" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%230b1b2b'/><stop offset='0.5' stop-color='%234b1a1a'/><stop offset='1' stop-color='%23d98b2b'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.5)' stroke-width='3'/><text x='850' y='798' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>AGENTIC</text><text x='850' y='842' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>PODCASTS</text><text x='110' y='730' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>Freedom at</text><text x='110' y='830' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>Midnight</text></svg>">
+                </div>
               </div>
               <div class="collection-copy">
                 <div class="collection-topline">
                   <span>Partition 1947</span>
                   <span class="runtime-pill">4h 4m</span>
                 </div>
-                <div>
-                  <h3 class="collection-title">Freedom at Midnight</h3>
-                  <p class="collection-author">Dominique Lapierre &amp; Larry Collins</p>
-                </div>
-                <div class="meta-row">
-                  <span>4 episodes</span>
-                </div>
+                <h3 class="collection-title">Freedom at Midnight</h3>
+                <p class="collection-author">Dominique Lapierre &amp; Larry Collins</p>
+                <div class="meta-row"><span>4 episodes</span></div>
               </div>
-              <p class="collection-summary">
-                Four episodes track the British exit, the rushed Partition line, the refugee catastrophe, and
-                Gandhi’s final fast and assassination.
-              </p>
             </a>
           </article>
 
-          <article class="collection-card" style="--accent:#2a9d8f; --accent-weak:rgba(42, 157, 143, 0.16);">
-            <a class="collection-link" href="./the-crusades-authoritative-history.html">
-              <div class="collection-art">
-                <img
-                  alt="The Crusades cover art"
-                  src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%231b2a24'/><stop offset='0.48' stop-color='%235b5a34'/><stop offset='1' stop-color='%23c9a56a'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.45)' stroke-width='3'/><text x='850' y='798' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>AGENTIC</text><text x='850' y='842' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>PODCASTS</text><text x='110' y='730' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>The</text><text x='110' y='830' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>Crusades</text></svg>"
-                >
+          <!-- The Crusades -->
+          <article class="collection-card" style="--accent:#5e9e8a; --accent-weak:rgba(94,158,138,0.16); --accent-rgb:94,158,138;">
+            <a class="collection-link" href="./the-crusades-authoritative-history.html" aria-label="The Crusades — Thomas Asbridge">
+              <div class="collection-art-wrap">
+                <div class="collection-art">
+                  <img alt="The Crusades cover art" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%231b2a24'/><stop offset='0.48' stop-color='%235b5a34'/><stop offset='1' stop-color='%23c9a56a'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.45)' stroke-width='3'/><text x='850' y='798' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>AGENTIC</text><text x='850' y='842' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>PODCASTS</text><text x='110' y='730' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>The</text><text x='110' y='830' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>Crusades</text></svg>">
+                </div>
               </div>
               <div class="collection-copy">
                 <div class="collection-topline">
                   <span>Medieval Levant</span>
                   <span class="runtime-pill">4h 31m</span>
                 </div>
-                <div>
-                  <h3 class="collection-title">The Crusades</h3>
-                  <p class="collection-author">Thomas Asbridge</p>
-                </div>
-                <div class="meta-row">
-                  <span>4 episodes</span>
-                </div>
+                <h3 class="collection-title">The Crusades</h3>
+                <p class="collection-author">Thomas Asbridge</p>
+                <div class="meta-row"><span>4 episodes</span></div>
               </div>
-              <p class="collection-summary">
-                Four episodes trace the First Crusade, Saladin’s reconquest, the Third Crusade’s compromise, and the
-                fall of Outremer. Strategy and faith collide across two centuries of holy war.
-              </p>
             </a>
           </article>
 
-          <article class="collection-card" style="--accent:#3a7bd5; --accent-weak:rgba(58, 123, 213, 0.16);">
-            <a class="collection-link" href="./india-after-gandhi.html">
-              <div class="collection-art">
-                <img
-                  alt="India After Gandhi cover art"
-                  src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%2318132f'/><stop offset='0.52' stop-color='%235a4a8a'/><stop offset='1' stop-color='%231d2f5f'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.5)' stroke-width='3'/><text x='110' y='730' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>India After</text><text x='110' y='830' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>Gandhi</text><text x='850' y='798' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>AGENTIC</text><text x='850' y='842' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>PODCASTS</text></svg>"
-                >
+          <!-- India After Gandhi -->
+          <article class="collection-card" style="--accent:#5b85b8; --accent-weak:rgba(91,133,184,0.16); --accent-rgb:91,133,184;">
+            <a class="collection-link" href="./india-after-gandhi.html" aria-label="India After Gandhi — Ramachandra Guha">
+              <div class="collection-art-wrap">
+                <div class="collection-art">
+                  <img alt="India After Gandhi cover art" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%2318132f'/><stop offset='0.52' stop-color='%235a4a8a'/><stop offset='1' stop-color='%231d2f5f'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.5)' stroke-width='3'/><text x='110' y='730' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>India After</text><text x='110' y='830' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>Gandhi</text><text x='850' y='798' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>AGENTIC</text><text x='850' y='842' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>PODCASTS</text></svg>">
+                </div>
               </div>
               <div class="collection-copy">
                 <div class="collection-topline">
                   <span>Modern India</span>
                   <span class="runtime-pill">6h 59m</span>
                 </div>
-                <div>
-                  <h3 class="collection-title">India After Gandhi</h3>
-                  <p class="collection-author">Ramachandra Guha</p>
-                </div>
-                <div class="meta-row">
-                  <span>5 episodes</span>
-                </div>
+                <h3 class="collection-title">India After Gandhi</h3>
+                <p class="collection-author">Ramachandra Guha</p>
+                <div class="meta-row"><span>5 episodes</span></div>
               </div>
-              <p class="collection-summary">
-                Five episodes follow India’s post-1947 story from constitution-making to Nehru’s republic, Indira’s
-                Emergency, and the rise of coalition politics and liberalization.
-              </p>
             </a>
           </article>
 
-          <article class="collection-card" style="--accent:#8e44ad; --accent-weak:rgba(142, 68, 173, 0.16);">
-            <a class="collection-link" href="./last-mughal.html">
-              <div class="collection-art">
-                <img
-                  alt="The Last Mughal cover art"
-                  src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%232b1a16'/><stop offset='0.45' stop-color='%238b3a2b'/><stop offset='1' stop-color='%23c49a46'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.5)' stroke-width='3'/><text x='850' y='798' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>AGENTIC</text><text x='850' y='842' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>PODCASTS</text><text x='110' y='730' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>The Last</text><text x='110' y='830' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>Mughal</text></svg>"
-                >
+          <!-- The Last Mughal -->
+          <article class="collection-card" style="--accent:#b07a3a; --accent-weak:rgba(176,122,58,0.16); --accent-rgb:176,122,58;">
+            <a class="collection-link" href="./last-mughal.html" aria-label="The Last Mughal — William Dalrymple">
+              <div class="collection-art-wrap">
+                <div class="collection-art">
+                  <img alt="The Last Mughal cover art" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%232b1a16'/><stop offset='0.45' stop-color='%238b3a2b'/><stop offset='1' stop-color='%23c49a46'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.5)' stroke-width='3'/><text x='850' y='798' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>AGENTIC</text><text x='850' y='842' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>PODCASTS</text><text x='110' y='730' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>The Last</text><text x='110' y='830' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>Mughal</text></svg>">
+                </div>
               </div>
               <div class="collection-copy">
                 <div class="collection-topline">
                   <span>Delhi, 1857</span>
                   <span class="runtime-pill">3h 30m</span>
                 </div>
-                <div>
-                  <h3 class="collection-title">The Last Mughal</h3>
-                  <p class="collection-author">William Dalrymple</p>
-                </div>
-                <div class="meta-row">
-                  <span>3 episodes</span>
-                </div>
+                <h3 class="collection-title">The Last Mughal</h3>
+                <p class="collection-author">William Dalrymple</p>
+                <div class="meta-row"><span>3 episodes</span></div>
               </div>
-              <p class="collection-summary">
-                A three-part portrait of Delhi before, during, and after the 1857 rebellion. Courtly life and cultural
-                brilliance give way to siege, retribution, and exile as the last Mughal dynasty collapses.
-              </p>
             </a>
           </article>
 
-          <article class="collection-card" style="--accent:#c0392b; --accent-weak:rgba(192, 57, 43, 0.16);">
-            <a class="collection-link" href="./return-of-a-king.html">
-              <div class="collection-art">
-                <img
-                  alt="Return of a King cover art"
-                  src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%23273241'/><stop offset='0.45' stop-color='%237a6b4e'/><stop offset='1' stop-color='%23b1864b'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.45)' stroke-width='3'/><text x='850' y='798' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>AGENTIC</text><text x='850' y='842' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>PODCASTS</text><text x='110' y='730' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>Return of</text><text x='110' y='830' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>a King</text></svg>"
-                >
+          <!-- Return of a King -->
+          <article class="collection-card" style="--accent:#a07858; --accent-weak:rgba(160,120,88,0.16); --accent-rgb:160,120,88;">
+            <a class="collection-link" href="./return-of-a-king.html" aria-label="Return of a King — William Dalrymple">
+              <div class="collection-art-wrap">
+                <div class="collection-art">
+                  <img alt="Return of a King cover art" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%23273241'/><stop offset='0.45' stop-color='%237a6b4e'/><stop offset='1' stop-color='%23b1864b'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.45)' stroke-width='3'/><text x='850' y='798' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>AGENTIC</text><text x='850' y='842' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>PODCASTS</text><text x='110' y='730' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>Return of</text><text x='110' y='830' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>a King</text></svg>">
+                </div>
               </div>
               <div class="collection-copy">
                 <div class="collection-topline">
                   <span>Afghanistan</span>
                   <span class="runtime-pill">3h 34m</span>
                 </div>
-                <div>
-                  <h3 class="collection-title">Return of a King</h3>
-                  <p class="collection-author">William Dalrymple</p>
-                </div>
-                <div class="meta-row">
-                  <span>3 episodes</span>
-                </div>
+                <h3 class="collection-title">Return of a King</h3>
+                <p class="collection-author">William Dalrymple</p>
+                <div class="meta-row"><span>3 episodes</span></div>
               </div>
-              <p class="collection-summary">
-                Three episodes on the First Anglo-Afghan War: a restored king, a brittle occupation, and a retreat
-                that became legend. The story traces imperial confidence, Afghan resistance, and the punitive return
-                that followed.
-              </p>
             </a>
           </article>
 
-          <article class="collection-card" style="--accent:#2f855a; --accent-weak:rgba(47, 133, 90, 0.16);">
-            <a class="collection-link" href="./the-great-war-for-civilisation.html">
-              <div class="collection-art">
-                <img
-                  alt="The Great War for Civilisation cover art"
-                  src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%230f1417'/><stop offset='0.48' stop-color='%2339454f'/><stop offset='1' stop-color='%23c9863f'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.45)' stroke-width='3'/><text x='850' y='798' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>AGENTIC</text><text x='850' y='842' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>PODCASTS</text><text x='110' y='630' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='82' font-weight='700'>The Great</text><text x='110' y='730' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='82' font-weight='700'>War For</text><text x='110' y='830' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='82' font-weight='700'>Civilization</text></svg>"
-                >
+          <!-- The Great War for Civilisation -->
+          <article class="collection-card" style="--accent:#5e8e74; --accent-weak:rgba(94,142,116,0.16); --accent-rgb:94,142,116;">
+            <a class="collection-link" href="./the-great-war-for-civilisation.html" aria-label="The Great War for Civilisation — Robert Fisk">
+              <div class="collection-art-wrap">
+                <div class="collection-art">
+                  <img alt="The Great War for Civilisation cover art" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%230f1417'/><stop offset='0.48' stop-color='%2339454f'/><stop offset='1' stop-color='%23c9863f'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.45)' stroke-width='3'/><text x='850' y='798' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>AGENTIC</text><text x='850' y='842' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>PODCASTS</text><text x='110' y='630' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='82' font-weight='700'>The Great</text><text x='110' y='730' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='82' font-weight='700'>War For</text><text x='110' y='830' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='82' font-weight='700'>Civilization</text></svg>">
+                </div>
               </div>
               <div class="collection-copy">
                 <div class="collection-topline">
                   <span>Middle East</span>
                   <span class="runtime-pill">13h 7m</span>
                 </div>
-                <div>
-                  <h3 class="collection-title">The Great War for Civilisation</h3>
-                  <p class="collection-author">Robert Fisk</p>
-                </div>
-                <div class="meta-row">
-                  <span>9 episodes</span>
-                </div>
+                <h3 class="collection-title">The Great War for Civilisation</h3>
+                <p class="collection-author">Robert Fisk</p>
+                <div class="meta-row"><span>9 episodes</span></div>
               </div>
-              <p class="collection-summary">
-                Nine episodes follow Robert Fisk across Afghanistan, Iran-Iraq, Lebanon, Palestine, Algeria, the Gulf
-                War, sanctions, 9/11, and Baghdad’s occupation.
-              </p>
             </a>
           </article>
-          <article class="collection-card" style="--accent:#4fb6ad; --accent-weak:rgba(79, 182, 173, 0.16);">
-            <a class="collection-link" href="./ghost-wars.html">
-              <div class="collection-art">
-                <img
-                  alt="Ghost Wars cover art"
-                  src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%230b1520'/><stop offset='0.5' stop-color='%231f3645'/><stop offset='1' stop-color='%233f6b6a'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.45)' stroke-width='3'/><text x='850' y='798' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>AGENTIC</text><text x='850' y='842' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>PODCASTS</text><text x='110' y='730' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>Ghost</text><text x='110' y='830' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>Wars</text></svg>"
-                >
+
+          <!-- Ghost Wars -->
+          <article class="collection-card" style="--accent:#4e8e98; --accent-weak:rgba(78,142,152,0.16); --accent-rgb:78,142,152;">
+            <a class="collection-link" href="./ghost-wars.html" aria-label="Ghost Wars — Steve Coll">
+              <div class="collection-art-wrap">
+                <div class="collection-art">
+                  <img alt="Ghost Wars cover art" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%230b1520'/><stop offset='0.5' stop-color='%231f3645'/><stop offset='1' stop-color='%233f6b6a'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.45)' stroke-width='3'/><text x='850' y='798' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>AGENTIC</text><text x='850' y='842' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>PODCASTS</text><text x='110' y='730' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>Ghost</text><text x='110' y='830' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>Wars</text></svg>">
+                </div>
               </div>
               <div class="collection-copy">
                 <div class="collection-topline">
-                  <span>Afghanistan 1979-2001</span>
+                  <span>Afghanistan 1979–2001</span>
                   <span class="runtime-pill">5h 33m</span>
                 </div>
-                <div>
-                  <h3 class="collection-title">Ghost Wars</h3>
-                  <p class="collection-author">Steve Coll</p>
-                </div>
-                <div class="meta-row">
-                  <span>5 episodes</span>
-                </div>
+                <h3 class="collection-title">Ghost Wars</h3>
+                <p class="collection-author">Steve Coll</p>
+                <div class="meta-row"><span>5 episodes</span></div>
               </div>
-              <p class="collection-summary">
-                A covert war that begins as anti-Soviet aid and ends in the warnings before 9/11. Five episodes follow
-                the CIA-ISI pipeline, the Taliban's rise, bin Laden's sanctuary, and the policy drift that kept
-                narrowing the options.
-              </p>
             </a>
           </article>
+
         </div>
       </div>
     </section>
   </main>
 
+  <!-- FOOTER -->
   <footer class="site-footer">
     <div class="shell site-footer-inner">
-      <a class="github-footer-link" href="https://github.com/baqiral-1/podcast_agent" aria-label="Hosted on GitHub: open the podcast_agent repository">
+      <a class="github-footer-link" href="https://github.com/baqiral-1/podcast_agent" aria-label="View podcast_agent repository on GitHub">
         <svg class="github-mark" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M12 .5C5.65.5.5 5.65.5 12A11.5 11.5 0 0 0 8.36 22.93c.58.1.79-.25.79-.56v-1.96c-3.2.69-3.87-1.36-3.87-1.36-.52-1.33-1.28-1.68-1.28-1.68-1.05-.72.08-.71.08-.71 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.36.96.1-.75.4-1.25.73-1.54-2.56-.29-5.26-1.28-5.26-5.68 0-1.25.45-2.27 1.18-3.08-.12-.29-.51-1.46.12-3.02 0 0 .96-.31 3.15 1.18a10.9 10.9 0 0 1 5.74 0c2.18-1.49 3.14-1.18 3.14-1.18.63 1.56.24 2.73.12 3.02.74.81 1.18 1.83 1.18 3.08 0 4.41-2.7 5.38-5.28 5.67.41.35.77 1.03.77 2.08v3.08c0 .31.21.67.8.56A11.5 11.5 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5z"></path>
+          <path d="M12 .5C5.65.5.5 5.65.5 12A11.5 11.5 0 0 0 8.36 22.93c.58.1.79-.25.79-.56v-1.96c-3.2.69-3.87-1.36-3.87-1.36-.52-1.33-1.28-1.68-1.28-1.68-1.05-.72.08-.71.08-.71 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.36.96.1-.75.4-1.25.73-1.54-2.56-.29-5.26-1.28-5.26-5.68 0-1.25.45-2.27 1.18-3.08-.12-.29-.51-1.46.12-3.02 0 0 .96-.31 3.15 1.18a10.9 10.9 0 0 1 5.74 0c2.18-1.49 3.14-1.18 3.14-1.18.63 1.56.24 2.73.12 3.02.74.81 1.18 1.83 1.18 3.08 0 4.41-2.7 5.38-5.28 5.67.41.35.77 1.03.77 2.08v3.08c0 .31.21.67.8.56A11.5 11.5 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5z"/>
         </svg>
         <span>Hosted on GitHub</span>
       </a>
