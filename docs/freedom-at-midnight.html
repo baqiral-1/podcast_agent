@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Agentic Podcasts | Freedom at Midnight</title>
-  <meta name="description" content="Stories and analyses adapted from Freedom at Midnight.">
+  <meta name="description" content="Podcast episodes adapted from Freedom at Midnight by Larry Collins & Dominique Lapierre.">
   <style>
     :root {
       --body-bg-color: #080b0e;
@@ -13,7 +13,7 @@
       --primary-body-font-size: 1.12rem;
       --primary-body-font-weight: 300;
       --primary-color: #c97a45;
-      --primary-hover-color: #e09460;
+      --primary-hover-color: #e09060;
       --body-padding: 1.5rem;
       --header-bg: rgba(14, 19, 24, 0.82);
       --nav-color: #f2ede4;
@@ -30,7 +30,7 @@
       --episode-title-font-size: 1.5rem;
       --episode-meta-color: #c97a45;
       --audio-player-progressed: #f3efe6;
-      --audio-player-runtime-color: #d7c8b4;
+      --audio-player-runtime-color: #b9d7d4;
       --max-width: 1537px;
       --footer-border: rgba(255, 255, 255, 0.08);
       --footer-copy: rgba(255, 255, 255, 0.64);
@@ -202,154 +202,219 @@
 
     .episode-player {
       margin-top: 1.15rem;
+      padding: 0.9rem 0 0;
     }
 
     .audio-shell {
-      padding: 0.85rem 0;
-      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      display: grid;
+      gap: 0.85rem;
     }
 
     .player-row {
-      display: grid;
-      grid-template-columns: auto minmax(0, 1fr);
-      gap: 1rem;
+      display: flex;
       align-items: center;
+      gap: 1rem;
+      width: 100%;
     }
 
     .play-toggle {
-      width: 44px;
-      height: 44px;
+      width: 3rem;
+      height: 3rem;
+      flex: 0 0 auto;
       border-radius: 999px;
-      background: rgba(255, 255, 255, 0.1);
-      color: #ffffff;
+      background: transparent;
+      color: #eef0f7;
+      border: 2px solid rgba(238, 240, 247, 0.95);
       display: inline-flex;
       align-items: center;
       justify-content: center;
       cursor: pointer;
+      transition: color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+    }
+
+    .play-toggle:hover,
+    .play-toggle:focus-visible {
+      color: var(--primary-color);
+      border-color: var(--primary-color);
+      transform: translateY(-1px);
     }
 
     .play-toggle svg {
-      width: 20px;
-      height: 20px;
+      width: 1rem;
+      height: 1rem;
       fill: currentColor;
     }
 
     .progress-cluster {
+      flex: 1 1 auto;
       display: grid;
-      gap: 0.55rem;
+      gap: 0.45rem;
+      align-items: center;
     }
 
     .timeline {
       width: 100%;
-      -webkit-appearance: none;
-      appearance: none;
-      height: 4px;
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.15);
-      outline: none;
+      margin: 0;
+      accent-color: var(--audio-player-progressed);
       cursor: pointer;
-    }
-
-    .timeline::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      appearance: none;
-      width: 14px;
-      height: 14px;
-      border-radius: 50%;
-      background: var(--primary-color);
-    }
-
-    .timeline::-moz-range-thumb {
-      width: 14px;
-      height: 14px;
-      border-radius: 50%;
-      background: var(--primary-color);
     }
 
     .player-meta-row {
       display: flex;
-      align-items: center;
       justify-content: space-between;
-      font-size: 0.9rem;
+      align-items: center;
+      gap: 1rem;
       color: var(--audio-player-runtime-color);
+      font-size: 0.86rem;
+      line-height: 1.4;
+      font-variant-numeric: tabular-nums;
     }
 
     .player-utility {
       display: inline-flex;
+      align-items: center;
       gap: 0.5rem;
     }
 
     .player-utility button {
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      background: transparent;
-      color: inherit;
+      min-width: 3rem;
+      padding: 0.25rem 0.65rem;
       border-radius: 999px;
-      padding: 0.1rem 0.6rem;
+      background: rgba(238, 240, 247, 0.08);
+      color: #eef0f7;
       cursor: pointer;
-      font-size: 0.85rem;
+      font: inherit;
+    }
+
+    .native-audio {
+      display: none;
     }
 
     .site-footer {
-      border-top: 1px solid var(--footer-border);
-      padding: 2.2rem 0;
+      border-top: 1px solid rgba(247, 241, 233, 0.1);
+      background: transparent;
     }
 
     .site-footer-inner {
       display: flex;
+      align-items: center;
       justify-content: center;
+      gap: 0.7rem;
+      padding: 1.1rem 0 1.6rem;
+      color: rgba(255, 255, 255, 0.64);
+      font-size: 0.92rem;
     }
 
     .github-footer-link {
       display: inline-flex;
       align-items: center;
-      gap: 0.75rem;
-      color: var(--footer-copy);
-      font-size: 0.95rem;
+      gap: 0.5rem;
+      color: inherit;
+    }
+
+    .github-footer-link:hover,
+    .github-footer-link:focus-visible {
+      color: #ffffff;
     }
 
     .github-mark {
-      width: 18px;
-      height: 18px;
+      width: 1.1rem;
+      height: 1.1rem;
+      display: block;
       fill: currentColor;
     }
 
-    @media (max-width: 900px) {
+    @media screen and (max-width: 767px) {
+      html {
+        font-size: 13px;
+        line-height: 1.75;
+      }
+
+      .site-header {
+        padding-bottom: 1.15rem;
+      }
+
+      .site-header-inner {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .show-header {
+        padding-top: 4.8rem;
+      }
+
       .show-header-grid {
         grid-template-columns: 1fr;
+        gap: 1.65rem;
       }
 
       .show-art {
-        max-width: 320px;
+        max-width: 24rem;
+      }
+
+      .show-title {
+        font-size: 2.28rem;
+        line-height: 1.14;
+      }
+
+      .show-description {
+        margin-top: 1rem;
+        font-size: 1.08rem;
+        line-height: 1.78;
+      }
+
+      .episodes-section {
+        padding: 2.9rem 0 3.8rem;
+      }
+
+      .episode-card {
+        padding: 1.12rem 0;
+      }
+
+      .episode-meta {
+        margin-bottom: 0.65rem;
+        font-size: 0.98rem;
       }
 
       .episode-title {
-        font-size: 1.3rem;
+        font-size: 1.62rem;
+        line-height: 1.3;
       }
-    }
 
-    @media (max-width: 640px) {
-      :root {
-        --body-padding: 1rem;
-        --show-header-padding-top: 4.5rem;
-        --show-header-title-font-size: 1.8rem;
+      .episode-description-preview,
+      .episode-description,
+      .episode-description-more {
+        font-size: 1.02rem;
+        line-height: 1.8;
+      }
+
+      .description-toggle {
+        font-size: 1rem;
+        line-height: 1.6;
+      }
+
+      .episode-player {
+        margin-top: 1.3rem;
+        padding-top: 1rem;
+      }
+
+      .audio-shell {
+        gap: 1rem;
       }
 
       .player-row {
-        grid-template-columns: 1fr;
+        align-items: flex-start;
+        gap: 1.05rem;
       }
 
       .play-toggle {
-        justify-self: start;
+        width: 3.35rem;
+        height: 3.35rem;
       }
 
-      .timeline::-webkit-slider-thumb {
-        width: 16px;
-        height: 16px;
-      }
-
-      .timeline::-moz-range-thumb {
-        width: 16px;
-        height: 16px;
+      .play-toggle svg {
+        width: 1.08rem;
+        height: 1.08rem;
       }
 
       .player-meta-row {
@@ -360,9 +425,6 @@
       .player-utility {
         gap: 0.85rem;
       }
-
-      .player-utility button,
-      .player-utility a,
     }
   </style>
 </head>
@@ -379,16 +441,14 @@
         <div class="show-art">
           <img
             alt="Freedom at Midnight cover art"
-            src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%23121b2a'/><stop offset='0.48' stop-color='%233a2a2c'/><stop offset='1' stop-color='%23d98b2b'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.45)' stroke-width='3'/><text x='850' y='798' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>AGENTIC</text><text x='850' y='842' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>PODCASTS</text><text x='110' y='730' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>Freedom at</text><text x='110' y='830' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>Midnight</text></svg>"
+            src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><radialGradient id='g' cx='50%' cy='42%' r='68%'><stop offset='0' stop-color='%230c1220'/><stop offset='0.45' stop-color='%235a1015'/><stop offset='1' stop-color='%236a2808'/></radialGradient></defs><rect width='960' height='960' fill='url(%23g)'/><g transform='translate(836,72)' opacity='0.72'><text x='-10' y='52' text-anchor='end' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='30' font-weight='800' letter-spacing='5' fill='white'>AGENTIC</text><text x='-10' y='84' text-anchor='end' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='26' font-weight='700' letter-spacing='5' fill='white'>PODCASTS</text><rect x='0' y='24' width='10' height='32' rx='2' fill='white'/><rect x='16' y='12' width='10' height='56' rx='2' fill='white'/><rect x='32' y='0' width='10' height='80' rx='2' fill='white'/><rect x='48' y='12' width='10' height='56' rx='2' fill='white'/><rect x='64' y='24' width='10' height='32' rx='2' fill='white'/></g><text x='80' y='720' fill='%23f0c060' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='86' font-weight='700'>Freedom</text><text x='80' y='818' fill='%23f0c060' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='86' font-weight='700'>at Midnight</text><text x='80' y='928' fill='%23f0c060' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='32' font-weight='400' font-style='italic' opacity='0.85'>Larry Collins & Dominique Lapierre</text></svg>"
           >
         </div>
 
         <div class="show-copy">
           <h1 class="show-title">Freedom at Midnight</h1>
           <p class="show-description">
-            Four episodes follow the British exit from India, the scramble to draw borders, and the violence of
-            Partition. From Mountbatten’s rushed timetable to Gandhi’s final fast and assassination, the series asks
-            how independence became a tragedy as well as a triumph.
+            August 1947. Two men race against a deadline that cannot be stopped. Mountbatten has a palace and a timetable. Gandhi has a palm branch and a path he sweeps himself. Between them, the British Empire is dying and the Indian subcontinent is burning. Five episodes of diplomacy, partition, massacre, and assassination — the birth of two nations, the death of millions of hopes, and a wound that never fully closed.
           </p>
         </div>
       </div>
@@ -398,29 +458,20 @@
       <div class="shell episode-list">
         <article class="episode-card">
           <p class="episode-meta">Episode 1</p>
-          <h2 class="episode-title">Empire in Retreat</h2>
+          <h2 class="episode-title">The Dying Raj</h2>
           <p class="episode-description-preview">
-            An exhausted empire, a shrinking timetable, and irreconcilable demands push Partition from threat to plan.
+            A frail man sweeps excrement from his own path. Six thousand miles away, an empire debates how fast to die.
           </p>
           <div class="episode-details">
             <span class="episode-description-more" data-role="episode-description-more">
-              Britain’s war-ravaged empire limps toward the exit, but India’s future is anything but agreed. Congress
-              leaders press for a unified state; the Muslim League demands Pakistan; communal violence in Calcutta and
-              Noakhali foreshadows what politics cannot contain. We follow Gandhi’s lonely marches for peace, the
-              failure of the Cabinet Mission, and the steady collapse of British authority as mutiny becomes a whisper
-              and famine a memory that still haunts the streets. Attlee’s government wants out, Wavell is spent, and
-              Jinnah senses leverage in every delay. Into this disarray steps Lord Mountbatten, sent to engineer a
-              transfer of power at speed. He finds a timetable that keeps shrinking, a map no one can draw without
-              blood, and princes and Sikhs who fear being stranded on the wrong side of history. Mountbatten accelerates
-              the schedule, promising August 1947, and no one sleeps. As the deadline moves closer, one question
-              dominates: can independence arrive without catastrophe?
+              Nineteen forty-seven. Gandhi — seventy-seven years old, 114 pounds — walks barefoot through Noakhali, where glass and human excrement have been laid deliberately across his path. He stops, breaks off a palm branch, and sweeps his own road. Six thousand miles away, a frozen, coal-rationed London debates how quickly to surrender an empire it can no longer afford. Mountbatten arrives in Delhi as the last Viceroy with an unusual mandate: end British rule. He has a palace, a ceremonial army, and a deadline. The Raj can still dress for dinner, fire cannon, shine its brass — but beneath the pageantry, something fundamental is collapsing. From Noakhali's smoking villages to London's austere streets, this episode traces the final act of the world's largest empire: the exhausted men managing its end, the forces racing ahead of them, and the question nobody has answered — what happens to hundreds of millions of people when the machine simply stops?
             </span>
             <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
           </div>
           <div class="episode-player">
             <div class="audio-shell">
               <audio class="native-audio" preload="metadata">
-                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/freedom-at-midnight-episodes-1-4-20260327T0718/episode-1.mp3" type="audio/mpeg">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/freedom-at-midnight-episodes-1-5-20260328T1559/episode-1.mp3" type="audio/mpeg">
                 Your browser does not support the audio element.
               </audio>
               <div class="player-row">
@@ -442,32 +493,22 @@
             </div>
           </div>
         </article>
-
         <article class="episode-card">
           <p class="episode-meta">Episode 2</p>
-          <h2 class="episode-title">The Bargain to Divide India</h2>
+          <h2 class="episode-title">Choosing Partition</h2>
           <p class="episode-description-preview">
-            Radcliffe’s commission draws a line through Punjab and Bengal as leaders accept a bitter compromise.
+            In the Viceroy's study, Jinnah's chin dips — barely visible — and the fate of hundreds of millions is decided.
           </p>
           <div class="episode-details">
             <span class="episode-description-more" data-role="episode-description-more">
-              Mountbatten’s plan turns argument into arithmetic: who keeps which districts, who controls Calcutta, how
-              to split Punjab’s canals and railways. The episode follows the high-wire bargaining between Congress, the
-              Muslim League, and the departing British as the idea of partition hardens into a map. Nehru and Patel
-              accept a bitter compromise, betting unity is no longer salvageable. Cyril Radcliffe arrives with no time
-              and no local knowledge, presiding over boundary commissions that argue from statistics and fear. Sikh
-              leaders demand a homeland, Bengal’s politics fracture, and provincial governors try to keep order while
-              the deadline moves closer. Delhi rehearses a pageant of freedom even as trains begin to carry families in
-              the wrong direction. The closer the line gets to the ground, the more lives it will cut across. When the
-              final award is sealed in secret, only one thing is certain: the map will arrive after the violence has
-              already begun.
+              June 2, 1947. In the Viceroy's study, Mohammed Ali Jinnah's chin dips in a barely perceptible nod. No conference table. No secretaries. No public theater. Mountbatten works through private conversations, one leader at a time, convinced there are only weeks left to prevent civil war. Gandhi offers a desperate last plan: give Jinnah the prime ministership for nine months and trust democracy to show that unity is possible. Mountbatten takes it seriously. Events take it away. Nehru, once resistant to partition, begins accepting its inevitability as Bengal's death toll climbs. Mountbatten chooses August 15 as independence day — the anniversary of Japan's surrender. Astrologers across India recoil: Friday is inauspicious, Saturn and Jupiter gather in the dreaded ninth house, Capricorn is hostile to centrifugal forces. Swami Madananand writes to Mountbatten warning of floods, famine, and massacre. The letter is filed. The date is kept.
             </span>
             <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
           </div>
           <div class="episode-player">
             <div class="audio-shell">
               <audio class="native-audio" preload="metadata">
-                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/freedom-at-midnight-episodes-1-4-20260327T0718/episode-2.mp3" type="audio/mpeg">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/freedom-at-midnight-episodes-1-5-20260328T1559/episode-2.mp3" type="audio/mpeg">
                 Your browser does not support the audio element.
               </audio>
               <div class="player-row">
@@ -489,32 +530,22 @@
             </div>
           </div>
         </article>
-
         <article class="episode-card">
           <p class="episode-meta">Episode 3</p>
-          <h2 class="episode-title">Midnight Freedom, Massacre, and Kashmir</h2>
+          <h2 class="episode-title">Freedom and Fracture</h2>
           <p class="episode-description-preview">
-            Independence dawns amid massacre, refugee columns, and a Kashmir crisis that threatens a new war.
+            An independence train arrives at Amritsar. The doors open. No one steps out.
           </p>
           <div class="episode-details">
             <span class="episode-description-more" data-role="episode-description-more">
-              Independence comes at midnight, but the streets are on fire. As India and Pakistan are born, the
-              Radcliffe Line lands like a guillotine, splitting villages, canals, and police forces. Delhi celebrates
-              while the countryside burns. In Lahore and Amritsar, neighbor turns on neighbor while hastily drawn
-              borders turn trains into moving battlegrounds. The episode follows the spiraling violence in Punjab and
-              Bengal, the refugee columns that clog the roads, and the frantic attempts to restore order with shaky new
-              armies. Gandhi refuses to celebrate, walking through riot-torn neighborhoods and fasting to shame leaders
-              into peace. Meanwhile princely states weigh their choices; Hyderabad resists, and Kashmir’s ruler
-              hesitates as armed men cross the borders. The new governments discover that sovereignty is an empty word
-              without safety, and that the first test of freedom is whether it can protect the weakest. The episode ends
-              with Kashmir on the edge and both nations pulled toward war.
+              August 15, 1947, Amritsar station. The Number Ten Down Express rolls in under armed escort. Station Master Chani Singh expects refugees and grief. Instead, silence — no faces in windows, no doors opening. Inside the carriages: bodies tangled across floors, throats cut, skulls smashed. A woman lifts her husband's severed head from a pool of blood. The last carriage bears a whitewashed message: 'This train is our independence gift to Nehru and Patel.' Seventy-three days earlier, men in Delhi began dividing a subcontinent with calendars, ledgers, and forms. Cyril Radcliffe, a British lawyer who had never visited India, drew borders affecting hundreds of millions of lives — working alone, in haste. His line through Punjab splits the Sikh community. His line through Bengal leaves Pakistan with jute land but no mills. One decision in Gurdaspur gives India a land route to Kashmir. The consequences will echo for the next seventy-five years and counting.
             </span>
             <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
           </div>
           <div class="episode-player">
             <div class="audio-shell">
               <audio class="native-audio" preload="metadata">
-                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/freedom-at-midnight-episodes-1-4-20260327T0718/episode-3.mp3" type="audio/mpeg">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/freedom-at-midnight-episodes-1-5-20260328T1559/episode-3.mp3" type="audio/mpeg">
                 Your browser does not support the audio element.
               </audio>
               <div class="player-row">
@@ -536,32 +567,59 @@
             </div>
           </div>
         </article>
-
         <article class="episode-card">
           <p class="episode-meta">Episode 4</p>
-          <h2 class="episode-title">The Last Fast and the Assassination</h2>
+          <h2 class="episode-title">Aftershocks of Partition</h2>
           <p class="episode-description-preview">
-            Gandhi’s last fast, princely-state coercion, and an assassin’s bullet redefine the new republic.
+            Three weeks after independence, Nehru and Patel ask an Englishman to save India from itself.
           </p>
           <div class="episode-details">
             <span class="episode-description-more" data-role="episode-description-more">
-              Independence does not end the crisis. In Delhi, Gandhi launches a final fast, demanding that Hindu and
-              Muslim leaders stop the killings and honor their pledges. His hunger turns into the last moral bargaining
-              chip of the new republic, forcing cabinet ministers, RSS leaders, and refugee mobs to sign fragile truce
-              agreements. Patel and Menon push to integrate the princely states; Hyderabad becomes the test case for
-              coercion in a country still bleeding. Kashmir’s war drags on, and Delhi fills with refugees who want
-              justice, not patience. Meanwhile Pakistan grapples with its own birth pains and Karachi’s uncertainty.
-              The episode traces how the moral authority of one man collides with the machinery of a state that needs
-              to look strong. Then, on a January evening in 1948, a bullet ends the fast and shatters the fragile calm.
-              The nation mourns, but the political future is already tilting toward a harder, more anxious kind of
-              unity.
+              Three weeks after independence. Nehru and Patel sit in Mountbatten's study looking like, in one observer's phrase, 'chastened schoolboys.' Punjab is spinning beyond anyone's worst fears. Delhi itself is sliding into violence. Nehru admits plainly: they do not know how to hold the situation. Then comes the moment neither man could have imagined — they ask Mountbatten to take charge. Patel, the hard realist, backs the request. India's founders, barely weeks into freedom, ask a British earl to save their nation. The collapse is happening in Punjab: for six weeks, murder spreads with unprecedented speed and scale — not battlefields but communities turning on themselves, trains packed with corpses, entire cities emptied. Meanwhile in Kashmir, the Hindu Maharaja of a Muslim-majority territory delays his accession decision. Pakistani tribal forces, backed from Rawalpindi, move toward Srinagar. India airlifts troops. The airport is held by hours. The promised plebiscite quietly disappears.
             </span>
             <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
           </div>
           <div class="episode-player">
             <div class="audio-shell">
               <audio class="native-audio" preload="metadata">
-                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/freedom-at-midnight-episodes-1-4-20260327T0718/episode-4.mp3" type="audio/mpeg">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/freedom-at-midnight-episodes-1-5-20260328T1559/episode-4.mp3" type="audio/mpeg">
+                Your browser does not support the audio element.
+              </audio>
+              <div class="player-row">
+                <button class="play-toggle" data-role="hero-play" type="button" aria-label="Play audio">
+                  <svg data-role="play-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M8 5.14v13.72L19 12 8 5.14z"></path>
+                  </svg>
+                </button>
+                <div class="progress-cluster">
+                  <input class="timeline" data-role="timeline" type="range" min="0" max="100" step="0.1" value="0" aria-label="Seek through audio">
+                  <div class="player-meta-row">
+                    <div><span data-role="current-time">0:00</span> / <span data-role="duration">0:00</span></div>
+                    <div class="player-utility">
+                      <button data-role="speed-toggle" type="button">1x</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+        <article class="episode-card">
+          <p class="episode-meta">Episode 5</p>
+          <h2 class="episode-title">The Death of the Mahatma</h2>
+          <p class="episode-description-preview">
+            Gandhi describes the terms of his own death — precisely, calmly, the night before it happens.
+          </p>
+          <div class="episode-details">
+            <span class="episode-description-more" data-role="episode-description-more">
+              January 29, 1948. Gandhi tells his attendant Manu that if he dies of an ordinary illness — even a pimple — she should proclaim him a false mahatma. But if someone shoots him and he takes the bullet on his bare chest without a sigh, with Rama's name on his lips, only then should she call him true. It is eerie hearing a man describe the terms of his own death. More eerie that he has spent months making himself deliberately vulnerable — refusing security, walking into crowds, insisting on meeting everyone. In Poona, Nathuram Godse — editor of a Hindu nationalist newspaper, devotee of a Brahmin warrior ideal — has decided that Gandhi's insistence on Hindu-Muslim unity is not compassion but betrayal. On January 30, at Birla House, at a prayer meeting, at five past five in the evening, Godse steps forward. Three shots. Gandhi falls. He dies before he reaches the floor.
+            </span>
+            <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
+          </div>
+          <div class="episode-player">
+            <div class="audio-shell">
+              <audio class="native-audio" preload="metadata">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/freedom-at-midnight-episodes-1-5-20260328T1559/episode-5.mp3" type="audio/mpeg">
                 Your browser does not support the audio element.
               </audio>
               <div class="player-row">
@@ -586,109 +644,89 @@
       </div>
     </section>
   </main>
+
   <footer class="site-footer">
     <div class="shell site-footer-inner">
-      <a class="github-footer-link" href="https://github.com/baqiral-1/podcast_agent" aria-label="Hosted on GitHub: open the podcast_agent repository">
-        <svg class="github-mark" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M12 .5C5.65.5.5 5.65.5 12A11.5 11.5 0 0 0 8.36 22.93c.58.1.79-.25.79-.56v-1.96c-3.2.69-3.87-1.36-3.87-1.36-.52-1.33-1.28-1.68-1.28-1.68-1.05-.72.08-.71.08-.71 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.36.96.1-.75.4-1.25.73-1.54-2.56-.29-5.26-1.28-5.26-5.68 0-1.25.45-2.27 1.18-3.08-.12-.29-.51-1.46.12-3.02 0 0 .96-.31 3.15 1.18a10.9 10.9 0 0 1 5.74 0c2.18-1.49 3.14-1.18 3.14-1.18.63 1.56.24 2.73.12 3.02.74.81 1.18 1.83 1.18 3.08 0 4.41-2.7 5.38-5.28 5.67.41.35.77 1.03.77 2.08v3.08c0 .31.21.67.8.56A11.5 11.5 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5z"></path>
+      <a class="github-footer-link" href="https://github.com/baqiral-1/podcast_agent" target="_blank" rel="noopener">
+        <svg class="github-mark" viewBox="0 0 98 96" aria-label="GitHub">
+          <path fill-rule="evenodd" clip-rule="evenodd" d="M48.854 0C21.839 0 0 22 0 49.217c0 21.756 13.993 40.172 33.405 46.69 2.427.49 3.316-1.059 3.316-2.362 0-1.141-.08-5.052-.08-9.127-13.59 2.934-16.42-5.867-16.42-5.867-2.184-5.704-5.42-7.17-5.42-7.17-4.448-3.015.324-3.015.324-3.015 4.934.326 7.523 5.052 7.523 5.052 4.367 7.496 11.404 5.378 14.235 4.074.404-3.178 1.699-5.378 3.074-6.6-10.839-1.141-22.243-5.378-22.243-24.283 0-5.378 1.94-9.778 5.014-13.2-.485-1.222-2.184-6.275.486-13.038 0 0 4.125-1.304 13.426 5.052a46.97 46.97 0 0 1 12.214-1.63c4.125 0 8.33.571 12.213 1.63 9.302-6.356 13.427-5.052 13.427-5.052 2.67 6.763.97 11.816.485 13.038 3.155 3.422 5.015 7.822 5.015 13.2 0 18.905-11.404 23.06-22.324 24.283 1.78 1.548 3.316 4.481 3.316 9.126 0 6.6-.08 11.897-.08 13.526 0 1.304.89 2.853 3.316 2.364 19.412-6.52 33.405-24.935 33.405-46.691C97.707 22 75.788 0 48.854 0z"/>
         </svg>
-        <span>Hosted on GitHub</span>
+        GitHub
       </a>
     </div>
   </footer>
 
   <script>
-    const speeds = [1, 1.5, 2];
+    document.querySelectorAll('.episode-card').forEach(card => {
+      const audio = card.querySelector('.native-audio');
+      const playBtn = card.querySelector('[data-role="hero-play"]');
+      const playIcon = card.querySelector('[data-role="play-icon"]');
+      const timeline = card.querySelector('[data-role="timeline"]');
+      const currentTimeEl = card.querySelector('[data-role="current-time"]');
+      const durationEl = card.querySelector('[data-role="duration"]');
+      const speedBtn = card.querySelector('[data-role="speed-toggle"]');
+      const detailsEl = card.querySelector('.episode-details');
+      const toggleBtn = card.querySelector('[data-role="description-toggle"]');
+      const moreEl = card.querySelector('[data-role="episode-description-more"]');
 
-    function formatTime(value) {
-      if (!Number.isFinite(value) || value < 0) {
-        return "0:00";
+      const PLAY_PATH = 'M8 5.14v13.72L19 12 8 5.14z';
+      const PAUSE_PATH = 'M6 19h4V5H6v14zm8-14v14h4V5h-4z';
+      const speeds = [1, 1.25, 1.5, 2];
+      let speedIdx = 0;
+
+      function fmt(s) {
+        const m = Math.floor(s / 60), sec = Math.floor(s % 60);
+        return m + ':' + String(sec).padStart(2, '0');
       }
 
-      const totalSeconds = Math.floor(value);
-      const hours = Math.floor(totalSeconds / 3600);
-      const minutes = Math.floor(totalSeconds / 60);
-      const seconds = totalSeconds % 60;
-      if (hours > 0) {
-        const remainingMinutes = Math.floor((totalSeconds % 3600) / 60);
-        return `${hours}:${String(remainingMinutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-      }
-      return `${minutes}:${String(seconds).padStart(2, "0")}`;
-    }
-
-    document.querySelectorAll(".episode-card").forEach((episodeCard) => {
-      const audio = episodeCard.querySelector("audio");
-      const heroPlay = episodeCard.querySelector('[data-role="hero-play"]');
-      const playIcon = episodeCard.querySelector('[data-role="play-icon"]');
-      const timeline = episodeCard.querySelector('[data-role="timeline"]');
-      const currentTime = episodeCard.querySelector('[data-role="current-time"]');
-      const duration = episodeCard.querySelector('[data-role="duration"]');
-      const speedToggle = episodeCard.querySelector('[data-role="speed-toggle"]');
-      const descriptionToggle = episodeCard.querySelector('[data-role="description-toggle"]');
-      const episodeDetails = episodeCard.querySelector(".episode-details");
-
-      let speedIndex = 0;
-
-      function syncPlayState() {
-        const isPaused = audio.paused;
-        playIcon.innerHTML = isPaused
-          ? '<path d="M8 5.14v13.72L19 12 8 5.14z"></path>'
-          : '<path d="M7 5h3v14H7zm7 0h3v14h-3z"></path>';
-        heroPlay.setAttribute("aria-label", isPaused ? "Play audio" : "Pause audio");
+      if (audio) {
+        audio.addEventListener('loadedmetadata', () => {
+          durationEl.textContent = fmt(audio.duration);
+          timeline.max = audio.duration;
+        });
+        audio.addEventListener('timeupdate', () => {
+          currentTimeEl.textContent = fmt(audio.currentTime);
+          timeline.value = audio.currentTime;
+        });
+        audio.addEventListener('ended', () => {
+          playIcon.setAttribute('d', PLAY_PATH);
+        });
       }
 
-      function updateTimeline() {
-        if (!Number.isFinite(audio.duration) || audio.duration <= 0) {
-          timeline.value = 0;
-          duration.textContent = "0:00";
-          return;
-        }
-
-        timeline.value = (audio.currentTime / audio.duration) * 100;
-        currentTime.textContent = formatTime(audio.currentTime);
-        duration.textContent = formatTime(audio.duration);
-      }
-
-      heroPlay.addEventListener("click", () => {
-        if (audio.paused) {
-          document.querySelectorAll(".native-audio").forEach((otherAudio) => {
-            if (otherAudio != audio) {
-              otherAudio.pause();
-            }
+      if (playBtn) {
+        playBtn.addEventListener('click', () => {
+          document.querySelectorAll('.native-audio').forEach(a => {
+            if (a !== audio && !a.paused) { a.pause(); }
           });
-          audio.play();
-        } else {
-          audio.pause();
-        }
-      });
+          if (audio.paused) {
+            audio.play();
+            playIcon.setAttribute('d', PAUSE_PATH);
+          } else {
+            audio.pause();
+            playIcon.setAttribute('d', PLAY_PATH);
+          }
+        });
+      }
 
-      audio.addEventListener("play", syncPlayState);
-      audio.addEventListener("pause", syncPlayState);
-      audio.addEventListener("ended", syncPlayState);
-      audio.addEventListener("timeupdate", updateTimeline);
-      audio.addEventListener("loadedmetadata", updateTimeline);
+      if (timeline) {
+        timeline.addEventListener('input', () => { audio.currentTime = timeline.value; });
+      }
 
-      timeline.addEventListener("input", () => {
-        if (!Number.isFinite(audio.duration) || audio.duration <= 0) {
-          return;
-        }
-        audio.currentTime = (Number(timeline.value) / 100) * audio.duration;
-      });
+      if (speedBtn) {
+        speedBtn.addEventListener('click', () => {
+          speedIdx = (speedIdx + 1) % speeds.length;
+          audio.playbackRate = speeds[speedIdx];
+          speedBtn.textContent = speeds[speedIdx] + 'x';
+        });
+      }
 
-      speedToggle.addEventListener("click", () => {
-        speedIndex = (speedIndex + 1) % speeds.length;
-        audio.playbackRate = speeds[speedIndex];
-        speedToggle.textContent = `${speeds[speedIndex]}x`;
-      });
-
-      descriptionToggle.addEventListener("click", () => {
-        const isOpen = episodeDetails.classList.toggle("is-open");
-        descriptionToggle.textContent = isOpen ? "Read less" : "Read more";
-        descriptionToggle.setAttribute("aria-expanded", String(isOpen));
-      });
-
-      syncPlayState();
-      updateTimeline();
+      if (toggleBtn) {
+        toggleBtn.addEventListener('click', () => {
+          const open = detailsEl.classList.toggle('is-open');
+          toggleBtn.textContent = open ? 'Show less' : 'Read more';
+          toggleBtn.setAttribute('aria-expanded', open);
+        });
+      }
     });
   </script>
 </body>

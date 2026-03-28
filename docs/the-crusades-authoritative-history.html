@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Agentic Podcasts | The Crusades</title>
-  <meta name="description" content="Stories and analyses adapted from The Crusades.">
+  <meta name="description" content="Podcast episodes adapted from The Crusades by Thomas Asbridge.">
   <style>
     :root {
       --body-bg-color: #080b0e;
@@ -12,12 +12,12 @@
       --primary-font: "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
       --primary-body-font-size: 1.12rem;
       --primary-body-font-weight: 300;
-      --primary-color: #5e9e8a;
-      --primary-hover-color: #7abba8;
+      --primary-color: #8a6a2a;
+      --primary-hover-color: #aa8840;
       --body-padding: 1.5rem;
       --header-bg: rgba(14, 19, 24, 0.82);
       --nav-color: #f2ede4;
-      --nav-color-hover: #5e9e8a;
+      --nav-color-hover: #8a6a2a;
       --nav-font-size: 1rem;
       --header-padding: 1.25rem;
       --nav-horizontal-margin: 1.25rem;
@@ -28,9 +28,9 @@
       --episode-margin: 0.75rem;
       --episode-inner-spacing: 1rem;
       --episode-title-font-size: 1.5rem;
-      --episode-meta-color: #5e9e8a;
+      --episode-meta-color: #8a6a2a;
       --audio-player-progressed: #f3efe6;
-      --audio-player-runtime-color: #d7c8b4;
+      --audio-player-runtime-color: #b9d7d4;
       --max-width: 1537px;
       --footer-border: rgba(255, 255, 255, 0.08);
       --footer-copy: rgba(255, 255, 255, 0.64);
@@ -49,7 +49,7 @@
     body {
       margin: 0;
       background:
-        radial-gradient(circle at top, rgba(94, 158, 138, 0.13), transparent 36%),
+        radial-gradient(circle at top, rgba(138, 106, 42, 0.13), transparent 36%),
         linear-gradient(180deg, #0d1418 0%, #080b0e 50%, #060810 100%);
       color: var(--body-font-color);
       font-family: var(--primary-font);
@@ -202,154 +202,219 @@
 
     .episode-player {
       margin-top: 1.15rem;
+      padding: 0.9rem 0 0;
     }
 
     .audio-shell {
-      padding: 0.85rem 0;
-      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      display: grid;
+      gap: 0.85rem;
     }
 
     .player-row {
-      display: grid;
-      grid-template-columns: auto minmax(0, 1fr);
-      gap: 1rem;
+      display: flex;
       align-items: center;
+      gap: 1rem;
+      width: 100%;
     }
 
     .play-toggle {
-      width: 44px;
-      height: 44px;
+      width: 3rem;
+      height: 3rem;
+      flex: 0 0 auto;
       border-radius: 999px;
-      background: rgba(255, 255, 255, 0.1);
-      color: #ffffff;
+      background: transparent;
+      color: #eef0f7;
+      border: 2px solid rgba(238, 240, 247, 0.95);
       display: inline-flex;
       align-items: center;
       justify-content: center;
       cursor: pointer;
+      transition: color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+    }
+
+    .play-toggle:hover,
+    .play-toggle:focus-visible {
+      color: var(--primary-color);
+      border-color: var(--primary-color);
+      transform: translateY(-1px);
     }
 
     .play-toggle svg {
-      width: 20px;
-      height: 20px;
+      width: 1rem;
+      height: 1rem;
       fill: currentColor;
     }
 
     .progress-cluster {
+      flex: 1 1 auto;
       display: grid;
-      gap: 0.55rem;
+      gap: 0.45rem;
+      align-items: center;
     }
 
     .timeline {
       width: 100%;
-      -webkit-appearance: none;
-      appearance: none;
-      height: 4px;
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.15);
-      outline: none;
+      margin: 0;
+      accent-color: var(--audio-player-progressed);
       cursor: pointer;
-    }
-
-    .timeline::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      appearance: none;
-      width: 14px;
-      height: 14px;
-      border-radius: 50%;
-      background: var(--primary-color);
-    }
-
-    .timeline::-moz-range-thumb {
-      width: 14px;
-      height: 14px;
-      border-radius: 50%;
-      background: var(--primary-color);
     }
 
     .player-meta-row {
       display: flex;
-      align-items: center;
       justify-content: space-between;
-      font-size: 0.9rem;
+      align-items: center;
+      gap: 1rem;
       color: var(--audio-player-runtime-color);
+      font-size: 0.86rem;
+      line-height: 1.4;
+      font-variant-numeric: tabular-nums;
     }
 
     .player-utility {
       display: inline-flex;
+      align-items: center;
       gap: 0.5rem;
     }
 
     .player-utility button {
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      background: transparent;
-      color: inherit;
+      min-width: 3rem;
+      padding: 0.25rem 0.65rem;
       border-radius: 999px;
-      padding: 0.1rem 0.6rem;
+      background: rgba(238, 240, 247, 0.08);
+      color: #eef0f7;
       cursor: pointer;
-      font-size: 0.85rem;
+      font: inherit;
+    }
+
+    .native-audio {
+      display: none;
     }
 
     .site-footer {
-      border-top: 1px solid var(--footer-border);
-      padding: 2.2rem 0;
+      border-top: 1px solid rgba(247, 241, 233, 0.1);
+      background: transparent;
     }
 
     .site-footer-inner {
       display: flex;
+      align-items: center;
       justify-content: center;
+      gap: 0.7rem;
+      padding: 1.1rem 0 1.6rem;
+      color: rgba(255, 255, 255, 0.64);
+      font-size: 0.92rem;
     }
 
     .github-footer-link {
       display: inline-flex;
       align-items: center;
-      gap: 0.75rem;
-      color: var(--footer-copy);
-      font-size: 0.95rem;
+      gap: 0.5rem;
+      color: inherit;
+    }
+
+    .github-footer-link:hover,
+    .github-footer-link:focus-visible {
+      color: #ffffff;
     }
 
     .github-mark {
-      width: 18px;
-      height: 18px;
+      width: 1.1rem;
+      height: 1.1rem;
+      display: block;
       fill: currentColor;
     }
 
-    @media (max-width: 900px) {
+    @media screen and (max-width: 767px) {
+      html {
+        font-size: 13px;
+        line-height: 1.75;
+      }
+
+      .site-header {
+        padding-bottom: 1.15rem;
+      }
+
+      .site-header-inner {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .show-header {
+        padding-top: 4.8rem;
+      }
+
       .show-header-grid {
         grid-template-columns: 1fr;
+        gap: 1.65rem;
       }
 
       .show-art {
-        max-width: 320px;
+        max-width: 24rem;
+      }
+
+      .show-title {
+        font-size: 2.28rem;
+        line-height: 1.14;
+      }
+
+      .show-description {
+        margin-top: 1rem;
+        font-size: 1.08rem;
+        line-height: 1.78;
+      }
+
+      .episodes-section {
+        padding: 2.9rem 0 3.8rem;
+      }
+
+      .episode-card {
+        padding: 1.12rem 0;
+      }
+
+      .episode-meta {
+        margin-bottom: 0.65rem;
+        font-size: 0.98rem;
       }
 
       .episode-title {
-        font-size: 1.3rem;
+        font-size: 1.62rem;
+        line-height: 1.3;
       }
-    }
 
-    @media (max-width: 640px) {
-      :root {
-        --body-padding: 1rem;
-        --show-header-padding-top: 4.5rem;
-        --show-header-title-font-size: 1.8rem;
+      .episode-description-preview,
+      .episode-description,
+      .episode-description-more {
+        font-size: 1.02rem;
+        line-height: 1.8;
+      }
+
+      .description-toggle {
+        font-size: 1rem;
+        line-height: 1.6;
+      }
+
+      .episode-player {
+        margin-top: 1.3rem;
+        padding-top: 1rem;
+      }
+
+      .audio-shell {
+        gap: 1rem;
       }
 
       .player-row {
-        grid-template-columns: 1fr;
+        align-items: flex-start;
+        gap: 1.05rem;
       }
 
       .play-toggle {
-        justify-self: start;
+        width: 3.35rem;
+        height: 3.35rem;
       }
 
-      .timeline::-webkit-slider-thumb {
-        width: 16px;
-        height: 16px;
-      }
-
-      .timeline::-moz-range-thumb {
-        width: 16px;
-        height: 16px;
+      .play-toggle svg {
+        width: 1.08rem;
+        height: 1.08rem;
       }
 
       .player-meta-row {
@@ -360,9 +425,6 @@
       .player-utility {
         gap: 0.85rem;
       }
-
-      .player-utility button,
-      .player-utility a,
     }
   </style>
 </head>
@@ -379,16 +441,14 @@
         <div class="show-art">
           <img
             alt="The Crusades cover art"
-            src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%231b2321'/><stop offset='0.5' stop-color='%234f5a3a'/><stop offset='1' stop-color='%23c9a56a'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.45)' stroke-width='3'/><text x='850' y='798' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>AGENTIC</text><text x='850' y='842' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>PODCASTS</text><text x='110' y='760' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='96' font-weight='700'>The Crusades</text></svg>"
+            src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><radialGradient id='g' cx='50%' cy='42%' r='68%'><stop offset='0' stop-color='%231a1510'/><stop offset='0.45' stop-color='%232d2a18'/><stop offset='1' stop-color='%235a3a18'/></radialGradient></defs><rect width='960' height='960' fill='url(%23g)'/><g transform='translate(836,72)' opacity='0.72'><text x='-10' y='52' text-anchor='end' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='30' font-weight='800' letter-spacing='5' fill='white'>AGENTIC</text><text x='-10' y='84' text-anchor='end' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='26' font-weight='700' letter-spacing='5' fill='white'>PODCASTS</text><rect x='0' y='24' width='10' height='32' rx='2' fill='white'/><rect x='16' y='12' width='10' height='56' rx='2' fill='white'/><rect x='32' y='0' width='10' height='80' rx='2' fill='white'/><rect x='48' y='12' width='10' height='56' rx='2' fill='white'/><rect x='64' y='24' width='10' height='32' rx='2' fill='white'/></g><text x='80' y='720' fill='%23e8d8b0' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='86' font-weight='700'>The Crusades</text><text x='80' y='830' fill='%23e8d8b0' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='40' font-weight='400' font-style='italic' opacity='0.85'>Thomas Asbridge</text></svg>"
           >
         </div>
 
         <div class="show-copy">
           <h1 class="show-title">The Crusades</h1>
           <p class="show-description">
-            Four episodes cover the preaching of holy war, the creation of crusader states, and the Muslim
-            counteroffensive that reshaped the eastern Mediterranean. From the First Crusade to the loss of Outremer,
-            strategy and faith collide across two centuries.
+            In 1095, Pope Urban II stood at Clermont and described a war that would last two centuries, cost millions of lives, and reshape the relationship between Christianity and Islam forever. Thomas Asbridge's authoritative history traces the Crusades in five episodes — from the First Crusade's bloody triumph to the fall of Acre in 1291 — revealing what drove ordinary men and women to take the cross, and what they found when they got there.
           </p>
         </div>
       </div>
@@ -398,29 +458,20 @@
       <div class="shell episode-list">
         <article class="episode-card">
           <p class="episode-meta">Episode 1</p>
-          <h2 class="episode-title">From Clermont to Outremer</h2>
+          <h2 class="episode-title">From Clermont to Conquest</h2>
           <p class="episode-description-preview">
-            Urban II’s call ignites a march that ends with Jerusalem and fragile crusader states.
+            Urban II delivers his sermon. Thousands take the cross. Jerusalem falls to the crusaders — and the streets fill with blood.
           </p>
           <div class="episode-details">
             <span class="episode-description-more" data-role="episode-description-more">
-              At Clermont in 1095, Urban II turns pilgrimage into holy war, and Europe answers. This episode follows
-              the fevered preaching, the People’s Crusade’s chaos, and the long march of knights and princes into
-              Anatolia. Along the way, pogroms erupt along the Rhine, revealing how violence follows the banner.
-              Byzantium’s emperor bargains for help, but mistrust grows as crusaders take Nicaea and push toward
-              Antioch. Siege, famine, and visions blur the line between devotion and desperation. When Jerusalem
-              finally falls in 1099, the victory is soaked in blood and leaves a new political reality: Latin states
-              planted in a hostile landscape. It is a conquest forged in hunger and faith. We trace how Outremer is
-              built—castles, lords, and fragile alliances with local powers—and how the First Crusade’s miracle creates
-              obligations that future generations must defend. The episode ends with a question that will define the
-              next century: can a crusader kingdom survive once the initial zeal burns out?
+              November 1095. Pope Urban II stands before a crowd at Clermont and delivers a sermon that will change the world. He describes Muslim rulers desecrating Christian holy places, brutalizing pilgrims, persecuting the faithful. Most of what he describes is exaggerated or invented. It doesn't matter. His words transform a military recruiting call into a spiritual obligation, and within months, armies are forming across Western Europe. The episode follows those armies through years of brutal campaigning: the siege of Antioch, where starvation and disease kill as many as battle; the long march south through a landscape of heat and ambush; the final assault on Jerusalem on July 15, 1099, when crusader knights broke through the walls and spent three days killing everyone inside. Survivors gathered afterward in tears at the Church of the Holy Sepulchre to give thanks. The episode traces how this combination — faith and massacre, piety and conquest, prayer and blood — becomes the essential pattern of the Crusading movement. And how the fragile state that follows, Outremer, survives only because its Muslim neighbors cannot agree on anything.
             </span>
             <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
           </div>
           <div class="episode-player">
             <div class="audio-shell">
               <audio class="native-audio" preload="metadata">
-                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/the-crusades-an-authoritative-history-episodes-1-4-20260327T0718/episode-1.mp3" type="audio/mpeg">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/the-crusades-episodes-1-5-20260328T1559/episode-1.mp3" type="audio/mpeg">
                 Your browser does not support the audio element.
               </audio>
               <div class="player-row">
@@ -442,32 +493,22 @@
             </div>
           </div>
         </article>
-
         <article class="episode-card">
           <p class="episode-meta">Episode 2</p>
-          <h2 class="episode-title">Muslim Revival and Saladin’s Ascendancy</h2>
+          <h2 class="episode-title">Outremer, Revival, and the Road to Saladin</h2>
           <p class="episode-description-preview">
-            Zengi, Nur al-Din, and Saladin forge a Muslim counteroffensive and reclaim Jerusalem.
+            In Aleppo, an ornate wooden pulpit is built for a mosque in Jerusalem — a city that Islam has not yet recovered.
           </p>
           <div class="episode-details">
             <span class="episode-description-more" data-role="episode-description-more">
-              The crusader states survive, but their neighbors regroup. This episode shifts to the Muslim world:
-              Zengi’s jihad, Nur al-Din’s reforms, and the slow creation of a unified front. We follow Saladin’s rise
-              from a Kurdish officer in Egypt to the ruler who can challenge the Franks. Egypt and Syria are finally
-              welded together, giving him depth and money. Balduin IV’s leprosy and the barons’ feuds leave the kingdom
-              brittle, while Raynald of Châtillon’s raids provoke holy war. Alliances shift, truces are broken, and the
-              Latin kingdoms grow complacent amid internal rivalries. When Saladin finally strikes, the battlefield of
-              Hattin becomes the turning point: the crusader army is trapped, the True Cross captured, and Jerusalem is
-              retaken. Yet Saladin must rule a vast coalition with its own fractures, and the Franks still hold their
-              coastal fortresses. The episode ends with the western response gathering strength, as Europe prepares to
-              send kings across the sea.
+              Nur al-Din, ruler of Aleppo and Damascus, commissions a spectacular wooden pulpit — a minbar — for the Aqsa Mosque in Jerusalem. Jerusalem is still under Frankish rule. The pulpit is an act of faith, a political statement, and a long-term plan: he intends to install it in person, after he has taken the city back. The episode traces Nur al-Din's patient, methodical unification of Muslim Syria and his growing pressure on the Crusader states. Meanwhile, the Franks build Outremer into something more durable than a military outpost: fortress chains, military orders, dynastic marriages, trade networks, and a court culture that borrows as much from the Islamic world as it fights it. Then comes Egypt. In the intrigue-filled politics of the Fatimid Caliphate, a rising figure — a young Kurdish general named Saladin — emerges from Cairo's court politics as the master of the richest country in the region. The pulpit in Aleppo is still waiting. Nur al-Din dies before it is installed. His successor will be the one who fulfills the commission.
             </span>
             <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
           </div>
           <div class="episode-player">
             <div class="audio-shell">
               <audio class="native-audio" preload="metadata">
-                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/the-crusades-an-authoritative-history-episodes-1-4-20260327T0718/episode-2.mp3" type="audio/mpeg">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/the-crusades-episodes-1-5-20260328T1559/episode-2.mp3" type="audio/mpeg">
                 Your browser does not support the audio element.
               </audio>
               <div class="player-row">
@@ -489,32 +530,22 @@
             </div>
           </div>
         </article>
-
         <article class="episode-card">
           <p class="episode-meta">Episode 3</p>
-          <h2 class="episode-title">The Third Crusade: Kings, Campaigns, and Compromise</h2>
+          <h2 class="episode-title">Saladin Ascendant</h2>
           <p class="episode-description-preview">
-            Richard the Lionheart wins battles but trades Jerusalem for a fragile truce.
+            On the heights of Hattin, Saladin controls the water. The Frankish army has none. The outcome is decided before the battle begins.
           </p>
           <div class="episode-details">
             <span class="episode-description-more" data-role="episode-description-more">
-              Jerusalem’s fall brings kings to the east. Philip heads home early, weakening the coalition. This episode
-              follows the Third Crusade: Frederick Barbarossa’s march and sudden death, Philip II’s uneasy
-              cooperation, and Richard the Lionheart’s brutal campaign along the coast. Acre becomes a test of
-              endurance, with plague, politics, and a massacre that hardens Saladin’s resolve. Richard wins dazzling
-              tactical victories at Arsuf and Jaffa, yet he cannot hold the interior without splitting his forces.
-              Diplomacy and battlefield theatrics run side by side as both sides search for advantage. In the end,
-              Richard chooses compromise—pilgrims gain access to holy sites, the crusader states survive, and Jerusalem
-              remains Muslim. Back home, Richard’s realm is unstable, and he must decide whether glory is worth a
-              kingdom. The crusade ends without the holy city, but with the myth of chivalry strengthened. The question
-              lingering over the truce is whether the settlement can outlast the kings who made it.
+              July 4, 1187. Hattin. The Frankish army, drawn out of its fortresses by Saladin's invasion and a dispute over strategy between its commanders, marches across waterless plateau in July heat. Saladin controls the wells. His forces have eaten, rested, and brought their water from the Jordan Valley. He deliberately delays the final assault, allowing thirst and heat to do his work for him. When the Frankish king's tent falls and the True Cross is captured, the battle is already lost. What follows is the collapse of a kingdom: Saladin moves from city to city and fortress to fortress, accepting surrenders and restoring Muslim administration. On October 2, 1187 — exactly eighty-eight years after the First Crusade's victory — Jerusalem returns to Muslim hands. Saladin installs Nur al-Din's pulpit in the Aqsa Mosque. The gesture fulfills his predecessor's vision and announces his own: this is not merely a military victory. It is the restoration of a civilization. The shock in Europe is total. The Third Crusade is already forming.
             </span>
             <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
           </div>
           <div class="episode-player">
             <div class="audio-shell">
               <audio class="native-audio" preload="metadata">
-                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/the-crusades-an-authoritative-history-episodes-1-4-20260327T0718/episode-3.mp3" type="audio/mpeg">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/the-crusades-episodes-1-5-20260328T1559/episode-3.mp3" type="audio/mpeg">
                 Your browser does not support the audio element.
               </audio>
               <div class="player-row">
@@ -536,31 +567,22 @@
             </div>
           </div>
         </article>
-
         <article class="episode-card">
           <p class="episode-meta">Episode 4</p>
-          <h2 class="episode-title">Reinvention, Diversion, and the End of Outremer</h2>
+          <h2 class="episode-title">The Third Crusade: Kings Against the Sultan</h2>
           <p class="episode-description-preview">
-            Crusading turns inward, then collapses as Acre falls and the frontier disappears.
+            Richard the Lionheart arrives at Acre. Saladin weeps as the city falls. Neither man will ever take Jerusalem.
           </p>
           <div class="episode-details">
             <span class="episode-description-more" data-role="episode-description-more">
-              The crusading idea survives its defeats by reinventing itself. This episode follows the Fourth
-              Crusade’s diversion and the shocking sack of Constantinople, where a war for Jerusalem becomes a war on
-              fellow Christians. Military orders, Venetian finance, and papal politics drive campaigns that feel more
-              like empire than pilgrimage. The papacy’s authority wavers as crusade becomes a political tool, aimed at
-              heretics in Europe and rival dynasties in the Mediterranean. We track the later expeditions of Louis IX,
-              the rise of the Mamluks, and the tightening siege on the remaining coastal strongholds. Acre’s fall in
-              1291 ends the Latin presence in the Holy Land, but not the memory of crusade. Myths of holy war linger in
-              Europe and the Middle East alike, shaping identity and grievance long after the last castle is abandoned.
-              The episode closes by asking whether the crusades ended in the thirteenth century or simply changed form.
+              The news of Hattin reaches Europe and triggers a mobilization that dwarfs anything the Crusades have previously achieved: Frederick Barbarossa of Germany, Philip Augustus of France, and Richard I of England all take the cross. Frederick drowns crossing a river in Anatolia. Philip and Richard arrive at Acre in 1191, where Saladin watches from the heights as the city he has held falls to Western pressure. He weeps. Richard moves south in tight formation, winning the hard-fought Battle of Arsuf in September, demonstrating that Crusading armies could still defeat Saladin in the open field. Then politics, supply, and fatigue do what Saladin's cavalry could not. Richard reaches the approaches to Jerusalem twice — and turns back both times, knowing he cannot hold it even if he takes it. He and Saladin negotiate a truce. Pilgrims may visit the holy city. Crusaders keep the coastal strip. Richard sails for home. Jerusalem remains in Muslim hands. The True Cross is never returned.
             </span>
             <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
           </div>
           <div class="episode-player">
             <div class="audio-shell">
               <audio class="native-audio" preload="metadata">
-                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/the-crusades-an-authoritative-history-episodes-1-4-20260327T0718/episode-4.mp3" type="audio/mpeg">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/the-crusades-episodes-1-5-20260328T1559/episode-4.mp3" type="audio/mpeg">
                 Your browser does not support the audio element.
               </audio>
               <div class="player-row">
@@ -582,113 +604,129 @@
             </div>
           </div>
         </article>
-
+        <article class="episode-card">
+          <p class="episode-meta">Episode 5</p>
+          <h2 class="episode-title">Aftermath, Reinvention, and the End of Outremer</h2>
+          <p class="episode-description-preview">
+            Acre falls on May 18, 1291. Within weeks, the last Crusader holdings on the mainland are gone.
+          </p>
+          <div class="episode-details">
+            <span class="episode-description-more" data-role="episode-description-more">
+              May 18, 1291. Acre. War drums. Greek fire. Siege engines hurling stones through walls that have held for a century. The last major Crusader city is falling. The Templar master William of Beaujeu is struck by a crossbow bolt and dies on the ramparts. The Hospitaller master is wounded by a lance. Dominican friars are killed singing hymns in their convent. Civilians rush the harbor; boats overturn; hundreds drown. Sultan Khalil's revenge is systematic — a retribution for two centuries of Crusader atrocities, executed with the cold thoroughness of a man who intends to make a point. Within weeks, Tyre, Beirut, and Sidon fall. Tortosa is evacuated. By August 1291, the mainland Crusader settlements are gone — two centuries of settlement erased in a single summer. 'Purified of Franks,' contemporary observers note. The episode traces what the Crusades leave behind: transformed trade routes, hardened religious boundaries, a legacy of mutual misunderstanding that neither Christianity nor Islam will fully process for centuries.
+            </span>
+            <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
+          </div>
+          <div class="episode-player">
+            <div class="audio-shell">
+              <audio class="native-audio" preload="metadata">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/the-crusades-episodes-1-5-20260328T1559/episode-5.mp3" type="audio/mpeg">
+                Your browser does not support the audio element.
+              </audio>
+              <div class="player-row">
+                <button class="play-toggle" data-role="hero-play" type="button" aria-label="Play audio">
+                  <svg data-role="play-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M8 5.14v13.72L19 12 8 5.14z"></path>
+                  </svg>
+                </button>
+                <div class="progress-cluster">
+                  <input class="timeline" data-role="timeline" type="range" min="0" max="100" step="0.1" value="0" aria-label="Seek through audio">
+                  <div class="player-meta-row">
+                    <div><span data-role="current-time">0:00</span> / <span data-role="duration">0:00</span></div>
+                    <div class="player-utility">
+                      <button data-role="speed-toggle" type="button">1x</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
       </div>
     </section>
   </main>
+
   <footer class="site-footer">
     <div class="shell site-footer-inner">
-      <a class="github-footer-link" href="https://github.com/baqiral-1/podcast_agent" aria-label="Hosted on GitHub: open the podcast_agent repository">
-        <svg class="github-mark" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M12 .5C5.65.5.5 5.65.5 12A11.5 11.5 0 0 0 8.36 22.93c.58.1.79-.25.79-.56v-1.96c-3.2.69-3.87-1.36-3.87-1.36-.52-1.33-1.28-1.68-1.28-1.68-1.05-.72.08-.71.08-.71 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.36.96.1-.75.4-1.25.73-1.54-2.56-.29-5.26-1.28-5.26-5.68 0-1.25.45-2.27 1.18-3.08-.12-.29-.51-1.46.12-3.02 0 0 .96-.31 3.15 1.18a10.9 10.9 0 0 1 5.74 0c2.18-1.49 3.14-1.18 3.14-1.18.63 1.56.24 2.73.12 3.02.74.81 1.18 1.83 1.18 3.08 0 4.41-2.7 5.38-5.28 5.67.41.35.77 1.03.77 2.08v3.08c0 .31.21.67.8.56A11.5 11.5 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5z"></path>
+      <a class="github-footer-link" href="https://github.com/baqiral-1/podcast_agent" target="_blank" rel="noopener">
+        <svg class="github-mark" viewBox="0 0 98 96" aria-label="GitHub">
+          <path fill-rule="evenodd" clip-rule="evenodd" d="M48.854 0C21.839 0 0 22 0 49.217c0 21.756 13.993 40.172 33.405 46.69 2.427.49 3.316-1.059 3.316-2.362 0-1.141-.08-5.052-.08-9.127-13.59 2.934-16.42-5.867-16.42-5.867-2.184-5.704-5.42-7.17-5.42-7.17-4.448-3.015.324-3.015.324-3.015 4.934.326 7.523 5.052 7.523 5.052 4.367 7.496 11.404 5.378 14.235 4.074.404-3.178 1.699-5.378 3.074-6.6-10.839-1.141-22.243-5.378-22.243-24.283 0-5.378 1.94-9.778 5.014-13.2-.485-1.222-2.184-6.275.486-13.038 0 0 4.125-1.304 13.426 5.052a46.97 46.97 0 0 1 12.214-1.63c4.125 0 8.33.571 12.213 1.63 9.302-6.356 13.427-5.052 13.427-5.052 2.67 6.763.97 11.816.485 13.038 3.155 3.422 5.015 7.822 5.015 13.2 0 18.905-11.404 23.06-22.324 24.283 1.78 1.548 3.316 4.481 3.316 9.126 0 6.6-.08 11.897-.08 13.526 0 1.304.89 2.853 3.316 2.364 19.412-6.52 33.405-24.935 33.405-46.691C97.707 22 75.788 0 48.854 0z"/>
         </svg>
-        <span>Hosted on GitHub</span>
+        GitHub
       </a>
     </div>
   </footer>
 
   <script>
-    const speeds = [1, 1.5, 2];
+    document.querySelectorAll('.episode-card').forEach(card => {
+      const audio = card.querySelector('.native-audio');
+      const playBtn = card.querySelector('[data-role="hero-play"]');
+      const playIcon = card.querySelector('[data-role="play-icon"]');
+      const timeline = card.querySelector('[data-role="timeline"]');
+      const currentTimeEl = card.querySelector('[data-role="current-time"]');
+      const durationEl = card.querySelector('[data-role="duration"]');
+      const speedBtn = card.querySelector('[data-role="speed-toggle"]');
+      const detailsEl = card.querySelector('.episode-details');
+      const toggleBtn = card.querySelector('[data-role="description-toggle"]');
+      const moreEl = card.querySelector('[data-role="episode-description-more"]');
 
-    function formatTime(value) {
-      if (!Number.isFinite(value) || value < 0) {
-        return "0:00";
+      const PLAY_PATH = 'M8 5.14v13.72L19 12 8 5.14z';
+      const PAUSE_PATH = 'M6 19h4V5H6v14zm8-14v14h4V5h-4z';
+      const speeds = [1, 1.25, 1.5, 2];
+      let speedIdx = 0;
+
+      function fmt(s) {
+        const m = Math.floor(s / 60), sec = Math.floor(s % 60);
+        return m + ':' + String(sec).padStart(2, '0');
       }
 
-      const totalSeconds = Math.floor(value);
-      const hours = Math.floor(totalSeconds / 3600);
-      const minutes = Math.floor(totalSeconds / 60);
-      const seconds = totalSeconds % 60;
-      if (hours > 0) {
-        const remainingMinutes = Math.floor((totalSeconds % 3600) / 60);
-        return `${hours}:${String(remainingMinutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-      }
-      return `${minutes}:${String(seconds).padStart(2, "0")}`;
-    }
-
-    document.querySelectorAll(".episode-card").forEach((episodeCard) => {
-      const audio = episodeCard.querySelector("audio");
-      const heroPlay = episodeCard.querySelector('[data-role="hero-play"]');
-      const playIcon = episodeCard.querySelector('[data-role="play-icon"]');
-      const timeline = episodeCard.querySelector('[data-role="timeline"]');
-      const currentTime = episodeCard.querySelector('[data-role="current-time"]');
-      const duration = episodeCard.querySelector('[data-role="duration"]');
-      const speedToggle = episodeCard.querySelector('[data-role="speed-toggle"]');
-      const descriptionToggle = episodeCard.querySelector('[data-role="description-toggle"]');
-      const episodeDetails = episodeCard.querySelector(".episode-details");
-
-      let speedIndex = 0;
-
-      function syncPlayState() {
-        const isPaused = audio.paused;
-        playIcon.innerHTML = isPaused
-          ? '<path d="M8 5.14v13.72L19 12 8 5.14z"></path>'
-          : '<path d="M7 5h3v14H7zm7 0h3v14h-3z"></path>';
-        heroPlay.setAttribute("aria-label", isPaused ? "Play audio" : "Pause audio");
+      if (audio) {
+        audio.addEventListener('loadedmetadata', () => {
+          durationEl.textContent = fmt(audio.duration);
+          timeline.max = audio.duration;
+        });
+        audio.addEventListener('timeupdate', () => {
+          currentTimeEl.textContent = fmt(audio.currentTime);
+          timeline.value = audio.currentTime;
+        });
+        audio.addEventListener('ended', () => {
+          playIcon.setAttribute('d', PLAY_PATH);
+        });
       }
 
-      function updateTimeline() {
-        if (!Number.isFinite(audio.duration) || audio.duration <= 0) {
-          timeline.value = 0;
-          duration.textContent = "0:00";
-          return;
-        }
-
-        timeline.value = (audio.currentTime / audio.duration) * 100;
-        currentTime.textContent = formatTime(audio.currentTime);
-        duration.textContent = formatTime(audio.duration);
-      }
-
-      heroPlay.addEventListener("click", () => {
-        if (audio.paused) {
-          document.querySelectorAll(".native-audio").forEach((otherAudio) => {
-            if (otherAudio != audio) {
-              otherAudio.pause();
-            }
+      if (playBtn) {
+        playBtn.addEventListener('click', () => {
+          document.querySelectorAll('.native-audio').forEach(a => {
+            if (a !== audio && !a.paused) { a.pause(); }
           });
-          audio.play();
-        } else {
-          audio.pause();
-        }
-      });
+          if (audio.paused) {
+            audio.play();
+            playIcon.setAttribute('d', PAUSE_PATH);
+          } else {
+            audio.pause();
+            playIcon.setAttribute('d', PLAY_PATH);
+          }
+        });
+      }
 
-      audio.addEventListener("play", syncPlayState);
-      audio.addEventListener("pause", syncPlayState);
-      audio.addEventListener("ended", syncPlayState);
-      audio.addEventListener("timeupdate", updateTimeline);
-      audio.addEventListener("loadedmetadata", updateTimeline);
+      if (timeline) {
+        timeline.addEventListener('input', () => { audio.currentTime = timeline.value; });
+      }
 
-      timeline.addEventListener("input", () => {
-        if (!Number.isFinite(audio.duration) || audio.duration <= 0) {
-          return;
-        }
-        audio.currentTime = (Number(timeline.value) / 100) * audio.duration;
-      });
+      if (speedBtn) {
+        speedBtn.addEventListener('click', () => {
+          speedIdx = (speedIdx + 1) % speeds.length;
+          audio.playbackRate = speeds[speedIdx];
+          speedBtn.textContent = speeds[speedIdx] + 'x';
+        });
+      }
 
-      speedToggle.addEventListener("click", () => {
-        speedIndex = (speedIndex + 1) % speeds.length;
-        audio.playbackRate = speeds[speedIndex];
-        speedToggle.textContent = `${speeds[speedIndex]}x`;
-      });
-
-      descriptionToggle.addEventListener("click", () => {
-        const isOpen = episodeDetails.classList.toggle("is-open");
-        descriptionToggle.textContent = isOpen ? "Read less" : "Read more";
-        descriptionToggle.setAttribute("aria-expanded", String(isOpen));
-      });
-
-      syncPlayState();
-      updateTimeline();
+      if (toggleBtn) {
+        toggleBtn.addEventListener('click', () => {
+          const open = detailsEl.classList.toggle('is-open');
+          toggleBtn.textContent = open ? 'Show less' : 'Read more';
+          toggleBtn.setAttribute('aria-expanded', open);
+        });
+      }
     });
   </script>
 </body>

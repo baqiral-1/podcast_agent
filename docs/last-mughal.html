@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Agentic Podcasts | The Last Mughal</title>
-  <meta name="description" content="Stories and analyses adapted from The Last Mughal.">
+  <meta name="description" content="Podcast episodes adapted from The Last Mughal by William Dalrymple.">
   <style>
     :root {
       --body-bg-color: #080b0e;
@@ -12,12 +12,12 @@
       --primary-font: "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
       --primary-body-font-size: 1.12rem;
       --primary-body-font-weight: 300;
-      --primary-color: #b07a3a;
-      --primary-hover-color: #cc9550;
+      --primary-color: #a07858;
+      --primary-hover-color: #c09878;
       --body-padding: 1.5rem;
       --header-bg: rgba(14, 19, 24, 0.82);
       --nav-color: #f2ede4;
-      --nav-color-hover: #b07a3a;
+      --nav-color-hover: #a07858;
       --nav-font-size: 1rem;
       --header-padding: 1.25rem;
       --nav-horizontal-margin: 1.25rem;
@@ -28,9 +28,9 @@
       --episode-margin: 0.75rem;
       --episode-inner-spacing: 1rem;
       --episode-title-font-size: 1.5rem;
-      --episode-meta-color: #b07a3a;
-      --audio-player-progressed: #f6efe3;
-      --audio-player-runtime-color: #d7c4a6;
+      --episode-meta-color: #a07858;
+      --audio-player-progressed: #f3efe6;
+      --audio-player-runtime-color: #b9d7d4;
       --max-width: 1537px;
       --footer-border: rgba(255, 255, 255, 0.08);
       --footer-copy: rgba(255, 255, 255, 0.64);
@@ -49,7 +49,7 @@
     body {
       margin: 0;
       background:
-        radial-gradient(circle at top, rgba(176, 122, 58, 0.13), transparent 36%),
+        radial-gradient(circle at top, rgba(160, 120, 88, 0.13), transparent 36%),
         linear-gradient(180deg, #0d1418 0%, #080b0e 50%, #060810 100%);
       color: var(--body-font-color);
       font-family: var(--primary-font);
@@ -130,7 +130,7 @@
     .show-description {
       max-width: 44rem;
       margin: 1.35rem 0 0;
-      color: rgba(246, 239, 227, 0.78);
+      color: rgba(243, 239, 230, 0.78);
     }
 
     .episodes-section {
@@ -223,8 +223,8 @@
       flex: 0 0 auto;
       border-radius: 999px;
       background: transparent;
-      color: #f5efe6;
-      border: 2px solid rgba(245, 239, 230, 0.95);
+      color: #eef0f7;
+      border: 2px solid rgba(238, 240, 247, 0.95);
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -255,71 +255,35 @@
     .timeline {
       width: 100%;
       margin: 0;
-      appearance: none;
-      background: transparent;
       accent-color: var(--audio-player-progressed);
       cursor: pointer;
-    }
-
-    .timeline::-webkit-slider-runnable-track {
-      height: 3px;
-      background: rgba(245, 239, 230, 0.28);
-      border-radius: 999px;
-    }
-
-    .timeline::-webkit-slider-thumb {
-      appearance: none;
-      width: 14px;
-      height: 14px;
-      margin-top: -5.5px;
-      border-radius: 999px;
-      background: #f5efe6;
-    }
-
-    .timeline::-moz-range-track {
-      height: 3px;
-      background: rgba(245, 239, 230, 0.28);
-      border-radius: 999px;
-    }
-
-    .timeline::-moz-range-thumb {
-      width: 14px;
-      height: 14px;
-      border-radius: 999px;
-      border: 0;
-      background: #f5efe6;
     }
 
     .player-meta-row {
       display: flex;
       justify-content: space-between;
-      gap: 1rem;
       align-items: center;
+      gap: 1rem;
       color: var(--audio-player-runtime-color);
-      font-size: 0.9rem;
+      font-size: 0.86rem;
+      line-height: 1.4;
+      font-variant-numeric: tabular-nums;
     }
 
     .player-utility {
-      display: flex;
+      display: inline-flex;
       align-items: center;
-      gap: 0.75rem;
-      flex: 0 0 auto;
+      gap: 0.5rem;
     }
 
-    .player-utility button,
-    .player-utility a {
-      padding: 0;
-      background: transparent;
-      color: #f5efe6;
-      font-size: 0.95rem;
+    .player-utility button {
+      min-width: 3rem;
+      padding: 0.25rem 0.65rem;
+      border-radius: 999px;
+      background: rgba(238, 240, 247, 0.08);
+      color: #eef0f7;
       cursor: pointer;
-    }
-
-    .player-utility button:hover,
-    .player-utility a:hover,
-    .player-utility button:focus-visible,
-    .player-utility a:focus-visible {
-      color: var(--primary-color);
+      font: inherit;
     }
 
     .native-audio {
@@ -360,12 +324,6 @@
       fill: currentColor;
     }
 
-    @media screen and (max-width: 1024px) {
-      html {
-        font-size: 13px;
-      }
-    }
-
     @media screen and (max-width: 767px) {
       html {
         font-size: 13px;
@@ -387,7 +345,6 @@
 
       .show-header-grid {
         grid-template-columns: 1fr;
-        align-items: start;
         gap: 1.65rem;
       }
 
@@ -460,29 +417,7 @@
         height: 1.08rem;
       }
 
-      .timeline::-webkit-slider-runnable-track {
-        height: 4px;
-      }
-
-      .timeline::-webkit-slider-thumb {
-        width: 16px;
-        height: 16px;
-        margin-top: -6px;
-      }
-
-      .timeline::-moz-range-track {
-        height: 4px;
-      }
-
-      .timeline::-moz-range-thumb {
-        width: 16px;
-        height: 16px;
-      }
-
       .player-meta-row {
-        align-items: flex-start;
-        flex-direction: column;
-        gap: 0.45rem;
         font-size: 0.98rem;
         line-height: 1.55;
       }
@@ -490,9 +425,6 @@
       .player-utility {
         gap: 0.85rem;
       }
-
-      .player-utility button,
-      .player-utility a,
     }
   </style>
 </head>
@@ -509,37 +441,37 @@
         <div class="show-art">
           <img
             alt="The Last Mughal cover art"
-            src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%232b1a16'/><stop offset='0.45' stop-color='%238b3a2b'/><stop offset='1' stop-color='%23c49a46'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.5)' stroke-width='3'/><text x='850' y='798' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>AGENTIC</text><text x='850' y='842' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>PODCASTS</text><text x='110' y='730' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>The Last</text><text x='110' y='830' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>Mughal</text></svg>"
+            src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><radialGradient id='g' cx='50%' cy='42%' r='68%'><stop offset='0' stop-color='%231a1008'/><stop offset='0.45' stop-color='%233a2018'/><stop offset='1' stop-color='%235a3020'/></radialGradient></defs><rect width='960' height='960' fill='url(%23g)'/><g transform='translate(836,72)' opacity='0.72'><text x='-10' y='52' text-anchor='end' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='30' font-weight='800' letter-spacing='5' fill='white'>AGENTIC</text><text x='-10' y='84' text-anchor='end' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='26' font-weight='700' letter-spacing='5' fill='white'>PODCASTS</text><rect x='0' y='24' width='10' height='32' rx='2' fill='white'/><rect x='16' y='12' width='10' height='56' rx='2' fill='white'/><rect x='32' y='0' width='10' height='80' rx='2' fill='white'/><rect x='48' y='12' width='10' height='56' rx='2' fill='white'/><rect x='64' y='24' width='10' height='32' rx='2' fill='white'/></g><text x='80' y='720' fill='%23d4b898' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='86' font-weight='700'>The</text><text x='80' y='818' fill='%23d4b898' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='86' font-weight='700'>Last Mughal</text><text x='80' y='928' fill='%23d4b898' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='40' font-weight='400' font-style='italic' opacity='0.85'>William Dalrymple</text></svg>"
           >
         </div>
 
         <div class="show-copy">
           <h1 class="show-title">The Last Mughal</h1>
           <p class="show-description">
-            A three-part portrait of Delhi before, during, and after the 1857 rebellion. Courtly life and cultural brilliance give way to siege, retribution, and exile as the last Mughal dynasty collapses.
+            In 1857, the last Mughal emperor was eighty-two years old, a poet-king with no real power and a court in elegant decline. Then the sepoys arrived, and everything changed. William Dalrymple's The Last Mughal follows Bahadur Shah Zafar from the rebellion that made him briefly real again, through the siege that destroyed his city, to the exile that erased him — and asks what was lost when Delhi fell.
           </p>
         </div>
       </div>
     </section>
 
-                <section class="episodes-section" id="episodes">
+    <section class="episodes-section" id="episodes">
       <div class="shell episode-list">
         <article class="episode-card">
           <p class="episode-meta">Episode 1</p>
-          <h2 class="episode-title">The World Before the Siege</h2>
+          <h2 class="episode-title">Delhi Before the Deluge</h2>
           <p class="episode-description-preview">
-            Delhi's courtly world glitters even as rebellion gathers in the shadows.
+            The last Mughal emperor writes poetry while the world outside his palace window is about to ignite.
           </p>
           <div class="episode-details">
             <span class="episode-description-more" data-role="episode-description-more">
-              Delhi in the 1850s is a city of poetry, markets, and overlapping faiths, but also of British ambition and a court in slow decline. We meet Bahadur Shah Zafar, an emperor with little power and a palace full of poets, princes, and rival factions. The episode walks the rhythms of the city, from the Red Fort to the cantonment, and shows how older accommodations between Hindus and Muslims begin to fracture under evangelical confidence and imperial reform. A wedding procession tries to restage imperial splendor while the machinery of British rule tightens around it. Outside the palace walls, new religious currents, rumors, and resentments build a second Delhi alongside the first. This is a portrait of a capital that still believes in its own grandeur, even as it senses the end. Both courts listen for a storm. By the time the city wakes to another ordinary morning, the tinder for rebellion is already in place.
+              Bahadur Shah Zafar II is eighty-two years old. He is a calligrapher, a poet, a Sufi scholar, and a gardener of some distinction. He is not, in any practical sense, a ruler: his authority extends no further than the Red Fort's walls, and even there it is constrained by the British political resident who controls his stipend. Delhi in 1856 is a city of extraordinary cultural refinement — one of the most cosmopolitan places on earth — but also a city in which British evangelical missionaries are working to replace the old world of Hindu-Muslim coexistence with a new Christian order. Zafar watches, and writes. In the bazaars, rumors circulate about rifle cartridges greased with pig and cow fat. In Meerut, sepoys refuse to bite them. On May 10, 1857, they shoot their officers, free their imprisoned comrades, and ride through the night toward Delhi — toward the only living symbol of Mughal authority — seeking a legitimacy that only an old, cautious emperor can give.
             </span>
             <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
           </div>
           <div class="episode-player">
             <div class="audio-shell">
               <audio class="native-audio" preload="metadata">
-                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/last-mughal-episodes-1-3-20260327T0154/episode-1.mp3" type="audio/mpeg">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/last-mughal-episodes-1-4-20260328T1559/episode-1.mp3" type="audio/mpeg">
                 Your browser does not support the audio element.
               </audio>
               <div class="player-row">
@@ -561,23 +493,22 @@
             </div>
           </div>
         </article>
-
         <article class="episode-card">
           <p class="episode-meta">Episode 2</p>
-          <h2 class="episode-title">Outbreak and Stalemate</h2>
+          <h2 class="episode-title">The Explosion of May</h2>
           <p class="episode-description-preview">
-            The siege drags on as rival leaders and British forces grind a city to exhaustion.
+            The sepoys crowd into the Hall of Audience. They ask Zafar to place his hands on their heads. He hesitates. Then he does.
           </p>
           <div class="episode-details">
             <span class="episode-description-more" data-role="episode-description-more">
-              The mutiny reaches Delhi and everything stalls between fury and hesitation. British forces regroup on the Ridge while the city erupts, and Bahadur Shah becomes a reluctant symbol for a rebellion he cannot command. Princes rush to court, militias form, and Delhi turns into a city without a single authority. Outside the walls, Hodson and the British advance; inside, Mirza Mughal and Bakht Khan struggle to coordinate defense and politics. The besiegers become besieged as monsoon, disease, and exhaustion grind both camps. Reinforcements arrive, but unity does not. The episode follows the long, brutal summer of 1857 when victory is always promised and rarely delivered. Delhi is shelled, alliances wobble, and a decisive assault is delayed again and again. By the time the British are ready to strike, the city is starving, and the court is divided against itself. The question is not whether the siege will break, but how much will survive it.
+              May 11, 1857. The Hall of Audience in the Red Fort. Sepoys who arrived from Meerut overnight — grimy, exhausted, still carrying weapons — crowd forward and ask the emperor to place his hand on their heads: a blessing that transforms a mutiny into an imperial revolution. Zafar hesitates. His caution is legendary. Then he chooses. His hand descends. Half a mile away, Lieutenant George Willoughby detonates the great magazine, sending a massive explosion through the city's center that kills hundreds. In a single morning: an imperial blessing and a military catastrophe, synchronized. British survivors flee. The Ridge north of the city becomes a British camp — but instead of falling as expected, Delhi fills with rebel forces from across northern India. The British besieging force finds itself effectively besieged. The Red Fort fills with soldiers who have no unified command. And in the palace at the center of the storm, the old poet-king has placed his hand on something he cannot take back.
             </span>
             <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
           </div>
           <div class="episode-player">
             <div class="audio-shell">
               <audio class="native-audio" preload="metadata">
-                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/last-mughal-episodes-1-3-20260327T0154/episode-2.mp3" type="audio/mpeg">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/last-mughal-episodes-1-4-20260328T1559/episode-2.mp3" type="audio/mpeg">
                 Your browser does not support the audio element.
               </audio>
               <div class="player-row">
@@ -599,23 +530,59 @@
             </div>
           </div>
         </article>
-
         <article class="episode-card">
           <p class="episode-meta">Episode 3</p>
-          <h2 class="episode-title">Fall of Delhi, Death of a Dynasty</h2>
+          <h2 class="episode-title">Siege, Stalemate, and the Turn of the Tide</h2>
           <p class="episode-description-preview">
-            The fall of Delhi ends a dynasty and leaves a city haunted by loss.
+            For three months, the British hold the Ridge. Delhi holds them back. Then the reinforcements arrive.
           </p>
           <div class="episode-details">
             <span class="episode-description-more" data-role="episode-description-more">
-              The British finally storm Delhi, and the city becomes a site of retribution. Princes are executed at the Bloody Gate, neighborhoods are looted, and the emperor's court is caged and starved. Bahadur Shah Zafar is put on trial, reduced to a powerless defendant in a case built around conspiracy and vengeance. As British authority returns, the old capital is emptied and remade, while poets like Ghalib walk through ruins that no longer feel like home. The episode follows the fall of a dynasty: judgment, exile, and a long road to Rangoon. There, the last Mughal dies in a wooden prison, and Delhi is left to remember him in fragments. This is not just the end of a revolt, but the end of an imperial world. By the time the empire looks stable again, it has erased the city it claimed to save. What remains is a memory, and a question about who gets to write it.
+              Three months. British forces hold the Ridge in conditions of extraordinary suffering: cholera, dysentery, heat, flies, constant sniping, and the knowledge that every day without decisive action means another day of rebel reinforcement. Inside Delhi, the rebellion fragments. Factions within the city dispute strategy, authority, and resources. Zafar manages his court — still holding ceremonies, still writing poetry, still trying to manage fractious military commanders who will not listen to an old man who never wanted this war. On August 1, Eid al-Adha. The city is in the grip of a potential communal explosion. Zafar's careful precautions prevent it. Outside the city, British reinforcements finally arrive. Artillery is positioned. Breaching batteries are established. The balance begins to shift — not dramatically, but with the slow accumulation of weight. By early September, the siege is breaking open. The final assault on Delhi's walls is days away. The city that has survived three months is about to fall in days.
             </span>
             <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
           </div>
           <div class="episode-player">
             <div class="audio-shell">
               <audio class="native-audio" preload="metadata">
-                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/last-mughal-episodes-1-3-20260327T0154/episode-3.mp3" type="audio/mpeg">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/last-mughal-episodes-1-4-20260328T1559/episode-3.mp3" type="audio/mpeg">
+                Your browser does not support the audio element.
+              </audio>
+              <div class="player-row">
+                <button class="play-toggle" data-role="hero-play" type="button" aria-label="Play audio">
+                  <svg data-role="play-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M8 5.14v13.72L19 12 8 5.14z"></path>
+                  </svg>
+                </button>
+                <div class="progress-cluster">
+                  <input class="timeline" data-role="timeline" type="range" min="0" max="100" step="0.1" value="0" aria-label="Seek through audio">
+                  <div class="player-meta-row">
+                    <div><span data-role="current-time">0:00</span> / <span data-role="duration">0:00</span></div>
+                    <div class="player-utility">
+                      <button data-role="speed-toggle" type="button">1x</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+        <article class="episode-card">
+          <p class="episode-meta">Episode 4</p>
+          <h2 class="episode-title">Fall, Retribution, and Exile</h2>
+          <p class="episode-description-preview">
+            Zafar is found in a tomb, brought back to Delhi in a palanquin — no longer a sovereign, not even a prisoner. Something smaller.
+          </p>
+          <div class="episode-details">
+            <span class="episode-description-more" data-role="episode-description-more">
+              September 1857. British forces breach the walls and fight through Delhi in days of brutal street combat. Nicholson, the legendary British officer whose reckless courage defines the assault, is mortally wounded and dies days later. Zafar flees to Humayun's Tomb and is found there, brought back to Delhi in a palanquin — not as sovereign, not as ceremonial prisoner, but as something smaller, something already half-erased. William Hodson, the British cavalry officer who captures him, executes three Mughal princes in cold blood the same day, on a Delhi street, in front of a crowd. Zafar is tried, convicted of rebellion, and exiled to Rangoon in 1858, where he dies in 1862. His grave is made level with the turf so that it will disappear. It does not disappear. From the ruins of 1857, two Muslim futures emerge: one looking westward toward modern education at Aligarh, one looking inward toward Islamic revival at Deoband. The poet-emperor is gone. His shadow remains.
+            </span>
+            <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
+          </div>
+          <div class="episode-player">
+            <div class="audio-shell">
+              <audio class="native-audio" preload="metadata">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/last-mughal-episodes-1-4-20260328T1559/episode-4.mp3" type="audio/mpeg">
                 Your browser does not support the audio element.
               </audio>
               <div class="player-row">
@@ -640,145 +607,89 @@
       </div>
     </section>
   </main>
+
   <footer class="site-footer">
     <div class="shell site-footer-inner">
-      <a class="github-footer-link" href="https://github.com/baqiral-1/podcast_agent" aria-label="Hosted on GitHub: open the podcast_agent repository">
-        <svg class="github-mark" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M12 .5C5.65.5.5 5.65.5 12A11.5 11.5 0 0 0 8.36 22.93c.58.1.79-.25.79-.56v-1.96c-3.2.69-3.87-1.36-3.87-1.36-.52-1.33-1.28-1.68-1.28-1.68-1.05-.72.08-.71.08-.71 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.36.96.1-.75.4-1.25.73-1.54-2.56-.29-5.26-1.28-5.26-5.68 0-1.25.45-2.27 1.18-3.08-.12-.29-.51-1.46.12-3.02 0 0 .96-.31 3.15 1.18a10.9 10.9 0 0 1 5.74 0c2.18-1.49 3.14-1.18 3.14-1.18.63 1.56.24 2.73.12 3.02.74.81 1.18 1.83 1.18 3.08 0 4.41-2.7 5.38-5.28 5.67.41.35.77 1.03.77 2.08v3.08c0 .31.21.67.8.56A11.5 11.5 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5z"></path>
+      <a class="github-footer-link" href="https://github.com/baqiral-1/podcast_agent" target="_blank" rel="noopener">
+        <svg class="github-mark" viewBox="0 0 98 96" aria-label="GitHub">
+          <path fill-rule="evenodd" clip-rule="evenodd" d="M48.854 0C21.839 0 0 22 0 49.217c0 21.756 13.993 40.172 33.405 46.69 2.427.49 3.316-1.059 3.316-2.362 0-1.141-.08-5.052-.08-9.127-13.59 2.934-16.42-5.867-16.42-5.867-2.184-5.704-5.42-7.17-5.42-7.17-4.448-3.015.324-3.015.324-3.015 4.934.326 7.523 5.052 7.523 5.052 4.367 7.496 11.404 5.378 14.235 4.074.404-3.178 1.699-5.378 3.074-6.6-10.839-1.141-22.243-5.378-22.243-24.283 0-5.378 1.94-9.778 5.014-13.2-.485-1.222-2.184-6.275.486-13.038 0 0 4.125-1.304 13.426 5.052a46.97 46.97 0 0 1 12.214-1.63c4.125 0 8.33.571 12.213 1.63 9.302-6.356 13.427-5.052 13.427-5.052 2.67 6.763.97 11.816.485 13.038 3.155 3.422 5.015 7.822 5.015 13.2 0 18.905-11.404 23.06-22.324 24.283 1.78 1.548 3.316 4.481 3.316 9.126 0 6.6-.08 11.897-.08 13.526 0 1.304.89 2.853 3.316 2.364 19.412-6.52 33.405-24.935 33.405-46.691C97.707 22 75.788 0 48.854 0z"/>
         </svg>
-        <span>Hosted on GitHub</span>
+        GitHub
       </a>
     </div>
   </footer>
 
   <script>
-    const speeds = [1, 1.5, 2];
+    document.querySelectorAll('.episode-card').forEach(card => {
+      const audio = card.querySelector('.native-audio');
+      const playBtn = card.querySelector('[data-role="hero-play"]');
+      const playIcon = card.querySelector('[data-role="play-icon"]');
+      const timeline = card.querySelector('[data-role="timeline"]');
+      const currentTimeEl = card.querySelector('[data-role="current-time"]');
+      const durationEl = card.querySelector('[data-role="duration"]');
+      const speedBtn = card.querySelector('[data-role="speed-toggle"]');
+      const detailsEl = card.querySelector('.episode-details');
+      const toggleBtn = card.querySelector('[data-role="description-toggle"]');
+      const moreEl = card.querySelector('[data-role="episode-description-more"]');
 
-    function formatTime(value) {
-      if (!Number.isFinite(value) || value < 0) {
-        return "0:00";
+      const PLAY_PATH = 'M8 5.14v13.72L19 12 8 5.14z';
+      const PAUSE_PATH = 'M6 19h4V5H6v14zm8-14v14h4V5h-4z';
+      const speeds = [1, 1.25, 1.5, 2];
+      let speedIdx = 0;
+
+      function fmt(s) {
+        const m = Math.floor(s / 60), sec = Math.floor(s % 60);
+        return m + ':' + String(sec).padStart(2, '0');
       }
 
-      const hours = Math.floor(value / 3600);
-      const minutes = Math.floor((value % 3600) / 60);
-      const seconds = Math.floor(value % 60).toString().padStart(2, "0");
-
-      if (hours > 0) {
-        return `${hours}:${minutes.toString().padStart(2, "0")}:${seconds}`;
+      if (audio) {
+        audio.addEventListener('loadedmetadata', () => {
+          durationEl.textContent = fmt(audio.duration);
+          timeline.max = audio.duration;
+        });
+        audio.addEventListener('timeupdate', () => {
+          currentTimeEl.textContent = fmt(audio.currentTime);
+          timeline.value = audio.currentTime;
+        });
+        audio.addEventListener('ended', () => {
+          playIcon.setAttribute('d', PLAY_PATH);
+        });
       }
 
-      return `${minutes}:${seconds}`;
-    }
-
-    document.querySelectorAll(".episode-card").forEach((episodeCard) => {
-      const audio = episodeCard.querySelector("audio");
-      const heroPlay = episodeCard.querySelector('[data-role="hero-play"]');
-      const playIcon = episodeCard.querySelector('[data-role="play-icon"]');
-      const timeline = episodeCard.querySelector('[data-role="timeline"]');
-      const currentTime = episodeCard.querySelector('[data-role="current-time"]');
-      const duration = episodeCard.querySelector('[data-role="duration"]');
-      const speedToggle = episodeCard.querySelector('[data-role="speed-toggle"]');
-      const descriptionToggle = episodeCard.querySelector('[data-role="description-toggle"]');
-      const episodeDetails = episodeCard.querySelector(".episode-details");
-      let isSeeking = false;
-
-      function syncPlayButton() {
-        const paused = audio.paused;
-        heroPlay.setAttribute("aria-label", paused ? "Play audio" : "Pause audio");
-        playIcon.innerHTML = paused
-          ? '<path d="M8 5.14v13.72L19 12 8 5.14z"></path>'
-          : '<path d="M7 5h4v14H7zM13 5h4v14h-4z"></path>';
+      if (playBtn) {
+        playBtn.addEventListener('click', () => {
+          document.querySelectorAll('.native-audio').forEach(a => {
+            if (a !== audio && !a.paused) { a.pause(); }
+          });
+          if (audio.paused) {
+            audio.play();
+            playIcon.setAttribute('d', PAUSE_PATH);
+          } else {
+            audio.pause();
+            playIcon.setAttribute('d', PLAY_PATH);
+          }
+        });
       }
 
-      function syncTimeline() {
-        if (!Number.isFinite(audio.duration) || audio.duration <= 0) {
-          timeline.disabled = true;
-          timeline.max = "0";
-          timeline.value = "0";
-          currentTime.textContent = "0:00";
-          duration.textContent = "0:00";
-          return;
-        }
-
-        timeline.disabled = false;
-        timeline.max = String(audio.duration);
-
-        if (!isSeeking) {
-          timeline.value = String(audio.currentTime);
-          currentTime.textContent = formatTime(audio.currentTime);
-        }
-
-        duration.textContent = formatTime(audio.duration);
+      if (timeline) {
+        timeline.addEventListener('input', () => { audio.currentTime = timeline.value; });
       }
 
-      function commitSeek() {
-        if (!Number.isFinite(audio.duration) || audio.duration <= 0) {
-          return;
-        }
-
-        audio.currentTime = Math.min(Number(timeline.value), audio.duration);
-        currentTime.textContent = formatTime(audio.currentTime);
+      if (speedBtn) {
+        speedBtn.addEventListener('click', () => {
+          speedIdx = (speedIdx + 1) % speeds.length;
+          audio.playbackRate = speeds[speedIdx];
+          speedBtn.textContent = speeds[speedIdx] + 'x';
+        });
       }
 
-      heroPlay.addEventListener("click", () => {
-        if (audio.paused) {
-          void audio.play();
-        } else {
-          audio.pause();
-        }
-      });
-
-      timeline.addEventListener("pointerdown", () => {
-        isSeeking = true;
-      });
-
-      timeline.addEventListener("input", () => {
-        if (!Number.isFinite(audio.duration) || audio.duration <= 0) {
-          return;
-        }
-
-        if (isSeeking) {
-          currentTime.textContent = formatTime(Number(timeline.value));
-          return;
-        }
-
-        commitSeek();
-      });
-
-      timeline.addEventListener("change", () => {
-        commitSeek();
-        isSeeking = false;
-        syncTimeline();
-      });
-
-      timeline.addEventListener("pointerup", () => {
-        commitSeek();
-        isSeeking = false;
-        syncTimeline();
-      });
-
-      speedToggle.addEventListener("click", () => {
-        const currentIndex = speeds.indexOf(audio.playbackRate);
-        const nextRate = speeds[(currentIndex + 1) % speeds.length];
-        audio.playbackRate = nextRate;
-        speedToggle.textContent = `${nextRate}x`;
-      });
-
-      descriptionToggle.addEventListener("click", () => {
-        const isOpen = episodeDetails.classList.toggle("is-open");
-        descriptionToggle.textContent = isOpen ? "Read less" : "Read more";
-        descriptionToggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
-      });
-
-      audio.addEventListener("loadedmetadata", syncTimeline);
-      audio.addEventListener("durationchange", syncTimeline);
-      audio.addEventListener("timeupdate", syncTimeline);
-      audio.addEventListener("play", syncPlayButton);
-      audio.addEventListener("pause", syncPlayButton);
-      audio.addEventListener("ended", syncPlayButton);
-
-      syncPlayButton();
-      syncTimeline();
+      if (toggleBtn) {
+        toggleBtn.addEventListener('click', () => {
+          const open = detailsEl.classList.toggle('is-open');
+          toggleBtn.textContent = open ? 'Show less' : 'Read more';
+          toggleBtn.setAttribute('aria-expanded', open);
+        });
+      }
     });
   </script>
 </body>

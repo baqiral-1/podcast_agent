@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Agentic Podcasts | India After Gandhi</title>
-  <meta name="description" content="Stories and analyses adapted from India After Gandhi.">
+  <meta name="description" content="Podcast episodes adapted from India After Gandhi by Ramachandra Guha.">
   <style>
     :root {
       --body-bg-color: #080b0e;
@@ -13,7 +13,7 @@
       --primary-body-font-size: 1.12rem;
       --primary-body-font-weight: 300;
       --primary-color: #5b85b8;
-      --primary-hover-color: #789fd0;
+      --primary-hover-color: #7aaad8;
       --body-padding: 1.5rem;
       --header-bg: rgba(14, 19, 24, 0.82);
       --nav-color: #f2ede4;
@@ -29,8 +29,8 @@
       --episode-inner-spacing: 1rem;
       --episode-title-font-size: 1.5rem;
       --episode-meta-color: #5b85b8;
-      --audio-player-progressed: #f6efe6;
-      --audio-player-runtime-color: #e0d6c8;
+      --audio-player-progressed: #f3efe6;
+      --audio-player-runtime-color: #b9d7d4;
       --max-width: 1537px;
       --footer-border: rgba(255, 255, 255, 0.08);
       --footer-copy: rgba(255, 255, 255, 0.64);
@@ -130,7 +130,7 @@
     .show-description {
       max-width: 44rem;
       margin: 1.35rem 0 0;
-      color: rgba(246, 239, 230, 0.78);
+      color: rgba(243, 239, 230, 0.78);
     }
 
     .episodes-section {
@@ -158,18 +158,10 @@
 
     .episode-title {
       margin: 0;
-      color: #f4eefc;
+      color: #ffffff;
       font-size: var(--episode-title-font-size);
       line-height: 1.35;
       font-weight: 700;
-    }
-
-    .episode-description {
-      max-width: 68rem;
-      margin: 0;
-      color: #ddd2ee;
-      font-size: 0.95rem;
-      line-height: 1.7;
     }
 
     .episode-details {
@@ -190,7 +182,7 @@
     .episode-description-preview {
       max-width: 68rem;
       margin: 0.9rem 0 0;
-      color: #ddd2ee;
+      color: #ffffff;
       font-size: 0.95rem;
       line-height: 1.7;
     }
@@ -231,8 +223,8 @@
       flex: 0 0 auto;
       border-radius: 999px;
       background: transparent;
-      color: #f4eefc;
-      border: 2px solid rgba(244, 238, 252, 0.95);
+      color: #eef0f7;
+      border: 2px solid rgba(238, 240, 247, 0.95);
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -263,71 +255,35 @@
     .timeline {
       width: 100%;
       margin: 0;
-      appearance: none;
-      background: transparent;
       accent-color: var(--audio-player-progressed);
       cursor: pointer;
-    }
-
-    .timeline::-webkit-slider-runnable-track {
-      height: 3px;
-      background: rgba(244, 238, 252, 0.28);
-      border-radius: 999px;
-    }
-
-    .timeline::-webkit-slider-thumb {
-      appearance: none;
-      width: 14px;
-      height: 14px;
-      margin-top: -5.5px;
-      border-radius: 999px;
-      background: #f4eefc;
-    }
-
-    .timeline::-moz-range-track {
-      height: 3px;
-      background: rgba(244, 238, 252, 0.28);
-      border-radius: 999px;
-    }
-
-    .timeline::-moz-range-thumb {
-      width: 14px;
-      height: 14px;
-      border-radius: 999px;
-      border: 0;
-      background: #f4eefc;
     }
 
     .player-meta-row {
       display: flex;
       justify-content: space-between;
-      gap: 1rem;
       align-items: center;
+      gap: 1rem;
       color: var(--audio-player-runtime-color);
-      font-size: 0.9rem;
+      font-size: 0.86rem;
+      line-height: 1.4;
+      font-variant-numeric: tabular-nums;
     }
 
     .player-utility {
-      display: flex;
+      display: inline-flex;
       align-items: center;
-      gap: 0.75rem;
-      flex: 0 0 auto;
+      gap: 0.5rem;
     }
 
-    .player-utility button,
-    .player-utility a {
-      padding: 0;
-      background: transparent;
-      color: #f4eefc;
-      font-size: 0.95rem;
+    .player-utility button {
+      min-width: 3rem;
+      padding: 0.25rem 0.65rem;
+      border-radius: 999px;
+      background: rgba(238, 240, 247, 0.08);
+      color: #eef0f7;
       cursor: pointer;
-    }
-
-    .player-utility button:hover,
-    .player-utility a:hover,
-    .player-utility button:focus-visible,
-    .player-utility a:focus-visible {
-      color: var(--primary-color);
+      font: inherit;
     }
 
     .native-audio {
@@ -368,12 +324,6 @@
       fill: currentColor;
     }
 
-    @media screen and (max-width: 1024px) {
-      html {
-        font-size: 13px;
-      }
-    }
-
     @media screen and (max-width: 767px) {
       html {
         font-size: 13px;
@@ -395,7 +345,6 @@
 
       .show-header-grid {
         grid-template-columns: 1fr;
-        align-items: start;
         gap: 1.65rem;
       }
 
@@ -468,29 +417,7 @@
         height: 1.08rem;
       }
 
-      .timeline::-webkit-slider-runnable-track {
-        height: 4px;
-      }
-
-      .timeline::-webkit-slider-thumb {
-        width: 16px;
-        height: 16px;
-        margin-top: -6px;
-      }
-
-      .timeline::-moz-range-track {
-        height: 4px;
-      }
-
-      .timeline::-moz-range-thumb {
-        width: 16px;
-        height: 16px;
-      }
-
       .player-meta-row {
-        align-items: flex-start;
-        flex-direction: column;
-        gap: 0.45rem;
         font-size: 0.98rem;
         line-height: 1.55;
       }
@@ -498,9 +425,6 @@
       .player-utility {
         gap: 0.85rem;
       }
-
-      .player-utility button,
-      .player-utility a,
     }
   </style>
 </head>
@@ -517,48 +441,37 @@
         <div class="show-art">
           <img
             alt="India After Gandhi cover art"
-            src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%2318132f'/><stop offset='0.52' stop-color='%235a4a8a'/><stop offset='1' stop-color='%231d2f5f'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><rect x='72' y='72' width='816' height='816' fill='none' stroke='rgba(255,255,255,0.5)' stroke-width='3'/><text x='110' y='730' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>India After</text><text x='110' y='830' fill='white' font-family='Muli, Arial, sans-serif' font-stretch='condensed' font-size='84' font-weight='700'>Gandhi</text><text x='850' y='798' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>AGENTIC</text><text x='850' y='842' text-anchor='end' fill='white' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='34' font-weight='800' letter-spacing='6'>PODCASTS</text></svg>"
+            src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><radialGradient id='g' cx='50%' cy='42%' r='68%'><stop offset='0' stop-color='%230a1430'/><stop offset='0.45' stop-color='%231a2850'/><stop offset='1' stop-color='%232a3c70'/></radialGradient></defs><rect width='960' height='960' fill='url(%23g)'/><g transform='translate(836,72)' opacity='0.72'><text x='-10' y='52' text-anchor='end' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='30' font-weight='800' letter-spacing='5' fill='white'>AGENTIC</text><text x='-10' y='84' text-anchor='end' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='26' font-weight='700' letter-spacing='5' fill='white'>PODCASTS</text><rect x='0' y='24' width='10' height='32' rx='2' fill='white'/><rect x='16' y='12' width='10' height='56' rx='2' fill='white'/><rect x='32' y='0' width='10' height='80' rx='2' fill='white'/><rect x='48' y='12' width='10' height='56' rx='2' fill='white'/><rect x='64' y='24' width='10' height='32' rx='2' fill='white'/></g><text x='80' y='720' fill='%23b0c8e8' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='86' font-weight='700'>India</text><text x='80' y='818' fill='%23b0c8e8' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='86' font-weight='700'>After Gandhi</text><text x='80' y='928' fill='%23b0c8e8' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='40' font-weight='400' font-style='italic' opacity='0.85'>Ramachandra Guha</text></svg>"
           >
         </div>
 
         <div class="show-copy">
           <h1 class="show-title">India After Gandhi</h1>
           <p class="show-description">
-            Five episodes trace India’s post-1947 arc from Partition and constitution-making through Nehru’s
-            state-building, Indira’s Emergency, and the turn to coalition politics. The story ends with
-            liberalization, identity movements, and mass culture remaking the republic.
+            They said India would not survive. That it was too large, too diverse, too wounded by partition to hold together as a democracy. They were wrong — but barely. Ramachandra Guha's epic chronicle follows ten episodes of the world's most improbable republic: independence, Kashmir, Emergency, assassination, liberalization, and the stubborn insistence of 350 million first-time voters that they, too, had something to say about who governed them.
           </p>
         </div>
       </div>
     </section>
 
-                <section class="episodes-section" id="episodes">
+    <section class="episodes-section" id="episodes">
       <div class="shell episode-list">
         <article class="episode-card">
           <p class="episode-meta">Episode 1</p>
-          <h2 class="episode-title">Partition, Integration, and the Democratic Founding</h2>
+          <h2 class="episode-title">Partition and the Problem of India</h2>
           <p class="episode-description-preview">
-            Partition’s wounds, integration of princely states, and the constitution test a newborn democracy.
+            August 15, 1947. A governor holds a party while his city burns. An empire ends in fire and blood.
           </p>
           <div class="episode-details">
             <span class="episode-description-more" data-role="episode-description-more">
-              India’s independence begins with Partition’s wound. This episode tracks the refugee crisis, the
-              assassination of Gandhi, and the frantic effort to keep a vast, exhausted country from splintering.
-              Sardar Patel and V.P. Menon move to integrate hundreds of princely states, while Nehru tries to balance
-              idealism with the raw demands of security and food. Hyderabad’s defiance shows how quickly force can
-              replace persuasion. The constitution is drafted to hold together a nation of languages, religions, and
-              castes; the question is whether democracy can survive the very violence that birthed it. Kashmir’s
-              accession becomes the first international test, and the army’s role in a civilian republic is defined in
-              real time. By the time India’s first general election arrives, the new state has survived its first
-              shocks, but the shape of federalism, minority protection, and national unity is still unsettled.
-              Independence is declared; the argument over what it means has only begun.
+              August 15, 1947. The new governor of West Punjab holds a party in Government House in Lahore as the city burns around him — fires rising into darkness, electricity failed, gunfire echoing through streets empty of everyone but the fleeing and the dead. This is what independence looks like in the middle of Partition. The episode traces the political deadlock that made partition seem inevitable: Jinnah's demand for Pakistan, Nehru's vision of unity, Mountbatten's accelerated timeline. Then Gandhi's assassination in January 1948 — the first great shock of the new republic. Yet something remarkable happens: India does not splinter. Despite prophets of failure in every capital, the republic holds together not through unanimity but through the oldest of democratic instruments — argument. The first leaders of an improbable nation set out to build a state from scratch with a partition wound still fresh, a treasury nearly empty, and millions of people who have never voted, never been asked what they think.
             </span>
             <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
           </div>
           <div class="episode-player">
             <div class="audio-shell">
               <audio class="native-audio" preload="metadata">
-                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/india-after-gandhi-episodes-1-5-20260327T0731/episode-1.mp3" type="audio/mpeg">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/india-after-gandhi-episodes-1-10-20260328T1559/episode-1.mp3" type="audio/mpeg">
                 Your browser does not support the audio element.
               </audio>
               <div class="player-row">
@@ -580,32 +493,22 @@
             </div>
           </div>
         </article>
-
         <article class="episode-card">
           <p class="episode-meta">Episode 2</p>
-          <h2 class="episode-title">Nehru’s Republic: Planning, Federalism, and Border Strains</h2>
+          <h2 class="episode-title">Integration, Kashmir, and Refugee Reconstruction</h2>
           <p class="episode-description-preview">
-            Planning, linguistic states, and border wars test Nehru’s developmental vision.
+            Patel integrates 562 princely states by persuasion and pressure. Kashmir needs an airlift.
           </p>
           <div class="episode-details">
             <span class="episode-description-more" data-role="episode-description-more">
-              Nehru’s India tries to turn freedom into a functioning state. The episode moves from the Planning
-              Commission and the choice of a mixed economy to the struggle over language, federal boundaries, and the
-              place of the countryside in a nation of cities and factories. Dams rise as temples of modernity, but
-              harvests and prices keep politics uneasy. The Congress party dominates elections, yet regional movements
-              and linguistic agitations force Delhi to redraw the map. Abroad, nonalignment promises autonomy, but the
-              borders are porous and contested: Pakistan remains a rival, and China’s claims in the Himalayas harden.
-              We follow the slow building of institutions—courts, bureaucracy, and a public sector—while shortages and
-              corruption test the promise of socialism. When the 1962 war with China shatters Nehru’s aura, the
-              republic discovers how quickly a moral vision can meet the limits of geography. The question after defeat
-              is whether the system he built can survive without him.
+              Sardar Patel has an extraordinary task: fold 562 princely states — each with its own ruler, its own army, its own relationship with the British Crown — into the new Indian republic. He does it, mostly, through a combination of persuasion, financial incentives, and the implicit threat of a new national army. The geography cooperates. The politics barely do. Kashmir is the exception. The Hindu Maharaja of a Muslim-majority territory delays his decision as Pakistani-backed tribal raiders advance on Srinagar. India airlifts troops on October 27, 1947 — one of the first military airlifts in history — and holds the airport by hours. The episode also follows millions of refugees crossing the new borders in both directions, rebuilding lives with nothing but what they carried. Sindhis who lost their homeland to Pakistan reconstruct entire communities within Indian territory. The administrative stamina required to absorb this catastrophe without institutional collapse is itself a kind of miracle.
             </span>
             <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
           </div>
           <div class="episode-player">
             <div class="audio-shell">
               <audio class="native-audio" preload="metadata">
-                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/india-after-gandhi-episodes-1-5-20260327T0731/episode-2.mp3" type="audio/mpeg">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/india-after-gandhi-episodes-1-10-20260328T1559/episode-2.mp3" type="audio/mpeg">
                 Your browser does not support the audio element.
               </audio>
               <div class="player-row">
@@ -627,32 +530,22 @@
             </div>
           </div>
         </article>
-
         <article class="episode-card">
           <p class="episode-meta">Episode 3</p>
-          <h2 class="episode-title">After Nehru: Defeat, Succession, and Indira’s Break</h2>
+          <h2 class="episode-title">Constitution, Franchise, and Non-Alignment</h2>
           <p class="episode-description-preview">
-            Shastri’s death and Indira’s rise end Congress consensus and begin personal rule.
+            India grants voting rights to 350 million people, most of them illiterate. This has never been attempted.
           </p>
           <div class="episode-details">
             <span class="episode-description-more" data-role="episode-description-more">
-              Nehru’s death leaves a vacuum that the Congress party expects to control, but history refuses to
-              cooperate. The episode moves through the uneasy Shastri years—food shortages, the 1965 war with
-              Pakistan, and the search for a steady hand. Shastri’s sudden death in Tashkent opens the door to Indira,
-              and the party chooses the wrong person to underestimate. Indira Gandhi rises from a compromise candidate
-              to a leader with her own power base. Regional parties grow louder, caste coalitions shift, and the
-              party’s old bosses find themselves outmaneuvered. The Green Revolution begins to change the countryside,
-              promising abundance while deepening inequality. When Indira nationalizes banks and calls for a “garibi
-              hatao” mandate, the Congress splits, and the politics of consensus gives way to an era of personal rule.
-              By the end, India is no longer the quiet, gentlemanly democracy of the 1950s. The next question is how
-              far that centralization will go.
+              The Constituent Assembly, led by Dr. B.R. Ambedkar, debates the structure of the new republic. One decision above all others defines India's founding audacity: universal adult franchise, immediately, for every citizen regardless of education, property, or caste. Three hundred and fifty million people. Most of them illiterate. Most of them voting for the first time. It has never been attempted at this scale anywhere on earth. In Himachal Pradesh, Buddhist villagers cast ballots before winter snow closes their mountain passes — some of the first votes in the history of the world's largest democracy. Nehru articulates non-alignment: India will refuse to choose between Washington and Moscow, will develop its own model, will represent the post-colonial world's aspiration for independence. The Kashmir conflict reaches the United Nations. India's first international crisis — a territorial dispute over mountains few outsiders have ever seen — becomes a frozen wound that will not thaw for seventy years.
             </span>
             <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
           </div>
           <div class="episode-player">
             <div class="audio-shell">
               <audio class="native-audio" preload="metadata">
-                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/india-after-gandhi-episodes-1-5-20260327T0731/episode-3.mp3" type="audio/mpeg">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/india-after-gandhi-episodes-1-10-20260328T1559/episode-3.mp3" type="audio/mpeg">
                 Your browser does not support the audio element.
               </audio>
               <div class="player-row">
@@ -674,32 +567,22 @@
             </div>
           </div>
         </article>
-
         <article class="episode-card">
           <p class="episode-meta">Episode 4</p>
-          <h2 class="episode-title">Indira Ascendant: Victory, Emergency, and the Post-Congress Experiment</h2>
+          <h2 class="episode-title">Remaking Society: States, Development, Reform</h2>
           <p class="episode-description-preview">
-            Bangladesh victory leads to Emergency rule and a fragile post-Congress experiment.
+            A man fasts for fifty-eight days demanding a Telugu state. He dies. The map of India changes.
           </p>
           <div class="episode-details">
             <span class="episode-description-more" data-role="episode-description-more">
-              Indira’s dominance peaks with the 1971 war and the creation of Bangladesh, a victory that seems to settle
-              her authority. Refugees pour in from East Pakistan, and the war cements her reputation as a decisive
-              leader. But triumph becomes overreach. The memory of victory fades as dissent spreads. The episode
-              follows economic strain, corruption scandals, and the rise of Jayaprakash Narayan’s movement as Indira
-              declares the Emergency in 1975 after a court judgment threatens her mandate, suspending civil liberties,
-              censoring the press, and jailing opponents. Sanjay Gandhi’s sterilization drives and slum demolitions
-              turn the state’s modernizing zeal into fear. When elections are finally called in 1977, the opposition
-              unites to defeat her, producing India’s first non-Congress government. The Janata coalition promises to
-              restore democracy but struggles to govern a factional country. The episode ends with Indira sensing her
-              route back, and the question of whether the Emergency’s lessons will actually change the republic.
+              Potti Sriramulu fasts for fifty-eight days demanding a separate state for Telugu speakers. When he dies, mass unrest erupts — offices attacked, trains damaged, cities paralyzed. The central government, which had resisted linguistic reorganization as a threat to national unity, abruptly reverses course. If language defines community, and community demands representation, then the map of India must be redrawn along linguistic lines rather than colonial boundaries. This decision reshapes the entire federation. Nehru's development vision is also taking form: massive dams, steel plants, irrigation projects — the 'temples of modern India,' as he calls them. The Hindu Code Bill triggers fierce parliamentary combat over women's rights, marriage law, and caste inheritance. India does something most post-colonial nations avoid: it legislates radical social reform simultaneously with political constitution-building. Not perfectly. Not completely. But with enough force to begin transforming what a billion people can expect from their own government.
             </span>
             <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
           </div>
           <div class="episode-player">
             <div class="audio-shell">
               <audio class="native-audio" preload="metadata">
-                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/india-after-gandhi-episodes-1-5-20260327T0731/episode-4.mp3" type="audio/mpeg">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/india-after-gandhi-episodes-1-10-20260328T1559/episode-4.mp3" type="audio/mpeg">
                 Your browser does not support the audio element.
               </audio>
               <div class="player-row">
@@ -721,32 +604,207 @@
             </div>
           </div>
         </article>
-
         <article class="episode-card">
           <p class="episode-meta">Episode 5</p>
-          <h2 class="episode-title">From Rajiv to Liberalization: Identity, Coalition Rule, and Mass Culture</h2>
+          <h2 class="episode-title">Regional Crises of the Union</h2>
           <p class="episode-description-preview">
-            Assassination, liberalization, and identity politics remake India’s democracy.
+            The Bombay crisis pits Marathi speakers against Hindi speakers. Neither side blinks.
           </p>
           <div class="episode-details">
             <span class="episode-description-more" data-role="episode-description-more">
-              Indira returns to power, only to confront Punjab’s insurgency and the Golden Temple crisis. Her
-              assassination in 1984 brings Rajiv Gandhi to office, promising technocratic renewal but facing the
-              Bofors scandal, ethnic violence, and the limits of a centralized state. The episode follows the opening
-              of television and consumer culture, the Mandal Commission’s upheaval, and the rise of Hindu nationalism
-              as the old Congress umbrella collapses. Kashmir’s insurgency and the Ayodhya dispute reveal how faith can
-              mobilize votes and violence. Coalition governments become the new normal, with regional parties
-              bargaining for power in Delhi. Economic crisis in 1991 forces a break with the old model, launching
-              liberalization that reshapes cities, jobs, and aspirations. By the end, India is louder, more prosperous,
-              and more divided, with identity politics and market forces both pulling at the same fabric. The question
-              is whether democratic pluralism can keep pace with the speed of change.
+              The linguistic reorganization of states doesn't resolve the questions of belonging — it multiplies them. The battle over Bombay becomes explosively tense: Marathi speakers demand it as the capital of a new Maharashtra state; Gujarati speakers want it as a joint city; Hindi nationalists want it as nobody's capital at all. Meanwhile, in the northeast, the Naga hills slide into bitter insurgency. The Nagas — ethnically distinct, largely Christian, never fully integrated into British India — resist incorporation into a Hindu-majority republic. India's first hidden war begins: counterinsurgency in mountains few Indians have ever visited. In Kerala in 1957, communists win a state election — the first democratic communist victory anywhere in the world. The result alarms the Congress establishment and the Church in equal measure. President's Rule is imposed. An elected government is dismissed. India's democracy reveals its contradictions: universal franchise does not guarantee universal results will be honored.
             </span>
             <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
           </div>
           <div class="episode-player">
             <div class="audio-shell">
               <audio class="native-audio" preload="metadata">
-                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/india-after-gandhi-episodes-1-5-20260327T0731/episode-5.mp3" type="audio/mpeg">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/india-after-gandhi-episodes-1-10-20260328T1559/episode-5.mp3" type="audio/mpeg">
+                Your browser does not support the audio element.
+              </audio>
+              <div class="player-row">
+                <button class="play-toggle" data-role="hero-play" type="button" aria-label="Play audio">
+                  <svg data-role="play-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M8 5.14v13.72L19 12 8 5.14z"></path>
+                  </svg>
+                </button>
+                <div class="progress-cluster">
+                  <input class="timeline" data-role="timeline" type="range" min="0" max="100" step="0.1" value="0" aria-label="Seek through audio">
+                  <div class="player-meta-row">
+                    <div><span data-role="current-time">0:00</span> / <span data-role="duration">0:00</span></div>
+                    <div class="player-utility">
+                      <button data-role="speed-toggle" type="button">1x</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+        <article class="episode-card">
+          <p class="episode-meta">Episode 6</p>
+          <h2 class="episode-title">Nehru's Last Years and Secular India's Tests</h2>
+          <p class="episode-description-preview">
+            The Dalai Lama crosses into India. China takes note. Then China attacks.
+          </p>
+          <div class="episode-details">
+            <span class="episode-description-more" data-role="episode-description-more">
+              March 1959. The Dalai Lama flees Tibet across the Himalayas and arrives in India as a refugee. Nehru grants asylum. China, which had been cultivating India as a model of post-colonial solidarity, regards the gesture as betrayal. Diplomatic negotiations fail. In October 1962, Chinese forces pour across the disputed border in two simultaneous attacks. Indian troops, inadequately equipped and poorly deployed, collapse. The military humiliation is total. Nehru, visibly shaken and aging, never recovers. He dies in May 1964, and with him dies a certain confidence in the idea that India could shape its own destiny through moral authority alone. Succession becomes chaotic. The 'Syndicate' — Congress party bosses — chooses Lal Bahadur Shastri as a manageable compromise. Shastri surprises everyone by standing firm in the 1965 war with Pakistan. Then he dies at the peace negotiations in Tashkent. The path now opens, unexpectedly, for Jawaharlal Nehru's daughter.
+            </span>
+            <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
+          </div>
+          <div class="episode-player">
+            <div class="audio-shell">
+              <audio class="native-audio" preload="metadata">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/india-after-gandhi-episodes-1-10-20260328T1559/episode-6.mp3" type="audio/mpeg">
+                Your browser does not support the audio element.
+              </audio>
+              <div class="player-row">
+                <button class="play-toggle" data-role="hero-play" type="button" aria-label="Play audio">
+                  <svg data-role="play-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M8 5.14v13.72L19 12 8 5.14z"></path>
+                  </svg>
+                </button>
+                <div class="progress-cluster">
+                  <input class="timeline" data-role="timeline" type="range" min="0" max="100" step="0.1" value="0" aria-label="Seek through audio">
+                  <div class="player-meta-row">
+                    <div><span data-role="current-time">0:00</span> / <span data-role="duration">0:00</span></div>
+                    <div class="player-utility">
+                      <button data-role="speed-toggle" type="button">1x</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+        <article class="episode-card">
+          <p class="episode-meta">Episode 7</p>
+          <h2 class="episode-title">Post-Nehru Upheaval and Indira's Ascent</h2>
+          <p class="episode-description-preview">
+            The party bosses think they can control Indira Gandhi. They are wrong.
+          </p>
+          <div class="episode-details">
+            <span class="episode-description-more" data-role="episode-description-more">
+              Indira Gandhi inherits power as a compromise candidate the Congress Syndicate expects to manage. They will spend years discovering their mistake. She fights her own party for control, splits Congress in 1969, and wins a massive mandate in the 1971 general election on the slogan 'Garibi Hatao' — abolish poverty. Weeks later, East Pakistan erupts in mass violence as the Pakistani military suppresses Bengali nationalism with extraordinary brutality. Ten million refugees cross into India. Indira Gandhi commits India's military. In December 1971, the Pakistani army in the east surrenders to Indian forces in under two weeks. Bangladesh is born. Indira returns to Delhi as a conquering hero — Time magazine compares her to Durga, the Hindu goddess of war. The adulation creates its own dangers. A leader who has known real power — and who has seen rivals try to remove her — begins to treat threats to her position as threats to the nation.
+            </span>
+            <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
+          </div>
+          <div class="episode-player">
+            <div class="audio-shell">
+              <audio class="native-audio" preload="metadata">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/india-after-gandhi-episodes-1-10-20260328T1559/episode-7.mp3" type="audio/mpeg">
+                Your browser does not support the audio element.
+              </audio>
+              <div class="player-row">
+                <button class="play-toggle" data-role="hero-play" type="button" aria-label="Play audio">
+                  <svg data-role="play-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M8 5.14v13.72L19 12 8 5.14z"></path>
+                  </svg>
+                </button>
+                <div class="progress-cluster">
+                  <input class="timeline" data-role="timeline" type="range" min="0" max="100" step="0.1" value="0" aria-label="Seek through audio">
+                  <div class="player-meta-row">
+                    <div><span data-role="current-time">0:00</span> / <span data-role="duration">0:00</span></div>
+                    <div class="player-utility">
+                      <button data-role="speed-toggle" type="button">1x</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+        <article class="episode-card">
+          <p class="episode-meta">Episode 8</p>
+          <h2 class="episode-title">Emergency and Democratic Recovery</h2>
+          <p class="episode-description-preview">
+            Democracy is suspended. Sanjay Gandhi runs the country from the back seat. Then something unexpected happens.
+          </p>
+          <div class="episode-details">
+            <span class="episode-description-more" data-role="episode-description-more">
+              June 25, 1975. President Fakhruddin Ali Ahmed, acting on Indira Gandhi's advice, declares a state of Emergency. Opposition leaders are arrested overnight. The press is censored. Fundamental rights are suspended. For twenty-one months, Indira governs without parliament and Sanjay Gandhi — her younger son, with no elected office — runs coercive social campaigns: forced sterilizations, slum demolitions, urban beautification programs that destroy the livelihoods of the poor. Jayaprakash Narayan, the aging Gandhian opposition leader, is imprisoned. Yet something underground persists: civil resistance, pamphlets, the memory of what democracy was supposed to mean. In 1977, Indira calls elections, confident of victory. Instead, Indians vote her out — the first transfer of power away from Congress since independence. The Janata coalition takes office. It soon fractures and fails. But its brief existence proves something essential: Indian democracy has roots deeper than any individual leader, deeper even than the party that claimed to have created it.
+            </span>
+            <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
+          </div>
+          <div class="episode-player">
+            <div class="audio-shell">
+              <audio class="native-audio" preload="metadata">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/india-after-gandhi-episodes-1-10-20260328T1559/episode-8.mp3" type="audio/mpeg">
+                Your browser does not support the audio element.
+              </audio>
+              <div class="player-row">
+                <button class="play-toggle" data-role="hero-play" type="button" aria-label="Play audio">
+                  <svg data-role="play-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M8 5.14v13.72L19 12 8 5.14z"></path>
+                  </svg>
+                </button>
+                <div class="progress-cluster">
+                  <input class="timeline" data-role="timeline" type="range" min="0" max="100" step="0.1" value="0" aria-label="Seek through audio">
+                  <div class="player-meta-row">
+                    <div><span data-role="current-time">0:00</span> / <span data-role="duration">0:00</span></div>
+                    <div class="player-utility">
+                      <button data-role="speed-toggle" type="button">1x</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+        <article class="episode-card">
+          <p class="episode-meta">Episode 9</p>
+          <h2 class="episode-title">Fragmentation, Identity Politics, and the End of One-Party India</h2>
+          <p class="episode-description-preview">
+            Operation Bluestar. Then a knock at the back door of the Prime Minister's house.
+          </p>
+          <div class="episode-details">
+            <span class="episode-description-more" data-role="episode-description-more">
+              Punjab is burning. Sikh militants, led by the charismatic and volatile Jarnail Singh Bhindranwale, have turned the Golden Temple in Amritsar into an armed stronghold. Demands for Khalistan — a separate Sikh homeland — escalate into assassinations, bombings, and the systematic killing of Hindus. Indira Gandhi orders Operation Bluestar: the Indian army storms the Golden Temple in June 1984. Bhindranwale dies in the fighting. The temple is damaged. The operation succeeds tactically. Its consequences are catastrophic. On October 31, 1984, Indira Gandhi is shot by two of her Sikh bodyguards in the garden of her own residence. Anti-Sikh violence erupts across India in the days that follow — organized, brutal, and largely unpunished. Thousands die. But the republic does not collapse: elections are called, a new government takes power, and democratic processes resume. India survives its worst political crisis since Partition through the same instrument that always saves it — the vote.
+            </span>
+            <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
+          </div>
+          <div class="episode-player">
+            <div class="audio-shell">
+              <audio class="native-audio" preload="metadata">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/india-after-gandhi-episodes-1-10-20260328T1559/episode-9.mp3" type="audio/mpeg">
+                Your browser does not support the audio element.
+              </audio>
+              <div class="player-row">
+                <button class="play-toggle" data-role="hero-play" type="button" aria-label="Play audio">
+                  <svg data-role="play-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M8 5.14v13.72L19 12 8 5.14z"></path>
+                  </svg>
+                </button>
+                <div class="progress-cluster">
+                  <input class="timeline" data-role="timeline" type="range" min="0" max="100" step="0.1" value="0" aria-label="Seek through audio">
+                  <div class="player-meta-row">
+                    <div><span data-role="current-time">0:00</span> / <span data-role="duration">0:00</span></div>
+                    <div class="player-utility">
+                      <button data-role="speed-toggle" type="button">1x</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+        <article class="episode-card">
+          <p class="episode-meta">Episode 10</p>
+          <h2 class="episode-title">Hindutva, Liberalization, and the Bargaining Republic</h2>
+          <p class="episode-description-preview">
+            A sixteenth-century mosque is demolished by a crowd. India survives that too.
+          </p>
+          <div class="episode-details">
+            <span class="episode-description-more" data-role="episode-description-more">
+              December 6, 1992. A Hindu nationalist crowd demolishes the Babri Mosque in Ayodhya — a sixteenth-century structure that, they claim, marks the birthplace of Ram. The demolition is broadcast live. Communal riots sweep India in the weeks that follow, killing thousands in Bombay, Surat, Delhi. The secular promise of the republic seems, for a moment, to have been broken beyond repair. It holds, narrowly. Meanwhile, Rajiv Gandhi's economic liberalization has already begun India's transformation: satellite television, mobile phones, software exports, a new middle class that shops in malls and argues in English on the internet. Two Indias coexist in the same decade — a village India still governed by panchayats and seasonal debt, and a Bangalore India of air-conditioned offices and stock market dreams. The republic holds both, imperfectly, argumentatively, through elections that nobody fully controls. Not quite a democracy. Not quite failing. Something stranger and more durable: a bargaining republic that will not stop bargaining.
+            </span>
+            <button class="description-toggle" data-role="description-toggle" type="button" aria-expanded="false">Read more</button>
+          </div>
+          <div class="episode-player">
+            <div class="audio-shell">
+              <audio class="native-audio" preload="metadata">
+                <source src="https://github.com/baqiral-1/podcast_agent/releases/download/india-after-gandhi-episodes-1-10-20260328T1559/episode-10.mp3" type="audio/mpeg">
                 Your browser does not support the audio element.
               </audio>
               <div class="player-row">
@@ -771,145 +829,89 @@
       </div>
     </section>
   </main>
+
   <footer class="site-footer">
     <div class="shell site-footer-inner">
-      <a class="github-footer-link" href="https://github.com/baqiral-1/podcast_agent" aria-label="Hosted on GitHub: open the podcast_agent repository">
-        <svg class="github-mark" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M12 .5C5.65.5.5 5.65.5 12A11.5 11.5 0 0 0 8.36 22.93c.58.1.79-.25.79-.56v-1.96c-3.2.69-3.87-1.36-3.87-1.36-.52-1.33-1.28-1.68-1.28-1.68-1.05-.72.08-.71.08-.71 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.36.96.1-.75.4-1.25.73-1.54-2.56-.29-5.26-1.28-5.26-5.68 0-1.25.45-2.27 1.18-3.08-.12-.29-.51-1.46.12-3.02 0 0 .96-.31 3.15 1.18a10.9 10.9 0 0 1 5.74 0c2.18-1.49 3.14-1.18 3.14-1.18.63 1.56.24 2.73.12 3.02.74.81 1.18 1.83 1.18 3.08 0 4.41-2.7 5.38-5.28 5.67.41.35.77 1.03.77 2.08v3.08c0 .31.21.67.8.56A11.5 11.5 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5z"></path>
+      <a class="github-footer-link" href="https://github.com/baqiral-1/podcast_agent" target="_blank" rel="noopener">
+        <svg class="github-mark" viewBox="0 0 98 96" aria-label="GitHub">
+          <path fill-rule="evenodd" clip-rule="evenodd" d="M48.854 0C21.839 0 0 22 0 49.217c0 21.756 13.993 40.172 33.405 46.69 2.427.49 3.316-1.059 3.316-2.362 0-1.141-.08-5.052-.08-9.127-13.59 2.934-16.42-5.867-16.42-5.867-2.184-5.704-5.42-7.17-5.42-7.17-4.448-3.015.324-3.015.324-3.015 4.934.326 7.523 5.052 7.523 5.052 4.367 7.496 11.404 5.378 14.235 4.074.404-3.178 1.699-5.378 3.074-6.6-10.839-1.141-22.243-5.378-22.243-24.283 0-5.378 1.94-9.778 5.014-13.2-.485-1.222-2.184-6.275.486-13.038 0 0 4.125-1.304 13.426 5.052a46.97 46.97 0 0 1 12.214-1.63c4.125 0 8.33.571 12.213 1.63 9.302-6.356 13.427-5.052 13.427-5.052 2.67 6.763.97 11.816.485 13.038 3.155 3.422 5.015 7.822 5.015 13.2 0 18.905-11.404 23.06-22.324 24.283 1.78 1.548 3.316 4.481 3.316 9.126 0 6.6-.08 11.897-.08 13.526 0 1.304.89 2.853 3.316 2.364 19.412-6.52 33.405-24.935 33.405-46.691C97.707 22 75.788 0 48.854 0z"/>
         </svg>
-        <span>Hosted on GitHub</span>
+        GitHub
       </a>
     </div>
   </footer>
 
   <script>
-    const speeds = [1, 1.5, 2];
+    document.querySelectorAll('.episode-card').forEach(card => {
+      const audio = card.querySelector('.native-audio');
+      const playBtn = card.querySelector('[data-role="hero-play"]');
+      const playIcon = card.querySelector('[data-role="play-icon"]');
+      const timeline = card.querySelector('[data-role="timeline"]');
+      const currentTimeEl = card.querySelector('[data-role="current-time"]');
+      const durationEl = card.querySelector('[data-role="duration"]');
+      const speedBtn = card.querySelector('[data-role="speed-toggle"]');
+      const detailsEl = card.querySelector('.episode-details');
+      const toggleBtn = card.querySelector('[data-role="description-toggle"]');
+      const moreEl = card.querySelector('[data-role="episode-description-more"]');
 
-    function formatTime(value) {
-      if (!Number.isFinite(value) || value < 0) {
-        return "0:00";
+      const PLAY_PATH = 'M8 5.14v13.72L19 12 8 5.14z';
+      const PAUSE_PATH = 'M6 19h4V5H6v14zm8-14v14h4V5h-4z';
+      const speeds = [1, 1.25, 1.5, 2];
+      let speedIdx = 0;
+
+      function fmt(s) {
+        const m = Math.floor(s / 60), sec = Math.floor(s % 60);
+        return m + ':' + String(sec).padStart(2, '0');
       }
 
-      const hours = Math.floor(value / 3600);
-      const minutes = Math.floor((value % 3600) / 60);
-      const seconds = Math.floor(value % 60).toString().padStart(2, "0");
-
-      if (hours > 0) {
-        return `${hours}:${minutes.toString().padStart(2, "0")}:${seconds}`;
+      if (audio) {
+        audio.addEventListener('loadedmetadata', () => {
+          durationEl.textContent = fmt(audio.duration);
+          timeline.max = audio.duration;
+        });
+        audio.addEventListener('timeupdate', () => {
+          currentTimeEl.textContent = fmt(audio.currentTime);
+          timeline.value = audio.currentTime;
+        });
+        audio.addEventListener('ended', () => {
+          playIcon.setAttribute('d', PLAY_PATH);
+        });
       }
 
-      return `${minutes}:${seconds}`;
-    }
-
-    document.querySelectorAll(".episode-card").forEach((episodeCard) => {
-      const audio = episodeCard.querySelector("audio");
-      const heroPlay = episodeCard.querySelector('[data-role="hero-play"]');
-      const playIcon = episodeCard.querySelector('[data-role="play-icon"]');
-      const timeline = episodeCard.querySelector('[data-role="timeline"]');
-      const currentTime = episodeCard.querySelector('[data-role="current-time"]');
-      const duration = episodeCard.querySelector('[data-role="duration"]');
-      const speedToggle = episodeCard.querySelector('[data-role="speed-toggle"]');
-      const descriptionToggle = episodeCard.querySelector('[data-role="description-toggle"]');
-      const episodeDetails = episodeCard.querySelector(".episode-details");
-      let isSeeking = false;
-
-      function syncPlayButton() {
-        const paused = audio.paused;
-        heroPlay.setAttribute("aria-label", paused ? "Play audio" : "Pause audio");
-        playIcon.innerHTML = paused
-          ? '<path d="M8 5.14v13.72L19 12 8 5.14z"></path>'
-          : '<path d="M7 5h4v14H7zM13 5h4v14h-4z"></path>';
+      if (playBtn) {
+        playBtn.addEventListener('click', () => {
+          document.querySelectorAll('.native-audio').forEach(a => {
+            if (a !== audio && !a.paused) { a.pause(); }
+          });
+          if (audio.paused) {
+            audio.play();
+            playIcon.setAttribute('d', PAUSE_PATH);
+          } else {
+            audio.pause();
+            playIcon.setAttribute('d', PLAY_PATH);
+          }
+        });
       }
 
-      function syncTimeline() {
-        if (!Number.isFinite(audio.duration) || audio.duration <= 0) {
-          timeline.disabled = true;
-          timeline.max = "0";
-          timeline.value = "0";
-          currentTime.textContent = "0:00";
-          duration.textContent = "0:00";
-          return;
-        }
-
-        timeline.disabled = false;
-        timeline.max = String(audio.duration);
-
-        if (!isSeeking) {
-          timeline.value = String(audio.currentTime);
-          currentTime.textContent = formatTime(audio.currentTime);
-        }
-
-        duration.textContent = formatTime(audio.duration);
+      if (timeline) {
+        timeline.addEventListener('input', () => { audio.currentTime = timeline.value; });
       }
 
-      function commitSeek() {
-        if (!Number.isFinite(audio.duration) || audio.duration <= 0) {
-          return;
-        }
-
-        audio.currentTime = Math.min(Number(timeline.value), audio.duration);
-        currentTime.textContent = formatTime(audio.currentTime);
+      if (speedBtn) {
+        speedBtn.addEventListener('click', () => {
+          speedIdx = (speedIdx + 1) % speeds.length;
+          audio.playbackRate = speeds[speedIdx];
+          speedBtn.textContent = speeds[speedIdx] + 'x';
+        });
       }
 
-      heroPlay.addEventListener("click", () => {
-        if (audio.paused) {
-          void audio.play();
-        } else {
-          audio.pause();
-        }
-      });
-
-      timeline.addEventListener("pointerdown", () => {
-        isSeeking = true;
-      });
-
-      timeline.addEventListener("input", () => {
-        if (!Number.isFinite(audio.duration) || audio.duration <= 0) {
-          return;
-        }
-
-        if (isSeeking) {
-          currentTime.textContent = formatTime(Number(timeline.value));
-          return;
-        }
-
-        commitSeek();
-      });
-
-      timeline.addEventListener("change", () => {
-        commitSeek();
-        isSeeking = false;
-        syncTimeline();
-      });
-
-      timeline.addEventListener("pointerup", () => {
-        commitSeek();
-        isSeeking = false;
-        syncTimeline();
-      });
-
-      speedToggle.addEventListener("click", () => {
-        const currentIndex = speeds.indexOf(audio.playbackRate);
-        const nextRate = speeds[(currentIndex + 1) % speeds.length];
-        audio.playbackRate = nextRate;
-        speedToggle.textContent = `${nextRate}x`;
-      });
-
-      descriptionToggle.addEventListener("click", () => {
-        const isOpen = episodeDetails.classList.toggle("is-open");
-        descriptionToggle.textContent = isOpen ? "Read less" : "Read more";
-        descriptionToggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
-      });
-
-      audio.addEventListener("loadedmetadata", syncTimeline);
-      audio.addEventListener("durationchange", syncTimeline);
-      audio.addEventListener("timeupdate", syncTimeline);
-      audio.addEventListener("play", syncPlayButton);
-      audio.addEventListener("pause", syncPlayButton);
-      audio.addEventListener("ended", syncPlayButton);
-
-      syncPlayButton();
-      syncTimeline();
+      if (toggleBtn) {
+        toggleBtn.addEventListener('click', () => {
+          const open = detailsEl.classList.toggle('is-open');
+          toggleBtn.textContent = open ? 'Show less' : 'Read more';
+          toggleBtn.setAttribute('aria-expanded', open);
+        });
+      }
     });
   </script>
 </body>
