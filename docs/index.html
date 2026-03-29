@@ -20,7 +20,7 @@
       --font:          "Avenir Next", "SF Pro Text", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
       --font-display:  "Avenir Next Condensed", "Avenir Next", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
       --max-width:     1410px;
-      --page-pad:      2.1875rem;
+      --page-pad:      5%;
     }
 
     *, *::before, *::after { box-sizing: border-box; }
@@ -93,56 +93,7 @@
     .hero-inner {
       display: flex;
       align-items: center;
-    }
-
-    .hero-copy {
-      max-width: 640px;
-      flex: 1 1 auto;
-    }
-
-    .hero-eyebrow {
-      display: block;
-      font-size: 1.07rem;
-      font-weight: 800;
-      letter-spacing: 0.16em;
-      text-transform: uppercase;
-      color: var(--brand-gold);
-      margin-bottom: 1.4rem;
-    }
-
-    .hero-stats {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.5rem 1.6rem;
-      margin-bottom: 2.4rem;
-      font-size: 0.82rem;
-      font-weight: 700;
-      letter-spacing: 0.05em;
-      text-transform: uppercase;
-      color: var(--muted);
-    }
-
-    .hero-cta {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.55rem;
-      padding: 0.78rem 1.8rem;
-      border: none;
-      border-radius: 999px;
-      background: var(--brand-gold);
-      color: var(--void);
-      font-size: 0.85rem;
-      font-weight: 800;
-      letter-spacing: 0.07em;
-      text-transform: uppercase;
-      box-shadow: 0 4px 20px rgba(200, 146, 42, 0.35);
-      transition: background 0.22s ease, transform 0.18s ease, box-shadow 0.22s ease;
-    }
-    .hero-cta:hover {
-      background: var(--brand-gold-lt);
-      color: var(--void);
-      transform: translateY(-1px);
-      box-shadow: 0 6px 28px rgba(200, 146, 42, 0.5);
+      justify-content: center;
     }
 
     /* ─── HERO CAROUSEL ──────────────────────────────────────── */
@@ -150,7 +101,7 @@
     .hero-carousel-wrap {
       flex: 0 0 auto;
       width: clamp(274px, 37.6%, 496px);
-      margin-left: clamp(3rem, 6vw, 7rem);
+      margin-left: 0;
       display: flex;
       flex-direction: column;
     }
@@ -295,9 +246,6 @@
         to   { opacity: 1; transform: translateY(0); }
       }
 
-      .hero-eyebrow       { animation: fadeSlideUp 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.05s both; }
-      .hero-stats         { animation: fadeSlideUp 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.12s both; }
-      .hero-cta           { animation: fadeSlideUp 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.20s both; }
       .hero-carousel-wrap { animation: fadeSlideUp 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.28s both; }
     }
 
@@ -523,21 +471,13 @@
 
     @media screen and (max-width: 900px) {
       .hero-inner {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 1.5rem;
+        justify-content: center;
       }
-      .hero-copy { max-width: 100%; }
-      .hero-carousel-wrap {
-        width: 100%;
-        max-width: 460px;
-        margin-left: 0;
-      }
+      .hero-carousel-wrap { width: 100%; max-width: 460px; margin: 0 auto; }
       .collection-grid { grid-template-columns: repeat(3, 1fr); }
     }
 
     @media screen and (max-width: 640px) {
-      :root { --page-pad: 1.1rem; }
       html { font-size: 15px; }
       .hero { padding: 3.5rem 0 3rem; min-height: auto; }
       .hero-carousel-wrap { max-width: 100%; }
@@ -581,11 +521,6 @@
   <main>
     <section class="hero">
       <div class="shell hero-inner">
-        <div class="hero-copy">
-        <div class="hero-eyebrow">History &amp; Narrative</div>
-        <p class="hero-stats">15 Collections &nbsp;|&nbsp; 78 Episodes &nbsp;|&nbsp; ~96 Hours</p>
-        <a class="hero-cta" href="#collections">Browse Collections</a>
-        </div>
         <div class="hero-carousel-wrap">
           <div class="hero-carousel" aria-label="Collection covers">
 
