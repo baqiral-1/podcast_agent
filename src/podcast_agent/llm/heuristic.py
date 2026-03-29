@@ -8,7 +8,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from podcast_agent.llm.base import LLMClient, PromptPayload
+from podcast_agent.llm.base import LLMClient, PromptPayload, prompt_log_metadata
 from podcast_agent.llm.concurrency import llm_semaphore_for
 from podcast_agent.schemas.models import GroundingStatus
 
@@ -32,21 +32,33 @@ class HeuristicLLMClient(LLMClient):
                     "llm_request",
                     client="heuristic",
                     schema_name=schema_name,
-                    instructions=instructions,
-                    payload=payload,
+                    **prompt_log_metadata(instructions, payload),
                 )
-            generator = getattr(self, f"_generate_{schema_name}", None)
-            if generator is None:
-                raise ValueError(f"No heuristic generator available for schema '{schema_name}'.")
-            response = generator(payload)
-            if self.run_logger is not None:
-                self.run_logger.log(
-                    "llm_response",
-                    client="heuristic",
-                    schema_name=schema_name,
-                    response=response,
-                )
-            return response_model.model_validate(response)
+            try:
+                generator = getattr(self, f"_generate_{schema_name}", None)
+                if generator is None:
+                    raise ValueError(f"No heuristic generator available for schema '{schema_name}'.")
+                response = generator(payload)
+                if self.run_logger is not None:
+                    self.run_logger.log(
+                        "llm_response",
+                        client="heuristic",
+                        schema_name=schema_name,
+                        response=response,
+                    )
+                return response_model.model_validate(response)
+            except Exception as exc:
+                if self.run_logger is not None:
+                    self.run_logger.log(
+                        "llm_error",
+                        client="heuristic",
+                        schema_name=schema_name,
+                        error_type=type(exc).__name__,
+                        error_message=str(exc),
+                        instructions=instructions,
+                        payload=payload,
+                    )
+                raise
 
     def _generate_book_structure(self, payload: PromptPayload) -> dict[str, Any]:
         return payload["draft"]

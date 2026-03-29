@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 from pydantic import BaseModel
 
 from podcast_agent.config import LLMConfig, Settings
-from podcast_agent.llm.base import LLMClient, LLMContentFilterError, PromptPayload
+from podcast_agent.llm.base import LLMClient, LLMContentFilterError, PromptPayload, prompt_log_metadata
 from podcast_agent.llm.concurrency import configure_llm_semaphore, llm_semaphore_for
 
 
@@ -156,12 +156,11 @@ class OpenAICompatibleLLMClient(LLMClient):
                     "llm_request",
                     client="openai-compatible",
                     schema_name=schema_name,
-                    instructions=system_text,
-                    payload=user_text,
                     model=selected_model,
                     timeout_seconds=self.config.timeout_seconds,
                     api_mode="responses" if use_responses_api else "chat_completions",
                     reasoning_effort=reasoning_effort or "none",
+                    **prompt_log_metadata(system_text, user_text),
                 )
             try:
                 response = self.transport.post_json(
@@ -193,6 +192,8 @@ class OpenAICompatibleLLMClient(LLMClient):
                         schema_name=schema_name,
                         error_type=type(exc).__name__,
                         error_message=str(exc),
+                        instructions=system_text,
+                        payload=user_text,
                     )
                 raise
 

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+import hashlib
+import json
 from typing import Any
 
 from pydantic import BaseModel
@@ -35,3 +37,20 @@ class LLMClient(ABC):
         response_model: type[BaseModel],
     ) -> BaseModel:
         """Generate and validate structured JSON for a response model."""
+
+
+def _serialize_prompt_component(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    return json.dumps(value, default=str, sort_keys=True)
+
+
+def prompt_log_metadata(instructions: Any, payload: Any) -> dict[str, Any]:
+    instructions_text = _serialize_prompt_component(instructions)
+    payload_text = _serialize_prompt_component(payload)
+    return {
+        "instructions_char_count": len(instructions_text),
+        "payload_char_count": len(payload_text),
+        "instructions_sha256": hashlib.sha256(instructions_text.encode("utf-8")).hexdigest(),
+        "payload_sha256": hashlib.sha256(payload_text.encode("utf-8")).hexdigest(),
+    }

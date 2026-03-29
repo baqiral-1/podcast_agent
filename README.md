@@ -46,7 +46,7 @@ podcast-agent render-audio-from-manifest ./.podcast_agent/runs/example-book-2026
 
 ## Outputs
 
-Each run writes artifacts under `.podcast_agent/runs/<book-title>-<timestamp-to-minute>/`, including a `run.log` with stage transitions, prompts, and responses.
+Each run writes artifacts under `.podcast_agent/runs/<book-title>-<timestamp-to-minute>/`, including a `run.log` with stage transitions, prompt metadata for successful LLM requests (and full prompts only on LLM errors), plus responses.
 
 Each episode directory contains a canonical `episode_output.json` artifact plus companion script/manifest files and optional final audio.
 

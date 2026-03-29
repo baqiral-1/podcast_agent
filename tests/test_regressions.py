@@ -546,6 +546,13 @@ def test_run_log_captures_llm_prompts_and_artifact_writes(tmp_path: Path) -> Non
     assert any(line["event_type"] == "llm_request" for line in lines)
     assert any(line["event_type"] == "artifact_written" for line in lines)
     assert any(line["event_type"] == "stage_start" for line in lines)
+    llm_requests = [line for line in lines if line["event_type"] == "llm_request"]
+    assert llm_requests
+    payload = llm_requests[0]["payload"]
+    assert "instructions" not in payload
+    assert "payload" not in payload
+    assert payload["instructions_char_count"] > 0
+    assert payload["payload_char_count"] > 0
 
 
 def test_failed_beat_write_logs_stage_failure_and_skips_episode_output(tmp_path: Path) -> None:
@@ -726,6 +733,8 @@ def test_openai_client_logs_llm_error_for_timeout(tmp_path: Path) -> None:
     assert errors
     assert errors[0]["payload"]["schema_name"] == "structured_chapter"
     assert errors[0]["payload"]["error_type"] == "TimeoutError"
+    assert errors[0]["payload"]["instructions"].startswith("Normalize this chapter")
+    assert '"schema_name": "structured_chapter"' in errors[0]["payload"]["payload"]
 
 
 def test_run_logger_remains_parseable_under_concurrent_writes(tmp_path: Path) -> None:

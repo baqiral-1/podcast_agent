@@ -8,7 +8,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from podcast_agent.config import LLMConfig
-from podcast_agent.llm.base import LLMClient, LLMContentFilterError, PromptPayload
+from podcast_agent.llm.base import LLMClient, LLMContentFilterError, PromptPayload, prompt_log_metadata
 from podcast_agent.llm.concurrency import llm_semaphore_for
 from podcast_agent.llm.openai_compatible import (
     HTTPTransport,
@@ -73,10 +73,9 @@ class AnthropicLLMClient(LLMClient):
                     "llm_request",
                     client="anthropic",
                     schema_name=schema_name,
-                    instructions=instructions,
-                    payload=user_content,
                     model=selected_model,
                     timeout_seconds=self.config.timeout_seconds,
+                    **prompt_log_metadata(instructions, user_content),
                 )
             try:
                 response = self.transport.post_json(
@@ -104,6 +103,8 @@ class AnthropicLLMClient(LLMClient):
                         schema_name=schema_name,
                         error_type=type(exc).__name__,
                         error_message=str(exc),
+                        instructions=instructions,
+                        payload=user_content,
                     )
                 raise
 
