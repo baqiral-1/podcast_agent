@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from podcast_agent.agents.base import Agent
+from podcast_agent.run_logging import submit_with_context
 from podcast_agent.schemas.models import (
     ClaimAssessment,
     EpisodeScript,
@@ -51,7 +52,7 @@ class GroundingValidationAgent(Agent):
                     (
                         index,
                         segment,
-                        executor.submit(self._validate_segment, script, segment, retrieval_hit_map),
+                        submit_with_context(executor, self._validate_segment, script, segment, retrieval_hit_map),
                     )
                     for index, segment in enumerate(script.segments)
                 ]

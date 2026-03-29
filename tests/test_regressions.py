@@ -17,7 +17,7 @@ from podcast_agent.llm import HeuristicLLMClient
 from podcast_agent.llm.base import LLMClient, LLMContentFilterError
 from podcast_agent.llm.openai_compatible import HTTPTransport, OpenAICompatibleLLMClient
 from podcast_agent.pipeline.orchestrator import PipelineOrchestrator
-from podcast_agent.run_logging import RunLogger
+from podcast_agent.run_logging import RunLogger, submit_with_context
 from podcast_agent.schemas.models import (
     BookAnalysis,
     BookChapter,
@@ -770,6 +770,34 @@ def test_run_logger_preserves_buffered_and_concurrent_events(tmp_path: Path) -> 
     assert len(parsed) == 210
     assert sum(1 for line in parsed if line["event_type"] == "buffered_event") == 10
     assert sum(1 for line in parsed if line["event_type"] == "thread_event") == 200
+
+
+def test_run_logger_context_defaults_and_threadpool_propagation(tmp_path: Path) -> None:
+    run_logger = RunLogger(tmp_path / "runs")
+    run_logger.bind_run("context-run")
+    run_logger.log("unscoped_event")
+
+    with run_logger.context(book_id="book-a", book_title="Book A"):
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [
+                submit_with_context(executor, run_logger.log, "scoped_event", sequence=index)
+                for index in range(6)
+            ]
+            for future in futures:
+                future.result()
+
+    lines = [
+        json.loads(line)
+        for line in (tmp_path / "runs" / "context-run" / "run.log").read_text(encoding="utf-8").splitlines()
+    ]
+    assert lines[0]["event_type"] == "unscoped_event"
+    assert lines[0]["payload"]["book_id"] is None
+    assert lines[0]["payload"]["book_title"] is None
+
+    scoped_events = [line for line in lines if line["event_type"] == "scoped_event"]
+    assert len(scoped_events) == 6
+    assert all(line["payload"]["book_id"] == "book-a" for line in scoped_events)
+    assert all(line["payload"]["book_title"] == "Book A" for line in scoped_events)
 
 
 def test_planning_retries_after_non_compliant_series_plan(tmp_path: Path) -> None:

@@ -10,6 +10,7 @@ from pydantic import ValidationError
 
 from podcast_agent.agents.base import Agent
 from podcast_agent.llm.openai_compatible import OpenAICompatibleLLMClient
+from podcast_agent.run_logging import submit_with_context
 from podcast_agent.schemas.models import (
     BeatScript,
     BeatScriptDraft,
@@ -99,7 +100,8 @@ class WritingAgent(Agent):
         executor = ThreadPoolExecutor(max_workers=self.beat_parallelism)
         try:
             future_to_payload = {
-                executor.submit(self._write_beat, beat_payload): beat_payload for beat_payload in beat_payloads
+                submit_with_context(executor, self._write_beat, beat_payload): beat_payload
+                for beat_payload in beat_payloads
             }
             for future in as_completed(future_to_payload):
                 beat_payload = future_to_payload[future]

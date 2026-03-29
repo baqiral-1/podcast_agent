@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+from contextvars import ContextVar, copy_context
 import json
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 
 class RunLogger:
@@ -18,6 +20,7 @@ class RunLogger:
         self.log_path: Path | None = None
         self._pending_events: list[dict[str, Any]] = []
         self._lock = threading.Lock()
+        self._context: ContextVar[dict[str, Any]] = ContextVar("run_logger_context", default={})
 
     def bind_run(self, run_id: str) -> None:
         """Bind the logger to a concrete run directory and flush buffered events."""
@@ -35,10 +38,17 @@ class RunLogger:
     def log(self, event_type: str, **payload: Any) -> None:
         """Record an event immediately or buffer it until the run is initialized."""
 
+        context_payload = self._context.get()
+        resolved_payload = {
+            **context_payload,
+            **payload,
+        }
+        resolved_payload.setdefault("book_id", None)
+        resolved_payload.setdefault("book_title", None)
         event = {
             "timestamp": datetime.now(UTC).isoformat(),
             "event_type": event_type,
-            "payload": payload,
+            "payload": resolved_payload,
         }
         with self._lock:
             if self.log_path is None:
@@ -46,9 +56,31 @@ class RunLogger:
                 return
             self._write_event_locked(event)
 
+    @contextmanager
+    def context(self, **payload: Any):
+        """Temporarily attach default payload fields to subsequent log events."""
+
+        merged = {**self._context.get(), **payload}
+        token = self._context.set(merged)
+        try:
+            yield
+        finally:
+            self._context.reset(token)
+
     def _write_event_locked(self, event: dict[str, Any]) -> None:
         if self.log_path is None:
             raise RuntimeError("Run log path is not initialized.")
         with self.log_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(event, default=str))
             handle.write("\n")
+
+
+def submit_with_context(executor, fn: Callable[..., Any], *args: Any, **kwargs: Any):
+    """Submit work to an executor while preserving the current contextvars state."""
+
+    context = copy_context()
+
+    def run_in_context() -> Any:
+        return context.run(fn, *args, **kwargs)
+
+    return executor.submit(run_in_context)

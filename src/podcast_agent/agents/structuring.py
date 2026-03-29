@@ -10,6 +10,7 @@ from podcast_agent.agents.base import Agent
 from podcast_agent.ingestion import normalize_source_text
 from podcast_agent.llm.base import LLMContentFilterError
 from podcast_agent.llm.openai_compatible import LLMTransportHTTPError
+from podcast_agent.run_logging import submit_with_context
 from podcast_agent.schemas.models import (
     BookChapter,
     BookChunk,
@@ -174,7 +175,7 @@ class StructuringAgent(Agent):
         structured_results: dict[int, StructuredChapter | None] = {}
         with ThreadPoolExecutor(max_workers=self.structuring_parallelism) as executor:
             future_map = {
-                executor.submit(self._structure_chapter, chapter_number, chapter_title, chapter_body): (
+                submit_with_context(executor, self._structure_chapter, chapter_number, chapter_title, chapter_body): (
                     chapter_number,
                     chapter_title,
                 )
@@ -310,7 +311,8 @@ class StructuringAgent(Agent):
         )
         with ThreadPoolExecutor(max_workers=window_parallelism) as executor:
             future_map = {
-                executor.submit(
+                submit_with_context(
+                    executor,
                     self._structure_window,
                     chapter_number,
                     chapter_title,
