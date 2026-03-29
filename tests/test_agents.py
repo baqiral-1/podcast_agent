@@ -183,7 +183,7 @@ class BeatWritingTransport:
         return HTTPResponse(status_code=200, body=body)
 
 
-def test_writing_agent_forces_medium_reasoning_effort_for_beat_writing() -> None:
+def test_writing_agent_forces_low_reasoning_effort_for_beat_writing() -> None:
     transport = BeatWritingTransport()
     llm = OpenAICompatibleLLMClient(
         config=LLMConfig(api_key="test-key", reasoning_effort="high"),
@@ -199,7 +199,7 @@ def test_writing_agent_forces_medium_reasoning_effort_for_beat_writing() -> None
 
     assert isinstance(result, BeatScript)
     assert transport.last_payload is not None
-    assert transport.last_payload["reasoning"]["effort"] == "medium"
+    assert transport.last_payload["reasoning"]["effort"] == "low"
 
 
 class MissingMetadataStructuringLLM(LLMClient):

@@ -116,9 +116,11 @@ use callbacks: "Remember the warning from years earlier..." They use
 contrast as structure — cutting between two diverging worlds rather than
 describing them in sequence.
 
-Allocate ~15-20% of your word budget to interpretive context: brief
-reflections on why a fact matters, rhetorical questions that let irony
-land, 1-2 sentence pauses after revelations.
+Allocate 25-30% of your word budget to interpretive context: scene-setting
+before key events, brief reflections on why a fact matters, atmosphere and
+physical detail that ground the listener in place and time, rhetorical
+questions that let irony land, and 2-3 sentence pauses after major
+revelations. The listener should never feel rushed past an important moment.
 
 FOLLOW THE ARC PLAN:
 - Start with the opening scene specified in the plan
@@ -128,6 +130,10 @@ FOLLOW THE ARC PLAN:
 - Land key moments using the techniques the plan specifies
 - Use the transitions the plan describes between acts
 - CHARACTERIZATION: When introducing a person for the first time, give the listener something to hold onto beyond their title — a physical detail, personality trait, telling habit, or quote from the source. Use only details present in the source.
+- PACING: After a major reversal, death, decision, or revelation, do not
+  immediately move to the next fact. Give it 1-3 sentences of space — let
+  the weight land before continuing. The listener should feel the significance
+  of the moment, not just note it.
 
 FIDELITY:
 - Every claim, fact, name, number, date in the source must appear
@@ -183,8 +189,11 @@ AVOID:
 - Repeating facts for emphasis within the same section
 - Addressing the listener as "you" more than 2-3 times per act
 
-LENGTH: 110-130% of source word count. Don't pad with content-free filler.
-Reflection and interpretation are not padding. Don't cut facts.
+LENGTH: 120-140% of source word count. Expand deliberately — use the extra
+space for scene-setting before key events, atmospheric description, pauses
+after revelations, and brief reflections on why a moment matters. Do not pad
+with content-free filler. Reflection, context, and atmosphere are not padding.
+Do not cut facts.
 
 OUTPUT: Plain text narration only. No markdown, no headers, no preamble,
 no "Here is the narration:" prefix. Preserve paragraph breaks between

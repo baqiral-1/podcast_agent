@@ -29,9 +29,9 @@ class EpisodePlanningAgent(Agent):
     instructions = (
         "Create a hierarchical series and episode plan for a single-narrator podcast. "
         "Episodes should preserve the multi-chapter clusters from analysis and return exactly the requested episode count. "
-        "Return a contiguous partition of the full chapter order, choose episode spans by chapter_ids only, and distribute "
-        "source material as evenly as practical across the requested episodes. Chunk coverage will be expanded deterministically "
-        "from those chapter spans."
+        "Choose episode spans by chapter_ids only. Prefer contiguous chapter spans across the full chapter order, and "
+        "distribute source material as evenly as practical across the requested episodes. Chunk coverage will be expanded "
+        "deterministically from those chapter spans."
     )
     response_model = PlannerSeriesPlan
 
@@ -157,7 +157,7 @@ class EpisodePlanningAgent(Agent):
             "Return the compact planner output only.",
             f"Set book_id to {payload['structure']['book_id']}.",
             f"Return exactly {episode_count} episodes.",
-            "Use chapter_ids as the authoritative contiguous partition of the selected chapters.",
+            "Use chapter_ids to define episode spans and prefer contiguous chapter spans when practical.",
             "Return only episode metadata and chapter_ids; do not include chunk_ids or beats.",
             "Keep strategy_summary, title, and themes concise.",
         ]
@@ -238,24 +238,10 @@ class EpisodePlanningAgent(Agent):
             chunk.chunk_id: len(chunk.text.split())
             for chunk in structure.chunks
         }
-        chapter_word_counts = {
-            chapter.chapter_id: sum(
-                len(chunk.text.split())
-                for chunk in structure.chunks
-                if chunk.chapter_id == chapter.chapter_id
-            )
-            for chapter in structure.chapters
-        }
         normalized_episode_data = [
             self._normalize_episode_data(episode, chapter_to_chunks, chapter_order, chunk_themes)
             for episode in sorted(plan.episodes, key=lambda episode: episode.sequence)
         ]
-        normalized_episode_data = self._rebalance_episode_data(
-            normalized_episode_data,
-            chapter_word_counts,
-            chapter_order,
-            episode_count,
-        )
         normalized_episodes = [
             EpisodePlan.model_validate(
                 self._episode_data_to_payload(
@@ -297,105 +283,6 @@ class EpisodePlanningAgent(Agent):
             "chapter_ids": chapter_ids,
             "chunk_ids": chunk_ids,
             "themes": themes or episode.themes,
-        }
-
-    def _rebalance_episode_data(
-        self,
-        episodes: list[dict],
-        chapter_word_counts: dict[str, int],
-        chapter_order: dict[str, int],
-        episode_count: int,
-    ) -> list[dict]:
-        chapter_ids = sorted(chapter_word_counts, key=lambda chapter_id: chapter_order[chapter_id])
-        if episode_count < 1:
-            raise RuntimeError("episode_count must be at least 1")
-        if episode_count > len(chapter_ids):
-            raise RuntimeError(
-                f"Requested {episode_count} episodes, but only {len(chapter_ids)} chapters are available for contiguous partitioning."
-            )
-        target_words = self._target_source_words_for_chapter_counts(chapter_word_counts, chapter_ids, episode_count)
-        partitioned_chapter_ids = self._partition_chapters(chapter_ids, chapter_word_counts, episode_count, target_words)
-        sequence_to_episode = {
-            episode["sequence"]: episode
-            for episode in episodes
-        }
-        normalized: list[dict] = []
-        for sequence, chapter_group in enumerate(partitioned_chapter_ids, start=1):
-            template = sequence_to_episode.get(sequence) or sequence_to_episode.get(min(sequence_to_episode, default=1), {
-                "episode_id": f"episode-{sequence}",
-                "title": f"Episode {sequence}",
-                "themes": [],
-                "chunk_ids": [],
-            })
-            chunk_ids = [
-                chunk_id
-                for chapter_id in chapter_group
-                for chunk_id in template.get("chunk_ids", [])
-                if chunk_id.startswith(f"{chapter_id}-chunk-")
-            ]
-            normalized.append(
-                {
-                    "episode_id": f"episode-{sequence}",
-                    "sequence": sequence,
-                    "title": template["title"],
-                    "chapter_ids": chapter_group,
-                    "chunk_ids": chunk_ids,
-                    "themes": template.get("themes", []),
-                }
-            )
-        return normalized
-
-    def _partition_chapters(
-        self,
-        chapter_ids: list[str],
-        chapter_word_counts: dict[str, int],
-        episode_count: int,
-        target_words: int,
-    ) -> list[list[str]]:
-        groups: list[list[str]] = []
-        current_group: list[str] = []
-        current_words = 0
-        remaining_groups = episode_count
-        remaining_chapters = len(chapter_ids)
-        for chapter_id in chapter_ids:
-            current_group.append(chapter_id)
-            current_words += chapter_word_counts[chapter_id]
-            remaining_chapters -= 1
-            groups_needed_after_current = remaining_groups - 1
-            if groups_needed_after_current == 0:
-                continue
-            if remaining_chapters == groups_needed_after_current:
-                groups.append(current_group)
-                current_group = []
-                current_words = 0
-                remaining_groups -= 1
-                continue
-            if current_words >= target_words:
-                groups.append(current_group)
-                current_group = []
-                current_words = 0
-                remaining_groups -= 1
-        if current_group:
-            groups.append(current_group)
-        return groups
-
-    def _merge_episode_group(
-        self,
-        episodes: list[dict],
-        *,
-        episode_id: str,
-        title: str,
-    ) -> dict:
-        chapter_ids = [chapter_id for episode in episodes for chapter_id in episode["chapter_ids"]]
-        chunk_ids = [chunk_id for episode in episodes for chunk_id in episode["chunk_ids"]]
-        themes = [theme for episode in episodes for theme in episode["themes"]]
-        return {
-            "episode_id": episode_id,
-            "sequence": episodes[0]["sequence"],
-            "title": title,
-            "chapter_ids": chapter_ids,
-            "chunk_ids": chunk_ids,
-            "themes": [theme for theme, _ in Counter(themes).most_common(4)],
         }
 
     def _episode_data_to_payload(

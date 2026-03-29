@@ -1,0 +1,129 @@
+{
+  "version": 2,
+  "theme": {
+    "delimiter": " • ",
+    "exact_count": 3,
+    "max_words_per_theme": 2,
+    "max_two_word_themes_per_episode": 1,
+    "require_geography_specificity": true
+  },
+  "carousel": {
+    "meta_font_size_rem": 0.912,
+    "theme_color": "var(--brand-gold)",
+    "metadata_color": "#ffffff",
+    "summary_location": "below_meta_rows",
+    "summary_font_scale": 0.85,
+    "layout": {
+      "theme_line": 1,
+      "meta_line": 2,
+      "summary_line": 3
+    }
+  },
+  "all_episodes": {
+    "theme_color": "var(--brand-gold)",
+    "metadata_color": "#ffffff"
+  },
+  "layout": {
+    "max_width_px": 1410,
+    "desktop_tablet_page_padding_rem": 2.1875,
+    "mobile_page_padding_rem": 1.1
+  },
+  "hero": {
+    "headline_text": "The Podcast That Built Itself",
+    "headline_font_style": "cinematic_condensed"
+  },
+  "svg": {
+    "brand_transform": "translate(836,72) translate(74,0) scale(1.2) translate(-74,0)",
+    "two_line_title_y": [690, 772],
+    "two_line_title_font_size": 72,
+    "author_baseline_y": 842,
+    "color_overrides": {
+      "freedom-at-midnight": "soft_amber"
+    }
+  },
+  "carousel_themes_by_slug": {
+    "a-peace-to-end-all-peace": [
+      "Ottoman",
+      "Levant",
+      "Arab Borders"
+    ],
+    "black-wave": [
+      "Saudi",
+      "Iran",
+      "Afghanistan"
+    ],
+    "freedom-at-midnight": [
+      "India",
+      "Pakistan",
+      "Punjab Partition"
+    ],
+    "ghost-wars": [
+      "Afghanistan",
+      "Pakistan",
+      "9/11"
+    ],
+    "gods-shadow": [
+      "Ottoman",
+      "Egypt",
+      "Mediterranean"
+    ],
+    "india-after-gandhi": [
+      "India",
+      "Kashmir",
+      "Democracy"
+    ],
+    "india-in-the-persianate-age": [
+      "India",
+      "Persianate",
+      "Mughal"
+    ],
+    "midnights-furies": [
+      "Punjab",
+      "Bengal",
+      "Partition Violence"
+    ],
+    "return-of-a-king": [
+      "Afghanistan",
+      "Kabul",
+      "British Empire"
+    ],
+    "the-anarchy": [
+      "Bengal",
+      "India",
+      "Company Rule"
+    ],
+    "the-crusades-authoritative-history": [
+      "Jerusalem",
+      "Levant",
+      "Latin Crusades"
+    ],
+    "the-fall-of-the-ottomans": [
+      "Ottoman",
+      "Anatolia",
+      "Arab Revolt"
+    ],
+    "last-mughal": [
+      "Delhi",
+      "India",
+      "Mughal Court"
+    ],
+    "the-struggle-for-pakistan": [
+      "Pakistan",
+      "Bangladesh",
+      "Military Rule"
+    ],
+    "the-great-war-for-civilisation": [
+      "Iraq",
+      "Lebanon",
+      "Middle East"
+    ]
+  },
+  "two_line_title_slugs": [
+    "a-peace-to-end-all-peace",
+    "freedom-at-midnight",
+    "india-after-gandhi",
+    "return-of-a-king",
+    "last-mughal",
+    "the-struggle-for-pakistan"
+  ]
+}

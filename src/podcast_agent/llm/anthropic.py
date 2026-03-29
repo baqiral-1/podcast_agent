@@ -39,7 +39,7 @@ class AnthropicLLMClient(LLMClient):
             raise RuntimeError("ANTHROPIC_API_KEY is required for the Anthropic LLM client.")
 
         with llm_semaphore_for(schema_name):
-            selected_model = self.config.model_overrides.get(schema_name, self.config.model_name)
+            selected_model = self.config.model_name
             endpoint = f"{self.config.anthropic_base_url.rstrip('/')}/v1/messages"
             user_content = json.dumps(
                 {

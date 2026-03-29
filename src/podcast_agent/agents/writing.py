@@ -30,7 +30,7 @@ class WritingAgent(Agent):
     instructions = (
         "Write a grounded single-narrator podcast script section for the provided beat. "
         "Use only the provided beat and retrieval hits. Write spoken narration, not notes or analysis. "
-        "Develop the beat fully enough to reflect the assigned source material, but stay concise and proportional to the assigned source volume. "
+        "Develop the beat fully. Write rich, unhurried narration that brings the material to life — include scene-setting, character detail, atmosphere, and context proportional to the significance of the events. Do not compress or skim. Cover the assigned source material with the depth a listener needs to visualize and absorb it. "
         "Coverage requirements: cover the assigned retrieval hits comprehensively. "
         "If the beat has 7 or fewer assigned chunk_ids, every assigned chunk_id must appear in at least one claim's evidence_chunk_ids. "
         "Do not focus only on early chunks if later chunks contain distinct material. "
@@ -312,7 +312,7 @@ class WritingAgent(Agent):
         retrieval_hit_map: dict[str, RetrievalHit],
         episode_target_script_words: int,
     ) -> dict[str, int]:
-        relaxed_episode_target = max(20, episode_target_script_words // 2)
+        relaxed_episode_target = max(20, int(episode_target_script_words / 1.7))
         beat_source_words = {
             beat["beat_id"]: sum(
                 len(retrieval_hit_map[chunk_id].text.split())
@@ -522,8 +522,10 @@ class WritingAgent(Agent):
             llm = llm.client_for_schema(schema_name)
         if isinstance(llm, OpenAICompatibleLLMClient):
             run_logger = getattr(llm, "run_logger", None)
-            llm_updates = {"timeout_seconds": self.beat_write_timeout_seconds}
-            llm_updates["reasoning_effort"] = "medium"
+            llm_updates = {
+                "timeout_seconds": self.beat_write_timeout_seconds,
+                "reasoning_effort": "low",
+            }
             llm = OpenAICompatibleLLMClient(
                 llm.config.model_copy(update=llm_updates),
                 transport=llm.transport,

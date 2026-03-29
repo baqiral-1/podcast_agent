@@ -784,7 +784,7 @@ def test_planning_retries_after_non_compliant_series_plan(tmp_path: Path) -> Non
         ),
         encoding="utf-8",
     )
-    settings = Settings(pipeline=PipelineConfig(artifact_root=tmp_path / "runs"))
+    settings = Settings(pipeline=PipelineConfig(artifact_root=tmp_path / "runs", min_episode_source_ratio=0.01))
     llm = FlakyPlanningLLM()
     orchestrator = PipelineOrchestrator(
         repository=InMemoryRepository(),
@@ -794,7 +794,7 @@ def test_planning_retries_after_non_compliant_series_plan(tmp_path: Path) -> Non
 
     result = orchestrator.run_pipeline(book_path, title="Retry Planned", author="A. Writer", episode_count=2)
 
-    assert llm.series_plan_calls == 1
+    assert llm.series_plan_calls == 2
     assert result["series_plan"]["episodes"]
     assert result["series_plan"]["episodes"][0]["chunk_ids"]
     assert result["series_plan"]["episodes"][0]["beats"]
@@ -802,7 +802,8 @@ def test_planning_retries_after_non_compliant_series_plan(tmp_path: Path) -> Non
     lines = [json.loads(line) for line in run_log.read_text(encoding="utf-8").splitlines()]
     diagnostics = [line for line in lines if line["event_type"] == "planning_diagnostics"]
     assert diagnostics
-    assert diagnostics[0]["payload"]["violations"] == []
+    assert diagnostics[0]["payload"]["violations"]
+    assert diagnostics[-1]["payload"]["violations"] == []
 
 
 def test_planning_retries_after_truncation_with_compact_retry_instructions(tmp_path: Path) -> None:
@@ -883,7 +884,7 @@ def test_analysis_retries_after_schema_incomplete_output(tmp_path: Path) -> None
     assert diagnostics[-1]["payload"]["violations"] == []
 
 
-def test_planning_returns_single_episode_when_book_is_below_source_word_floor() -> None:
+def test_planning_preserves_planner_episode_count_when_book_is_below_source_word_floor() -> None:
     chunk_a = "alpha " * 3000
     chunk_b = "beta " * 3000
     structure = BookStructure(
@@ -992,12 +993,17 @@ def test_planning_returns_single_episode_when_book_is_below_source_word_floor() 
 
     normalized = planner._normalize_plan(plan, structure, episode_count=1)
 
-    assert len(normalized.episodes) == 1
-    assert normalized.episodes[0].chapter_ids == ["medium-book-chapter-1", "medium-book-chapter-2"]
-    assert planner._compliance_violations(normalized, structure, analysis, episode_count=1) == []
+    assert len(normalized.episodes) == 2
+    assert [episode.chapter_ids for episode in normalized.episodes] == [
+        ["medium-book-chapter-1"],
+        ["medium-book-chapter-2"],
+    ]
+    assert planner._compliance_violations(normalized, structure, analysis, episode_count=1) == [
+        "planner returned 2 episodes instead of required 1"
+    ]
 
 
-def test_planning_splits_large_books_only_when_each_episode_meets_source_floor() -> None:
+def test_planning_preserves_planner_episode_spans_for_large_books() -> None:
     def words(label: str, count: int) -> str:
         return ((label + " ") * count).strip()
 
@@ -1076,12 +1082,16 @@ def test_planning_splits_large_books_only_when_each_episode_meets_source_floor()
 
     normalized = planner._normalize_plan(plan, structure, episode_count=2)
 
-    assert len(normalized.episodes) == 2
+    assert len(normalized.episodes) == 4
     assert [episode.chapter_ids for episode in normalized.episodes] == [
-        ["large-book-chapter-1", "large-book-chapter-2"],
-        ["large-book-chapter-3", "large-book-chapter-4"],
+        ["large-book-chapter-1"],
+        ["large-book-chapter-2"],
+        ["large-book-chapter-3"],
+        ["large-book-chapter-4"],
     ]
-    assert planner._compliance_violations(normalized, structure, analysis, episode_count=2) == []
+    assert planner._compliance_violations(normalized, structure, analysis, episode_count=2) == [
+        "planner returned 4 episodes instead of required 2"
+    ]
 
 
 def test_planning_rejects_episode_count_when_estimated_runtime_exceeds_cap() -> None:
@@ -1091,10 +1101,13 @@ def test_planning_rejects_episode_count_when_estimated_runtime_exceeds_cap() -> 
     chapter_word_count = 12000
     chapters = []
     chunks = []
-    clusters = []
+    chapter_ids: list[str] = []
+    chunk_ids: list[str] = []
     for index in range(1, 5):
         chapter_id = f"runtime-book-chapter-{index}"
         chunk_id = f"{chapter_id}-chunk-1"
+        chapter_ids.append(chapter_id)
+        chunk_ids.append(chunk_id)
         chapters.append(
             BookChapter(
                 chapter_id=chapter_id,
@@ -1118,16 +1131,16 @@ def test_planning_rejects_episode_count_when_estimated_runtime_exceeds_cap() -> 
                 themes=[f"theme-{index}"],
             )
         )
-        clusters.append(
-            EpisodeCluster(
-                cluster_id=f"cluster-{index}",
-                label=f"Cluster {index}",
-                rationale=f"Part {index}",
-                chapter_ids=[chapter_id],
-                chunk_ids=[chunk_id],
-                themes=[f"theme-{index}"],
-            )
+    clusters = [
+        EpisodeCluster(
+            cluster_id="cluster-1",
+            label="Cluster 1",
+            rationale="Single long episode.",
+            chapter_ids=chapter_ids,
+            chunk_ids=chunk_ids,
+            themes=["theme-1", "theme-2", "theme-3", "theme-4"],
         )
+    ]
     structure = BookStructure(book_id="runtime-book", title="Runtime Book", chapters=chapters, chunks=chunks)
     analysis = BookAnalysis(
         book_id="runtime-book",
@@ -1154,10 +1167,19 @@ def test_planning_allows_episode_count_when_estimated_runtime_is_within_cap() ->
     chapter_word_count = 11000
     chapters = []
     chunks = []
-    clusters = []
+    first_half_chapter_ids: list[str] = []
+    first_half_chunk_ids: list[str] = []
+    second_half_chapter_ids: list[str] = []
+    second_half_chunk_ids: list[str] = []
     for index in range(1, 5):
         chapter_id = f"runtime-ok-book-chapter-{index}"
         chunk_id = f"{chapter_id}-chunk-1"
+        if index <= 2:
+            first_half_chapter_ids.append(chapter_id)
+            first_half_chunk_ids.append(chunk_id)
+        else:
+            second_half_chapter_ids.append(chapter_id)
+            second_half_chunk_ids.append(chunk_id)
         chapters.append(
             BookChapter(
                 chapter_id=chapter_id,
@@ -1181,16 +1203,24 @@ def test_planning_allows_episode_count_when_estimated_runtime_is_within_cap() ->
                 themes=[f"theme-{index}"],
             )
         )
-        clusters.append(
-            EpisodeCluster(
-                cluster_id=f"cluster-{index}",
-                label=f"Cluster {index}",
-                rationale=f"Part {index}",
-                chapter_ids=[chapter_id],
-                chunk_ids=[chunk_id],
-                themes=[f"theme-{index}"],
-            )
-        )
+    clusters = [
+        EpisodeCluster(
+            cluster_id="cluster-1",
+            label="Cluster 1",
+            rationale="Part 1",
+            chapter_ids=first_half_chapter_ids,
+            chunk_ids=first_half_chunk_ids,
+            themes=["theme-1", "theme-2"],
+        ),
+        EpisodeCluster(
+            cluster_id="cluster-2",
+            label="Cluster 2",
+            rationale="Part 2",
+            chapter_ids=second_half_chapter_ids,
+            chunk_ids=second_half_chunk_ids,
+            themes=["theme-3", "theme-4"],
+        ),
+    ]
     structure = BookStructure(book_id="runtime-ok-book", title="Runtime OK Book", chapters=chapters, chunks=chunks)
     analysis = BookAnalysis(
         book_id="runtime-ok-book",

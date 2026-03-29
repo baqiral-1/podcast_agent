@@ -518,7 +518,7 @@ def test_pipeline_defaults_raise_parallelism() -> None:
     assert settings.pipeline.max_structuring_llm_chapter_words == 75000
     assert settings.pipeline.min_episode_source_ratio == 0.3
     assert settings.spoken_delivery.enabled is True
-    assert settings.spoken_delivery.timeout_seconds == 1200.0
+    assert settings.spoken_delivery.timeout_seconds == 10800.0
     assert settings.spoken_delivery.chunk_min_words == 700
     assert settings.spoken_delivery.chunk_max_words == 900
     assert settings.tts.kokoro_parallelism == 2
