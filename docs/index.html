@@ -190,30 +190,42 @@
       display: block;
     }
 
-    .hero-carousel-dots {
+    .hero-carousel-arrow {
       position: absolute;
-      bottom: 1rem;
-      left: 50%;
-      transform: translateX(-50%);
-      display: flex;
-      gap: 0.45rem;
+      top: 50%;
+      transform: translateY(-50%);
       z-index: 2;
-    }
-
-    .hero-carousel-dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
+      width: 2.35rem;
+      height: 2.35rem;
       border: none;
-      background: rgba(255, 255, 255, 0.3);
-      cursor: pointer;
+      border-radius: 999px;
       padding: 0;
-      transition: background 0.2s ease, transform 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: rgba(255, 255, 255, 0.84);
+      background: transparent;
+      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.55);
+      cursor: pointer;
+      transition: color 0.18s ease, transform 0.18s ease;
     }
 
-    .hero-carousel-dot.active {
-      background: var(--brand-gold);
-      transform: scale(1.5);
+    .hero-carousel-arrow:hover {
+      color: #ffffff;
+      transform: translateY(-50%) scale(1.04);
+    }
+
+    .hero-carousel-arrow:focus-visible {
+      outline: 2px solid var(--brand-gold);
+      outline-offset: 2px;
+    }
+
+    .hero-carousel-arrow.prev {
+      left: 0.7rem;
+    }
+
+    .hero-carousel-arrow.next {
+      right: 0.7rem;
     }
 
     .hero-carousel-caption {
@@ -510,8 +522,17 @@
     }
 
     @media screen and (max-width: 900px) {
+      .hero-inner {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1.5rem;
+      }
       .hero-copy { max-width: 100%; }
-      .hero-carousel-wrap { display: none; }
+      .hero-carousel-wrap {
+        width: 100%;
+        max-width: 460px;
+        margin-left: 0;
+      }
       .collection-grid { grid-template-columns: repeat(3, 1fr); }
     }
 
@@ -519,6 +540,11 @@
       :root { --page-pad: 1.1rem; }
       html { font-size: 15px; }
       .hero { padding: 3.5rem 0 3rem; min-height: auto; }
+      .hero-carousel-wrap { max-width: 100%; }
+      .hero-carousel-arrow {
+        width: 2.15rem;
+        height: 2.15rem;
+      }
       .collection-grid { grid-template-columns: repeat(2, 1fr); gap: 0.75rem; }
     }
 
@@ -639,23 +665,8 @@
               <img alt="The Great War for Civilisation cover art" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 960'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop offset='0' stop-color='%230a0c0e'/><stop offset='0.5' stop-color='%231e2830'/><stop offset='1' stop-color='%234a2e10'/></linearGradient></defs><rect width='960' height='960' fill='url(%23g)'/><g transform='translate(836,72) translate(74,0) scale(1.2) translate(-74,0)' opacity='0.72'><text x='-10' y='52' text-anchor='end' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='30' font-weight='800' letter-spacing='5' fill='white'>AGENTIC</text><text x='-10' y='84' text-anchor='end' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='26' font-weight='700' letter-spacing='5' fill='white'>PODCASTS</text><rect x='0' y='24' width='10' height='32' rx='2' fill='white'/><rect x='16' y='12' width='10' height='56' rx='2' fill='white'/><rect x='32' y='0' width='10' height='80' rx='2' fill='white'/><rect x='48' y='12' width='10' height='56' rx='2' fill='white'/><rect x='64' y='24' width='10' height='32' rx='2' fill='white'/></g><text x='80' y='620' fill='%23d8c0a0' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='82' font-weight='700'>The Great</text><text x='80' y='700' fill='%23d8c0a0' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='82' font-weight='700'>War for</text><text x='80' y='780' fill='%23d8c0a0' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='82' font-weight='700'>Civilisation</text><text x='80' y='850' fill='%23d8c0a0' font-family='Avenir Next, Segoe UI, Helvetica Neue, Arial, sans-serif' font-size='40' font-weight='400' font-style='italic' opacity='0.85'>Robert Fisk</text></svg>">
             </a>
           </div>
-            <div class="hero-carousel-dots" role="tablist" aria-label="Select cover">
-            <button class="hero-carousel-dot active" aria-label="A Peace to End All Peace"></button>
-            <button class="hero-carousel-dot" aria-label="Black Wave"></button>
-            <button class="hero-carousel-dot" aria-label="Freedom at Midnight"></button>
-            <button class="hero-carousel-dot" aria-label="Ghost Wars"></button>
-            <button class="hero-carousel-dot" aria-label="God's Shadow"></button>
-            <button class="hero-carousel-dot" aria-label="India After Gandhi"></button>
-            <button class="hero-carousel-dot" aria-label="India in the Persianate Age"></button>
-            <button class="hero-carousel-dot" aria-label="Midnight's Furies"></button>
-            <button class="hero-carousel-dot" aria-label="Return of a King"></button>
-            <button class="hero-carousel-dot" aria-label="The Anarchy"></button>
-            <button class="hero-carousel-dot" aria-label="The Crusades"></button>
-            <button class="hero-carousel-dot" aria-label="The Fall of the Ottomans"></button>
-            <button class="hero-carousel-dot" aria-label="The Last Mughal"></button>
-            <button class="hero-carousel-dot" aria-label="The Struggle for Pakistan"></button>
-            <button class="hero-carousel-dot" aria-label="The Great War for Civilisation"></button>
-            </div>
+          <button class="hero-carousel-arrow prev" type="button" aria-label="Previous cover">&#10094;</button>
+          <button class="hero-carousel-arrow next" type="button" aria-label="Next cover">&#10095;</button>
           </div>
           <div class="hero-carousel-caption">
             <div class="carousel-caption-theme-row">
@@ -948,7 +959,8 @@
   <script>
   (function () {
     var slides    = document.querySelectorAll('.hero-carousel-slide');
-    var dots      = document.querySelectorAll('.hero-carousel-dot');
+    var prevBtn   = document.querySelector('.hero-carousel-arrow.prev');
+    var nextBtn   = document.querySelector('.hero-carousel-arrow.next');
     var captTheme = document.querySelector('.carousel-caption-theme');
     var captMeta  = document.querySelector('.carousel-caption-meta');
     var captSummary = document.querySelector('.carousel-caption-summary');
@@ -966,20 +978,26 @@
     }
 
     function go(n) {
+      if (!slides.length) return;
       slides[cur].classList.remove('active');
-      dots[cur].classList.remove('active');
       cur = (n + slides.length) % slides.length;
       slides[cur].classList.add('active');
-      dots[cur].classList.add('active');
       updateCaption(cur);
     }
 
-    function start() { if (!reduced) timer = setInterval(function () { go(cur + 1); }, 3200); }
+    function start() {
+      if (slides.length < 2 || reduced) return;
+      stop();
+      timer = setInterval(function () { go(cur + 1); }, 3200);
+    }
     function stop()  { clearInterval(timer); }
 
-    dots.forEach(function (dot, i) {
-      dot.addEventListener('click', function () { stop(); go(i); start(); });
-    });
+    if (prevBtn) {
+      prevBtn.addEventListener('click', function () { stop(); go(cur - 1); start(); });
+    }
+    if (nextBtn) {
+      nextBtn.addEventListener('click', function () { stop(); go(cur + 1); start(); });
+    }
 
     var wrap = document.querySelector('.hero-carousel-wrap');
     if (wrap) {
@@ -987,6 +1005,7 @@
       wrap.addEventListener('mouseleave', start);
     }
 
+    if (!slides.length) return;
     updateCaption(0);
     start();
   }());
