@@ -17,6 +17,7 @@ from podcast_agent.cli.app import app
 from podcast_agent.config import Settings
 from podcast_agent.db import InMemoryRepository
 from podcast_agent.llm import HeuristicLLMClient
+from podcast_agent.llm.base import LLMClient
 from podcast_agent.pipeline.orchestrator import EpisodePreparation, PipelineOrchestrator
 from podcast_agent.schemas.models import (
     ClaimAssessment,
@@ -119,6 +120,55 @@ class DelayedTTSClient(TTSClient):
         del voice, audio_format, instructions
         time.sleep(self.delays[text])
         return text.encode("utf-8")
+
+
+class FlakySpokenDeliveryLLM(LLMClient):
+    """LLM stub that fails once during spoken-delivery planning, then succeeds."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.plan_calls = 0
+
+    def generate_json(self, schema_name, instructions, payload, response_model):
+        del instructions
+        if schema_name == "spoken_delivery_plan":
+            self.plan_calls += 1
+            if self.plan_calls == 1:
+                raise RuntimeError("LLM request timed out after 10800.0 seconds")
+            return response_model.model_validate(
+                {
+                    "theme": "Recovered",
+                    "threads": [
+                        {
+                            "name": "Thread",
+                            "introduced": "Act 1",
+                            "developed": "Act 2",
+                            "payoff": "Act 3",
+                            "listener_feeling": "Relief",
+                        }
+                    ],
+                    "opening": {
+                        "scene": "Opening scene",
+                        "why": "Hook",
+                        "transition_strategy": "Pull back.",
+                    },
+                    "acts": [
+                        {
+                            "number": 1,
+                            "title": "Act 1",
+                            "source_material": "Opening",
+                            "why_here": "Start here",
+                            "driving_tension": "Why now",
+                            "transition_to_next": "Next",
+                        }
+                    ],
+                    "plants_and_payoffs": [],
+                    "key_moments": [],
+                }
+            )
+        if schema_name == "spoken_delivery_narration":
+            return response_model.model_validate({"narration": payload.get("source_script", "").strip()})
+        raise AssertionError(f"Unexpected schema name: {schema_name}")
 
 
 class RetryingTTSClient(TTSClient):
@@ -1535,6 +1585,36 @@ def test_spoken_delivery_cli_writes_sibling_artifacts(tmp_path: Path, monkeypatc
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload["spoken_script"]["episode_id"] == "episode-1"
+    assert (source_path.parent / "spoken_script.json").exists()
+    assert (source_path.parent / "spoken_delivery.json").exists()
+    assert (source_path.parent / "spoken_delivery_arc_plan.json").exists()
+
+
+def test_spoken_delivery_cli_retries_timeout_and_succeeds(tmp_path: Path, monkeypatch) -> None:
+    llm = FlakySpokenDeliveryLLM()
+    orchestrator = PipelineOrchestrator(
+        repository=InMemoryRepository(),
+        llm=llm,
+        settings=Settings().model_copy(
+            update={"pipeline": Settings().pipeline.model_copy(update={"artifact_root": tmp_path / "runs"})}
+        ),
+    )
+    source_path = tmp_path / "source-run" / "observatory-book" / "episode-1" / "episode_output.json"
+    source_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest = _build_render_manifest("episode-1", ["First fact. Second fact.", "Third fact follows."])
+    _write_episode_output_artifact(source_path, manifest)
+
+    monkeypatch.setattr(
+        "podcast_agent.cli.app._build_orchestrator",
+        lambda database_url, **kwargs: orchestrator,
+    )
+
+    result = CliRunner().invoke(app, ["spoken-delivery", str(source_path)])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["spoken_script"]["episode_id"] == "episode-1"
+    assert llm.plan_calls == 2
     assert (source_path.parent / "spoken_script.json").exists()
     assert (source_path.parent / "spoken_delivery.json").exists()
     assert (source_path.parent / "spoken_delivery_arc_plan.json").exists()

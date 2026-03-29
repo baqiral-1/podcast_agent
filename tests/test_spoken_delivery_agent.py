@@ -96,6 +96,66 @@ class TwoCallSpokenDeliveryLLM(LLMClient):
         raise AssertionError(f"Unexpected schema name: {schema_name}")
 
 
+class CaptureRunLogger:
+    def __init__(self) -> None:
+        self.events: list[tuple[str, dict]] = []
+
+    def log(self, event_name: str, **payload) -> None:
+        self.events.append((event_name, payload))
+
+
+class FlakySpokenDeliveryLLM(LLMClient):
+    """Stub that can fail selected schemas for a fixed number of calls."""
+
+    def __init__(self, failures: dict[str, list[Exception]]) -> None:
+        super().__init__()
+        self.failures = {key: list(value) for key, value in failures.items()}
+        self.calls: list[str] = []
+
+    def generate_json(self, schema_name, instructions, payload, response_model):
+        del instructions
+        self.calls.append(schema_name)
+        queued = self.failures.get(schema_name)
+        if queued:
+            exc = queued.pop(0)
+            raise exc
+        if schema_name == "spoken_delivery_plan":
+            return response_model.model_validate(
+                {
+                    "theme": "Recovered theme",
+                    "threads": [
+                        {
+                            "name": "Thread",
+                            "introduced": "Act 1",
+                            "developed": "Act 2",
+                            "payoff": "Act 3",
+                            "listener_feeling": "Relief",
+                        }
+                    ],
+                    "opening": {
+                        "scene": "Opening scene",
+                        "why": "Hook",
+                        "transition_strategy": "Pull back.",
+                    },
+                    "acts": [
+                        {
+                            "number": 1,
+                            "title": "Act 1",
+                            "source_material": "Opening",
+                            "why_here": "Start here",
+                            "driving_tension": "Why now",
+                            "transition_to_next": "Next",
+                        }
+                    ],
+                    "plants_and_payoffs": [],
+                    "key_moments": [],
+                }
+            )
+        if schema_name == "spoken_delivery_narration":
+            return response_model.model_validate({"narration": payload.get("source_script", "").strip()})
+        raise AssertionError(f"Unexpected schema name: {schema_name}")
+
+
 def test_spoken_delivery_full_episode_two_call_flow() -> None:
     llm = TwoCallSpokenDeliveryLLM()
     agent = SpokenDeliveryAgent(llm, chunk_min_words=1, chunk_max_words=50)
@@ -107,6 +167,60 @@ def test_spoken_delivery_full_episode_two_call_flow() -> None:
     assert spoken_script.narration != ""
     assert llm.calls[0][0] == "spoken_delivery_plan"
     assert llm.calls[1][0] == "spoken_delivery_narration"
+
+
+def test_spoken_delivery_retries_runtime_errors_and_recovers() -> None:
+    llm = FlakySpokenDeliveryLLM(
+        failures={
+            "spoken_delivery_plan": [RuntimeError("LLM request failed: temporary 502")],
+            "spoken_delivery_narration": [RuntimeError("LLM request timed out after 10800.0 seconds")],
+        }
+    )
+    logger = CaptureRunLogger()
+    llm.set_run_logger(logger)
+    agent = SpokenDeliveryAgent(llm, chunk_min_words=1, chunk_max_words=50)
+
+    spoken_script, spoken_delivery, arc_plan = agent.rewrite_full_episode_two_call(_build_script())
+
+    assert spoken_script.narration != ""
+    assert spoken_delivery.chunk_count >= 1
+    assert arc_plan.theme == "Recovered theme"
+    assert llm.calls.count("spoken_delivery_plan") == 2
+    assert llm.calls.count("spoken_delivery_narration") == 2
+    retry_events = [event for event in logger.events if event[0] == "spoken_delivery_retry"]
+    assert len(retry_events) == 2
+    assert retry_events[0][1]["schema_name"] == "spoken_delivery_plan"
+    assert retry_events[0][1]["is_timeout"] is False
+    assert retry_events[1][1]["schema_name"] == "spoken_delivery_narration"
+    assert retry_events[1][1]["is_timeout"] is True
+
+
+def test_spoken_delivery_raises_after_exhausting_two_retries() -> None:
+    llm = FlakySpokenDeliveryLLM(
+        failures={
+            "spoken_delivery_plan": [
+                RuntimeError("LLM request failed: temporary 502"),
+                RuntimeError("LLM request failed: temporary 502"),
+                RuntimeError("LLM request failed: temporary 502"),
+            ]
+        }
+    )
+    logger = CaptureRunLogger()
+    llm.set_run_logger(logger)
+    agent = SpokenDeliveryAgent(llm, chunk_min_words=1, chunk_max_words=50)
+
+    try:
+        agent.rewrite_full_episode_two_call(_build_script())
+    except RuntimeError as exc:
+        assert "temporary 502" in str(exc)
+    else:
+        raise AssertionError("Expected spoken delivery to fail after retries are exhausted")
+
+    assert llm.calls.count("spoken_delivery_plan") == 3
+    failed_events = [event for event in logger.events if event[0] == "spoken_delivery_failed"]
+    assert len(failed_events) == 1
+    assert failed_events[0][1]["attempt"] == 3
+    assert failed_events[0][1]["total_attempts"] == 3
 
 
 def test_extract_names_filters_discourse_tokens_and_keeps_real_entities() -> None:

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import socket
+from typing import Any, TypeVar
+
 from podcast_agent.agents.base import Agent
 from podcast_agent.eval.rewrite_metrics import build_rewrite_metrics, check_fidelity
 from podcast_agent.llm.anthropic import AnthropicLLMClient
@@ -18,6 +21,8 @@ from podcast_agent.schemas.models import (
     SpokenEpisodeNarration,
     SpokenNarrationChunk,
 )
+
+ResponseModelT = TypeVar("ResponseModelT")
 
 
 class SpokenDeliveryAgent(Agent):
@@ -49,8 +54,10 @@ class SpokenDeliveryAgent(Agent):
         source_narration = self._build_source_narration(script)
 
         plan_client = self._client_for_schema(self.plan_schema_name)
-        plan = plan_client.generate_json(
+        plan = self._generate_with_retry(
+            client=plan_client,
             schema_name=self.plan_schema_name,
+            episode_id=script.episode_id,
             instructions=build_spoken_delivery_arc_plan_instructions(),
             payload={
                 "episode_id": script.episode_id,
@@ -61,8 +68,10 @@ class SpokenDeliveryAgent(Agent):
         )
 
         narration_client = self._client_for_schema(self.narration_schema_name)
-        narration_draft = narration_client.generate_json(
+        narration_draft = self._generate_with_retry(
+            client=narration_client,
             schema_name=self.narration_schema_name,
+            episode_id=script.episode_id,
             instructions=build_spoken_delivery_narration_instructions(),
             payload={
                 "episode_id": script.episode_id,
@@ -132,6 +141,75 @@ class SpokenDeliveryAgent(Agent):
 
     def _build_source_narration(self, script: EpisodeScript) -> str:
         return "\n\n".join(segment.narration.strip() for segment in script.segments if segment.narration).strip()
+
+    def _generate_with_retry(
+        self,
+        *,
+        client: Any,
+        schema_name: str,
+        episode_id: str,
+        instructions: str,
+        payload: dict[str, Any],
+        response_model: type[ResponseModelT],
+    ) -> ResponseModelT:
+        total_attempts = 3
+        run_logger = getattr(client, "run_logger", None) or getattr(self.llm, "run_logger", None)
+        attempt = 1
+        for attempt in range(1, total_attempts + 1):
+            try:
+                return client.generate_json(
+                    schema_name=schema_name,
+                    instructions=instructions,
+                    payload=payload,
+                    response_model=response_model,
+                )
+            except Exception as exc:
+                if not self._is_retryable_failure(exc):
+                    raise
+                is_timeout = self._is_timeout_failure(exc)
+                if run_logger is not None:
+                    event_name = "spoken_delivery_failed" if attempt == total_attempts else "spoken_delivery_retry"
+                    run_logger.log(
+                        event_name,
+                        stage="spoken_delivery_episode",
+                        schema_name=schema_name,
+                        episode_id=episode_id,
+                        attempt=attempt,
+                        total_attempts=total_attempts,
+                        is_timeout=is_timeout,
+                        error_type=type(exc).__name__,
+                        error_message=str(exc),
+                    )
+                if attempt == total_attempts:
+                    raise
+        raise RuntimeError(
+            f"Spoken delivery exhausted retries for schema '{schema_name}' and episode '{episode_id}'."
+        )
+
+    @staticmethod
+    def _is_retryable_failure(exc: Exception) -> bool:
+        return isinstance(exc, (RuntimeError, TimeoutError, socket.timeout))
+
+    @classmethod
+    def _is_timeout_failure(cls, exc: Exception) -> bool:
+        if isinstance(exc, (TimeoutError, socket.timeout)):
+            return True
+        for error in cls._exception_chain(exc):
+            message = str(error).lower()
+            if "timed out" in message or "timeout" in message:
+                return True
+        return False
+
+    @staticmethod
+    def _exception_chain(exc: BaseException) -> list[BaseException]:
+        chain: list[BaseException] = []
+        seen: set[int] = set()
+        current: BaseException | None = exc
+        while current is not None and id(current) not in seen:
+            chain.append(current)
+            seen.add(id(current))
+            current = current.__cause__ or current.__context__
+        return chain
 
     def _chunk_narration(self, episode_id: str, narration: str) -> list[SpokenNarrationChunk]:
         paragraphs = [para.strip() for para in narration.split("\n\n") if para.strip()]
