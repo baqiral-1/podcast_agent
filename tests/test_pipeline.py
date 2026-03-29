@@ -1565,6 +1565,6 @@ def test_spoken_delivery_cli_rejects_failed_grounding_episode_output(tmp_path: P
 
     assert result.exit_code != 0
     normalized_output = _normalize_cli_output(result.output).lower()
-    assert "grounding did not pass" in normalized_output
+    assert re.search(r"grounding\W+did\W+not\W+pass", normalized_output) is not None
     assert not (source_path.parent / "spoken_script.json").exists()
     assert not (source_path.parent / "spoken_delivery.json").exists()
