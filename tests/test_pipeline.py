@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 import io
 import json
 from pathlib import Path
+import re
 import threading
 import time
 import wave
@@ -48,6 +49,14 @@ The discovery creates tension among the sponsors, who want the observatory frame
 Chapter 4: Legacy
 By the end of the journey, the team understands that the observatory connected communities through knowledge exchange. The final journal entries argue that its legacy was cooperation, memory, and scientific practice.
 """
+
+
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _normalize_cli_output(output: str) -> str:
+    plain = _ANSI_ESCAPE_RE.sub("", output)
+    return " ".join(plain.split())
 
 
 class FakeTTSClient(TTSClient):
@@ -1475,7 +1484,8 @@ def test_run_pipeline_requires_episode_count_cli(tmp_path: Path) -> None:
     )
 
     assert result.exit_code != 0
-    assert "Missing option '--episode-count'" in result.output
+    normalized_output = _normalize_cli_output(result.output).lower()
+    assert "missing option '--episode-count'" in normalized_output
 
 
 def test_render_audio_from_manifest_cli_uses_saved_episode_output(tmp_path: Path, monkeypatch) -> None:
@@ -1554,6 +1564,7 @@ def test_spoken_delivery_cli_rejects_failed_grounding_episode_output(tmp_path: P
     result = CliRunner().invoke(app, ["spoken-delivery", str(source_path)])
 
     assert result.exit_code != 0
-    assert "grounding did not pass" in result.output
+    normalized_output = _normalize_cli_output(result.output).lower()
+    assert "grounding did not pass" in normalized_output
     assert not (source_path.parent / "spoken_script.json").exists()
     assert not (source_path.parent / "spoken_delivery.json").exists()
