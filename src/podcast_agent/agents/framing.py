@@ -103,7 +103,7 @@ class EpisodeFramingAgent(Agent):
         last_error: Exception | None = None
         for attempt in range(self.retry_attempts + 1):
             try:
-                framing = self.llm.generate_json(
+                return self.llm.generate_json(
                     schema_name=self.schema_name,
                     instructions=instructions,
                     payload=payload,
@@ -114,49 +114,7 @@ class EpisodeFramingAgent(Agent):
                 if attempt >= self.retry_attempts:
                     break
                 instructions = self._retry_instructions(instructions, last_error)
-                continue
-            violations = self._validate_word_counts(framing, payload)
-            if not violations:
-                return framing
-            last_error = ValueError("; ".join(violations))
-            if attempt >= self.retry_attempts:
-                break
-            instructions = self._retry_instructions(instructions, last_error)
         raise RuntimeError(f"Episode framing failed after retry: {last_error}") from last_error
 
-    def _validate_word_counts(self, framing: EpisodeFraming, payload: dict) -> list[str]:
-        violations: list[str] = []
-        has_previous = payload.get("has_previous", False)
-        has_next = payload.get("has_next", False)
-        if has_previous:
-            recap_words = self._word_count(framing.recap)
-            if not (self.recap_min_words <= recap_words <= self.recap_max_words):
-                violations.append(
-                    f"recap has {recap_words} words (expected {self.recap_min_words}-{self.recap_max_words})"
-                )
-            if not self._starts_with_any(framing.recap, self.recap_openers):
-                violations.append("recap does not start with an approved opener")
-        if has_next:
-            next_words = self._word_count(framing.next_overview)
-            if not (self.next_min_words <= next_words <= self.next_max_words):
-                violations.append(
-                    f"next_overview has {next_words} words (expected {self.next_min_words}-{self.next_max_words})"
-                )
-            if not self._starts_with_any(framing.next_overview, self.next_openers):
-                violations.append("next_overview does not start with an approved opener")
-        return violations
-
     def _retry_instructions(self, instructions: str, error: Exception) -> str:
-        return (
-            f"{instructions} The previous output violated word-count requirements. "
-            f"Use the specified ranges and openers and rewrite. Error: {error}."
-        )
-
-    @staticmethod
-    def _word_count(text: str) -> int:
-        return len(text.split())
-
-    @classmethod
-    def _starts_with_any(cls, text: str, starters: list[str]) -> bool:
-        trimmed = text.strip()
-        return any(trimmed.startswith(starter) for starter in starters)
+        return f"{instructions} Rewrite to satisfy the framing requirements. Error: {error}."

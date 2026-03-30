@@ -11,7 +11,21 @@ from podcast_agent.config import Settings
 from podcast_agent.db import InMemoryRepository
 from podcast_agent.llm import HeuristicLLMClient
 from podcast_agent.pipeline.orchestrator import PipelineOrchestrator
-from podcast_agent.schemas.models import BatchBookSpec, BatchRunManifest
+from podcast_agent.schemas.models import (
+    BatchBookSpec,
+    BatchRunManifest,
+    EpisodeBeat,
+    EpisodeFraming,
+    EpisodeOutput,
+    EpisodePlan,
+    EpisodeScript,
+    GroundingReport,
+    RewriteMetrics,
+    SeriesPlan,
+    SpokenDeliveryEpisodeResult,
+    SpokenEpisodeNarration,
+    SpokenNarrationChunk,
+)
 
 BOOK_TEXT = """
 Chapter 1: Arrival
@@ -268,4 +282,431 @@ def test_run_batch_fails_before_structuring_on_invalid_chapter_range(tmp_path: P
     )
 
     with pytest.raises(ValueError, match="Unable to find start chapter"):
+        orchestrator.run_batch(manifest)
+
+
+def test_batch_book_spec_spoken_only_requires_artifact_path() -> None:
+    with pytest.raises(ValueError, match="artifact_path is required"):
+        BatchBookSpec.model_validate(
+            {
+                "title": "Spoken Only",
+                "spoken-delivery-only": True,
+            }
+        )
+
+
+def test_batch_book_spec_accepts_spoken_only_aliases() -> None:
+    spec = BatchBookSpec.model_validate(
+        {
+            "title": "Spoken Only",
+            "spoken-delivery-only": True,
+            "artifact-path": "/tmp/source-book",
+        }
+    )
+
+    assert spec.spoken_delivery_only is True
+    assert spec.artifact_path == "/tmp/source-book"
+    assert spec.source_path is None
+    assert spec.episode_count is None
+
+
+def test_run_batch_supports_mixed_spoken_only_books(tmp_path: Path, monkeypatch) -> None:
+    full_book = tmp_path / "full-book.txt"
+    full_book.write_text(BOOK_TEXT, encoding="utf-8")
+
+    source_book_root = tmp_path / "source-run" / "spoken-only-book"
+    source_book_root.mkdir(parents=True)
+    (source_book_root / "ingestion.json").write_text(
+        json.dumps({"book_id": "source-book", "title": "Source Book"}),
+        encoding="utf-8",
+    )
+    (source_book_root / "analysis.json").write_text(
+        json.dumps({"book_id": "source-book", "themes": ["theme"]}),
+        encoding="utf-8",
+    )
+    (source_book_root / "series_plan.json").write_text(
+        json.dumps({"book_id": "source-book", "episodes": []}),
+        encoding="utf-8",
+    )
+
+    source_episode_dir = source_book_root / "episode-1"
+    source_episode_dir.mkdir(parents=True)
+    source_output = EpisodeOutput(
+        plan=EpisodePlan(
+            episode_id="episode-1",
+            sequence=1,
+            title="Episode 1",
+            chapter_ids=[],
+            chunk_ids=[],
+            themes=[],
+            beats=[
+                EpisodeBeat(
+                    beat_id="beat-1",
+                    title="Beat 1",
+                    chunk_ids=[],
+                )
+            ],
+        ),
+        script=EpisodeScript(
+            episode_id="episode-1",
+            title="Episode 1",
+            narrator="Narrator",
+            segments=[],
+        ),
+        report=GroundingReport(
+            episode_id="episode-1",
+            overall_status="pass",
+            claim_assessments=[],
+        ),
+    )
+    (source_episode_dir / "episode_output.json").write_text(
+        source_output.model_dump_json(indent=2),
+        encoding="utf-8",
+    )
+
+    settings = Settings().model_copy(
+        update={
+            "pipeline": Settings().pipeline.model_copy(
+                update={
+                    "artifact_root": tmp_path / "runs",
+                    "episode_parallelism": 1,
+                    "batch_parallelism": 1,
+                    "analysis_parallelism": 1,
+                    "spoken_delivery_parallelism": 1,
+                }
+            )
+        }
+    )
+    orchestrator = PipelineOrchestrator(
+        repository=InMemoryRepository(),
+        llm=HeuristicLLMClient(),
+        settings=settings,
+    )
+
+    ingest_calls: list[str] = []
+    original_ingest = orchestrator.ingest_book
+
+    def counting_ingest(*args, **kwargs):
+        result = original_ingest(*args, **kwargs)
+        ingest_calls.append(result.book_id)
+        return result
+
+    monkeypatch.setattr(orchestrator, "ingest_book", counting_ingest)
+
+    def fake_spoken_delivery_episode(book_id: str, script: EpisodeScript):
+        del book_id
+        spoken_script = SpokenEpisodeNarration(
+            episode_id=script.episode_id,
+            title=script.title,
+            narrator=script.narrator,
+            narration="Spoken narration body.",
+            chunks=[
+                SpokenNarrationChunk(
+                    chunk_id=f"{script.episode_id}-chunk-1",
+                    text="Spoken narration body.",
+                    word_count=3,
+                )
+            ],
+        )
+        spoken_delivery = SpokenDeliveryEpisodeResult(
+            episode_id=script.episode_id,
+            mode="full",
+            metrics=RewriteMetrics(
+                source_word_count=3,
+                spoken_word_count=3,
+                expansion_ratio=1.0,
+                source_sentence_count=1,
+                spoken_sentence_count=1,
+                source_average_sentence_length=3.0,
+                spoken_average_sentence_length=3.0,
+                source_paragraph_count=1,
+                spoken_paragraph_count=1,
+            ),
+            chunk_count=1,
+        )
+        return spoken_script, spoken_delivery, None
+
+    monkeypatch.setattr(orchestrator, "spoken_delivery_episode", fake_spoken_delivery_episode)
+    monkeypatch.setattr(
+        orchestrator,
+        "_build_episode_framing",
+        lambda plan, **kwargs: EpisodeFraming(
+            recap=f"Previously on {plan.title}.",
+            next_overview="Next episode preview.",
+        ),
+    )
+
+    manifest = BatchRunManifest(
+        run_id="mixed-mode-batch",
+        with_audio=False,
+        books=[
+            BatchBookSpec(
+                source_path=str(full_book),
+                title="Full Book",
+                author="Author One",
+                episode_count=1,
+            ),
+            BatchBookSpec.model_validate(
+                {
+                    "title": "Spoken Only Book",
+                    "spoken-delivery-only": True,
+                    "artifact-path": str(source_book_root),
+                }
+            ),
+        ],
+    )
+
+    result = orchestrator.run_batch(manifest)
+
+    assert ingest_calls == ["full-book"]
+    by_book_id = {book["book_id"]: book for book in result["books"]}
+
+    full_book_payload = by_book_id["full-book"]
+    assert full_book_payload["ingestion"]["title"] == "Full Book"
+    assert full_book_payload["episodes"]
+
+    spoken_only_payload = by_book_id["spoken-only-book"]
+    assert spoken_only_payload["ingestion"]["book_id"] == "source-book"
+    assert spoken_only_payload["analysis"]["book_id"] == "source-book"
+    assert spoken_only_payload["series_plan"]["book_id"] == "source-book"
+    assert len(spoken_only_payload["episodes"]) == 1
+    assert spoken_only_payload["episodes"][0]["spoken_delivery"] is not None
+
+    run_dir = tmp_path / "runs" / "mixed-mode-batch"
+    assert (run_dir / "spoken-only-book" / "ingestion.json").exists()
+    assert (run_dir / "spoken-only-book" / "analysis.json").exists()
+    assert (run_dir / "spoken-only-book" / "series_plan.json").exists()
+    assert (run_dir / "spoken-only-book" / "episode-1" / "episode_output.json").exists()
+
+
+def test_run_batch_spoken_only_fallback_to_factual_script(tmp_path: Path, monkeypatch) -> None:
+    source_book_root = tmp_path / "source-run" / "spoken-only-book"
+    source_book_root.mkdir(parents=True)
+    (source_book_root / "ingestion.json").write_text(
+        json.dumps({"book_id": "source-book", "title": "Source Book"}),
+        encoding="utf-8",
+    )
+    (source_book_root / "analysis.json").write_text(
+        json.dumps({"book_id": "source-book", "themes": ["theme"]}),
+        encoding="utf-8",
+    )
+    (source_book_root / "series_plan.json").write_text(
+        SeriesPlan(
+            book_id="source-book",
+            format="single_narrator",
+            strategy_summary="Summary",
+            episodes=[
+                EpisodePlan(
+                    episode_id="episode-1",
+                    sequence=1,
+                    title="Episode 1",
+                    chapter_ids=[],
+                    chunk_ids=[],
+                    themes=[],
+                    beats=[EpisodeBeat(beat_id="beat-1", title="Beat 1", chunk_ids=[])],
+                )
+            ],
+        ).model_dump_json(indent=2),
+        encoding="utf-8",
+    )
+
+    source_episode_dir = source_book_root / "episode-1"
+    source_episode_dir.mkdir(parents=True)
+    (source_episode_dir / "factual_script.json").write_text(
+        EpisodeScript(
+            episode_id="episode-1",
+            title="Episode 1",
+            narrator="Narrator",
+            segments=[],
+        ).model_dump_json(indent=2),
+        encoding="utf-8",
+    )
+
+    settings = Settings().model_copy(
+        update={
+            "pipeline": Settings().pipeline.model_copy(
+                update={
+                    "artifact_root": tmp_path / "runs",
+                    "episode_parallelism": 1,
+                    "batch_parallelism": 1,
+                    "analysis_parallelism": 1,
+                    "spoken_delivery_parallelism": 1,
+                }
+            )
+        }
+    )
+    orchestrator = PipelineOrchestrator(
+        repository=InMemoryRepository(),
+        llm=HeuristicLLMClient(),
+        settings=settings,
+    )
+
+    def fake_spoken_delivery_episode(book_id: str, script: EpisodeScript):
+        del book_id
+        spoken_script = SpokenEpisodeNarration(
+            episode_id=script.episode_id,
+            title=script.title,
+            narrator=script.narrator,
+            narration="Spoken narration body.",
+            chunks=[
+                SpokenNarrationChunk(
+                    chunk_id=f"{script.episode_id}-chunk-1",
+                    text="Spoken narration body.",
+                    word_count=3,
+                )
+            ],
+        )
+        spoken_delivery = SpokenDeliveryEpisodeResult(
+            episode_id=script.episode_id,
+            mode="full",
+            metrics=RewriteMetrics(
+                source_word_count=3,
+                spoken_word_count=3,
+                expansion_ratio=1.0,
+                source_sentence_count=1,
+                spoken_sentence_count=1,
+                source_average_sentence_length=3.0,
+                spoken_average_sentence_length=3.0,
+                source_paragraph_count=1,
+                spoken_paragraph_count=1,
+            ),
+            chunk_count=1,
+        )
+        return spoken_script, spoken_delivery, None
+
+    monkeypatch.setattr(orchestrator, "spoken_delivery_episode", fake_spoken_delivery_episode)
+    monkeypatch.setattr(
+        orchestrator,
+        "_build_episode_framing",
+        lambda plan, **kwargs: EpisodeFraming(
+            recap=f"Previously on {plan.title}.",
+            next_overview="Next episode preview.",
+        ),
+    )
+
+    manifest = BatchRunManifest(
+        run_id="spoken-only-factual-fallback",
+        with_audio=False,
+        books=[
+            BatchBookSpec.model_validate(
+                {
+                    "title": "Spoken Only Book",
+                    "spoken-delivery-only": True,
+                    "artifact-path": str(source_book_root),
+                }
+            ),
+        ],
+    )
+
+    result = orchestrator.run_batch(manifest)
+    spoken_only_payload = result["books"][0]
+    assert spoken_only_payload["book_id"] == "spoken-only-book"
+    assert len(spoken_only_payload["episodes"]) == 1
+    assert spoken_only_payload["episodes"][0]["spoken_delivery"] is not None
+
+
+def test_run_batch_spoken_only_factual_script_requires_series_plan(tmp_path: Path) -> None:
+    source_book_root = tmp_path / "source-run" / "spoken-only-book"
+    source_episode_dir = source_book_root / "episode-1"
+    source_episode_dir.mkdir(parents=True)
+    (source_episode_dir / "factual_script.json").write_text(
+        EpisodeScript(
+            episode_id="episode-1",
+            title="Episode 1",
+            narrator="Narrator",
+            segments=[],
+        ).model_dump_json(indent=2),
+        encoding="utf-8",
+    )
+
+    settings = Settings().model_copy(
+        update={
+            "pipeline": Settings().pipeline.model_copy(
+                update={"artifact_root": tmp_path / "runs"}
+            )
+        }
+    )
+    orchestrator = PipelineOrchestrator(
+        repository=InMemoryRepository(),
+        llm=HeuristicLLMClient(),
+        settings=settings,
+    )
+    manifest = BatchRunManifest(
+        run_id="spoken-only-missing-series-plan",
+        with_audio=False,
+        books=[
+            BatchBookSpec.model_validate(
+                {
+                    "title": "Spoken Only Book",
+                    "spoken-delivery-only": True,
+                    "artifact-path": str(source_book_root),
+                }
+            ),
+        ],
+    )
+
+    with pytest.raises(ValueError, match="requires series_plan.json"):
+        orchestrator.run_batch(manifest)
+
+
+def test_run_batch_spoken_only_factual_script_episode_id_must_match_series_plan(tmp_path: Path) -> None:
+    source_book_root = tmp_path / "source-run" / "spoken-only-book"
+    source_episode_dir = source_book_root / "episode-1"
+    source_episode_dir.mkdir(parents=True)
+    (source_episode_dir / "factual_script.json").write_text(
+        EpisodeScript(
+            episode_id="episode-1",
+            title="Episode 1",
+            narrator="Narrator",
+            segments=[],
+        ).model_dump_json(indent=2),
+        encoding="utf-8",
+    )
+    (source_book_root / "series_plan.json").write_text(
+        SeriesPlan(
+            book_id="source-book",
+            format="single_narrator",
+            strategy_summary="Summary",
+            episodes=[
+                EpisodePlan(
+                    episode_id="episode-2",
+                    sequence=1,
+                    title="Episode 2",
+                    chapter_ids=[],
+                    chunk_ids=[],
+                    themes=[],
+                    beats=[EpisodeBeat(beat_id="beat-2", title="Beat 2", chunk_ids=[])],
+                )
+            ],
+        ).model_dump_json(indent=2),
+        encoding="utf-8",
+    )
+
+    settings = Settings().model_copy(
+        update={
+            "pipeline": Settings().pipeline.model_copy(
+                update={"artifact_root": tmp_path / "runs"}
+            )
+        }
+    )
+    orchestrator = PipelineOrchestrator(
+        repository=InMemoryRepository(),
+        llm=HeuristicLLMClient(),
+        settings=settings,
+    )
+    manifest = BatchRunManifest(
+        run_id="spoken-only-mismatched-series-plan",
+        with_audio=False,
+        books=[
+            BatchBookSpec.model_validate(
+                {
+                    "title": "Spoken Only Book",
+                    "spoken-delivery-only": True,
+                    "artifact-path": str(source_book_root),
+                }
+            ),
+        ],
+    )
+
+    with pytest.raises(ValueError, match="Missing episode_id 'episode-1'"):
         orchestrator.run_batch(manifest)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import time
 
 import pytest
 from pydantic import BaseModel
@@ -363,8 +364,10 @@ def test_openai_compatible_client_logs_prompt_metadata_for_success(tmp_path: Pat
         for line in (tmp_path / "runs" / "openai-success" / "run.log").read_text(encoding="utf-8").splitlines()
     ]
     request_events = [line for line in lines if line["event_type"] == "llm_request"]
+    response_meta_events = [line for line in lines if line["event_type"] == "llm_response_meta"]
 
     assert request_events
+    assert response_meta_events
     payload = request_events[-1]["payload"]
     assert "instructions" not in payload
     assert "payload" not in payload
@@ -372,6 +375,13 @@ def test_openai_compatible_client_logs_prompt_metadata_for_success(tmp_path: Pat
     assert payload["payload_char_count"] > 0
     assert len(payload["instructions_sha256"]) == 64
     assert len(payload["payload_sha256"]) == 64
+    assert payload["request_uuid"]
+    assert payload["request_started_at"]
+    assert payload["endpoint"].endswith("/v1/responses")
+    response_meta_payload = response_meta_events[-1]["payload"]
+    assert response_meta_payload["request_uuid"] == payload["request_uuid"]
+    assert response_meta_payload["response_id"] is None or isinstance(response_meta_payload["response_id"], str)
+    assert isinstance(response_meta_payload["elapsed_ms"], int | None)
 
 
 def test_openai_compatible_client_logs_full_prompt_payload_on_error(tmp_path: Path) -> None:
@@ -402,3 +412,53 @@ def test_openai_compatible_client_logs_full_prompt_payload_on_error(tmp_path: Pa
     payload = error_events[-1]["payload"]
     assert payload["instructions"].startswith("Validate the claims.")
     assert '"schema_name": "grounding_report"' in payload["payload"]
+    assert payload["request_uuid"]
+
+
+def test_openai_compatible_client_emits_inflight_heartbeat(tmp_path: Path) -> None:
+    class SlowTransport:
+        def post_json(self, url: str, headers: dict, payload: dict, timeout_seconds: float) -> HTTPResponse:
+            time.sleep(0.03)
+            return HTTPResponse(
+                status_code=200,
+                body={
+                    "output": [
+                        {
+                            "type": "message",
+                            "content": [
+                                {
+                                    "type": "output_text",
+                                    "text": (
+                                        '{"episode_id":"episode-1","overall_status":"pass",'
+                                        '"claim_assessments":[],"validated_at":"2026-03-13T00:00:00Z"}'
+                                    ),
+                                }
+                            ],
+                        }
+                    ]
+                },
+            )
+
+    run_logger = RunLogger(tmp_path / "runs")
+    run_logger.bind_run("openai-heartbeat")
+    client = OpenAICompatibleLLMClient(config=LLMConfig(api_key="test-key"), transport=SlowTransport())
+    client.set_run_logger(run_logger)
+    client._heartbeat_interval_seconds = 0.01
+
+    client.generate_json(
+        schema_name="grounding_report",
+        instructions="Validate the claims.",
+        payload={"script": {"episode_id": "episode-1"}},
+        response_model=GroundingReport,
+    )
+
+    lines = [
+        json.loads(line)
+        for line in (tmp_path / "runs" / "openai-heartbeat" / "run.log").read_text(encoding="utf-8").splitlines()
+    ]
+    heartbeat_events = [line for line in lines if line["event_type"] == "llm_inflight_heartbeat"]
+    assert heartbeat_events
+    heartbeat_payload = heartbeat_events[-1]["payload"]
+    assert heartbeat_payload["request_uuid"]
+    assert heartbeat_payload["schema_name"] == "grounding_report"
+    assert heartbeat_payload["elapsed_ms"] >= 0

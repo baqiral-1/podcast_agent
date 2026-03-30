@@ -216,7 +216,8 @@ class EpisodePlanningAgent(Agent):
             episode_words = sum(chunk_word_counts.get(chunk_id, 0) for chunk_id in episode.chunk_ids)
             if episode_words < min_episode_source_words:
                 violations.append(
-                    f"{episode.episode_id} estimated at {episode_words} source words, too small for target {target_source_words_per_episode}"
+                    f"{episode.episode_id} estimated at {episode_words} source words, too small for minimum {min_episode_source_words} "
+                    f"(ratio {self.min_episode_source_ratio:.2f} of target {target_source_words_per_episode})"
                 )
             estimated_script_words = self._estimate_script_words_from_source_words(episode_words)
             estimated_minutes = self._estimate_episode_minutes(estimated_script_words)
@@ -427,13 +428,16 @@ class EpisodePlanningAgent(Agent):
             chunk.chunk_id: len(chunk.text.split())
             for chunk in structure.chunks
         }
+        target_source_words_per_episode = self._target_source_words_per_episode(structure, episode_count)
+        min_episode_source_words = max(1, int(target_source_words_per_episode * self.min_episode_source_ratio))
         run_logger.log(
             "planning_diagnostics",
             retried=retried,
             requested_episode_count=episode_count,
             minimum_source_words_per_episode=self.minimum_source_words_per_episode,
             min_episode_source_ratio=self.min_episode_source_ratio,
-            target_source_words_per_episode=self._target_source_words_per_episode(structure, episode_count),
+            target_source_words_per_episode=target_source_words_per_episode,
+            min_episode_source_words=min_episode_source_words,
             max_episode_minutes=self.max_episode_minutes,
             max_episode_script_words=self._max_episode_script_words(),
             section_beat_target_words=self.section_beat_target_words,

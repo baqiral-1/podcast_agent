@@ -8,6 +8,13 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
 class DatabaseConfig(BaseModel):
     """Connection settings for PostgreSQL-backed storage."""
 
@@ -60,7 +67,13 @@ class LLMConfig(BaseModel):
         default_factory=lambda: os.getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com"),
     )
     anthropic_max_tokens: int = Field(
-        default_factory=lambda: int(os.getenv("ANTHROPIC_MAX_TOKENS", "16384")), ge=1
+        default_factory=lambda: int(os.getenv("ANTHROPIC_MAX_TOKENS", "100000")), ge=1
+    )
+    anthropic_prompt_caching_enabled: bool = Field(
+        default_factory=lambda: _env_bool("ANTHROPIC_PROMPT_CACHING_ENABLED", True)
+    )
+    anthropic_prompt_caching_auto_fallback: bool = Field(
+        default_factory=lambda: _env_bool("ANTHROPIC_PROMPT_CACHING_AUTO_FALLBACK", True)
     )
     timeout_seconds: float = Field(default=600.0, gt=0.0)
 
@@ -133,7 +146,7 @@ class PipelineConfig(BaseModel):
     grounding_parallelism: int = Field(default=9, ge=1)
     spoken_delivery_parallelism: int | None = Field(default=3, ge=1)
     minimum_source_words_per_episode: int = Field(default=50000, ge=1000)
-    min_episode_source_ratio: float = Field(default=0.3, gt=0.0, le=1.0)
+    min_episode_source_ratio: float = Field(default=0.2, gt=0.0, le=1.0)
     spoken_words_per_minute: int = Field(default=130, ge=80)
     max_episode_minutes: int = Field(default=360, ge=1)
     max_analysis_payload_bytes: int = Field(default=500000, ge=10000)
@@ -147,7 +160,7 @@ class PipelineConfig(BaseModel):
     coverage_warning_min_ratio: float | None = Field(default=None, ge=0.0, le=1.0)
     max_structuring_chapter_words: int = Field(default=2500, ge=500)
     max_structuring_llm_chapter_words: int = Field(default=75000, ge=1000)
-    structuring_parallelism: int = Field(default=30, ge=1)
+    structuring_parallelism: int = Field(default=50, ge=1)
     structuring_window_words: int = Field(default=5000, ge=300)
     structuring_window_overlap_words: int = Field(default=150, ge=0)
     framing_recap_min_words: int = Field(default=80, ge=10)

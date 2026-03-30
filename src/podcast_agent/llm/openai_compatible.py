@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import json
+import os
 import socket
 from dataclasses import dataclass
+from datetime import UTC, datetime
+import threading
+import time
 from typing import Any
 from urllib import request
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
+from uuid import uuid4
 
 from pydantic import BaseModel
 
@@ -23,6 +28,10 @@ class HTTPResponse:
 
     status_code: int
     body: dict[str, Any]
+    response_headers: dict[str, str] | None = None
+    elapsed_ms: int | None = None
+    time_to_headers_ms: int | None = None
+    response_bytes: int | None = None
 
 
 class LLMTransportHTTPError(RuntimeError):
@@ -48,10 +57,68 @@ class HTTPTransport:
 
         data = json.dumps(payload).encode("utf-8")
         http_request = request.Request(url=url, data=data, headers=headers, method="POST")
+        started_at = time.monotonic()
         try:
             with request.urlopen(http_request, timeout=timeout_seconds) as response:
-                body = json.loads(response.read().decode("utf-8"))
-                return HTTPResponse(status_code=response.status, body=body)
+                headers_ms = int((time.monotonic() - started_at) * 1000)
+                response_headers = {
+                    key.lower(): value
+                    for key, value in response.headers.items()
+                }
+                raw_body = response.read()
+                elapsed_ms = int((time.monotonic() - started_at) * 1000)
+                body = json.loads(raw_body.decode("utf-8"))
+                return HTTPResponse(
+                    status_code=response.status,
+                    body=body,
+                    response_headers=response_headers,
+                    elapsed_ms=elapsed_ms,
+                    time_to_headers_ms=headers_ms,
+                    response_bytes=len(raw_body),
+                )
+        except HTTPError as exc:
+            message = exc.read().decode("utf-8", errors="replace")
+            raise LLMTransportHTTPError(status_code=exc.code, response_text=message) from exc
+        except URLError as exc:
+            raise RuntimeError(f"LLM request failed: {exc.reason}") from exc
+        except (TimeoutError, socket.timeout) as exc:
+            raise RuntimeError(f"LLM request timed out after {timeout_seconds} seconds") from exc
+        except OSError as exc:
+            raise RuntimeError(f"LLM request failed with transport error: {exc}") from exc
+
+    def post_json_sse(
+        self,
+        url: str,
+        headers: dict[str, str],
+        payload: dict[str, Any],
+        timeout_seconds: float,
+    ) -> HTTPResponse:
+        """POST JSON and consume an SSE (server-sent events) stream.
+
+        Returns a single HTTPResponse whose body is the reconstructed
+        Anthropic Messages response assembled from the streamed events.
+        """
+
+        data = json.dumps(payload).encode("utf-8")
+        http_request = request.Request(url=url, data=data, headers=headers, method="POST")
+        started_at = time.monotonic()
+        try:
+            with request.urlopen(http_request, timeout=timeout_seconds) as response:
+                headers_ms = int((time.monotonic() - started_at) * 1000)
+                response_headers = {
+                    key.lower(): value
+                    for key, value in response.headers.items()
+                }
+                body, total_bytes = _consume_anthropic_sse(response)
+                elapsed_ms = int((time.monotonic() - started_at) * 1000)
+                return HTTPResponse(
+                    status_code=response.status,
+                    body=body,
+                    response_headers=response_headers,
+                    elapsed_ms=elapsed_ms,
+                    time_to_headers_ms=headers_ms,
+                    response_bytes=total_bytes,
+                )
         except HTTPError as exc:
             message = exc.read().decode("utf-8", errors="replace")
             raise LLMTransportHTTPError(status_code=exc.code, response_text=message) from exc
@@ -63,11 +130,94 @@ class HTTPTransport:
             raise RuntimeError(f"LLM request failed with transport error: {exc}") from exc
 
 
+def _consume_anthropic_sse(response) -> tuple[dict[str, Any], int]:
+    """Read an Anthropic SSE stream and reconstruct the Messages API response body.
+
+    Returns (reconstructed_body, total_bytes_read).
+    """
+
+    message: dict[str, Any] = {}
+    content_blocks: list[dict[str, Any]] = []
+    # Accumulate partial JSON per content block index
+    json_accumulators: dict[int, list[str]] = {}
+    total_bytes = 0
+
+    for raw_line in response:
+        total_bytes += len(raw_line)
+        line = raw_line.decode("utf-8", errors="replace").rstrip("\r\n")
+
+        if not line.startswith("data: "):
+            continue
+
+        data_str = line[6:]
+        if data_str.strip() == "[DONE]":
+            break
+
+        try:
+            event = json.loads(data_str)
+        except json.JSONDecodeError:
+            continue
+
+        event_type = event.get("type")
+
+        if event_type == "message_start":
+            msg = event.get("message", {})
+            message = {
+                "id": msg.get("id"),
+                "type": msg.get("type", "message"),
+                "role": msg.get("role", "assistant"),
+                "model": msg.get("model"),
+                "usage": msg.get("usage", {}),
+            }
+
+        elif event_type == "content_block_start":
+            idx = event.get("index", 0)
+            block = event.get("content_block", {})
+            # Ensure list is long enough
+            while len(content_blocks) <= idx:
+                content_blocks.append({})
+            content_blocks[idx] = dict(block)
+            if block.get("type") == "tool_use":
+                json_accumulators[idx] = []
+
+        elif event_type == "content_block_delta":
+            idx = event.get("index", 0)
+            delta = event.get("delta", {})
+            delta_type = delta.get("type")
+            if delta_type == "input_json_delta" and idx in json_accumulators:
+                json_accumulators[idx].append(delta.get("partial_json", ""))
+            elif delta_type == "text_delta" and idx < len(content_blocks):
+                content_blocks[idx].setdefault("text", "")
+                content_blocks[idx]["text"] += delta.get("text", "")
+
+        elif event_type == "content_block_stop":
+            idx = event.get("index", 0)
+            if idx in json_accumulators:
+                full_json = "".join(json_accumulators.pop(idx))
+                if idx < len(content_blocks):
+                    try:
+                        content_blocks[idx]["input"] = json.loads(full_json)
+                    except json.JSONDecodeError:
+                        content_blocks[idx]["input"] = full_json
+
+        elif event_type == "message_delta":
+            delta = event.get("delta", {})
+            if "stop_reason" in delta:
+                message["stop_reason"] = delta["stop_reason"]
+            usage = event.get("usage", {})
+            if usage:
+                message.setdefault("usage", {}).update(usage)
+
+    message["content"] = content_blocks
+    return message, total_bytes
+
+
 class OpenAICompatibleLLMClient(LLMClient):
     """Client that requests schema-constrained JSON from an OpenAI-compatible API."""
 
     _reasoning_excluded_schemas = {"structured_chapter", "grounding_report"}
     _allowed_reasoning_efforts = {"low", "medium", "high", "xhigh"}
+    _heartbeat_interval_seconds = 120.0
 
     def __init__(self, config: LLMConfig, transport: HTTPTransport | None = None) -> None:
         super().__init__()
@@ -151,12 +301,26 @@ class OpenAICompatibleLLMClient(LLMClient):
                 "Authorization": f"Bearer {self.config.api_key}",
                 "Content-Type": "application/json",
             }
+            request_uuid = uuid4().hex
+            request_started_at = datetime.now(UTC).isoformat()
+            request_started_monotonic = time.monotonic()
+            stop_heartbeat, heartbeat_thread = self._start_inflight_heartbeat(
+                request_uuid=request_uuid,
+                schema_name=schema_name,
+                model=selected_model,
+                api_mode="responses" if use_responses_api else "chat_completions",
+                timeout_seconds=self.config.timeout_seconds,
+                request_started_monotonic=request_started_monotonic,
+            )
             if self.run_logger is not None:
                 self.run_logger.log(
                     "llm_request",
+                    request_uuid=request_uuid,
                     client="openai-compatible",
                     schema_name=schema_name,
                     model=selected_model,
+                    endpoint=endpoint,
+                    request_started_at=request_started_at,
                     timeout_seconds=self.config.timeout_seconds,
                     api_mode="responses" if use_responses_api else "chat_completions",
                     reasoning_effort=reasoning_effort or "none",
@@ -170,11 +334,35 @@ class OpenAICompatibleLLMClient(LLMClient):
                     timeout_seconds=self.config.timeout_seconds,
                 )
                 if self.run_logger is not None:
+                    response_body = response.body
+                    usage = response_body.get("usage")
+                    response_id = response_body.get("id")
+                    provider_request_id = (response.response_headers or {}).get("x-request-id")
                     self.run_logger.log(
-                        "llm_response",
+                        "llm_response_meta",
+                        request_uuid=request_uuid,
                         client="openai-compatible",
                         schema_name=schema_name,
-                        response=response.body,
+                        response_id=response_id,
+                        provider_request_id=provider_request_id,
+                        status_code=response.status_code,
+                        status=response_body.get("status"),
+                        model=response_body.get("model", selected_model),
+                        response_created_at=response_body.get("created_at"),
+                        response_completed_at=response_body.get("completed_at"),
+                        elapsed_ms=response.elapsed_ms,
+                        time_to_headers_ms=response.time_to_headers_ms,
+                        response_bytes=response.response_bytes,
+                        prompt_tokens=(usage or {}).get("input_tokens"),
+                        completion_tokens=(usage or {}).get("output_tokens"),
+                        total_tokens=(usage or {}).get("total_tokens"),
+                    )
+                    self.run_logger.log(
+                        "llm_response",
+                        request_uuid=request_uuid,
+                        client="openai-compatible",
+                        schema_name=schema_name,
+                        response=response_body,
                     )
                 if not use_responses_api:
                     _raise_for_finish_reason(response.body)
@@ -188,6 +376,7 @@ class OpenAICompatibleLLMClient(LLMClient):
                 if self.run_logger is not None:
                     self.run_logger.log(
                         "llm_error",
+                        request_uuid=request_uuid,
                         client="openai-compatible",
                         schema_name=schema_name,
                         error_type=type(exc).__name__,
@@ -196,6 +385,48 @@ class OpenAICompatibleLLMClient(LLMClient):
                         payload=user_text,
                     )
                 raise
+            finally:
+                stop_heartbeat.set()
+                if heartbeat_thread is not None:
+                    heartbeat_thread.join(timeout=0.1)
+
+    def _start_inflight_heartbeat(
+        self,
+        *,
+        request_uuid: str,
+        schema_name: str,
+        model: str,
+        api_mode: str,
+        timeout_seconds: float,
+        request_started_monotonic: float,
+    ) -> tuple[threading.Event, threading.Thread | None]:
+        if self.run_logger is None:
+            return threading.Event(), None
+        if os.getenv("PODCAST_AGENT_DISABLE_LLM_HEARTBEAT", "").strip().lower() in {"1", "true", "yes"}:
+            return threading.Event(), None
+        stop = threading.Event()
+
+        def emit_heartbeat() -> None:
+            while not stop.wait(self._heartbeat_interval_seconds):
+                elapsed_ms = int((time.monotonic() - request_started_monotonic) * 1000)
+                self.run_logger.log(
+                    "llm_inflight_heartbeat",
+                    request_uuid=request_uuid,
+                    client="openai-compatible",
+                    schema_name=schema_name,
+                    model=model,
+                    api_mode=api_mode,
+                    elapsed_ms=elapsed_ms,
+                    timeout_seconds=timeout_seconds,
+                )
+
+        thread = threading.Thread(
+            target=emit_heartbeat,
+            name=f"llm-heartbeat-{request_uuid[:8]}",
+            daemon=True,
+        )
+        thread.start()
+        return stop, thread
 
 
 class RoutingLLMClient(LLMClient):

@@ -51,6 +51,7 @@ from podcast_agent.schemas.models import (
     RenderSegment,
     RepairResult,
     EpisodeSegment,
+    SeriesPlan,
     SpokenDeliveryArcPlan,
     SpokenDeliveryEpisodeResult,
     SpokenEpisodeNarration,
@@ -1184,8 +1185,15 @@ class PipelineOrchestrator:
         book_ids: list[str] = []
         book_titles: list[str] = []
         for spec in manifest.books:
-            path = Path(spec.source_path)
-            resolved_title = spec.title or path.stem.replace("_", " ").title()
+            if spec.spoken_delivery_only:
+                if spec.title:
+                    resolved_title = spec.title
+                else:
+                    artifact_root = Path(spec.artifact_path or "")
+                    resolved_title = artifact_root.name.replace("-", " ").replace("_", " ").title()
+            else:
+                path = Path(spec.source_path or "")
+                resolved_title = spec.title or path.stem.replace("_", " ").title()
             book_id = _slugify(resolved_title)
             if book_id in spec_by_book_id:
                 raise ValueError(f"Duplicate book_id '{book_id}' in batch manifest.")
@@ -1193,6 +1201,8 @@ class PipelineOrchestrator:
             book_ids.append(book_id)
             book_titles.append(resolved_title)
             self._book_titles[book_id] = resolved_title
+        full_book_ids = [book_id for book_id in book_ids if not spec_by_book_id[book_id].spoken_delivery_only]
+        spoken_only_book_ids = [book_id for book_id in book_ids if spec_by_book_id[book_id].spoken_delivery_only]
 
         self.run_id = resolved_run_id
         self.run_logger.bind_run(resolved_run_id)
@@ -1213,8 +1223,15 @@ class PipelineOrchestrator:
 
             def item_book_info(item) -> tuple[str | None, str | None]:
                 if isinstance(item, BatchBookSpec):
-                    path = Path(item.source_path)
-                    item_title = item.title or path.stem.replace("_", " ").title()
+                    if item.spoken_delivery_only:
+                        if item.title:
+                            item_title = item.title
+                        else:
+                            artifact_root = Path(item.artifact_path or "")
+                            item_title = artifact_root.name.replace("-", " ").replace("_", " ").title()
+                    else:
+                        path = Path(item.source_path or "")
+                        item_title = item.title or path.stem.replace("_", " ").title()
                     return _slugify(item_title), item_title
                 if isinstance(item, BookIngestionResult):
                     return item.book_id, item.title
@@ -1273,7 +1290,7 @@ class PipelineOrchestrator:
 
             ingestion_by_book_id = run_stage(
                 "ingest_book",
-                list(manifest.books),
+                [spec_by_book_id[book_id] for book_id in full_book_ids],
                 lambda spec: self.ingest_book(
                     source_path=spec.source_path,
                     title=spec.title,
@@ -1330,17 +1347,17 @@ class PipelineOrchestrator:
             self.run_logger.log(
                 "batch_stage_start",
                 stage="write_grounding",
-                item_count=len(book_ids),
+                item_count=len(full_book_ids),
             )
             preparations_by_book_id: dict[str, list[EpisodePreparation]] = {}
-            if resolved_parallelism == 1 or len(book_ids) <= 1:
-                for book_id in book_ids:
+            if resolved_parallelism == 1 or len(full_book_ids) <= 1:
+                for book_id in full_book_ids:
                     preparations_by_book_id[book_id] = prepare_book(book_id)
             else:
                 with ThreadPoolExecutor(max_workers=resolved_parallelism) as executor:
                     future_map = {
                         submit_with_context(executor, prepare_book, book_id): book_id
-                        for book_id in book_ids
+                        for book_id in full_book_ids
                     }
                     for future in as_completed(future_map):
                         book_id = future_map[future]
@@ -1354,11 +1371,11 @@ class PipelineOrchestrator:
             self.run_logger.log(
                 "batch_stage_start",
                 stage="spoken_delivery_manifest",
-                item_count=len(book_ids),
+                item_count=len(full_book_ids),
             )
             episode_outputs_by_book_id: dict[str, list[EpisodeOutput]] = {}
-            if resolved_spoken_delivery_parallelism == 1 or len(book_ids) <= 1:
-                for book_id in book_ids:
+            if resolved_spoken_delivery_parallelism == 1 or len(full_book_ids) <= 1:
+                for book_id in full_book_ids:
                     episode_outputs_by_book_id[book_id] = self._finalize_episode_preparations(
                         book_id,
                         preparations_by_book_id[book_id],
@@ -1374,7 +1391,7 @@ class PipelineOrchestrator:
                             preparations_by_book_id[book_id],
                             synthesize_audio=resolved_with_audio,
                         ): book_id
-                        for book_id in book_ids
+                        for book_id in full_book_ids
                     }
                     for future in as_completed(future_map):
                         book_id = future_map[future]
@@ -1385,6 +1402,129 @@ class PipelineOrchestrator:
                 item_count=len(episode_outputs_by_book_id),
             )
 
+            spoken_only_result_by_book_id: dict[str, dict[str, object]] = {}
+            self.run_logger.log(
+                "batch_stage_start",
+                stage="spoken_delivery_only_books",
+                item_count=len(spoken_only_book_ids),
+            )
+
+            def process_spoken_only_book(book_id: str) -> dict[str, object]:
+                spec = spec_by_book_id[book_id]
+                with self._book_context(book_id):
+                    source_root = Path(spec.artifact_path or "")
+                    copied_artifacts = self._copy_source_book_artifacts(
+                        source_root=source_root,
+                        target_book_id=book_id,
+                    )
+                    source_episode_outputs = self._load_spoken_only_source_episode_outputs(source_root)
+                    source_episode_outputs.sort(key=lambda output: output.plan.sequence)
+
+                    generated_outputs: list[EpisodeOutput] = []
+                    previous_spoken_script: SpokenEpisodeNarration | None = None
+                    previous_plan: EpisodePlan | None = None
+                    previous_script: EpisodeScript | None = None
+                    for index, source_output in enumerate(source_episode_outputs):
+                        next_output = (
+                            source_episode_outputs[index + 1]
+                            if index + 1 < len(source_episode_outputs)
+                            else None
+                        )
+                        spoken_script, spoken_delivery, arc_plan = self.spoken_delivery_episode(
+                            book_id,
+                            source_output.script,
+                        )
+                        framing = self._build_episode_framing(
+                            source_output.plan,
+                            current_script=source_output.script,
+                            previous_spoken_script=previous_spoken_script,
+                            previous_plan=previous_plan,
+                            previous_script=previous_script,
+                            next_plan=next_output.plan if next_output is not None else None,
+                            next_script=next_output.script if next_output is not None else None,
+                        )
+                        spoken_script = self._apply_framing_to_spoken_script(spoken_script, framing)
+                        spoken_delivery = spoken_delivery.model_copy(
+                            update={"chunk_count": len(spoken_script.chunks)}
+                        )
+                        manifest = self.render_manifest(
+                            source_output.script,
+                            source_output.report,
+                            spoken_script=spoken_script,
+                            book_id=book_id,
+                        )
+                        audio_manifest = None
+                        if resolved_with_audio:
+                            manifest = self._prepare_manifest_for_audio(manifest)
+                            audio_manifest = self.synthesize_audio(manifest, book_id=book_id)
+                        episode_output = source_output.model_copy(
+                            update={
+                                "framing": framing,
+                                "spoken_script": spoken_script,
+                                "spoken_delivery": spoken_delivery,
+                                "manifest": manifest,
+                                "audio_manifest": audio_manifest,
+                            }
+                        )
+                        self._write_artifact(
+                            self._episode_artifact_key(book_id, source_output.plan.episode_id),
+                            "factual_script",
+                            source_output.script.model_dump(mode="json"),
+                        )
+                        self._write_artifact(
+                            self._episode_artifact_key(book_id, source_output.plan.episode_id),
+                            "spoken_script",
+                            spoken_script.model_dump(mode="json"),
+                        )
+                        self._write_artifact(
+                            self._episode_artifact_key(book_id, source_output.plan.episode_id),
+                            "spoken_delivery",
+                            spoken_delivery.model_dump(mode="json"),
+                        )
+                        if arc_plan is not None:
+                            self._write_artifact(
+                                self._episode_artifact_key(book_id, source_output.plan.episode_id),
+                                "spoken_delivery_arc_plan",
+                                arc_plan.model_dump(mode="json"),
+                            )
+                        self._write_artifact(
+                            self._episode_artifact_key(book_id, source_output.plan.episode_id),
+                            "episode_framing",
+                            framing.model_dump(mode="json"),
+                        )
+                        self._write_artifact(
+                            self._episode_artifact_key(book_id, source_output.plan.episode_id),
+                            "episode_output",
+                            episode_output.model_dump(mode="json"),
+                        )
+                        generated_outputs.append(episode_output)
+                        previous_spoken_script = spoken_script
+                        previous_plan = source_output.plan
+                        previous_script = source_output.script
+                    return {
+                        "episodes": generated_outputs,
+                        "copied_artifacts": copied_artifacts,
+                    }
+
+            if resolved_spoken_delivery_parallelism == 1 or len(spoken_only_book_ids) <= 1:
+                for book_id in spoken_only_book_ids:
+                    spoken_only_result_by_book_id[book_id] = process_spoken_only_book(book_id)
+            else:
+                with ThreadPoolExecutor(max_workers=resolved_spoken_delivery_parallelism) as executor:
+                    future_map = {
+                        submit_with_context(executor, process_spoken_only_book, book_id): book_id
+                        for book_id in spoken_only_book_ids
+                    }
+                    for future in as_completed(future_map):
+                        book_id = future_map[future]
+                        spoken_only_result_by_book_id[book_id] = future.result()
+
+            self.run_logger.log(
+                "batch_stage_end",
+                stage="spoken_delivery_only_books",
+                item_count=len(spoken_only_result_by_book_id),
+            )
+
             self.run_logger.log(
                 "batch_completed",
                 run_id=resolved_run_id,
@@ -1393,18 +1533,32 @@ class PipelineOrchestrator:
 
         books_payload = []
         for book_id in book_ids:
-            ingestion = ingestion_by_book_id[book_id]
-            analysis, plan = analysis_plan_by_book_id[book_id]
-            episodes = [
-                episode_output.model_dump(mode="json")
-                for episode_output in episode_outputs_by_book_id[book_id]
-            ]
+            spec = spec_by_book_id[book_id]
+            if not spec.spoken_delivery_only:
+                ingestion = ingestion_by_book_id[book_id].model_dump(mode="json")
+                analysis, plan = analysis_plan_by_book_id[book_id]
+                analysis_payload = analysis.model_dump(mode="json")
+                plan_payload = plan.model_dump(mode="json")
+                episodes = [
+                    episode_output.model_dump(mode="json")
+                    for episode_output in episode_outputs_by_book_id[book_id]
+                ]
+            else:
+                spoken_only_result = spoken_only_result_by_book_id[book_id]
+                copied_artifacts = spoken_only_result["copied_artifacts"]
+                ingestion = copied_artifacts.get("ingestion")
+                analysis_payload = copied_artifacts.get("analysis")
+                plan_payload = copied_artifacts.get("series_plan")
+                episodes = [
+                    episode_output.model_dump(mode="json")
+                    for episode_output in spoken_only_result["episodes"]
+                ]
             books_payload.append(
                 {
                     "book_id": book_id,
-                    "ingestion": ingestion.model_dump(mode="json"),
-                    "analysis": analysis.model_dump(mode="json"),
-                    "series_plan": plan.model_dump(mode="json"),
+                    "ingestion": ingestion,
+                    "analysis": analysis_payload,
+                    "series_plan": plan_payload,
                     "episodes": episodes,
                 }
             )
@@ -1859,6 +2013,109 @@ class PipelineOrchestrator:
         union = left.union(right)
         return len(intersection) / len(union)
 
+    def _copy_source_book_artifacts(self, source_root: Path, target_book_id: str) -> dict[str, dict]:
+        if not source_root.exists():
+            raise ValueError(f"Spoken-delivery artifact path does not exist: {source_root}")
+        if not source_root.is_dir():
+            raise ValueError(f"Spoken-delivery artifact path must be a directory: {source_root}")
+
+        copied_artifacts: dict[str, dict] = {}
+        for artifact_name in ("ingestion", "structure", "analysis", "series_plan", "embeddings"):
+            artifact_path = source_root / f"{artifact_name}.json"
+            if not artifact_path.exists():
+                continue
+            payload = self._load_manifest_source(artifact_path)
+            if not isinstance(payload, dict):
+                raise ValueError(
+                    f"Artifact '{artifact_path}' must contain a JSON object, got {type(payload).__name__}."
+                )
+            copied_artifacts[artifact_name] = payload
+            self._write_artifact(self._book_artifact_key(target_book_id), artifact_name, payload)
+        return copied_artifacts
+
+    def _load_spoken_only_source_episode_outputs(self, source_root: Path) -> list[EpisodeOutput]:
+        if not source_root.exists():
+            raise ValueError(f"Spoken-delivery artifact path does not exist: {source_root}")
+        if not source_root.is_dir():
+            raise ValueError(f"Spoken-delivery artifact path must be a directory: {source_root}")
+
+        source_outputs: list[EpisodeOutput] = []
+        series_plan_path = source_root / "series_plan.json"
+        plan_by_episode_id: dict[str, EpisodePlan] | None = None
+
+        def load_plan_by_episode_id() -> dict[str, EpisodePlan]:
+            nonlocal plan_by_episode_id
+            if plan_by_episode_id is not None:
+                return plan_by_episode_id
+            if not series_plan_path.exists():
+                raise ValueError(
+                    "Spoken-delivery-only fallback from factual_script.json requires "
+                    f"series_plan.json at '{series_plan_path}'."
+                )
+            try:
+                series_plan_payload = self._load_manifest_source(series_plan_path)
+                series_plan = SeriesPlan.model_validate_json(json.dumps(series_plan_payload))
+            except ValidationError as exc:
+                raise ValueError(f"Invalid series_plan.json at '{series_plan_path}': {exc}") from exc
+            plan_by_episode_id = {
+                episode_plan.episode_id: episode_plan for episode_plan in series_plan.episodes
+            }
+            return plan_by_episode_id
+
+        for episode_dir in sorted(path for path in source_root.iterdir() if path.is_dir()):
+            episode_output_path = episode_dir / "episode_output.json"
+            if episode_output_path.exists():
+                try:
+                    source_output = EpisodeOutput.model_validate_json(
+                        episode_output_path.read_text(encoding="utf-8")
+                    )
+                except ValidationError as exc:
+                    raise ValueError(f"Invalid episode_output.json at '{episode_output_path}': {exc}") from exc
+                if source_output.report.overall_status != "pass":
+                    raise ValueError(
+                        "Spoken-delivery-only mode requires grounding-passed episode outputs. "
+                        f"Found '{source_output.plan.episode_id}' with status '{source_output.report.overall_status}'."
+                    )
+                source_outputs.append(source_output)
+                continue
+
+            factual_script_path = episode_dir / "factual_script.json"
+            if not factual_script_path.exists():
+                continue
+            try:
+                script = EpisodeScript.model_validate_json(factual_script_path.read_text(encoding="utf-8"))
+            except ValidationError as exc:
+                raise ValueError(f"Invalid factual_script.json at '{factual_script_path}': {exc}") from exc
+            episode_plan = load_plan_by_episode_id().get(script.episode_id)
+            if episode_plan is None:
+                raise ValueError(
+                    "Spoken-delivery-only fallback from factual_script.json requires a matching episode in "
+                    f"series_plan.json. Missing episode_id '{script.episode_id}' for '{factual_script_path}'."
+                )
+            source_outputs.append(
+                EpisodeOutput(
+                    plan=episode_plan,
+                    script=script,
+                    report=GroundingReport(
+                        episode_id=script.episode_id,
+                        overall_status="pass",
+                        claim_assessments=[],
+                    ),
+                )
+            )
+            self.run_logger.log(
+                "spoken_only_factual_script_fallback_used",
+                episode_id=script.episode_id,
+                source_path=str(factual_script_path),
+                series_plan_path=str(series_plan_path),
+            )
+
+        if not source_outputs:
+            raise ValueError(
+                "Spoken-delivery-only mode requires at least one episode_output.json or factual_script.json under "
+                f"'{source_root}'."
+            )
+        return source_outputs
 
     def _write_citation_audit(
         self,

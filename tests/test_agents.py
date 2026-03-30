@@ -1586,7 +1586,7 @@ def test_episode_planning_uses_configured_min_episode_source_ratio() -> None:
     assert planner._target_source_words_per_episode(structure, episode_count=2) == 60000
     assert planner._compliance_violations(plan, structure, analysis, episode_count=2) == []
     assert strict_planner._compliance_violations(plan, structure, analysis, episode_count=2) == [
-        "episode-2 estimated at 25000 source words, too small for target 60000"
+        "episode-2 estimated at 25000 source words, too small for minimum 30000 (ratio 0.50 of target 60000)"
     ]
 
 

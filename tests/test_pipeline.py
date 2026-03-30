@@ -564,6 +564,9 @@ def test_index_book_raises_when_end_precedes_start(tmp_path: Path) -> None:
 def test_pipeline_defaults_raise_parallelism() -> None:
     settings = Settings()
 
+    assert settings.llm.anthropic_max_tokens == 100000
+    assert settings.llm.anthropic_prompt_caching_enabled is True
+    assert settings.llm.anthropic_prompt_caching_auto_fallback is True
     assert settings.pipeline.episode_parallelism == 6
     assert settings.pipeline.batch_parallelism == 3
     assert settings.pipeline.audio_parallelism == 6

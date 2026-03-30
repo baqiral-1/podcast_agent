@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from enum import Enum
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 
 
 def utc_now() -> datetime:
@@ -44,12 +44,32 @@ class BookIngestionResult(StrictModel):
 class BatchBookSpec(StrictModel):
     """Input specification for one book in a batch run."""
 
-    source_path: str
-    episode_count: int = Field(ge=1)
+    source_path: str | None = None
+    episode_count: int | None = Field(default=None, ge=1)
     title: str | None = None
     author: str = "Unknown"
     start_chapter: str | None = None
     end_chapter: str | None = None
+    spoken_delivery_only: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("spoken_delivery_only", "spoken-delivery-only"),
+    )
+    artifact_path: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("artifact_path", "artifact-path"),
+    )
+
+    @model_validator(mode="after")
+    def validate_mode_requirements(self) -> "BatchBookSpec":
+        if self.spoken_delivery_only:
+            if not self.artifact_path:
+                raise ValueError("artifact_path is required when spoken_delivery_only is true.")
+            return self
+        if not self.source_path:
+            raise ValueError("source_path is required when spoken_delivery_only is false.")
+        if self.episode_count is None:
+            raise ValueError("episode_count is required when spoken_delivery_only is false.")
+        return self
 
 
 class BatchRunManifest(StrictModel):
