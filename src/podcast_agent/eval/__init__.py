@@ -1,2 +1,1 @@
-"""Evaluation helpers for rewrite quality and bounds."""
-
+"""Evaluation helpers."""

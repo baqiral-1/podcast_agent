@@ -1,5 +1,1 @@
-"""Persistence interfaces and implementations."""
-
-from podcast_agent.db.repository import InMemoryRepository, PostgresRepository, Repository
-
-__all__ = ["InMemoryRepository", "PostgresRepository", "Repository"]
+"""Persistence interfaces (unused in multi-book pipeline — chunks stored in PGVector)."""

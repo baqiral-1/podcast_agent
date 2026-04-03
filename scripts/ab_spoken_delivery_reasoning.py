@@ -60,11 +60,63 @@ def _build_minimal_arc_plan() -> dict:
     }
 
 
-def _build_source_script() -> str:
-    return (
-        "The courier arrives at dusk. A single envelope changes the plan.\n\n"
-        "By morning, the team has to move fast, and the city feels smaller."
-    )
+def _build_fact_bank() -> dict:
+    return {
+        "episode_id": "episode-1",
+        "segments": [
+            {
+                "segment_id": "episode-1-segment-1",
+                "heading": "Sample",
+                "facts": [
+                    {
+                        "fact_id": "episode-1-segment-1__f01",
+                        "segment_id": "episode-1-segment-1",
+                        "text": "The courier arrives at dusk.",
+                        "anchors": ["courier", "dusk"],
+                        "uncertainty": "definite",
+                        "role": "event",
+                        "importance": 3,
+                        "dependencies": {"after": [], "before": [], "group_with": [], "float": False},
+                        "scene_id": "episode-1-segment-1_scene",
+                        "scene_label": "Scene centered on the courier arrival.",
+                        "source_index": 1,
+                        "quote_text": "",
+                        "quote_speaker": "",
+                    },
+                    {
+                        "fact_id": "episode-1-segment-1__f02",
+                        "segment_id": "episode-1-segment-1",
+                        "text": "A single envelope changes the plan.",
+                        "anchors": ["envelope", "plan"],
+                        "uncertainty": "definite",
+                        "role": "event",
+                        "importance": 3,
+                        "dependencies": {"after": ["episode-1-segment-1__f01"], "before": [], "group_with": [], "float": False},
+                        "scene_id": "episode-1-segment-1_scene",
+                        "scene_label": "Scene centered on the courier arrival.",
+                        "source_index": 2,
+                        "quote_text": "",
+                        "quote_speaker": "",
+                    },
+                    {
+                        "fact_id": "episode-1-segment-1__f03",
+                        "segment_id": "episode-1-segment-1",
+                        "text": "By morning, the team has to move fast, and the city feels smaller.",
+                        "anchors": ["morning", "team", "city"],
+                        "uncertainty": "definite",
+                        "role": "context",
+                        "importance": 2,
+                        "dependencies": {"after": ["episode-1-segment-1__f02"], "before": [], "group_with": [], "float": False},
+                        "scene_id": "episode-1-segment-1_scene",
+                        "scene_label": "Scene centered on the courier arrival.",
+                        "source_index": 3,
+                        "quote_text": "",
+                        "quote_speaker": "",
+                    },
+                ],
+            }
+        ],
+    }
 
 
 def _run_for_effort(client: OpenAICompatibleLLMClient, effort: str, runs: int) -> list[float]:
@@ -74,7 +126,7 @@ def _run_for_effort(client: OpenAICompatibleLLMClient, effort: str, runs: int) -
         "episode_id": "episode-1",
         "episode_title": "AB Test Episode",
         "arc_plan": _build_minimal_arc_plan(),
-        "source_script": _build_source_script(),
+        "fact_bank": _build_fact_bank(),
     }
     for _ in range(runs):
         start = time.perf_counter()

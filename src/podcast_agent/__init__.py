@@ -1,4 +1,4 @@
-"""Podcast agent package."""
+"""Multi-book thematic podcast pipeline."""
 
 from __future__ import annotations
 

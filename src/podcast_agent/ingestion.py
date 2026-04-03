@@ -7,6 +7,8 @@ from pathlib import Path
 
 from pypdf import PdfReader
 
+from podcast_agent.schemas.models import ChapterInfo
+
 
 _OCR_SPACED_HEADING_RE = re.compile(r"^(?:[A-Za-z]\s+){3,}[A-Za-z]$")
 _PAGE_MARKER_RE = re.compile(r"^\[Page \d+\]$")
@@ -85,3 +87,56 @@ def _normalize_line(line: str) -> str:
 
 def _looks_like_heading(line: str) -> bool:
     return bool(_SECTION_HEADING_RE.match(line))
+
+
+def extract_chapters_from_source(raw_text: str) -> list[ChapterInfo]:
+    """Extract chapter boundaries from normalized source headings."""
+
+    headings: list[tuple[int, str]] = []
+    cursor = 0
+    for line in raw_text.splitlines(keepends=True):
+        stripped = line.strip()
+        if stripped:
+            candidate = stripped.lstrip("#").strip()
+            if _looks_like_heading(candidate):
+                headings.append((cursor, candidate))
+        cursor += len(line)
+
+    if not headings:
+        raise ValueError("No chapter headings found in source text.")
+
+    chapters: list[ChapterInfo] = []
+    start_idx = 0
+    if headings[0][0] > 0 and raw_text[: headings[0][0]].strip():
+        preface_text = raw_text[: headings[0][0]]
+        chapters.append(
+            ChapterInfo(
+                chapter_id="ch0",
+                title="Front Matter",
+                start_index=0,
+                end_index=headings[0][0],
+                word_count=len(preface_text.split()),
+                summary="",
+            )
+        )
+        start_idx = 1
+
+    for i, (heading_start, heading_title) in enumerate(headings):
+        end_index = headings[i + 1][0] if i + 1 < len(headings) else len(raw_text)
+        chapter_text = raw_text[heading_start:end_index]
+        word_count = len(chapter_text.split())
+        if word_count < 1000:
+            raise ValueError(
+                f"Chapter '{heading_title}' has {word_count} words; minimum is 1000."
+            )
+        chapters.append(
+            ChapterInfo(
+                chapter_id=f"ch{i + start_idx + 1}",
+                title=heading_title,
+                start_index=heading_start,
+                end_index=end_index,
+                word_count=word_count,
+                summary="",
+            )
+        )
+    return chapters

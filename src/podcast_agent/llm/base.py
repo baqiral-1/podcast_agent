@@ -35,6 +35,9 @@ class LLMClient(ABC):
         instructions: str,
         payload: PromptPayload,
         response_model: type[BaseModel],
+        *,
+        attempt: int = 1,
+        max_attempts: int = 1,
     ) -> BaseModel:
         """Generate and validate structured JSON for a response model."""
 

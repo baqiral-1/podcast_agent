@@ -1,2235 +1,1698 @@
-"""End-to-end orchestration for the book-to-podcast pipeline."""
+"""Multi-book thematic podcast pipeline orchestrator.
+
+Implements the four-phase pipeline:
+  Phase 1: Ingest & Index (parallel per book)
+  Phase 2: Thematic Intelligence (sequential cross-book)
+  Phase 3: Episode Production (parallel per episode)
+  Phase 4: Audio Rendering (parallel per episode)
+"""
 
 from __future__ import annotations
 
-from collections import Counter, defaultdict
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
-from datetime import UTC, datetime
-import io
+import asyncio
+import hashlib
 import json
-from math import log
-from pathlib import Path
+import logging
+import math
 import re
-import shutil
-import subprocess
-import tempfile
-import threading
-import wave
+import time
+from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import Any
+from uuid import uuid4
 
-from pydantic import ValidationError
-
-from podcast_agent.agents import (
-    AnalysisAgent,
-    EpisodeFramingAgent,
-    EpisodePlanningAgent,
-    GroundingValidationAgent,
-    RepairAgent,
-    SpokenDeliveryAgent,
-    StructuringAgent,
-    WritingAgent,
-)
+from podcast_agent.agents.framing import EpisodeFramingAgent
+from podcast_agent.agents.narrative_strategy import NarrativeStrategyAgent
+from podcast_agent.agents.passage_extraction import PassageExtractionAgent
+from podcast_agent.agents.planning import SeriesPlanningAgent
+from podcast_agent.agents.repair import RepairAgent
+from podcast_agent.agents.source_weaving import SourceWeavingAgent
+from podcast_agent.agents.spoken_delivery_agent import SpokenDeliveryAgent
+from podcast_agent.agents.structuring import StructuringAgent
+from podcast_agent.agents.synthesis_mapping import SynthesisMappingAgent
+from podcast_agent.agents.theme_decomposition import ThemeDecompositionAgent
+from podcast_agent.agents.chapter_summary import ChapterSummaryAgent
+from podcast_agent.agents.validation import GroundingValidationAgent
+from podcast_agent.agents.writing import WritingAgent
 from podcast_agent.config import Settings
-from podcast_agent.db.repository import ArtifactStore, InMemoryRepository, Repository
-from podcast_agent.ingestion import normalize_source_text, read_source_text
-from podcast_agent.llm import LLMClient, build_llm_client
-from podcast_agent.retrieval import RetrievalService, embed_text
-from podcast_agent.run_logging import RunLogger, submit_with_context
+from podcast_agent.ingestion import read_source_text, extract_chapters_from_source
+from podcast_agent.langchain.llm import build_llm_client
+from podcast_agent.llm.base import LLMClient
+from podcast_agent.llm.concurrency import configure_llm_semaphore
+from podcast_agent.retrieval.search import RetrievalService
+from podcast_agent.retrieval.vector_store import PGVectorRetrieval
+from podcast_agent.run_logging import RunLogger
 from podcast_agent.schemas.models import (
     AudioManifest,
-    AudioSegmentFile,
-    BatchBookSpec,
-    BatchRunManifest,
-    BookIngestionResult,
-    BookStructure,
+    AudioSegmentResult,
+    BookRecord,
+    ChapterInfo,
+    ChunkingConfig,
+    CoverageStats,
     EpisodeFraming,
-    EpisodeOutput,
     EpisodePlan,
     EpisodeScript,
+    ExtractedPassage,
     GroundingReport,
+    NarrativeStrategy,
+    PassagePair,
+    PipelineConfig,
+    ProjectStatus,
     RenderManifest,
     RenderSegment,
     RepairResult,
-    EpisodeSegment,
-    SeriesPlan,
-    SpokenDeliveryArcPlan,
-    SpokenDeliveryEpisodeResult,
-    SpokenEpisodeNarration,
-    SourceType,
+    SegmentDiff,
+    ScriptSegment,
+    SpokenScript,
+    SpokenSegment,
+    SynthesisMap,
+    SynthesisTag,
+    TextChunk,
+    ThematicAxis,
+    ThematicCorpus,
+    ThematicProject,
 )
-from podcast_agent.tts import TTSClient, build_tts_client
-from podcast_agent.utils.chapter_utils import split_into_chapters, validate_chapter_range
-from podcast_agent.utils.text import truncate_words
+from podcast_agent.tts.openai_compatible import build_tts_client
+
+logger = logging.getLogger(__name__)
 
 
-class WavMergeError(RuntimeError):
-    """Raised when WAV segments cannot be merged cleanly."""
-
-    def __init__(self, message: str, diagnostics: list[dict[str, object]]) -> None:
-        super().__init__(message)
-        self.diagnostics = diagnostics
+# ---------------------------------------------------------------------------
+# Artifact persistence helpers
+# ---------------------------------------------------------------------------
 
 
-@dataclass
-class EpisodePreparation:
-    plan: EpisodePlan
-    script: EpisodeScript
-    report: GroundingReport
-    repair_attempts: list[RepairResult]
+def _save_json(path: Path, data: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if hasattr(data, "model_dump"):
+        payload = data.model_dump(mode="json")
+    else:
+        payload = data
+    path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+
+
+def _load_json(path: Path) -> dict | None:
+    if not path.exists():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _input_hash(*args: Any) -> str:
+    content = json.dumps(args, sort_keys=True, default=str)
+    return hashlib.sha256(content.encode()).hexdigest()[:16]
+
+
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+_WORD_RE = re.compile(r"[A-Za-z0-9']+")
+
+
+def _split_sentences(text: str) -> list[str]:
+    if not text:
+        return []
+    sentences = [s.strip() for s in _SENTENCE_SPLIT_RE.split(text) if s.strip()]
+    if not sentences and text.strip():
+        return [text.strip()]
+    return sentences
+
+
+def _tokenize(text: str) -> list[str]:
+    return _WORD_RE.findall(text.lower())
+
+
+def _bm25_score(
+    tokens: list[str],
+    query_terms: dict[str, int],
+    idf: dict[str, float],
+    avg_len: float,
+    *,
+    k1: float = 1.5,
+    b: float = 0.75,
+) -> float:
+    if not tokens:
+        return 0.0
+    tf: dict[str, int] = {}
+    for t in tokens:
+        tf[t] = tf.get(t, 0) + 1
+    doc_len = len(tokens)
+    score = 0.0
+    for term, qf in query_terms.items():
+        if term not in tf:
+            continue
+        freq = tf[term]
+        denom = freq + k1 * (1 - b + b * (doc_len / avg_len))
+        score += idf.get(term, 0.0) * ((freq * (k1 + 1)) / denom) * qf
+    return score
+
+
+def _trim_candidate_texts_by_bm25(axis: ThematicAxis, candidates: list[dict]) -> None:
+    if not candidates:
+        return
+    query_parts = [axis.name, axis.description]
+    query_parts.extend(axis.guiding_questions)
+    query_parts.extend(axis.keywords)
+    query_text = " ".join(part for part in query_parts if part).strip()
+    if not query_text:
+        return
+    query_terms: dict[str, int] = {}
+    for term in _tokenize(query_text):
+        query_terms[term] = query_terms.get(term, 0) + 1
+    if not query_terms:
+        return
+
+    sentence_tokens: list[list[str]] = []
+    sentences_by_candidate: list[list[str]] = []
+    for cand in candidates:
+        sentences = _split_sentences(cand.get("text", ""))
+        sentences_by_candidate.append(sentences)
+        for sentence in sentences:
+            sentence_tokens.append(_tokenize(sentence))
+
+    if not sentence_tokens:
+        return
+
+    df: dict[str, int] = {}
+    for tokens in sentence_tokens:
+        for term in set(tokens):
+            df[term] = df.get(term, 0) + 1
+    total_sentences = len(sentence_tokens)
+    idf = {
+        term: math.log(1 + (total_sentences - count + 0.5) / (count + 0.5))
+        for term, count in df.items()
+    }
+    avg_len = sum(len(tokens) for tokens in sentence_tokens) / total_sentences
+    if avg_len <= 0:
+        return
+
+    for cand, sentences in zip(candidates, sentences_by_candidate, strict=False):
+        if not sentences:
+            continue
+        scored: list[tuple[float, int, str]] = []
+        for idx, sentence in enumerate(sentences):
+            tokens = _tokenize(sentence)
+            score = _bm25_score(tokens, query_terms, idf, avg_len)
+            scored.append((score, idx, sentence))
+        scored.sort(key=lambda item: (-item[0], item[1]))
+        top_n = max(1, math.ceil(len(sentences) / 4))
+        selected = sorted(scored[:top_n], key=lambda item: item[1])
+        trimmed = " ".join(sentence for _, _, sentence in selected).strip()
+        if trimmed:
+            cand["text"] = trimmed
+
+
+def _select_top_passages_for_synthesis(
+    passages: list[ExtractedPassage],
+    *,
+    top_k: int = 10,
+) -> list[ExtractedPassage]:
+    if not passages:
+        return []
+    top_n = max(1, min(top_k, len(passages)))
+    ranked = sorted(
+        passages,
+        key=lambda p: (-p.relevance_score, -p.quotability_score, p.passage_id),
+    )
+    return ranked[:top_n]
+
+
+def _select_synthesis_passages(
+    passages: list[ExtractedPassage],
+    cross_pair_ids: set[str],
+) -> list[ExtractedPassage]:
+    selected = _select_top_passages_for_synthesis(passages)
+    selected_by_id = {p.passage_id: p for p in selected}
+    additions = [
+        p for p in passages
+        if p.passage_id in cross_pair_ids and p.passage_id not in selected_by_id
+    ]
+    if additions:
+        additions.sort(key=lambda p: p.passage_id)
+        selected.extend(additions)
+    return selected
+
+
+# ---------------------------------------------------------------------------
+# Stage logging context manager
+# ---------------------------------------------------------------------------
+
+
+@asynccontextmanager
+async def _stage_log(run_logger: RunLogger, stage_name: str, project_dir: Path, **input_summary):
+    """Log stage start/end with timing and save input/output artifacts."""
+    stage_dir = project_dir / "stage_artifacts" / stage_name
+    stage_dir.mkdir(parents=True, exist_ok=True)
+    _save_json(stage_dir / "input.json", input_summary)
+
+    start = time.monotonic()
+    run_logger.log("stage_start", stage=stage_name, input_summary=input_summary)
+
+    result_holder: dict[str, Any] = {}
+    error_info: dict[str, Any] | None = None
+    try:
+        yield result_holder
+    except Exception as exc:
+        error_info = {"error_type": type(exc).__name__, "error_message": str(exc)}
+        raise
+    finally:
+        elapsed_ms = int((time.monotonic() - start) * 1000)
+        output_summary = result_holder.get("output_summary", {})
+        _save_json(stage_dir / "output.json", output_summary)
+        event_payload: dict[str, Any] = {
+            "stage": stage_name,
+            "elapsed_ms": elapsed_ms,
+            "output_summary": output_summary,
+            "artifact_dir": str(stage_dir),
+        }
+        if error_info:
+            event_payload["error"] = error_info
+            run_logger.log("stage_error", **event_payload)
+        else:
+            run_logger.log("stage_end", **event_payload)
+
+
+# ---------------------------------------------------------------------------
+# Text chunking (Stage 3 — no LLM)
+# ---------------------------------------------------------------------------
+
+
+def chunk_text(
+    raw_text: str,
+    book_id: str,
+    chapters: list[ChapterInfo],
+    config: ChunkingConfig,
+) -> list[TextChunk]:
+    """Split chapter text into overlapping chunks."""
+    chunks: list[TextChunk] = []
+    global_index = 0
+    for chapter in chapters:
+        chapter_text = raw_text[chapter.start_index : chapter.end_index]
+        chapter_chunks = _split_into_chunks(
+            chapter_text,
+            config.max_chunk_words,
+            config.overlap_words,
+            config.min_chunk_words,
+            config.split_on,
+        )
+        for position, text_str in enumerate(chapter_chunks):
+            word_count = len(text_str.split())
+            chunks.append(
+                TextChunk(
+                    chunk_id=f"{book_id}-{chapter.chapter_id}-chunk-{global_index}",
+                    book_id=book_id,
+                    chapter_id=chapter.chapter_id,
+                    text=text_str,
+                    word_count=word_count,
+                    position=position,
+                    metadata={"author": "", "title": ""},
+                )
+            )
+            global_index += 1
+    return chunks
+
+
+def _split_into_chunks(
+    text: str,
+    max_words: int,
+    overlap_words: int,
+    min_words: int,
+    split_on: list[str],
+) -> list[str]:
+    words = text.split()
+    if len(words) <= max_words:
+        return [text] if len(words) >= min_words else ([text] if text.strip() else [])
+
+    chunks: list[str] = []
+    start = 0
+    while start < len(words):
+        end = min(start + max_words, len(words))
+        chunk_words = words[start:end]
+        chunk_str = " ".join(chunk_words)
+
+        if end < len(words):
+            best_split = -1
+            for boundary in split_on:
+                idx = chunk_str.rfind(boundary)
+                if idx > len(chunk_str) // 2:
+                    best_split = max(best_split, idx)
+            if best_split > 0:
+                chunk_str = chunk_str[: best_split + len(split_on[0])]
+                end = start + len(chunk_str.split())
+
+        if chunks and len(chunk_str.split()) < min_words:
+            chunks[-1] = chunks[-1] + " " + chunk_str
+            break
+
+        chunks.append(chunk_str.strip())
+        start = max(start + 1, end - overlap_words)
+
+    return [c for c in chunks if c.strip()]
+
+
+# ---------------------------------------------------------------------------
+# Render manifest construction (Stage 15 — no LLM)
+# ---------------------------------------------------------------------------
+
+
+def build_render_manifest(
+    spoken_script: SpokenScript,
+    framing: EpisodeFraming | None,
+    voice_id: str = "ballad",
+    speed: float = 1.0,
+    words_per_minute: int = 130,
+) -> RenderManifest:
+    segments: list[RenderSegment] = []
+
+    if framing and framing.cold_open:
+        segments.append(RenderSegment(
+            text=framing.cold_open, voice_id=voice_id, speed=speed,
+            pause_after_ms=1500,
+        ))
+
+    if framing and framing.recap:
+        segments.append(RenderSegment(
+            text=framing.recap, voice_id=voice_id, speed=speed,
+            pause_before_ms=500, pause_after_ms=1000,
+        ))
+
+    for seg in spoken_script.segments:
+        segments.append(RenderSegment(
+            segment_id=seg.segment_id, text=seg.text, voice_id=voice_id,
+            speed=speed, pause_before_ms=300, pause_after_ms=300,
+        ))
+
+    if framing and framing.preview:
+        segments.append(RenderSegment(
+            text=framing.preview, voice_id=voice_id, speed=speed,
+            pause_before_ms=1000,
+        ))
+
+    total_words = sum(len(seg.text.split()) for seg in segments)
+    estimated_seconds = int(total_words / words_per_minute * 60)
+
+    return RenderManifest(
+        episode_number=spoken_script.episode_number,
+        segments=segments,
+        total_segments=len(segments),
+        estimated_duration_seconds=estimated_seconds,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Pipeline Orchestrator
+# ---------------------------------------------------------------------------
 
 
 class PipelineOrchestrator:
-    """Coordinates all stages from ingestion through render manifest."""
+    """Orchestrates the four-phase multi-book thematic podcast pipeline."""
 
-    def __init__(
-        self,
-        settings: Settings | None = None,
-        repository: Repository | None = None,
-        llm: LLMClient | None = None,
-        tts: TTSClient | None = None,
-    ) -> None:
+    def __init__(self, settings: Settings | None = None) -> None:
         self.settings = settings or Settings()
-        self.repository = repository or InMemoryRepository()
-        self.llm = llm or build_llm_client(self.settings)
-        self.artifacts = ArtifactStore(self.settings.pipeline.artifact_root)
         self.run_logger = RunLogger(self.settings.pipeline.artifact_root)
-        self.run_id: str | None = None
-        self.current_book_id: str | None = None
-        self._book_titles: dict[str, str] = {}
-        self._audio_semaphore = threading.BoundedSemaphore(self.settings.pipeline.audio_parallelism)
-        if hasattr(self.llm, "set_run_logger"):
-            self.llm.set_run_logger(self.run_logger)
-        self.tts = tts or build_tts_client(self.settings)
-        if hasattr(self.tts, "set_run_logger"):
-            self.tts.set_run_logger(self.run_logger)
-        self.retrieval = RetrievalService(self.repository)
-        self.structuring_agent = StructuringAgent(
-            llm=self.llm,
-            max_chunk_words=self.settings.pipeline.max_chunk_words,
-            chunk_overlap_words=self.settings.pipeline.chunk_overlap_words,
-            max_structuring_chapter_words=self.settings.pipeline.max_structuring_chapter_words,
-            max_structuring_llm_chapter_words=self.settings.pipeline.max_structuring_llm_chapter_words,
-            structuring_parallelism=self.settings.pipeline.structuring_parallelism,
-            structuring_window_words=self.settings.pipeline.structuring_window_words,
-            structuring_window_overlap_words=self.settings.pipeline.structuring_window_overlap_words,
-        )
-        self.analysis_agent = AnalysisAgent(
-            self.llm,
-            max_payload_bytes=self.settings.pipeline.max_analysis_payload_bytes,
-            max_payload_bytes_with_episode_count=self.settings.pipeline.max_analysis_payload_bytes_with_episode_count,
-        )
-        self.planning_agent = EpisodePlanningAgent(
-            self.llm,
-            minimum_source_words_per_episode=self.settings.pipeline.minimum_source_words_per_episode,
-            min_episode_source_ratio=self.settings.pipeline.min_episode_source_ratio,
-            spoken_words_per_minute=self.settings.pipeline.spoken_words_per_minute,
-            max_episode_minutes=self.settings.pipeline.max_episode_minutes,
-            max_payload_bytes=self.settings.pipeline.max_planning_payload_bytes,
-            max_payload_bytes_with_episode_count=self.settings.pipeline.max_planning_payload_bytes_with_episode_count,
-            section_beat_target_words=self.settings.pipeline.section_beat_target_words,
-            beat_evidence_window_size=self.settings.pipeline.beat_evidence_window_size,
-        )
-        self.writing_agent = WritingAgent(
-            self.llm,
-            minimum_source_words_per_episode=self.settings.pipeline.minimum_source_words_per_episode,
-            spoken_words_per_minute=self.settings.pipeline.spoken_words_per_minute,
-            coverage_warning_min_ratio=self.settings.pipeline.coverage_warning_min_ratio,
-            target_script_source_ratio=self.settings.pipeline.target_script_source_ratio,
-            max_target_script_words=self.settings.pipeline.max_target_script_words,
-            beat_parallelism=self.settings.pipeline.beat_parallelism,
-            beat_write_retry_attempts=self.settings.pipeline.beat_write_retry_attempts,
-            beat_write_timeout_seconds=self.settings.pipeline.beat_write_timeout_seconds,
-        )
-        self.validation_agent = GroundingValidationAgent(
-            self.llm,
-            grounding_parallelism=self.settings.pipeline.grounding_parallelism,
-        )
-        self.repair_agent = RepairAgent(self.llm)
-        spoken_chunk_min_words = self.settings.spoken_delivery.chunk_min_words
-        spoken_chunk_max_words = self.settings.spoken_delivery.chunk_max_words
-        if self.settings.tts.provider.lower() == "kokoro":
-            spoken_chunk_min_words = self.settings.tts.kokoro_chunk_min_words
-            spoken_chunk_max_words = self.settings.tts.kokoro_chunk_max_words
-        self.spoken_delivery_agent = SpokenDeliveryAgent(
-            self.llm,
-            timeout_seconds=self.settings.spoken_delivery.timeout_seconds,
-            chunk_min_words=spoken_chunk_min_words,
-            chunk_max_words=spoken_chunk_max_words,
-        )
-        self.framing_agent = EpisodeFramingAgent(
-            self.llm,
-            recap_min_words=self.settings.pipeline.framing_recap_min_words,
-            recap_max_words=self.settings.pipeline.framing_recap_max_words,
-            next_min_words=self.settings.pipeline.framing_next_min_words,
-            next_max_words=self.settings.pipeline.framing_next_max_words,
-            max_recap_source_words=self.settings.pipeline.framing_recap_source_max_words,
+        self.llm: LLMClient = build_llm_client(self.settings)
+        self.vector_store = PGVectorRetrieval(self.settings, run_logger=self.run_logger)
+        self.retrieval = RetrievalService(self.settings, self.vector_store)
+        self.tts_client = build_tts_client(self.settings)
+        self.llm.set_run_logger(self.run_logger)
+        self.tts_client.set_run_logger(self.run_logger)
+
+        # Configure per-schema concurrency semaphores
+        per_schema: dict[str, int] = {}
+        for schema_name, agent_cfg in self.settings.llm.agent_configs.items():
+            if agent_cfg.concurrency_limit is not None:
+                per_schema[schema_name] = agent_cfg.concurrency_limit
+        configure_llm_semaphore(
+            default_limit=self.settings.pipeline.llm_global_max_concurrency,
+            per_schema=per_schema,
         )
 
-    def log_command(self, command_name: str, arguments: dict) -> None:
-        """Record the CLI command or orchestration entrypoint."""
+        # Build agents with per-schema retry counts
+        def _retries(name: str) -> int:
+            return self.settings.llm.resolve_max_retry_attempts(name)
 
-        self.run_logger.log("command", command_name=command_name, arguments=arguments)
+        self.structuring_agent = StructuringAgent(self.llm, max_retry_attempts=_retries("structuring"))
+        self.chapter_summary_agent = ChapterSummaryAgent(self.llm, max_retry_attempts=_retries("chapter_summary"))
+        self.theme_decomposition_agent = ThemeDecompositionAgent(self.llm, max_retry_attempts=_retries("theme_decomposition"))
+        self.passage_extraction_agent = PassageExtractionAgent(self.llm, max_retry_attempts=_retries("passage_extraction"))
+        self.synthesis_mapping_agent = SynthesisMappingAgent(self.llm, max_retry_attempts=_retries("synthesis_mapping"))
+        self.narrative_strategy_agent = NarrativeStrategyAgent(self.llm, max_retry_attempts=_retries("narrative_strategy"))
+        self.series_planning_agent = SeriesPlanningAgent(self.llm, max_retry_attempts=_retries("series_planning"))
+        self.writing_agent = WritingAgent(self.llm, max_retry_attempts=_retries("episode_writing"))
+        self.source_weaving_agent = SourceWeavingAgent(self.llm, max_retry_attempts=_retries("source_weaving"))
+        self.grounding_agent = GroundingValidationAgent(self.llm, max_retry_attempts=_retries("grounding_validation"))
+        self.repair_agent = RepairAgent(self.llm, max_retry_attempts=_retries("repair"))
+        self.spoken_delivery_agent = SpokenDeliveryAgent(self.llm, max_retry_attempts=_retries("spoken_delivery"))
+        self.framing_agent = EpisodeFramingAgent(self.llm, max_retry_attempts=_retries("episode_framing"))
 
-    def _book_title(self, book_id: str | None) -> str | None:
-        if book_id is None:
-            return None
-        return self._book_titles.get(book_id)
+    # -----------------------------------------------------------------------
+    # Main entry point
+    # -----------------------------------------------------------------------
 
-    def _book_context(self, book_id: str | None, *, book_title: str | None = None):
-        resolved_title = book_title if book_title is not None else self._book_title(book_id)
-        return self.run_logger.context(book_id=book_id, book_title=resolved_title)
-
-    def ingest_book(
+    async def run_multi_book_podcast(
         self,
-        source_path: str | Path,
-        title: str | None = None,
-        author: str = "Unknown",
-    ) -> BookIngestionResult:
-        """Read source text and persist the book record."""
+        source_paths: list[str],
+        theme: str,
+        episode_count: int,
+        config: PipelineConfig | None = None,
+        theme_elaboration: str | None = None,
+        titles: list[str] | None = None,
+        authors: list[str] | None = None,
+        project_id: str | None = None,
+    ) -> ThematicProject:
+        pipeline_config = config or PipelineConfig()
+        project_id = project_id or uuid4().hex
+        project_dir = self.settings.pipeline.artifact_root / project_id
 
-        path = Path(source_path)
-        raw_text = read_source_text(path)
-        resolved_title = title or path.stem.replace("_", " ").title()
-        book_id = _slugify(resolved_title)
-        source_type = _detect_source_type(path)
-        ingestion = BookIngestionResult(
-            book_id=book_id,
-            title=resolved_title,
-            author=author,
-            source_path=str(path),
-            source_type=source_type,
-            raw_text=raw_text,
-        )
-        self.current_book_id = book_id
-        self._book_titles[book_id] = resolved_title
-        with self._book_context(book_id, book_title=resolved_title):
-            if self.run_id is None:
-                self.run_id = _new_run_id(book_id)
-                self.run_logger.bind_run(self.run_id)
-                self.run_logger.log("run_started", run_id=self.run_id, book_id=book_id, title=resolved_title)
-            self.run_logger.log(
-                "stage_start",
-                stage="ingest_book",
-                source_path=str(path),
-                title=resolved_title,
-                author=author,
-            )
-            if source_type == SourceType.PDF:
-                page_count = len(re.findall(r"^\[Page \d+\]$", raw_text, flags=re.MULTILINE))
-                word_count = len(raw_text.split())
-                warnings: list[str] = []
-                if page_count == 0:
-                    warnings.append("missing_page_markers")
-                if word_count < 50:
-                    warnings.append("low_extracted_word_count")
-                self.run_logger.log(
-                    "pdf_ingest_diagnostics",
-                    source_path=str(path),
-                    page_count=page_count,
-                    extracted_word_count=word_count,
-                    warnings=warnings,
-                )
-            self.repository.save_book(ingestion)
-            self._write_artifact(self._book_artifact_key(book_id), "ingestion", ingestion.model_dump(mode="json"))
-            self.run_logger.log("stage_end", stage="ingest_book", book_id=book_id)
-        return ingestion
-
-    def index_book(
-        self,
-        ingestion: BookIngestionResult,
-        *,
-        start_chapter: str | None = None,
-        end_chapter: str | None = None,
-    ):
-        """Structure the book and store chunks plus embeddings in the repository."""
-
-        with self._book_context(ingestion.book_id, book_title=ingestion.title):
-            if start_chapter is not None or end_chapter is not None:
-                self.run_logger.log(
-                    "stage_start",
-                    stage="validate_chapter_range",
-                    book_id=ingestion.book_id,
-                )
-                try:
-                    self._validate_chapter_range(
-                        ingestion,
-                        start_chapter=start_chapter,
-                        end_chapter=end_chapter,
-                    )
-                except Exception as exc:
-                    self.run_logger.log(
-                        "stage_failed",
-                        stage="validate_chapter_range",
-                        book_id=ingestion.book_id,
-                        error_type=type(exc).__name__,
-                        error_message=str(exc),
-                    )
-                    raise
-                self.run_logger.log(
-                    "stage_end",
-                    stage="validate_chapter_range",
-                    book_id=ingestion.book_id,
-                )
-            self.run_logger.log("stage_start", stage="index_book", book_id=ingestion.book_id)
-            structure = self.structuring_agent.structure(
-                ingestion,
-                start_chapter=start_chapter,
-                end_chapter=end_chapter,
-            )
-            self._book_titles[structure.book_id] = structure.title
-            if start_chapter is not None or end_chapter is not None:
-                self.run_logger.log(
-                    "chapter_selection_applied",
-                    book_id=structure.book_id,
-                    start_chapter=start_chapter,
-                    end_chapter=end_chapter,
-                    chapter_count=len(structure.chapters),
-                    chunk_count=len(structure.chunks),
-                )
-            self.repository.save_structure(structure)
-            embeddings = {
-                chunk.chunk_id: embed_text(
-                    chunk.text,
-                    dimensions=self.settings.pipeline.embedding_dimensions,
-                )
-                for chunk in structure.chunks
-            }
-            self.repository.save_embeddings(structure.book_id, embeddings)
-            self._write_artifact(
-                self._book_artifact_key(structure.book_id),
-                "structure",
-                structure.model_dump(mode="json"),
-            )
-            self._write_artifact(self._book_artifact_key(structure.book_id), "embeddings", embeddings)
-            self.run_logger.log(
-                "stage_end",
-                stage="index_book",
-                book_id=structure.book_id,
-                chunk_count=len(structure.chunks),
-            )
-        return structure
-
-    @staticmethod
-    def _validate_chapter_range(
-        ingestion: BookIngestionResult,
-        *,
-        start_chapter: str | None,
-        end_chapter: str | None,
-    ) -> None:
-        normalized_text = (
-            normalize_source_text(ingestion.raw_text)
-            if ingestion.source_type == SourceType.PDF
-            else ingestion.raw_text
-        )
-        sections = split_into_chapters(normalized_text)
-        validate_chapter_range(
-            sections,
-            start_chapter=start_chapter,
-            end_chapter=end_chapter,
-        )
-
-    def plan_episodes(self, structure, *, episode_count: int):
-        """Analyze the book and produce the series plan."""
-
-        self._book_titles[structure.book_id] = structure.title
-        with self._book_context(structure.book_id, book_title=structure.title):
-            self.run_logger.log("stage_start", stage="plan_episodes", book_id=structure.book_id)
-            analysis = self.analysis_agent.analyze(structure, episode_count)
-            plan = self.planning_agent.plan(structure, analysis, episode_count)
-            self._write_artifact(
-                self._book_artifact_key(structure.book_id),
-                "analysis",
-                analysis.model_dump(mode="json"),
-            )
-            self._write_artifact(
-                self._book_artifact_key(structure.book_id),
-                "series_plan",
-                plan.model_dump(mode="json"),
-            )
-            self.run_logger.log(
-                "stage_end",
-                stage="plan_episodes",
-                book_id=structure.book_id,
-                episode_count=len(plan.episodes),
-                requested_episode_count=episode_count,
-                episode_parallelism=self.settings.pipeline.episode_parallelism,
-            )
-        return analysis, plan
-
-    def write_episode(self, book_id: str, episode_plan: EpisodePlan) -> EpisodeScript:
-        """Generate a single episode script from retrieved evidence."""
-
-        with self._book_context(book_id):
-            self.run_logger.log("stage_start", stage="write_episode", book_id=book_id, episode_id=episode_plan.episode_id)
-            retrieval_hits = self.retrieval.fetch_for_episode(book_id=book_id, chunk_ids=episode_plan.chunk_ids)
-            self.run_logger.log(
-                "episode_assignment_diagnostics",
-                book_id=book_id,
-                episode_id=episode_plan.episode_id,
-                assigned_chunk_count=len(retrieval_hits),
-                beat_count=len(episode_plan.beats),
-                beat_chunk_counts=[len(beat.chunk_ids) for beat in episode_plan.beats],
-            )
-            script = self.writing_agent.write(episode_plan, retrieval_hits)
-            self.run_logger.log("stage_end", stage="write_episode", book_id=book_id, episode_id=episode_plan.episode_id)
-        return script
-
-    def validate_episode(self, book_id: str, script: EpisodeScript) -> GroundingReport:
-        """Validate one episode script against the cited chunks."""
-
-        with self._book_context(book_id):
-            self.run_logger.log("stage_start", stage="validate_episode", book_id=book_id, episode_id=script.episode_id)
-            cited_chunk_ids = []
-            for segment in script.segments:
-                cited_chunk_ids.extend(segment.citations)
-            retrieval_hits = self.retrieval.fetch_for_episode(book_id=book_id, chunk_ids=sorted(set(cited_chunk_ids)))
-            report = self.validation_agent.validate(script, retrieval_hits)
-            self.run_logger.log(
-                "stage_end",
-                stage="validate_episode",
-                book_id=book_id,
-                episode_id=script.episode_id,
-                overall_status=report.overall_status,
-            )
-        return report
-
-    def spoken_delivery_episode(
-        self,
-        book_id: str,
-        script: EpisodeScript,
-    ) -> tuple[
-        SpokenEpisodeNarration | None,
-        SpokenDeliveryEpisodeResult | None,
-        SpokenDeliveryArcPlan | None,
-    ]:
-        """Rewrite a validated factual script into spoken-form delivery."""
-
-        with self._book_context(book_id):
-            if not self.settings.spoken_delivery.enabled:
-                raise RuntimeError("Spoken delivery is required to build a manifest.")
-            self.run_logger.log("stage_start", stage="spoken_delivery_episode", book_id=book_id, episode_id=script.episode_id)
-            spoken_script, spoken_delivery, arc_plan = self.spoken_delivery_agent.rewrite_full_episode_two_call(script)
-            self.run_logger.log(
-                "stage_end",
-                stage="spoken_delivery_episode",
-                book_id=book_id,
-                episode_id=script.episode_id,
-                chunk_count=len(spoken_script.chunks),
-            )
-        return spoken_script, spoken_delivery, arc_plan
-
-    def repair_episode(
-        self,
-        book_id: str,
-        script: EpisodeScript,
-        report: GroundingReport,
-    ) -> RepairResult:
-        """Repair an episode until it validates or hits the attempt cap."""
-
-        with self._book_context(book_id):
-            current_script = script
-            current_report = report
-            repair_result = None
-            for attempt in range(1, self.settings.pipeline.max_repair_attempts + 1):
-                failed_segments = self.repair_agent.failed_segments(current_script, current_report)
-                if not failed_segments:
-                    return RepairResult(
-                        episode_id=current_script.episode_id,
-                        attempt=attempt,
-                        repaired_segment_ids=[],
-                        script=current_script,
-                        report=current_report,
-                    )
-                self.run_logger.log(
-                    "stage_start",
-                    stage="repair_episode",
-                    book_id=book_id,
-                    episode_id=script.episode_id,
-                    attempt=attempt,
-                )
-                failed_assessments = self.repair_agent.failed_claim_assessments(current_script, current_report)
-                self.run_logger.log(
-                    "repair_payload_diagnostics",
-                    book_id=book_id,
-                    episode_id=current_script.episode_id,
-                    attempt=attempt,
-                    failed_segment_count=len(failed_segments),
-                    failed_segment_ids=[segment.segment_id for segment in failed_segments],
-                    failed_beat_ids=[segment.beat_id for segment in failed_segments],
-                    failed_claim_count=len(failed_assessments),
-                )
-                segment_repair = self.repair_agent.repair(current_script, current_report, attempt)
-                previous_script = current_script
-                current_script = self._merge_repaired_segments(previous_script, segment_repair.repaired_segments)
-                self._log_repair_segment_diffs(
-                    book_id=book_id,
-                    episode_id=current_script.episode_id,
-                    attempt=attempt,
-                    before_script=previous_script,
-                    repaired_segments=segment_repair.repaired_segments,
-                )
-                current_report = self.validate_episode(book_id, current_script)
-                repair_result = RepairResult(
-                    episode_id=current_script.episode_id,
-                    attempt=attempt,
-                    repaired_segment_ids=segment_repair.repaired_segment_ids,
-                    script=current_script,
-                    report=current_report,
-                )
-                self._write_artifact(
-                    self._episode_artifact_key(book_id, current_script.episode_id),
-                    f"repair_attempt_{attempt}",
-                    {
-                        "episode_id": current_script.episode_id,
-                        "attempt": attempt,
-                        "repaired_segment_ids": segment_repair.repaired_segment_ids,
-                        "repaired_beat_ids": [segment.beat_id for segment in segment_repair.repaired_segments],
-                        "repaired_segments": [segment.model_dump(mode="json") for segment in segment_repair.repaired_segments],
-                        "report": current_report.model_dump(mode="json"),
-                    },
-                )
-                self.run_logger.log(
-                    "stage_end",
-                    stage="repair_episode",
-                    book_id=book_id,
-                    episode_id=script.episode_id,
-                    attempt=attempt,
-                    overall_status=current_report.overall_status,
-                )
-                if current_report.overall_status == "pass":
-                    return repair_result.model_copy(update={"repaired_segment_ids": repair_result.repaired_segment_ids})
-            if repair_result is None:
-                raise RuntimeError("Repair requested with no attempts configured.")
-            return repair_result
-
-    def _merge_repaired_segments(
-        self,
-        script: EpisodeScript,
-        repaired_segments: list[EpisodeSegment],
-    ) -> EpisodeScript:
-        repaired_by_id = {segment.segment_id: segment for segment in repaired_segments}
-        merged_segments = [repaired_by_id.get(segment.segment_id, segment) for segment in script.segments]
-        return script.model_copy(update={"segments": merged_segments})
-
-    def _log_repair_segment_diffs(
-        self,
-        *,
-        book_id: str,
-        episode_id: str,
-        attempt: int,
-        before_script: EpisodeScript,
-        repaired_segments: list[EpisodeSegment],
-    ) -> None:
-        previous_by_id = {segment.segment_id: segment for segment in before_script.segments}
-        repaired_segment_ids: list[str] = []
-        repaired_beat_ids: list[str] = []
-        for repaired_segment in repaired_segments:
-            previous_segment = previous_by_id[repaired_segment.segment_id]
-            repaired_segment_ids.append(repaired_segment.segment_id)
-            repaired_beat_ids.append(repaired_segment.beat_id)
-            self.run_logger.log(
-                "repair_segment_diff",
-                book_id=book_id,
-                episode_id=episode_id,
-                attempt=attempt,
-                segment_id=repaired_segment.segment_id,
-                beat_id=repaired_segment.beat_id,
-                heading_changed=previous_segment.heading != repaired_segment.heading,
-                old_narration_word_count=len(previous_segment.narration.split()),
-                new_narration_word_count=len(repaired_segment.narration.split()),
-                old_claim_count=len(previous_segment.claims),
-                new_claim_count=len(repaired_segment.claims),
-                old_citation_count=len(previous_segment.citations),
-                new_citation_count=len(repaired_segment.citations),
-                old_claim_ids=[claim.claim_id for claim in previous_segment.claims],
-                new_claim_ids=[claim.claim_id for claim in repaired_segment.claims],
-            )
+        self.run_logger.bind_run(project_id)
+        database_configured = bool(self.settings.database.dsn)
+        retrieval_enabled = self.vector_store.enabled
         self.run_logger.log(
-            "repair_merge_summary",
-            book_id=book_id,
-            episode_id=episode_id,
-            attempt=attempt,
-            repaired_segment_ids=repaired_segment_ids,
-            repaired_beat_ids=repaired_beat_ids,
+            "pipeline_start",
+            theme=theme,
+            episode_count=episode_count,
+            book_count=len(source_paths),
+            skip_grounding=pipeline_config.skip_grounding,
+            skip_spoken_delivery=pipeline_config.skip_spoken_delivery,
+            database_configured=database_configured,
+            retrieval_enabled=retrieval_enabled,
+            retrieval_collection=self.settings.retrieval.collection_name,
+        )
+        self.run_logger.log(
+            "retrieval_status",
+            database_configured=database_configured,
+            retrieval_enabled=retrieval_enabled,
+            retrieval_collection=self.settings.retrieval.collection_name,
         )
 
-    def render_manifest(
-        self,
-        script: EpisodeScript,
-        report: GroundingReport,
-        spoken_script: SpokenEpisodeNarration | None = None,
-        *,
-        book_id: str | None = None,
-    ) -> RenderManifest:
-        """Build the TTS-ready manifest from a validated script."""
+        project = ThematicProject(
+            project_id=project_id,
+            theme=theme,
+            theme_elaboration=theme_elaboration,
+            episode_count=episode_count,
+            config=pipeline_config,
+            status=ProjectStatus.INGESTING,
+        )
 
-        if report.overall_status != "pass":
-            raise RuntimeError(
-                f"Cannot render manifest for episode '{script.episode_id}' with failed grounding."
-            )
-        grounded_claim_ids = {
-            assessment.claim_id
-            for assessment in report.claim_assessments
-            if assessment.status.value == "grounded"
-        }
-        if spoken_script is None:
-            raise RuntimeError("Spoken script is required to render a manifest.")
-        resolved_book_id = book_id or self.current_book_id
-        if resolved_book_id is None:
-            raise RuntimeError("Book context is required to persist render artifacts.")
-        with self._book_context(resolved_book_id):
-            segments = []
-            claim_ids = sorted(grounded_claim_ids)
-            for chunk in spoken_script.chunks:
-                text = chunk.text
-                ssml = f"<speak>{text}</speak>"
-                segments.append(
-                    RenderSegment(
-                        segment_id=chunk.chunk_id,
-                        speaker=script.narrator,
-                        text=text,
-                        ssml=ssml,
-                        grounded_claim_ids=claim_ids,
-                    )
+        # Phase 1: Ingest & Index (parallel per book)
+        logger.info("Phase 1: Ingest & Index (%d books)", len(source_paths))
+        book_tasks = []
+        for i, path in enumerate(source_paths):
+            title = titles[i] if titles and i < len(titles) else Path(path).stem
+            author = authors[i] if authors and i < len(authors) else "Unknown"
+            book_tasks.append(
+                self._ingest_and_index_book(
+                    path, title, author, project_id, project_dir, pipeline_config,
                 )
-            manifest = RenderManifest(
-                episode_id=script.episode_id,
-                title=script.title,
-                narrator=script.narrator,
-                segments=segments,
+            )
+        book_results = await asyncio.gather(*book_tasks, return_exceptions=True)
+
+        successful_books: list[BookRecord] = []
+        for i, result in enumerate(book_results):
+            if isinstance(result, Exception):
+                logger.error("Book %d failed: %s", i, result)
+                self.run_logger.log("book_ingest_failed", index=i, error=str(result))
+            else:
+                successful_books.append(result)
+
+        if len(successful_books) < 2:
+            project = project.model_copy(update={"status": ProjectStatus.FAILED})
+            _save_json(project_dir / "thematic_project.json", project)
+            raise RuntimeError(
+                f"Only {len(successful_books)} books ingested successfully. Minimum 2 required."
+            )
+
+        project = project.model_copy(update={
+            "books": successful_books,
+            "status": ProjectStatus.ANALYZING,
+        })
+        _save_json(project_dir / "thematic_project.json", project)
+        self.run_logger.log(
+            "convergence_barrier",
+            successful_books=len(successful_books),
+            total_words=sum(b.total_words for b in successful_books),
+        )
+
+        # Phase 2: Thematic Intelligence (sequential)
+        logger.info("Phase 2: Thematic Intelligence")
+
+        axes = await self._decompose_theme(project, project_dir)
+        corpus = await self._extract_passages(project, axes, project_dir)
+        synthesis_map = await self._map_synthesis(project, corpus, project_dir)
+
+        if synthesis_map.quality_score < pipeline_config.synthesis_quality_threshold:
+            logger.warning(
+                "Synthesis quality %.2f below threshold %.2f. "
+                "Books may lack thematic overlap for strong synthesis.",
+                synthesis_map.quality_score, pipeline_config.synthesis_quality_threshold,
             )
             self.run_logger.log(
-                "stage_start",
-                stage="render_manifest",
-                book_id=resolved_book_id,
-                episode_id=script.episode_id,
+                "synthesis_quality_warning",
+                score=synthesis_map.quality_score,
+                threshold=pipeline_config.synthesis_quality_threshold,
             )
-            self.run_logger.log(
-                "stage_end",
-                stage="render_manifest",
-                book_id=resolved_book_id,
-                episode_id=script.episode_id,
-            )
-        return manifest
 
-    def _load_spoken_script_artifact(
-        self,
-        book_id: str,
-        episode_id: str,
-        *,
-        episode_dir: Path | None = None,
-    ) -> SpokenEpisodeNarration:
-        if episode_dir is None:
-            episode_dir = self.settings.pipeline.artifact_root / self._episode_artifact_key(book_id, episode_id)
-        spoken_script_path = episode_dir / "spoken_script.json"
-        if not spoken_script_path.exists():
-            raise RuntimeError(
-                f"spoken_script.json not found at '{spoken_script_path}'. "
-                "Run spoken-delivery or enable spoken delivery before synthesizing audio."
-            )
-        try:
-            return SpokenEpisodeNarration.model_validate_json(
-                spoken_script_path.read_text(encoding="utf-8")
-            )
-        except ValidationError as exc:
-            raise ValueError(f"Invalid spoken_script.json at '{spoken_script_path}': {exc}") from exc
+        strategy = await self._choose_narrative_strategy(project, synthesis_map, project_dir)
 
-    def _render_manifest_from_spoken_script(
-        self,
-        spoken_script: SpokenEpisodeNarration,
-        report: GroundingReport | None,
-    ) -> RenderManifest:
-        grounded_claim_ids: list[str] = []
-        if report is not None and report.overall_status == "pass":
-            grounded_claim_ids = sorted(
-                assessment.claim_id
-                for assessment in report.claim_assessments
-                if assessment.status.value == "grounded"
-            )
-        segments = []
-        for chunk in spoken_script.chunks:
-            text = chunk.text
-            ssml = f"<speak>{text}</speak>"
-            segments.append(
-                RenderSegment(
-                    segment_id=chunk.chunk_id,
-                    speaker=spoken_script.narrator,
-                    text=text,
-                    ssml=ssml,
-                    grounded_claim_ids=grounded_claim_ids,
-                )
-            )
-        return RenderManifest(
-            episode_id=spoken_script.episode_id,
-            title=spoken_script.title,
-            narrator=spoken_script.narrator,
-            segments=segments,
+        project = project.model_copy(update={"status": ProjectStatus.PLANNING})
+        episode_plans = await self._plan_series(
+            project, synthesis_map, strategy, corpus, project_dir,
         )
 
-    def _load_report_from_episode_dir(self, episode_dir: Path) -> GroundingReport | None:
-        episode_output_path = episode_dir / "episode_output.json"
-        if not episode_output_path.exists():
-            return None
-        try:
-            payload = json.loads(episode_output_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            return None
-        report_payload = payload.get("report")
-        if report_payload is None:
-            return None
-        try:
-            return GroundingReport.model_validate_json(json.dumps(report_payload))
-        except ValidationError:
-            return None
+        # Phase 3: Episode Production (parallel per episode)
+        logger.info("Phase 3: Episode Production (%d episodes)", len(episode_plans))
+        project = project.model_copy(update={"status": ProjectStatus.PRODUCING})
 
-    def _prepare_manifest_for_audio(self, manifest: RenderManifest) -> RenderManifest:
-        if self.settings.tts.provider.lower() != "kokoro":
-            return manifest
-        chunk_size_words = self.settings.tts.kokoro_chunk_max_words
-        prepared_segments: list[RenderSegment] = []
-        for segment in manifest.segments:
-            chunks = self._split_text_into_chunks(segment.text, chunk_size_words)
-            if len(chunks) == 1:
-                prepared_segments.append(segment)
-                continue
-            for index, chunk_text in enumerate(chunks, start=1):
-                prepared_segments.append(
-                    RenderSegment(
-                        segment_id=f"{segment.segment_id}-chunk-{index}",
-                        speaker=segment.speaker,
-                        text=chunk_text,
-                        ssml=f"<speak>{chunk_text}</speak>",
-                        grounded_claim_ids=segment.grounded_claim_ids,
-                    )
-                )
-        return RenderManifest(
-            episode_id=manifest.episode_id,
-            title=manifest.title,
-            narrator=manifest.narrator,
-            segments=prepared_segments,
-        )
-
-    @staticmethod
-    def _split_text_into_chunks(text: str, chunk_size_words: int) -> list[str]:
-        words = text.split()
-        if len(words) <= chunk_size_words:
-            return [text]
-        return [
-            " ".join(words[index : index + chunk_size_words])
-            for index in range(0, len(words), chunk_size_words)
+        sem = asyncio.Semaphore(pipeline_config.episode_write_concurrency)
+        ep_tasks = [
+            self._produce_episode(plan, project, corpus, project_dir, sem)
+            for plan in episode_plans
         ]
+        ep_results = await asyncio.gather(*ep_tasks, return_exceptions=True)
 
-    def synthesize_audio(self, manifest: RenderManifest, *, book_id: str | None = None) -> AudioManifest:
-        """Synthesize audio files for each renderable segment."""
+        spoken_scripts: list[tuple[int, SpokenScript]] = []
+        for result in ep_results:
+            if isinstance(result, Exception):
+                logger.error("Episode production failed: %s", result)
+            else:
+                spoken_scripts.append(result)
+        spoken_scripts.sort(key=lambda x: x[0])
 
-        resolved_book_id = book_id or self.current_book_id
-        if resolved_book_id is None:
-            raise RuntimeError("Book context is required to synthesize audio.")
-        with self._book_context(resolved_book_id):
-            manifest = self._prepare_manifest_for_audio(manifest)
-            self.run_logger.log(
-                "stage_start",
-                stage="synthesize_audio",
-                book_id=resolved_book_id,
-                episode_id=manifest.episode_id,
+        # Framing (sequential)
+        framings: dict[int, EpisodeFraming] = {}
+        for i, (ep_num, spoken) in enumerate(spoken_scripts):
+            prev_summary = spoken_scripts[i - 1][1].arc_plan if i > 0 else None
+            next_summary = None
+            if i < len(spoken_scripts) - 1:
+                next_idx = spoken_scripts[i + 1][0] - 1
+                if next_idx < len(episode_plans):
+                    next_summary = episode_plans[next_idx].thematic_focus
+            framing = await self._frame_episode(
+                ep_num, len(spoken_scripts), spoken, prev_summary, next_summary,
+                project, project_dir,
             )
-            provider = self.settings.tts.provider.lower()
-            if provider == "kokoro":
-                effective_parallelism = min(
-                    len(manifest.segments),
-                    self.settings.pipeline.audio_parallelism,
-                    self.settings.tts.kokoro_parallelism,
+            framings[ep_num] = framing
+
+        # Phase 4: Audio Rendering (parallel per episode)
+        logger.info("Phase 4: Audio Rendering")
+        audio_sem = asyncio.Semaphore(pipeline_config.tts_concurrency)
+        audio_tasks = [
+            self._render_episode_audio(
+                ep_num,
+                spoken,
+                framings.get(ep_num),
+                project_dir,
+                audio_sem,
+                skip_audio=pipeline_config.skip_audio,
+            )
+            for ep_num, spoken in spoken_scripts
+        ]
+        await asyncio.gather(*audio_tasks, return_exceptions=True)
+
+        project = project.model_copy(update={"status": ProjectStatus.COMPLETE})
+        _save_json(project_dir / "thematic_project.json", project)
+        self.run_logger.log("pipeline_complete", project_id=project_id)
+        logger.info("Pipeline complete. Artifacts at %s", project_dir)
+
+        return project
+
+    # -----------------------------------------------------------------------
+    # Phase 1: Ingest & Index
+    # -----------------------------------------------------------------------
+
+    async def _ingest_and_index_book(
+        self,
+        source_path: str,
+        title: str,
+        author: str,
+        project_id: str,
+        project_dir: Path,
+        config: PipelineConfig,
+    ) -> BookRecord:
+        path = Path(source_path)
+        book_id = uuid4().hex
+        book_dir = project_dir / "books" / book_id
+
+        async with _stage_log(
+            self.run_logger, f"ingest_book_{book_id[:8]}", project_dir,
+            book_id=book_id, title=title, path=source_path,
+        ) as ctx:
+            # Stage 1: Read source
+            raw_text = await asyncio.to_thread(read_source_text, path)
+            total_words = len(raw_text.split())
+            source_type = path.suffix.lower().lstrip(".")
+            if source_type not in ("pdf", "txt", "md"):
+                source_type = "txt"
+
+            book_record = BookRecord(
+                book_id=book_id, title=title, author=author,
+                source_path=source_path, source_type=source_type,
+                total_words=total_words,
+            )
+
+            book_dir.mkdir(parents=True, exist_ok=True)
+            (book_dir / "raw_text.txt").write_text(raw_text, encoding="utf-8")
+
+            # Stage 2: Structure chapters
+            chapters = await self._structure_chapters(book_record, raw_text, project_dir)
+            book_record = book_record.model_copy(update={"chapters": chapters})
+            _save_json(book_dir / "book_record.json", book_record)
+
+            # Stage 3: Chunk text
+            chunking_config = ChunkingConfig(
+                max_chunk_words=config.chunk_max_words,
+                overlap_words=config.chunk_overlap_words,
+            )
+            chunks = chunk_text(raw_text, book_id, chapters, chunking_config)
+            for c in chunks:
+                c.metadata["author"] = author
+                c.metadata["title"] = title
+
+            # Stage 4: Embed & Store
+            await asyncio.to_thread(self.vector_store.index_chunks, chunks, project_id)
+
+            ctx["output_summary"] = {
+                "book_id": book_id, "title": title,
+                "chapters": len(chapters), "chunks": len(chunks), "words": total_words,
+            }
+            return book_record
+
+    async def _structure_chapters(
+        self, book_record: BookRecord, raw_text: str, project_dir: Path,
+    ) -> list[ChapterInfo]:
+        async with _stage_log(
+            self.run_logger, f"structure_{book_record.book_id[:8]}", project_dir,
+            book_id=book_record.book_id, text_length=len(raw_text),
+        ) as ctx:
+            chapters = extract_chapters_from_source(raw_text)
+            summary_tasks = []
+            for chapter in chapters:
+                chapter_text = raw_text[chapter.start_index : chapter.end_index]
+                payload = self.chapter_summary_agent.build_payload(
+                    book_id=book_record.book_id,
+                    title=book_record.title,
+                    author=book_record.author,
+                    chapter_title=chapter.title,
+                    chapter_text=chapter_text,
                 )
-                if effective_parallelism <= 1:
-                    synthesized_segments = [
-                        self._synthesize_audio_segment(resolved_book_id, index, manifest.episode_id, segment)
-                        for index, segment in enumerate(manifest.segments)
-                    ]
-                else:
-                    with ThreadPoolExecutor(max_workers=effective_parallelism) as executor:
-                        futures = [
-                            submit_with_context(
-                                executor,
-                                self._synthesize_audio_segment,
-                                resolved_book_id,
-                                index,
-                                manifest.episode_id,
-                                segment,
-                            )
-                            for index, segment in enumerate(manifest.segments)
-                        ]
-                        synthesized_segments = []
-                        try:
-                            for future in futures:
-                                synthesized_segments.append(future.result())
-                        except Exception:
-                            for future in futures:
-                                future.cancel()
-                            raise
-            elif len(manifest.segments) <= 1 or self.settings.pipeline.audio_parallelism == 1:
-                synthesized_segments = [
-                    self._synthesize_audio_segment(resolved_book_id, index, manifest.episode_id, segment)
-                    for index, segment in enumerate(manifest.segments)
-                ]
-            else:
-                max_workers = min(len(manifest.segments), self.settings.pipeline.audio_parallelism)
-                with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                    futures = [
-                        submit_with_context(
-                            executor,
-                            self._synthesize_audio_segment,
-                            resolved_book_id,
-                            index,
-                            manifest.episode_id,
-                            segment,
-                        )
-                        for index, segment in enumerate(manifest.segments)
-                    ]
-                    synthesized_segments = []
-                    try:
-                        for future in futures:
-                            synthesized_segments.append(future.result())
-                    except Exception:
-                        for future in futures:
-                            future.cancel()
-                        raise
-            synthesized_segments.sort(key=lambda item: item[0])
-            audio_segments = [audio_segment for _, _, audio_segment in synthesized_segments]
-            if provider == "kokoro":
-                wav_segments = [
-                    (audio_segment.segment_id, audio_bytes)
-                    for _, audio_bytes, audio_segment in synthesized_segments
-                ]
-                try:
-                    combined_wav = self._combine_wav_segments(wav_segments)
-                except WavMergeError as exc:
-                    self.run_logger.log(
-                        "audio_merge_failed",
-                        book_id=resolved_book_id,
-                        episode_id=manifest.episode_id,
-                        provider=provider,
-                        segment_count=len(wav_segments),
-                        error_type=type(exc).__name__,
-                        error_message=str(exc),
-                        diagnostics=exc.diagnostics,
-                    )
-                    raise
-                if self.settings.tts.audio_format.lower() == "mp3":
-                    combined_audio = self._convert_wav_to_mp3_bytes(combined_wav)
-                else:
-                    combined_audio = combined_wav
-            else:
-                combined_audio = b"".join(audio_bytes for _, audio_bytes, _ in synthesized_segments)
-            extension = self.settings.tts.audio_format
-            file_name = f"{manifest.episode_id}.{extension}"
-            relative_dir = self._episode_artifact_key(resolved_book_id, manifest.episode_id)
-            audio_path = self.artifacts.write_bytes(relative_dir, file_name, combined_audio)
-            self.run_logger.log(
-                "artifact_written",
-                artifact_path=str(audio_path),
-                artifact_name=file_name,
-                book_id=resolved_book_id,
+                summary_tasks.append(asyncio.to_thread(self.chapter_summary_agent.run, payload))
+
+            summaries = await asyncio.gather(*summary_tasks)
+            updated: list[ChapterInfo] = []
+            for chapter, summary in zip(chapters, summaries, strict=True):
+                updated.append(chapter.model_copy(update={"summary": summary.summary}))
+            chapters = updated
+
+            ctx["output_summary"] = {
+                "chapter_count": len(chapters), "windows_processed": 0,
+            }
+            return chapters
+
+    # -----------------------------------------------------------------------
+    # Phase 2: Thematic Intelligence
+    # -----------------------------------------------------------------------
+
+    async def _decompose_theme(
+        self, project: ThematicProject, project_dir: Path,
+    ) -> list[ThematicAxis]:
+        async with _stage_log(
+            self.run_logger, "theme_decomposition", project_dir,
+            theme=project.theme, book_count=len(project.books),
+        ) as ctx:
+            payload = self.theme_decomposition_agent.build_payload(
+                theme=project.theme,
+                theme_elaboration=project.theme_elaboration,
+                books=project.books,
             )
-            audio_manifest = AudioManifest(
-                episode_id=manifest.episode_id,
-                title=manifest.title,
-                narrator=manifest.narrator,
-                voice=self.settings.tts.voice,
-                audio_path=str(audio_path),
-                audio_format=self.settings.tts.audio_format,
-                segments=audio_segments,
-            )
-            self.run_logger.log(
-                "stage_end",
-                stage="synthesize_audio",
-                book_id=resolved_book_id,
-                episode_id=manifest.episode_id,
-                segment_count=len(audio_segments),
-            )
-        return audio_manifest
+            result = await asyncio.to_thread(self.theme_decomposition_agent.run, payload)
+            axes = result.axes
 
-    def _combine_wav_segments(self, segments: list[tuple[str, bytes]]) -> bytes:
-        diagnostics: list[dict[str, object]] = []
-        expected_format: tuple[int, int, int, str, str] | None = None
-        expected_params: wave._wave_params | None = None
-        frame_chunks: list[bytes] = []
-
-        if not segments:
-            raise WavMergeError("No WAV segments provided for merge.", diagnostics)
-
-        for segment_id, audio_bytes in segments:
-            try:
-                with wave.open(io.BytesIO(audio_bytes)) as wav_handle:
-                    params = wav_handle.getparams()
-                    frames = wav_handle.readframes(wav_handle.getnframes())
-            except wave.Error as exc:
-                diagnostics.append(
-                    {
-                        "segment_id": segment_id,
-                        "byte_count": len(audio_bytes),
-                        "error": str(exc),
-                    }
-                )
-                raise WavMergeError(
-                    f"Failed to read WAV segment '{segment_id}': {exc}",
-                    diagnostics,
-                ) from exc
-            diagnostics.append(
-                {
-                    "segment_id": segment_id,
-                    "nchannels": params.nchannels,
-                    "sampwidth": params.sampwidth,
-                    "framerate": params.framerate,
-                    "nframes": params.nframes,
-                    "comptype": params.comptype,
-                    "compname": params.compname,
-                    "byte_count": len(audio_bytes),
-                }
-            )
-            format_key = (
-                params.nchannels,
-                params.sampwidth,
-                params.framerate,
-                params.comptype,
-                params.compname,
-            )
-            if expected_format is None:
-                expected_format = format_key
-                expected_params = params
-            elif format_key != expected_format:
-                raise WavMergeError(
-                    f"WAV segment format mismatch: expected {expected_format} got {format_key} "
-                    f"for segment '{segment_id}'.",
-                    diagnostics,
-                )
-            frame_chunks.append(frames)
-
-        if expected_params is None:
-            raise WavMergeError("No WAV segments available after parsing.", diagnostics)
-
-        output = io.BytesIO()
-        with wave.open(output, "wb") as wav_out:
-            wav_out.setnchannels(expected_params.nchannels)
-            wav_out.setsampwidth(expected_params.sampwidth)
-            wav_out.setframerate(expected_params.framerate)
-            wav_out.setcomptype(expected_params.comptype, expected_params.compname)
-            for frames in frame_chunks:
-                wav_out.writeframes(frames)
-        return output.getvalue()
-
-    def _convert_wav_to_mp3_bytes(self, wav_bytes: bytes) -> bytes:
-        ffmpeg_path = shutil.which("ffmpeg")
-        if ffmpeg_path is None:
-            raise RuntimeError("ffmpeg is required to convert WAV to MP3 but was not found on PATH.")
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir)
-            input_path = temp_path / "input.wav"
-            output_path = temp_path / "output.mp3"
-            input_path.write_bytes(wav_bytes)
-            result = subprocess.run(
-                [
-                    ffmpeg_path,
-                    "-hide_banner",
-                    "-loglevel",
-                    "error",
-                    "-y",
-                    "-i",
-                    str(input_path),
-                    "-codec:a",
-                    "libmp3lame",
-                    "-q:a",
-                    "2",
-                    str(output_path),
-                ],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                check=False,
-            )
-            if result.returncode != 0:
-                message = result.stderr.decode("utf-8", errors="replace").strip()
-                raise RuntimeError(f"ffmpeg failed with exit code {result.returncode}: {message}")
-            if not output_path.exists():
-                raise RuntimeError("ffmpeg did not produce an output file.")
-            return output_path.read_bytes()
-
-    def regenerate_audio_from_artifact(
-        self,
-        artifact_path: str | Path,
-        *,
-        book_id: str | None = None,
-    ) -> EpisodeOutput:
-        """Regenerate episode audio from a saved artifact, using spoken_script.json for synthesis."""
-
-        path = Path(artifact_path)
-        payload = self._load_manifest_source(path)
-        resolved_book_id = book_id or self._infer_book_id_from_artifact_path(path)
-        if not resolved_book_id:
-            raise ValueError(
-                "Unable to determine book ID from artifact path. Provide --book-id for manifest-only audio regeneration."
-            )
-        episode_dir = path.parent
-        spoken_script = self._load_spoken_script_artifact(
-            resolved_book_id,
-            episode_dir.name,
-            episode_dir=episode_dir,
-        )
-        report = self._load_report_from_episode_dir(episode_dir)
-        manifest = self._render_manifest_from_spoken_script(spoken_script, report)
-        manifest = self._prepare_manifest_for_audio(manifest)
-
-        self.current_book_id = resolved_book_id
-        self._book_titles[resolved_book_id] = manifest.title
-        self.run_id = _new_run_id(resolved_book_id)
-        self.run_logger.bind_run(self.run_id)
-        with self._book_context(resolved_book_id, book_title=manifest.title):
-            self.run_logger.log("run_started", run_id=self.run_id, book_id=resolved_book_id, title=manifest.title)
-
-            episode_output: EpisodeOutput
-            if "manifest" in payload:
-                source_output = EpisodeOutput.model_validate_json(json.dumps(payload))
-                audio_manifest = self.synthesize_audio(manifest)
-                episode_output = source_output.model_copy(update={"audio_manifest": audio_manifest})
-            else:
-                audio_manifest = self.synthesize_audio(manifest)
-                episode_output = EpisodeOutput(
-                    plan=_placeholder_episode_plan(resolved_book_id, manifest),
-                    script=_placeholder_episode_script(manifest),
-                    report=_placeholder_grounding_report(manifest),
-                    manifest=manifest,
-                    audio_manifest=audio_manifest,
-                )
-            self._write_artifact(
-                self._episode_artifact_key(resolved_book_id, manifest.episode_id),
-                "episode_output",
-                episode_output.model_dump(mode="json"),
-            )
-        return episode_output
-
-    def spoken_delivery_from_artifact(
-        self,
-        artifact_path: str | Path,
-    ) -> dict:
-        """Run spoken delivery from a saved factual script or episode output artifact."""
-
-        path = Path(artifact_path)
-        payload = self._load_manifest_source(path)
-        if "script" in payload and "report" in payload:
-            report = GroundingReport.model_validate_json(json.dumps(payload["report"]))
-            if report.overall_status != "pass":
-                for artifact_name in (
-                    "spoken_script.json",
-                    "spoken_delivery.json",
-                    "spoken_delivery_arc_plan.json",
-                ):
-                    (path.parent / artifact_name).unlink(missing_ok=True)
-                raise ValueError(
-                    f"Cannot run spoken delivery from artifact '{artifact_path}' because grounding did not pass."
-                )
-        try:
-            if "script" in payload:
-                script = EpisodeScript.model_validate_json(json.dumps(payload["script"]))
-            else:
-                script = EpisodeScript.model_validate_json(json.dumps(payload))
-        except ValidationError as exc:
-            raise ValueError(f"Artifact '{artifact_path}' does not contain a valid factual script: {exc}") from exc
-        inferred_book_id = self._infer_book_id_from_artifact_path(path)
-        with self._book_context(inferred_book_id):
-            spoken_script, spoken_delivery, arc_plan = self.spoken_delivery_agent.rewrite_full_episode_two_call(script)
-            script_path = path.parent / "spoken_script.json"
-            delivery_path = path.parent / "spoken_delivery.json"
-            script_path.write_text(spoken_script.model_dump_json(indent=2), encoding="utf-8")
-            delivery_path.write_text(spoken_delivery.model_dump_json(indent=2), encoding="utf-8")
-            if arc_plan is not None:
-                arc_plan_path = path.parent / "spoken_delivery_arc_plan.json"
-                arc_plan_path.write_text(arc_plan.model_dump_json(indent=2), encoding="utf-8")
-        return {
-            "factual_script": script.model_dump(mode="json"),
-            "spoken_script": spoken_script.model_dump(mode="json"),
-            "spoken_delivery": spoken_delivery.model_dump(mode="json"),
-        }
-
-    def _synthesize_audio_segment(
-        self,
-        book_id: str,
-        index: int,
-        episode_id: str,
-        segment: RenderSegment,
-    ) -> tuple[int, bytes, AudioSegmentFile]:
-        audio_bytes = self._synthesize_segment_with_retry(book_id, episode_id, segment)
-        return (
-            index,
-            audio_bytes,
-            AudioSegmentFile(
-                segment_id=segment.segment_id,
-                speaker=segment.speaker,
-                text=segment.text,
-                grounded_claim_ids=segment.grounded_claim_ids,
-            ),
-        )
-
-    def _synthesize_segment_with_retry(
-        self,
-        book_id: str,
-        episode_id: str,
-        segment: RenderSegment,
-    ) -> bytes:
-        total_attempts = self.settings.pipeline.audio_retry_attempts + 1
-        for attempt in range(1, total_attempts + 1):
-            self.run_logger.log(
-                "tts_segment_attempt",
-                book_id=book_id,
-                episode_id=episode_id,
-                segment_id=segment.segment_id,
-                attempt=attempt,
-                total_attempts=total_attempts,
-            )
-            try:
-                with self._audio_semaphore:
-                    return self.tts.synthesize(
-                        segment.text,
-                        voice=self.settings.tts.voice,
-                        audio_format=self.settings.tts.audio_format,
-                        instructions=self.settings.tts.instructions,
-                    )
-            except Exception as exc:
-                if attempt == total_attempts:
-                    self.run_logger.log(
-                        "tts_segment_failed",
-                        book_id=book_id,
-                        episode_id=episode_id,
-                        segment_id=segment.segment_id,
-                        attempt=attempt,
-                        error_type=type(exc).__name__,
-                        error_message=str(exc),
-                    )
-                    raise RuntimeError(
-                        f"Audio synthesis failed for segment '{segment.segment_id}' in episode "
-                        f"'{episode_id}' after {attempt} attempts."
-                    ) from exc
-                self.run_logger.log(
-                    "tts_segment_retry",
-                    book_id=book_id,
-                    episode_id=episode_id,
-                    segment_id=segment.segment_id,
-                    attempt=attempt,
-                    error_type=type(exc).__name__,
-                    error_message=str(exc),
-                )
-        raise RuntimeError(f"Audio synthesis exhausted retries for segment '{segment.segment_id}'.")
-
-    def run_pipeline(
-        self,
-        source_path: str | Path,
-        title: str | None = None,
-        author: str = "Unknown",
-        start_chapter: str | None = None,
-        end_chapter: str | None = None,
-        episode_count: int | None = None,
-        synthesize_audio: bool = False,
-    ) -> dict:
-        """Run the end-to-end pipeline for every episode in the series plan."""
-
-        if episode_count is None:
-            raise TypeError("episode_count is required for run_pipeline")
-        ingestion = self.ingest_book(source_path=source_path, title=title, author=author)
-        structure = self.index_book(
-            ingestion,
-            start_chapter=start_chapter,
-            end_chapter=end_chapter,
-        )
-        analysis, plan = self.plan_episodes(structure, episode_count=episode_count)
-        with self._book_context(structure.book_id, book_title=structure.title):
-            self.run_logger.log(
-                "episode_parallelism_configured",
-                book_id=structure.book_id,
-                requested_episode_count=episode_count,
-                episode_count=len(plan.episodes),
-                episode_parallelism=self.settings.pipeline.episode_parallelism,
-            )
-        episode_outputs = self._process_episode_plans(
-            structure.book_id,
-            plan.episodes,
-            synthesize_audio=synthesize_audio,
-        )
-        episodes = [episode_output.model_dump(mode="json") for episode_output in episode_outputs]
-        return {
-            "ingestion": ingestion.model_dump(mode="json"),
-            "analysis": analysis.model_dump(mode="json"),
-            "series_plan": plan.model_dump(mode="json"),
-            "episodes": episodes,
-        }
-
-    def run_batch(
-        self,
-        manifest: BatchRunManifest,
-        *,
-        synthesize_audio: bool | None = None,
-        run_id: str | None = None,
-        batch_parallelism: int | None = None,
-    ) -> dict:
-        """Run the pipeline for multiple books with stage barriers across the batch."""
-
-        if not manifest.books:
-            raise ValueError("Batch manifest must include at least one book.")
-        resolved_run_id = run_id or manifest.run_id or _new_batch_run_id()
-        resolved_with_audio = manifest.with_audio if synthesize_audio is None else synthesize_audio
-        resolved_parallelism = batch_parallelism or self.settings.pipeline.batch_parallelism
-        resolved_analysis_parallelism = (
-            self.settings.pipeline.analysis_parallelism or resolved_parallelism
-        )
-        resolved_spoken_delivery_parallelism = (
-            self.settings.pipeline.spoken_delivery_parallelism or resolved_parallelism
-        )
-
-        spec_by_book_id: dict[str, BatchBookSpec] = {}
-        book_ids: list[str] = []
-        book_titles: list[str] = []
-        for spec in manifest.books:
-            if spec.spoken_delivery_only:
-                if spec.title:
-                    resolved_title = spec.title
-                else:
-                    artifact_root = Path(spec.artifact_path or "")
-                    resolved_title = artifact_root.name.replace("-", " ").replace("_", " ").title()
-            else:
-                path = Path(spec.source_path or "")
-                resolved_title = spec.title or path.stem.replace("_", " ").title()
-            book_id = _slugify(resolved_title)
-            if book_id in spec_by_book_id:
-                raise ValueError(f"Duplicate book_id '{book_id}' in batch manifest.")
-            spec_by_book_id[book_id] = spec
-            book_ids.append(book_id)
-            book_titles.append(resolved_title)
-            self._book_titles[book_id] = resolved_title
-        full_book_ids = [book_id for book_id in book_ids if not spec_by_book_id[book_id].spoken_delivery_only]
-        spoken_only_book_ids = [book_id for book_id in book_ids if spec_by_book_id[book_id].spoken_delivery_only]
-
-        self.run_id = resolved_run_id
-        self.run_logger.bind_run(resolved_run_id)
-        with self.run_logger.context(
-            book_ids=book_ids,
-            book_titles=book_titles,
-            book_id=None,
-            book_title=None,
-        ):
-            self.run_logger.log(
-                "batch_started",
-                run_id=resolved_run_id,
-                book_count=len(manifest.books),
-                batch_parallelism=resolved_parallelism,
-                analysis_parallelism=resolved_analysis_parallelism,
-                spoken_delivery_parallelism=resolved_spoken_delivery_parallelism,
-            )
-
-            def item_book_info(item) -> tuple[str | None, str | None]:
-                if isinstance(item, BatchBookSpec):
-                    if item.spoken_delivery_only:
-                        if item.title:
-                            item_title = item.title
-                        else:
-                            artifact_root = Path(item.artifact_path or "")
-                            item_title = artifact_root.name.replace("-", " ").replace("_", " ").title()
-                    else:
-                        path = Path(item.source_path or "")
-                        item_title = item.title or path.stem.replace("_", " ").title()
-                    return _slugify(item_title), item_title
-                if isinstance(item, BookIngestionResult):
-                    return item.book_id, item.title
-                if isinstance(item, BookStructure):
-                    return item.book_id, item.title
-                if isinstance(item, str):
-                    return item, self._book_title(item)
-                return getattr(item, "book_id", None), getattr(item, "title", None)
-
-            def run_stage(stage: str, items: list, handler, key_fn, parallelism: int = resolved_parallelism):
-                self.run_logger.log(
-                    "batch_stage_start",
-                    stage=stage,
-                    item_count=len(items),
-                )
-                results: dict[str, object] = {}
-
-                def run_item(item):
-                    item_book_id, item_title = item_book_info(item)
-                    with self._book_context(item_book_id, book_title=item_title):
-                        return handler(item)
-
-                if parallelism == 1 or len(items) <= 1:
-                    for item in items:
-                        result = run_item(item)
-                        results[key_fn(item, result)] = result
-                else:
-                    with ThreadPoolExecutor(max_workers=parallelism) as executor:
-                        future_map = {
-                            submit_with_context(executor, run_item, item): item
-                            for item in items
-                        }
-                        for future in as_completed(future_map):
-                            item = future_map[future]
-                            try:
-                                result = future.result()
-                            except Exception as exc:
-                                item_book_id, item_title = item_book_info(item)
-                                self.run_logger.log(
-                                    "stage_failed",
-                                    stage=stage,
-                                    error_type=type(exc).__name__,
-                                    error_message=str(exc),
-                                    book_id=item_book_id,
-                                    book_title=item_title,
-                                    source_path=getattr(item, "source_path", None),
-                                )
-                                raise
-                            results[key_fn(item, result)] = result
-                self.run_logger.log(
-                    "batch_stage_end",
-                    stage=stage,
-                    item_count=len(results),
-                )
-                return results
-
-            ingestion_by_book_id = run_stage(
-                "ingest_book",
-                [spec_by_book_id[book_id] for book_id in full_book_ids],
-                lambda spec: self.ingest_book(
-                    source_path=spec.source_path,
-                    title=spec.title,
-                    author=spec.author,
-                ),
-                lambda spec, result: result.book_id,
-            )
-
-            run_stage(
-                "validate_chapter_range",
-                list(ingestion_by_book_id.values()),
-                lambda ingestion: self._validate_chapter_range(
-                    ingestion,
-                    start_chapter=spec_by_book_id[ingestion.book_id].start_chapter,
-                    end_chapter=spec_by_book_id[ingestion.book_id].end_chapter,
-                ),
-                lambda ingestion, result: ingestion.book_id,
-            )
-
-            structure_by_book_id = run_stage(
-                "index_book",
-                list(ingestion_by_book_id.values()),
-                lambda ingestion: self.index_book(
-                    ingestion,
-                    start_chapter=spec_by_book_id[ingestion.book_id].start_chapter,
-                    end_chapter=spec_by_book_id[ingestion.book_id].end_chapter,
-                ),
-                lambda ingestion, result: result.book_id,
-            )
-
-            analysis_plan_by_book_id = run_stage(
-                "plan_episodes",
-                list(structure_by_book_id.values()),
-                lambda structure: self.plan_episodes(
-                    structure,
-                    episode_count=spec_by_book_id[structure.book_id].episode_count,
-                ),
-                lambda structure, result: structure.book_id,
-                parallelism=resolved_analysis_parallelism,
-            )
-
-            def prepare_book(book_id: str) -> list[EpisodePreparation]:
-                with self._book_context(book_id):
-                    plan = analysis_plan_by_book_id[book_id][1]
-                    self.run_logger.log(
-                        "episode_parallelism_configured",
-                        book_id=book_id,
-                        requested_episode_count=spec_by_book_id[book_id].episode_count,
-                        episode_count=len(plan.episodes),
-                        episode_parallelism=self.settings.pipeline.episode_parallelism,
-                    )
-                    return self._prepare_episode_plans(book_id, plan.episodes)
-
-            self.run_logger.log(
-                "batch_stage_start",
-                stage="write_grounding",
-                item_count=len(full_book_ids),
-            )
-            preparations_by_book_id: dict[str, list[EpisodePreparation]] = {}
-            if resolved_parallelism == 1 or len(full_book_ids) <= 1:
-                for book_id in full_book_ids:
-                    preparations_by_book_id[book_id] = prepare_book(book_id)
-            else:
-                with ThreadPoolExecutor(max_workers=resolved_parallelism) as executor:
-                    future_map = {
-                        submit_with_context(executor, prepare_book, book_id): book_id
-                        for book_id in full_book_ids
-                    }
-                    for future in as_completed(future_map):
-                        book_id = future_map[future]
-                        preparations_by_book_id[book_id] = future.result()
-            self.run_logger.log(
-                "batch_stage_end",
-                stage="write_grounding",
-                item_count=len(preparations_by_book_id),
-            )
-
-            self.run_logger.log(
-                "batch_stage_start",
-                stage="spoken_delivery_manifest",
-                item_count=len(full_book_ids),
-            )
-            episode_outputs_by_book_id: dict[str, list[EpisodeOutput]] = {}
-            if resolved_spoken_delivery_parallelism == 1 or len(full_book_ids) <= 1:
-                for book_id in full_book_ids:
-                    episode_outputs_by_book_id[book_id] = self._finalize_episode_preparations(
-                        book_id,
-                        preparations_by_book_id[book_id],
-                        synthesize_audio=resolved_with_audio,
-                    )
-            else:
-                with ThreadPoolExecutor(max_workers=resolved_spoken_delivery_parallelism) as executor:
-                    future_map = {
-                        submit_with_context(
-                            executor,
-                            self._finalize_episode_preparations,
-                            book_id,
-                            preparations_by_book_id[book_id],
-                            synthesize_audio=resolved_with_audio,
-                        ): book_id
-                        for book_id in full_book_ids
-                    }
-                    for future in as_completed(future_map):
-                        book_id = future_map[future]
-                        episode_outputs_by_book_id[book_id] = future.result()
-            self.run_logger.log(
-                "batch_stage_end",
-                stage="spoken_delivery_manifest",
-                item_count=len(episode_outputs_by_book_id),
-            )
-
-            spoken_only_result_by_book_id: dict[str, dict[str, object]] = {}
-            self.run_logger.log(
-                "batch_stage_start",
-                stage="spoken_delivery_only_books",
-                item_count=len(spoken_only_book_ids),
-            )
-
-            def process_spoken_only_book(book_id: str) -> dict[str, object]:
-                spec = spec_by_book_id[book_id]
-                with self._book_context(book_id):
-                    source_root = Path(spec.artifact_path or "")
-                    copied_artifacts = self._copy_source_book_artifacts(
-                        source_root=source_root,
-                        target_book_id=book_id,
-                    )
-                    source_episode_outputs = self._load_spoken_only_source_episode_outputs(source_root)
-                    source_episode_outputs.sort(key=lambda output: output.plan.sequence)
-
-                    generated_outputs: list[EpisodeOutput] = []
-                    previous_spoken_script: SpokenEpisodeNarration | None = None
-                    previous_plan: EpisodePlan | None = None
-                    previous_script: EpisodeScript | None = None
-                    for index, source_output in enumerate(source_episode_outputs):
-                        next_output = (
-                            source_episode_outputs[index + 1]
-                            if index + 1 < len(source_episode_outputs)
-                            else None
-                        )
-                        spoken_script, spoken_delivery, arc_plan = self.spoken_delivery_episode(
-                            book_id,
-                            source_output.script,
-                        )
-                        framing = self._build_episode_framing(
-                            source_output.plan,
-                            current_script=source_output.script,
-                            previous_spoken_script=previous_spoken_script,
-                            previous_plan=previous_plan,
-                            previous_script=previous_script,
-                            next_plan=next_output.plan if next_output is not None else None,
-                            next_script=next_output.script if next_output is not None else None,
-                        )
-                        spoken_script = self._apply_framing_to_spoken_script(spoken_script, framing)
-                        spoken_delivery = spoken_delivery.model_copy(
-                            update={"chunk_count": len(spoken_script.chunks)}
-                        )
-                        manifest = self.render_manifest(
-                            source_output.script,
-                            source_output.report,
-                            spoken_script=spoken_script,
-                            book_id=book_id,
-                        )
-                        audio_manifest = None
-                        if resolved_with_audio:
-                            manifest = self._prepare_manifest_for_audio(manifest)
-                            audio_manifest = self.synthesize_audio(manifest, book_id=book_id)
-                        episode_output = source_output.model_copy(
-                            update={
-                                "framing": framing,
-                                "spoken_script": spoken_script,
-                                "spoken_delivery": spoken_delivery,
-                                "manifest": manifest,
-                                "audio_manifest": audio_manifest,
-                            }
-                        )
-                        self._write_artifact(
-                            self._episode_artifact_key(book_id, source_output.plan.episode_id),
-                            "factual_script",
-                            source_output.script.model_dump(mode="json"),
-                        )
-                        self._write_artifact(
-                            self._episode_artifact_key(book_id, source_output.plan.episode_id),
-                            "spoken_script",
-                            spoken_script.model_dump(mode="json"),
-                        )
-                        self._write_artifact(
-                            self._episode_artifact_key(book_id, source_output.plan.episode_id),
-                            "spoken_delivery",
-                            spoken_delivery.model_dump(mode="json"),
-                        )
-                        if arc_plan is not None:
-                            self._write_artifact(
-                                self._episode_artifact_key(book_id, source_output.plan.episode_id),
-                                "spoken_delivery_arc_plan",
-                                arc_plan.model_dump(mode="json"),
-                            )
-                        self._write_artifact(
-                            self._episode_artifact_key(book_id, source_output.plan.episode_id),
-                            "episode_framing",
-                            framing.model_dump(mode="json"),
-                        )
-                        self._write_artifact(
-                            self._episode_artifact_key(book_id, source_output.plan.episode_id),
-                            "episode_output",
-                            episode_output.model_dump(mode="json"),
-                        )
-                        generated_outputs.append(episode_output)
-                        previous_spoken_script = spoken_script
-                        previous_plan = source_output.plan
-                        previous_script = source_output.script
-                    return {
-                        "episodes": generated_outputs,
-                        "copied_artifacts": copied_artifacts,
-                    }
-
-            if resolved_spoken_delivery_parallelism == 1 or len(spoken_only_book_ids) <= 1:
-                for book_id in spoken_only_book_ids:
-                    spoken_only_result_by_book_id[book_id] = process_spoken_only_book(book_id)
-            else:
-                with ThreadPoolExecutor(max_workers=resolved_spoken_delivery_parallelism) as executor:
-                    future_map = {
-                        submit_with_context(executor, process_spoken_only_book, book_id): book_id
-                        for book_id in spoken_only_book_ids
-                    }
-                    for future in as_completed(future_map):
-                        book_id = future_map[future]
-                        spoken_only_result_by_book_id[book_id] = future.result()
-
-            self.run_logger.log(
-                "batch_stage_end",
-                stage="spoken_delivery_only_books",
-                item_count=len(spoken_only_result_by_book_id),
-            )
-
-            self.run_logger.log(
-                "batch_completed",
-                run_id=resolved_run_id,
-                book_count=len(book_ids),
-            )
-
-        books_payload = []
-        for book_id in book_ids:
-            spec = spec_by_book_id[book_id]
-            if not spec.spoken_delivery_only:
-                ingestion = ingestion_by_book_id[book_id].model_dump(mode="json")
-                analysis, plan = analysis_plan_by_book_id[book_id]
-                analysis_payload = analysis.model_dump(mode="json")
-                plan_payload = plan.model_dump(mode="json")
-                episodes = [
-                    episode_output.model_dump(mode="json")
-                    for episode_output in episode_outputs_by_book_id[book_id]
-                ]
-            else:
-                spoken_only_result = spoken_only_result_by_book_id[book_id]
-                copied_artifacts = spoken_only_result["copied_artifacts"]
-                ingestion = copied_artifacts.get("ingestion")
-                analysis_payload = copied_artifacts.get("analysis")
-                plan_payload = copied_artifacts.get("series_plan")
-                episodes = [
-                    episode_output.model_dump(mode="json")
-                    for episode_output in spoken_only_result["episodes"]
-                ]
-            books_payload.append(
-                {
-                    "book_id": book_id,
-                    "ingestion": ingestion,
-                    "analysis": analysis_payload,
-                    "series_plan": plan_payload,
-                    "episodes": episodes,
-                }
-            )
-        return {
-            "run_id": resolved_run_id,
-            "books": books_payload,
-        }
-
-    def _process_episode_plans(
-        self,
-        book_id: str,
-        episode_plans: list[EpisodePlan],
-        *,
-        synthesize_audio: bool,
-    ) -> list[EpisodeOutput]:
-        preparations = self._prepare_episode_plans(book_id, episode_plans)
-        return self._finalize_episode_preparations(
-            book_id,
-            preparations,
-            synthesize_audio=synthesize_audio,
-        )
-
-    def _prepare_episode_plans(
-        self,
-        book_id: str,
-        episode_plans: list[EpisodePlan],
-    ) -> list[EpisodePreparation]:
-        with self._book_context(book_id):
-            preparations: list[EpisodePreparation] = []
-            if self.settings.pipeline.episode_parallelism == 1 or len(episode_plans) <= 1:
-                preparations = [self._prepare_episode_plan(book_id, episode_plan) for episode_plan in episode_plans]
-            else:
-                with ThreadPoolExecutor(max_workers=self.settings.pipeline.episode_parallelism) as executor:
-                    futures = [
-                        submit_with_context(executor, self._prepare_episode_plan, book_id, episode_plan)
-                        for episode_plan in episode_plans
-                    ]
-                    for future in as_completed(futures):
-                        preparations.append(future.result())
-        return preparations
-
-    def _finalize_episode_preparations(
-        self,
-        book_id: str,
-        preparations: list[EpisodePreparation],
-        *,
-        synthesize_audio: bool,
-    ) -> list[EpisodeOutput]:
-        with self._book_context(book_id):
-            ordered_preparations = sorted(preparations, key=lambda prep: prep.plan.sequence)
-            failed_episode_ids = [
-                preparation.plan.episode_id
-                for preparation in ordered_preparations
-                if preparation.report.overall_status != "pass"
+            valid_axes = [
+                a for a in axes
+                if sum(1 for s in a.relevance_by_book.values() if s >= 0.3) >= 2
             ]
-            grounding_passed = not failed_episode_ids
-            self.run_logger.log(
-                "episode_grounding_barrier",
-                book_id=book_id,
-                passed=grounding_passed,
-                failed_episode_ids=failed_episode_ids,
-            )
 
-            episode_outputs: list[EpisodeOutput] = []
-            previous_spoken_script: SpokenEpisodeNarration | None = None
-            previous_plan: EpisodePlan | None = None
-            previous_script: EpisodeScript | None = None
-            for index, preparation in enumerate(ordered_preparations):
-                next_plan = ordered_preparations[index + 1].plan if index + 1 < len(ordered_preparations) else None
-                next_script = (
-                    ordered_preparations[index + 1].script if index + 1 < len(ordered_preparations) else None
+            if len(valid_axes) < project.config.min_axes:
+                logger.warning(
+                    "Only %d valid axes (min %d). Using all %d.",
+                    len(valid_axes), project.config.min_axes, len(axes),
                 )
-                episode_output, core_spoken_script = self._finalize_episode_plan(
-                    book_id,
-                    preparation,
-                    synthesize_audio=synthesize_audio,
-                    allow_downstream=grounding_passed,
-                    previous_spoken_script=previous_spoken_script,
-                    previous_plan=previous_plan,
-                    previous_script=previous_script,
-                    next_plan=next_plan,
-                    next_script=next_script,
-                )
-                episode_outputs.append(episode_output)
-                if core_spoken_script is not None:
-                    previous_spoken_script = core_spoken_script
-                previous_plan = preparation.plan
-                previous_script = preparation.script
-            episode_outputs.sort(key=lambda episode_output: episode_output.plan.sequence)
-        return episode_outputs
+                valid_axes = axes[:project.config.max_axes]
 
-    def _prepare_episode_plan(
-        self,
-        book_id: str,
-        episode_plan: EpisodePlan,
-    ) -> EpisodePreparation:
-        with self._book_context(book_id):
-            try:
-                script = self.write_episode(book_id, episode_plan)
-            except Exception as exc:
+            valid_axes = valid_axes[:project.config.max_axes]
+            _save_json(project_dir / "thematic_axes.json",
+                        {"axes": [a.model_dump(mode="json") for a in valid_axes]})
+
+            ctx["output_summary"] = {
+                "total_axes_generated": len(axes),
+                "valid_axes": len(valid_axes),
+                "axis_names": [a.name for a in valid_axes],
+            }
+            return valid_axes
+
+    async def _extract_passages(
+        self, project: ThematicProject, axes: list[ThematicAxis], project_dir: Path,
+    ) -> ThematicCorpus:
+        async with _stage_log(
+            self.run_logger, "passage_extraction", project_dir,
+            axis_count=len(axes), book_count=len(project.books),
+        ) as ctx:
+            if not self.vector_store.enabled:
                 self.run_logger.log(
-                    "stage_failed",
-                    stage="write_episode",
-                    book_id=book_id,
-                    episode_id=episode_plan.episode_id,
-                    error_type=type(exc).__name__,
-                    error_message=str(exc),
+                    "retrieval_disabled",
+                    reason="DATABASE_URL not set",
+                    message="Vector retrieval is disabled; passage extraction will yield zero candidates.",
                 )
-                raise
-            self._write_citation_audit(book_id, episode_plan, script)
-            if self.settings.pipeline.skip_grounding:
-                report = GroundingReport(
-                    episode_id=episode_plan.episode_id,
-                    overall_status="pass",
-                    claim_assessments=[],
-                )
-                self._write_citation_audit(book_id, episode_plan, script, report)
-                repair_attempts = []
-            else:
-                report = self.validate_episode(book_id, script)
-                self._write_citation_audit(book_id, episode_plan, script, report)
-                repair_attempts = []
-                if report.overall_status != "pass":
-                    repair = self.repair_episode(book_id, script, report)
-                    script = repair.script
-                    report = repair.report
-                    repair_attempts.append(repair)
-                    self._write_citation_audit(book_id, episode_plan, script, report)
-            self.run_logger.log(
-                "repair_summary",
-                book_id=book_id,
-                episode_id=episode_plan.episode_id,
-                repair_attempt_count=len(repair_attempts),
-                final_status=report.overall_status,
-            )
-            self._write_artifact(
-                self._episode_artifact_key(book_id, episode_plan.episode_id),
-                "factual_script",
-                script.model_dump(mode="json"),
-            )
-        return EpisodePreparation(
-            plan=episode_plan,
-            script=script,
-            report=report,
-            repair_attempts=repair_attempts,
-        )
+            book_ids = [b.book_id for b in project.books]
+            max_log_per_book = max(30, project.config.passages_per_axis_per_book)
+            all_passages_by_axis: dict[str, list[ExtractedPassage]] = {}
+            all_cross_pairs: list[PassagePair] = []
+            candidate_counts_by_axis: dict[str, int] = {}
 
-    def _finalize_episode_plan(
+            sem = asyncio.Semaphore(project.config.passage_extraction_concurrency)
+
+            def _process_axis(axis: ThematicAxis) -> tuple[str, list[ExtractedPassage], list[PassagePair], int]:
+                hits_by_book = self.retrieval.retrieve_for_axis(
+                    axis=axis, project_id=project.project_id,
+                    book_ids=book_ids,
+                    k_per_book=max_log_per_book,
+                )
+
+                retrieval_log: dict[str, Any] = {
+                    "axis_id": axis.axis_id,
+                    "axis_name": axis.name,
+                    "axis_description": axis.description,
+                    "max_log_per_book": max_log_per_book,
+                    "used_per_book": project.config.passages_per_axis_per_book,
+                    "books": [],
+                }
+
+                candidates = []
+                for bid, hits in hits_by_book.items():
+                    book = next((b for b in project.books if b.book_id == bid), None)
+                    book_entry = {
+                        "book_id": bid,
+                        "title": book.title if book else "Unknown",
+                        "author": book.author if book else "Unknown",
+                        "candidates": [],
+                    }
+                    for rank, hit in enumerate(hits, start=1):
+                        used = rank <= project.config.passages_per_axis_per_book
+                        book_entry["candidates"].append({
+                            "rank": rank,
+                            "used": used,
+                            "chunk_id": hit.chunk_id,
+                            "chapter_id": hit.chapter_id,
+                            "score": hit.score,
+                            "text": hit.text,
+                            "metadata": hit.metadata,
+                        })
+                        if not used:
+                            continue
+                        candidates.append({
+                            "passage_id": uuid4().hex,
+                            "book_id": bid,
+                            "chunk_ids": [hit.chunk_id],
+                            "text": hit.text,
+                            "chapter_ref": hit.metadata.get("chapter_id", ""),
+                            "axis_id": axis.axis_id,
+                            "author": book.author if book else "Unknown",
+                            "title": book.title if book else "Unknown",
+                        })
+                    retrieval_log["books"].append(book_entry)
+
+                _save_json(
+                    project_dir
+                    / "stage_artifacts"
+                    / "passage_extraction"
+                    / f"retrieval_candidates_{axis.axis_id}.json",
+                    retrieval_log,
+                )
+
+                candidate_count = len(candidates)
+                if not candidates:
+                    return axis.axis_id, [], [], candidate_count
+
+                _trim_candidate_texts_by_bm25(axis, candidates)
+
+                payload = self.passage_extraction_agent.build_payload(
+                    axis_id=axis.axis_id, axis_name=axis.name,
+                    axis_description=axis.description,
+                    candidate_passages=candidates,
+                )
+                candidate_by_id = {c["passage_id"]: c for c in candidates}
+                candidate_ids = list(candidate_by_id.keys())
+                candidate_count = len(candidate_ids)
+                max_attempts = self.passage_extraction_agent.max_retry_attempts
+                result = None
+                for attempt in range(1, max_attempts + 1):
+                    result = self.passage_extraction_agent.run(payload)
+                    result_ids = [p.passage_id for p in result.passages]
+                    id_counts: dict[str, int] = {}
+                    for pid in result_ids:
+                        id_counts[pid] = id_counts.get(pid, 0) + 1
+                    duplicate_ids = [pid for pid, count in id_counts.items() if count > 1]
+                    extra_ids = [pid for pid in id_counts if pid not in candidate_by_id]
+                    unique_ids = [pid for pid in candidate_ids if pid in id_counts]
+                    unique_count = len(unique_ids)
+                    coverage_ratio = unique_count / max(1, candidate_count)
+                    missing_ids = [pid for pid in candidate_ids if pid not in id_counts]
+                    if duplicate_ids or extra_ids or missing_ids:
+                        self.run_logger.log(
+                            "passage_extraction_id_mismatch",
+                            axis_id=axis.axis_id,
+                            attempt=attempt,
+                            max_attempts=max_attempts,
+                            missing_ids=missing_ids,
+                            extra_ids=extra_ids,
+                            duplicate_ids=duplicate_ids,
+                        )
+                    if coverage_ratio >= 0.85:
+                        break
+                    self.run_logger.log(
+                        "passage_extraction_low_coverage",
+                        axis_id=axis.axis_id,
+                        attempt=attempt,
+                        max_attempts=max_attempts,
+                        unique_count=unique_count,
+                        candidate_count=candidate_count,
+                        coverage_ratio=round(coverage_ratio, 3),
+                    )
+                    if attempt < max_attempts:
+                        backoff = min(2 ** (attempt - 1), 16) + (time.monotonic() % 1)
+                        time.sleep(backoff)
+                        continue
+                    raise RuntimeError(
+                        "Passage extraction returned fewer than 85% of candidate passages for axis "
+                        f"{axis.axis_id} after {max_attempts} attempts."
+                    )
+                assert result is not None
+
+                scores_by_id = {}
+                for score in result.passages:
+                    if score.passage_id in candidate_by_id and score.passage_id not in scores_by_id:
+                        scores_by_id[score.passage_id] = score
+                rehydrated_passages = []
+                for candidate in candidates:
+                    score = scores_by_id.get(candidate["passage_id"])
+                    if score is None:
+                        continue
+                    rehydrated_passages.append(
+                        ExtractedPassage(
+                            passage_id=score.passage_id,
+                            book_id=candidate["book_id"],
+                            chunk_ids=candidate["chunk_ids"],
+                            text=candidate["text"],
+                            chapter_ref=candidate.get("chapter_ref", ""),
+                            axis_id=candidate.get("axis_id", axis.axis_id),
+                            secondary_axes=candidate.get("secondary_axes", []),
+                            relevance_score=score.relevance_score,
+                            quotability_score=score.quotability_score,
+                            synthesis_tags=score.synthesis_tags,
+                        )
+                    )
+
+                passages_by_book: dict[str, list[ExtractedPassage]] = {}
+                for p in rehydrated_passages:
+                    passages_by_book.setdefault(p.book_id, []).append(p)
+
+                top_passages = []
+                for book_passages in passages_by_book.values():
+                    sorted_p = sorted(book_passages, key=lambda x: x.relevance_score, reverse=True)
+                    top_passages.extend(sorted_p[:project.config.rerank_top_k])
+
+                filtered_pairs = [
+                    pair
+                    for pair in result.cross_book_pairs
+                    if pair.axis_id == axis.axis_id
+                    and pair.relationship
+                    not in {SynthesisTag.AGREES_WITH, SynthesisTag.EXTENDS}
+                ]
+                filtered_pairs.sort(key=lambda p: p.strength, reverse=True)
+                return axis.axis_id, top_passages, filtered_pairs[:5], candidate_count
+
+            async def _process_axis_async(axis: ThematicAxis):
+                async with sem:
+                    return await asyncio.to_thread(_process_axis, axis)
+
+            results = await asyncio.gather(*[_process_axis_async(axis) for axis in axes])
+
+            for axis_id, top_passages, cross_pairs, candidate_count in results:
+                candidate_counts_by_axis[axis_id] = candidate_count
+                all_passages_by_axis[axis_id] = top_passages
+                all_cross_pairs.extend(cross_pairs)
+
+            # ---- Retrieval metrics ----
+            retrieval_metrics: dict[str, Any] = {"per_axis": {}, "per_book": {}, "summary": {}}
+
+            for axis in axes:
+                axis_passages = all_passages_by_axis.get(axis.axis_id, [])
+                relevance_scores = [p.relevance_score for p in axis_passages]
+                quotability_scores = [p.quotability_score for p in axis_passages]
+                books_represented = list(set(p.book_id for p in axis_passages))
+
+                retrieval_metrics["per_axis"][axis.axis_id] = {
+                    "axis_name": axis.name,
+                    "candidate_count": candidate_counts_by_axis.get(axis.axis_id, 0),
+                    "post_rerank_count": len(axis_passages),
+                    "avg_relevance_score": round(sum(relevance_scores) / max(1, len(relevance_scores)), 3),
+                    "avg_quotability_score": round(sum(quotability_scores) / max(1, len(quotability_scores)), 3),
+                    "relevance_distribution": {
+                        "above_0.8": sum(1 for s in relevance_scores if s >= 0.8),
+                        "0.5_to_0.8": sum(1 for s in relevance_scores if 0.5 <= s < 0.8),
+                        "below_0.5": sum(1 for s in relevance_scores if s < 0.5),
+                    },
+                    "books_represented": books_represented,
+                }
+
+            for book in project.books:
+                book_passages = [
+                    p for passages in all_passages_by_axis.values()
+                    for p in passages if p.book_id == book.book_id
+                ]
+                retrieval_metrics["per_book"][book.book_id] = {
+                    "title": book.title,
+                    "total_passages": len(book_passages),
+                    "axes_with_passages": sum(
+                        1 for passages in all_passages_by_axis.values()
+                        if any(p.book_id == book.book_id for p in passages)
+                    ),
+                    "avg_relevance": round(
+                        sum(p.relevance_score for p in book_passages) / max(1, len(book_passages)), 3
+                    ),
+                }
+
+            cross_pair_counts: dict[str, int] = {}
+            for pair in all_cross_pairs:
+                key = pair.relationship.value
+                cross_pair_counts[key] = cross_pair_counts.get(key, 0) + 1
+
+            total_passages = sum(len(p) for p in all_passages_by_axis.values())
+            retrieval_metrics["summary"] = {
+                "total_axes": len(axes),
+                "total_passages": total_passages,
+                "total_cross_book_pairs": len(all_cross_pairs),
+                "cross_book_pair_counts": cross_pair_counts,
+            }
+
+            _save_json(project_dir / "retrieval_metrics.json", retrieval_metrics)
+            self.run_logger.log("retrieval_metrics", **retrieval_metrics["summary"])
+
+            # ---- Build corpus ----
+            book_coverage = {}
+            for book in project.books:
+                total = sum(
+                    len([p for p in passages if p.book_id == book.book_id])
+                    for passages in all_passages_by_axis.values()
+                )
+                axes_covered = sum(
+                    1 for passages in all_passages_by_axis.values()
+                    if any(p.book_id == book.book_id for p in passages)
+                )
+                book_coverage[book.book_id] = CoverageStats(
+                    total_passages=total, axes_covered=axes_covered,
+                    coverage_ratio=axes_covered / max(1, len(axes)),
+                )
+
+            corpus = ThematicCorpus(
+                project_id=project.project_id, axes=axes,
+                passages_by_axis=all_passages_by_axis,
+                cross_book_pairs=all_cross_pairs,
+                book_coverage=book_coverage,
+                total_passages=total_passages,
+            )
+
+            _save_json(project_dir / "thematic_corpus.json", corpus)
+
+            ctx["output_summary"] = retrieval_metrics["summary"]
+            return corpus
+
+    async def _map_synthesis(
+        self, project: ThematicProject, corpus: ThematicCorpus, project_dir: Path,
+    ) -> SynthesisMap:
+        async with _stage_log(
+            self.run_logger, "synthesis_mapping", project_dir,
+            axis_count=len(corpus.axes), total_passages=corpus.total_passages,
+        ) as ctx:
+            cross_pair_ids = {
+                pid
+                for pair in corpus.cross_book_pairs
+                for pid in (pair.passage_a_id, pair.passage_b_id)
+            }
+            axes_summary = [
+                {"axis_id": a.axis_id, "name": a.name, "description": a.description}
+                for a in corpus.axes
+            ]
+            passages_summary: dict[str, list[dict]] = {}
+            synthesis_passage_total = 0
+            for axis_id, passages in corpus.passages_by_axis.items():
+                selected_passages = _select_synthesis_passages(passages, cross_pair_ids)
+                synthesis_passage_total += len(selected_passages)
+                passages_summary[axis_id] = [
+                    {
+                        "passage_id": p.passage_id, "book_id": p.book_id,
+                        "text": p.text[:500],
+                        "relevance_score": p.relevance_score,
+                        "synthesis_tags": [t.value for t in p.synthesis_tags],
+                    }
+                    for p in selected_passages
+                ]
+
+            cross_pairs = [
+                {
+                    "passage_a_id": pp.passage_a_id,
+                    "passage_b_id": pp.passage_b_id,
+                    "relationship": pp.relationship.value,
+                    "strength": pp.strength,
+                }
+                for pp in corpus.cross_book_pairs
+            ]
+            book_metadata = [
+                {"book_id": b.book_id, "title": b.title, "author": b.author}
+                for b in project.books
+            ]
+
+            payload = self.synthesis_mapping_agent.build_payload(
+                project_id=project.project_id, axes_summary=axes_summary,
+                passages_by_axis=passages_summary, cross_book_pairs=cross_pairs,
+                book_metadata=book_metadata,
+            )
+            result = await asyncio.to_thread(self.synthesis_mapping_agent.run, payload)
+
+            synthesis_map = SynthesisMap(
+                project_id=project.project_id,
+                insights=result.insights,
+                narrative_threads=result.narrative_threads,
+                book_relationship_matrix=result.book_relationship_matrix,
+                unresolved_tensions=result.unresolved_tensions,
+                quality_score=result.quality_score,
+                merged_narratives=result.merged_narratives,
+            )
+            _save_json(project_dir / "synthesis_map.json", synthesis_map)
+
+            ctx["output_summary"] = {
+                "insights": len(synthesis_map.insights),
+                "threads": len(synthesis_map.narrative_threads),
+                "quality_score": synthesis_map.quality_score,
+                "synthesis_passages": synthesis_passage_total,
+            }
+            return synthesis_map
+
+    async def _choose_narrative_strategy(
+        self, project: ThematicProject, synthesis_map: SynthesisMap, project_dir: Path,
+    ) -> NarrativeStrategy:
+        async with _stage_log(
+            self.run_logger, "narrative_strategy", project_dir,
+            insight_count=len(synthesis_map.insights),
+            override=project.config.narrative_strategy_override,
+        ) as ctx:
+            if project.config.narrative_strategy_override:
+                strategy = NarrativeStrategy(
+                    strategy_type=project.config.narrative_strategy_override,
+                    justification="User override",
+                    series_arc="", episode_arc_outline=[],
+                )
+                _save_json(project_dir / "narrative_strategy.json", strategy)
+                ctx["output_summary"] = {"strategy": strategy.strategy_type, "source": "override"}
+                return strategy
+
+            synthesis_summary = {
+                "insight_types": [i.insight_type.value for i in synthesis_map.insights],
+                "thread_arc_types": [t.arc_type for t in synthesis_map.narrative_threads],
+                "quality_score": synthesis_map.quality_score,
+                "insight_count": len(synthesis_map.insights),
+                "thread_count": len(synthesis_map.narrative_threads),
+            }
+            project_metadata = {
+                "theme": project.theme,
+                "book_count": len(project.books),
+                "books": [{"title": b.title, "author": b.author} for b in project.books],
+            }
+
+            payload = self.narrative_strategy_agent.build_payload(
+                synthesis_map_summary=synthesis_summary,
+                project_metadata=project_metadata,
+                episode_count=project.episode_count,
+            )
+            strategy = await asyncio.to_thread(self.narrative_strategy_agent.run, payload)
+            _save_json(project_dir / "narrative_strategy.json", strategy)
+
+            ctx["output_summary"] = {"strategy": strategy.strategy_type, "source": "agent"}
+            return strategy
+
+    async def _plan_series(
         self,
-        book_id: str,
-        preparation: EpisodePreparation,
-        *,
-        synthesize_audio: bool,
-        allow_downstream: bool,
-        previous_spoken_script: SpokenEpisodeNarration | None,
-        previous_plan: EpisodePlan | None,
-        previous_script: EpisodeScript | None,
-        next_plan: EpisodePlan | None,
-        next_script: EpisodeScript | None,
-    ) -> tuple[EpisodeOutput, SpokenEpisodeNarration | None]:
-        spoken_script = None
-        spoken_delivery = None
-        arc_plan = None
-        framing = None
-        core_spoken_script: SpokenEpisodeNarration | None = None
-        episode_downstream = allow_downstream and preparation.report.overall_status == "pass"
-        if episode_downstream:
-            try:
-                spoken_script, spoken_delivery, arc_plan = self.spoken_delivery_episode(
-                    book_id,
-                    preparation.script,
-                )
-            except Exception as exc:
-                self.run_logger.log(
-                    "stage_failed",
-                    stage="spoken_delivery_episode",
-                    book_id=book_id,
-                    episode_id=preparation.plan.episode_id,
-                    error_type=type(exc).__name__,
-                    error_message=str(exc),
-                )
-                episode_downstream = False
-            if spoken_script is not None and spoken_delivery is not None:
-                core_spoken_script = spoken_script
-                try:
-                    self.run_logger.log(
-                        "stage_start",
-                        stage="episode_framing",
-                        book_id=book_id,
-                        episode_id=preparation.plan.episode_id,
-                    )
-                    framing = self._build_episode_framing(
-                        preparation.plan,
-                        current_script=preparation.script,
-                        previous_spoken_script=previous_spoken_script,
-                        previous_plan=previous_plan,
-                        previous_script=previous_script,
-                        next_plan=next_plan,
-                        next_script=next_script,
-                    )
-                    self.run_logger.log(
-                        "stage_end",
-                        stage="episode_framing",
-                        book_id=book_id,
-                        episode_id=preparation.plan.episode_id,
-                    )
-                except Exception as exc:
-                    self.run_logger.log(
-                        "stage_failed",
-                        stage="episode_framing",
-                        book_id=book_id,
-                        episode_id=preparation.plan.episode_id,
-                        error_type=type(exc).__name__,
-                        error_message=str(exc),
-                    )
-                    episode_downstream = False
-                if framing is not None:
-                    spoken_script = self._apply_framing_to_spoken_script(spoken_script, framing)
-                    spoken_delivery = spoken_delivery.model_copy(
-                        update={"chunk_count": len(spoken_script.chunks)}
-                    )
-                self._write_artifact(
-                    self._episode_artifact_key(book_id, preparation.plan.episode_id),
-                    "spoken_script",
-                    spoken_script.model_dump(mode="json"),
-                )
-                self._write_artifact(
-                    self._episode_artifact_key(book_id, preparation.plan.episode_id),
-                    "spoken_delivery",
-                    spoken_delivery.model_dump(mode="json"),
-                )
-                if arc_plan is not None:
-                    self._write_artifact(
-                        self._episode_artifact_key(book_id, preparation.plan.episode_id),
-                        "spoken_delivery_arc_plan",
-                        arc_plan.model_dump(mode="json"),
-                    )
-                if framing is not None:
-                    self._write_artifact(
-                        self._episode_artifact_key(book_id, preparation.plan.episode_id),
-                        "episode_framing",
-                        framing.model_dump(mode="json"),
-                    )
-            else:
-                episode_downstream = False
-        manifest = None
-        audio_manifest = None
-        if episode_downstream:
-            manifest = self.render_manifest(
-                preparation.script,
-                preparation.report,
-                spoken_script=spoken_script,
-                book_id=book_id,
-            )
-            if synthesize_audio:
-                spoken_script_artifact = self._load_spoken_script_artifact(book_id, preparation.plan.episode_id)
-                manifest = self._render_manifest_from_spoken_script(spoken_script_artifact, preparation.report)
-                manifest = self._prepare_manifest_for_audio(manifest)
-                audio_manifest = self.synthesize_audio(manifest, book_id=book_id)
-        episode_output = EpisodeOutput(
-            plan=preparation.plan,
-            script=preparation.script,
-            report=preparation.report,
-            framing=framing,
-            spoken_script=spoken_script,
-            spoken_delivery=spoken_delivery,
-            manifest=manifest,
-            audio_manifest=audio_manifest,
-            repair_attempts=preparation.repair_attempts,
-        )
-        self._write_artifact(
-            self._episode_artifact_key(book_id, preparation.plan.episode_id),
-            "episode_output",
-            episode_output.model_dump(mode="json"),
-        )
-        return episode_output, core_spoken_script
+        project: ThematicProject,
+        synthesis_map: SynthesisMap,
+        strategy: NarrativeStrategy,
+        corpus: ThematicCorpus,
+        project_dir: Path,
+    ) -> list[EpisodePlan]:
+        async with _stage_log(
+            self.run_logger, "series_planning", project_dir,
+            episode_count=project.episode_count, strategy=strategy.strategy_type,
+        ) as ctx:
+            synthesis_summary = {
+                "insights": [
+                    {
+                        "insight_id": i.insight_id,
+                        "insight_type": i.insight_type.value,
+                        "title": i.title, "description": i.description,
+                        "passage_ids": i.passage_ids,
+                        "podcast_potential": i.podcast_potential,
+                        "treatment": i.treatment,
+                    }
+                    for i in synthesis_map.insights
+                ],
+                "narrative_threads": [
+                    {
+                        "thread_id": t.thread_id, "title": t.title,
+                        "insight_ids": t.insight_ids, "arc_type": t.arc_type,
+                    }
+                    for t in synthesis_map.narrative_threads
+                ],
+                "merged_narratives": [
+                    {
+                        "topic": m.topic,
+                        "narrative": m.narrative,
+                        "source_passage_ids": m.source_passage_ids,
+                        "points_of_consensus": m.points_of_consensus,
+                        "points_of_disagreement": m.points_of_disagreement,
+                    }
+                    for m in synthesis_map.merged_narratives
+                ],
+            }
 
-    def _build_episode_framing(
+            passages_summary: dict[str, list[dict]] = {}
+            for axis_id, passages in corpus.passages_by_axis.items():
+                passages_summary[axis_id] = [
+                    {
+                        "passage_id": p.passage_id, "book_id": p.book_id,
+                        "relevance_score": p.relevance_score,
+                        "quotability_score": p.quotability_score,
+                    }
+                    for p in passages
+                ]
+
+            project_metadata = {
+                "theme": project.theme,
+                "book_count": len(project.books),
+                "books": [
+                    {"book_id": b.book_id, "title": b.title, "author": b.author}
+                    for b in project.books
+                ],
+                "attribution_budget": project.config.attribution_budget,
+            }
+
+            payload = self.series_planning_agent.build_payload(
+                synthesis_map_summary=synthesis_summary,
+                narrative_strategy=strategy.model_dump(mode="json"),
+                project_metadata=project_metadata,
+                episode_count=project.episode_count,
+                passages_summary=passages_summary,
+            )
+            result = await asyncio.to_thread(self.series_planning_agent.run, payload)
+
+            adjusted_episodes: list[EpisodePlan] = []
+            for episode in result.episodes:
+                beats = list(episode.beats)
+                total_beats = len(beats)
+                if total_beats == 0:
+                    adjusted_episodes.append(episode)
+                    continue
+                budget = episode.attribution_budget or project.config.attribution_budget
+                max_attributed = int(total_beats * budget)
+                attributed_indices = [
+                    i for i, beat in enumerate(beats)
+                    if beat.attribution_level in ("light", "full")
+                ]
+                if len(attributed_indices) <= max_attributed:
+                    adjusted_episodes.append(episode)
+                    continue
+                ordered_indices = [
+                    i for i, beat in enumerate(beats) if beat.attribution_level == "full"
+                ] + [
+                    i for i, beat in enumerate(beats) if beat.attribution_level == "light"
+                ]
+                keep_set = set(ordered_indices[:max_attributed])
+                adjusted_beats = []
+                dropped_indices: list[int] = []
+                for idx, beat in enumerate(beats):
+                    if idx in keep_set:
+                        adjusted_beats.append(beat)
+                        continue
+                    if beat.attribution_level in ("light", "full"):
+                        dropped_indices.append(idx)
+                        adjusted_beats.append(
+                            beat.model_copy(update={"attribution_level": "none"})
+                        )
+                    else:
+                        adjusted_beats.append(beat)
+                episode = episode.model_copy(update={"beats": adjusted_beats})
+                self.run_logger.log(
+                    "attribution_budget_enforced",
+                    episode=episode.episode_number,
+                    attribution_budget=budget,
+                    total_beats=total_beats,
+                    max_attributed=max_attributed,
+                    attributed_before=len(attributed_indices),
+                    attributed_after=max_attributed,
+                    adjusted_indices=dropped_indices,
+                )
+                adjusted_episodes.append(episode)
+
+            _save_json(
+                project_dir / "series_plan.json",
+                {"episodes": [e.model_dump(mode="json") for e in adjusted_episodes]},
+            )
+
+            ctx["output_summary"] = {
+                "episode_count": len(adjusted_episodes),
+                "titles": [e.title for e in adjusted_episodes],
+            }
+            return adjusted_episodes
+
+    # -----------------------------------------------------------------------
+    # Phase 3: Episode Production
+    # -----------------------------------------------------------------------
+
+    async def _produce_episode(
         self,
         plan: EpisodePlan,
-        *,
-        current_script: EpisodeScript,
-        previous_spoken_script: SpokenEpisodeNarration | None,
-        previous_plan: EpisodePlan | None,
-        previous_script: EpisodeScript | None,
-        next_plan: EpisodePlan | None,
-        next_script: EpisodeScript | None,
-    ) -> EpisodeFraming | None:
-        has_previous = previous_plan is not None and previous_script is not None
-        has_next = next_plan is not None
-        recap_source = self._build_recap_source_from_previous(
-            previous_plan,
-            previous_script,
-            target_words=24,
-            max_words=self.settings.pipeline.framing_recap_source_max_words,
-        )
-        current_outline = self._build_beat_outline(plan, current_script)
-        next_outline = (
-            self._build_beat_outline(next_plan, next_script) if next_plan is not None else ""
-        )
-        payload = self.framing_agent.build_payload(
-            episode_id=plan.episode_id,
-            episode_title=plan.title,
-            recap_source=recap_source,
-            current_themes=plan.themes,
-            next_themes=next_plan.themes if next_plan is not None else None,
-            current_outline=current_outline,
-            next_outline=next_outline,
-            has_previous=has_previous,
-            has_next=has_next,
-        )
-        return self.framing_agent.generate(payload)
+        project: ThematicProject,
+        corpus: ThematicCorpus,
+        project_dir: Path,
+        semaphore: asyncio.Semaphore,
+    ) -> tuple[int, SpokenScript]:
+        async with semaphore:
+            ep_dir = project_dir / "episodes" / str(plan.episode_number)
+            ep_dir.mkdir(parents=True, exist_ok=True)
 
-    @classmethod
-    def _build_recap_source_from_previous(
-        cls,
-        previous_plan: EpisodePlan | None,
-        previous_script: EpisodeScript | None,
-        *,
-        target_words: int,
-        max_words: int,
-    ) -> str:
-        if previous_plan is None or previous_script is None:
-            return ""
-        narration_by_beat: dict[str, list[str]] = defaultdict(list)
-        for segment in previous_script.segments:
-            if segment.narration.strip():
-                narration_by_beat[segment.beat_id].append(segment.narration.strip())
-        lines: list[str] = []
-        for index, beat in enumerate(previous_plan.beats, start=1):
-            narration = " ".join(narration_by_beat.get(beat.beat_id, [])).strip()
-            source_text = f"{beat.title}. {narration}".strip() if narration else beat.title.strip()
-            summary = cls._extract_key_sentences(source_text, target_words=target_words)
-            if not summary:
-                summary = truncate_words(source_text, target_words)
-            lines.append(f"{index}. {summary}")
-        recap_source = "\n".join(lines).strip()
-        return truncate_words(recap_source, max_words)
+            script = await self._write_episode(plan, project, corpus, ep_dir, project_dir)
 
-    def _apply_framing_to_spoken_script(
-        self,
-        spoken_script: SpokenEpisodeNarration,
-        framing: EpisodeFraming,
-    ) -> SpokenEpisodeNarration:
-        intro_parts = []
-        if framing.recap.strip():
-            intro_parts.append(framing.recap.strip())
-        intro_text = "\n\n".join(intro_parts).strip()
-        outro_text = framing.next_overview.strip()
-        narration_parts = [part for part in (intro_text, spoken_script.narration.strip(), outro_text) if part]
-        narration = "\n\n".join(narration_parts).strip()
-        chunks = self.spoken_delivery_agent.chunk_narration(spoken_script.episode_id, narration)
-        return spoken_script.model_copy(update={"narration": narration, "chunks": chunks})
+            if not project.config.skip_grounding:
+                report = await self._validate_grounding(
+                    plan.episode_number, script, corpus, ep_dir, project_dir,
+                )
+                if report.overall_status != "PASSED":
+                    script, report = await self._repair_loop(
+                        plan.episode_number, script, report, corpus, ep_dir,
+                        project_dir, max_attempts=project.config.max_repair_attempts,
+                    )
+            else:
+                self.run_logger.log("grounding_skipped", episode=plan.episode_number)
 
-    def _build_beat_outline(self, plan: EpisodePlan | None, script: EpisodeScript | None) -> str:
-        if plan is None or script is None:
-            return ""
-        narration_by_beat: dict[str, list[str]] = defaultdict(list)
-        for segment in script.segments:
-            if segment.narration.strip():
-                narration_by_beat[segment.beat_id].append(segment.narration.strip())
-        lines: list[str] = []
-        for index, beat in enumerate(plan.beats, start=1):
-            narration = " ".join(narration_by_beat.get(beat.beat_id, [])).strip()
-            source_text = f"{beat.title}. {narration}".strip() if narration else beat.title.strip()
-            summary = self._extract_key_sentences(source_text, target_words=60)
-            if not summary:
-                summary = truncate_words(source_text, 60)
-            lines.append(f"{index}. {summary}")
-        return "\n".join(lines).strip()
+            if not project.config.skip_spoken_delivery:
+                spoken = await self._rewrite_for_speech(
+                    plan.episode_number, script, project, ep_dir, project_dir,
+                )
+            else:
+                spoken = SpokenScript(
+                    episode_number=plan.episode_number,
+                    title=script.title,
+                    segments=[
+                        SpokenSegment(
+                            segment_id=seg.segment_id,
+                            text=seg.text,
+                            max_words=project.config.spoken_chunk_max_words,
+                        )
+                        for seg in script.segments
+                    ],
+                    arc_plan=None,
+                    tts_provider=project.config.tts_provider,
+                )
+                _save_json(ep_dir / "spoken_script.json", spoken)
+                self.run_logger.log("spoken_delivery_skipped", episode=plan.episode_number)
 
-    @staticmethod
-    def _split_sentences(text: str) -> list[str]:
-        cleaned = " ".join(text.strip().split())
-        if not cleaned:
-            return []
-        parts = re.split(r"(?<=[.!?])\\s+", cleaned)
-        return [part.strip() for part in parts if part.strip()]
+            return (plan.episode_number, spoken)
 
-    @staticmethod
-    def _tokenize_words(text: str) -> list[str]:
-        return re.findall(r"[A-Za-z0-9']+", text)
+    async def _write_episode(
+        self, plan: EpisodePlan, project: ThematicProject,
+        corpus: ThematicCorpus, ep_dir: Path, project_dir: Path,
+    ) -> EpisodeScript:
+        async with _stage_log(
+            self.run_logger, f"write_episode_{plan.episode_number}", project_dir,
+            episode=plan.episode_number, beat_count=len(plan.beats),
+        ) as ctx:
+            passage_ids = set()
+            for beat in plan.beats:
+                passage_ids.update(beat.passage_ids)
 
-    @classmethod
-    def _extract_key_sentences(cls, text: str, *, target_words: int = 60) -> str:
-        sentences = cls._split_sentences(text)
-        if not sentences:
-            return ""
-        tokenized = [cls._tokenize_words(sentence) for sentence in sentences]
-        lowered = [[token.lower() for token in tokens] for tokens in tokenized]
-        if not any(lowered):
-            return truncate_words(text, target_words)
-        doc_freq: Counter[str] = Counter()
-        for tokens in lowered:
-            doc_freq.update(set(tokens))
-        sentence_scores: list[tuple[int, float]] = []
-        sentence_count = len(sentences)
-        for idx, tokens in enumerate(lowered):
-            if not tokens:
-                sentence_scores.append((idx, -1.0))
-                continue
-            tf = Counter(tokens)
-            tfidf_score = 0.0
-            for term, count in tf.items():
-                idf = log((1 + sentence_count) / (1 + doc_freq[term])) + 1.0
-                tfidf_score += count * idf
-            position_bonus = 0.15 * (1.0 - (idx / max(sentence_count - 1, 1)))
-            entity_tokens = [
-                token
-                for token in tokenized[idx]
-                if token[:1].isupper() and not token.isupper()
+            passages = []
+            for axis_passages in corpus.passages_by_axis.values():
+                for p in axis_passages:
+                    if p.passage_id in passage_ids:
+                        passages.append({
+                            "passage_id": p.passage_id, "book_id": p.book_id,
+                            "text": p.text, "chapter_ref": p.chapter_ref,
+                            "synthesis_tags": [t.value for t in p.synthesis_tags],
+                        })
+
+            book_metadata = [
+                {"book_id": b.book_id, "title": b.title, "author": b.author}
+                for b in project.books
             ]
-            entity_bonus = 0.02 * len(entity_tokens)
-            word_count = len(tokens)
-            length_penalty = (abs(word_count - 25) / 25.0) * 0.1
-            sentence_scores.append((idx, tfidf_score + position_bonus + entity_bonus - length_penalty))
-        ranked = [idx for idx, _ in sorted(sentence_scores, key=lambda item: item[1], reverse=True)]
-        selected: list[int] = []
-        selected_token_sets: list[set[str]] = []
-        total_words = 0
-        for idx in ranked:
-            if total_words >= target_words:
-                break
-            token_set = set(lowered[idx])
-            if token_set:
-                if any(cls._jaccard_similarity(token_set, existing) > 0.5 for existing in selected_token_sets):
-                    continue
-            selected.append(idx)
-            selected_token_sets.append(token_set)
-            total_words += len(lowered[idx])
-        if not selected:
-            selected = [0]
-        selected_sorted = sorted(selected)
-        summary = " ".join(sentences[idx] for idx in selected_sorted).strip()
-        summary_words = summary.split()
-        if len(summary_words) < target_words:
-            for idx, sentence in enumerate(sentences):
-                if idx in selected_sorted:
-                    continue
-                summary_words.extend(sentence.split())
-                if len(summary_words) >= target_words:
-                    break
-        if len(summary_words) > target_words:
-            summary_words = summary_words[:target_words]
-        return " ".join(summary_words).strip()
 
-    @staticmethod
-    def _jaccard_similarity(left: set[str], right: set[str]) -> float:
-        if not left or not right:
-            return 0.0
-        intersection = left.intersection(right)
-        union = left.union(right)
-        return len(intersection) / len(union)
+            payload = self.writing_agent.build_payload(
+                episode_number=plan.episode_number,
+                episode_plan=plan.model_dump(mode="json"),
+                passages=passages, book_metadata=book_metadata,
+                max_author_names_per_episode=project.config.max_author_names_per_episode,
+                prefer_indirect_attribution=project.config.prefer_indirect_attribution,
+                skip_grounding=project.config.skip_grounding,
+            )
+            result = await asyncio.to_thread(self.writing_agent.run, payload)
 
-    def _copy_source_book_artifacts(self, source_root: Path, target_book_id: str) -> dict[str, dict]:
-        if not source_root.exists():
-            raise ValueError(f"Spoken-delivery artifact path does not exist: {source_root}")
-        if not source_root.is_dir():
-            raise ValueError(f"Spoken-delivery artifact path must be a directory: {source_root}")
+            if project.config.skip_grounding:
+                normalized_segments = []
+                for seg in result.segments:
+                    segment_kwargs = {
+                        "text": seg.text,
+                        "segment_type": seg.segment_type,
+                        "beat_id": seg.beat_id,
+                        "source_book_ids": seg.source_book_ids,
+                        "attribution_level": seg.attribution_level,
+                        "citations": [],
+                    }
+                    if seg.segment_id:
+                        segment_kwargs["segment_id"] = seg.segment_id
+                    normalized_segments.append(ScriptSegment(**segment_kwargs))
+                result_segments = normalized_segments
+                result_citations = []
+            else:
+                result_segments = result.segments
+                result_citations = result.citations
 
-        copied_artifacts: dict[str, dict] = {}
-        for artifact_name in ("ingestion", "structure", "analysis", "series_plan", "embeddings"):
-            artifact_path = source_root / f"{artifact_name}.json"
-            if not artifact_path.exists():
-                continue
-            payload = self._load_manifest_source(artifact_path)
-            if not isinstance(payload, dict):
-                raise ValueError(
-                    f"Artifact '{artifact_path}' must contain a JSON object, got {type(payload).__name__}."
-                )
-            copied_artifacts[artifact_name] = payload
-            self._write_artifact(self._book_artifact_key(target_book_id), artifact_name, payload)
-        return copied_artifacts
+            total_words = sum(len(seg.text.split()) for seg in result_segments)
+            script = EpisodeScript(
+                episode_number=plan.episode_number, title=result.title,
+                segments=result_segments, total_word_count=total_words,
+                estimated_duration_seconds=int(total_words / 130 * 60),
+                citations=result_citations,
+            )
+            _save_json(ep_dir / "episode_script.json", script)
 
-    def _load_spoken_only_source_episode_outputs(self, source_root: Path) -> list[EpisodeOutput]:
-        if not source_root.exists():
-            raise ValueError(f"Spoken-delivery artifact path does not exist: {source_root}")
-        if not source_root.is_dir():
-            raise ValueError(f"Spoken-delivery artifact path must be a directory: {source_root}")
-
-        source_outputs: list[EpisodeOutput] = []
-        series_plan_path = source_root / "series_plan.json"
-        plan_by_episode_id: dict[str, EpisodePlan] | None = None
-
-        def load_plan_by_episode_id() -> dict[str, EpisodePlan]:
-            nonlocal plan_by_episode_id
-            if plan_by_episode_id is not None:
-                return plan_by_episode_id
-            if not series_plan_path.exists():
-                raise ValueError(
-                    "Spoken-delivery-only fallback from factual_script.json requires "
-                    f"series_plan.json at '{series_plan_path}'."
-                )
-            try:
-                series_plan_payload = self._load_manifest_source(series_plan_path)
-                series_plan = SeriesPlan.model_validate_json(json.dumps(series_plan_payload))
-            except ValidationError as exc:
-                raise ValueError(f"Invalid series_plan.json at '{series_plan_path}': {exc}") from exc
-            plan_by_episode_id = {
-                episode_plan.episode_id: episode_plan for episode_plan in series_plan.episodes
+            ctx["output_summary"] = {
+                "words": total_words, "segments": len(result.segments),
+                "citations": len(result_citations),
             }
-            return plan_by_episode_id
+            return script
 
-        for episode_dir in sorted(path for path in source_root.iterdir() if path.is_dir()):
-            episode_output_path = episode_dir / "episode_output.json"
-            if episode_output_path.exists():
-                try:
-                    source_output = EpisodeOutput.model_validate_json(
-                        episode_output_path.read_text(encoding="utf-8")
+    async def _validate_grounding(
+        self, episode_number: int, script: EpisodeScript,
+        corpus: ThematicCorpus, ep_dir: Path, project_dir: Path,
+    ) -> GroundingReport:
+        async with _stage_log(
+            self.run_logger, f"grounding_{episode_number}", project_dir,
+            episode=episode_number, segment_count=len(script.segments),
+        ) as ctx:
+            passage_lookup: dict[str, dict] = {}
+            for axis_passages in corpus.passages_by_axis.values():
+                for p in axis_passages:
+                    passage_lookup[p.passage_id] = {
+                        "passage_id": p.passage_id,
+                        "book_id": p.book_id, "text": p.text,
+                    }
+
+            payload = self.grounding_agent.build_payload(
+                episode_number=episode_number,
+                script=script.model_dump(mode="json"),
+                passages=passage_lookup,
+            )
+            report = await asyncio.to_thread(self.grounding_agent.run, payload)
+            _save_json(ep_dir / "grounding_report.json", report)
+
+            ctx["output_summary"] = {
+                "status": report.overall_status,
+                "grounding_score": report.grounding_score,
+                "attribution_accuracy": report.attribution_accuracy,
+                "claim_count": len(report.claim_assessments),
+                "fairness_flags": len(report.fairness_flags),
+            }
+            return report
+
+    async def _repair_loop(
+        self, episode_number: int, script: EpisodeScript,
+        report: GroundingReport, corpus: ThematicCorpus,
+        ep_dir: Path, project_dir: Path, max_attempts: int = 3,
+    ) -> tuple[EpisodeScript, GroundingReport]:
+        current_script = script
+        current_report = report
+
+        for attempt in range(1, max_attempts + 1):
+            if current_report.overall_status == "PASSED":
+                break
+
+            failing_claims = [
+                ca for ca in current_report.claim_assessments
+                if ca.status in ("UNSUPPORTED", "FABRICATED")
+            ]
+            if not failing_claims and not current_report.fairness_flags:
+                break
+
+            async with _stage_log(
+                self.run_logger, f"repair_{episode_number}_attempt_{attempt}", project_dir,
+                episode=episode_number, attempt=attempt,
+                failing_claims=len(failing_claims),
+            ) as ctx:
+                passage_lookup: dict[str, dict] = {}
+                for axis_passages in corpus.passages_by_axis.values():
+                    for p in axis_passages:
+                        passage_lookup[p.passage_id] = {
+                            "passage_id": p.passage_id,
+                            "book_id": p.book_id, "text": p.text,
+                        }
+
+                failing_segments = [
+                    seg.model_dump(mode="json") for seg in current_script.segments
+                    if any(
+                        c.cited_passage_id in [cit.passage_id for cit in seg.citations]
+                        for c in failing_claims
                     )
-                except ValidationError as exc:
-                    raise ValueError(f"Invalid episode_output.json at '{episode_output_path}': {exc}") from exc
-                if source_output.report.overall_status != "pass":
-                    raise ValueError(
-                        "Spoken-delivery-only mode requires grounding-passed episode outputs. "
-                        f"Found '{source_output.plan.episode_id}' with status '{source_output.report.overall_status}'."
+                ]
+                failure_reasons = [
+                    {"claim_text": c.claim_text, "status": c.status, "explanation": c.explanation}
+                    for c in failing_claims
+                ]
+
+                payload = self.repair_agent.build_payload(
+                    failing_segments=failing_segments,
+                    failure_reasons=failure_reasons,
+                    passages=passage_lookup,
+                )
+                result = await asyncio.to_thread(self.repair_agent.run, payload)
+
+                repaired_map = {seg.segment_id: seg for seg in result.repaired_segments}
+                new_segments = []
+                diffs: list[SegmentDiff] = []
+                for seg in current_script.segments:
+                    if seg.segment_id in repaired_map:
+                        new_seg = repaired_map[seg.segment_id]
+                        diffs.append(SegmentDiff(
+                            segment_id=seg.segment_id,
+                            before=seg.text, after=new_seg.text,
+                        ))
+                        new_segments.append(new_seg)
+                    else:
+                        new_segments.append(seg)
+
+                total_words = sum(len(s.text.split()) for s in new_segments)
+                new_script = current_script.model_copy(update={
+                    "segments": new_segments,
+                    "total_word_count": total_words,
+                })
+                new_report = await self._validate_grounding(
+                    episode_number, new_script, corpus, ep_dir, project_dir,
+                )
+
+                remaining = len([
+                    ca for ca in new_report.claim_assessments
+                    if ca.status in ("UNSUPPORTED", "FABRICATED")
+                ])
+                status = (
+                    "RESOLVED" if new_report.overall_status == "PASSED"
+                    else "IMPROVED" if new_report.grounding_score > current_report.grounding_score
+                    else "NO_PROGRESS"
+                )
+
+                repair_result = RepairResult(
+                    attempt_number=attempt,
+                    original_script=current_script,
+                    repaired_script=new_script,
+                    claims_repaired=len(diffs),
+                    remaining_failures=remaining,
+                    diffs=diffs,
+                    status=status,
+                )
+                _save_json(ep_dir / f"repair_attempt_{attempt}.json", repair_result)
+
+                current_script = new_script
+                current_report = new_report
+
+                ctx["output_summary"] = {
+                    "status": status,
+                    "claims_repaired": len(diffs),
+                    "remaining_failures": remaining,
+                }
+
+                if status == "NO_PROGRESS":
+                    break
+
+        _save_json(ep_dir / "episode_script.json", current_script)
+        return current_script, current_report
+
+    async def _rewrite_for_speech(
+        self, episode_number: int, script: EpisodeScript,
+        project: ThematicProject, ep_dir: Path, project_dir: Path,
+    ) -> SpokenScript:
+        async with _stage_log(
+            self.run_logger, f"spoken_delivery_{episode_number}", project_dir,
+            episode=episode_number, segment_count=len(script.segments),
+        ) as ctx:
+            script_segments = [seg.model_dump(mode="json") for seg in script.segments]
+
+            payload = self.spoken_delivery_agent.build_payload(
+                episode_number=episode_number,
+                script_segments=script_segments,
+                max_words_per_segment=project.config.spoken_chunk_max_words,
+                tts_provider=project.config.tts_provider,
+            )
+            result = await asyncio.to_thread(self.spoken_delivery_agent.run, payload)
+
+            spoken = SpokenScript(
+                episode_number=episode_number, title=script.title,
+                segments=result.segments, arc_plan=result.arc_plan,
+                tts_provider=project.config.tts_provider,
+            )
+            _save_json(ep_dir / "spoken_script.json", spoken)
+
+            ctx["output_summary"] = {"segment_count": len(result.segments)}
+            return spoken
+
+    # -----------------------------------------------------------------------
+    # Framing (sequential)
+    # -----------------------------------------------------------------------
+
+    async def _frame_episode(
+        self, episode_number: int, total_episodes: int,
+        spoken: SpokenScript, previous_summary: str | None,
+        next_summary: str | None, project: ThematicProject,
+        project_dir: Path,
+    ) -> EpisodeFraming:
+        ep_dir = project_dir / "episodes" / str(episode_number)
+
+        async with _stage_log(
+            self.run_logger, f"framing_{episode_number}", project_dir,
+            episode=episode_number, total_episodes=total_episodes,
+        ) as ctx:
+            current_summary = spoken.arc_plan or spoken.title
+            book_metadata = [
+                {"book_id": b.book_id, "title": b.title, "author": b.author}
+                for b in project.books
+            ]
+
+            payload = self.framing_agent.build_payload(
+                episode_number=episode_number,
+                total_episodes=total_episodes,
+                current_episode_summary=current_summary,
+                previous_episode_summary=previous_summary,
+                next_episode_summary=next_summary,
+                book_metadata=book_metadata,
+            )
+            framing = await asyncio.to_thread(self.framing_agent.run, payload)
+            _save_json(ep_dir / "episode_framing.json", framing)
+
+            ctx["output_summary"] = {
+                "has_recap": framing.recap is not None,
+                "has_preview": framing.preview is not None,
+                "has_cold_open": framing.cold_open is not None,
+            }
+            return framing
+
+    # -----------------------------------------------------------------------
+    # Phase 4: Audio Rendering
+    # -----------------------------------------------------------------------
+
+    async def _render_episode_audio(
+        self, episode_number: int, spoken: SpokenScript,
+        framing: EpisodeFraming | None, project_dir: Path,
+        semaphore: asyncio.Semaphore, *,
+        skip_audio: bool,
+    ) -> AudioManifest:
+        async with semaphore:
+            ep_dir = project_dir / "episodes" / str(episode_number)
+
+            async with _stage_log(
+                self.run_logger, f"audio_{episode_number}", project_dir,
+                episode=episode_number, segment_count=len(spoken.segments),
+            ) as ctx:
+                manifest = build_render_manifest(
+                    spoken, framing,
+                    voice_id=self.settings.tts.voice,
+                    speed=self.settings.tts.speed,
+                    words_per_minute=self.settings.pipeline.spoken_words_per_minute,
+                )
+                _save_json(ep_dir / "render_manifest.json", manifest)
+
+                if skip_audio:
+                    ctx["output_summary"] = {
+                        "skipped": True,
+                        "total_segments": len(manifest.segments),
+                    }
+                    return AudioManifest(
+                        episode_number=episode_number,
+                        audio_segments=[],
+                        diagnostics={
+                            "skipped": True,
+                            "total_segments": len(manifest.segments),
+                        },
                     )
-                source_outputs.append(source_output)
-                continue
 
-            factual_script_path = episode_dir / "factual_script.json"
-            if not factual_script_path.exists():
-                continue
-            try:
-                script = EpisodeScript.model_validate_json(factual_script_path.read_text(encoding="utf-8"))
-            except ValidationError as exc:
-                raise ValueError(f"Invalid factual_script.json at '{factual_script_path}': {exc}") from exc
-            episode_plan = load_plan_by_episode_id().get(script.episode_id)
-            if episode_plan is None:
-                raise ValueError(
-                    "Spoken-delivery-only fallback from factual_script.json requires a matching episode in "
-                    f"series_plan.json. Missing episode_id '{script.episode_id}' for '{factual_script_path}'."
+                audio_dir = ep_dir / "audio"
+                audio_dir.mkdir(parents=True, exist_ok=True)
+
+                audio_segments: list[AudioSegmentResult] = []
+                retry_count = 0
+
+                for seg in manifest.segments:
+                    if not seg.text.strip():
+                        continue
+                    for attempt in range(self.settings.pipeline.audio_retry_attempts + 1):
+                        try:
+                            audio_bytes = await asyncio.to_thread(
+                                self.tts_client.synthesize,
+                                seg.text, seg.voice_id,
+                                self.settings.tts.audio_format,
+                            )
+                            audio_path = audio_dir / f"{seg.segment_id}.{self.settings.tts.audio_format}"
+                            audio_path.write_bytes(audio_bytes)
+                            audio_segments.append(AudioSegmentResult(
+                                segment_id=seg.segment_id,
+                                audio_path=str(audio_path), success=True,
+                            ))
+                            break
+                        except Exception as exc:
+                            retry_count += 1
+                            self.run_logger.log(
+                                "tts_retry", episode=episode_number,
+                                segment_id=seg.segment_id, attempt=attempt + 1,
+                                error=str(exc),
+                            )
+                            if attempt == self.settings.pipeline.audio_retry_attempts:
+                                logger.error("TTS failed for segment %s: %s", seg.segment_id, exc)
+                                audio_segments.append(AudioSegmentResult(
+                                    segment_id=seg.segment_id, audio_path="",
+                                    success=False, error=str(exc),
+                                ))
+
+                audio_manifest = AudioManifest(
+                    episode_number=episode_number,
+                    audio_segments=audio_segments,
+                    diagnostics={
+                        "total_segments": len(manifest.segments),
+                        "successful": sum(1 for s in audio_segments if s.success),
+                        "failed": sum(1 for s in audio_segments if not s.success),
+                        "retries": retry_count,
+                    },
                 )
-            source_outputs.append(
-                EpisodeOutput(
-                    plan=episode_plan,
-                    script=script,
-                    report=GroundingReport(
-                        episode_id=script.episode_id,
-                        overall_status="pass",
-                        claim_assessments=[],
-                    ),
-                )
-            )
-            self.run_logger.log(
-                "spoken_only_factual_script_fallback_used",
-                episode_id=script.episode_id,
-                source_path=str(factual_script_path),
-                series_plan_path=str(series_plan_path),
-            )
+                _save_json(ep_dir / "audio_manifest.json", audio_manifest)
 
-        if not source_outputs:
-            raise ValueError(
-                "Spoken-delivery-only mode requires at least one episode_output.json or factual_script.json under "
-                f"'{source_root}'."
-            )
-        return source_outputs
-
-    def _write_citation_audit(
-        self,
-        book_id: str,
-        episode_plan: EpisodePlan,
-        script: EpisodeScript,
-        report: GroundingReport | None = None,
-    ) -> None:
-        retrieval_hits = self.retrieval.fetch_for_episode(book_id=book_id, chunk_ids=episode_plan.chunk_ids)
-        payload = {
-            "episode_id": episode_plan.episode_id,
-            "writing": self.writing_agent.build_citation_audit(episode_plan, script, retrieval_hits),
-            "validation": (
-                self.validation_agent.build_citation_audit(script, report)
-                if report is not None
-                else None
-            ),
-        }
-        self._write_artifact(
-            self._episode_artifact_key(book_id, episode_plan.episode_id),
-            "citation_audit",
-            payload,
-        )
-
-    def _write_artifact(self, run_key: str, name: str, payload: dict) -> None:
-        artifact_path = self.artifacts.write_json(run_key, name, payload)
-        self.run_logger.log("artifact_written", artifact_path=str(artifact_path), artifact_name=name)
-
-    def _book_artifact_key(self, book_id: str) -> str:
-        if self.run_id is None:
-            raise RuntimeError("Run ID is not initialized. Ingest a book before writing artifacts.")
-        return f"{self.run_id}/{book_id}"
-
-    def _episode_artifact_key(self, book_id: str, episode_id: str) -> str:
-        if self.run_id is None:
-            raise RuntimeError("Run ID is not initialized. Ingest a book before writing artifacts.")
-        return f"{self.run_id}/{book_id}/{episode_id}"
-
-    def _load_manifest_source(self, artifact_path: Path) -> dict:
-        try:
-            return json.loads(artifact_path.read_text(encoding="utf-8"))
-        except FileNotFoundError as exc:
-            raise ValueError(f"Artifact path does not exist: {artifact_path}") from exc
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"Artifact file is not valid JSON: {artifact_path}") from exc
-
-    def _extract_render_manifest(self, payload: dict, artifact_path: Path) -> RenderManifest:
-        try:
-            if "manifest" in payload:
-                manifest_payload = payload.get("manifest")
-                if manifest_payload is None:
-                    raise ValueError(f"Artifact '{artifact_path}' is missing a usable 'manifest' payload.")
-                return RenderManifest.model_validate_json(json.dumps(manifest_payload))
-            return RenderManifest.model_validate_json(json.dumps(payload))
-        except ValidationError as exc:
-            raise ValueError(f"Artifact '{artifact_path}' does not contain a valid render manifest: {exc}") from exc
-
-    def _infer_book_id_from_artifact_path(self, artifact_path: Path) -> str | None:
-        parts = artifact_path.parts
-        for index, part in enumerate(parts[:-2]):
-            if part == self.settings.pipeline.artifact_root.name and index + 2 < len(parts):
-                return parts[index + 2]
-        if len(parts) >= 3 and parts[-2].startswith("episode-"):
-            return parts[-3]
-        return None
-
-
-def _slugify(value: str) -> str:
-    value = value.strip().lower()
-    value = re.sub(r"[^a-z0-9]+", "-", value)
-    return value.strip("-") or "book"
-
-
-def _detect_source_type(path: Path) -> SourceType:
-    suffix = path.suffix.lower()
-    if suffix == ".pdf":
-        return SourceType.PDF
-    if suffix == ".md":
-        return SourceType.MARKDOWN
-    return SourceType.TEXT
-
-def _new_run_id(book_id: str) -> str:
-    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M")
-    return f"{book_id}-{timestamp}"
-
-
-def _new_batch_run_id() -> str:
-    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M")
-    return f"batch-{timestamp}"
-
-
-def _placeholder_episode_plan(book_id: str, manifest: RenderManifest) -> EpisodePlan:
-    del book_id
-    return EpisodePlan(
-        episode_id=manifest.episode_id,
-        sequence=1,
-        title=manifest.title,
-        chapter_ids=[],
-        themes=[],
-    )
-
-
-def _placeholder_episode_script(manifest: RenderManifest) -> EpisodeScript:
-    return EpisodeScript(
-        episode_id=manifest.episode_id,
-        title=manifest.title,
-        narrator=manifest.narrator,
-        segments=[],
-    )
-
-
-def _placeholder_grounding_report(manifest: RenderManifest) -> GroundingReport:
-    return GroundingReport(
-        episode_id=manifest.episode_id,
-        overall_status="pass",
-        claim_assessments=[],
-    )
+                ctx["output_summary"] = audio_manifest.diagnostics
+                return audio_manifest

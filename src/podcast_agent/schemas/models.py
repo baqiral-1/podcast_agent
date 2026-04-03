@@ -1,528 +1,473 @@
-"""Strict schema contracts for the pipeline."""
+"""Strict schema contracts for the multi-book thematic podcast pipeline."""
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import Enum
-from typing import Literal
+from typing import Any, Literal
+from uuid import uuid4
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 def utc_now() -> datetime:
-    """Return a timezone-aware UTC timestamp."""
-
     return datetime.now(UTC)
 
 
+def new_id() -> str:
+    return uuid4().hex
+
+
 class StrictModel(BaseModel):
-    """Base model with strict validation defaults."""
-
-    model_config = ConfigDict(extra="forbid", strict=True)
+    model_config = ConfigDict(extra="forbid")
 
 
-class SourceType(str, Enum):
-    """Supported source formats."""
-
-    TEXT = "text"
-    MARKDOWN = "markdown"
-    PDF = "pdf"
+# ---------------------------------------------------------------------------
+# Enums
+# ---------------------------------------------------------------------------
 
 
-class BookIngestionResult(StrictModel):
-    """Metadata captured from source ingestion."""
+class ProjectStatus(str, Enum):
+    INGESTING = "ingesting"
+    INDEXING = "indexing"
+    ANALYZING = "analyzing"
+    PLANNING = "planning"
+    PRODUCING = "producing"
+    COMPLETE = "complete"
+    FAILED = "failed"
 
-    book_id: str
+
+class SynthesisTag(str, Enum):
+    AGREES_WITH = "agrees_with"
+    CONTRADICTS = "contradicts"
+    EXTENDS = "extends"
+    EXEMPLIFIES = "exemplifies"
+    CONTEXTUALIZES = "contextualizes"
+    INDEPENDENT = "independent"
+
+
+class InsightType(str, Enum):
+    AGREEMENT = "agreement"
+    DISAGREEMENT = "disagreement"
+    EXTENSION = "extension"
+    TENSION = "tension"
+    SURPRISING_CONNECTION = "surprising_connection"
+    EVOLUTION = "evolution"
+
+
+# ---------------------------------------------------------------------------
+# 3.1 Project-Level Models
+# ---------------------------------------------------------------------------
+
+
+class ChapterInfo(StrictModel):
+    chapter_id: str = Field(default_factory=new_id)
+    title: str
+    start_index: int = Field(ge=0)
+    end_index: int = Field(ge=0)
+    word_count: int = Field(ge=0)
+    summary: str = ""
+
+
+class BookRecord(StrictModel):
+    book_id: str = Field(default_factory=new_id)
     title: str
     author: str
     source_path: str
-    source_type: SourceType
-    raw_text: str
-    ingested_at: datetime = Field(default_factory=utc_now)
+    source_type: str  # "pdf", "txt", "md"
+    chapters: list[ChapterInfo] = Field(default_factory=list)
+    total_words: int = Field(default=0, ge=0)
+    ingestion_diagnostics: dict[str, Any] = Field(default_factory=dict)
 
 
-class BatchBookSpec(StrictModel):
-    """Input specification for one book in a batch run."""
-
-    source_path: str | None = None
-    episode_count: int | None = Field(default=None, ge=1)
-    title: str | None = None
-    author: str = "Unknown"
-    start_chapter: str | None = None
-    end_chapter: str | None = None
-    spoken_delivery_only: bool = Field(
-        default=False,
-        validation_alias=AliasChoices("spoken_delivery_only", "spoken-delivery-only"),
-    )
-    artifact_path: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices("artifact_path", "artifact-path"),
-    )
-
-    @model_validator(mode="after")
-    def validate_mode_requirements(self) -> "BatchBookSpec":
-        if self.spoken_delivery_only:
-            if not self.artifact_path:
-                raise ValueError("artifact_path is required when spoken_delivery_only is true.")
-            return self
-        if not self.source_path:
-            raise ValueError("source_path is required when spoken_delivery_only is false.")
-        if self.episode_count is None:
-            raise ValueError("episode_count is required when spoken_delivery_only is false.")
-        return self
+class PipelineConfig(StrictModel):
+    max_axes: int = Field(default=15, ge=1)
+    min_axes: int = Field(default=5, ge=1)
+    passages_per_axis_per_book: int = Field(default=20, ge=1)
+    rerank_top_k: int = Field(default=10, ge=1)
+    min_book_coverage: float = Field(default=0.6, ge=0.0, le=1.0)
+    synthesis_quality_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
+    grounding_threshold: float = Field(default=0.85, ge=0.0, le=1.0)
+    cross_book_grounding_threshold: float = Field(default=0.85, ge=0.0, le=1.0)
+    max_repair_attempts: int = Field(default=3, ge=0)
+    narrative_strategy_override: str | None = None
+    book_weights: dict[str, float] | None = None
+    tts_provider: str = "openai"
+    tts_concurrency: int = Field(default=4, ge=1)
+    episode_write_concurrency: int = Field(default=2, ge=1)
+    passage_extraction_concurrency: int = Field(default=15, ge=1)
+    chunk_max_words: int = Field(default=400, ge=50)
+    chunk_overlap_words: int = Field(default=50, ge=0)
+    spoken_chunk_max_words: int = Field(default=250, ge=50)
+    max_author_names_per_episode: int = Field(default=3, ge=0)
+    attribution_budget: float = Field(default=0.2, ge=0.0, le=1.0)
+    prefer_indirect_attribution: bool = True
+    skip_grounding: bool = False
+    skip_spoken_delivery: bool = False
+    skip_audio: bool = False
 
 
-class BatchRunManifest(StrictModel):
-    """Manifest describing a batch pipeline run."""
-
-    run_id: str | None = None
-    with_audio: bool = False
-    books: list[BatchBookSpec]
-
-
-class BookChunk(StrictModel):
-    """Canonical chunk record derived from a chapter or section."""
-
-    chunk_id: str
-    chapter_id: str
-    chapter_title: str
-    chapter_number: int = Field(ge=1)
-    sequence: int = Field(ge=1)
-    text: str
-    start_word: int = Field(ge=0)
-    end_word: int = Field(ge=0)
-    source_offsets: list[int] = Field(min_length=2, max_length=2)
-    themes: list[str] = Field(default_factory=list)
-
-
-class BookChapter(StrictModel):
-    """Canonical chapter record with chunk references."""
-
-    chapter_id: str
-    chapter_number: int = Field(ge=1)
-    title: str
-    summary: str
-    chunk_ids: list[str]
-
-
-class StructuredChunkDraft(StrictModel):
-    """Intermediate chunk emitted during chapter-level structuring."""
-
-    text: str
-    start_word: int = Field(ge=0)
-    end_word: int = Field(ge=0)
-    source_offsets: list[int] = Field(min_length=2, max_length=2)
-    themes: list[str] = Field(default_factory=list)
-
-
-class StructuredChunkPlan(StrictModel):
-    """Metadata-only chunk plan returned by the LLM during structuring."""
-
-    start_word: int = Field(ge=0)
-    end_word: int = Field(ge=0)
-    themes: list[str] = Field(default_factory=list)
-
-
-class StructuredChapterPlan(StrictModel):
-    """Metadata-only structuring plan used to rebuild full chapter chunks locally."""
-
-    chapter_number: int | None = Field(default=None, ge=1)
-    title: str | None = None
-    summary: str | None = None
-    chunks: list[StructuredChunkPlan]
-
-
-class StructuredChapter(StrictModel):
-    """Intermediate chapter structure used before merging a full book."""
-
-    chapter_number: int = Field(ge=1)
-    title: str
-    summary: str
-    chunks: list[StructuredChunkDraft]
-
-
-class BookStructure(StrictModel):
-    """Normalized structure emitted by the structuring agent."""
-
-    book_id: str
-    title: str
-    chapters: list[BookChapter]
-    chunks: list[BookChunk]
+class ThematicProject(StrictModel):
+    project_id: str = Field(default_factory=new_id)
+    theme: str
+    theme_elaboration: str | None = None
+    books: list[BookRecord] = Field(default_factory=list)
+    episode_count: int = Field(default=3, ge=1)
+    config: PipelineConfig = Field(default_factory=PipelineConfig)
     created_at: datetime = Field(default_factory=utc_now)
+    status: ProjectStatus = ProjectStatus.INGESTING
 
 
-class ContinuityArc(StrictModel):
-    """Cross-chapter continuity signal extracted from the book."""
+# ---------------------------------------------------------------------------
+# 3.2 Chunk & Retrieval Models
+# ---------------------------------------------------------------------------
 
-    arc_id: str
-    label: str
+
+class ChunkingConfig(StrictModel):
+    max_chunk_words: int = Field(default=400, ge=50)
+    overlap_words: int = Field(default=50, ge=0)
+    min_chunk_words: int = Field(default=80, ge=10)
+    split_on: list[str] = Field(default_factory=lambda: ["\n\n", ". "])
+
+
+class TextChunk(StrictModel):
+    chunk_id: str = Field(default_factory=new_id)
+    book_id: str
+    chapter_id: str
+    text: str
+    word_count: int = Field(ge=0)
+    position: int = Field(ge=0)
+    embedding: list[float] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
+# 3.3 Thematic Analysis Models
+# ---------------------------------------------------------------------------
+
+
+class ThematicAxis(StrictModel):
+    axis_id: str = Field(default_factory=new_id)
+    name: str
     description: str
-    chapter_ids: list[str]
+    guiding_questions: list[str] = Field(default_factory=list)
+    relevance_by_book: dict[str, float] = Field(default_factory=dict)
+    keywords: list[str] = Field(default_factory=list)
+    parent_axis_id: str | None = None
 
 
-class EpisodeCluster(StrictModel):
-    """Candidate episode group identified during analysis."""
-
-    cluster_id: str
-    label: str
-    rationale: str
-    chapter_ids: list[str]
-    chunk_ids: list[str] = Field(default_factory=list)
-    themes: list[str] = Field(default_factory=list)
-
-
-class BookAnalysis(StrictModel):
-    """Analytical context used to create the series plan."""
-
+class ExtractedPassage(StrictModel):
+    passage_id: str = Field(default_factory=new_id)
     book_id: str
-    themes: list[str]
-    continuity_arcs: list[ContinuityArc]
-    notable_claims: list[str]
-    episode_clusters: list[EpisodeCluster]
-    created_at: datetime = Field(default_factory=utc_now)
+    chunk_ids: list[str] = Field(min_length=1)
+    text: str
+    chapter_ref: str = ""
+    axis_id: str
+    secondary_axes: list[str] = Field(default_factory=list)
+    relevance_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    quotability_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    synthesis_tags: list[SynthesisTag] = Field(default_factory=list)
+
+
+class PassagePair(StrictModel):
+    passage_a_id: str
+    passage_b_id: str
+    relationship: SynthesisTag
+    strength: float = Field(ge=0.0, le=1.0)
+    axis_id: str
+
+
+class CoverageStats(StrictModel):
+    total_passages: int = Field(default=0, ge=0)
+    axes_covered: int = Field(default=0, ge=0)
+    coverage_ratio: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
+class ThematicCorpus(StrictModel):
+    project_id: str
+    axes: list[ThematicAxis] = Field(default_factory=list)
+    passages_by_axis: dict[str, list[ExtractedPassage]] = Field(default_factory=dict)
+    cross_book_pairs: list[PassagePair] = Field(default_factory=list)
+    book_coverage: dict[str, CoverageStats] = Field(default_factory=dict)
+    total_passages: int = Field(default=0, ge=0)
+
+
+# ---------------------------------------------------------------------------
+# 3.4 Synthesis Models
+# ---------------------------------------------------------------------------
+
+
+class SynthesisInsight(StrictModel):
+    insight_id: str = Field(default_factory=new_id)
+    insight_type: InsightType
+    title: str
+    description: str
+    passage_ids: list[str] = Field(min_length=2)
+    axis_ids: list[str] = Field(default_factory=list)
+    podcast_potential: float = Field(default=0.5, ge=0.0, le=1.0)
+    treatment: Literal["debate", "build", "contrast", "resolve", "leave_open"] = "contrast"
+
+
+class NarrativeThread(StrictModel):
+    thread_id: str = Field(default_factory=new_id)
+    title: str
+    description: str
+    insight_ids: list[str] = Field(default_factory=list)
+    arc_type: Literal["convergence", "divergence", "evolution", "dialectic", "deepening"] = "convergence"
+
+
+class MergedNarrative(StrictModel):
+    topic: str
+    narrative: str
+    source_passage_ids: list[str] = Field(default_factory=list)
+    points_of_consensus: list[str] = Field(default_factory=list)
+    points_of_disagreement: list[str] = Field(default_factory=list)
+
+
+class SynthesisMap(StrictModel):
+    project_id: str
+    insights: list[SynthesisInsight] = Field(default_factory=list)
+    narrative_threads: list[NarrativeThread] = Field(default_factory=list)
+    book_relationship_matrix: dict[str, dict[str, str]] = Field(default_factory=dict)
+    unresolved_tensions: list[str] = Field(default_factory=list)
+    quality_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    merged_narratives: list[MergedNarrative] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# 3.5 Episode Planning Models
+# ---------------------------------------------------------------------------
+
+
+class NarrativeStrategy(StrictModel):
+    strategy_type: Literal[
+        "thesis_driven", "debate", "chronological", "convergence", "mosaic"
+    ]
+    justification: str
+    series_arc: str
+    episode_arc_outline: list[str] = Field(default_factory=list)
+
+
+class CrossReference(StrictModel):
+    from_book_id: str
+    to_book_id: str
+    connection_type: Literal["agrees", "disagrees", "extends", "provides_example"]
+    bridge_note: str = ""
+
+
+class SpineSegment(StrictModel):
+    segment_id: str = Field(default_factory=new_id)
+    narrative_text: str
+    source_passages: list[str] = Field(default_factory=list)
+    segment_function: Literal[
+        "scene_setting",
+        "event",
+        "context",
+        "consequence",
+        "turning_point",
+        "tension",
+        "resolution",
+    ]
+    era_or_moment: str = ""
+
+
+class AttributionMoment(StrictModel):
+    moment_id: str = Field(default_factory=new_id)
+    insert_after_segment_id: str
+    disagreement_type: Literal["factual", "interpretive", "causal"]
+    description: str
+    books_involved: list[str] = Field(default_factory=list)
+    narrative_function: Literal[
+        "complicates_simple_reading",
+        "reveals_hidden_motive",
+        "shows_stakes_of_interpretation",
+        "listener_must_choose",
+    ] = "complicates_simple_reading"
+    suggested_treatment: Literal[
+        "brief_aside",
+        "extended_exploration",
+        "rhetorical_question",
+        "cliffhanger",
+    ] = "brief_aside"
+
+
+class NarrativeSpine(StrictModel):
+    episode_number: int = Field(ge=1)
+    spine_segments: list[SpineSegment] = Field(default_factory=list)
+    attribution_moments: list[AttributionMoment] = Field(default_factory=list)
+    narrative_voice: str = "omniscient narrator telling a story"
 
 
 class EpisodeBeat(StrictModel):
-    """Beat inside an episode plan."""
-
-    beat_id: str
-    title: str
-    chunk_ids: list[str] = Field(default_factory=list)
+    beat_id: str = Field(default_factory=new_id)
+    description: str
+    passage_ids: list[str] = Field(default_factory=list)
+    primary_book_id: str = ""
+    supporting_book_ids: list[str] = Field(default_factory=list)
+    synthesis_instruction: str | None = None
+    narrative_instruction: Literal[
+        "set_the_scene",
+        "advance_events",
+        "explain_context",
+        "build_tension",
+        "reveal_consequence",
+        "pivot_to_new_thread",
+    ] = "advance_events"
+    attribution_level: Literal["none", "light", "full"] = "none"
+    transition_hint: str | None = None
+    estimated_duration_seconds: int = Field(default=120, ge=0)
 
 
 class EpisodePlan(StrictModel):
-    """One podcast episode plan."""
-
-    episode_id: str
-    sequence: int = Field(ge=1)
+    episode_number: int = Field(ge=1)
     title: str
-    chapter_ids: list[str]
-    chunk_ids: list[str] = Field(default_factory=list)
-    themes: list[str] = Field(default_factory=list)
+    thematic_focus: str = ""
+    axis_ids: list[str] = Field(default_factory=list)
+    insight_ids: list[str] = Field(default_factory=list)
     beats: list[EpisodeBeat] = Field(default_factory=list)
+    attribution_budget: float = Field(default=0.2, ge=0.0, le=1.0)
+    narrative_spine: NarrativeSpine | None = None
+    book_balance: dict[str, float] = Field(default_factory=dict)
+    cross_references: list[CrossReference] = Field(default_factory=list)
+    target_duration_minutes: float = Field(default=60.0, gt=0.0)
+    episode_strategy: str = ""
 
 
-class PlannerEpisodePlan(StrictModel):
-    """Compact planner output used before deterministic episode expansion."""
-
-    episode_id: str
-    sequence: int = Field(ge=1)
-    title: str
-    chapter_ids: list[str]
-    themes: list[str] = Field(default_factory=list)
+# ---------------------------------------------------------------------------
+# 3.6 Script & Validation Models
+# ---------------------------------------------------------------------------
 
 
-class SeriesPlan(StrictModel):
-    """Series-level plan for the full book adaptation."""
-
+class Citation(StrictModel):
+    citation_id: str = Field(default_factory=new_id)
+    text_span: str
+    passage_id: str
     book_id: str
-    format: Literal["single_narrator"]
-    strategy_summary: str
-    episodes: list[EpisodePlan]
-    created_at: datetime = Field(default_factory=utc_now)
+    chunk_ids: list[str] = Field(default_factory=list)
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
 
 
-class PlannerSeriesPlan(StrictModel):
-    """Compact series plan emitted by the planner LLM."""
-
-    book_id: str
-    format: Literal["single_narrator"]
-    strategy_summary: str
-    episodes: list[PlannerEpisodePlan]
-    created_at: datetime = Field(default_factory=utc_now)
-
-
-class RetrievalHit(StrictModel):
-    """Retrieved chunk used for writing or validation."""
-
-    chunk_id: str
-    chapter_id: str
-    chapter_title: str
-    score: float
+class ScriptSegment(StrictModel):
+    segment_id: str = Field(default_factory=new_id)
     text: str
-
-
-class ScriptClaim(StrictModel):
-    """Claim included in a script segment."""
-
-    claim_id: str
-    text: str
-    evidence_chunk_ids: list[str] = Field(min_length=1)
-
-
-class ScriptClaimDraft(StrictModel):
-    """LLM-authored claim before ids are derived locally."""
-
-    text: str
-    evidence_chunk_ids: list[str] = Field(min_length=1)
-
-
-class EpisodeSegment(StrictModel):
-    """One narratable segment in an episode script."""
-
-    segment_id: str
-    beat_id: str
-    heading: str
-    narration: str
-    claims: list[ScriptClaim] = Field(min_length=1)
-    citations: list[str]
-
-
-class EpisodeSegmentDraft(StrictModel):
-    """LLM-authored segment before citations are derived locally."""
-
-    heading: str
-    narration: str
-    claims: list[ScriptClaimDraft] = Field(min_length=1)
-
-
-class SpokenDeliveryThread(StrictModel):
-    """Dramatic thread descriptor for a full-episode arc plan."""
-
-    name: str
-    introduced: str
-    developed: str
-    payoff: str
-    listener_feeling: str
-
-
-class SpokenDeliveryOpening(StrictModel):
-    """Opening scene selection for a full-episode arc plan."""
-
-    scene: str
-    why: str
-    transition_strategy: str
-
-
-class SpokenDeliveryAct(StrictModel):
-    """Act-level structure for a full-episode arc plan."""
-
-    number: int = Field(ge=1)
-    title: str
-    source_material: str
-    why_here: str
-    driving_tension: str
-    transition_to_next: str
-
-
-class SpokenDeliveryPlantPayoff(StrictModel):
-    """Plant/payoff mapping for arc-level callbacks."""
-
-    fact: str
-    plant_in_act: int = Field(ge=1)
-    payoff_in_act: int = Field(ge=1)
-    bridging_language: str
-
-
-class SpokenDeliveryKeyMoment(StrictModel):
-    """Key moment to land with a specific technique."""
-
-    moment: str
-    why_it_matters: str
-    how_to_land: str
-    in_act: int = Field(ge=1)
-
-
-class SpokenDeliveryArcPlan(StrictModel):
-    """Full-episode arc plan produced by the narration planner."""
-
-    theme: str
-    threads: list[SpokenDeliveryThread]
-    opening: SpokenDeliveryOpening
-    acts: list[SpokenDeliveryAct]
-    plants_and_payoffs: list[SpokenDeliveryPlantPayoff]
-    key_moments: list[SpokenDeliveryKeyMoment]
-
-
-class SpokenDeliveryNarrationDraft(StrictModel):
-    """LLM-authored full-episode narration draft."""
-
-    narration: str
-
-
-class BeatScript(StrictModel):
-    """Intermediate beat-scoped script emitted during writing."""
-
-    beat_id: str
-    segments: list[EpisodeSegment]
-
-
-class BeatScriptDraft(StrictModel):
-    """LLM-authored beat script before citations are derived locally."""
-
-    segments: list[EpisodeSegmentDraft]
+    segment_type: Literal["intro", "body", "transition", "outro", "recap", "bridge"] = "body"
+    beat_id: str | None = None
+    source_book_ids: list[str] = Field(default_factory=list)
+    citations: list[Citation] = Field(default_factory=list)
+    attribution_level: Literal["none", "light", "full"] = "none"
 
 
 class EpisodeScript(StrictModel):
-    """Single-episode script emitted by the writing stage."""
-
-    episode_id: str
+    episode_number: int = Field(ge=1)
     title: str
-    narrator: str
-    segments: list[EpisodeSegment]
-    created_at: datetime = Field(default_factory=utc_now)
-
-
-class EpisodeFraming(StrictModel):
-    """Intro/outro framing text for an episode."""
-
-    recap: str
-    next_overview: str
-
-
-class RewriteMetrics(StrictModel):
-    """Lightweight rewrite metrics for spoken-delivery evaluation."""
-
-    source_word_count: int = Field(ge=0)
-    spoken_word_count: int = Field(ge=0)
-    expansion_ratio: float = Field(ge=0.0)
-    source_sentence_count: int = Field(ge=0)
-    spoken_sentence_count: int = Field(ge=0)
-    source_average_sentence_length: float = Field(ge=0.0)
-    spoken_average_sentence_length: float = Field(ge=0.0)
-    source_paragraph_count: int = Field(ge=0)
-    spoken_paragraph_count: int = Field(ge=0)
-
-
-class SpokenNarrationChunk(StrictModel):
-    """Chunked narration segment for TTS rendering."""
-
-    chunk_id: str
-    text: str
-    word_count: int = Field(ge=0)
-
-
-class SpokenEpisodeNarration(StrictModel):
-    """Full-episode narration plus chunked output for TTS."""
-
-    episode_id: str
-    title: str
-    narrator: str
-    narration: str
-    chunks: list[SpokenNarrationChunk]
-    created_at: datetime = Field(default_factory=utc_now)
-
-
-class GroundingStatus(str, Enum):
-    """Grounding status for a script claim."""
-
-    GROUNDED = "grounded"
-    WEAK = "weak"
-    UNSUPPORTED = "unsupported"
-    CONFLICTING = "conflicting"
+    segments: list[ScriptSegment] = Field(default_factory=list)
+    total_word_count: int = Field(default=0, ge=0)
+    estimated_duration_seconds: int = Field(default=0, ge=0)
+    citations: list[Citation] = Field(default_factory=list)
 
 
 class ClaimAssessment(StrictModel):
-    """Grounding assessment for one claim."""
+    claim_text: str
+    cited_passage_id: str
+    status: Literal["SUPPORTED", "PARTIALLY_SUPPORTED", "UNSUPPORTED", "FABRICATED"]
+    explanation: str = ""
 
-    claim_id: str
-    status: GroundingStatus
-    reason: str
-    evidence_chunk_ids: list[str]
+
+class CrossBookClaimAssessment(StrictModel):
+    claim_text: str
+    book_ids: list[str] = Field(default_factory=list)
+    passage_ids: list[str] = Field(default_factory=list)
+    comparison_valid: bool = True
+    failure_reason: str | None = None
+
+
+class FairnessFlag(StrictModel):
+    book_id: str
+    claim_text: str
+    issue: Literal["straw_man", "oversimplified", "out_of_context", "false_equivalence"]
+    suggestion: str = ""
 
 
 class GroundingReport(StrictModel):
-    """Claim-level validation report for an episode script."""
+    episode_number: int = Field(ge=1)
+    claim_assessments: list[ClaimAssessment] = Field(default_factory=list)
+    cross_book_claims: list[CrossBookClaimAssessment] = Field(default_factory=list)
+    overall_status: Literal["PASSED", "NEEDS_REPAIR", "FAILED"] = "PASSED"
+    grounding_score: float = Field(default=1.0, ge=0.0, le=1.0)
+    attribution_accuracy: float = Field(default=1.0, ge=0.0, le=1.0)
+    fairness_flags: list[FairnessFlag] = Field(default_factory=list)
 
-    episode_id: str
-    overall_status: Literal["pass", "fail"]
-    claim_assessments: list[ClaimAssessment]
-    validated_at: datetime = Field(default_factory=utc_now)
+
+class SegmentDiff(StrictModel):
+    segment_id: str
+    before: str
+    after: str
 
 
 class RepairResult(StrictModel):
-    """Outcome of a repair attempt."""
-
-    episode_id: str
-    attempt: int = Field(ge=1)
-    repaired_segment_ids: list[str]
-    script: EpisodeScript
-    report: GroundingReport
-
-
-class SegmentRepairResult(StrictModel):
-    """LLM-scoped repair response containing only rewritten segments."""
-
-    episode_id: str
-    attempt: int = Field(ge=1)
-    repaired_segment_ids: list[str]
-    repaired_segments: list[EpisodeSegment]
+    attempt_number: int = Field(ge=1)
+    original_script: EpisodeScript
+    repaired_script: EpisodeScript
+    claims_repaired: int = Field(default=0, ge=0)
+    remaining_failures: int = Field(default=0, ge=0)
+    diffs: list[SegmentDiff] = Field(default_factory=list)
+    status: Literal["RESOLVED", "IMPROVED", "NO_PROGRESS"] = "NO_PROGRESS"
 
 
-class SegmentRepairDraftResult(StrictModel):
-    """LLM-scoped repair response before citations are derived locally."""
-
-    episode_id: str
-    attempt: int = Field(ge=1)
-    repaired_segment_ids: list[str]
-    repaired_segments: list[EpisodeSegmentDraft]
+# ---------------------------------------------------------------------------
+# 3.7 Speech & Audio Models
+# ---------------------------------------------------------------------------
 
 
-class SpokenDeliveryEpisodeResult(StrictModel):
-    """Episode-level spoken-delivery outcome for full rewrites."""
+class SpokenSegment(StrictModel):
+    segment_id: str
+    text: str
+    max_words: int = Field(default=250, ge=1)
+    ssml_hints: dict[str, Any] | None = None
 
-    episode_id: str
-    mode: Literal["full"]
-    metrics: RewriteMetrics
-    fidelity_passed: bool = True
-    missing_names: list[str] = Field(default_factory=list)
-    missing_numbers: list[str] = Field(default_factory=list)
-    chunk_count: int = Field(ge=0)
-    generated_at: datetime = Field(default_factory=utc_now)
+
+class SpokenScript(StrictModel):
+    episode_number: int = Field(ge=1)
+    title: str
+    segments: list[SpokenSegment] = Field(default_factory=list)
+    arc_plan: str | None = None
+    tts_provider: str = "openai"
+
+
+class EpisodeFraming(StrictModel):
+    episode_number: int = Field(ge=1)
+    recap: str | None = None
+    preview: str | None = None
+    cold_open: str | None = None
 
 
 class RenderSegment(StrictModel):
-    """Final renderable segment."""
-
-    segment_id: str
-    speaker: str
+    segment_id: str = Field(default_factory=new_id)
     text: str
-    ssml: str
-    grounded_claim_ids: list[str]
+    voice_id: str = "ballad"
+    speed: float = Field(default=1.0, gt=0.0, le=4.0)
+    pause_before_ms: int = Field(default=0, ge=0)
+    pause_after_ms: int = Field(default=0, ge=0)
 
 
 class RenderManifest(StrictModel):
-    """Validated TTS-ready output."""
-
-    episode_id: str
-    title: str
-    narrator: str
-    segments: list[RenderSegment]
-    generated_at: datetime = Field(default_factory=utc_now)
+    episode_number: int = Field(ge=1)
+    segments: list[RenderSegment] = Field(default_factory=list)
+    total_segments: int = Field(default=0, ge=0)
+    estimated_duration_seconds: int = Field(default=0, ge=0)
 
 
-class AudioSegmentFile(StrictModel):
-    """Metadata for one rendered segment inside an episode audio output."""
-
+class AudioSegmentResult(StrictModel):
     segment_id: str
-    speaker: str
-    text: str
-    grounded_claim_ids: list[str]
+    audio_path: str
+    duration_seconds: float = Field(default=0.0, ge=0.0)
+    success: bool = True
+    error: str | None = None
 
 
 class AudioManifest(StrictModel):
-    """Audio synthesis output for one episode."""
-
-    episode_id: str
-    title: str
-    narrator: str
-    voice: str
-    audio_path: str
-    audio_format: str
-    segments: list[AudioSegmentFile]
-    generated_at: datetime = Field(default_factory=utc_now)
-
-
-class EpisodeOutput(StrictModel):
-    """Canonical per-episode artifact persisted by the pipeline."""
-
-    plan: EpisodePlan
-    script: EpisodeScript
-    report: GroundingReport
-    framing: EpisodeFraming | None = None
-    spoken_script: SpokenEpisodeNarration | None = None
-    spoken_delivery: SpokenDeliveryEpisodeResult | None = None
-    manifest: RenderManifest | None = None
-    audio_manifest: AudioManifest | None = None
-    repair_attempts: list[RepairResult] = Field(default_factory=list)
-    generated_at: datetime = Field(default_factory=utc_now)
+    episode_number: int = Field(ge=1)
+    audio_segments: list[AudioSegmentResult] = Field(default_factory=list)
+    merged_audio_path: str | None = None
+    total_duration_seconds: float = Field(default=0.0, ge=0.0)
+    diagnostics: dict[str, Any] = Field(default_factory=dict)

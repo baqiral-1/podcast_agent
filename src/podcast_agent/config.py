@@ -1,11 +1,11 @@
-"""Runtime configuration for the podcast agent."""
+"""Runtime configuration for the multi-book thematic podcast pipeline."""
 
 from __future__ import annotations
 
 import os
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -16,51 +16,50 @@ def _env_bool(name: str, default: bool) -> bool:
 
 
 class DatabaseConfig(BaseModel):
-    """Connection settings for PostgreSQL-backed storage."""
-
     model_config = ConfigDict(frozen=True)
 
     dsn: str | None = Field(
         default_factory=lambda: os.getenv("DATABASE_URL"),
-        description="PostgreSQL DSN used by the repository layer.",
+        description="PostgreSQL DSN used by PGVector and chunk storage.",
     )
 
 
-class LLMConfig(BaseModel):
-    """Shared LLM defaults for all agents."""
+class AgentConfig(BaseModel):
+    """Per-agent LLM configuration."""
 
     model_config = ConfigDict(frozen=True)
 
+    model_name: str | None = None
+    provider: str | None = None
+    temperature: float | None = None
+    max_tokens: int | None = None
+    max_retry_attempts: int | None = None
+    concurrency_limit: int | None = None
+
+
+class LLMConfig(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     llm_provider: str = Field(
-        default_factory=lambda: os.getenv("LLM_PROVIDER") or os.getenv("LLM_TYPE") or "openai"
+        default_factory=lambda: os.getenv("LLM_PROVIDER") or os.getenv("LLM_TYPE") or "anthropic"
     )
-    provider: str = Field(default_factory=lambda: os.getenv("LLM_PROVIDER", "openai-compatible"))
-    model_name: str = Field(default_factory=lambda: os.getenv("LLM_MODEL_NAME", "gpt-5.4"))
+    provider: str = Field(default_factory=lambda: os.getenv("LLM_PROVIDER", "anthropic"))
+    model_name: str = Field(default_factory=lambda: os.getenv("LLM_MODEL_NAME", "claude-opus-4-6"))
     model_overrides: dict[str, str] = Field(
-        default_factory=lambda: {
-            "structured_chapter": "gpt-5-mini",
-            "grounding_report": "gpt-5-mini",
-        },
-        description=(
-            "Optional per-schema model overrides keyed by schema_name. "
-            "When present, schema_name-specific entries take precedence over model_name."
-        ),
+        default_factory=dict,
+        description="Per-schema model overrides keyed by schema_name.",
     )
     provider_overrides: dict[str, str] = Field(
         default_factory=dict,
-        description=(
-            "Optional per-schema LLM provider overrides keyed by schema_name. "
-            "Values should be one of: openai-compatible, openai, anthropic, heuristic."
-        ),
+        description="Per-schema LLM provider overrides keyed by schema_name.",
     )
     temperature: float = Field(default=1.0, ge=0.0, le=2.0)
     reasoning_effort: str | None = Field(
         default_factory=lambda: os.getenv("LLM_REASONING_EFFORT"),
-        description="Optional reasoning effort for supported OpenAI reasoning models.",
     )
     api_key: str | None = Field(default_factory=lambda: os.getenv("OPENAI_API_KEY"))
     base_url: str = Field(
-        default_factory=lambda: os.getenv("OPENAI_BASE_URL", "https://api.openai.com"),
+        default_factory=lambda: os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
     )
     anthropic_api_key: str | None = Field(default_factory=lambda: os.getenv("ANTHROPIC_API_KEY"))
     anthropic_base_url: str = Field(
@@ -69,6 +68,14 @@ class LLMConfig(BaseModel):
     anthropic_max_tokens: int = Field(
         default_factory=lambda: int(os.getenv("ANTHROPIC_MAX_TOKENS", "100000")), ge=1
     )
+    anthropic_max_tokens_overrides: dict[str, int] = Field(
+        default_factory=lambda: {
+            "structuring": 64000,
+            "passage_extraction": 64000,
+            "episode_framing": 64000,
+        },
+        description="Per-schema max_tokens overrides for Anthropic models.",
+    )
     anthropic_prompt_caching_enabled: bool = Field(
         default_factory=lambda: _env_bool("ANTHROPIC_PROMPT_CACHING_ENABLED", True)
     )
@@ -76,11 +83,90 @@ class LLMConfig(BaseModel):
         default_factory=lambda: _env_bool("ANTHROPIC_PROMPT_CACHING_AUTO_FALLBACK", True)
     )
     timeout_seconds: float = Field(default=600.0, gt=0.0)
+    timeout_seconds_overrides: dict[str, float] = Field(
+        default_factory=lambda: {
+            "passage_extraction": 480.0,
+            "series_planning": 900.0,
+            "episode_writing": 1200.0,
+        },
+        description="Per-schema timeout overrides in seconds.",
+    )
+    heartbeat_enabled: bool = Field(default=True)
+    heartbeat_interval_seconds: float = Field(default=60.0, gt=0.0)
+    openai_prompt_caching_enabled: bool = Field(
+        default_factory=lambda: _env_bool("OPENAI_PROMPT_CACHING_ENABLED", True),
+    )
+
+    # Per-agent configuration keyed by agent schema_name
+    agent_configs: dict[str, AgentConfig] = Field(
+        default_factory=lambda: {
+            "structuring": AgentConfig(model_name="claude-haiku-4-5", temperature=0.3, max_retry_attempts=2, concurrency_limit=25),
+            "chapter_summary": AgentConfig(model_name="claude-haiku-4-5", temperature=0.3, max_retry_attempts=2, concurrency_limit=25),
+            "theme_decomposition": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.7, max_retry_attempts=2, concurrency_limit=6),
+            "passage_extraction": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.1, max_retry_attempts=2, concurrency_limit=15),
+            "synthesis_mapping": AgentConfig(model_name="claude-opus-4-6", temperature=0.8, max_retry_attempts=2, concurrency_limit=3),
+            "narrative_strategy": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.5, max_retry_attempts=2, concurrency_limit=6),
+            "series_planning": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.5, max_retry_attempts=2, concurrency_limit=6),
+            "episode_writing": AgentConfig(model_name="claude-opus-4-6", temperature=0.6, max_retry_attempts=2, concurrency_limit=3),
+            "source_weaving": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.5, max_retry_attempts=2, concurrency_limit=6),
+            "grounding_validation": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.2, max_retry_attempts=2, concurrency_limit=6),
+            "repair": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.3, max_retry_attempts=2, concurrency_limit=6),
+            "spoken_delivery": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.7, max_retry_attempts=2, concurrency_limit=6),
+            "episode_framing": AgentConfig(model_name="claude-haiku-4-5", temperature=0.7, max_retry_attempts=2, concurrency_limit=15),
+        },
+        description="Per-agent LLM config overrides keyed by schema_name.",
+    )
+
+    def resolve_anthropic_max_tokens(self, schema_name: str) -> int:
+        override = self.anthropic_max_tokens_overrides.get(schema_name)
+        if override is None:
+            resolved = self.anthropic_max_tokens
+        else:
+            resolved = override
+        model_name = self.resolve_model(schema_name)
+        if model_name and model_name.strip().lower().startswith("claude-haiku"):
+            resolved = min(64000, resolved)
+        return max(1, resolved)
+
+    def resolve_temperature(self, schema_name: str) -> float:
+        agent_cfg = self.agent_configs.get(schema_name)
+        if agent_cfg and agent_cfg.temperature is not None:
+            return agent_cfg.temperature
+        return self.temperature
+
+    @field_validator("base_url", mode="before")
+    @classmethod
+    def _normalize_openai_base_url(cls, value: str) -> str:
+        if value is None:
+            return value
+        base = str(value).rstrip("/")
+        if base == "https://api.openai.com":
+            return "https://api.openai.com/v1"
+        return value
+
+    def resolve_model(self, schema_name: str) -> str:
+        agent_cfg = self.agent_configs.get(schema_name)
+        if agent_cfg and agent_cfg.model_name is not None:
+            return agent_cfg.model_name
+        return self.model_overrides.get(schema_name, self.model_name)
+
+    def resolve_max_retry_attempts(self, schema_name: str) -> int:
+        agent_cfg = self.agent_configs.get(schema_name)
+        if agent_cfg and agent_cfg.max_retry_attempts is not None:
+            return agent_cfg.max_retry_attempts
+        return 2
+
+    def resolve_concurrency_limit(self, schema_name: str) -> int | None:
+        agent_cfg = self.agent_configs.get(schema_name)
+        if agent_cfg and agent_cfg.concurrency_limit is not None:
+            return agent_cfg.concurrency_limit
+        return None
+
+    def resolve_timeout_seconds(self, schema_name: str) -> float:
+        return self.timeout_seconds_overrides.get(schema_name, self.timeout_seconds)
 
 
 class TTSConfig(BaseModel):
-    """Text-to-speech settings for audio synthesis."""
-
     model_config = ConfigDict(frozen=True)
 
     provider: str = Field(default="openai-compatible")
@@ -110,13 +196,11 @@ class TTSConfig(BaseModel):
     @model_validator(mode="after")
     def validate_kokoro_chunk_bounds(self) -> "TTSConfig":
         if self.kokoro_chunk_max_words < self.kokoro_chunk_min_words:
-            raise ValueError("kokoro_chunk_max_words must be greater than or equal to kokoro_chunk_min_words")
+            raise ValueError("kokoro_chunk_max_words must be >= kokoro_chunk_min_words")
         return self
 
 
 class SpokenDeliveryConfig(BaseModel):
-    """Textual spoken-delivery rewrite settings."""
-
     model_config = ConfigDict(frozen=True)
 
     enabled: bool = Field(default=True)
@@ -125,60 +209,89 @@ class SpokenDeliveryConfig(BaseModel):
     chunk_max_words: int = Field(default=900, ge=100)
 
 
-class PipelineConfig(BaseModel):
-    """Top-level configuration for orchestration."""
+class PipelineRuntimeConfig(BaseModel):
+    """Orchestration-level runtime parameters."""
 
     model_config = ConfigDict(frozen=True)
 
-    artifact_root: Path = Field(default=Path(".podcast_agent") / "runs")
+    artifact_root: Path = Field(default=Path("runs"))
     embedding_dimensions: int = Field(default=8, ge=4)
-    max_chunk_words: int = Field(default=180, ge=40)
-    chunk_overlap_words: int = Field(default=30, ge=0)
-    max_repair_attempts: int = Field(default=2, ge=0)
-    episode_parallelism: int = Field(default=6, ge=1)
-    batch_parallelism: int = Field(default=3, ge=1)
-    analysis_parallelism: int | None = Field(default=8, ge=1)
-    audio_parallelism: int = Field(default=6, ge=1)
-    audio_retry_attempts: int = Field(default=2, ge=0)
-    beat_parallelism: int = Field(default=20, ge=1)
-    beat_write_retry_attempts: int = Field(default=2, ge=0)
-    beat_write_timeout_seconds: float = Field(default=600.0, gt=0.0)
-    grounding_parallelism: int = Field(default=9, ge=1)
-    spoken_delivery_parallelism: int | None = Field(default=3, ge=1)
-    minimum_source_words_per_episode: int = Field(default=50000, ge=1000)
-    min_episode_source_ratio: float = Field(default=0.3, gt=0.0, le=1.0)
+    max_chunk_words: int = Field(default=400, ge=50)
+    chunk_overlap_words: int = Field(default=50, ge=0)
+    min_chunk_words: int = Field(default=80, ge=10)
+    max_repair_attempts: int = Field(default=3, ge=0)
+    episode_write_concurrency: int = Field(default=2, ge=1)
+    tts_concurrency: int = Field(default=4, ge=1)
+    llm_global_max_concurrency: int = Field(default=30, ge=1)
+    audio_retry_attempts: int = Field(default=3, ge=0)
     spoken_words_per_minute: int = Field(default=130, ge=80)
-    max_episode_minutes: int = Field(default=360, ge=1)
-    max_analysis_payload_bytes: int = Field(default=500000, ge=10000)
-    max_planning_payload_bytes: int = Field(default=500000, ge=10000)
-    max_analysis_payload_bytes_with_episode_count: int = Field(default=1000000, ge=10000)
-    max_planning_payload_bytes_with_episode_count: int = Field(default=1000000, ge=10000)
-    target_script_source_ratio: float = Field(default=0.25, gt=0.0, le=1.0)
-    max_target_script_words: int = Field(default=20000, ge=300)
-    section_beat_target_words: int = Field(default=3000, ge=200)
-    beat_evidence_window_size: int = Field(default=20, ge=1)
-    coverage_warning_min_ratio: float | None = Field(default=None, ge=0.0, le=1.0)
-    max_structuring_chapter_words: int = Field(default=2500, ge=500)
-    max_structuring_llm_chapter_words: int = Field(default=75000, ge=1000)
-    structuring_parallelism: int = Field(default=30, ge=1)
-    structuring_window_words: int = Field(default=5000, ge=300)
-    structuring_window_overlap_words: int = Field(default=150, ge=0)
-    framing_recap_min_words: int = Field(default=80, ge=10)
-    framing_recap_max_words: int = Field(default=100, ge=10)
-    framing_next_min_words: int = Field(default=20, ge=5)
-    framing_next_max_words: int = Field(default=30, ge=5)
-    framing_recap_source_max_words: int = Field(default=900, ge=50)
-    framing_outline_max_words: int = Field(default=120, ge=20)
-    skip_grounding: bool = Field(default=False)
+    # Thematic intelligence
+    max_axes: int = Field(default=15, ge=1)
+    min_axes: int = Field(default=5, ge=1)
+    passages_per_axis_per_book: int = Field(default=20, ge=1)
+    rerank_top_k: int = Field(default=10, ge=1)
+    min_book_coverage: float = Field(default=0.6, ge=0.0, le=1.0)
+    synthesis_quality_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
+    grounding_threshold: float = Field(default=0.85, ge=0.0, le=1.0)
+    cross_book_grounding_threshold: float = Field(default=0.85, ge=0.0, le=1.0)
+    narrative_strategy_override: str | None = None
+    book_weights: dict[str, float] | None = None
+    spoken_chunk_max_words: int = Field(default=250, ge=50)
+
+
+class EmbeddingsConfig(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    provider: str = Field(default_factory=lambda: os.getenv("EMBEDDINGS_PROVIDER", "openai"))
+    model_name: str = Field(
+        default_factory=lambda: os.getenv("EMBEDDINGS_MODEL_NAME", "text-embedding-3-small")
+    )
+    dimensions: int | None = Field(
+        default_factory=lambda: int(os.getenv("EMBEDDINGS_DIMENSIONS", "0")) or None
+    )
+    batch_size: int = Field(default_factory=lambda: int(os.getenv("EMBEDDINGS_BATCH_SIZE", "100")), ge=1)
+    timeout_seconds: float = Field(
+        default_factory=lambda: float(os.getenv("EMBEDDINGS_TIMEOUT_SECONDS", "60.0")), gt=0.0
+    )
+
+
+class RetrievalConfig(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    collection_name: str = Field(
+        default_factory=lambda: os.getenv("RETRIEVAL_COLLECTION_NAME", "podcast_agent_chunks")
+    )
+    oversample_factor: int = Field(
+        default_factory=lambda: int(os.getenv("RETRIEVAL_OVERSAMPLE_FACTOR", "3")), ge=1
+    )
+    max_oversample: int = Field(
+        default_factory=lambda: int(os.getenv("RETRIEVAL_MAX_OVERSAMPLE", "150")), ge=1
+    )
+
+
+class LangChainConfig(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    cache_backend: str = Field(default_factory=lambda: os.getenv("LANGCHAIN_CACHE_BACKEND", "sqlite"))
+    cache_path: str = Field(
+        default_factory=lambda: os.getenv(
+            "LANGCHAIN_CACHE_PATH", str(Path(".podcast_agent") / "langchain_cache.sqlite")
+        )
+    )
+    cache_redis_url: str | None = Field(
+        default_factory=lambda: os.getenv("LANGCHAIN_CACHE_REDIS_URL")
+    )
+    cache_enabled: bool = Field(default_factory=lambda: _env_bool("LANGCHAIN_CACHE_ENABLED", True))
 
 
 class Settings(BaseModel):
-    """Aggregate application settings."""
-
     model_config = ConfigDict(frozen=True)
 
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
+    embeddings: EmbeddingsConfig = Field(default_factory=EmbeddingsConfig)
+    retrieval: RetrievalConfig = Field(default_factory=RetrievalConfig)
+    langchain: LangChainConfig = Field(default_factory=LangChainConfig)
     tts: TTSConfig = Field(default_factory=TTSConfig)
     spoken_delivery: SpokenDeliveryConfig = Field(default_factory=SpokenDeliveryConfig)
-    pipeline: PipelineConfig = Field(default_factory=PipelineConfig)
+    pipeline: PipelineRuntimeConfig = Field(default_factory=PipelineRuntimeConfig)
