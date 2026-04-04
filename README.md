@@ -107,12 +107,12 @@ podcast-agent status <project-id>
 
 ### Phase 1: Ingest & Index (parallel per book)
 1. **Read source** — PDF or plain text
-2. **Structure chapters** — LLM identifies chapter boundaries and summaries
+2. **Structure chapters** — LLM identifies chapter boundaries and chapter summaries
 3. **Chunk text** — Overlapping chunks at paragraph/sentence boundaries
 4. **Embed & store** — Index chunks in PGVector with book/project metadata
 
 ### Phase 2: Thematic Intelligence (sequential)
-5. **Decompose theme** — Break theme into 5-15 thematic axes
+5. **Decompose theme** — Break theme into 5-15 thematic axes using chapter-summary context
 6. **Extract passages** — Vector retrieval + LLM reranking per axis per book
 7. **Map synthesis** — Discover cross-book insights (agreements, disagreements, tensions, extensions)
 8. **Choose narrative strategy** — Select series structure (thesis-driven, debate, convergence, etc.)
@@ -128,6 +128,9 @@ podcast-agent status <project-id>
 ### Phase 4: Audio Rendering (parallel per episode)
 15. **Build render manifest** — TTS-ready segment specification
 16. **Synthesize audio** — TTS with retry and concurrency control
+
+Chapter summaries are currently consumed only for theme decomposition. Downstream
+stages rely on retrieved passages and synthesis artifacts rather than chapter summaries.
 
 ## Outputs
 

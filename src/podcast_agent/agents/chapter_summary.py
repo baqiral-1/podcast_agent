@@ -12,13 +12,14 @@ class ChapterSummaryResponse(BaseModel):
 
 
 class ChapterSummaryAgent(Agent):
-    """Generates a short summary for a chapter."""
+    """Generates chapter summaries used by theme decomposition."""
 
     schema_name = "chapter_summary"
     response_model = ChapterSummaryResponse
     instructions = (
-        "You are a book analyst. Given a chapter of a book, produce a concise 2-3 sentence "
-        "summary of the chapter's content. Focus on the main events, arguments, and people.\n\n"
+        "You are a book analyst. Given a chapter of a book, produce a concise 4-6 sentence "
+        "summary focused on thematic analysis. Capture key events or arguments, the central "
+        "actors or institutions, major tensions/disagreements, and any meaningful causal shifts.\n\n"
         "Return a JSON object with a 'summary' field."
     )
 

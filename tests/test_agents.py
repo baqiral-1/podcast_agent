@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, call
 import pytest
 
 from podcast_agent.agents.base import Agent
+from podcast_agent.agents.chapter_summary import ChapterSummaryAgent
 from podcast_agent.langchain.runnables import RetryableGenerationError, TransientLLMError
 from podcast_agent.agents.framing import EpisodeFramingAgent
 from podcast_agent.agents.narrative_strategy import NarrativeStrategyAgent
@@ -78,6 +79,17 @@ class TestThemeDecompositionAgent:
         assert payload["theme"] == "AI ethics"
         assert len(payload["books"]) == 2
         assert payload["books"][0]["chapters"][0]["title"] == "Ch1"
+        assert payload["books"][0]["chapters"][0]["summary"] == "Summary."
+
+
+class TestChapterSummaryAgent:
+    def test_schema_name(self):
+        agent = ChapterSummaryAgent(_mock_llm())
+        assert agent.schema_name == "chapter_summary"
+
+    def test_instructions_target_longer_summary(self):
+        agent = ChapterSummaryAgent(_mock_llm())
+        assert "4-6 sentence" in agent.instructions
 
 
 class TestPassageExtractionAgent:
@@ -118,6 +130,7 @@ class TestSynthesisMappingAgent:
             book_metadata=[{"book_id": "b1", "title": "Book 1"}],
         )
         assert payload["project_id"] == "proj1"
+        assert "chapters" not in payload["books"][0]
 
 
 class TestNarrativeStrategyAgent:
@@ -156,6 +169,7 @@ class TestSeriesPlanningAgent:
             project_metadata={}, episode_count=3, passages_summary={},
         )
         assert payload["episode_count"] == 3
+        assert "chapters" not in payload["project"]
 
 
 class TestWritingAgent:
@@ -175,6 +189,7 @@ class TestWritingAgent:
         )
         assert payload["episode_number"] == 1
         assert payload["skip_grounding"] is True
+        assert "chapters" not in payload["books"][0]
 
 
 class TestSourceWeavingAgent:

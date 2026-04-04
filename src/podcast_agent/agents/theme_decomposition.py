@@ -13,7 +13,11 @@ class ThemeDecompositionResponse(BaseModel):
 
 
 class ThemeDecompositionAgent(Agent):
-    """Decomposes a user theme into 5-15 thematic axes spanning all books."""
+    """Decomposes a user theme into 5-15 thematic axes spanning all books.
+
+    This stage is the intentional consumer of chapter summaries. Later stages use
+    retrieved passage evidence instead of chapter-summary context.
+    """
 
     schema_name = "theme_decomposition"
     response_model = ThemeDecompositionResponse
@@ -42,6 +46,7 @@ class ThemeDecompositionAgent(Agent):
     ) -> dict:
         book_summaries = []
         for book in books:
+            # Chapter summaries are provided here for thematic axis discovery only.
             chapter_info = [
                 {"title": ch.title, "summary": ch.summary}
                 for ch in book.chapters
