@@ -780,7 +780,9 @@ class PipelineOrchestrator:
 
             sem = asyncio.Semaphore(project.config.passage_extraction_concurrency)
 
-            def _process_axis(axis: ThematicAxis) -> tuple[str, list[ExtractedPassage], list[PassagePair], int]:
+            def _process_axis(
+                axis: ThematicAxis,
+            ) -> tuple[str, list[ExtractedPassage], list[PassagePair], int, dict[str, Any]]:
                 hits_by_book = self.retrieval.retrieve_for_axis(
                     axis=axis, project_id=project.project_id,
                     book_ids=book_ids,
@@ -935,15 +937,60 @@ class PipelineOrchestrator:
                     sorted_p = sorted(book_passages, key=lambda x: x.relevance_score, reverse=True)
                     top_passages.extend(sorted_p[:project.config.rerank_top_k])
 
-                filtered_pairs = [
+                relationship_filtered_pairs = [
                     pair
                     for pair in result.cross_book_pairs
                     if pair.axis_id == axis.axis_id
                     and pair.relationship
                     not in {SynthesisTag.AGREES_WITH, SynthesisTag.EXTENDS}
                 ]
-                filtered_pairs.sort(key=lambda p: p.strength, reverse=True)
-                return axis.axis_id, top_passages, filtered_pairs[:5], candidate_count
+                passage_book_by_id = {p.passage_id: p.book_id for p in rehydrated_passages}
+                validated_pairs: list[PassagePair] = []
+                dropped_missing_id_pairs: list[dict[str, str]] = []
+                dropped_same_book_pairs: list[dict[str, str]] = []
+                for pair in relationship_filtered_pairs:
+                    book_a = passage_book_by_id.get(pair.passage_a_id)
+                    book_b = passage_book_by_id.get(pair.passage_b_id)
+                    if book_a is None or book_b is None:
+                        dropped_missing_id_pairs.append(
+                            {
+                                "passage_a_id": pair.passage_a_id,
+                                "passage_b_id": pair.passage_b_id,
+                            }
+                        )
+                        continue
+                    if book_a == book_b:
+                        dropped_same_book_pairs.append(
+                            {
+                                "passage_a_id": pair.passage_a_id,
+                                "passage_b_id": pair.passage_b_id,
+                                "book_id": book_a,
+                            }
+                        )
+                        continue
+                    validated_pairs.append(pair)
+
+                if dropped_missing_id_pairs or dropped_same_book_pairs:
+                    self.run_logger.log(
+                        "passage_extraction_invalid_cross_book_pairs",
+                        axis_id=axis.axis_id,
+                        candidate_pair_count=len(relationship_filtered_pairs),
+                        dropped_missing_id_count=len(dropped_missing_id_pairs),
+                        dropped_same_book_count=len(dropped_same_book_pairs),
+                        dropped_missing_id_pairs=dropped_missing_id_pairs,
+                        dropped_same_book_pairs=dropped_same_book_pairs,
+                    )
+
+                validated_pairs.sort(key=lambda p: p.strength, reverse=True)
+                retained_pairs = validated_pairs[:5]
+                cross_pair_validation = {
+                    "candidate_pair_count": len(relationship_filtered_pairs),
+                    "valid_pair_count": len(validated_pairs),
+                    "retained_pair_count": len(retained_pairs),
+                    "dropped_missing_id_count": len(dropped_missing_id_pairs),
+                    "dropped_same_book_count": len(dropped_same_book_pairs),
+                }
+                return axis.axis_id, top_passages, retained_pairs, candidate_count, cross_pair_validation
 
             async def _process_axis_async(axis: ThematicAxis):
                 async with sem:
@@ -951,10 +998,12 @@ class PipelineOrchestrator:
 
             results = await asyncio.gather(*[_process_axis_async(axis) for axis in axes])
 
-            for axis_id, top_passages, cross_pairs, candidate_count in results:
+            cross_pair_validation_by_axis: dict[str, dict[str, Any]] = {}
+            for axis_id, top_passages, cross_pairs, candidate_count, cross_pair_validation in results:
                 candidate_counts_by_axis[axis_id] = candidate_count
                 all_passages_by_axis[axis_id] = top_passages
                 all_cross_pairs.extend(cross_pairs)
+                cross_pair_validation_by_axis[axis_id] = cross_pair_validation
 
             # ---- Retrieval metrics ----
             retrieval_metrics: dict[str, Any] = {"per_axis": {}, "per_book": {}, "summary": {}}
@@ -977,6 +1026,16 @@ class PipelineOrchestrator:
                         "below_0.5": sum(1 for s in relevance_scores if s < 0.5),
                     },
                     "books_represented": books_represented,
+                    "cross_pair_validation": cross_pair_validation_by_axis.get(
+                        axis.axis_id,
+                        {
+                            "candidate_pair_count": 0,
+                            "valid_pair_count": 0,
+                            "retained_pair_count": 0,
+                            "dropped_missing_id_count": 0,
+                            "dropped_same_book_count": 0,
+                        },
+                    ),
                 }
 
             for book in project.books:

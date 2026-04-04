@@ -48,6 +48,8 @@ class PassageExtractionAgent(Agent):
         "- relationship (one of: contradicts, exemplifies, contextualizes, independent)\n"
         "- strength (0.0-1.0)\n"
         "- axis_id\n\n"
+        "Every cross_book_pairs item MUST connect passages from different books. Never pair two passages "
+        "from the same book. If you are not certain both passages are from different books, omit the pair.\n\n"
         "Return at most 5 cross_book_pairs. If more are possible, choose the strongest, most salient "
         "relationships for this axis.\n\n"
         "If there are no cross_book_pairs, return an empty array. Do not omit required keys."

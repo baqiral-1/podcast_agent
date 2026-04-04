@@ -585,6 +585,8 @@ class TestBookIngestion:
             pipeline=Settings().pipeline.model_copy(update={"artifact_root": tmp_path}),
         )
         orch = PipelineOrchestrator(settings)
+        log_spy = MagicMock()
+        orch.run_logger.log = log_spy
 
         class FakeRetrieval:
             def __init__(self, hits_by_book):
@@ -632,6 +634,12 @@ class TestBookIngestion:
         orch.retrieval = FakeRetrieval(hits_by_book)
 
         def fake_run(payload):
+            candidate_ids_by_book: dict[str, list[str]] = {}
+            for candidate in payload["candidate_passages"]:
+                candidate_ids_by_book.setdefault(candidate["book_id"], []).append(candidate["passage_id"])
+
+            book_a_id = candidate_ids_by_book["book-a"][0]
+            book_b_id = candidate_ids_by_book["book-b"][0]
             passages = [
                 PassageExtractionScore(
                     passage_id=c["passage_id"],
@@ -643,52 +651,66 @@ class TestBookIngestion:
             ]
             cross_pairs = [
                 PassagePair(
-                    passage_a_id="p1",
-                    passage_b_id="p2",
+                    passage_a_id=book_a_id,
+                    passage_b_id=book_b_id,
                     relationship=SynthesisTag.AGREES_WITH,
                     strength=0.99,
                     axis_id="axis_01",
                 ),
                 PassagePair(
-                    passage_a_id="p3",
-                    passage_b_id="p4",
+                    passage_a_id=book_b_id,
+                    passage_b_id=book_a_id,
                     relationship=SynthesisTag.EXTENDS,
                     strength=0.95,
                     axis_id="axis_01",
                 ),
                 PassagePair(
-                    passage_a_id="p5",
-                    passage_b_id="p6",
+                    passage_a_id=book_a_id,
+                    passage_b_id=book_b_id,
                     relationship=SynthesisTag.CONTEXTUALIZES,
-                    strength=0.9,
+                    strength=0.94,
                     axis_id="axis_01",
                 ),
                 PassagePair(
-                    passage_a_id="p7",
-                    passage_b_id="p8",
+                    passage_a_id=book_b_id,
+                    passage_b_id=book_a_id,
                     relationship=SynthesisTag.EXEMPLIFIES,
-                    strength=0.85,
+                    strength=0.93,
                     axis_id="axis_01",
                 ),
                 PassagePair(
-                    passage_a_id="p9",
-                    passage_b_id="p10",
+                    passage_a_id=book_a_id,
+                    passage_b_id=book_b_id,
                     relationship=SynthesisTag.CONTRADICTS,
-                    strength=0.8,
+                    strength=0.92,
                     axis_id="axis_01",
                 ),
                 PassagePair(
-                    passage_a_id="p11",
-                    passage_b_id="p12",
+                    passage_a_id=book_b_id,
+                    passage_b_id=book_a_id,
                     relationship=SynthesisTag.CONTEXTUALIZES,
-                    strength=0.7,
+                    strength=0.91,
                     axis_id="axis_01",
                 ),
                 PassagePair(
-                    passage_a_id="p13",
-                    passage_b_id="p14",
+                    passage_a_id=book_a_id,
+                    passage_b_id=book_b_id,
                     relationship=SynthesisTag.EXEMPLIFIES,
-                    strength=0.6,
+                    strength=0.90,
+                    axis_id="axis_01",
+                ),
+                PassagePair(
+                    passage_a_id=book_a_id,
+                    passage_b_id=book_a_id,
+                    relationship=SynthesisTag.CONTEXTUALIZES,
+                    strength=0.89,
+                    axis_id="axis_01",
+                ),
+                PassagePair(
+                    passage_a_id="missing-passage-id",
+                    passage_b_id=book_b_id,
+                    relationship=SynthesisTag.EXEMPLIFIES,
+                    strength=0.88,
                     axis_id="axis_01",
                 ),
             ]
@@ -711,6 +733,29 @@ class TestBookIngestion:
         assert SynthesisTag.AGREES_WITH not in relationships
         assert SynthesisTag.EXTENDS not in relationships
         assert len(corpus.cross_book_pairs) == 5
+        assert all(pair.passage_a_id != pair.passage_b_id for pair in corpus.cross_book_pairs)
+
+        retrieval_metrics = json.loads((project_dir / "retrieval_metrics.json").read_text())
+        axis_validation = retrieval_metrics["per_axis"]["axis_01"]["cross_pair_validation"]
+        assert axis_validation == {
+            "candidate_pair_count": 7,
+            "valid_pair_count": 5,
+            "retained_pair_count": 5,
+            "dropped_missing_id_count": 1,
+            "dropped_same_book_count": 1,
+        }
+
+        invalid_pair_logs = [
+            call
+            for call in log_spy.call_args_list
+            if call.args and call.args[0] == "passage_extraction_invalid_cross_book_pairs"
+        ]
+        assert len(invalid_pair_logs) == 1
+        invalid_payload = invalid_pair_logs[0].kwargs
+        assert invalid_payload["axis_id"] == "axis_01"
+        assert invalid_payload["candidate_pair_count"] == 7
+        assert invalid_payload["dropped_missing_id_count"] == 1
+        assert invalid_payload["dropped_same_book_count"] == 1
 
 
 def test_select_synthesis_passages_top10_plus_pairs():

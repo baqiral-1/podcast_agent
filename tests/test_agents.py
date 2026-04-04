@@ -97,6 +97,11 @@ class TestPassageExtractionAgent:
         assert payload["axis_id"] == "ax1"
         assert len(payload["candidate_passages"]) == 1
 
+    def test_instructions_require_different_books_for_cross_pairs(self):
+        agent = PassageExtractionAgent(_mock_llm())
+        assert "MUST connect passages from different books" in agent.instructions
+        assert "Never pair two passages from the same book" in agent.instructions
+
 
 class TestSynthesisMappingAgent:
     def test_schema_name(self):
