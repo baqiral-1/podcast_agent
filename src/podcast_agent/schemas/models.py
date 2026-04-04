@@ -90,11 +90,10 @@ class PipelineConfig(StrictModel):
     grounding_threshold: float = Field(default=0.85, ge=0.0, le=1.0)
     cross_book_grounding_threshold: float = Field(default=0.85, ge=0.0, le=1.0)
     max_repair_attempts: int = Field(default=3, ge=0)
-    narrative_strategy_override: str | None = None
     book_weights: dict[str, float] | None = None
     tts_provider: str = "openai"
     tts_concurrency: int = Field(default=4, ge=1)
-    episode_write_concurrency: int = Field(default=2, ge=1)
+    episode_write_concurrency: int = Field(default=3, ge=1)
     passage_extraction_concurrency: int = Field(default=6, ge=1)
     chunk_max_words: int = Field(default=400, ge=50)
     chunk_overlap_words: int = Field(default=50, ge=0)
@@ -250,6 +249,16 @@ class NarrativeStrategy(StrictModel):
     series_arc: str
     episode_arc_outline: list[str] = Field(default_factory=list)
     recommended_episode_count: int | None = Field(default=None, ge=2, le=8)
+    episode_assignments: list["EpisodeAssignment"] = Field(default_factory=list)
+
+
+class EpisodeAssignment(StrictModel):
+    episode_number: int = Field(ge=1)
+    title: str
+    thematic_focus: str = ""
+    axis_ids: list[str] = Field(default_factory=list)
+    insight_ids: list[str] = Field(default_factory=list)
+    episode_strategy: str = ""
 
 
 class CrossReference(StrictModel):

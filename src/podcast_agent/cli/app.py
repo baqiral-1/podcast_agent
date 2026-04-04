@@ -28,7 +28,6 @@ def run(
     theme_elaboration: Optional[str] = typer.Option(None, "--elaboration", help="Optional longer theme description."),
     titles: Optional[str] = typer.Option(None, "--titles", help="Comma-separated book titles."),
     authors: Optional[str] = typer.Option(None, "--authors", help="Comma-separated author names."),
-    strategy: Optional[str] = typer.Option(None, "--strategy", help="Force narrative strategy (thesis_driven, debate, chronological, convergence, mosaic)."),
     output_dir: Optional[str] = typer.Option(None, "--output-dir", "-o", help="Custom output directory."),
     skip_grounding: bool = typer.Option(False, "--skip-grounding", help="Skip grounding validation and repair."),
     skip_spoken_delivery: bool = typer.Option(False, "--skip-spoken-delivery", help="Skip spoken delivery rewrite."),
@@ -47,8 +46,6 @@ def run(
         )
 
     config_updates: dict = {}
-    if strategy:
-        config_updates["narrative_strategy_override"] = strategy
     if skip_grounding:
         config_updates["skip_grounding"] = True
     if skip_spoken_delivery:

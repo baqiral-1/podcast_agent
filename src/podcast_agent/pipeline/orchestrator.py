@@ -24,7 +24,7 @@ from uuid import uuid4
 from podcast_agent.agents.framing import EpisodeFramingAgent
 from podcast_agent.agents.narrative_strategy import NarrativeStrategyAgent
 from podcast_agent.agents.passage_extraction import PassageExtractionAgent
-from podcast_agent.agents.planning import SeriesPlanningAgent
+from podcast_agent.agents.planning import EpisodePlanningAgent
 from podcast_agent.agents.repair import RepairAgent
 from podcast_agent.agents.source_weaving import SourceWeavingAgent
 from podcast_agent.agents.spoken_delivery_agent import SpokenDeliveryAgent
@@ -49,6 +49,7 @@ from podcast_agent.schemas.models import (
     ChapterInfo,
     ChunkingConfig,
     CoverageStats,
+    EpisodeAssignment,
     EpisodeFraming,
     EpisodePlan,
     EpisodeScript,
@@ -246,6 +247,63 @@ def _select_synthesis_passages(
         additions.sort(key=lambda p: p.passage_id)
         selected.extend(additions)
     return selected
+
+
+def _select_episode_planning_passages(
+    *,
+    passages_by_axis: dict[str, list[ExtractedPassage]],
+    assigned_axis_ids: list[str],
+    selected_insight_passage_ids: set[str],
+    supporting_passages_per_axis: int = 25,
+) -> dict[str, list[ExtractedPassage]]:
+    if not assigned_axis_ids:
+        return {axis_id: [] for axis_id in assigned_axis_ids}
+
+    def _chunk_key(passage: ExtractedPassage) -> tuple[str, ...]:
+        if passage.chunk_ids:
+            return tuple(passage.chunk_ids)
+        return ("passage", passage.passage_id)
+
+    chunk_axes: dict[tuple[str, ...], set[str]] = {}
+    for axis_id in assigned_axis_ids:
+        for passage in passages_by_axis.get(axis_id, []):
+            key = _chunk_key(passage)
+            chunk_axes.setdefault(key, set()).add(axis_id)
+
+    selected_by_axis: dict[str, list[ExtractedPassage]] = {axis_id: [] for axis_id in assigned_axis_ids}
+    for axis_id in assigned_axis_ids:
+        insight_passages: list[ExtractedPassage] = []
+        supporting_ranked: list[tuple[float, float, float, str, ExtractedPassage]] = []
+        for passage in passages_by_axis.get(axis_id, []):
+            if passage.passage_id in selected_insight_passage_ids:
+                insight_passages.append(passage)
+                continue
+            key = _chunk_key(passage)
+            is_multi_axis = len(chunk_axes.get(key, set())) > 1
+            weighted_score = (
+                (0.65 * passage.relevance_score)
+                + (0.35 * passage.quotability_score)
+                + (0.04 if is_multi_axis else 0.0)
+            )
+            supporting_ranked.append(
+                (
+                    -weighted_score,
+                    -passage.relevance_score,
+                    -passage.quotability_score,
+                    passage.passage_id,
+                    passage,
+                )
+            )
+        insight_passages.sort(
+            key=lambda p: (-p.relevance_score, -p.quotability_score, p.passage_id)
+        )
+        supporting_ranked.sort()
+        supporting_passages = [
+            passage
+            for _, _, _, _, passage in supporting_ranked[:supporting_passages_per_axis]
+        ]
+        selected_by_axis[axis_id] = insight_passages + supporting_passages
+    return selected_by_axis
 
 
 def _clamp(value: float, minimum: float, maximum: float) -> float:
@@ -584,7 +642,7 @@ class PipelineOrchestrator:
         self.passage_extraction_agent = PassageExtractionAgent(self.llm, max_retry_attempts=_retries("passage_extraction"))
         self.synthesis_mapping_agent = SynthesisMappingAgent(self.llm, max_retry_attempts=_retries("synthesis_mapping"))
         self.narrative_strategy_agent = NarrativeStrategyAgent(self.llm, max_retry_attempts=_retries("narrative_strategy"))
-        self.series_planning_agent = SeriesPlanningAgent(self.llm, max_retry_attempts=_retries("series_planning"))
+        self.episode_planning_agent = EpisodePlanningAgent(self.llm, max_retry_attempts=_retries("episode_planning"))
         self.writing_agent = WritingAgent(self.llm, max_retry_attempts=_retries("episode_writing"))
         self.source_weaving_agent = SourceWeavingAgent(self.llm, max_retry_attempts=_retries("source_weaving"))
         self.grounding_agent = GroundingValidationAgent(self.llm, max_retry_attempts=_retries("grounding_validation"))
@@ -725,7 +783,7 @@ class PipelineOrchestrator:
                 threshold=pipeline_config.synthesis_quality_threshold,
             )
 
-        strategy = await self._choose_narrative_strategy(project, synthesis_map, project_dir)
+        strategy = await self._choose_narrative_strategy(project, synthesis_map, corpus, project_dir)
         project = self._resolve_episode_count_from_strategy(project, strategy)
         _save_json(project_dir / "thematic_project.json", project)
 
@@ -1426,38 +1484,79 @@ class PipelineOrchestrator:
             return synthesis_map
 
     async def _choose_narrative_strategy(
-        self, project: ThematicProject, synthesis_map: SynthesisMap, project_dir: Path,
+        self,
+        project: ThematicProject,
+        synthesis_map: SynthesisMap,
+        corpus: ThematicCorpus,
+        project_dir: Path,
     ) -> NarrativeStrategy:
         async with _stage_log(
             self.run_logger, "narrative_strategy", project_dir,
             insight_count=len(synthesis_map.insights),
-            override=project.config.narrative_strategy_override,
         ) as ctx:
-            if project.config.narrative_strategy_override:
-                strategy = NarrativeStrategy(
-                    strategy_type=project.config.narrative_strategy_override,
-                    justification="User override",
-                    series_arc="", episode_arc_outline=[],
-                )
-                _save_json(project_dir / "narrative_strategy.json", strategy)
-                ctx["output_summary"] = {"strategy": strategy.strategy_type, "source": "override"}
-                return strategy
-
             synthesis_summary = {
-                "insight_types": [i.insight_type.value for i in synthesis_map.insights],
-                "thread_arc_types": [t.arc_type for t in synthesis_map.narrative_threads],
+                "insights": [
+                    {
+                        "insight_id": i.insight_id,
+                        "insight_type": i.insight_type.value,
+                        "title": i.title,
+                        "description": i.description,
+                        "passage_ids": i.passage_ids,
+                        "podcast_potential": i.podcast_potential,
+                        "treatment": i.treatment,
+                    }
+                    for i in synthesis_map.insights
+                ],
+                "narrative_threads": [
+                    {
+                        "thread_id": t.thread_id,
+                        "title": t.title,
+                        "description": t.description,
+                        "insight_ids": t.insight_ids,
+                        "arc_type": t.arc_type,
+                    }
+                    for t in synthesis_map.narrative_threads
+                ],
+                "book_relationship_matrix": synthesis_map.book_relationship_matrix,
+                "unresolved_tensions": synthesis_map.unresolved_tensions,
+                "merged_narratives": [
+                    {
+                        "topic": m.topic,
+                        "narrative": m.narrative,
+                        "source_passage_ids": m.source_passage_ids,
+                        "points_of_consensus": m.points_of_consensus,
+                        "points_of_disagreement": m.points_of_disagreement,
+                    }
+                    for m in synthesis_map.merged_narratives
+                ],
                 "quality_score": synthesis_map.quality_score,
                 "insight_count": len(synthesis_map.insights),
                 "thread_count": len(synthesis_map.narrative_threads),
             }
+            thematic_axes = []
+            for axis in corpus.axes:
+                passages = corpus.passages_by_axis.get(axis.axis_id, [])
+                thematic_axes.append(
+                    {
+                        "axis_id": axis.axis_id,
+                        "name": axis.name,
+                        "description": axis.description,
+                        "guiding_questions": axis.guiding_questions,
+                        "keywords": axis.keywords,
+                        "relevance_by_book": axis.relevance_by_book,
+                        "passage_count": len(passages),
+                        "books_with_passages": sorted({p.book_id for p in passages}),
+                    }
+                )
             project_metadata = {
                 "theme": project.theme,
                 "book_count": len(project.books),
-                "books": [{"title": b.title, "author": b.author} for b in project.books],
+                "books": [{"book_id": b.book_id, "title": b.title, "author": b.author} for b in project.books],
             }
 
             payload = self.narrative_strategy_agent.build_payload(
-                synthesis_map_summary=synthesis_summary,
+                synthesis_map=synthesis_summary,
+                thematic_axes=thematic_axes,
                 project_metadata=project_metadata,
                 episode_count=project.requested_episode_count,
             )
@@ -1466,8 +1565,8 @@ class PipelineOrchestrator:
 
             ctx["output_summary"] = {
                 "strategy": strategy.strategy_type,
-                "source": "agent",
                 "recommended_episode_count": strategy.recommended_episode_count,
+                "episode_assignments": len(strategy.episode_assignments),
             }
             return strategy
 
@@ -1520,51 +1619,23 @@ class PipelineOrchestrator:
         project_dir: Path,
     ) -> list[EpisodePlan]:
         async with _stage_log(
-            self.run_logger, "series_planning", project_dir,
+            self.run_logger, "episode_planning", project_dir,
             episode_count=project.episode_count, strategy=strategy.strategy_type,
         ) as ctx:
-            synthesis_summary = {
-                "insights": [
-                    {
-                        "insight_id": i.insight_id,
-                        "insight_type": i.insight_type.value,
-                        "title": i.title, "description": i.description,
-                        "passage_ids": i.passage_ids,
-                        "podcast_potential": i.podcast_potential,
-                        "treatment": i.treatment,
-                    }
-                    for i in synthesis_map.insights
-                ],
-                "narrative_threads": [
-                    {
-                        "thread_id": t.thread_id, "title": t.title,
-                        "insight_ids": t.insight_ids, "arc_type": t.arc_type,
-                    }
-                    for t in synthesis_map.narrative_threads
-                ],
-                "merged_narratives": [
-                    {
-                        "topic": m.topic,
-                        "narrative": m.narrative,
-                        "source_passage_ids": m.source_passage_ids,
-                        "points_of_consensus": m.points_of_consensus,
-                        "points_of_disagreement": m.points_of_disagreement,
-                    }
-                    for m in synthesis_map.merged_narratives
-                ],
+            assignment_map: dict[int, EpisodeAssignment] = {
+                assignment.episode_number: assignment
+                for assignment in strategy.episode_assignments
             }
-
-            passages_summary: dict[str, list[dict]] = {}
-            for axis_id, passages in corpus.passages_by_axis.items():
-                passages_summary[axis_id] = [
-                    {
-                        "passage_id": p.passage_id, "book_id": p.book_id,
-                        "relevance_score": p.relevance_score,
-                        "quotability_score": p.quotability_score,
-                    }
-                    for p in passages
-                ]
-
+            missing_assignments = [
+                episode_number
+                for episode_number in range(1, project.episode_count + 1)
+                if episode_number not in assignment_map
+            ]
+            if missing_assignments:
+                raise RuntimeError(
+                    "Narrative strategy did not assign axis_ids/insight_ids for "
+                    f"episodes: {missing_assignments}"
+                )
             project_metadata = {
                 "theme": project.theme,
                 "book_count": len(project.books),
@@ -1574,23 +1645,143 @@ class PipelineOrchestrator:
                 ],
                 "attribution_budget": project.config.attribution_budget,
             }
-
-            payload = self.series_planning_agent.build_payload(
-                synthesis_map_summary=synthesis_summary,
-                narrative_strategy=strategy.model_dump(mode="json"),
-                project_metadata=project_metadata,
-                episode_count=project.episode_count,
-                passages_summary=passages_summary,
-            )
-            result = await asyncio.to_thread(self.series_planning_agent.run, payload)
-
+            insights_by_id = {insight.insight_id: insight for insight in synthesis_map.insights}
             adjusted_episodes: list[EpisodePlan] = []
-            for episode in result.episodes:
+            ordered_assignments = [
+                assignment_map[episode_number]
+                for episode_number in range(1, project.episode_count + 1)
+            ]
+            planning_requests: list[tuple[int, EpisodeAssignment, dict[str, Any]]] = []
+            for idx, assignment in enumerate(ordered_assignments):
+                selected_insights = [
+                    insights_by_id[insight_id]
+                    for insight_id in assignment.insight_ids
+                    if insight_id in insights_by_id
+                ]
+                selected_insight_passage_ids = {
+                    passage_id
+                    for insight in selected_insights
+                    for passage_id in insight.passage_ids
+                }
+                synthesis_subset = {
+                    "insights": [
+                        {
+                            "insight_id": insight.insight_id,
+                            "insight_type": insight.insight_type.value,
+                            "title": insight.title,
+                            "description": insight.description,
+                            "passage_ids": insight.passage_ids,
+                            "podcast_potential": insight.podcast_potential,
+                            "treatment": insight.treatment,
+                        }
+                        for insight in selected_insights
+                    ],
+                    "narrative_threads": [
+                        {
+                            "thread_id": thread.thread_id,
+                            "title": thread.title,
+                            "description": thread.description,
+                            "insight_ids": thread.insight_ids,
+                            "arc_type": thread.arc_type,
+                        }
+                        for thread in synthesis_map.narrative_threads
+                        if any(insight_id in assignment.insight_ids for insight_id in thread.insight_ids)
+                    ],
+                    "quality_score": synthesis_map.quality_score,
+                }
+                selected_passages_by_axis = _select_episode_planning_passages(
+                    passages_by_axis=corpus.passages_by_axis,
+                    assigned_axis_ids=assignment.axis_ids,
+                    selected_insight_passage_ids=selected_insight_passage_ids,
+                )
+                passages_summary = {
+                    axis_id: [
+                        ({
+                            "passage_id": p.passage_id,
+                            "book_id": p.book_id,
+                            "relevance_score": p.relevance_score,
+                            "quotability_score": p.quotability_score,
+                        } | (
+                            {"full_text": _resolve_writing_passage_text(p)}
+                            if p.passage_id in selected_insight_passage_ids
+                            else {"summary_text": p.text}
+                        ))
+                        for p in selected_passages_by_axis.get(axis_id, [])
+                    ]
+                    for axis_id in assignment.axis_ids
+                }
+                previous_episode = None
+                if idx > 0:
+                    prev = ordered_assignments[idx - 1]
+                    previous_episode = {
+                        "episode_number": prev.episode_number,
+                        "title": prev.title,
+                        "thematic_focus": prev.thematic_focus,
+                    }
+                next_episode = None
+                if idx + 1 < len(ordered_assignments):
+                    nxt = ordered_assignments[idx + 1]
+                    next_episode = {
+                        "episode_number": nxt.episode_number,
+                        "title": nxt.title,
+                        "thematic_focus": nxt.thematic_focus,
+                    }
+                payload = self.episode_planning_agent.build_payload(
+                    episode_assignment=assignment.model_dump(mode="json"),
+                    narrative_strategy=strategy.model_dump(mode="json"),
+                    synthesis_map=synthesis_subset,
+                    project_metadata=project_metadata,
+                    available_passages=passages_summary,
+                    previous_episode=previous_episode,
+                    next_episode=next_episode,
+                )
+                planning_requests.append((idx, assignment, payload))
+
+            planning_sem = asyncio.Semaphore(project.config.episode_write_concurrency)
+
+            async def _plan_single_episode(
+                idx: int,
+                assignment: EpisodeAssignment,
+                payload: dict[str, Any],
+            ) -> tuple[int, EpisodeAssignment, EpisodePlan]:
+                async with planning_sem:
+                    episode = await asyncio.to_thread(self.episode_planning_agent.run, payload)
+                return idx, assignment, episode
+
+            planning_results = await asyncio.gather(*[
+                _plan_single_episode(idx, assignment, payload)
+                for idx, assignment, payload in planning_requests
+            ])
+            planning_results.sort(key=lambda row: row[0])
+
+            for _, assignment, episode in planning_results:
+                episode = episode.model_copy(
+                    update={
+                        "episode_number": assignment.episode_number,
+                        "title": episode.title or assignment.title,
+                        "thematic_focus": episode.thematic_focus or assignment.thematic_focus,
+                        "axis_ids": assignment.axis_ids,
+                        "insight_ids": assignment.insight_ids,
+                        "episode_strategy": episode.episode_strategy or assignment.episode_strategy,
+                    }
+                )
                 beats = list(episode.beats)
                 total_beats = len(beats)
                 if total_beats == 0:
                     adjusted_episodes.append(episode)
                     continue
+                if not 75.0 <= float(episode.target_duration_minutes) <= 90.0:
+                    self.run_logger.log(
+                        "episode_plan_duration_warning",
+                        episode=episode.episode_number,
+                        target_duration_minutes=episode.target_duration_minutes,
+                    )
+                if not 30 <= total_beats <= 36:
+                    self.run_logger.log(
+                        "episode_plan_beats_warning",
+                        episode=episode.episode_number,
+                        beats=total_beats,
+                    )
                 budget = episode.attribution_budget or project.config.attribution_budget
                 max_attributed = int(total_beats * budget)
                 attributed_indices = [

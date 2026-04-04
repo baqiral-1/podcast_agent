@@ -95,7 +95,7 @@ class TestPipelineRuntimeConfig:
         assert config.max_chunk_words == 400
         assert config.chunk_overlap_words == 50
         assert config.max_repair_attempts == 3
-        assert config.episode_write_concurrency == 2
+        assert config.episode_write_concurrency == 3
         assert config.tts_concurrency == 4
 
     def test_thematic_defaults(self):
@@ -134,6 +134,7 @@ class TestLLMConfigResolvers:
         config = LLMConfig()
         assert config.resolve_model("structuring") == "claude-haiku-4-5"
         assert config.resolve_model("synthesis_mapping") == "claude-opus-4-6"
+        assert config.resolve_model("narrative_strategy") == "claude-opus-4-6"
         assert config.resolve_model("grounding_validation") == "claude-sonnet-4-6"
         assert config.resolve_model("episode_framing") == "claude-haiku-4-5"
 
@@ -171,7 +172,7 @@ class TestLLMConfigResolvers:
         config = LLMConfig()
         expected_agents = [
             "structuring", "theme_decomposition", "passage_extraction",
-            "synthesis_mapping", "narrative_strategy", "series_planning",
+            "synthesis_mapping", "narrative_strategy", "episode_planning",
             "episode_writing", "source_weaving", "grounding_validation",
             "repair", "spoken_delivery", "episode_framing",
         ]

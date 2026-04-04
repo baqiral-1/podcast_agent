@@ -12,7 +12,7 @@ from podcast_agent.langchain.runnables import RetryableGenerationError, Transien
 from podcast_agent.agents.framing import EpisodeFramingAgent
 from podcast_agent.agents.narrative_strategy import NarrativeStrategyAgent
 from podcast_agent.agents.passage_extraction import PassageExtractionAgent
-from podcast_agent.agents.planning import SeriesPlanningAgent
+from podcast_agent.agents.planning import EpisodePlanningAgent
 from podcast_agent.agents.repair import RepairAgent
 from podcast_agent.agents.source_weaving import SourceWeavingAgent
 from podcast_agent.agents.spoken_delivery_agent import SpokenDeliveryAgent
@@ -141,39 +141,62 @@ class TestNarrativeStrategyAgent:
     def test_build_payload(self):
         agent = NarrativeStrategyAgent(_mock_llm())
         payload = agent.build_payload(
-            synthesis_map_summary={"insight_count": 5},
+            synthesis_map={"insight_count": 5},
+            thematic_axes=[{"axis_id": "a1"}],
             project_metadata={"theme": "Test"},
             episode_count=3,
         )
         assert payload["requested_episode_count"] == 3
+        assert payload["thematic_axes"][0]["axis_id"] == "a1"
 
     def test_build_payload_without_episode_override(self):
         agent = NarrativeStrategyAgent(_mock_llm())
         payload = agent.build_payload(
-            synthesis_map_summary={"insight_count": 5},
+            synthesis_map={"insight_count": 5},
+            thematic_axes=[],
             project_metadata={"theme": "Test"},
             episode_count=None,
         )
         assert "requested_episode_count" not in payload
 
+    def test_instructions_define_output_schema(self):
+        agent = NarrativeStrategyAgent(_mock_llm())
+        assert "episode assignment plan" in agent.instructions
+        assert "Choose the strategy using:" in agent.instructions
+        assert "narrative progression, contrast, and payoff" in agent.instructions
+        assert "If project.requested_episode_count is provided, use it as a planning hint for arc shape." in agent.instructions
+        assert "Output schema (strict):" in agent.instructions
+        assert "episode_assignments: array of objects" in agent.instructions
+        assert "strategy_type: one of thesis_driven, debate, chronological, convergence, mosaic" in agent.instructions
+        assert "Return only a JSON object matching this schema." in agent.instructions
+        assert "Every SynthesisInsight with podcast_potential > 0.5 must appear in at least one " in agent.instructions
 
-class TestSeriesPlanningAgent:
+
+class TestEpisodePlanningAgent:
     def test_schema_name(self):
-        agent = SeriesPlanningAgent(_mock_llm())
-        assert agent.schema_name == "series_planning"
+        agent = EpisodePlanningAgent(_mock_llm())
+        assert agent.schema_name == "episode_planning"
 
     def test_build_payload(self):
-        agent = SeriesPlanningAgent(_mock_llm())
+        agent = EpisodePlanningAgent(_mock_llm())
         payload = agent.build_payload(
-            synthesis_map_summary={}, narrative_strategy={},
-            project_metadata={}, episode_count=3, passages_summary={},
+            episode_assignment={"episode_number": 1},
+            narrative_strategy={},
+            synthesis_map={},
+            project_metadata={},
+            available_passages={},
+            previous_episode=None,
+            next_episode=None,
         )
-        assert payload["episode_count"] == 3
+        assert payload["episode_assignment"]["episode_number"] == 1
         assert "chapters" not in payload["project"]
 
-    def test_instructions_target_75_to_100_minute_episode(self):
-        agent = SeriesPlanningAgent(_mock_llm())
-        assert "75-100 minute episode" in agent.instructions
+    def test_instructions_target_75_to_90_minute_episode(self):
+        agent = EpisodePlanningAgent(_mock_llm())
+        assert "75-90 minutes" in agent.instructions
+        assert "30-36 beats" in agent.instructions
+        assert "summary_text" in agent.instructions
+        assert "full_text" in agent.instructions
 
 
 class TestWritingAgent:
@@ -355,7 +378,7 @@ class TestAllAgentsHaveRequiredAttributes:
         PassageExtractionAgent,
         SynthesisMappingAgent,
         NarrativeStrategyAgent,
-        SeriesPlanningAgent,
+        EpisodePlanningAgent,
         WritingAgent,
         SourceWeavingAgent,
         GroundingValidationAgent,

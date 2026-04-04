@@ -249,11 +249,11 @@ Document assumptions in the final response.
 - Use this structure:
   Description
   Intent:
-    - 2 bullet points summarizing intent (3 maximum only if necessary). Keep each bullet under 20 words.
+    - 2 bullet points summarizing intent (3 maximum for changes over 200 lines). Keep each bullet under 20 words.
     - ...
 
   Changes:
-    - 3 bullet points summarizing changes (5 maximum only if necessary). Keep each bullet under 25 words.
+    - 3 bullet points summarizing changes (5 maximum for changes over 200 lines). Keep each bullet under 25 words.
 
 ### Content Rules
 

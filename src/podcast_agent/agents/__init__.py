@@ -3,7 +3,7 @@
 from podcast_agent.agents.framing import EpisodeFramingAgent
 from podcast_agent.agents.narrative_strategy import NarrativeStrategyAgent
 from podcast_agent.agents.passage_extraction import PassageExtractionAgent
-from podcast_agent.agents.planning import SeriesPlanningAgent
+from podcast_agent.agents.planning import EpisodePlanningAgent
 from podcast_agent.agents.repair import RepairAgent
 from podcast_agent.agents.source_weaving import SourceWeavingAgent
 from podcast_agent.agents.spoken_delivery_agent import SpokenDeliveryAgent
@@ -20,7 +20,7 @@ __all__ = [
     "NarrativeStrategyAgent",
     "PassageExtractionAgent",
     "RepairAgent",
-    "SeriesPlanningAgent",
+    "EpisodePlanningAgent",
     "SourceWeavingAgent",
     "SpokenDeliveryAgent",
     "StructuringAgent",

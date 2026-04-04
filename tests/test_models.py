@@ -18,6 +18,7 @@ from podcast_agent.schemas.models import (
     CoverageStats,
     CrossBookClaimAssessment,
     CrossReference,
+    EpisodeAssignment,
     EpisodeBeat,
     EpisodeFraming,
     EpisodePlan,
@@ -271,6 +272,26 @@ class TestNarrativeStrategy:
                 series_arc="Test arc",
             )
             assert strategy.strategy_type == strategy_type
+
+    def test_episode_assignments_roundtrip(self):
+        strategy = NarrativeStrategy(
+            strategy_type="convergence",
+            justification="Test",
+            series_arc="Arc",
+            episode_assignments=[
+                EpisodeAssignment(
+                    episode_number=1,
+                    title="Episode 1",
+                    thematic_focus="Focus",
+                    axis_ids=["ax1"],
+                    insight_ids=["in1"],
+                    episode_strategy="Set context",
+                )
+            ],
+        )
+        data = json.loads(strategy.model_dump_json())
+        restored = NarrativeStrategy.model_validate(data)
+        assert restored.episode_assignments[0].axis_ids == ["ax1"]
 
 
 class TestSpokenScript:

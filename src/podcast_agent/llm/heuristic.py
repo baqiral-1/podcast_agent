@@ -148,9 +148,11 @@ class HeuristicLLMClient(LLMClient):
 
     def _generate_narrative_strategy(self, payload: PromptPayload) -> dict[str, Any]:
         requested_episode_count = payload.get("requested_episode_count")
+        synthesis_map = payload.get("synthesis_map", {})
+        thematic_axes = payload.get("thematic_axes", [])
+        insights = synthesis_map.get("insights", [])
         if requested_episode_count is None:
-            synthesis_map = payload.get("synthesis_map", {})
-            insight_count = int(synthesis_map.get("insight_count", 0))
+            insight_count = int(synthesis_map.get("insight_count", len(insights)))
             thread_count = int(synthesis_map.get("thread_count", 0))
             quality_score = float(synthesis_map.get("quality_score", 0.0))
             base = max(2, (insight_count // 5) + (thread_count // 2))
@@ -159,6 +161,24 @@ class HeuristicLLMClient(LLMClient):
             recommended_episode_count = max(2, min(8, base))
         else:
             recommended_episode_count = max(2, min(8, int(requested_episode_count)))
+        episode_assignments = []
+        axis_ids = [axis.get("axis_id", uuid4().hex) for axis in thematic_axes] or [uuid4().hex]
+        insight_ids = [insight.get("insight_id", uuid4().hex) for insight in insights]
+        for i in range(recommended_episode_count):
+            axis_id = axis_ids[i % len(axis_ids)]
+            assigned_insights = []
+            if insight_ids:
+                assigned_insights = [insight_ids[i % len(insight_ids)]]
+            episode_assignments.append(
+                {
+                    "episode_number": i + 1,
+                    "title": f"Episode {i + 1}",
+                    "thematic_focus": f"Focus on axis {axis_id[:8]}",
+                    "axis_ids": [axis_id],
+                    "insight_ids": assigned_insights,
+                    "episode_strategy": "advance main thread",
+                }
+            )
         return {
             "strategy_type": "convergence",
             "justification": "Heuristic: defaulting to convergence strategy.",
@@ -167,41 +187,58 @@ class HeuristicLLMClient(LLMClient):
                 f"Episode {i + 1}" for i in range(recommended_episode_count)
             ],
             "recommended_episode_count": recommended_episode_count,
+            "episode_assignments": episode_assignments,
         }
 
-    def _generate_series_planning(self, payload: PromptPayload) -> dict[str, Any]:
-        episode_count = payload.get("episode_count", 3)
-        episodes = []
-        for i in range(1, episode_count + 1):
-            episodes.append({
-                "episode_number": i,
-                "title": f"Episode {i}",
-                "thematic_focus": "Heuristic focus",
-                "attribution_budget": payload.get("attribution_budget", 0.2),
-                "narrative_spine": {
-                    "episode_number": i,
-                    "spine_segments": [
-                        {
-                            "segment_id": uuid4().hex,
-                            "narrative_text": f"Heuristic spine segment {i}.",
-                            "source_passages": [],
-                            "segment_function": "context",
-                            "era_or_moment": "",
-                        }
-                    ],
-                    "attribution_moments": [],
-                    "narrative_voice": "omniscient narrator telling a story",
-                },
-                "beats": [
+    def _generate_episode_planning(self, payload: PromptPayload) -> dict[str, Any]:
+        assignment = payload.get("episode_assignment", {})
+        episode_number = int(assignment.get("episode_number", 1))
+        axis_ids = assignment.get("axis_ids", [])
+        insight_ids = assignment.get("insight_ids", [])
+        available_passages = payload.get("available_passages", {})
+        first_axis = axis_ids[0] if axis_ids else ""
+        passage_pool = available_passages.get(first_axis, []) if first_axis else []
+        selected_passage_ids = [
+            passage.get("passage_id", uuid4().hex)
+            for passage in passage_pool[:3]
+        ]
+        beats = []
+        for i in range(30):
+            beats.append(
+                {
+                    "beat_id": uuid4().hex,
+                    "description": f"Beat {i + 1} for episode {episode_number}",
+                    "passage_ids": selected_passage_ids,
+                    "narrative_instruction": "advance_events",
+                    "attribution_level": "none",
+                    "estimated_duration_seconds": 150,
+                }
+            )
+        return {
+            "episode_number": episode_number,
+            "title": assignment.get("title", f"Episode {episode_number}"),
+            "thematic_focus": assignment.get("thematic_focus", "Heuristic focus"),
+            "axis_ids": axis_ids,
+            "insight_ids": insight_ids,
+            "attribution_budget": 0.2,
+            "beats": beats,
+            "narrative_spine": {
+                "episode_number": episode_number,
+                "spine_segments": [
                     {
-                        "beat_id": uuid4().hex,
-                        "description": f"Beat for episode {i}",
-                        "narrative_instruction": "advance_events",
-                        "attribution_level": "none",
+                        "segment_id": uuid4().hex,
+                        "narrative_text": f"Heuristic spine segment {episode_number}.",
+                        "source_passages": selected_passage_ids,
+                        "segment_function": "context",
+                        "era_or_moment": "",
                     }
                 ],
-            })
-        return {"episodes": episodes}
+                "attribution_moments": [],
+                "narrative_voice": "omniscient narrator telling a story",
+            },
+            "target_duration_minutes": 80.0,
+            "episode_strategy": assignment.get("episode_strategy", ""),
+        }
 
     def _generate_episode_writing(self, payload: PromptPayload) -> dict[str, Any]:
         ep_num = payload.get("episode_number", 1)

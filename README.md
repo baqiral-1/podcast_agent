@@ -84,7 +84,6 @@ podcast-agent run book1.pdf book2.txt book3.md \
 | `--elaboration` | | | Optional longer theme description |
 | `--titles` | | | Comma-separated book titles |
 | `--authors` | | | Comma-separated author names |
-| `--strategy` | | | Force narrative strategy: `thesis_driven`, `debate`, `chronological`, `convergence`, or `mosaic` |
 | `--output-dir` | `-o` | `runs/` | Custom output directory |
 | `--skip-grounding` | | `False` | Skip grounding validation and repair |
 | `--skip-spoken-delivery` | | `False` | Skip spoken delivery rewrite |
@@ -116,18 +115,19 @@ podcast-agent status <project-id>
 6. **Extract passages** — Vector retrieval + LLM reranking per axis per book
 7. **Map synthesis** — Discover cross-book insights (agreements, disagreements, tensions, extensions)
 8. **Choose narrative strategy** — Select series structure (thesis-driven, debate, convergence, etc.)
-9. **Plan series** — Episode-by-episode plans with beats and passage assignments
+9. **Assign episodes** — Narrative strategy assigns axes and insights per episode
+10. **Plan episodes** — Per-episode structure planning with beats and passage assignments
 
 ### Phase 3: Episode Production (parallel per episode)
-10. **Write episode** — Script with citations and cross-book transitions
-11. **Validate grounding** — Fact-check claims against cited passages (skippable)
-12. **Repair loop** — Fix grounding failures up to N attempts (skippable)
-13. **Spoken delivery** — Rewrite for natural speech without changing facts (skippable)
-14. **Frame episode** — Recaps, previews, and cold opens (sequential)
+11. **Write episode** — Script with citations and cross-book transitions
+12. **Validate grounding** — Fact-check claims against cited passages (skippable)
+13. **Repair loop** — Fix grounding failures up to N attempts (skippable)
+14. **Spoken delivery** — Rewrite for natural speech without changing facts (skippable)
+15. **Frame episode** — Recaps, previews, and cold opens (sequential)
 
 ### Phase 4: Audio Rendering (parallel per episode)
-15. **Build render manifest** — TTS-ready segment specification
-16. **Synthesize audio** — TTS with retry and concurrency control
+16. **Build render manifest** — TTS-ready segment specification
+17. **Synthesize audio** — TTS with retry and concurrency control
 
 Chapter summaries are currently consumed only for theme decomposition. Downstream
 stages rely on retrieved passages and synthesis artifacts rather than chapter summaries.

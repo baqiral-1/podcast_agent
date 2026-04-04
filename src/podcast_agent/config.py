@@ -86,7 +86,7 @@ class LLMConfig(BaseModel):
     timeout_seconds_overrides: dict[str, float] = Field(
         default_factory=lambda: {
             "passage_extraction": 480.0,
-            "series_planning": 900.0,
+            "episode_planning": 900.0,
             "episode_writing": 1200.0,
         },
         description="Per-schema timeout overrides in seconds.",
@@ -105,8 +105,8 @@ class LLMConfig(BaseModel):
             "theme_decomposition": AgentConfig(model_name="claude-opus-4-6", temperature=0.7, max_retry_attempts=2, concurrency_limit=6),
             "passage_extraction": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.1, max_retry_attempts=2, concurrency_limit=6),
             "synthesis_mapping": AgentConfig(model_name="claude-opus-4-6", temperature=0.8, max_retry_attempts=2, concurrency_limit=3),
-            "narrative_strategy": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.5, max_retry_attempts=2, concurrency_limit=6),
-            "series_planning": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.5, max_retry_attempts=2, concurrency_limit=6),
+            "narrative_strategy": AgentConfig(model_name="claude-opus-4-6", temperature=0.5, max_retry_attempts=2, concurrency_limit=6),
+            "episode_planning": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.5, max_retry_attempts=2, concurrency_limit=6),
             "episode_writing": AgentConfig(model_name="claude-opus-4-6", temperature=0.6, max_retry_attempts=2, concurrency_limit=3),
             "source_weaving": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.5, max_retry_attempts=2, concurrency_limit=6),
             "grounding_validation": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.2, max_retry_attempts=2, concurrency_limit=6),
@@ -220,7 +220,7 @@ class PipelineRuntimeConfig(BaseModel):
     chunk_overlap_words: int = Field(default=50, ge=0)
     min_chunk_words: int = Field(default=80, ge=10)
     max_repair_attempts: int = Field(default=3, ge=0)
-    episode_write_concurrency: int = Field(default=2, ge=1)
+    episode_write_concurrency: int = Field(default=3, ge=1)
     tts_concurrency: int = Field(default=4, ge=1)
     llm_global_max_concurrency: int = Field(default=30, ge=1)
     audio_retry_attempts: int = Field(default=3, ge=0)
@@ -234,7 +234,6 @@ class PipelineRuntimeConfig(BaseModel):
     synthesis_quality_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
     grounding_threshold: float = Field(default=0.85, ge=0.0, le=1.0)
     cross_book_grounding_threshold: float = Field(default=0.85, ge=0.0, le=1.0)
-    narrative_strategy_override: str | None = None
     book_weights: dict[str, float] | None = None
     spoken_chunk_max_words: int = Field(default=250, ge=50)
 
