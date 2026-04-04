@@ -19,7 +19,8 @@ from podcast_agent.langchain.prompts import build_prompt_template
 from podcast_agent.langchain.runnables import (
     RetryableGenerationError,
     TransientLLMError,
-    is_timeout_error,
+    is_json_parse_error,
+    is_transient_error,
 )
 from podcast_agent.llm.base import (
     LLMClient,
@@ -304,8 +305,16 @@ class LangChainLLMClient(LLMClient):
                     content = "".join(str(part) for part in content)
                 if response_metadata is None:
                     response_metadata = getattr(response, "response_metadata", {}) or {}
-            normalized_json = normalize_json_content(str(content))
-            normalized_payload = unwrap_response_payload(json.loads(normalized_json))
+            try:
+                normalized_json = normalize_json_content(str(content))
+                normalized_payload = unwrap_response_payload(json.loads(normalized_json))
+            except Exception as parse_exc:
+                if is_json_parse_error(parse_exc):
+                    raise RetryableGenerationError(
+                        f"JSON parsing failed for {schema_name}: {parse_exc}",
+                        data={"raw_content": str(content)},
+                    ) from parse_exc
+                raise
             if self.run_logger is not None:
                 response_metadata = response_metadata or {}
                 provider_request_id = (
@@ -362,7 +371,7 @@ class LangChainLLMClient(LLMClient):
                     instructions=system_text,
                     payload=user_text,
                 )
-            if is_timeout_error(exc):
+            if is_transient_error(exc):
                 raise TransientLLMError(str(exc)) from exc
             raise
 

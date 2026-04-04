@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextvars import Context, copy_context
+import json
 import socket
 from typing import Any, Callable, Sequence, TypeVar
 
@@ -38,6 +39,42 @@ def is_timeout_error(exc: Exception) -> bool:
     message = str(exc).lower()
     if "timeout" in message or "timed out" in message:
         return True
+    return False
+
+
+def is_connection_error(exc: Exception) -> bool:
+    if isinstance(exc, ConnectionError):
+        return True
+    error_name = type(exc).__name__.lower()
+    if "connection" in error_name:
+        return True
+    message = str(exc).lower()
+    if "connection error" in message:
+        return True
+    if "connection reset" in message:
+        return True
+    if "connection aborted" in message:
+        return True
+    if "connection refused" in message:
+        return True
+    if "broken pipe" in message:
+        return True
+    return False
+
+
+def is_transient_error(exc: Exception) -> bool:
+    return is_timeout_error(exc) or is_connection_error(exc)
+
+
+def is_json_parse_error(exc: Exception) -> bool:
+    if isinstance(exc, json.JSONDecodeError):
+        return True
+    if isinstance(exc, RuntimeError):
+        message = str(exc)
+        if message.startswith("LLM response was not valid JSON."):
+            return True
+        if message.startswith("LLM response JSON must be an object."):
+            return True
     return False
 
 

@@ -102,7 +102,7 @@ class TestPipelineRuntimeConfig:
         config = PipelineRuntimeConfig()
         assert config.max_axes == 15
         assert config.min_axes == 5
-        assert config.passages_per_axis_per_book == 20
+        assert config.passages_per_axis_per_book == 25
         assert config.synthesis_quality_threshold == 0.5
         assert config.grounding_threshold == 0.85
 
@@ -110,7 +110,8 @@ class TestPipelineRuntimeConfig:
 class TestLLMConfigResolvers:
     def test_resolve_max_retry_attempts_from_agent_config(self):
         config = LLMConfig()
-        assert config.resolve_max_retry_attempts("structuring") == 2
+        assert config.resolve_max_retry_attempts("structuring") == 3
+        assert config.resolve_max_retry_attempts("chapter_summary") == 3
         assert config.resolve_max_retry_attempts("synthesis_mapping") == 2
 
     def test_resolve_max_retry_attempts_default_for_unknown(self):
@@ -119,7 +120,9 @@ class TestLLMConfigResolvers:
 
     def test_resolve_concurrency_limit_from_agent_config(self):
         config = LLMConfig()
-        assert config.resolve_concurrency_limit("structuring") == 25
+        assert config.resolve_concurrency_limit("structuring") == 10
+        assert config.resolve_concurrency_limit("chapter_summary") == 10
+        assert config.resolve_concurrency_limit("passage_extraction") == 6
         assert config.resolve_concurrency_limit("synthesis_mapping") == 3
         assert config.resolve_concurrency_limit("episode_writing") == 3
 

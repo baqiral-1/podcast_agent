@@ -77,6 +77,16 @@ from podcast_agent.tts.openai_compatible import build_tts_client
 logger = logging.getLogger(__name__)
 
 
+class StructuringStageError(RuntimeError):
+    """Raised when chapter structuring fails for a book during ingestion."""
+
+    def __init__(self, message: str, *, book_id: str, title: str, source_path: str) -> None:
+        super().__init__(message)
+        self.book_id = book_id
+        self.title = title
+        self.source_path = source_path
+
+
 # ---------------------------------------------------------------------------
 # Artifact persistence helpers
 # ---------------------------------------------------------------------------
@@ -647,12 +657,36 @@ class PipelineOrchestrator:
         book_results = await asyncio.gather(*book_tasks, return_exceptions=True)
 
         successful_books: list[BookRecord] = []
+        structuring_failures: list[StructuringStageError] = []
         for i, result in enumerate(book_results):
             if isinstance(result, Exception):
                 logger.error("Book %d failed: %s", i, result)
                 self.run_logger.log("book_ingest_failed", index=i, error=str(result))
+                if isinstance(result, StructuringStageError):
+                    structuring_failures.append(result)
             else:
                 successful_books.append(result)
+
+        if structuring_failures:
+            project = project.model_copy(update={"status": ProjectStatus.FAILED})
+            _save_json(project_dir / "thematic_project.json", project)
+            self.run_logger.log(
+                "structuring_failure_barrier",
+                failure_count=len(structuring_failures),
+                failed_books=[
+                    {
+                        "book_id": failure.book_id,
+                        "title": failure.title,
+                        "source_path": failure.source_path,
+                        "error": str(failure),
+                    }
+                    for failure in structuring_failures
+                ],
+            )
+            raise RuntimeError(
+                f"Structuring failed for {len(structuring_failures)} book(s). "
+                "Aborting before Phase 2."
+            )
 
         if len(successful_books) < 2:
             project = project.model_copy(update={"status": ProjectStatus.FAILED})
@@ -802,7 +836,15 @@ class PipelineOrchestrator:
             (book_dir / "raw_text.txt").write_text(raw_text, encoding="utf-8")
 
             # Stage 2: Structure chapters
-            chapters = await self._structure_chapters(book_record, raw_text, project_dir)
+            try:
+                chapters = await self._structure_chapters(book_record, raw_text, project_dir)
+            except Exception as exc:
+                raise StructuringStageError(
+                    f"Structuring failed for book '{title}' ({source_path}): {exc}",
+                    book_id=book_id,
+                    title=title,
+                    source_path=source_path,
+                ) from exc
             book_record = book_record.model_copy(update={"chapters": chapters})
             _save_json(book_dir / "book_record.json", book_record)
 
@@ -913,7 +955,7 @@ class PipelineOrchestrator:
                 )
             book_ids = [b.book_id for b in project.books]
             axis_candidate_budget = max(1, project.config.passages_per_axis_per_book * max(1, len(book_ids)))
-            max_log_per_book = max(30, project.config.passages_per_axis_per_book)
+            max_log_per_book = max(40, project.config.passages_per_axis_per_book)
             all_passages_by_axis: dict[str, list[ExtractedPassage]] = {}
             all_cross_pairs: list[PassagePair] = []
             candidate_counts_by_axis: dict[str, int] = {}

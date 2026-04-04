@@ -171,6 +171,10 @@ class TestSeriesPlanningAgent:
         assert payload["episode_count"] == 3
         assert "chapters" not in payload["project"]
 
+    def test_instructions_target_75_to_100_minute_episode(self):
+        agent = SeriesPlanningAgent(_mock_llm())
+        assert "75-100 minute episode" in agent.instructions
+
 
 class TestWritingAgent:
     def test_schema_name(self):

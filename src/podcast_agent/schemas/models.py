@@ -83,7 +83,7 @@ class BookRecord(StrictModel):
 class PipelineConfig(StrictModel):
     max_axes: int = Field(default=15, ge=1)
     min_axes: int = Field(default=5, ge=1)
-    passages_per_axis_per_book: int = Field(default=20, ge=1)
+    passages_per_axis_per_book: int = Field(default=25, ge=1)
     rerank_top_k: int = Field(default=10, ge=1)
     min_book_coverage: float = Field(default=0.6, ge=0.0, le=1.0)
     synthesis_quality_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
@@ -95,7 +95,7 @@ class PipelineConfig(StrictModel):
     tts_provider: str = "openai"
     tts_concurrency: int = Field(default=4, ge=1)
     episode_write_concurrency: int = Field(default=2, ge=1)
-    passage_extraction_concurrency: int = Field(default=15, ge=1)
+    passage_extraction_concurrency: int = Field(default=6, ge=1)
     chunk_max_words: int = Field(default=400, ge=50)
     chunk_overlap_words: int = Field(default=50, ge=0)
     spoken_chunk_max_words: int = Field(default=250, ge=50)
@@ -333,7 +333,7 @@ class EpisodePlan(StrictModel):
     narrative_spine: NarrativeSpine | None = None
     book_balance: dict[str, float] = Field(default_factory=dict)
     cross_references: list[CrossReference] = Field(default_factory=list)
-    target_duration_minutes: float = Field(default=60.0, gt=0.0)
+    target_duration_minutes: float = Field(default=90.0, gt=0.0)
     episode_strategy: str = ""
 
 

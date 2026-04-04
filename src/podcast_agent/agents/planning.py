@@ -39,7 +39,7 @@ class SeriesPlanningAgent(Agent):
         "Attribution budget: no more than 20% of beats may be light or full. "
         "If you exceed the budget, merge or cut attribution moments.\n\n"
         "Narrative spine rules:\n"
-        "- Provide 15-20 spine segments for a 30-60 minute episode\n"
+        "- Provide 15-20 spine segments for a 75-100 minute episode\n"
         "- Include 3-5 attribution moments per episode\n"
         "- Spine segments must not include author names\n\n"
         "Assign specific passage_ids from the thematic corpus to each beat. "

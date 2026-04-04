@@ -100,10 +100,10 @@ class LLMConfig(BaseModel):
     # Per-agent configuration keyed by agent schema_name
     agent_configs: dict[str, AgentConfig] = Field(
         default_factory=lambda: {
-            "structuring": AgentConfig(model_name="claude-haiku-4-5", temperature=0.3, max_retry_attempts=2, concurrency_limit=25),
-            "chapter_summary": AgentConfig(model_name="claude-haiku-4-5", temperature=0.3, max_retry_attempts=2, concurrency_limit=25),
-            "theme_decomposition": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.7, max_retry_attempts=2, concurrency_limit=6),
-            "passage_extraction": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.1, max_retry_attempts=2, concurrency_limit=15),
+            "structuring": AgentConfig(model_name="claude-haiku-4-5", temperature=0.3, max_retry_attempts=3, concurrency_limit=10),
+            "chapter_summary": AgentConfig(model_name="claude-haiku-4-5", temperature=0.3, max_retry_attempts=3, concurrency_limit=10),
+            "theme_decomposition": AgentConfig(model_name="claude-opus-4-6", temperature=0.7, max_retry_attempts=2, concurrency_limit=6),
+            "passage_extraction": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.1, max_retry_attempts=2, concurrency_limit=6),
             "synthesis_mapping": AgentConfig(model_name="claude-opus-4-6", temperature=0.8, max_retry_attempts=2, concurrency_limit=3),
             "narrative_strategy": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.5, max_retry_attempts=2, concurrency_limit=6),
             "series_planning": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.5, max_retry_attempts=2, concurrency_limit=6),
@@ -228,7 +228,7 @@ class PipelineRuntimeConfig(BaseModel):
     # Thematic intelligence
     max_axes: int = Field(default=15, ge=1)
     min_axes: int = Field(default=5, ge=1)
-    passages_per_axis_per_book: int = Field(default=20, ge=1)
+    passages_per_axis_per_book: int = Field(default=25, ge=1)
     rerank_top_k: int = Field(default=10, ge=1)
     min_book_coverage: float = Field(default=0.6, ge=0.0, le=1.0)
     synthesis_quality_threshold: float = Field(default=0.5, ge=0.0, le=1.0)

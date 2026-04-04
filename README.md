@@ -48,7 +48,7 @@ Each agent uses a default Claude model chosen for its task complexity:
 | Agent | Model | Concurrency | Retries |
 |-------|-------|-------------|---------|
 | Structuring | Haiku 4.5 | 15 | 5 |
-| Theme Decomposition | Sonnet 4.6 | 6 | 3 |
+| Theme Decomposition | Opus 4.6 | 6 | 3 |
 | Passage Extraction | Haiku 4.5 | 15 | 5 |
 | Synthesis Mapping | Opus 4.6 | 3 | 3 |
 | Narrative Strategy | Sonnet 4.6 | 6 | 3 |

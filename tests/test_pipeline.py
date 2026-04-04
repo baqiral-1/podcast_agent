@@ -13,6 +13,7 @@ import pytest
 from podcast_agent.config import Settings
 from podcast_agent.pipeline.orchestrator import (
     PipelineOrchestrator,
+    StructuringStageError,
     _compute_adaptive_rerank_target,
     _compute_passage_utilization,
     _save_json,
@@ -126,6 +127,58 @@ class TestBookIngestion:
                 theme="test",
                 episode_count=2,
             ))
+
+    def test_structuring_failure_blocks_phase_two(self, tmp_path):
+        settings = Settings(
+            llm=Settings().llm.model_copy(update={"llm_provider": "heuristic"}),
+            database=Settings().database.model_copy(update={"dsn": None}),
+            pipeline=Settings().pipeline.model_copy(update={"artifact_root": tmp_path}),
+        )
+        orch = PipelineOrchestrator(settings)
+
+        books = [
+            BookRecord(
+                book_id="b1", title="B1", author="A1",
+                source_path="/tmp/b1.txt", source_type="txt",
+            ),
+            BookRecord(
+                book_id="b2", title="B2", author="A2",
+                source_path="/tmp/b2.txt", source_type="txt",
+            ),
+            BookRecord(
+                book_id="b3", title="B3", author="A3",
+                source_path="/tmp/b3.txt", source_type="txt",
+            ),
+        ]
+        calls = {"n": 0}
+
+        async def fake_ingest(*args, **kwargs):
+            idx = calls["n"]
+            calls["n"] += 1
+            if idx == 1:
+                raise StructuringStageError(
+                    "boom",
+                    book_id="b2",
+                    title="B2",
+                    source_path="/tmp/b2.txt",
+                )
+            return books[idx]
+
+        orch._ingest_and_index_book = AsyncMock(side_effect=fake_ingest)
+        orch._decompose_theme = AsyncMock(side_effect=AssertionError("Phase 2 should not run"))
+
+        with pytest.raises(RuntimeError, match="Structuring failed for 1 book\\(s\\)"):
+            asyncio.run(orch.run_multi_book_podcast(
+                source_paths=["/tmp/b1.txt", "/tmp/b2.txt", "/tmp/b3.txt"],
+                theme="test",
+                episode_count=2,
+                project_id="proj-structuring-fail",
+            ))
+
+        project_file = tmp_path / "proj-structuring-fail" / "thematic_project.json"
+        data = json.loads(project_file.read_text())
+        assert data["status"] == ProjectStatus.FAILED.value
+        assert not (tmp_path / "proj-structuring-fail" / "thematic_axes.json").exists()
 
     def test_bm25_trims_top_third_sentences(self):
         axis = ThematicAxis(
@@ -317,6 +370,7 @@ class TestBookIngestion:
 
         asyncio.run(orch._extract_passages(project, [axis], project_dir))
 
+        assert orch.retrieval.calls == [40]
         log_path = (
             project_dir
             / "stage_artifacts"

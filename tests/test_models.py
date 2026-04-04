@@ -194,6 +194,10 @@ class TestEpisodePlan:
         assert len(restored.beats) == 1
         assert restored.beats[0].synthesis_instruction == "contrast"
 
+    def test_default_target_duration_minutes(self):
+        plan = EpisodePlan(episode_number=1, title="Episode 1")
+        assert plan.target_duration_minutes == 90.0
+
 
 class TestEpisodeScript:
     def test_roundtrip(self):
