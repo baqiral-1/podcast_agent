@@ -238,6 +238,138 @@ def _select_synthesis_passages(
     return selected
 
 
+def _clamp(value: float, minimum: float, maximum: float) -> float:
+    return max(minimum, min(maximum, value))
+
+
+def _resolve_axis_relevance(axis: ThematicAxis, book_ids: list[str]) -> dict[str, float]:
+    relevance: dict[str, float] = {}
+    total = 0.0
+    for book_id in book_ids:
+        score = float(axis.relevance_by_book.get(book_id, 0.0))
+        score = max(0.0, score)
+        relevance[book_id] = score
+        total += score
+    if total <= 0:
+        return {book_id: 1.0 for book_id in book_ids}
+    return relevance
+
+
+def _compute_adaptive_rerank_target(
+    *,
+    candidate_count: int,
+    rehydrated_count: int,
+    valid_cross_pair_count: int,
+    book_count: int,
+    rerank_top_k: int,
+) -> dict[str, Any]:
+    if rehydrated_count <= 0:
+        return {
+            "base_total": rerank_top_k * max(1, book_count),
+            "richness_factor": 0.5,
+            "pair_density": 0.0,
+            "pair_factor": 1.0,
+            "raw_target_total": 0,
+            "max_target_total": 0,
+            "target_total": 0,
+            "cap_applied": False,
+        }
+
+    base_total = max(1, rerank_top_k * max(1, book_count))
+    richness_factor = _clamp(candidate_count / base_total, 0.5, 2.0)
+    pair_density = valid_cross_pair_count / max(1, candidate_count)
+    pair_factor = 1.0 + min(0.3, pair_density)
+    raw_target = int(round(base_total * richness_factor * pair_factor))
+    max_target_total = max(1, int(round(base_total * 1.5)))
+    capped_target = min(raw_target, max_target_total)
+    target_total = max(1, min(capped_target, rehydrated_count))
+    return {
+        "base_total": base_total,
+        "richness_factor": round(richness_factor, 4),
+        "pair_density": round(pair_density, 4),
+        "pair_factor": round(pair_factor, 4),
+        "raw_target_total": raw_target,
+        "max_target_total": max_target_total,
+        "target_total": target_total,
+        "cap_applied": raw_target > max_target_total,
+    }
+
+
+def _compute_passage_utilization(
+    *,
+    corpus: ThematicCorpus,
+    episode_plans: list[EpisodePlan],
+    episode_scripts: list[EpisodeScript],
+    books: list[BookRecord],
+) -> dict[str, Any]:
+    retained_ids: set[str] = set()
+    passage_by_id: dict[str, ExtractedPassage] = {}
+    for axis_id, passages in corpus.passages_by_axis.items():
+        for passage in passages:
+            retained_ids.add(passage.passage_id)
+            passage_by_id[passage.passage_id] = passage
+
+    planned_ids: set[str] = set()
+    for plan in episode_plans:
+        for beat in plan.beats:
+            for passage_id in beat.passage_ids:
+                if passage_id in retained_ids:
+                    planned_ids.add(passage_id)
+
+    cited_ids: set[str] = set()
+    for script in episode_scripts:
+        for citation in script.citations:
+            if citation.passage_id in retained_ids:
+                cited_ids.add(citation.passage_id)
+        for segment in script.segments:
+            for citation in segment.citations:
+                if citation.passage_id in retained_ids:
+                    cited_ids.add(citation.passage_id)
+
+    def _ratio(count: int, total: int) -> float:
+        if total <= 0:
+            return 0.0
+        return round(count / total, 4)
+
+    per_axis: dict[str, Any] = {}
+    for axis_id, passages in corpus.passages_by_axis.items():
+        axis_retained = {p.passage_id for p in passages}
+        per_axis[axis_id] = {
+            "retained_count": len(axis_retained),
+            "planned_count": len(axis_retained & planned_ids),
+            "cited_count": len(axis_retained & cited_ids),
+            "plan_utilization_ratio": _ratio(len(axis_retained & planned_ids), len(axis_retained)),
+            "citation_utilization_ratio": _ratio(len(axis_retained & cited_ids), len(axis_retained)),
+        }
+
+    per_book: dict[str, Any] = {}
+    for book in books:
+        book_retained = {
+            pid for pid in retained_ids
+            if passage_by_id.get(pid) is not None and passage_by_id[pid].book_id == book.book_id
+        }
+        per_book[book.book_id] = {
+            "title": book.title,
+            "retained_count": len(book_retained),
+            "planned_count": len(book_retained & planned_ids),
+            "cited_count": len(book_retained & cited_ids),
+            "plan_utilization_ratio": _ratio(len(book_retained & planned_ids), len(book_retained)),
+            "citation_utilization_ratio": _ratio(len(book_retained & cited_ids), len(book_retained)),
+        }
+
+    return {
+        "summary": {
+            "retained_count": len(retained_ids),
+            "planned_count": len(planned_ids),
+            "cited_count": len(cited_ids),
+            "plan_utilization_ratio": _ratio(len(planned_ids), len(retained_ids)),
+            "citation_utilization_ratio": _ratio(len(cited_ids), len(retained_ids)),
+        },
+        "per_axis": per_axis,
+        "per_book": per_book,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Stage logging context manager
 # ---------------------------------------------------------------------------
@@ -586,6 +718,13 @@ class PipelineOrchestrator:
             else:
                 spoken_scripts.append(result)
         spoken_scripts.sort(key=lambda x: x[0])
+        self._write_passage_utilization(
+            project=project,
+            corpus=corpus,
+            episode_plans=episode_plans,
+            project_dir=project_dir,
+            episode_numbers=[episode_number for episode_number, _ in spoken_scripts],
+        )
 
         # Framing (sequential)
         framings: dict[int, EpisodeFraming] = {}
@@ -773,16 +912,18 @@ class PipelineOrchestrator:
                     message="Vector retrieval is disabled; passage extraction will yield zero candidates.",
                 )
             book_ids = [b.book_id for b in project.books]
+            axis_candidate_budget = max(1, project.config.passages_per_axis_per_book * max(1, len(book_ids)))
             max_log_per_book = max(30, project.config.passages_per_axis_per_book)
             all_passages_by_axis: dict[str, list[ExtractedPassage]] = {}
             all_cross_pairs: list[PassagePair] = []
             candidate_counts_by_axis: dict[str, int] = {}
+            axis_policy_by_axis: dict[str, dict[str, Any]] = {}
 
             sem = asyncio.Semaphore(project.config.passage_extraction_concurrency)
 
             def _process_axis(
                 axis: ThematicAxis,
-            ) -> tuple[str, list[ExtractedPassage], list[PassagePair], int, dict[str, Any]]:
+            ) -> tuple[str, list[ExtractedPassage], list[PassagePair], int, dict[str, Any], dict[str, Any]]:
                 hits_by_book = self.retrieval.retrieve_for_axis(
                     axis=axis, project_id=project.project_id,
                     book_ids=book_ids,
@@ -794,11 +935,16 @@ class PipelineOrchestrator:
                     "axis_name": axis.name,
                     "axis_description": axis.description,
                     "max_log_per_book": max_log_per_book,
-                    "used_per_book": project.config.passages_per_axis_per_book,
+                    "axis_candidate_budget": axis_candidate_budget,
+                    "allocation_policy": "global_relevance_power_rank",
+                    "allocation_power": 2.0,
                     "books": [],
                 }
+                relevance_by_book = _resolve_axis_relevance(axis, book_ids)
+                retrieval_log["relevance_by_book"] = relevance_by_book
 
-                candidates = []
+                ranked_rows: list[dict[str, Any]] = []
+                rows_by_book: dict[str, list[dict[str, Any]]] = {}
                 for bid, hits in hits_by_book.items():
                     book = next((b for b in project.books if b.book_id == bid), None)
                     book_entry = {
@@ -808,10 +954,43 @@ class PipelineOrchestrator:
                         "candidates": [],
                     }
                     for rank, hit in enumerate(hits, start=1):
-                        used = rank <= project.config.passages_per_axis_per_book
-                        book_entry["candidates"].append({
+                        priority = (relevance_by_book.get(bid, 0.0) ** 2) / max(1, rank)
+                        row = {
+                            "book_id": bid,
                             "rank": rank,
+                            "priority": priority,
+                            "hit": hit,
+                            "title": book.title if book else "Unknown",
+                            "author": book.author if book else "Unknown",
+                        }
+                        ranked_rows.append(row)
+                        rows_by_book.setdefault(bid, []).append(row)
+                    retrieval_log["books"].append(book_entry)
+
+                ranked_rows.sort(
+                    key=lambda row: (
+                        -row["priority"],
+                        row["rank"],
+                        str(row["hit"].chunk_id),
+                    )
+                )
+                selected_rows = ranked_rows[:axis_candidate_budget]
+                selected_row_ids = {id(row) for row in selected_rows}
+                candidates: list[dict[str, Any]] = []
+                admitted_by_book: dict[str, int] = {bid: 0 for bid in book_ids}
+
+                book_entry_by_id = {entry["book_id"]: entry for entry in retrieval_log["books"]}
+                for bid in book_ids:
+                    book_entry = book_entry_by_id.get(bid)
+                    if book_entry is None:
+                        continue
+                    for row in rows_by_book.get(bid, []):
+                        hit = row["hit"]
+                        used = id(row) in selected_row_ids
+                        book_entry["candidates"].append({
+                            "rank": row["rank"],
                             "used": used,
+                            "global_priority": round(float(row["priority"]), 8),
                             "chunk_id": hit.chunk_id,
                             "chapter_id": hit.chapter_id,
                             "score": hit.score,
@@ -820,6 +999,7 @@ class PipelineOrchestrator:
                         })
                         if not used:
                             continue
+                        admitted_by_book[bid] = admitted_by_book.get(bid, 0) + 1
                         candidates.append({
                             "passage_id": uuid4().hex,
                             "book_id": bid,
@@ -827,10 +1007,11 @@ class PipelineOrchestrator:
                             "text": hit.text,
                             "chapter_ref": hit.metadata.get("chapter_id", ""),
                             "axis_id": axis.axis_id,
-                            "author": book.author if book else "Unknown",
-                            "title": book.title if book else "Unknown",
+                            "author": row["author"],
+                            "title": row["title"],
                         })
-                    retrieval_log["books"].append(book_entry)
+
+                retrieval_log["admitted_by_book"] = admitted_by_book
 
                 _save_json(
                     project_dir
@@ -842,7 +1023,26 @@ class PipelineOrchestrator:
 
                 candidate_count = len(candidates)
                 if not candidates:
-                    return axis.axis_id, [], [], candidate_count
+                    empty_policy = _compute_adaptive_rerank_target(
+                        candidate_count=candidate_count,
+                        rehydrated_count=0,
+                        valid_cross_pair_count=0,
+                        book_count=len(book_ids),
+                        rerank_top_k=project.config.rerank_top_k,
+                    )
+                    empty_policy.update({
+                        "allocation_policy": retrieval_log["allocation_policy"],
+                        "allocation_power": retrieval_log["allocation_power"],
+                        "axis_candidate_budget": axis_candidate_budget,
+                        "admitted_by_book": admitted_by_book,
+                    })
+                    return axis.axis_id, [], [], candidate_count, {
+                        "candidate_pair_count": 0,
+                        "valid_pair_count": 0,
+                        "retained_pair_count": 0,
+                        "dropped_missing_id_count": 0,
+                        "dropped_same_book_count": 0,
+                    }, empty_policy
 
                 candidate_full_text_by_id = {
                     candidate["passage_id"]: candidate["text"]
@@ -928,15 +1128,6 @@ class PipelineOrchestrator:
                         )
                     )
 
-                passages_by_book: dict[str, list[ExtractedPassage]] = {}
-                for p in rehydrated_passages:
-                    passages_by_book.setdefault(p.book_id, []).append(p)
-
-                top_passages = []
-                for book_passages in passages_by_book.values():
-                    sorted_p = sorted(book_passages, key=lambda x: x.relevance_score, reverse=True)
-                    top_passages.extend(sorted_p[:project.config.rerank_top_k])
-
                 relationship_filtered_pairs = [
                     pair
                     for pair in result.cross_book_pairs
@@ -990,7 +1181,26 @@ class PipelineOrchestrator:
                     "dropped_missing_id_count": len(dropped_missing_id_pairs),
                     "dropped_same_book_count": len(dropped_same_book_pairs),
                 }
-                return axis.axis_id, top_passages, retained_pairs, candidate_count, cross_pair_validation
+                rerank_policy = _compute_adaptive_rerank_target(
+                    candidate_count=candidate_count,
+                    rehydrated_count=len(rehydrated_passages),
+                    valid_cross_pair_count=len(validated_pairs),
+                    book_count=len(book_ids),
+                    rerank_top_k=project.config.rerank_top_k,
+                )
+                ranked_rehydrated = sorted(
+                    rehydrated_passages,
+                    key=lambda p: (-p.relevance_score, -p.quotability_score, p.passage_id),
+                )
+                target_total = rerank_policy["target_total"]
+                top_passages = ranked_rehydrated[:target_total]
+                rerank_policy.update({
+                    "allocation_policy": retrieval_log["allocation_policy"],
+                    "allocation_power": retrieval_log["allocation_power"],
+                    "axis_candidate_budget": axis_candidate_budget,
+                    "admitted_by_book": admitted_by_book,
+                })
+                return axis.axis_id, top_passages, retained_pairs, candidate_count, cross_pair_validation, rerank_policy
 
             async def _process_axis_async(axis: ThematicAxis):
                 async with sem:
@@ -999,11 +1209,12 @@ class PipelineOrchestrator:
             results = await asyncio.gather(*[_process_axis_async(axis) for axis in axes])
 
             cross_pair_validation_by_axis: dict[str, dict[str, Any]] = {}
-            for axis_id, top_passages, cross_pairs, candidate_count, cross_pair_validation in results:
+            for axis_id, top_passages, cross_pairs, candidate_count, cross_pair_validation, axis_policy in results:
                 candidate_counts_by_axis[axis_id] = candidate_count
                 all_passages_by_axis[axis_id] = top_passages
                 all_cross_pairs.extend(cross_pairs)
                 cross_pair_validation_by_axis[axis_id] = cross_pair_validation
+                axis_policy_by_axis[axis_id] = axis_policy
 
             # ---- Retrieval metrics ----
             retrieval_metrics: dict[str, Any] = {"per_axis": {}, "per_book": {}, "summary": {}}
@@ -1018,6 +1229,7 @@ class PipelineOrchestrator:
                     "axis_name": axis.name,
                     "candidate_count": candidate_counts_by_axis.get(axis.axis_id, 0),
                     "post_rerank_count": len(axis_passages),
+                    "selection_policy": axis_policy_by_axis.get(axis.axis_id, {}),
                     "avg_relevance_score": round(sum(relevance_scores) / max(1, len(relevance_scores)), 3),
                     "avg_quotability_score": round(sum(quotability_scores) / max(1, len(quotability_scores)), 3),
                     "relevance_distribution": {
@@ -1388,6 +1600,41 @@ class PipelineOrchestrator:
                 "titles": [e.title for e in adjusted_episodes],
             }
             return adjusted_episodes
+
+    def _write_passage_utilization(
+        self,
+        *,
+        project: ThematicProject,
+        corpus: ThematicCorpus,
+        episode_plans: list[EpisodePlan],
+        project_dir: Path,
+        episode_numbers: list[int],
+    ) -> None:
+        episode_scripts: list[EpisodeScript] = []
+        for episode_number in episode_numbers:
+            script_path = project_dir / "episodes" / str(episode_number) / "episode_script.json"
+            payload = _load_json(script_path)
+            if payload is None:
+                continue
+            try:
+                episode_scripts.append(EpisodeScript.model_validate(payload))
+            except Exception as exc:
+                self.run_logger.log(
+                    "passage_utilization_script_parse_error",
+                    episode_number=episode_number,
+                    path=str(script_path),
+                    error_type=type(exc).__name__,
+                    error_message=str(exc),
+                )
+
+        utilization = _compute_passage_utilization(
+            corpus=corpus,
+            episode_plans=episode_plans,
+            episode_scripts=episode_scripts,
+            books=project.books,
+        )
+        _save_json(project_dir / "passage_utilization.json", utilization)
+        self.run_logger.log("passage_utilization", **utilization["summary"])
 
     # -----------------------------------------------------------------------
     # Phase 3: Episode Production

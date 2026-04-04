@@ -13,6 +13,8 @@ import pytest
 from podcast_agent.config import Settings
 from podcast_agent.pipeline.orchestrator import (
     PipelineOrchestrator,
+    _compute_adaptive_rerank_target,
+    _compute_passage_utilization,
     _save_json,
     _load_json,
     _trim_candidate_texts_by_bm25,
@@ -414,6 +416,101 @@ class TestBookIngestion:
             assert passage.relevance_score == 0.9
             assert passage.quotability_score == 0.8
             assert SynthesisTag.INDEPENDENT in passage.synthesis_tags
+
+    def test_passage_extraction_uses_global_no_floor_allocation(self, tmp_path):
+        settings = Settings(
+            llm=Settings().llm.model_copy(update={"llm_provider": "heuristic"}),
+            database=Settings().database.model_copy(update={"dsn": None}),
+            pipeline=Settings().pipeline.model_copy(update={"artifact_root": tmp_path}),
+        )
+        orch = PipelineOrchestrator(settings)
+
+        class FakeRetrieval:
+            def __init__(self, hits_by_book):
+                self.hits_by_book = hits_by_book
+
+            def retrieve_for_axis(self, *, axis, project_id, book_ids, k_per_book):
+                return {bid: self.hits_by_book[bid] for bid in book_ids}
+
+        book_a = BookRecord(
+            book_id="book-a", title="Book A", author="A",
+            source_path="/a.txt", source_type="txt",
+        )
+        book_b = BookRecord(
+            book_id="book-b", title="Book B", author="B",
+            source_path="/b.txt", source_type="txt",
+        )
+        axis = ThematicAxis(
+            axis_id="axis_01",
+            name="Axis",
+            description="Desc",
+            relevance_by_book={book_a.book_id: 1.0, book_b.book_id: 0.2},
+        )
+        hits_by_book = {
+            "book-a": [
+                RetrievalHit(
+                    chunk_id=f"a{i}",
+                    book_id="book-a",
+                    chapter_id="ch1",
+                    text=f"text a{i}",
+                    score=0.1 * i,
+                    metadata={"chapter_id": "ch1"},
+                )
+                for i in range(1, 5)
+            ],
+            "book-b": [
+                RetrievalHit(
+                    chunk_id=f"b{i}",
+                    book_id="book-b",
+                    chapter_id="ch2",
+                    text=f"text b{i}",
+                    score=0.1 * i,
+                    metadata={"chapter_id": "ch2"},
+                )
+                for i in range(1, 5)
+            ],
+        }
+        orch.retrieval = FakeRetrieval(hits_by_book)
+
+        orch.passage_extraction_agent.run = MagicMock(
+            side_effect=lambda payload: PassageExtractionResponse(
+                passages=[
+                    PassageExtractionScore(
+                        passage_id=c["passage_id"],
+                        relevance_score=0.5,
+                        quotability_score=0.5,
+                        synthesis_tags=[SynthesisTag.INDEPENDENT],
+                    )
+                    for c in payload["candidate_passages"]
+                ],
+                cross_book_pairs=[],
+            )
+        )
+
+        project = ThematicProject(
+            project_id="proj-1",
+            theme="T",
+            episode_count=2,
+            config=PipelineConfig(passages_per_axis_per_book=2, rerank_top_k=1),
+            status=ProjectStatus.ANALYZING,
+            books=[book_a, book_b],
+        )
+        project_dir = tmp_path / project.project_id
+        asyncio.run(orch._extract_passages(project, [axis], project_dir))
+
+        data = json.loads(
+            (
+                project_dir
+                / "stage_artifacts"
+                / "passage_extraction"
+                / "retrieval_candidates_axis_01.json"
+            ).read_text()
+        )
+        used_by_book = {
+            book["book_id"]: len([candidate for candidate in book["candidates"] if candidate["used"]])
+            for book in data["books"]
+        }
+        assert used_by_book == {"book-a": 4, "book-b": 0}
 
     def test_passage_extraction_retries_on_low_coverage(self, tmp_path):
         settings = Settings(
@@ -916,6 +1013,112 @@ class TestSynthesisSelection:
         ]
         selected = _select_synthesis_passages(passages, {"a"})
         assert [p.passage_id for p in selected] == ["b", "e", "d", "c", "a"]
+
+
+class TestAdaptiveRerankTarget:
+    def test_dense_axis_is_capped_to_one_point_five_x(self):
+        policy = _compute_adaptive_rerank_target(
+            candidate_count=80,
+            rehydrated_count=80,
+            valid_cross_pair_count=5,
+            book_count=4,
+            rerank_top_k=10,
+        )
+        assert policy["base_total"] == 40
+        assert policy["target_total"] == 60
+        assert policy["cap_applied"] is True
+
+    def test_sparse_axis_decreases_target(self):
+        policy = _compute_adaptive_rerank_target(
+            candidate_count=10,
+            rehydrated_count=10,
+            valid_cross_pair_count=0,
+            book_count=4,
+            rerank_top_k=10,
+        )
+        assert policy["base_total"] == 40
+        assert policy["target_total"] == 10
+        assert policy["cap_applied"] is False
+
+
+class TestPassageUtilization:
+    def test_compute_passage_utilization(self):
+        book_a = BookRecord(
+            book_id="book-a", title="Book A", author="A",
+            source_path="/a.txt", source_type="txt",
+        )
+        book_b = BookRecord(
+            book_id="book-b", title="Book B", author="B",
+            source_path="/b.txt", source_type="txt",
+        )
+        corpus = ThematicCorpus(
+            project_id="proj-1",
+            passages_by_axis={
+                "axis_01": [
+                    ExtractedPassage(
+                        passage_id="p1",
+                        book_id="book-a",
+                        chunk_ids=["c1"],
+                        text="t1",
+                        axis_id="axis_01",
+                    ),
+                    ExtractedPassage(
+                        passage_id="p2",
+                        book_id="book-b",
+                        chunk_ids=["c2"],
+                        text="t2",
+                        axis_id="axis_01",
+                    ),
+                ],
+                "axis_02": [
+                    ExtractedPassage(
+                        passage_id="p3",
+                        book_id="book-a",
+                        chunk_ids=["c3"],
+                        text="t3",
+                        axis_id="axis_02",
+                    ),
+                ],
+            },
+        )
+        episode_plans = [
+            EpisodePlan(
+                episode_number=1,
+                title="Ep1",
+                beats=[EpisodeBeat(description="b1", passage_ids=["p1", "p3"])],
+            )
+        ]
+        episode_scripts = [
+            EpisodeScript(
+                episode_number=1,
+                title="Ep1",
+                citations=[],
+                segments=[
+                    ScriptSegment(
+                        text="seg",
+                        citations=[
+                            {
+                                "text_span": "q",
+                                "passage_id": "p1",
+                                "book_id": "book-a",
+                            }
+                        ],
+                    )
+                ],
+            )
+        ]
+
+        utilization = _compute_passage_utilization(
+            corpus=corpus,
+            episode_plans=episode_plans,
+            episode_scripts=episode_scripts,
+            books=[book_a, book_b],
+        )
+        assert utilization["summary"]["retained_count"] == 3
+        assert utilization["summary"]["planned_count"] == 2
+        assert utilization["summary"]["cited_count"] == 1
+        assert utilization["per_axis"]["axis_01"]["planned_count"] == 1
+        assert utilization["per_book"]["book-b"]["cited_count"] == 0
 
 
 # ---------------------------------------------------------------------------
