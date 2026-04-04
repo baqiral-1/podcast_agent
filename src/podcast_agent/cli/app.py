@@ -16,7 +16,15 @@ app = typer.Typer(name="podcast-agent", help="Multi-book thematic podcast pipeli
 def run(
     sources: list[str] = typer.Argument(..., help="Paths to book files (PDF, TXT, MD)."),
     theme: str = typer.Option(..., "--theme", "-t", help="Theme to explore across books."),
-    episodes: int = typer.Option(3, "--episodes", "-n", help="Number of episodes to produce."),
+    episodes: Optional[int] = typer.Option(
+        None,
+        "--episodes",
+        "-n",
+        help=(
+            "Override number of episodes "
+            "(otherwise inferred from narrative strategy)."
+        ),
+    ),
     theme_elaboration: Optional[str] = typer.Option(None, "--elaboration", help="Optional longer theme description."),
     titles: Optional[str] = typer.Option(None, "--titles", help="Comma-separated book titles."),
     authors: Optional[str] = typer.Option(None, "--authors", help="Comma-separated author names."),

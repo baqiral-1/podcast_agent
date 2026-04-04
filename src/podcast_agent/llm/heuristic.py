@@ -147,13 +147,26 @@ class HeuristicLLMClient(LLMClient):
         }
 
     def _generate_narrative_strategy(self, payload: PromptPayload) -> dict[str, Any]:
+        requested_episode_count = payload.get("requested_episode_count")
+        if requested_episode_count is None:
+            synthesis_map = payload.get("synthesis_map", {})
+            insight_count = int(synthesis_map.get("insight_count", 0))
+            thread_count = int(synthesis_map.get("thread_count", 0))
+            quality_score = float(synthesis_map.get("quality_score", 0.0))
+            base = max(2, (insight_count // 5) + (thread_count // 2))
+            if quality_score >= 0.75:
+                base += 1
+            recommended_episode_count = max(2, min(8, base))
+        else:
+            recommended_episode_count = max(2, min(8, int(requested_episode_count)))
         return {
             "strategy_type": "convergence",
             "justification": "Heuristic: defaulting to convergence strategy.",
             "series_arc": "Books converge on shared themes.",
             "episode_arc_outline": [
-                f"Episode {i + 1}" for i in range(payload.get("episode_count", 3))
+                f"Episode {i + 1}" for i in range(recommended_episode_count)
             ],
+            "recommended_episode_count": recommended_episode_count,
         }
 
     def _generate_series_planning(self, payload: PromptPayload) -> dict[str, Any]:

@@ -27,18 +27,24 @@ class NarrativeStrategyAgent(Agent):
         "episode weaves them together. Best for maps with many independent but "
         "interesting axes.\n\n"
         "Select based on the distribution of insight types and thread arc types.\n\n"
+        "Also choose a recommended_episode_count between 2 and 8 based on thematic density, "
+        "number of insights, thread complexity, and narrative pacing.\n"
+        "If project.requested_episode_count is provided, use it as a planning hint for arc shape.\n\n"
         "Return a JSON object with strategy_type, justification, series_arc, and "
-        "episode_arc_outline (one line per episode showing planned progression)."
+        "episode_arc_outline (one line per episode showing planned progression), plus "
+        "recommended_episode_count."
     )
 
     def build_payload(
         self,
         synthesis_map_summary: dict,
         project_metadata: dict,
-        episode_count: int,
+        episode_count: int | None,
     ) -> dict:
-        return {
+        payload = {
             "synthesis_map": synthesis_map_summary,
             "project": project_metadata,
-            "episode_count": episode_count,
         }
+        if episode_count is not None:
+            payload["requested_episode_count"] = episode_count
+        return payload

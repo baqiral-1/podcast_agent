@@ -112,6 +112,8 @@ class ThematicProject(StrictModel):
     theme: str
     theme_elaboration: str | None = None
     books: list[BookRecord] = Field(default_factory=list)
+    requested_episode_count: int | None = Field(default=None, ge=1)
+    recommended_episode_count: int | None = Field(default=None, ge=2, le=8)
     episode_count: int = Field(default=3, ge=1)
     config: PipelineConfig = Field(default_factory=PipelineConfig)
     created_at: datetime = Field(default_factory=utc_now)
@@ -247,6 +249,7 @@ class NarrativeStrategy(StrictModel):
     justification: str
     series_arc: str
     episode_arc_outline: list[str] = Field(default_factory=list)
+    recommended_episode_count: int | None = Field(default=None, ge=2, le=8)
 
 
 class CrossReference(StrictModel):

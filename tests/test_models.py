@@ -322,11 +322,15 @@ class TestThematicProject:
     def test_roundtrip(self):
         project = ThematicProject(
             project_id="proj1", theme="AI and creativity",
+            requested_episode_count=4,
+            recommended_episode_count=5,
             episode_count=3, status=ProjectStatus.INGESTING,
         )
         data = json.loads(project.model_dump_json())
         restored = ThematicProject.model_validate(data)
         assert restored.status == ProjectStatus.INGESTING
+        assert restored.requested_episode_count == 4
+        assert restored.recommended_episode_count == 5
 
     def test_with_books(self):
         project = ThematicProject(

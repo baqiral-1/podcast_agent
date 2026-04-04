@@ -458,7 +458,7 @@ class PipelineOrchestrator:
         self,
         source_paths: list[str],
         theme: str,
-        episode_count: int,
+        episode_count: int | None,
         config: PipelineConfig | None = None,
         theme_elaboration: str | None = None,
         titles: list[str] | None = None,
@@ -476,6 +476,7 @@ class PipelineOrchestrator:
             "pipeline_start",
             theme=theme,
             episode_count=episode_count,
+            requested_episode_count=episode_count,
             book_count=len(source_paths),
             skip_grounding=pipeline_config.skip_grounding,
             skip_spoken_delivery=pipeline_config.skip_spoken_delivery,
@@ -494,7 +495,8 @@ class PipelineOrchestrator:
             project_id=project_id,
             theme=theme,
             theme_elaboration=theme_elaboration,
-            episode_count=episode_count,
+            requested_episode_count=episode_count,
+            episode_count=episode_count or 3,
             config=pipeline_config,
             status=ProjectStatus.INGESTING,
         )
@@ -558,6 +560,8 @@ class PipelineOrchestrator:
             )
 
         strategy = await self._choose_narrative_strategy(project, synthesis_map, project_dir)
+        project = self._resolve_episode_count_from_strategy(project, strategy)
+        _save_json(project_dir / "thematic_project.json", project)
 
         project = project.model_copy(update={"status": ProjectStatus.PLANNING})
         episode_plans = await self._plan_series(
@@ -1142,13 +1146,57 @@ class PipelineOrchestrator:
             payload = self.narrative_strategy_agent.build_payload(
                 synthesis_map_summary=synthesis_summary,
                 project_metadata=project_metadata,
-                episode_count=project.episode_count,
+                episode_count=project.requested_episode_count,
             )
             strategy = await asyncio.to_thread(self.narrative_strategy_agent.run, payload)
             _save_json(project_dir / "narrative_strategy.json", strategy)
 
-            ctx["output_summary"] = {"strategy": strategy.strategy_type, "source": "agent"}
+            ctx["output_summary"] = {
+                "strategy": strategy.strategy_type,
+                "source": "agent",
+                "recommended_episode_count": strategy.recommended_episode_count,
+            }
             return strategy
+
+    def _resolve_episode_count_from_strategy(
+        self,
+        project: ThematicProject,
+        strategy: NarrativeStrategy,
+    ) -> ThematicProject:
+        requested = project.requested_episode_count
+        if requested is not None:
+            self.run_logger.log(
+                "episode_count_decision",
+                requested_episode_count=requested,
+                recommended_episode_count=strategy.recommended_episode_count,
+                effective_episode_count=requested,
+                source="override",
+            )
+            return project.model_copy(
+                update={
+                    "episode_count": requested,
+                    "recommended_episode_count": strategy.recommended_episode_count,
+                }
+            )
+
+        if strategy.recommended_episode_count is None:
+            raise RuntimeError(
+                "Narrative strategy did not return recommended_episode_count and no --episodes override was provided."
+            )
+
+        self.run_logger.log(
+            "episode_count_decision",
+            requested_episode_count=None,
+            recommended_episode_count=strategy.recommended_episode_count,
+            effective_episode_count=strategy.recommended_episode_count,
+            source="narrative_strategy",
+        )
+        return project.model_copy(
+            update={
+                "episode_count": strategy.recommended_episode_count,
+                "recommended_episode_count": strategy.recommended_episode_count,
+            }
+        )
 
     async def _plan_series(
         self,

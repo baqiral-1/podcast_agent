@@ -127,7 +127,16 @@ class TestNarrativeStrategyAgent:
             project_metadata={"theme": "Test"},
             episode_count=3,
         )
-        assert payload["episode_count"] == 3
+        assert payload["requested_episode_count"] == 3
+
+    def test_build_payload_without_episode_override(self):
+        agent = NarrativeStrategyAgent(_mock_llm())
+        payload = agent.build_payload(
+            synthesis_map_summary={"insight_count": 5},
+            project_metadata={"theme": "Test"},
+            episode_count=None,
+        )
+        assert "requested_episode_count" not in payload
 
 
 class TestSeriesPlanningAgent:

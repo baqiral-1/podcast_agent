@@ -80,7 +80,7 @@ podcast-agent run book1.pdf book2.txt book3.md \
 |---|---|---|---|
 | `SOURCES` | | required | Paths to book files (PDF, TXT, MD) |
 | `--theme` | `-t` | required | Theme to explore across books |
-| `--episodes` | `-n` | `3` | Number of episodes to produce |
+| `--episodes` | `-n` | inferred | Override episode count (otherwise inferred from narrative strategy) |
 | `--elaboration` | | | Optional longer theme description |
 | `--titles` | | | Comma-separated book titles |
 | `--authors` | | | Comma-separated author names |

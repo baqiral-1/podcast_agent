@@ -1171,3 +1171,79 @@ class TestStageLog:
         output_data = json.loads((stage_dir / "output.json").read_text())
         assert output_data["result"] == "success"
         assert output_data["count"] == 42
+
+
+class TestEpisodeCountResolution:
+    def test_uses_override_when_present(self, tmp_path):
+        settings = Settings(
+            llm=Settings().llm.model_copy(update={"llm_provider": "heuristic"}),
+            database=Settings().database.model_copy(update={"dsn": None}),
+            pipeline=Settings().pipeline.model_copy(update={"artifact_root": tmp_path}),
+        )
+        orch = PipelineOrchestrator(settings)
+        project = ThematicProject(
+            project_id="proj1",
+            theme="Theme",
+            requested_episode_count=4,
+            episode_count=3,
+        )
+        strategy = NarrativeStrategy(
+            strategy_type="convergence",
+            justification="J",
+            series_arc="Arc",
+            episode_arc_outline=["Ep1", "Ep2"],
+            recommended_episode_count=6,
+        )
+
+        resolved = orch._resolve_episode_count_from_strategy(project, strategy)
+        assert resolved.episode_count == 4
+        assert resolved.recommended_episode_count == 6
+
+    def test_uses_strategy_count_without_override(self, tmp_path):
+        settings = Settings(
+            llm=Settings().llm.model_copy(update={"llm_provider": "heuristic"}),
+            database=Settings().database.model_copy(update={"dsn": None}),
+            pipeline=Settings().pipeline.model_copy(update={"artifact_root": tmp_path}),
+        )
+        orch = PipelineOrchestrator(settings)
+        project = ThematicProject(
+            project_id="proj1",
+            theme="Theme",
+            requested_episode_count=None,
+            episode_count=3,
+        )
+        strategy = NarrativeStrategy(
+            strategy_type="convergence",
+            justification="J",
+            series_arc="Arc",
+            episode_arc_outline=["Ep1", "Ep2"],
+            recommended_episode_count=5,
+        )
+
+        resolved = orch._resolve_episode_count_from_strategy(project, strategy)
+        assert resolved.episode_count == 5
+        assert resolved.recommended_episode_count == 5
+
+    def test_fails_without_override_when_strategy_missing_count(self, tmp_path):
+        settings = Settings(
+            llm=Settings().llm.model_copy(update={"llm_provider": "heuristic"}),
+            database=Settings().database.model_copy(update={"dsn": None}),
+            pipeline=Settings().pipeline.model_copy(update={"artifact_root": tmp_path}),
+        )
+        orch = PipelineOrchestrator(settings)
+        project = ThematicProject(
+            project_id="proj1",
+            theme="Theme",
+            requested_episode_count=None,
+            episode_count=3,
+        )
+        strategy = NarrativeStrategy(
+            strategy_type="convergence",
+            justification="J",
+            series_arc="Arc",
+            episode_arc_outline=["Ep1", "Ep2"],
+            recommended_episode_count=None,
+        )
+
+        with pytest.raises(RuntimeError, match="did not return recommended_episode_count"):
+            orch._resolve_episode_count_from_strategy(project, strategy)
