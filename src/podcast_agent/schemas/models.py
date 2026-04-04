@@ -161,6 +161,7 @@ class ExtractedPassage(StrictModel):
     book_id: str
     chunk_ids: list[str] = Field(min_length=1)
     text: str
+    full_text: str = ""
     chapter_ref: str = ""
     axis_id: str
     secondary_axes: list[str] = Field(default_factory=list)

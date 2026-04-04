@@ -104,6 +104,7 @@ def _input_hash(*args: Any) -> str:
 
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 _WORD_RE = re.compile(r"[A-Za-z0-9']+")
+_WRITING_SOURCE_MODE_FULL_CHUNK = "full_chunk"
 
 
 def _split_sentences(text: str) -> list[str]:
@@ -197,6 +198,13 @@ def _trim_candidate_texts_by_bm25(axis: ThematicAxis, candidates: list[dict]) ->
         trimmed = " ".join(sentence for _, _, sentence in selected).strip()
         if trimmed:
             cand["text"] = trimmed
+
+
+def _resolve_writing_passage_text(passage: ExtractedPassage) -> str:
+    full_text = passage.full_text.strip()
+    if full_text:
+        return full_text
+    return passage.text
 
 
 def _select_top_passages_for_synthesis(
@@ -830,6 +838,10 @@ class PipelineOrchestrator:
                 if not candidates:
                     return axis.axis_id, [], [], candidate_count
 
+                candidate_full_text_by_id = {
+                    candidate["passage_id"]: candidate["text"]
+                    for candidate in candidates
+                }
                 _trim_candidate_texts_by_bm25(axis, candidates)
 
                 payload = self.passage_extraction_agent.build_payload(
@@ -900,6 +912,7 @@ class PipelineOrchestrator:
                             book_id=candidate["book_id"],
                             chunk_ids=candidate["chunk_ids"],
                             text=candidate["text"],
+                            full_text=candidate_full_text_by_id.get(candidate["passage_id"], ""),
                             chapter_ref=candidate.get("chapter_ref", ""),
                             axis_id=candidate.get("axis_id", axis.axis_id),
                             secondary_axes=candidate.get("secondary_axes", []),
@@ -1329,7 +1342,9 @@ class PipelineOrchestrator:
     ) -> EpisodeScript:
         async with _stage_log(
             self.run_logger, f"write_episode_{plan.episode_number}", project_dir,
-            episode=plan.episode_number, beat_count=len(plan.beats),
+            episode=plan.episode_number,
+            beat_count=len(plan.beats),
+            writing_source_mode=_WRITING_SOURCE_MODE_FULL_CHUNK,
         ) as ctx:
             passage_ids = set()
             for beat in plan.beats:
@@ -1341,7 +1356,8 @@ class PipelineOrchestrator:
                     if p.passage_id in passage_ids:
                         passages.append({
                             "passage_id": p.passage_id, "book_id": p.book_id,
-                            "text": p.text, "chapter_ref": p.chapter_ref,
+                            "text": _resolve_writing_passage_text(p),
+                            "chapter_ref": p.chapter_ref,
                             "synthesis_tags": [t.value for t in p.synthesis_tags],
                         })
 
@@ -1358,6 +1374,7 @@ class PipelineOrchestrator:
                 prefer_indirect_attribution=project.config.prefer_indirect_attribution,
                 skip_grounding=project.config.skip_grounding,
             )
+            payload["writing_source_mode"] = _WRITING_SOURCE_MODE_FULL_CHUNK
             result = await asyncio.to_thread(self.writing_agent.run, payload)
 
             if project.config.skip_grounding:
@@ -1392,6 +1409,7 @@ class PipelineOrchestrator:
             ctx["output_summary"] = {
                 "words": total_words, "segments": len(result.segments),
                 "citations": len(result_citations),
+                "writing_source_mode": _WRITING_SOURCE_MODE_FULL_CHUNK,
             }
             return script
 

@@ -21,6 +21,7 @@ from podcast_agent.pipeline.orchestrator import (
 )
 from podcast_agent.retrieval.vector_store import RetrievalHit
 from podcast_agent.agents.passage_extraction import PassageExtractionResponse, PassageExtractionScore
+from podcast_agent.agents.writing import EpisodeWritingResponse
 from podcast_agent.schemas.models import (
     BookRecord,
     ChapterInfo,
@@ -134,6 +135,71 @@ class TestBookIngestion:
         ]
         _trim_candidate_texts_by_bm25(axis, candidates)
         assert candidates[0]["text"] == "alpha beta."
+
+    def test_passage_extraction_preserves_full_text_when_bm25_trims(self, tmp_path):
+        settings = Settings(
+            llm=Settings().llm.model_copy(update={"llm_provider": "heuristic"}),
+            database=Settings().database.model_copy(update={"dsn": None}),
+            pipeline=Settings().pipeline.model_copy(update={"artifact_root": tmp_path}),
+        )
+        orch = PipelineOrchestrator(settings)
+
+        class FakeRetrieval:
+            def retrieve_for_axis(self, *, axis, project_id, book_ids, k_per_book):
+                hit = RetrievalHit(
+                    chunk_id="a1",
+                    book_id="book-a",
+                    chapter_id="ch1",
+                    text="alpha beta. alpha. gamma.",
+                    score=0.1,
+                    metadata={"chapter_id": "ch1"},
+                )
+                return {"book-a": [hit], "book-b": []}
+
+        orch.retrieval = FakeRetrieval()
+
+        def fake_run(payload):
+            passages = [
+                PassageExtractionScore(
+                    passage_id=c["passage_id"],
+                    relevance_score=0.9,
+                    quotability_score=0.8,
+                    synthesis_tags=[SynthesisTag.INDEPENDENT],
+                )
+                for c in payload["candidate_passages"]
+            ]
+            return PassageExtractionResponse(passages=passages, cross_book_pairs=[])
+
+        orch.passage_extraction_agent.run = MagicMock(side_effect=fake_run)
+
+        book_a = BookRecord(
+            book_id="book-a", title="Book A", author="A",
+            source_path="/a.txt", source_type="txt",
+        )
+        book_b = BookRecord(
+            book_id="book-b", title="Book B", author="B",
+            source_path="/b.txt", source_type="txt",
+        )
+        axis = ThematicAxis(
+            axis_id="axis_01",
+            name="alpha beta",
+            description="desc",
+            relevance_by_book={book_a.book_id: 0.9, book_b.book_id: 0.9},
+        )
+        project = ThematicProject(
+            project_id="proj-1",
+            theme="T",
+            episode_count=2,
+            config=PipelineConfig(passages_per_axis_per_book=1, rerank_top_k=1),
+            status=ProjectStatus.ANALYZING,
+            books=[book_a, book_b],
+        )
+        project_dir = tmp_path / project.project_id
+
+        corpus = asyncio.run(orch._extract_passages(project, [axis], project_dir))
+        passage = corpus.passages_by_axis[axis.axis_id][0]
+        assert passage.text == "alpha beta."
+        assert passage.full_text == "alpha beta. alpha. gamma."
 
     def test_retrieval_candidates_logged(self, tmp_path):
         settings = Settings(
@@ -344,6 +410,7 @@ class TestBookIngestion:
         expected_by_chunk = {"a1": "text a1", "b1": "text b1"}
         for passage in axis_passages:
             assert passage.text == expected_by_chunk[passage.chunk_ids[0]]
+            assert passage.full_text == expected_by_chunk[passage.chunk_ids[0]]
             assert passage.relevance_score == 0.9
             assert passage.quotability_score == 0.8
             assert SynthesisTag.INDEPENDENT in passage.synthesis_tags
@@ -804,6 +871,106 @@ class TestSynthesisSelection:
         ]
         selected = _select_synthesis_passages(passages, {"a"})
         assert [p.passage_id for p in selected] == ["b", "e", "d", "c", "a"]
+
+
+# ---------------------------------------------------------------------------
+# Episode writing source mode
+# ---------------------------------------------------------------------------
+
+
+class TestWriteEpisodeSourceMode:
+    def _build_context(self, tmp_path, *, full_text: str) -> tuple[PipelineOrchestrator, EpisodePlan, ThematicProject, ThematicCorpus, Path, Path]:
+        settings = Settings(
+            llm=Settings().llm.model_copy(update={"llm_provider": "heuristic"}),
+            database=Settings().database.model_copy(update={"dsn": None}),
+            pipeline=Settings().pipeline.model_copy(update={"artifact_root": tmp_path}),
+        )
+        orch = PipelineOrchestrator(settings)
+
+        book = BookRecord(
+            book_id="book-a", title="Book A", author="A",
+            source_path="/a.txt", source_type="txt",
+        )
+        project = ThematicProject(
+            project_id="proj-1",
+            theme="T",
+            episode_count=1,
+            books=[book],
+            config=PipelineConfig(),
+        )
+        plan = EpisodePlan(
+            episode_number=1,
+            title="Episode 1",
+            beats=[
+                EpisodeBeat(
+                    beat_id="beat-1",
+                    description="Beat",
+                    passage_ids=["p1"],
+                )
+            ],
+        )
+        corpus = ThematicCorpus(
+            project_id=project.project_id,
+            passages_by_axis={
+                "axis_01": [
+                    ExtractedPassage(
+                        passage_id="p1",
+                        book_id="book-a",
+                        chunk_ids=["c1"],
+                        text="trimmed excerpt",
+                        full_text=full_text,
+                        chapter_ref="ch1",
+                        axis_id="axis_01",
+                        relevance_score=0.8,
+                        quotability_score=0.7,
+                        synthesis_tags=[SynthesisTag.INDEPENDENT],
+                    )
+                ]
+            },
+        )
+        project_dir = tmp_path / project.project_id
+        ep_dir = project_dir / "episodes" / "1"
+        return orch, plan, project, corpus, ep_dir, project_dir
+
+    def test_write_episode_uses_full_chunk_text(self, tmp_path):
+        orch, plan, project, corpus, ep_dir, project_dir = self._build_context(
+            tmp_path,
+            full_text="full chunk text",
+        )
+        orch.writing_agent.run = MagicMock(
+            return_value=EpisodeWritingResponse(
+                title="Episode 1",
+                segments=[ScriptSegment(segment_id="s1", text="Narration", beat_id="beat-1")],
+                citations=[],
+            )
+        )
+
+        asyncio.run(orch._write_episode(plan, project, corpus, ep_dir, project_dir))
+
+        payload = orch.writing_agent.run.call_args.args[0]
+        assert payload["passages"][0]["text"] == "full chunk text"
+        assert payload["writing_source_mode"] == "full_chunk"
+        output_path = project_dir / "stage_artifacts" / "write_episode_1" / "output.json"
+        output = json.loads(output_path.read_text())
+        assert output["writing_source_mode"] == "full_chunk"
+
+    def test_write_episode_falls_back_to_trimmed_excerpt(self, tmp_path):
+        orch, plan, project, corpus, ep_dir, project_dir = self._build_context(
+            tmp_path,
+            full_text="",
+        )
+        orch.writing_agent.run = MagicMock(
+            return_value=EpisodeWritingResponse(
+                title="Episode 1",
+                segments=[ScriptSegment(segment_id="s1", text="Narration", beat_id="beat-1")],
+                citations=[],
+            )
+        )
+
+        asyncio.run(orch._write_episode(plan, project, corpus, ep_dir, project_dir))
+
+        payload = orch.writing_agent.run.call_args.args[0]
+        assert payload["passages"][0]["text"] == "trimmed excerpt"
 
 
 # ---------------------------------------------------------------------------
