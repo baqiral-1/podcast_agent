@@ -124,6 +124,8 @@ _SPOKEN_TAG_RE = re.compile(r"<[^>]+>")
 _RUNTIME_UNDERSHOOT_WARNING_RATIO = 0.10
 _WHITESPACE_RE = re.compile(r"\s+")
 _WRITING_SOURCE_MODE_FULL_CHUNK = "full_chunk"
+_CROSS_REFERENCE_MIN_COVERAGE = 0.5
+_BOOK_BALANCE_MAX_ABS_DRIFT = 0.15
 _SPOKEN_RATE_MULTIPLIER = {
     "slower": 0.94,
     "normal": 1.0,
@@ -733,6 +735,181 @@ def _compute_passage_utilization(
         },
         "per_axis": per_axis,
         "per_book": per_book,
+    }
+
+
+def _evaluate_episode_script_plan_alignment(
+    *,
+    plan: EpisodePlan,
+    script: EpisodeScript,
+    min_cross_reference_coverage: float = _CROSS_REFERENCE_MIN_COVERAGE,
+    max_book_balance_abs_drift: float = _BOOK_BALANCE_MAX_ABS_DRIFT,
+) -> dict[str, Any]:
+    beat_passages_by_id = {
+        beat.beat_id: set(beat.passage_ids)
+        for beat in plan.beats
+    }
+
+    observed_passage_ids: set[str] = set()
+    for citation in script.citations:
+        observed_passage_ids.add(citation.passage_id)
+    for segment in script.segments:
+        if segment.beat_id and segment.beat_id in beat_passages_by_id:
+            observed_passage_ids.update(beat_passages_by_id[segment.beat_id])
+        for citation in segment.citations:
+            observed_passage_ids.add(citation.passage_id)
+
+    insights = list(plan.synthesis_context.insights) if plan.synthesis_context else []
+    insight_results: list[dict[str, Any]] = []
+    for insight in insights:
+        assigned_passage_ids = set(insight.passage_ids)
+        realized_passage_ids = sorted(observed_passage_ids & assigned_passage_ids)
+        realized_count = len(realized_passage_ids)
+        expected_min = min(2, len(assigned_passage_ids))
+        if expected_min == 0:
+            status = "not_applicable"
+        elif realized_count == 0:
+            status = "zero"
+        elif realized_count < expected_min:
+            status = "weak"
+        else:
+            status = "ok"
+        insight_results.append(
+            {
+                "insight_id": insight.insight_id,
+                "title": insight.title,
+                "status": status,
+                "realized_count": realized_count,
+                "expected_min": expected_min,
+                "assigned_passage_count": len(assigned_passage_ids),
+                "realized_passage_ids": realized_passage_ids,
+                "missing_passage_ids": sorted(assigned_passage_ids - observed_passage_ids),
+            }
+        )
+    insight_issues = [
+        item for item in insight_results
+        if item["status"] in {"weak", "zero"}
+    ]
+
+    planned_pairs = {
+        tuple(sorted((item.from_book_id, item.to_book_id)))
+        for item in plan.cross_references
+        if item.from_book_id and item.to_book_id and item.from_book_id != item.to_book_id
+    }
+    observed_pairs: set[tuple[str, str]] = set()
+    for segment in script.segments:
+        books = set(segment.source_book_ids)
+        books.update(citation.book_id for citation in segment.citations)
+        ordered_books = sorted(book for book in books if book)
+        for idx in range(len(ordered_books)):
+            for jdx in range(idx + 1, len(ordered_books)):
+                observed_pairs.add((ordered_books[idx], ordered_books[jdx]))
+    global_citation_books = sorted(
+        {
+            citation.book_id
+            for citation in script.citations
+            if citation.book_id
+        }
+    )
+    for idx in range(len(global_citation_books)):
+        for jdx in range(idx + 1, len(global_citation_books)):
+            observed_pairs.add((global_citation_books[idx], global_citation_books[jdx]))
+
+    covered_pairs = sorted(planned_pairs & observed_pairs)
+    planned_pair_count = len(planned_pairs)
+    coverage_ratio = (
+        len(covered_pairs) / planned_pair_count
+        if planned_pair_count > 0
+        else 1.0
+    )
+    cross_reference_has_issues = (
+        planned_pair_count > 0 and coverage_ratio < min_cross_reference_coverage
+    )
+
+    signal_counts: dict[str, int] = {}
+
+    def _add_book_signal(book_id: str) -> None:
+        if not book_id:
+            return
+        signal_counts[book_id] = signal_counts.get(book_id, 0) + 1
+
+    for citation in script.citations:
+        _add_book_signal(citation.book_id)
+    for segment in script.segments:
+        segment_books = set(segment.source_book_ids)
+        segment_books.update(citation.book_id for citation in segment.citations)
+        for book_id in segment_books:
+            _add_book_signal(book_id)
+
+    total_signals = sum(signal_counts.values())
+    observed_balance = {
+        book_id: (count / total_signals)
+        for book_id, count in signal_counts.items()
+        if total_signals > 0
+    }
+    drift_by_book = {}
+    max_abs_drift = 0.0
+    for book_id, planned_share in plan.book_balance.items():
+        observed_share = observed_balance.get(book_id, 0.0)
+        drift = abs(observed_share - float(planned_share))
+        drift_by_book[book_id] = round(drift, 4)
+        max_abs_drift = max(max_abs_drift, drift)
+
+    insufficient_book_signal = bool(plan.book_balance) and total_signals == 0
+    book_balance_has_issues = insufficient_book_signal or (
+        bool(plan.book_balance)
+        and total_signals > 0
+        and max_abs_drift > max_book_balance_abs_drift
+    )
+
+    sections = {
+        "insight_realization": {
+            "has_issues": bool(insight_issues),
+            "problem_count": len(insight_issues),
+            "insights": insight_results,
+            "observed_passage_count": len(observed_passage_ids),
+        },
+        "cross_references": {
+            "has_issues": cross_reference_has_issues,
+            "planned_pair_count": planned_pair_count,
+            "covered_pair_count": len(covered_pairs),
+            "coverage_ratio": round(coverage_ratio, 4),
+            "minimum_coverage": min_cross_reference_coverage,
+            "missing_pairs": [
+                {"book_ids": [a, b]}
+                for a, b in sorted(planned_pairs - observed_pairs)
+            ],
+        },
+        "book_balance": {
+            "has_issues": book_balance_has_issues,
+            "insufficient_signal": insufficient_book_signal,
+            "total_signals": total_signals,
+            "signal_counts": signal_counts,
+            "planned_balance": {
+                book_id: round(float(share), 4)
+                for book_id, share in plan.book_balance.items()
+            },
+            "observed_balance": {
+                book_id: round(share, 4)
+                for book_id, share in observed_balance.items()
+            },
+            "drift_by_book": drift_by_book,
+            "max_abs_drift": round(max_abs_drift, 4),
+            "max_allowed_abs_drift": max_book_balance_abs_drift,
+        },
+    }
+
+    problem_count = sum(1 for section in sections.values() if section["has_issues"])
+    return {
+        "episode_number": plan.episode_number,
+        "title": plan.title,
+        "has_issues": problem_count > 0,
+        "problem_count": problem_count,
+        "thresholds": {
+            "cross_reference_min_coverage": min_cross_reference_coverage,
+            "book_balance_max_abs_drift": max_book_balance_abs_drift,
+        },
+        **sections,
     }
 
 
@@ -2739,6 +2916,19 @@ class PipelineOrchestrator:
                     )
             else:
                 self.run_logger.log("grounding_skipped", episode=plan.episode_number)
+
+            alignment_report = _evaluate_episode_script_plan_alignment(plan=plan, script=script)
+            _save_json(ep_dir / "plan_alignment_report.json", alignment_report)
+            if alignment_report["has_issues"]:
+                self.run_logger.log(
+                    "episode_plan_alignment_warning",
+                    episode=plan.episode_number,
+                    problem_count=alignment_report["problem_count"],
+                    insight_problem_count=alignment_report["insight_realization"]["problem_count"],
+                    cross_reference_coverage=alignment_report["cross_references"]["coverage_ratio"],
+                    book_balance_max_abs_drift=alignment_report["book_balance"]["max_abs_drift"],
+                    insufficient_book_signal=alignment_report["book_balance"]["insufficient_signal"],
+                )
 
             if not project.config.skip_spoken_delivery:
                 spoken = await self._rewrite_for_speech(

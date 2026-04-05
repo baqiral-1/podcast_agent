@@ -271,6 +271,16 @@ class TestWritingAgent:
         assert "estimated_duration_seconds" in agent.instructions
         assert "target_duration_minutes" in agent.instructions_no_citations
         assert "estimated_duration_seconds" in agent.instructions_no_citations
+        assert "Required writing constraints" in agent.instructions
+        assert "plan.narrative_spine" in agent.instructions
+        assert "plan.cross_references" in agent.instructions
+        assert "plan.book_balance" in agent.instructions
+        assert "synthesis_instruction" in agent.instructions
+        assert "transition_hint" in agent.instructions
+        assert "Required writing constraints" in agent.instructions_no_citations
+        assert "plan.narrative_spine" in agent.instructions_no_citations
+        assert "plan.cross_references" in agent.instructions_no_citations
+        assert "plan.book_balance" in agent.instructions_no_citations
 
 
 class TestSourceWeavingAgent:

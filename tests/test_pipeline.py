@@ -20,6 +20,7 @@ from podcast_agent.pipeline.orchestrator import (
     PipelineOrchestrator,
     StructuringStageError,
     _compute_adaptive_rerank_target,
+    _evaluate_episode_script_plan_alignment,
     _compute_passage_utilization,
     _compute_passage_retrieval_budget,
     _render_segments_for_spoken_segment,
@@ -1434,6 +1435,165 @@ class TestPassageUtilization:
         assert utilization["summary"]["cited_count"] == 1
         assert utilization["per_axis"]["axis_01"]["planned_count"] == 1
         assert utilization["per_book"]["book-b"]["cited_count"] == 0
+
+
+class TestEpisodeScriptPlanAlignment:
+    def test_aligned_script_has_no_issues(self):
+        plan = EpisodePlan(
+            episode_number=1,
+            title="Ep1",
+            insight_ids=["insight-1"],
+            beats=[
+                EpisodeBeat(
+                    beat_id="beat-1",
+                    description="Beat",
+                    passage_ids=["p1", "p2"],
+                )
+            ],
+            synthesis_context={
+                "insights": [
+                    {
+                        "insight_id": "insight-1",
+                        "insight_type": InsightType.SYNCHRONICITY,
+                        "title": "Insight",
+                        "description": "Desc",
+                        "passage_ids": ["p1", "p2"],
+                        "axis_ids": ["axis_1"],
+                    }
+                ]
+            },
+            cross_references=[
+                {
+                    "from_book_id": "book-a",
+                    "to_book_id": "book-b",
+                    "connection_type": "extends",
+                }
+            ],
+            book_balance={"book-a": 0.5, "book-b": 0.5},
+        )
+        script = EpisodeScript(
+            episode_number=1,
+            title="Ep1",
+            segments=[
+                ScriptSegment(
+                    text="Narration",
+                    beat_id="beat-1",
+                    source_book_ids=["book-a", "book-b"],
+                    citations=[
+                        {"text_span": "a", "passage_id": "p1", "book_id": "book-a"},
+                        {"text_span": "b", "passage_id": "p2", "book_id": "book-b"},
+                    ],
+                )
+            ],
+            citations=[],
+        )
+
+        report = _evaluate_episode_script_plan_alignment(plan=plan, script=script)
+
+        assert report["has_issues"] is False
+        assert report["cross_references"]["coverage_ratio"] == 1.0
+        assert report["book_balance"]["max_abs_drift"] == 0.0
+
+    def test_missing_insight_realization_is_flagged(self):
+        plan = EpisodePlan(
+            episode_number=1,
+            title="Ep1",
+            insight_ids=["insight-1"],
+            beats=[EpisodeBeat(beat_id="beat-1", description="Beat", passage_ids=["p1"])],
+            synthesis_context={
+                "insights": [
+                    {
+                        "insight_id": "insight-1",
+                        "insight_type": InsightType.SYNCHRONICITY,
+                        "title": "Insight",
+                        "description": "Desc",
+                        "passage_ids": ["p1", "p2"],
+                        "axis_ids": ["axis_1"],
+                    }
+                ]
+            },
+        )
+        script = EpisodeScript(
+            episode_number=1,
+            title="Ep1",
+            segments=[ScriptSegment(text="Narration", beat_id=None)],
+            citations=[{"text_span": "x", "passage_id": "p_other", "book_id": "book-a"}],
+        )
+
+        report = _evaluate_episode_script_plan_alignment(plan=plan, script=script)
+
+        assert report["has_issues"] is True
+        assert report["insight_realization"]["has_issues"] is True
+        assert report["insight_realization"]["problem_count"] == 1
+
+    def test_cross_reference_under_coverage_is_flagged(self):
+        plan = EpisodePlan(
+            episode_number=1,
+            title="Ep1",
+            cross_references=[
+                {"from_book_id": "book-a", "to_book_id": "book-b", "connection_type": "agrees"},
+                {"from_book_id": "book-a", "to_book_id": "book-c", "connection_type": "agrees"},
+                {"from_book_id": "book-b", "to_book_id": "book-c", "connection_type": "agrees"},
+            ],
+        )
+        script = EpisodeScript(
+            episode_number=1,
+            title="Ep1",
+            segments=[
+                ScriptSegment(
+                    text="Narration",
+                    source_book_ids=["book-a", "book-b"],
+                )
+            ],
+            citations=[],
+        )
+
+        report = _evaluate_episode_script_plan_alignment(plan=plan, script=script)
+
+        assert report["has_issues"] is True
+        assert report["cross_references"]["has_issues"] is True
+        assert report["cross_references"]["coverage_ratio"] < 0.5
+
+    def test_book_balance_drift_is_flagged(self):
+        plan = EpisodePlan(
+            episode_number=1,
+            title="Ep1",
+            book_balance={"book-a": 0.5, "book-b": 0.5},
+        )
+        script = EpisodeScript(
+            episode_number=1,
+            title="Ep1",
+            segments=[
+                ScriptSegment(text="S1", source_book_ids=["book-a"]),
+                ScriptSegment(text="S2", source_book_ids=["book-a"]),
+            ],
+            citations=[],
+        )
+
+        report = _evaluate_episode_script_plan_alignment(plan=plan, script=script)
+
+        assert report["has_issues"] is True
+        assert report["book_balance"]["has_issues"] is True
+        assert report["book_balance"]["max_abs_drift"] > 0.15
+
+    def test_book_balance_uses_source_book_ids_and_top_level_citations(self):
+        plan = EpisodePlan(
+            episode_number=1,
+            title="Ep1",
+            book_balance={"book-a": 0.5, "book-b": 0.5},
+        )
+        script = EpisodeScript(
+            episode_number=1,
+            title="Ep1",
+            segments=[ScriptSegment(text="Narration", source_book_ids=["book-a"])],
+            citations=[{"text_span": "x", "passage_id": "p2", "book_id": "book-b"}],
+        )
+
+        report = _evaluate_episode_script_plan_alignment(plan=plan, script=script)
+
+        assert report["book_balance"]["signal_counts"]["book-a"] == 1
+        assert report["book_balance"]["signal_counts"]["book-b"] == 1
+        assert report["book_balance"]["has_issues"] is False
 
 
 # ---------------------------------------------------------------------------
