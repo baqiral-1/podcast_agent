@@ -232,6 +232,7 @@ class HeuristicLLMClient(LLMClient):
         else:
             recommended_episode_count = max(2, min(8, int(requested_episode_count)))
         episode_assignments = []
+        episode_arc_details = []
         axis_ids = [axis.get("axis_id", uuid4().hex) for axis in thematic_axes] or [uuid4().hex]
         insight_ids = [insight.get("insight_id", uuid4().hex) for insight in insights]
         for i in range(recommended_episode_count):
@@ -251,6 +252,22 @@ class HeuristicLLMClient(LLMClient):
                     "episode_strategy": "advance main thread",
                 }
             )
+            episode_arc_details.append(
+                {
+                    "episode_number": i + 1,
+                    "arc_summary": f"Episode {i + 1} advances the central series argument.",
+                    "narrative_stakes": "Clarify why this turning point matters for the full series arc.",
+                    "progression_beats": [
+                        "Re-establish the core conflict and what changed since the previous episode.",
+                        "Push the argument into a higher-stakes contradiction.",
+                        "End on a forward-driving implication for the next episode.",
+                    ],
+                    "unresolved_questions": [
+                        "What key uncertainty should remain open at the end of this episode?",
+                    ],
+                    "payoff_shape": "Escalate tensions now and reserve partial synthesis for later episodes.",
+                }
+            )
         return {
             "strategy_type": "convergence",
             "justification": "Heuristic: defaulting to convergence strategy.",
@@ -258,6 +275,7 @@ class HeuristicLLMClient(LLMClient):
             "episode_arc_outline": [
                 f"Episode {i + 1}" for i in range(recommended_episode_count)
             ],
+            "episode_arc_details": episode_arc_details,
             "recommended_episode_count": recommended_episode_count,
             "episode_assignments": episode_assignments,
         }

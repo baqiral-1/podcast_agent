@@ -23,6 +23,7 @@ class EpisodePlanningAgent(Agent):
         "The listener should feel like they are hearing history unfold, not a book review. "
         "Organize beats around what happened and why it matters.\n\n"
         "Use the selected synthesis context actively:\n"
+        "- Treat narrative_strategy.episode_arc_details for this episode as binding arc architecture\n"
         "- Use assigned insights to shape the core episode argument\n"
         "- Use selected merged narratives to anchor long-arc synthesis and payoff\n"
         "- Use selected unresolved tensions to shape open questions, pivots, or endings\n\n"

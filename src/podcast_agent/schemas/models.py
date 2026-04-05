@@ -309,12 +309,37 @@ class SynthesisMap(StrictModel):
 
 
 class NarrativeStrategy(StrictModel):
+    @model_validator(mode="after")
+    def validate_episode_arc_details(self) -> NarrativeStrategy:
+        detail_numbers = [detail.episode_number for detail in self.episode_arc_details]
+        if len(detail_numbers) != len(set(detail_numbers)):
+            raise ValueError("episode_arc_details must not contain duplicate episode_number values.")
+
+        if self.episode_arc_outline and len(self.episode_arc_outline) != len(self.episode_arc_details):
+            raise ValueError(
+                "episode_arc_outline and episode_arc_details must have the same length when outlines are provided."
+            )
+
+        assignment_numbers = {assignment.episode_number for assignment in self.episode_assignments}
+        detail_number_set = set(detail_numbers)
+        if assignment_numbers and assignment_numbers != detail_number_set:
+            missing = sorted(assignment_numbers - detail_number_set)
+            extra = sorted(detail_number_set - assignment_numbers)
+            parts: list[str] = []
+            if missing:
+                parts.append(f"missing episode_arc_details for episode_numbers={missing}")
+            if extra:
+                parts.append(f"unexpected episode_arc_details for episode_numbers={extra}")
+            raise ValueError("episode_arc_details must align with episode_assignments: " + "; ".join(parts))
+        return self
+
     strategy_type: Literal[
         "thesis_driven", "debate", "chronological", "convergence", "mosaic"
     ]
     justification: str
     series_arc: str
     episode_arc_outline: list[str] = Field(default_factory=list)
+    episode_arc_details: list["EpisodeArcDetail"]
     recommended_episode_count: int | None = Field(default=None, ge=2, le=8)
     episode_assignments: list["EpisodeAssignment"] = Field(default_factory=list)
 
@@ -328,6 +353,15 @@ class EpisodeAssignment(StrictModel):
     merged_narrative_ids: list[str] = Field(default_factory=list)
     tension_ids: list[str] = Field(default_factory=list)
     episode_strategy: str = ""
+
+
+class EpisodeArcDetail(StrictModel):
+    episode_number: int = Field(ge=1)
+    arc_summary: str
+    narrative_stakes: str
+    progression_beats: list[str] = Field(default_factory=list, min_length=1)
+    unresolved_questions: list[str] = Field(default_factory=list, min_length=1)
+    payoff_shape: str
 
 
 class CrossReference(StrictModel):

@@ -19,6 +19,7 @@ from podcast_agent.schemas.models import (
     CoverageStats,
     CrossBookClaimAssessment,
     CrossReference,
+    EpisodeArcDetail,
     EpisodeAssignment,
     EpisodeBeat,
     EpisodeFraming,
@@ -313,6 +314,7 @@ class TestNarrativeStrategy:
                 strategy_type=strategy_type,
                 justification="Test",
                 series_arc="Test arc",
+                episode_arc_details=[],
             )
             assert strategy.strategy_type == strategy_type
 
@@ -321,6 +323,16 @@ class TestNarrativeStrategy:
             strategy_type="convergence",
             justification="Test",
             series_arc="Arc",
+            episode_arc_details=[
+                EpisodeArcDetail(
+                    episode_number=1,
+                    arc_summary="Arc summary",
+                    narrative_stakes="Stakes",
+                    progression_beats=["Beat 1"],
+                    unresolved_questions=["Question 1"],
+                    payoff_shape="Payoff shape",
+                )
+            ],
             episode_assignments=[
                 EpisodeAssignment(
                     episode_number=1,
@@ -338,6 +350,49 @@ class TestNarrativeStrategy:
         restored = NarrativeStrategy.model_validate(data)
         assert restored.episode_assignments[0].axis_ids == ["ax1"]
         assert restored.episode_assignments[0].merged_narrative_ids == ["merged_narrative_001"]
+
+    def test_rejects_misaligned_episode_arc_details(self):
+        with pytest.raises(ValidationError, match="episode_arc_details must align"):
+            NarrativeStrategy(
+                strategy_type="convergence",
+                justification="Test",
+                series_arc="Arc",
+                episode_arc_details=[
+                    EpisodeArcDetail(
+                        episode_number=2,
+                        arc_summary="Arc summary",
+                        narrative_stakes="Stakes",
+                        progression_beats=["Beat 1"],
+                        unresolved_questions=["Question 1"],
+                        payoff_shape="Payoff shape",
+                    )
+                ],
+                episode_assignments=[
+                    EpisodeAssignment(
+                        episode_number=1,
+                        title="Episode 1",
+                    )
+                ],
+            )
+
+    def test_rejects_outline_and_detail_length_mismatch(self):
+        with pytest.raises(ValidationError, match="episode_arc_outline and episode_arc_details"):
+            NarrativeStrategy(
+                strategy_type="convergence",
+                justification="Test",
+                series_arc="Arc",
+                episode_arc_outline=["Ep1", "Ep2"],
+                episode_arc_details=[
+                    EpisodeArcDetail(
+                        episode_number=1,
+                        arc_summary="Arc summary",
+                        narrative_stakes="Stakes",
+                        progression_beats=["Beat 1"],
+                        unresolved_questions=["Question 1"],
+                        payoff_shape="Payoff shape",
+                    )
+                ],
+            )
 
 
 class TestSpokenScript:

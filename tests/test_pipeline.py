@@ -39,6 +39,7 @@ from podcast_agent.schemas.models import (
     ChapterAnalysis,
     ChapterInfo,
     ClaimAssessment,
+    EpisodeArcDetail,
     EpisodeAssignment,
     EpisodeBeat,
     EpisodeFraming,
@@ -69,6 +70,20 @@ from podcast_agent.schemas.models import (
 # ---------------------------------------------------------------------------
 # Artifact helpers
 # ---------------------------------------------------------------------------
+
+
+def _episode_arc_details(*episode_numbers: int) -> list[EpisodeArcDetail]:
+    return [
+        EpisodeArcDetail(
+            episode_number=episode_number,
+            arc_summary=f"Episode {episode_number} arc summary",
+            narrative_stakes=f"Episode {episode_number} narrative stakes",
+            progression_beats=[f"Episode {episode_number} progression beat"],
+            unresolved_questions=[f"Episode {episode_number} unresolved question"],
+            payoff_shape=f"Episode {episode_number} payoff shape",
+        )
+        for episode_number in episode_numbers
+    ]
 
 
 class TestArtifactPersistence:
@@ -2058,6 +2073,7 @@ class TestEpisodeCountResolution:
             justification="J",
             series_arc="Arc",
             episode_arc_outline=["Ep1", "Ep2"],
+            episode_arc_details=_episode_arc_details(1, 2),
             recommended_episode_count=6,
         )
 
@@ -2083,6 +2099,7 @@ class TestEpisodeCountResolution:
             justification="J",
             series_arc="Arc",
             episode_arc_outline=["Ep1", "Ep2"],
+            episode_arc_details=_episode_arc_details(1, 2),
             recommended_episode_count=5,
         )
 
@@ -2108,6 +2125,7 @@ class TestEpisodeCountResolution:
             justification="J",
             series_arc="Arc",
             episode_arc_outline=["Ep1", "Ep2"],
+            episode_arc_details=_episode_arc_details(1, 2),
             recommended_episode_count=None,
         )
 
@@ -2132,6 +2150,7 @@ class TestEpisodePlanningPayload:
                 justification="J",
                 series_arc="Arc",
                 episode_arc_outline=["Ep1"],
+                episode_arc_details=_episode_arc_details(1),
                 recommended_episode_count=2,
                 episode_assignments=[EpisodeAssignment(episode_number=1, title="Ep 1")],
             )
@@ -2174,6 +2193,9 @@ class TestEpisodePlanningPayload:
         assert "book_relationship_matrix" not in payload
         assert payload["merged_narratives"][0]["merged_narrative_id"] == "merged_narrative_001"
         assert payload["unresolved_tensions"][0]["tension_id"] == "tension_001"
+        project_payload = captured_payloads[0]["project"]
+        assert project_payload["target_episode_minutes"] == 100.0
+        assert project_payload["min_episode_minutes"] == 90.0
 
     def test_supporting_ranking_prefers_higher_quality_single_axis_over_lower_multi_axis(self):
         axis_1_passages = [
@@ -2255,6 +2277,7 @@ class TestEpisodePlanningPayload:
             justification="J",
             series_arc="Arc",
             episode_arc_outline=["Ep1"],
+            episode_arc_details=_episode_arc_details(1),
             recommended_episode_count=2,
             episode_assignments=[
                 EpisodeAssignment(
@@ -2445,6 +2468,7 @@ class TestEpisodePlanningPayload:
             justification="J",
             series_arc="Arc",
             episode_arc_outline=["Ep1"],
+            episode_arc_details=_episode_arc_details(1),
             recommended_episode_count=2,
             episode_assignments=[
                 EpisodeAssignment(
@@ -2532,6 +2556,7 @@ class TestEpisodePlanningPayload:
             justification="J",
             series_arc="Arc",
             episode_arc_outline=["Ep1"],
+            episode_arc_details=_episode_arc_details(1),
             recommended_episode_count=2,
             episode_assignments=[
                 EpisodeAssignment(
@@ -2649,6 +2674,7 @@ class TestEpisodePlanningPayload:
             justification="J",
             series_arc="Arc",
             episode_arc_outline=["Ep1"],
+            episode_arc_details=_episode_arc_details(1),
             recommended_episode_count=2,
             episode_assignments=[
                 EpisodeAssignment(
@@ -2746,6 +2772,7 @@ class TestEpisodePlanningPayload:
             justification="J",
             series_arc="Arc",
             episode_arc_outline=["Ep1"],
+            episode_arc_details=_episode_arc_details(1),
             recommended_episode_count=2,
             episode_assignments=[
                 EpisodeAssignment(
@@ -2850,6 +2877,7 @@ class TestEpisodePlanningPayload:
             justification="J",
             series_arc="Arc",
             episode_arc_outline=["Ep1"],
+            episode_arc_details=_episode_arc_details(1),
             recommended_episode_count=2,
             episode_assignments=[EpisodeAssignment(episode_number=1, title="Ep 1")],
         )
@@ -2911,6 +2939,7 @@ class TestEpisodePlanningPayload:
             justification="J",
             series_arc="Arc",
             episode_arc_outline=["Ep1", "Ep2", "Ep3"],
+            episode_arc_details=_episode_arc_details(1, 2, 3),
             recommended_episode_count=3,
             episode_assignments=[
                 EpisodeAssignment(episode_number=1, title="Ep 1", thematic_focus="F1"),
@@ -2963,6 +2992,7 @@ class TestEpisodePlanningPayload:
             justification="J",
             series_arc="Arc",
             episode_arc_outline=["Ep1", "Ep2", "Ep3"],
+            episode_arc_details=_episode_arc_details(1, 2, 3),
             recommended_episode_count=3,
             episode_assignments=[
                 EpisodeAssignment(episode_number=1, title="Assignment 1", thematic_focus="Focus 1"),
@@ -3029,6 +3059,7 @@ class TestEpisodePlanningPayload:
             justification="J",
             series_arc="Arc",
             episode_arc_outline=["Ep1", "Ep2", "Ep3", "Ep4"],
+            episode_arc_details=_episode_arc_details(1, 2, 3, 4),
             recommended_episode_count=4,
             episode_assignments=[
                 EpisodeAssignment(episode_number=1, title="Assignment 1"),

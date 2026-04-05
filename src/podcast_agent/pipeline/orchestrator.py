@@ -2154,6 +2154,8 @@ class PipelineOrchestrator:
                 "sub_themes": project.sub_themes,
                 "book_count": len(project.books),
                 "books": [{"book_id": b.book_id, "title": b.title, "author": b.author} for b in project.books],
+                "target_episode_minutes": project.config.target_episode_minutes,
+                "min_episode_minutes": project.config.min_episode_minutes,
             }
 
             payload = self.narrative_strategy_agent.build_payload(

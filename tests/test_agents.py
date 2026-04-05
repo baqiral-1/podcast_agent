@@ -210,6 +210,8 @@ class TestNarrativeStrategyAgent:
         assert "narrative progression, contrast, and payoff" in agent.instructions
         assert "If project.requested_episode_count is provided, use it as a planning hint for arc shape." in agent.instructions
         assert "Output schema (strict):" in agent.instructions
+        assert "episode_arc_details: array of objects" in agent.instructions
+        assert "narrative_stakes: string" in agent.instructions
         assert "episode_assignments: array of objects" in agent.instructions
         assert "strategy_type: one of thesis_driven, debate, chronological, convergence, mosaic" in agent.instructions
         assert "Return only a JSON object matching this schema." in agent.instructions
