@@ -38,7 +38,9 @@ class EpisodePlanningAgent(Agent):
         "- Spine segments must not include author names\n\n"
         "available_passages entries include mixed source detail:\n"
         "- supporting entries include summary_text\n"
-        "insight_passages entries contain the full-text passages for assigned insights, even when "
+        "- passage entries may include chapter_context with chapter-level themes, tensions, "
+        "causal shifts, and hooks\n"
+        "insight_passages entries contain the full_text passages for assigned insights, even when "
         "those passages live outside the episode's assigned axes.\n"
         "Use insight_passages for assigned-insight realization, and use available_passages for "
         "supporting context and cross-axis comparisons.\n\n"
@@ -56,9 +58,9 @@ class EpisodePlanningAgent(Agent):
         synthesis_map: dict,
         project_metadata: dict,
         available_passages: dict,
-        insight_passages: list[dict],
-        previous_episode: dict | None,
-        next_episode: dict | None,
+        insight_passages: list[dict] | None = None,
+        previous_episode: dict | None = None,
+        next_episode: dict | None = None,
         planning_feedback: dict | None = None,
     ) -> dict:
         payload = {
@@ -67,7 +69,7 @@ class EpisodePlanningAgent(Agent):
             "synthesis_map": synthesis_map,
             "project": project_metadata,
             "available_passages": available_passages,
-            "insight_passages": insight_passages,
+            "insight_passages": insight_passages or [],
             "previous_episode": previous_episode,
             "next_episode": next_episode,
         }

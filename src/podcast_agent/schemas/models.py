@@ -66,6 +66,20 @@ class ChapterInfo(StrictModel):
     end_index: int = Field(ge=0)
     word_count: int = Field(ge=0)
     summary: str = ""
+    analysis: "ChapterAnalysis | None" = None
+
+
+class ChapterAnalysis(StrictModel):
+    themes_touched: list[str] = Field(default_factory=list, max_length=8)
+    major_actors: list[str] = Field(default_factory=list, max_length=8)
+    key_places: list[str] = Field(default_factory=list, max_length=8)
+    key_institutions: list[str] = Field(default_factory=list, max_length=8)
+    timeframe: str = ""
+    key_events_or_arguments: list[str] = Field(default_factory=list, max_length=6)
+    major_tensions: list[str] = Field(default_factory=list, max_length=6)
+    causal_shifts: list[str] = Field(default_factory=list, max_length=6)
+    narrative_hooks: list[str] = Field(default_factory=list, max_length=5)
+    retrieval_keywords: list[str] = Field(default_factory=list, max_length=12)
 
 
 class BookRecord(StrictModel):

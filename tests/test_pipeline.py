@@ -36,6 +36,7 @@ from podcast_agent.agents.passage_extraction import PassageExtractionResponse, P
 from podcast_agent.agents.writing import EpisodeWritingResponse
 from podcast_agent.schemas.models import (
     BookRecord,
+    ChapterAnalysis,
     ChapterInfo,
     ClaimAssessment,
     EpisodeAssignment,
@@ -357,6 +358,13 @@ class TestBookIngestion:
                 end_index=100,
                 word_count=50,
                 summary="Summary A.",
+                analysis=ChapterAnalysis(
+                    themes_touched=["borders"],
+                    major_tensions=["speed vs legitimacy"],
+                    causal_shifts=["award delay increases uncertainty"],
+                    narrative_hooks=["A line on a map becomes a human crisis."],
+                    retrieval_keywords=["border", "delay"],
+                ),
             )],
         )
         book_b = BookRecord(
@@ -406,8 +414,54 @@ class TestBookIngestion:
         assert payload["sub_themes"] == ["borders", "displacement"]
         assert payload["books"][0]["book_summary"] == "Book A summary."
         assert payload["books"][1]["book_summary"] == "Book B summary."
+        assert payload["books"][0]["chapters"][0]["themes_touched"] == ["borders"]
         summary_payload = orch.book_summary_agent.run.call_args_list[0].args[0]
         assert summary_payload["sub_themes"] == ["borders", "displacement"]
+        assert summary_payload["chapters"][0]["retrieval_keywords"] == ["border", "delay"]
+
+    def test_structure_chapters_persists_summary_and_analysis(self, tmp_path):
+        settings = Settings(
+            llm=Settings().llm.model_copy(update={"llm_provider": "heuristic"}),
+            database=Settings().database.model_copy(update={"dsn": None}),
+            pipeline=Settings().pipeline.model_copy(update={"artifact_root": tmp_path}),
+        )
+        orch = PipelineOrchestrator(settings)
+        book = BookRecord(
+            book_id="book-a",
+            title="Book A",
+            author="Author A",
+            source_path="/a.txt",
+            source_type="txt",
+        )
+        chapter = ChapterInfo(
+            chapter_id="ch1",
+            title="Chapter 1",
+            start_index=0,
+            end_index=20,
+            word_count=5,
+        )
+        orch.chapter_summary_agent.run = MagicMock(
+            return_value=MagicMock(
+                summary="Structured summary.",
+                analysis=ChapterAnalysis(
+                    themes_touched=["partition"],
+                    major_tensions=["state vs community"],
+                    causal_shifts=["announcement changes incentives"],
+                    narrative_hooks=["The chapter opens with a political choice."],
+                    retrieval_keywords=["partition", "state"],
+                ),
+            )
+        )
+
+        with patch("podcast_agent.pipeline.orchestrator.extract_chapters_from_source", return_value=[chapter]):
+            chapters = asyncio.run(
+                orch._structure_chapters(book, "mock chapter text", tmp_path / "proj-structure")
+            )
+
+        assert chapters[0].summary == "Structured summary."
+        assert chapters[0].analysis is not None
+        assert chapters[0].analysis.major_tensions == ["state vs community"]
+
 
     def test_retrieval_candidates_logged(self, tmp_path):
         settings = Settings(
@@ -1382,6 +1436,23 @@ class TestWriteEpisodeSourceMode:
         book = BookRecord(
             book_id="book-a", title="Book A", author="A",
             source_path="/a.txt", source_type="txt",
+            chapters=[
+                ChapterInfo(
+                    chapter_id="ch1",
+                    title="Chapter 1",
+                    start_index=0,
+                    end_index=100,
+                    word_count=50,
+                    summary="Chapter summary",
+                    analysis=ChapterAnalysis(
+                        themes_touched=["partition"],
+                        major_tensions=["policy vs reality"],
+                        causal_shifts=["announcement triggers movement"],
+                        narrative_hooks=["One decree changes every household."],
+                        retrieval_keywords=["partition", "announcement"],
+                    ),
+                )
+            ],
         )
         project = ThematicProject(
             project_id="proj-1",
@@ -1443,6 +1514,8 @@ class TestWriteEpisodeSourceMode:
         assert payload["passages"][0]["text"] == "full chunk text"
         assert payload["writing_source_mode"] == "full_chunk"
         assert "synthesis_context" in payload["plan"]
+        assert payload["passages"][0]["chapter_context"]["chapter_title"] == "Chapter 1"
+        assert payload["passages"][0]["chapter_context"]["major_tensions"] == ["policy vs reality"]
         output_path = project_dir / "stage_artifacts" / "write_episode_1" / "output.json"
         output = json.loads(output_path.read_text())
         assert output["writing_source_mode"] == "full_chunk"
@@ -1513,6 +1586,7 @@ class TestWriteEpisodeSourceMode:
         payload = orch.writing_agent.run.call_args.args[0]
         assert payload["passages"][0]["passage_id"] == "p_cross_axis"
         assert payload["passages"][0]["text"] == "cross axis full text"
+        assert payload["passages"][0]["chapter_context"] is None
 
     def test_write_episode_logs_duration_shortfall_warning(self, tmp_path):
         orch, _, project, corpus, ep_dir, project_dir = self._build_context(
@@ -2284,6 +2358,7 @@ class TestEpisodePlanningPayload:
         assert any(p["passage_id"] == "p_a1_shared" for p in available["axis_1"])
         assert any(p["passage_id"] == "p_a2_shared" for p in available["axis_2"])
         assert {entry["passage_id"] for entry in insight_passages} == {"p_a1_unique", "p_a2_shared"}
+        assert "chapter_context" in available["axis_1"][0]
         assert all("full_text" in entry for entry in insight_passages)
         insight_entries = {
             entry["passage_id"]: entry
@@ -2520,6 +2595,7 @@ class TestEpisodePlanningPayload:
 
         payload = captured_payloads[0]
         assert payload["available_passages"]["axis_1"][0]["passage_id"] == "p_support"
+        assert "chapter_context" in payload["available_passages"]["axis_1"][0]
         assert {entry["passage_id"] for entry in payload["insight_passages"]} == {
             "p_insight_a", "p_insight_b"
         }

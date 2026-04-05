@@ -52,10 +52,22 @@ class ThemeDecompositionAgent(Agent):
         book_summaries = []
         for book in books:
             # Chapter summaries are provided here for thematic axis discovery only.
-            chapter_info = [
-                {"title": ch.title, "summary": ch.summary}
-                for ch in book.chapters
-            ]
+            chapter_info = []
+            for ch in book.chapters:
+                entry = {
+                    "chapter_id": ch.chapter_id,
+                    "title": ch.title,
+                    "summary": ch.summary,
+                }
+                if ch.analysis is not None:
+                    entry.update({
+                        "themes_touched": list(ch.analysis.themes_touched),
+                        "major_tensions": list(ch.analysis.major_tensions),
+                        "causal_shifts": list(ch.analysis.causal_shifts),
+                        "narrative_hooks": list(ch.analysis.narrative_hooks),
+                        "retrieval_keywords": list(ch.analysis.retrieval_keywords),
+                    })
+                chapter_info.append(entry)
             book_summaries.append({
                 "book_id": book.book_id,
                 "title": book.title,

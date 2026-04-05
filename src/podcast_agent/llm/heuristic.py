@@ -78,6 +78,39 @@ class HeuristicLLMClient(LLMClient):
             ]
         }
 
+    def _generate_chapter_summary(self, payload: PromptPayload) -> dict[str, Any]:
+        chapter_title = str(payload.get("chapter_title", "")).strip() or "This chapter"
+        chapter_text = str(payload.get("chapter_text", "")).strip()
+        words = chapter_text.split()
+        first_terms = [word.strip(".,;:!?()[]\"'") for word in words[:40]]
+        keywords: list[str] = []
+        for term in first_terms:
+            cleaned = term.strip()
+            if len(cleaned) < 5:
+                continue
+            if cleaned.lower() in {item.lower() for item in keywords}:
+                continue
+            keywords.append(cleaned)
+            if len(keywords) >= 5:
+                break
+        return {
+            "summary": f"{chapter_title} is summarized heuristically from the source text.",
+            "analysis": {
+                "themes_touched": [chapter_title] if chapter_title else [],
+                "major_actors": [],
+                "key_places": [],
+                "key_institutions": [],
+                "timeframe": "",
+                "key_events_or_arguments": [
+                    f"{chapter_title} contributes material relevant to the project theme."
+                ],
+                "major_tensions": [],
+                "causal_shifts": [],
+                "narrative_hooks": [f"Return to {chapter_title} for episode construction."],
+                "retrieval_keywords": keywords,
+            },
+        }
+
     def _generate_book_summary(self, payload: PromptPayload) -> dict[str, Any]:
         theme = str(payload.get("theme", "")).strip()
         sub_themes = [

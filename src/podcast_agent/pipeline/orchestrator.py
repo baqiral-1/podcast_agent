@@ -296,6 +296,53 @@ def _resolve_writing_passage_text(passage: ExtractedPassage) -> str:
     return passage.text
 
 
+def _build_compact_chapter_projection(chapter: ChapterInfo) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "chapter_id": chapter.chapter_id,
+        "title": chapter.title,
+        "summary": chapter.summary,
+    }
+    analysis = chapter.analysis
+    if analysis is None:
+        return payload
+    payload.update({
+        "themes_touched": list(analysis.themes_touched),
+        "major_tensions": list(analysis.major_tensions),
+        "causal_shifts": list(analysis.causal_shifts),
+        "narrative_hooks": list(analysis.narrative_hooks),
+        "retrieval_keywords": list(analysis.retrieval_keywords),
+    })
+    return payload
+
+
+def _build_chapter_context(chapter: ChapterInfo | None) -> dict[str, Any] | None:
+    if chapter is None:
+        return None
+    context: dict[str, Any] = {
+        "chapter_id": chapter.chapter_id,
+        "chapter_title": chapter.title,
+        "chapter_summary": chapter.summary,
+    }
+    analysis = chapter.analysis
+    if analysis is None:
+        return context
+    context.update({
+        "themes_touched": list(analysis.themes_touched),
+        "major_tensions": list(analysis.major_tensions),
+        "causal_shifts": list(analysis.causal_shifts),
+        "narrative_hooks": list(analysis.narrative_hooks),
+    })
+    return context
+
+
+def _build_chapter_lookup(books: list[BookRecord]) -> dict[tuple[str, str], ChapterInfo]:
+    lookup: dict[tuple[str, str], ChapterInfo] = {}
+    for book in books:
+        for chapter in book.chapters:
+            lookup[(book.book_id, chapter.chapter_id)] = chapter
+    return lookup
+
+
 def _select_top_passages_for_synthesis(
     passages: list[ExtractedPassage],
     *,
@@ -388,6 +435,7 @@ def _collect_episode_insight_passages(
     *,
     passages_by_axis: dict[str, list[ExtractedPassage]],
     selected_insight_passage_ids: set[str],
+    chapter_lookup: dict[tuple[str, str], ChapterInfo] | None = None,
 ) -> list[dict[str, Any]]:
     if not selected_insight_passage_ids:
         return []
@@ -404,6 +452,9 @@ def _collect_episode_insight_passages(
                     "book_id": passage.book_id,
                     "full_text": _resolve_writing_passage_text(passage),
                     "chapter_ref": passage.chapter_ref,
+                    "chapter_context": _build_chapter_context(
+                        (chapter_lookup or {}).get((passage.book_id, passage.chapter_ref))
+                    ),
                     "synthesis_tags": [tag.value for tag in passage.synthesis_tags],
                     "source_axis_ids": [axis_id],
                     "relevance_score": passage.relevance_score,
@@ -1412,7 +1463,10 @@ class PipelineOrchestrator:
             summaries = await asyncio.gather(*summary_tasks)
             updated: list[ChapterInfo] = []
             for chapter, summary in zip(chapters, summaries, strict=True):
-                updated.append(chapter.model_copy(update={"summary": summary.summary}))
+                updated.append(chapter.model_copy(update={
+                    "summary": summary.summary,
+                    "analysis": summary.analysis,
+                }))
             chapters = updated
 
             ctx["output_summary"] = {
@@ -1434,7 +1488,7 @@ class PipelineOrchestrator:
             summary_payloads: list[tuple[str, dict[str, Any]]] = []
             for book in project.books:
                 chapter_info = [
-                    {"title": ch.title, "summary": ch.summary}
+                    _build_compact_chapter_projection(ch)
                     for ch in book.chapters
                 ]
                 summary_payloads.append((
@@ -2197,6 +2251,7 @@ class PipelineOrchestrator:
             insights_by_id = {insight.insight_id: insight for insight in synthesis_map.insights}
             merged_catalog = _build_merged_narrative_catalog(synthesis_map)
             tension_catalog = _build_tension_catalog(synthesis_map)
+            chapter_lookup = _build_chapter_lookup(project.books)
             adjusted_episodes: list[EpisodePlan] = []
             realization_reports: list[dict[str, Any]] = []
             ordered_assignments = [
@@ -2226,6 +2281,7 @@ class PipelineOrchestrator:
                 insight_passages = _collect_episode_insight_passages(
                     passages_by_axis=corpus.passages_by_axis,
                     selected_insight_passage_ids=selected_insight_passage_ids,
+                    chapter_lookup=chapter_lookup,
                 )
                 selected_passages_by_axis = _select_episode_planning_passages(
                     passages_by_axis=corpus.passages_by_axis,
@@ -2237,6 +2293,10 @@ class PipelineOrchestrator:
                         ({
                             "passage_id": p.passage_id,
                             "book_id": p.book_id,
+                            "chapter_ref": p.chapter_ref,
+                            "chapter_context": _build_chapter_context(
+                                chapter_lookup.get((p.book_id, p.chapter_ref))
+                            ),
                             "relevance_score": p.relevance_score,
                             "quotability_score": p.quotability_score,
                         } | (
@@ -2564,6 +2624,7 @@ class PipelineOrchestrator:
             writing_source_mode=_WRITING_SOURCE_MODE_FULL_CHUNK,
         ) as ctx:
             passage_ids = set()
+            chapter_lookup = _build_chapter_lookup(project.books)
             for beat in plan.beats:
                 passage_ids.update(beat.passage_ids)
 
@@ -2575,6 +2636,9 @@ class PipelineOrchestrator:
                             "passage_id": p.passage_id, "book_id": p.book_id,
                             "text": _resolve_writing_passage_text(p),
                             "chapter_ref": p.chapter_ref,
+                            "chapter_context": _build_chapter_context(
+                                chapter_lookup.get((p.book_id, p.chapter_ref))
+                            ),
                             "synthesis_tags": [t.value for t in p.synthesis_tags],
                         })
 

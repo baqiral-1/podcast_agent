@@ -24,6 +24,7 @@ from podcast_agent.agents.validation import GroundingValidationAgent
 from podcast_agent.agents.writing import WritingAgent
 from podcast_agent.schemas.models import (
     BookRecord,
+    ChapterAnalysis,
     ChapterInfo,
     EpisodeFraming,
     GroundingReport,
@@ -67,6 +68,13 @@ class TestThemeDecompositionAgent:
                 chapters=[ChapterInfo(
                     title="Ch1", start_index=0, end_index=100,
                     word_count=50, summary="Summary.",
+                    analysis=ChapterAnalysis(
+                        themes_touched=["bias"],
+                        major_tensions=["fairness vs scale"],
+                        causal_shifts=["policy changes deployment"],
+                        narrative_hooks=["The tradeoff becomes visible."],
+                        retrieval_keywords=["bias", "governance"],
+                    ),
                 )],
             ),
             BookRecord(
@@ -88,6 +96,7 @@ class TestThemeDecompositionAgent:
         assert payload["books"][1]["book_summary"] == ""
         assert payload["books"][0]["chapters"][0]["title"] == "Ch1"
         assert payload["books"][0]["chapters"][0]["summary"] == "Summary."
+        assert payload["books"][0]["chapters"][0]["themes_touched"] == ["bias"]
 
 
 class TestBookSummaryAgent:

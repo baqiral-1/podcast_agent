@@ -11,6 +11,7 @@ from podcast_agent.schemas.models import (
     AudioManifest,
     AudioSegmentResult,
     BookRecord,
+    ChapterAnalysis,
     ChapterInfo,
     ChunkingConfig,
     Citation,
@@ -73,6 +74,13 @@ class TestBookRecord:
             chapter_id="ch1", title="Chapter 1",
             start_index=0, end_index=1000, word_count=200,
             summary="First chapter.",
+            analysis=ChapterAnalysis(
+                themes_touched=["partition"],
+                major_tensions=["deadline vs legitimacy"],
+                causal_shifts=["announcement accelerates unrest"],
+                narrative_hooks=["A decision made in private reshapes millions of lives."],
+                retrieval_keywords=["partition", "deadline"],
+            ),
         )
         book = BookRecord(
             book_id="b1", title="Test", author="A",
@@ -83,6 +91,19 @@ class TestBookRecord:
         restored = BookRecord.model_validate(data)
         assert len(restored.chapters) == 1
         assert restored.chapters[0].chapter_id == "ch1"
+        assert restored.chapters[0].analysis is not None
+        assert restored.chapters[0].analysis.themes_touched == ["partition"]
+
+    def test_chapter_info_accepts_missing_analysis_for_backward_compatibility(self):
+        chapter = ChapterInfo(
+            chapter_id="ch1",
+            title="Chapter 1",
+            start_index=0,
+            end_index=100,
+            word_count=50,
+            summary="Legacy summary.",
+        )
+        assert chapter.analysis is None
 
 
 class TestTextChunk:
