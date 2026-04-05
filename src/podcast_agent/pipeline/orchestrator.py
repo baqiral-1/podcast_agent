@@ -384,6 +384,43 @@ def _select_episode_planning_passages(
     return selected_by_axis
 
 
+def _collect_episode_insight_passages(
+    *,
+    passages_by_axis: dict[str, list[ExtractedPassage]],
+    selected_insight_passage_ids: set[str],
+) -> list[dict[str, Any]]:
+    if not selected_insight_passage_ids:
+        return []
+
+    by_id: dict[str, dict[str, Any]] = {}
+    for axis_id, passages in passages_by_axis.items():
+        for passage in passages:
+            if passage.passage_id not in selected_insight_passage_ids:
+                continue
+            existing = by_id.get(passage.passage_id)
+            if existing is None:
+                by_id[passage.passage_id] = {
+                    "passage_id": passage.passage_id,
+                    "book_id": passage.book_id,
+                    "full_text": _resolve_writing_passage_text(passage),
+                    "chapter_ref": passage.chapter_ref,
+                    "synthesis_tags": [tag.value for tag in passage.synthesis_tags],
+                    "source_axis_ids": [axis_id],
+                    "relevance_score": passage.relevance_score,
+                    "quotability_score": passage.quotability_score,
+                }
+                continue
+            if axis_id not in existing["source_axis_ids"]:
+                existing["source_axis_ids"].append(axis_id)
+
+    for payload in by_id.values():
+        payload["source_axis_ids"].sort()
+    return [
+        by_id[passage_id]
+        for passage_id in sorted(by_id)
+    ]
+
+
 def _build_merged_narrative_catalog(synthesis_map: SynthesisMap) -> list[dict[str, Any]]:
     return [
         {
@@ -2186,6 +2223,10 @@ class PipelineOrchestrator:
                     tension_catalog=tension_catalog,
                 )
                 synthesis_subset = synthesis_context.model_dump(mode="json")
+                insight_passages = _collect_episode_insight_passages(
+                    passages_by_axis=corpus.passages_by_axis,
+                    selected_insight_passage_ids=selected_insight_passage_ids,
+                )
                 selected_passages_by_axis = _select_episode_planning_passages(
                     passages_by_axis=corpus.passages_by_axis,
                     assigned_axis_ids=assignment.axis_ids,
@@ -2229,6 +2270,7 @@ class PipelineOrchestrator:
                     synthesis_map=synthesis_subset,
                     project_metadata=project_metadata,
                     available_passages=passages_summary,
+                    insight_passages=insight_passages,
                     previous_episode=previous_episode,
                     next_episode=next_episode,
                 )
@@ -2257,6 +2299,7 @@ class PipelineOrchestrator:
                             synthesis_map=synthesis_context.model_dump(mode="json"),
                             project_metadata=project_metadata,
                             available_passages=payload["available_passages"],
+                            insight_passages=payload["insight_passages"],
                             previous_episode=payload["previous_episode"],
                             next_episode=payload["next_episode"],
                             planning_feedback=_build_planning_feedback(realization),

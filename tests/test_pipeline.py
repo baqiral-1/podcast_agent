@@ -1465,6 +1465,55 @@ class TestWriteEpisodeSourceMode:
         payload = orch.writing_agent.run.call_args.args[0]
         assert payload["passages"][0]["text"] == "trimmed excerpt"
 
+    def test_write_episode_includes_cross_axis_insight_passage_when_plan_returns_it(self, tmp_path):
+        orch, plan, project, corpus, ep_dir, project_dir = self._build_context(
+            tmp_path,
+            full_text="full chunk text",
+        )
+        plan = plan.model_copy(
+            update={
+                "beats": [
+                    EpisodeBeat(
+                        beat_id="beat-1",
+                        description="Beat",
+                        passage_ids=["p_cross_axis"],
+                    )
+                ]
+            }
+        )
+        corpus = ThematicCorpus(
+            project_id=project.project_id,
+            passages_by_axis={
+                "axis_06": [
+                    ExtractedPassage(
+                        passage_id="p_cross_axis",
+                        book_id="book-a",
+                        chunk_ids=["c9"],
+                        text="cross axis excerpt",
+                        full_text="cross axis full text",
+                        chapter_ref="ch9",
+                        axis_id="axis_06",
+                        relevance_score=0.8,
+                        quotability_score=0.7,
+                        synthesis_tags=[SynthesisTag.INDEPENDENT],
+                    )
+                ]
+            },
+        )
+        orch.writing_agent.run = MagicMock(
+            return_value=EpisodeWritingResponse(
+                title="Episode 1",
+                segments=[ScriptSegment(segment_id="s1", text="Narration", beat_id="beat-1")],
+                citations=[],
+            )
+        )
+
+        asyncio.run(orch._write_episode(plan, project, corpus, ep_dir, project_dir))
+
+        payload = orch.writing_agent.run.call_args.args[0]
+        assert payload["passages"][0]["passage_id"] == "p_cross_axis"
+        assert payload["passages"][0]["text"] == "cross axis full text"
+
     def test_write_episode_logs_duration_shortfall_warning(self, tmp_path):
         orch, _, project, corpus, ep_dir, project_dir = self._build_context(
             tmp_path,
@@ -2230,9 +2279,12 @@ class TestEpisodePlanningPayload:
         assert synthesis_payload["merged_narratives"][0]["merged_narrative_id"] == "merged_narrative_001"
         assert synthesis_payload["unresolved_tensions"][0]["tension_id"] == "tension_001"
         available = captured_payloads[0]["available_passages"]
+        insight_passages = captured_payloads[0]["insight_passages"]
         assert "axis_1" in available and "axis_2" in available
         assert any(p["passage_id"] == "p_a1_shared" for p in available["axis_1"])
         assert any(p["passage_id"] == "p_a2_shared" for p in available["axis_2"])
+        assert {entry["passage_id"] for entry in insight_passages} == {"p_a1_unique", "p_a2_shared"}
+        assert all("full_text" in entry for entry in insight_passages)
         insight_entries = {
             entry["passage_id"]: entry
             for axis_entries in available.values()
@@ -2368,6 +2420,114 @@ class TestEpisodePlanningPayload:
         assert "summary_text" not in insight_by_id["p39"]
         assert "full_text" in insight_by_id["p_shared_axis_2"]
         assert "summary_text" not in insight_by_id["p_shared_axis_2"]
+        assert {entry["passage_id"] for entry in captured_payloads[0]["insight_passages"]} == {
+            "p39", "p_shared_axis_2"
+        }
+
+    def test_planning_payload_includes_cross_axis_insight_passages_separately(self, tmp_path):
+        settings = Settings(
+            llm=Settings().llm.model_copy(update={"llm_provider": "heuristic"}),
+            database=Settings().database.model_copy(update={"dsn": None}),
+            pipeline=Settings().pipeline.model_copy(update={"artifact_root": tmp_path}),
+        )
+        orch = PipelineOrchestrator(settings)
+        captured_payloads: list[dict] = []
+
+        def fake_episode_plan(payload):
+            captured_payloads.append(payload)
+            return EpisodePlan(episode_number=1, title="Planned", beats=[])
+
+        orch.episode_planning_agent.run = MagicMock(side_effect=fake_episode_plan)
+        project = ThematicProject(
+            project_id="proj_cross_axis",
+            theme="Theme",
+            episode_count=1,
+            books=[
+                BookRecord(
+                    book_id="book-a",
+                    title="Book A",
+                    author="A",
+                    source_path="/a.txt",
+                    source_type="txt",
+                )
+            ],
+        )
+        strategy = NarrativeStrategy(
+            strategy_type="convergence",
+            justification="J",
+            series_arc="Arc",
+            episode_arc_outline=["Ep1"],
+            recommended_episode_count=2,
+            episode_assignments=[
+                EpisodeAssignment(
+                    episode_number=1,
+                    title="Ep 1",
+                    axis_ids=["axis_1"],
+                    insight_ids=["insight_1"],
+                )
+            ],
+        )
+        corpus = ThematicCorpus(
+            project_id="proj_cross_axis",
+            passages_by_axis={
+                "axis_1": [
+                    ExtractedPassage(
+                        passage_id="p_support",
+                        book_id="book-a",
+                        chunk_ids=["c1"],
+                        text="support",
+                        full_text="support full",
+                        axis_id="axis_1",
+                    ),
+                ],
+                "axis_6": [
+                    ExtractedPassage(
+                        passage_id="p_insight_a",
+                        book_id="book-a",
+                        chunk_ids=["c2"],
+                        text="insight a",
+                        full_text="insight a full",
+                        axis_id="axis_6",
+                    ),
+                    ExtractedPassage(
+                        passage_id="p_insight_b",
+                        book_id="book-a",
+                        chunk_ids=["c3"],
+                        text="insight b",
+                        full_text="insight b full",
+                        axis_id="axis_6",
+                    ),
+                ],
+            },
+        )
+        synthesis_map = SynthesisMap(
+            project_id="proj_cross_axis",
+            insights=[
+                SynthesisInsight(
+                    insight_id="insight_1",
+                    insight_type=InsightType.SYNCHRONICITY,
+                    title="Insight",
+                    description="Desc",
+                    passage_ids=["p_insight_a", "p_insight_b"],
+                    axis_ids=["axis_6"],
+                )
+            ],
+        )
+
+        asyncio.run(
+            orch._plan_series(project, synthesis_map, strategy, corpus, tmp_path / "proj_cross_axis")
+        )
+
+        payload = captured_payloads[0]
+        assert payload["available_passages"]["axis_1"][0]["passage_id"] == "p_support"
+        assert {entry["passage_id"] for entry in payload["insight_passages"]} == {
+            "p_insight_a", "p_insight_b"
+        }
+        assert payload["insight_passages"][0]["source_axis_ids"] == ["axis_6"]
+        assert not any(
+            entry["passage_id"] in {"p_insight_a", "p_insight_b"}
+            for entry in payload["available_passages"]["axis_1"]
+        )
 
     def test_plan_series_retries_once_when_assigned_insight_has_zero_realization(self, tmp_path):
         settings = Settings(
@@ -2466,6 +2626,9 @@ class TestEpisodePlanningPayload:
 
         assert len(captured_payloads) == 2
         assert captured_payloads[1]["planning_feedback"]["issue"] == "assigned_insight_realization"
+        assert {entry["passage_id"] for entry in captured_payloads[1]["insight_passages"]} == {
+            "p_target"
+        }
         assert plans[0].beats[0].passage_ids == ["p_target", "p_missing"]
         realization = json.loads((tmp_path / "proj_retry" / "episode_plan_realization.json").read_text())
         assert realization["episodes"][0]["has_issues"] is False

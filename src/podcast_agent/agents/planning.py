@@ -37,9 +37,10 @@ class EpisodePlanningAgent(Agent):
         "- Include 3-5 attribution moments per episode\n"
         "- Spine segments must not include author names\n\n"
         "available_passages entries include mixed source detail:\n"
-        "- insight-linked entries include full_text\n"
         "- supporting entries include summary_text\n"
-        "Use full_text when available for high-fidelity beat planning, and use summary_text for "
+        "insight_passages entries contain the full-text passages for assigned insights, even when "
+        "those passages live outside the episode's assigned axes.\n"
+        "Use insight_passages for assigned-insight realization, and use available_passages for "
         "supporting context and cross-axis comparisons.\n\n"
         "Assign specific passage_ids from the thematic corpus to each beat. "
         "Use primary_book_id to indicate the best source material, not an author lead.\n\n"
@@ -55,6 +56,7 @@ class EpisodePlanningAgent(Agent):
         synthesis_map: dict,
         project_metadata: dict,
         available_passages: dict,
+        insight_passages: list[dict],
         previous_episode: dict | None,
         next_episode: dict | None,
         planning_feedback: dict | None = None,
@@ -65,6 +67,7 @@ class EpisodePlanningAgent(Agent):
             "synthesis_map": synthesis_map,
             "project": project_metadata,
             "available_passages": available_passages,
+            "insight_passages": insight_passages,
             "previous_episode": previous_episode,
             "next_episode": next_episode,
         }
