@@ -160,6 +160,7 @@ class TestLLMConfigResolvers:
     def test_resolve_model_from_agent_config(self):
         config = LLMConfig()
         assert config.resolve_model("structuring") == "claude-haiku-4-5"
+        assert config.resolve_model("book_summary") == "claude-opus-4-6"
         assert config.resolve_model("synthesis_mapping") == "claude-opus-4-6"
         assert config.resolve_model("narrative_strategy") == "claude-opus-4-6"
         assert config.resolve_model("episode_planning") == "claude-opus-4-6"

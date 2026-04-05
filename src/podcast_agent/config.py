@@ -104,7 +104,7 @@ class LLMConfig(BaseModel):
         default_factory=lambda: {
             "structuring": AgentConfig(model_name="claude-haiku-4-5", temperature=0.3, max_retry_attempts=3, concurrency_limit=10),
             "chapter_summary": AgentConfig(model_name="claude-haiku-4-5", temperature=0.3, max_retry_attempts=3, concurrency_limit=10),
-            "book_summary": AgentConfig(model_name="claude-haiku-4-5", temperature=0.3, max_retry_attempts=3, concurrency_limit=10),
+            "book_summary": AgentConfig(model_name="claude-opus-4-6", temperature=0.3, max_retry_attempts=3, concurrency_limit=10),
             "theme_decomposition": AgentConfig(model_name="claude-opus-4-6", temperature=0.7, max_retry_attempts=2, concurrency_limit=6),
             "passage_extraction": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.1, max_retry_attempts=3, concurrency_limit=8),
             "synthesis_mapping": AgentConfig(model_name="claude-opus-4-6", temperature=0.8, max_retry_attempts=2, concurrency_limit=3),
