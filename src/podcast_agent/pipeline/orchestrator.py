@@ -82,6 +82,8 @@ from podcast_agent.tts.openai_compatible import build_tts_client
 
 logger = logging.getLogger(__name__)
 
+_POST_RERANK_PASSAGE_LIMIT = 100
+
 
 class StructuringStageError(RuntimeError):
     """Raised when chapter structuring fails for a book during ingestion."""
@@ -419,6 +421,30 @@ def _select_top_passages_for_synthesis(
     ranked = sorted(
         passages,
         key=lambda p: (-p.relevance_score, -p.quotability_score, p.passage_id),
+    )
+    return ranked[:top_n]
+
+
+def _score_post_rerank_passage(passage: ExtractedPassage) -> float:
+    return (0.8 * passage.relevance_score) + (0.2 * passage.quotability_score)
+
+
+def _select_top_passages_for_post_rerank(
+    passages: list[ExtractedPassage],
+    *,
+    top_k: int = _POST_RERANK_PASSAGE_LIMIT,
+) -> list[ExtractedPassage]:
+    if not passages:
+        return []
+    top_n = max(1, min(top_k, len(passages)))
+    ranked = sorted(
+        passages,
+        key=lambda p: (
+            -_score_post_rerank_passage(p),
+            -p.relevance_score,
+            -p.quotability_score,
+            p.passage_id,
+        ),
     )
     return ranked[:top_n]
 
@@ -2335,13 +2361,19 @@ class PipelineOrchestrator:
                     book_count=len(book_ids),
                     rerank_top_k=project.config.rerank_top_k,
                 )
-                ranked_rehydrated = sorted(
+                target_total_before_limit = rerank_policy["target_total"]
+                target_total = min(target_total_before_limit, _POST_RERANK_PASSAGE_LIMIT)
+                top_passages = _select_top_passages_for_post_rerank(
                     rehydrated_passages,
-                    key=lambda p: (-p.relevance_score, -p.quotability_score, p.passage_id),
+                    top_k=target_total,
                 )
-                target_total = rerank_policy["target_total"]
-                top_passages = ranked_rehydrated[:target_total]
                 rerank_policy.update({
+                    "post_rerank_score_weights": {
+                        "relevance": 0.8,
+                        "quotability": 0.2,
+                    },
+                    "post_rerank_passage_limit": _POST_RERANK_PASSAGE_LIMIT,
+                    "target_total_before_limit": target_total_before_limit,
                     "allocation_policy": retrieval_log["allocation_policy"],
                     "retrieval_relevance_power": retrieval_log["retrieval_relevance_power"],
                     "retrieval_size_exponent": retrieval_log["retrieval_size_exponent"],
@@ -2349,6 +2381,7 @@ class PipelineOrchestrator:
                     "axis_candidate_budget": axis_candidate_budget_effective,
                     "per_book_budget": retrieval_log["per_book_budget"],
                     "admitted_by_book": admitted_by_book,
+                    "target_total": target_total,
                 })
                 return axis.axis_id, top_passages, retained_pairs, candidate_count, cross_pair_validation, rerank_policy
 

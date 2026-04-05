@@ -28,6 +28,7 @@ from podcast_agent.pipeline.orchestrator import (
     _select_episode_planning_passages,
     _save_json,
     _load_json,
+    _select_top_passages_for_post_rerank,
     _trim_candidate_texts_by_bm25,
     _select_synthesis_passages,
     _select_top_passages_for_synthesis,
@@ -880,7 +881,9 @@ class TestBookIngestion:
         orch.retrieval = FakeRetrieval(hits_by_book)
 
         bad_response = PassageExtractionResponse(passages=[], cross_book_pairs=[])
-        orch.passage_extraction_agent.run = MagicMock(side_effect=[bad_response, bad_response])
+        orch.passage_extraction_agent.run = MagicMock(
+            side_effect=[bad_response, bad_response, bad_response]
+        )
 
         project = ThematicProject(
             project_id="proj-1",
@@ -898,7 +901,7 @@ class TestBookIngestion:
 
         with pytest.raises(RuntimeError, match="fewer than 60%"):
             asyncio.run(orch._extract_passages(project, [axis], project_dir))
-        assert orch.passage_extraction_agent.run.call_count == 2
+        assert orch.passage_extraction_agent.run.call_count == 3
 
     def test_passage_extraction_ignores_duplicates(self, tmp_path):
         settings = Settings(
@@ -1369,6 +1372,51 @@ class TestAdaptiveRerankTarget:
         assert policy["base_total"] == 40
         assert policy["target_total"] == 10
         assert policy["cap_applied"] is False
+
+
+class TestPostRerankSelection:
+    def _make_passage(
+        self,
+        passage_id: str,
+        relevance: float,
+        quotability: float,
+    ) -> ExtractedPassage:
+        return ExtractedPassage(
+            passage_id=passage_id,
+            book_id="book-a",
+            chunk_ids=[passage_id],
+            text=f"text {passage_id}",
+            trimmed_text=f"text {passage_id}",
+            full_text=f"text {passage_id}",
+            chapter_ref="ch1",
+            axis_id="axis_01",
+            relevance_score=relevance,
+            quotability_score=quotability,
+            synthesis_tags=[],
+        )
+
+    def test_select_top_passages_for_post_rerank_uses_weighted_final_score(self):
+        passages = [
+            self._make_passage("a", 0.80, 0.00),
+            self._make_passage("b", 0.79, 1.00),
+            self._make_passage("c", 0.75, 0.75),
+        ]
+
+        selected = _select_top_passages_for_post_rerank(passages, top_k=3)
+
+        assert [p.passage_id for p in selected] == ["b", "c", "a"]
+
+    def test_select_top_passages_for_post_rerank_caps_at_requested_limit(self):
+        passages = [
+            self._make_passage(f"p{i:03d}", 1.0 - (i / 1000.0), 0.5)
+            for i in range(105)
+        ]
+
+        selected = _select_top_passages_for_post_rerank(passages, top_k=100)
+
+        assert len(selected) == 100
+        assert selected[0].passage_id == "p000"
+        assert selected[-1].passage_id == "p099"
 
 
 class TestPassageUtilization:
