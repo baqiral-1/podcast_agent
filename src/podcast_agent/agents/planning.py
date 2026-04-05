@@ -23,7 +23,7 @@ class EpisodePlanningAgent(Agent):
         "The listener should feel like they are hearing history unfold, not a book review. "
         "Organize beats around what happened and why it matters.\n\n"
         "Use the selected synthesis context actively:\n"
-        "- Treat narrative_strategy.episode_arc_details for this episode as binding arc architecture\n"
+        "- Treat narrative_strategy.episode_arc_detail as binding arc architecture\n"
         "- Use assigned insights to shape the core episode argument\n"
         "- Use selected merged narratives to anchor long-arc synthesis and payoff\n"
         "- Use selected unresolved tensions to shape open questions, pivots, or endings\n\n"
@@ -37,10 +37,9 @@ class EpisodePlanningAgent(Agent):
         "- Provide enough spine segments to support the beat count and 100-minute target\n"
         "- Include 3-5 attribution moments per episode\n"
         "- Spine segments must not include author names\n\n"
-        "available_passages entries include mixed source detail:\n"
-        "- supporting entries include summary_text\n"
-        "- passage entries may include chapter_context with chapter-level themes, tensions, "
-        "causal shifts, and hooks\n"
+        "available_passages entries include summary_text only.\n"
+        "Use chapter_context_by_ref[book_id][chapter_ref] when chapter-level context is needed "
+        "(themes, tensions, causal shifts, hooks).\n"
         "insight_passages entries contain the full_text passages for assigned insights, even when "
         "those passages live outside the episode's assigned axes.\n"
         "Use insight_passages for assigned-insight realization, and use available_passages for "
@@ -62,6 +61,7 @@ class EpisodePlanningAgent(Agent):
         project_metadata: dict,
         available_passages: dict,
         insight_passages: list[dict] | None = None,
+        chapter_context_by_ref: dict[str, dict[str, dict]] | None = None,
         previous_episode: dict | None = None,
         next_episode: dict | None = None,
         planning_feedback: dict | None = None,
@@ -73,6 +73,7 @@ class EpisodePlanningAgent(Agent):
             "project": project_metadata,
             "available_passages": available_passages,
             "insight_passages": insight_passages or [],
+            "chapter_context_by_ref": chapter_context_by_ref or {},
             "previous_episode": previous_episode,
             "next_episode": next_episode,
         }

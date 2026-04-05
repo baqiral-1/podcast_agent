@@ -2445,6 +2445,21 @@ class TestEpisodePlanningPayload:
                     author="A",
                     source_path="/a.txt",
                     source_type="txt",
+                    chapters=[
+                        ChapterInfo(
+                            chapter_id="ch1",
+                            title="Chapter 1",
+                            start_index=0,
+                            end_index=0,
+                            word_count=1200,
+                            summary="Chapter summary",
+                            analysis=ChapterAnalysis(
+                                major_tensions=["tension-1"],
+                                causal_shifts=["shift-1"],
+                                narrative_hooks=["hook-1"],
+                            ),
+                        )
+                    ],
                 )
             ],
         )
@@ -2478,6 +2493,7 @@ class TestEpisodePlanningPayload:
                         chunk_ids=["chunk_shared"],
                         text="Axis 1 summary",
                         full_text="Axis 1 shared full text",
+                        chapter_ref="ch1",
                         axis_id="axis_1",
                         relevance_score=0.9,
                         quotability_score=0.7,
@@ -2488,6 +2504,7 @@ class TestEpisodePlanningPayload:
                         chunk_ids=["chunk_unique_a1"],
                         text="Axis 1 unique summary",
                         full_text="Axis 1 unique full text",
+                        chapter_ref="ch1",
                         axis_id="axis_1",
                         relevance_score=0.8,
                         quotability_score=0.6,
@@ -2500,6 +2517,7 @@ class TestEpisodePlanningPayload:
                         chunk_ids=["chunk_shared"],
                         text="Axis 2 summary",
                         full_text="Axis 2 shared full text",
+                        chapter_ref="ch1",
                         axis_id="axis_2",
                         relevance_score=0.7,
                         quotability_score=0.7,
@@ -2557,18 +2575,32 @@ class TestEpisodePlanningPayload:
         assert any(p["passage_id"] == "p_a1_shared" for p in available["axis_1"])
         assert any(p["passage_id"] == "p_a2_shared" for p in available["axis_2"])
         assert {entry["passage_id"] for entry in insight_passages} == {"p_a1_unique", "p_a2_shared"}
-        assert "chapter_context" in available["axis_1"][0]
+        assert "chapter_context" not in available["axis_1"][0]
         assert all("full_text" in entry for entry in insight_passages)
+        assert captured_payloads[0]["chapter_context_by_ref"] == {
+            "book-a": {
+                "ch1": {
+                    "chapter_id": "ch1",
+                    "chapter_title": "Chapter 1",
+                    "chapter_summary": "Chapter summary",
+                    "themes_touched": [],
+                    "major_tensions": ["tension-1"],
+                    "causal_shifts": ["shift-1"],
+                    "narrative_hooks": ["hook-1"],
+                }
+            }
+        }
+        assert captured_payloads[0]["narrative_strategy"]["episode_arc_detail"]["episode_number"] == 1
         insight_entries = {
             entry["passage_id"]: entry
             for axis_entries in available.values()
             for entry in axis_entries
             if entry["passage_id"] in {"p_a1_unique", "p_a2_shared"}
         }
-        assert "full_text" in insight_entries["p_a1_unique"]
-        assert "summary_text" not in insight_entries["p_a1_unique"]
-        assert "full_text" in insight_entries["p_a2_shared"]
-        assert "summary_text" not in insight_entries["p_a2_shared"]
+        assert "summary_text" in insight_entries["p_a1_unique"]
+        assert "full_text" not in insight_entries["p_a1_unique"]
+        assert "summary_text" in insight_entries["p_a2_shared"]
+        assert "full_text" not in insight_entries["p_a2_shared"]
         non_insight_entry = next(
             entry
             for axis_entries in available.values()
@@ -2691,10 +2723,10 @@ class TestEpisodePlanningPayload:
             for entry in axis_entries
             if entry["passage_id"] in {"p39", "p_shared_axis_2"}
         }
-        assert "full_text" in insight_by_id["p39"]
-        assert "summary_text" not in insight_by_id["p39"]
-        assert "full_text" in insight_by_id["p_shared_axis_2"]
-        assert "summary_text" not in insight_by_id["p_shared_axis_2"]
+        assert "summary_text" in insight_by_id["p39"]
+        assert "full_text" not in insight_by_id["p39"]
+        assert "summary_text" in insight_by_id["p_shared_axis_2"]
+        assert "full_text" not in insight_by_id["p_shared_axis_2"]
         assert {entry["passage_id"] for entry in captured_payloads[0]["insight_passages"]} == {
             "p39", "p_shared_axis_2"
         }
@@ -2796,11 +2828,12 @@ class TestEpisodePlanningPayload:
 
         payload = captured_payloads[0]
         assert payload["available_passages"]["axis_1"][0]["passage_id"] == "p_support"
-        assert "chapter_context" in payload["available_passages"]["axis_1"][0]
+        assert "chapter_context" not in payload["available_passages"]["axis_1"][0]
         assert {entry["passage_id"] for entry in payload["insight_passages"]} == {
             "p_insight_a", "p_insight_b"
         }
         assert payload["insight_passages"][0]["source_axis_ids"] == ["axis_6"]
+        assert payload["chapter_context_by_ref"] == {}
         assert not any(
             entry["passage_id"] in {"p_insight_a", "p_insight_b"}
             for entry in payload["available_passages"]["axis_1"]

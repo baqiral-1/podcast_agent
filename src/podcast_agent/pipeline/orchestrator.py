@@ -376,6 +376,38 @@ def _build_chapter_lookup(books: list[BookRecord]) -> dict[tuple[str, str], Chap
     return lookup
 
 
+def _build_chapter_context_by_ref(
+    *,
+    chapter_lookup: dict[tuple[str, str], ChapterInfo],
+    passages_by_axis: dict[str, list[ExtractedPassage]],
+    insight_passages: list[dict[str, Any]],
+) -> dict[str, dict[str, dict[str, Any]]]:
+    chapter_refs_by_book: dict[str, set[str]] = {}
+    for passages in passages_by_axis.values():
+        for passage in passages:
+            if not passage.chapter_ref:
+                continue
+            chapter_refs_by_book.setdefault(passage.book_id, set()).add(passage.chapter_ref)
+    for passage in insight_passages:
+        chapter_ref = passage.get("chapter_ref")
+        book_id = passage.get("book_id")
+        if not chapter_ref or not book_id:
+            continue
+        chapter_refs_by_book.setdefault(book_id, set()).add(chapter_ref)
+
+    chapter_context_by_ref: dict[str, dict[str, dict[str, Any]]] = {}
+    for book_id, chapter_refs in sorted(chapter_refs_by_book.items()):
+        per_book: dict[str, dict[str, Any]] = {}
+        for chapter_ref in sorted(chapter_refs):
+            chapter_context = _build_chapter_context(chapter_lookup.get((book_id, chapter_ref)))
+            if chapter_context is None:
+                continue
+            per_book[chapter_ref] = chapter_context
+        if per_book:
+            chapter_context_by_ref[book_id] = per_book
+    return chapter_context_by_ref
+
+
 def _select_top_passages_for_synthesis(
     passages: list[ExtractedPassage],
     *,
@@ -485,9 +517,6 @@ def _collect_episode_insight_passages(
                     "book_id": passage.book_id,
                     "full_text": _resolve_writing_passage_text(passage),
                     "chapter_ref": passage.chapter_ref,
-                    "chapter_context": _build_chapter_context(
-                        (chapter_lookup or {}).get((passage.book_id, passage.chapter_ref))
-                    ),
                     "synthesis_tags": [tag.value for tag in passage.synthesis_tags],
                     "source_axis_ids": [axis_id],
                     "relevance_score": passage.relevance_score,
@@ -2702,6 +2731,10 @@ class PipelineOrchestrator:
                 for episode_number in range(1, project.episode_count + 1)
             ]
             planning_requests: list[tuple[int, EpisodeAssignment, list[Any], EpisodeSynthesisContext, dict[str, Any]]] = []
+            episode_arc_detail_by_number = {
+                detail.episode_number: detail
+                for detail in strategy.episode_arc_details
+            }
             for idx, assignment in enumerate(ordered_assignments):
                 selected_insights = [
                     insights_by_id[insight_id]
@@ -2731,25 +2764,33 @@ class PipelineOrchestrator:
                     assigned_axis_ids=assignment.axis_ids,
                     selected_insight_passage_ids=selected_insight_passage_ids,
                 )
+                chapter_context_by_ref = _build_chapter_context_by_ref(
+                    chapter_lookup=chapter_lookup,
+                    passages_by_axis=selected_passages_by_axis,
+                    insight_passages=insight_passages,
+                )
                 passages_summary = {
                     axis_id: [
-                        ({
+                        {
                             "passage_id": p.passage_id,
                             "book_id": p.book_id,
                             "chapter_ref": p.chapter_ref,
-                            "chapter_context": _build_chapter_context(
-                                chapter_lookup.get((p.book_id, p.chapter_ref))
-                            ),
                             "relevance_score": p.relevance_score,
                             "quotability_score": p.quotability_score,
-                        } | (
-                            {"full_text": _resolve_writing_passage_text(p)}
-                            if p.passage_id in selected_insight_passage_ids
-                            else {"summary_text": p.text}
-                        ))
+                            "summary_text": p.text,
+                        }
                         for p in selected_passages_by_axis.get(axis_id, [])
                     ]
                     for axis_id in assignment.axis_ids
+                }
+                episode_arc_detail = episode_arc_detail_by_number.get(assignment.episode_number)
+                narrative_strategy_payload: dict[str, Any] = {
+                    "strategy_type": strategy.strategy_type,
+                    "episode_arc_detail": (
+                        episode_arc_detail.model_dump(mode="json")
+                        if episode_arc_detail is not None
+                        else None
+                    ),
                 }
                 previous_episode = None
                 if idx > 0:
@@ -2769,11 +2810,12 @@ class PipelineOrchestrator:
                     }
                 payload = self.episode_planning_agent.build_payload(
                     episode_assignment=assignment.model_dump(mode="json"),
-                    narrative_strategy=strategy.model_dump(mode="json"),
+                    narrative_strategy=narrative_strategy_payload,
                     synthesis_map=synthesis_subset,
                     project_metadata=project_metadata,
                     available_passages=passages_summary,
                     insight_passages=insight_passages,
+                    chapter_context_by_ref=chapter_context_by_ref,
                     previous_episode=previous_episode,
                     next_episode=next_episode,
                 )
@@ -2798,11 +2840,12 @@ class PipelineOrchestrator:
                     if realization["has_issues"]:
                         retry_payload = self.episode_planning_agent.build_payload(
                             episode_assignment=assignment.model_dump(mode="json"),
-                            narrative_strategy=strategy.model_dump(mode="json"),
+                            narrative_strategy=payload["narrative_strategy"],
                             synthesis_map=synthesis_context.model_dump(mode="json"),
                             project_metadata=project_metadata,
                             available_passages=payload["available_passages"],
                             insight_passages=payload["insight_passages"],
+                            chapter_context_by_ref=payload["chapter_context_by_ref"],
                             previous_episode=payload["previous_episode"],
                             next_episode=payload["next_episode"],
                             planning_feedback=_build_planning_feedback(realization),
