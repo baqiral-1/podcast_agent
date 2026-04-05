@@ -140,14 +140,14 @@ class TestPassageRetrievalBudget:
 
 
 class TestWeightedAdmittedBudgets:
-    def test_quadratic_allocation_is_asymmetric_and_sums_exactly(self):
+    def test_relevance_weighting_is_asymmetric_and_sums_exactly(self):
         budgets = _compute_weighted_admitted_budgets(
             book_ids=["book-a", "book-b"],
             axis_total_budget=100,
             relevance_by_book={"book-a": 1.0, "book-b": 0.2},
         )
 
-        assert budgets == {"book-a": 92, "book-b": 8}
+        assert budgets == {"book-a": 86, "book-b": 14}
         assert sum(budgets.values()) == 100
 
     def test_zero_relevance_falls_back_to_even_distribution(self):
@@ -169,6 +169,20 @@ class TestWeightedAdmittedBudgets:
 
         assert budgets == {"book-a": 2, "book-b": 1}
         assert sum(budgets.values()) == 3
+
+    def test_size_share_softens_extreme_relevance_skew(self):
+        budgets = _compute_weighted_admitted_budgets(
+            book_ids=["book-a", "book-b"],
+            axis_total_budget=100,
+            relevance_by_book={"book-a": 0.9, "book-b": 0.7},
+            size_share_by_book={"book-a": 0.9, "book-b": 0.1},
+            floor_per_book=2,
+            relevance_power=1.2,
+            size_exponent=0.68,
+        )
+
+        assert budgets["book-a"] > budgets["book-b"]
+        assert sum(budgets.values()) == 100
 
 
 # ---------------------------------------------------------------------------
@@ -607,7 +621,7 @@ class TestBookIngestion:
         assert log_path.exists()
         data = json.loads(log_path.read_text())
         assert data["budget_strategy"] == "fixed_target_soft_threshold_backfill"
-        assert data["allocation_policy"] == "floor_3_blended_relevance_confidence_with_chapter_penalty"
+        assert data["allocation_policy"] == "floor_2_relevance_pow_1.2_size_pow_0.68_total_words"
         assert data["axis_candidate_budget_target"] == 150
         assert data["axis_candidate_budget_effective"] == 6
         assert data["axis_candidate_budget"] == 6
@@ -710,7 +724,7 @@ class TestBookIngestion:
             assert passage.quotability_score == 0.8
             assert SynthesisTag.INDEPENDENT in passage.synthesis_tags
 
-    def test_passage_extraction_uses_floor_quadratic_allocation(self, tmp_path):
+    def test_passage_extraction_uses_weighted_floor_allocation(self, tmp_path):
         settings = Settings(
             llm=Settings().llm.model_copy(update={"llm_provider": "heuristic"}),
             database=Settings().database.model_copy(update={"dsn": None}),
@@ -807,10 +821,10 @@ class TestBookIngestion:
             book["book_id"]: len([candidate for candidate in book["candidates"] if candidate["used"]])
             for book in data["books"]
         }
-        assert data["allocation_policy"] == "floor_3_blended_relevance_confidence_with_chapter_penalty"
-        assert data["per_book_budget"] == {"book-a": 29, "book-b": 11}
+        assert data["allocation_policy"] == "floor_2_relevance_pow_1.2_size_pow_0.68_total_words"
+        assert data["per_book_budget"] == {"book-a": 31, "book-b": 9}
         assert data["retrieval_depth_by_book"] == {"book-a": 2, "book-b": 2}
-        assert used_by_book == {"book-a": 20, "book-b": 11}
+        assert used_by_book == {"book-a": 20, "book-b": 9}
 
     def test_passage_extraction_retries_on_low_coverage(self, tmp_path):
         settings = Settings(

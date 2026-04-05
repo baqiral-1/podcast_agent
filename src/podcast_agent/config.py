@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -229,8 +230,11 @@ class PipelineRuntimeConfig(BaseModel):
     passage_retrieval_min_per_book: int = Field(default=20, ge=1)
     passage_retrieval_max_per_book: int = Field(default=50, ge=1)
     axis_candidate_target_total: int = Field(default=150, ge=1)
-    admission_floor_per_book: int = Field(default=3, ge=0)
+    admission_floor_per_book: int = Field(default=2, ge=0)
     retrieval_conf_weight: float = Field(default=0.2, ge=0.0, le=1.0)
+    retrieval_size_basis: Literal["total_words"] = "total_words"
+    retrieval_size_exponent: float = Field(default=0.68, ge=0.0)
+    retrieval_relevance_power: float = Field(default=1.2, ge=0.0)
     retrieval_soft_threshold: float = Field(default=0.35, ge=0.0, le=1.0)
     chapter_penalty_weight: float = Field(default=0.05, ge=0.0, le=1.0)
     rerank_top_k: int = Field(default=30, ge=1)

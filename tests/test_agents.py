@@ -244,6 +244,7 @@ class TestEpisodePlanningAgent:
         assert "40-45 beats" in agent.instructions
         assert "summary_text" in agent.instructions
         assert "full_text" in agent.instructions
+        assert "project.book_size_share_by_id" in agent.instructions
 
 
 class TestWritingAgent:

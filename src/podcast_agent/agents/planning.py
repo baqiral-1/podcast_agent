@@ -45,6 +45,8 @@ class EpisodePlanningAgent(Agent):
         "those passages live outside the episode's assigned axes.\n"
         "Use insight_passages for assigned-insight realization, and use available_passages for "
         "supporting context and cross-axis comparisons.\n\n"
+        "Set book_balance using project.book_size_share_by_id as a starting prior, then adjust "
+        "based on assigned axis_ids, selected insight evidence, and narrative needs.\n\n"
         "Assign specific passage_ids from the thematic corpus to each beat. "
         "Use primary_book_id to indicate the best source material, not an author lead.\n\n"
         "If planning_feedback is provided, treat it as a correction request and fix the cited "
