@@ -106,7 +106,7 @@ class TestPipelineRuntimeConfig:
         assert config.passage_retrieval_percentage == 0.25
         assert config.passage_retrieval_min_per_book == 20
         assert config.passage_retrieval_max_per_book == 50
-        assert config.axis_candidate_target_total == 150
+        assert config.axis_candidate_target_total == 180
         assert config.admission_floor_per_book == 2
         assert config.retrieval_conf_weight == 0.2
         assert config.retrieval_size_basis == "total_words"
@@ -131,6 +131,7 @@ class TestLLMConfigResolvers:
         assert config.resolve_max_retry_attempts("structuring") == 3
         assert config.resolve_max_retry_attempts("chapter_summary") == 3
         assert config.resolve_max_retry_attempts("book_summary") == 3
+        assert config.resolve_max_retry_attempts("passage_extraction") == 3
         assert config.resolve_max_retry_attempts("synthesis_mapping") == 2
 
     def test_resolve_max_retry_attempts_default_for_unknown(self):
@@ -139,6 +140,7 @@ class TestLLMConfigResolvers:
 
     def test_resolve_timeout_seconds_uses_schema_override(self):
         config = LLMConfig()
+        assert config.resolve_timeout_seconds("passage_extraction") == 360.0
         assert config.resolve_timeout_seconds("synthesis_mapping") == 1200.0
         assert config.resolve_timeout_seconds("unknown_agent") == 600.0
 

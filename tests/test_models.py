@@ -566,7 +566,7 @@ class TestPipelineConfig:
         assert config.passage_retrieval_percentage == 0.25
         assert config.passage_retrieval_min_per_book == 20
         assert config.passage_retrieval_max_per_book == 50
-        assert config.axis_candidate_target_total == 150
+        assert config.axis_candidate_target_total == 180
         assert config.admission_floor_per_book == 2
         assert config.retrieval_conf_weight == 0.2
         assert config.retrieval_size_basis == "total_words"

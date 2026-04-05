@@ -1,0 +1,1976 @@
+{
+  "source_log": ".podcast_agent/runs/final/run.log",
+  "source_line": 1298,
+  "timestamp": "2026-03-28T03:02:35.247357+00:00",
+  "event_type": "llm_request",
+  "schema_name": "book_analysis",
+  "instructions": "Analyze the book and propose multi-chapter episode clusters. Return the full BookAnalysis object with book_id, themes, continuity_arcs, notable_claims, and episode_clusters. Do not omit required top-level fields; use empty arrays for continuity_arcs or notable_claims only when necessary. Treat the clusters as a coverage-preserving partition of the book for downstream planning: every chapter should be assigned to exactly one cluster, clusters should usually follow contiguous chapter spans. Use chapter_ids as the authoritative cluster assignment and do not enumerate exhaustive chunk_ids unless they are strictly necessary; downstream normalization will derive full chunk coverage from the assigned chapters. When a requested episode count is provided, return exactly that many clusters.\nReturn only a JSON object that matches the requested schema. Do not wrap the response in markdown or prose. Do not repeat wrapper keys such as schema_name, payload, or expected_schema.",
+  "wrapped_user_text": {
+    "schema_name": "book_analysis",
+    "payload": {
+      "structure": {
+        "book_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition",
+        "title": "Midnight's Furies: The Deadly Legacy of India's Partition",
+        "chapters": [
+          {
+            "chapter_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-1",
+            "chapter_number": 1,
+            "title": "Prologue",
+            "summary": "A Train to Pakistan HEAD, THE JEEP\u2019S HEADLIGHTS picked out a lonely A of railroad track",
+            "chunk_count": 27,
+            "word_count": 11065,
+            "themes": [
+              "train sabotage",
+              "sikhs and militants",
+              "rural setting",
+              "improvised explosives",
+              "immediate tension",
+              "Muslim emigr\u00e9s"
+            ],
+            "sections": [
+              {
+                "section_id": "section-1",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-1-chunk-1",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-1-chunk-3",
+                "chunk_count": 3,
+                "word_count": 1260,
+                "themes": [
+                  "train sabotage",
+                  "sikhs and militants",
+                  "rural setting",
+                  "improvised explosives"
+                ]
+              },
+              {
+                "section_id": "section-2",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-1-chunk-4",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-1-chunk-6",
+                "chunk_count": 3,
+                "word_count": 1260,
+                "themes": [
+                  "communal massacres",
+                  "refugee convoys",
+                  "scale of violence",
+                  "humanitarian catastrophe"
+                ]
+              },
+              {
+                "section_id": "section-3",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-1-chunk-7",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-1-chunk-9",
+                "chunk_count": 3,
+                "word_count": 1260,
+                "themes": [
+                  "historiography of Partition",
+                  "archival gaps",
+                  "author's research method",
+                  "question of how enmity formed"
+                ]
+              },
+              {
+                "section_id": "section-4",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-1-chunk-10",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-1-chunk-12",
+                "chunk_count": 3,
+                "word_count": 1220,
+                "themes": [
+                  "British transition strategy",
+                  "distrust of British intentions",
+                  "administrative concerns",
+                  "Wavell and viceroyal character"
+                ]
+              },
+              {
+                "section_id": "section-5",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-1-chunk-13",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-1-chunk-14",
+                "chunk_count": 2,
+                "word_count": 1099,
+                "themes": [
+                  "viceroy_wavell",
+                  "british_left_and_labour",
+                  "transition_plan",
+                  "imperial_decline"
+                ]
+              },
+              {
+                "section_id": "section-6",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-1-chunk-15",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-1-chunk-16",
+                "chunk_count": 2,
+                "word_count": 1128,
+                "themes": [
+                  "nehru_profile",
+                  "jinnah_profile",
+                  "personal_rivalry",
+                  "muslim_league_vs_congress"
+                ]
+              },
+              {
+                "section_id": "section-7",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-1-chunk-17",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-1-chunk-18",
+                "chunk_count": 2,
+                "word_count": 1118,
+                "themes": [
+                  "direct_action_declaration",
+                  "jinnah_strategy",
+                  "rhetoric_and_threats",
+                  "communal_anxieties"
+                ]
+              },
+              {
+                "section_id": "section-8",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-1-chunk-19",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-1-chunk-20",
+                "chunk_count": 2,
+                "word_count": 998,
+                "themes": [
+                  "escalation_to_violence",
+                  "police_overwhelmed",
+                  "night_attacks",
+                  "pogrom_character"
+                ]
+              },
+              {
+                "section_id": "section-9",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-1-chunk-21",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-1-chunk-22",
+                "chunk_count": 2,
+                "word_count": 979,
+                "themes": [
+                  "reinforcements_and_recovery",
+                  "leadership_blame",
+                  "media_reports",
+                  "aftermath_and_implications"
+                ]
+              },
+              {
+                "section_id": "section-10",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-1-chunk-23",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-1-chunk-27",
+                "chunk_count": 5,
+                "word_count": 743,
+                "themes": [
+                  "bodies",
+                  "morgue",
+                  "death toll",
+                  "Great Calcutta Killing"
+                ]
+              }
+            ]
+          },
+          {
+            "chapter_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-2",
+            "chapter_number": 2,
+            "title": "Chapter 1: Jinnah and Jawaharlal",
+            "summary": "EARLY SEPTEMBER 1946, Wavell invited the nationalist po- | etess Sarojini Naidu to Viceroy\u2019s House for dinner",
+            "chunk_count": 61,
+            "word_count": 11542,
+            "themes": [
+              "dinner",
+              "september",
+              "wavell",
+              "indian",
+              "jinnah",
+              "congress"
+            ],
+            "sections": [
+              {
+                "section_id": "section-1",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-2-chunk-1",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-2-chunk-5",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "dinner",
+                  "september",
+                  "wavell",
+                  "indian"
+                ]
+              },
+              {
+                "section_id": "section-2",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-2-chunk-6",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-2-chunk-10",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "muslims",
+                  "muslim",
+                  "hindus",
+                  "contemporary"
+                ]
+              },
+              {
+                "section_id": "section-3",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-2-chunk-11",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-2-chunk-15",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "jinnah",
+                  "lawyer",
+                  "gandhi",
+                  "africa"
+                ]
+              },
+              {
+                "section_id": "section-4",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-2-chunk-16",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-2-chunk-20",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "jinnah",
+                  "indian",
+                  "political",
+                  "gandhi"
+                ]
+              },
+              {
+                "section_id": "section-5",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-2-chunk-21",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-2-chunk-25",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "jinnah",
+                  "india",
+                  "league",
+                  "reminded"
+                ]
+              },
+              {
+                "section_id": "section-6",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-2-chunk-26",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-2-chunk-30",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "trailed",
+                  "policemen",
+                  "agents",
+                  "criminal"
+                ]
+              },
+              {
+                "section_id": "section-7",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-2-chunk-31",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-2-chunk-36",
+                "chunk_count": 6,
+                "word_count": 950,
+                "themes": [
+                  "league",
+                  "congress",
+                  "muslim",
+                  "nehru"
+                ]
+              },
+              {
+                "section_id": "section-8",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-2-chunk-37",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-2-chunk-39",
+                "chunk_count": 3,
+                "word_count": 990,
+                "themes": [
+                  "World War II",
+                  "viceroy decision",
+                  "Nehru foreign policy",
+                  "British exclusion"
+                ]
+              },
+              {
+                "section_id": "section-9",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-2-chunk-40",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-2-chunk-42",
+                "chunk_count": 3,
+                "word_count": 1040,
+                "themes": [
+                  "Bengal / eastern wing",
+                  "economic stakes",
+                  "Aga Khan warning",
+                  "war disruption"
+                ]
+              },
+              {
+                "section_id": "section-10",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-2-chunk-43",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-2-chunk-45",
+                "chunk_count": 3,
+                "word_count": 1090,
+                "themes": [
+                  "Jinnah's rise during Congress imprisonment",
+                  "British patronage of League",
+                  "provincial takeovers",
+                  "mass mobilization"
+                ]
+              },
+              {
+                "section_id": "section-11",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-2-chunk-46",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-2-chunk-48",
+                "chunk_count": 3,
+                "word_count": 1010,
+                "themes": [
+                  "Punjab politics",
+                  "Khizar-Tiwana conflict",
+                  "strategic resources (canals, recruits)",
+                  "Jinnah's pressure on provincial leaders"
+                ]
+              },
+              {
+                "section_id": "section-12",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-2-chunk-49",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-2-chunk-54",
+                "chunk_count": 6,
+                "word_count": 480,
+                "themes": [
+                  "league",
+                  "jinnah",
+                  "moulvi",
+                  "village"
+                ]
+              },
+              {
+                "section_id": "section-13",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-2-chunk-55",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-2-chunk-60",
+                "chunk_count": 6,
+                "word_count": 450,
+                "themes": [
+                  "jinnah",
+                  "british",
+                  "bengal",
+                  "pakistan"
+                ]
+              },
+              {
+                "section_id": "section-14",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-2-chunk-61",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-2-chunk-61",
+                "chunk_count": 1,
+                "word_count": 132,
+                "themes": [
+                  "jinnah",
+                  "wearing",
+                  "perfectly",
+                  "tailored"
+                ]
+              }
+            ]
+          },
+          {
+            "chapter_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-3",
+            "chapter_number": 3,
+            "title": "Chapter 2: Madhouse",
+            "summary": "HIS PLANE CIRCLED over the airport in Peshawar, Az of the Northwest Frontier Province, Nehru could see a churning mob lining the edges of the runway",
+            "chunk_count": 35,
+            "word_count": 10469,
+            "themes": [
+              "tribal",
+              "circled",
+              "airport",
+              "peshawar",
+              "jinnah",
+              "league"
+            ],
+            "sections": [
+              {
+                "section_id": "section-1",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-3-chunk-1",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-3-chunk-5",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "tribal",
+                  "circled",
+                  "airport",
+                  "peshawar"
+                ]
+              },
+              {
+                "section_id": "section-2",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-3-chunk-6",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-3-chunk-10",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "tribal",
+                  "areas",
+                  "muslim",
+                  "buying"
+                ]
+              },
+              {
+                "section_id": "section-3",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-3-chunk-11",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-3-chunk-15",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "hindus",
+                  "league",
+                  "suhrawardy",
+                  "planes"
+                ]
+              },
+              {
+                "section_id": "section-4",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-3-chunk-16",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-3-chunk-20",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "civilisation",
+                  "bengal",
+                  "gandhi",
+                  "mahatma"
+                ]
+              },
+              {
+                "section_id": "section-5",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-3-chunk-21",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-3-chunk-25",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "league",
+                  "intelligence",
+                  "wavell",
+                  "congress"
+                ]
+              },
+              {
+                "section_id": "section-6",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-3-chunk-26",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-3-chunk-30",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "speaker",
+                  "muslims",
+                  "capital",
+                  "trouble"
+                ]
+              },
+              {
+                "section_id": "section-7",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-3-chunk-31",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-3-chunk-34",
+                "chunk_count": 4,
+                "word_count": 5019,
+                "themes": [
+                  "muslims",
+                  "letter",
+                  "brutality",
+                  "definite"
+                ]
+              },
+              {
+                "section_id": "section-8",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-3-chunk-35",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-3-chunk-35",
+                "chunk_count": 1,
+                "word_count": 50,
+                "themes": [
+                  "instigators",
+                  "appeared",
+                  "later",
+                  "november"
+                ]
+              }
+            ]
+          },
+          {
+            "chapter_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-4",
+            "chapter_number": 4,
+            "title": "Chapter 3: \"Pakistan Murdabad!\"",
+            "summary": "\u201cPakistan Murdabad!\u201d",
+            "chunk_count": 45,
+            "word_count": 10917,
+            "themes": [
+              "khizar",
+              "muslim_league",
+              "public_protests",
+              "attlee",
+              "british_withdrawal",
+              "jinnah"
+            ],
+            "sections": [
+              {
+                "section_id": "section-1",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-4-chunk-1",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-4-chunk-3",
+                "chunk_count": 3,
+                "word_count": 930,
+                "themes": [
+                  "khizar",
+                  "muslim_league",
+                  "public_protests",
+                  "attlee"
+                ]
+              },
+              {
+                "section_id": "section-2",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-4-chunk-4",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-4-chunk-5",
+                "chunk_count": 2,
+                "word_count": 900,
+                "themes": [
+                  "holi_riots",
+                  "communal_violence",
+                  "league_guards",
+                  "jinnah_stance"
+                ]
+              },
+              {
+                "section_id": "section-3",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-4-chunk-6",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-4-chunk-7",
+                "chunk_count": 2,
+                "word_count": 900,
+                "themes": [
+                  "rural_violence",
+                  "massacres",
+                  "messervy_reports",
+                  "train_attacks"
+                ]
+              },
+              {
+                "section_id": "section-4",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-4-chunk-8",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-4-chunk-9",
+                "chunk_count": 2,
+                "word_count": 900,
+                "themes": [
+                  "terror_and_displacement",
+                  "razed_homes",
+                  "sikh_choices",
+                  "jinnah_promises"
+                ]
+              },
+              {
+                "section_id": "section-5",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-4-chunk-10",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-4-chunk-11",
+                "chunk_count": 2,
+                "word_count": 900,
+                "themes": [
+                  "jenkins_frustration",
+                  "politicians",
+                  "league_intransigence",
+                  "wavell_sacked"
+                ]
+              },
+              {
+                "section_id": "section-6",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-4-chunk-12",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-4-chunk-15",
+                "chunk_count": 4,
+                "word_count": 1010,
+                "themes": [
+                  "mountbatten_arrival",
+                  "realization_of_crisis",
+                  "sikh_threats",
+                  "patiala_statements"
+                ]
+              },
+              {
+                "section_id": "section-7",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-4-chunk-16",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-4-chunk-20",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "british",
+                  "mountbatten",
+                  "punjab",
+                  "officer"
+                ]
+              },
+              {
+                "section_id": "section-8",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-4-chunk-21",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-4-chunk-25",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "decade",
+                  "rejecting",
+                  "reasonable",
+                  "compromise"
+                ]
+              },
+              {
+                "section_id": "section-9",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-4-chunk-26",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-4-chunk-30",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "mountbatten",
+                  "jinnah",
+                  "common",
+                  "calcutta"
+                ]
+              },
+              {
+                "section_id": "section-10",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-4-chunk-31",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-4-chunk-35",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "jinnah",
+                  "leader",
+                  "letters",
+                  "carefully"
+                ]
+              },
+              {
+                "section_id": "section-11",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-4-chunk-36",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-4-chunk-40",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "struck",
+                  "humiliating",
+                  "intolerable",
+                  "attempt"
+                ]
+              },
+              {
+                "section_id": "section-12",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-4-chunk-41",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-4-chunk-45",
+                "chunk_count": 5,
+                "word_count": 877,
+                "themes": [
+                  "jinnah",
+                  "mountbatten",
+                  "patiala",
+                  "cannot"
+                ]
+              }
+            ]
+          },
+          {
+            "chapter_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-5",
+            "chapter_number": 5,
+            "title": "Chapter 4: Indian Summer",
+            "summary": "URGAON, ONCE THE easternmost district of the Punjab, is today a suburb of Delhi\u2014a shapeless sprawl of mirrored- glass corporate towers and condo developments stretching to a purplish, smog-choked horizon",
+            "chunk_count": 70,
+            "word_count": 11340,
+            "themes": [
+              "hindus",
+              "district",
+              "muslims",
+              "british",
+              "brendon",
+              "troops"
+            ],
+            "sections": [
+              {
+                "section_id": "section-1",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-5-chunk-1",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-5-chunk-6",
+                "chunk_count": 6,
+                "word_count": 900,
+                "themes": [
+                  "hindus",
+                  "district",
+                  "muslims",
+                  "british"
+                ]
+              },
+              {
+                "section_id": "section-2",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-5-chunk-7",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-5-chunk-12",
+                "chunk_count": 6,
+                "word_count": 900,
+                "themes": [
+                  "british",
+                  "mountbatten",
+                  "leaders",
+                  "another"
+                ]
+              },
+              {
+                "section_id": "section-3",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-5-chunk-13",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-5-chunk-18",
+                "chunk_count": 6,
+                "word_count": 900,
+                "themes": [
+                  "mountbatten",
+                  "tension",
+                  "distrust",
+                  "preceding"
+                ]
+              },
+              {
+                "section_id": "section-4",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-5-chunk-19",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-5-chunk-24",
+                "chunk_count": 6,
+                "word_count": 900,
+                "themes": [
+                  "actually",
+                  "paying",
+                  "militants",
+                  "funded"
+                ]
+              },
+              {
+                "section_id": "section-5",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-5-chunk-25",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-5-chunk-30",
+                "chunk_count": 6,
+                "word_count": 900,
+                "themes": [
+                  "lahore",
+                  "control",
+                  "beyond",
+                  "horror"
+                ]
+              },
+              {
+                "section_id": "section-6",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-5-chunk-31",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-5-chunk-36",
+                "chunk_count": 6,
+                "word_count": 860,
+                "themes": [
+                  "jinnah",
+                  "intensely",
+                  "demeaning",
+                  "matter"
+                ]
+              },
+              {
+                "section_id": "section-7",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-5-chunk-37",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-5-chunk-41",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "muslim",
+                  "pakistan",
+                  "remained",
+                  "henceforth"
+                ]
+              },
+              {
+                "section_id": "section-8",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-5-chunk-42",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-5-chunk-46",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "british",
+                  "india",
+                  "enough",
+                  "rulers"
+                ]
+              },
+              {
+                "section_id": "section-9",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-5-chunk-47",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-5-chunk-51",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "maharajah",
+                  "minister",
+                  "pandit",
+                  "chandra"
+                ]
+              },
+              {
+                "section_id": "section-10",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-5-chunk-52",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-5-chunk-56",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "thousand",
+                  "summer",
+                  "nearly",
+                  "bigger"
+                ]
+              },
+              {
+                "section_id": "section-11",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-5-chunk-57",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-5-chunk-61",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "commission",
+                  "muslim",
+                  "populations",
+                  "boundary"
+                ]
+              },
+              {
+                "section_id": "section-12",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-5-chunk-62",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-5-chunk-66",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "jinnah",
+                  "village",
+                  "muslims",
+                  "amritsar"
+                ]
+              },
+              {
+                "section_id": "section-13",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-5-chunk-67",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-5-chunk-70",
+                "chunk_count": 4,
+                "word_count": 580,
+                "themes": [
+                  "process",
+                  "possible",
+                  "require",
+                  "plete"
+                ]
+              }
+            ]
+          },
+          {
+            "chapter_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-6",
+            "chapter_number": 6,
+            "title": "Chapter 5: Off the Rails",
+            "summary": "YHE EXPLODING GELIGNITE ripped seven feet of rail out of the ground and flipped the train\u2019s carriage onto its side",
+            "chunk_count": 70,
+            "word_count": 12275,
+            "themes": [
+              "train bombing",
+              "derailment",
+              "gelignite",
+              "casualties",
+              "Sikh attackers",
+              "immediate repercussions"
+            ],
+            "sections": [
+              {
+                "section_id": "section-1",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-6-chunk-1",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-6-chunk-5",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "train bombing",
+                  "derailment",
+                  "gelignite",
+                  "casualties"
+                ]
+              },
+              {
+                "section_id": "section-2",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-6-chunk-6",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-6-chunk-10",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "Mountbatten-Jinnah tensions",
+                  "debate over Sikh arrests",
+                  "delay in border announcement",
+                  "boundary sketch maps"
+                ]
+              },
+              {
+                "section_id": "section-3",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-6-chunk-11",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-6-chunk-15",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "police breakdown",
+                  "new commanders",
+                  "desertion of Muslim constables",
+                  "escalation of violence"
+                ]
+              },
+              {
+                "section_id": "section-4",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-6-chunk-16",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-6-chunk-20",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "Nehru's midnight speech",
+                  "independence rhetoric",
+                  "reassurance to minorities",
+                  "minority reassurance"
+                ]
+              },
+              {
+                "section_id": "section-5",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-6-chunk-21",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-6-chunk-25",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "Nehru's suppression order",
+                  "Nehru-Liaquat cooperation",
+                  "engagement with Sikh leaders",
+                  "policy response to violence"
+                ]
+              },
+              {
+                "section_id": "section-6",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-6-chunk-26",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-6-chunk-30",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "derailment sequence",
+                  "locomotive crash",
+                  "immediate chaos",
+                  "contextual summaries of unrest"
+                ]
+              },
+              {
+                "section_id": "section-7",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-6-chunk-31",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-6-chunk-36",
+                "chunk_count": 6,
+                "word_count": 950,
+                "themes": [
+                  "Boundary Force reactions",
+                  "local unit complicity or inaction",
+                  "ethnic-cleansing campaign",
+                  "role of local militias"
+                ]
+              },
+              {
+                "section_id": "section-8",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-6-chunk-37",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-6-chunk-41",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "patchwork princely states",
+                  "boundary force limits",
+                  "atrocities against muslims",
+                  "civil administration collapse"
+                ]
+              },
+              {
+                "section_id": "section-9",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-6-chunk-42",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-6-chunk-46",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "Lahore arrivals",
+                  "assassination attempt",
+                  "Jinnah's public response",
+                  "perceived one-sidedness"
+                ]
+              },
+              {
+                "section_id": "section-10",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-6-chunk-47",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-6-chunk-51",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "troop factionalism",
+                  "clashes between units",
+                  "risk of military taking sides",
+                  "Boundary Force purpose undermined"
+                ]
+              },
+              {
+                "section_id": "section-11",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-6-chunk-52",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-6-chunk-56",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "deterioration of cooperation",
+                  "boundary meeting",
+                  "distrust between leaders",
+                  "troop impartiality concerns"
+                ]
+              },
+              {
+                "section_id": "section-12",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-6-chunk-57",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-6-chunk-61",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "calcutta violence",
+                  "mob justice",
+                  "Gandhi's impotence",
+                  "breakdown of local peace"
+                ]
+              },
+              {
+                "section_id": "section-13",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-6-chunk-62",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-6-chunk-66",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "reports of arms production",
+                  "intelligence alarms",
+                  "licenses to arms dealers",
+                  "communal arming"
+                ]
+              },
+              {
+                "section_id": "section-14",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-6-chunk-67",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-6-chunk-70",
+                "chunk_count": 4,
+                "word_count": 525,
+                "themes": [
+                  "Delhi bombings",
+                  "trigger for city-wide violence",
+                  "fear of mass massacre",
+                  "spillover of Punjab crisis"
+                ]
+              }
+            ]
+          },
+          {
+            "chapter_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-7",
+            "chapter_number": 7,
+            "title": "Chapter 6: \"Stop This Madness\"",
+            "summary": "\u201cStop This Madness\u201d Y | YHROUGHOUT AUGUST, as the Punjab descended into mayhem, lights had continued to blaze from New Delhi's ivory- white Imperial Hotel",
+            "chunk_count": 40,
+            "word_count": 7709,
+            "themes": [
+              "india",
+              "curfew",
+              "muslim",
+              "elite_life",
+              "sikh",
+              "mob_violence"
+            ],
+            "sections": [
+              {
+                "section_id": "section-1",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-7-chunk-1",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-7-chunk-5",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "india",
+                  "curfew",
+                  "muslim",
+                  "elite_life"
+                ]
+              },
+              {
+                "section_id": "section-2",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-7-chunk-6",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-7-chunk-10",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "refugees",
+                  "troops",
+                  "violence",
+                  "leadership"
+                ]
+              },
+              {
+                "section_id": "section-3",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-7-chunk-11",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-7-chunk-15",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "public_sentiment",
+                  "refugee_relief",
+                  "kirpan_debate",
+                  "bias"
+                ]
+              },
+              {
+                "section_id": "section-4",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-7-chunk-16",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-7-chunk-20",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "simla",
+                  "mob_violence",
+                  "trust_breakdown",
+                  "refugee_experience"
+                ]
+              },
+              {
+                "section_id": "section-5",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-7-chunk-21",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-7-chunk-25",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "commonwealth",
+                  "appeal_for_help",
+                  "human_rights_claims",
+                  "international_pressure"
+                ]
+              },
+              {
+                "section_id": "section-6",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-7-chunk-26",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-7-chunk-30",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "junagadh_politics",
+                  "international_image",
+                  "pakistan_strategy",
+                  "ismay_visit"
+                ]
+              },
+              {
+                "section_id": "section-7",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-7-chunk-31",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-7-chunk-35",
+                "chunk_count": 5,
+                "word_count": 920,
+                "themes": [
+                  "amritsar_blockade",
+                  "kafila_challenges",
+                  "violence_on_routes",
+                  "refugee_vulnerability"
+                ]
+              },
+              {
+                "section_id": "section-8",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-7-chunk-36",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-7-chunk-39",
+                "chunk_count": 4,
+                "word_count": 1196,
+                "themes": [
+                  "organized Sikh migration and evacuation",
+                  "canal colonies abandoned",
+                  "Sikh consolidation and talk of Sikhistan",
+                  "militarization and risk of cross-border insurgency"
+                ]
+              },
+              {
+                "section_id": "section-9",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-7-chunk-40",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-7-chunk-40",
+                "chunk_count": 1,
+                "word_count": 193,
+                "themes": [
+                  "Nehru's moral and policy choice",
+                  "options: expulsion versus integration of Muslims",
+                  "appeal to national values and citizenship"
+                ]
+              }
+            ]
+          },
+          {
+            "chapter_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-8",
+            "chapter_number": 8,
+            "title": "Chapter 7: Ad Hoc Jihad",
+            "summary": "that if its leaders adopted the former course, India would be \u201cdoomed as",
+            "chunk_count": 72,
+            "word_count": 14622,
+            "themes": [
+              "leaders",
+              "adopted",
+              "former",
+              "course",
+              "mountbatten",
+              "contact"
+            ],
+            "sections": [
+              {
+                "section_id": "section-1",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-8-chunk-1",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-8-chunk-5",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "leaders",
+                  "adopted",
+                  "former",
+                  "course"
+                ]
+              },
+              {
+                "section_id": "section-2",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-8-chunk-6",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-8-chunk-10",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "junagadh",
+                  "hyderabad",
+                  "pakistan",
+                  "sardar"
+                ]
+              },
+              {
+                "section_id": "section-3",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-8-chunk-11",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-8-chunk-15",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "junagadh",
+                  "claimed",
+                  "messervy",
+                  "indian"
+                ]
+              },
+              {
+                "section_id": "section-4",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-8-chunk-16",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-8-chunk-20",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "punjab",
+                  "across",
+                  "racing",
+                  "waters"
+                ]
+              },
+              {
+                "section_id": "section-5",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-8-chunk-21",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-8-chunk-25",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "jinnah",
+                  "srinagar",
+                  "october",
+                  "khurshid"
+                ]
+              },
+              {
+                "section_id": "section-6",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-8-chunk-26",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-8-chunk-30",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "punjab",
+                  "mahajan",
+                  "western",
+                  "mysteriously"
+                ]
+              },
+              {
+                "section_id": "section-7",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-8-chunk-31",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-8-chunk-36",
+                "chunk_count": 6,
+                "word_count": 950,
+                "themes": [
+                  "kashmir",
+                  "offering",
+                  "procure",
+                  "machine"
+                ]
+              },
+              {
+                "section_id": "section-8",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-8-chunk-37",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-8-chunk-41",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "pathan",
+                  "tribal",
+                  "fighters",
+                  "frontier"
+                ]
+              },
+              {
+                "section_id": "section-9",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-8-chunk-42",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-8-chunk-46",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "tribal",
+                  "kashmir",
+                  "border",
+                  "abbottabad"
+                ]
+              },
+              {
+                "section_id": "section-10",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-8-chunk-47",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-8-chunk-51",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "british",
+                  "driver",
+                  "tribesmen",
+                  "another"
+                ]
+              },
+              {
+                "section_id": "section-11",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-8-chunk-52",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-8-chunk-56",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "refugees",
+                  "jammu",
+                  "muslims",
+                  "leased"
+                ]
+              },
+              {
+                "section_id": "section-12",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-8-chunk-57",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-8-chunk-61",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "troops",
+                  "kashmir",
+                  "indian",
+                  "british"
+                ]
+              },
+              {
+                "section_id": "section-13",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-8-chunk-62",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-8-chunk-66",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "jinnah",
+                  "troops",
+                  "kashmir",
+                  "night"
+                ]
+              },
+              {
+                "section_id": "section-14",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-8-chunk-67",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-8-chunk-70",
+                "chunk_count": 4,
+                "word_count": 1609,
+                "themes": [
+                  "jinnah",
+                  "mountbatten",
+                  "kashmir",
+                  "nehru"
+                ]
+              },
+              {
+                "section_id": "section-15",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-8-chunk-71",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-8-chunk-72",
+                "chunk_count": 2,
+                "word_count": 1263,
+                "themes": [
+                  "srinagar",
+                  "lashkar",
+                  "carried",
+                  "indian"
+                ]
+              }
+            ]
+          },
+          {
+            "chapter_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-9",
+            "chapter_number": 9,
+            "title": "Chapter 8: Himalayan Quagmire",
+            "summary": "once-cheerful riverside town",
+            "chunk_count": 60,
+            "word_count": 10593,
+            "themes": [
+              "tribal attack",
+              "riverside town",
+              "devastation",
+              "looting",
+              "mission attack",
+              "survivors' testimony"
+            ],
+            "sections": [
+              {
+                "section_id": "section-1",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-9-chunk-1",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-9-chunk-5",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "tribal attack",
+                  "riverside town",
+                  "devastation",
+                  "looting"
+                ]
+              },
+              {
+                "section_id": "section-2",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-9-chunk-6",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-9-chunk-10",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "moral narrative",
+                  "national identity",
+                  "Gandhi comment",
+                  "military caution"
+                ]
+              },
+              {
+                "section_id": "section-3",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-9-chunk-11",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-9-chunk-15",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "plebiscite doubts",
+                  "Nehru stance",
+                  "Abdullah",
+                  "expel raiders"
+                ]
+              },
+              {
+                "section_id": "section-4",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-9-chunk-16",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-9-chunk-20",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "massacre reports",
+                  "Jammu violence",
+                  "casualty estimates",
+                  "intelligence assessments"
+                ]
+              },
+              {
+                "section_id": "section-5",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-9-chunk-21",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-9-chunk-25",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "partition rejection",
+                  "diplomacy",
+                  "Lahore discussions",
+                  "boundary commission"
+                ]
+              },
+              {
+                "section_id": "section-6",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-9-chunk-26",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-9-chunk-30",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "Jinnah displeasure",
+                  "Liaquat commitments",
+                  "Quaid's control",
+                  "return to Karachi"
+                ]
+              },
+              {
+                "section_id": "section-7",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-9-chunk-31",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-9-chunk-36",
+                "chunk_count": 6,
+                "word_count": 950,
+                "themes": [
+                  "changing enemy tactics",
+                  "regular/irregular troops",
+                  "supply lines cut",
+                  "Poonch siege"
+                ]
+              },
+              {
+                "section_id": "section-8",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-9-chunk-37",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-9-chunk-41",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "december",
+                  "meeting",
+                  "liaquat",
+                  "destruction"
+                ]
+              },
+              {
+                "section_id": "section-9",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-9-chunk-42",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-9-chunk-46",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "million",
+                  "pakistan",
+                  "rounds",
+                  "multiple"
+                ]
+              },
+              {
+                "section_id": "section-10",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-9-chunk-47",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-9-chunk-51",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "insurgents",
+                  "attack",
+                  "indian",
+                  "troops"
+                ]
+              },
+              {
+                "section_id": "section-11",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-9-chunk-52",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-9-chunk-56",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "diverted",
+                  "srinagar",
+                  "campaign",
+                  "usurping"
+                ]
+              },
+              {
+                "section_id": "section-12",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-9-chunk-57",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-9-chunk-60",
+                "chunk_count": 4,
+                "word_count": 643,
+                "themes": [
+                  "gandhi",
+                  "mountbatten",
+                  "bitter",
+                  "cabinet"
+                ]
+              }
+            ]
+          },
+          {
+            "chapter_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-10",
+            "chapter_number": 10,
+            "title": "Chapter 9: The Last Battle",
+            "summary": "Gandhi\u2019S FAST WOULD LAST three more days",
+            "chunk_count": 69,
+            "word_count": 13611,
+            "themes": [
+              "gandhi",
+              "fast",
+              "medical warnings",
+              "communal response",
+              "prayer meeting",
+              "attempted bombing"
+            ],
+            "sections": [
+              {
+                "section_id": "section-1",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-10-chunk-1",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-10-chunk-5",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "gandhi",
+                  "fast",
+                  "medical warnings",
+                  "communal response"
+                ]
+              },
+              {
+                "section_id": "section-2",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-10-chunk-6",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-10-chunk-10",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "assassination",
+                  "gandhi shot",
+                  "public shock",
+                  "security"
+                ]
+              },
+              {
+                "section_id": "section-3",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-10-chunk-11",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-10-chunk-15",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "nehru invokes gandhi",
+                  "political justification",
+                  "post-funeral actions",
+                  "kashmir policy"
+                ]
+              },
+              {
+                "section_id": "section-4",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-10-chunk-16",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-10-chunk-20",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "military observation visits",
+                  "morale",
+                  "army readiness",
+                  "strategic assessment"
+                ]
+              },
+              {
+                "section_id": "section-5",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-10-chunk-21",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-10-chunk-25",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "indian blockade",
+                  "interdiction of supplies",
+                  "operation polo planning",
+                  "mountbatten awareness"
+                ]
+              },
+              {
+                "section_id": "section-6",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-10-chunk-26",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-10-chunk-30",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "pakistan internal strains",
+                  "cunningham diary",
+                  "border unrest",
+                  "tribal problems"
+                ]
+              },
+              {
+                "section_id": "section-7",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-10-chunk-31",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-10-chunk-36",
+                "chunk_count": 6,
+                "word_count": 950,
+                "themes": [
+                  "battlefield reports",
+                  "allegations of atrocities",
+                  "gracey warnings",
+                  "indian advantages"
+                ]
+              },
+              {
+                "section_id": "section-8",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-10-chunk-37",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-10-chunk-41",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "india",
+                  "april",
+                  "become",
+                  "semiregular"
+                ]
+              },
+              {
+                "section_id": "section-9",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-10-chunk-42",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-10-chunk-46",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "within",
+                  "denied",
+                  "speech",
+                  "public"
+                ]
+              },
+              {
+                "section_id": "section-10",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-10-chunk-47",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-10-chunk-51",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "cotton",
+                  "hyderabad",
+                  "airport",
+                  "regular"
+                ]
+              },
+              {
+                "section_id": "section-11",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-10-chunk-52",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-10-chunk-56",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "later",
+                  "founder",
+                  "collapsed",
+                  "wearing"
+                ]
+              },
+              {
+                "section_id": "section-12",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-10-chunk-57",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-10-chunk-61",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "capital",
+                  "doctors",
+                  "jinnah",
+                  "needed"
+                ]
+              },
+              {
+                "section_id": "section-13",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-10-chunk-62",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-10-chunk-66",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "doctors",
+                  "ambulance",
+                  "jinnah",
+                  "government"
+                ]
+              },
+              {
+                "section_id": "section-14",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-10-chunk-67",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-10-chunk-68",
+                "chunk_count": 2,
+                "word_count": 1811,
+                "themes": [
+                  "pakistan",
+                  "planes",
+                  "hyderabad",
+                  "almost"
+                ]
+              },
+              {
+                "section_id": "section-15",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-10-chunk-69",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-10-chunk-69",
+                "chunk_count": 1,
+                "word_count": 50,
+                "themes": [
+                  "delivered",
+                  "moment",
+                  "airlift",
+                  "effectively"
+                ]
+              }
+            ]
+          },
+          {
+            "chapter_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-11",
+            "chapter_number": 11,
+            "title": "Epilogue: Deadly Legacy",
+            "summary": "Partition's worst horrors hardened enmity between India and Pakistan. With Jinnah gone and Nehru unwilling to compromise on Kashmir, Pakistani politics fragmented, the army rose to dominance, and successive regimes embraced Islamization and proxy warfare. Cold War alignments, the Afghan jihad, and the ISI's support for militants deepened the conflict, culminating in nuclearization, repeated wars, and cross-border insurgency. Periodic proposals for a softer border and greater trade have surfaced, but rising militant capability, growing arsenals, and shrill media make reconciliation ever more urgent.",
+            "chunk_count": 12,
+            "word_count": 2090,
+            "themes": [
+              "kashmir",
+              "jinnah",
+              "nehru",
+              "hostility",
+              "refusal_to_compromise",
+              "pakistan"
+            ],
+            "sections": [
+              {
+                "section_id": "section-1",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-11-chunk-1",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-11-chunk-5",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "kashmir",
+                  "jinnah",
+                  "nehru",
+                  "hostility"
+                ]
+              },
+              {
+                "section_id": "section-2",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-11-chunk-6",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-11-chunk-10",
+                "chunk_count": 5,
+                "word_count": 900,
+                "themes": [
+                  "proxy_warfare",
+                  "isi",
+                  "militancy",
+                  "osama_bin_laden"
+                ]
+              },
+              {
+                "section_id": "section-3",
+                "start_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-11-chunk-11",
+                "end_chunk_id": "midnight-s-furies-the-deadly-legacy-of-india-s-partition-chapter-11-chunk-12",
+                "chunk_count": 2,
+                "word_count": 290,
+                "themes": [
+                  "soft_border_proposals",
+                  "trade_and_integration",
+                  "infrastructure",
+                  "economic_ties"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "episode_count": 3
+    },
+    "expected_schema": {
+      "$defs": {
+        "ContinuityArc": {
+          "additionalProperties": false,
+          "description": "Cross-chapter continuity signal extracted from the book.",
+          "properties": {
+            "arc_id": {
+              "title": "Arc Id",
+              "type": "string"
+            },
+            "label": {
+              "title": "Label",
+              "type": "string"
+            },
+            "description": {
+              "title": "Description",
+              "type": "string"
+            },
+            "chapter_ids": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Chapter Ids",
+              "type": "array"
+            }
+          },
+          "required": [
+            "arc_id",
+            "label",
+            "description",
+            "chapter_ids"
+          ],
+          "title": "ContinuityArc",
+          "type": "object"
+        },
+        "EpisodeCluster": {
+          "additionalProperties": false,
+          "description": "Candidate episode group identified during analysis.",
+          "properties": {
+            "cluster_id": {
+              "title": "Cluster Id",
+              "type": "string"
+            },
+            "label": {
+              "title": "Label",
+              "type": "string"
+            },
+            "rationale": {
+              "title": "Rationale",
+              "type": "string"
+            },
+            "chapter_ids": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Chapter Ids",
+              "type": "array"
+            },
+            "chunk_ids": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Chunk Ids",
+              "type": "array"
+            },
+            "themes": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Themes",
+              "type": "array"
+            }
+          },
+          "required": [
+            "cluster_id",
+            "label",
+            "rationale",
+            "chapter_ids"
+          ],
+          "title": "EpisodeCluster",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Analytical context used to create the series plan.",
+      "properties": {
+        "book_id": {
+          "title": "Book Id",
+          "type": "string"
+        },
+        "themes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Themes",
+          "type": "array"
+        },
+        "continuity_arcs": {
+          "items": {
+            "$ref": "#/$defs/ContinuityArc"
+          },
+          "title": "Continuity Arcs",
+          "type": "array"
+        },
+        "notable_claims": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Notable Claims",
+          "type": "array"
+        },
+        "episode_clusters": {
+          "items": {
+            "$ref": "#/$defs/EpisodeCluster"
+          },
+          "title": "Episode Clusters",
+          "type": "array"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "book_id",
+        "themes",
+        "continuity_arcs",
+        "notable_claims",
+        "episode_clusters"
+      ],
+      "title": "BookAnalysis",
+      "type": "object"
+    }
+  }
+}

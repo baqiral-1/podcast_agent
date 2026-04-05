@@ -1,0 +1,6 @@
+{
+  "file": "sample_books/osmans_dream.cleaned.txt",
+  "removed_in_cleanup_pass": 3,
+  "remaining_trailing_1to3_digit_markers": 0,
+  "chapter_count": 16
+}

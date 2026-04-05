@@ -100,7 +100,7 @@ class PipelineConfig(StrictModel):
     passage_retrieval_percentage: float = Field(default=0.25, gt=0.0, le=1.0)
     passage_retrieval_min_per_book: int = Field(default=20, ge=1)
     passage_retrieval_max_per_book: int = Field(default=50, ge=1)
-    axis_candidate_target_total: int = Field(default=150, ge=1)
+    axis_candidate_target_total: int = Field(default=180, ge=1)
     admission_floor_per_book: int = Field(default=2, ge=0)
     retrieval_conf_weight: float = Field(default=0.2, ge=0.0, le=1.0)
     retrieval_size_basis: Literal["total_words"] = "total_words"

@@ -86,7 +86,7 @@ class LLMConfig(BaseModel):
     timeout_seconds: float = Field(default=600.0, gt=0.0)
     timeout_seconds_overrides: dict[str, float] = Field(
         default_factory=lambda: {
-            "passage_extraction": 480.0,
+            "passage_extraction": 360.0,
             "synthesis_mapping": 1200.0,
             "episode_planning": 900.0,
             "episode_writing": 1200.0,
@@ -106,7 +106,7 @@ class LLMConfig(BaseModel):
             "chapter_summary": AgentConfig(model_name="claude-haiku-4-5", temperature=0.3, max_retry_attempts=3, concurrency_limit=10),
             "book_summary": AgentConfig(model_name="claude-haiku-4-5", temperature=0.3, max_retry_attempts=3, concurrency_limit=10),
             "theme_decomposition": AgentConfig(model_name="claude-opus-4-6", temperature=0.7, max_retry_attempts=2, concurrency_limit=6),
-            "passage_extraction": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.1, max_retry_attempts=2, concurrency_limit=8),
+            "passage_extraction": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.1, max_retry_attempts=3, concurrency_limit=8),
             "synthesis_mapping": AgentConfig(model_name="claude-opus-4-6", temperature=0.8, max_retry_attempts=2, concurrency_limit=3),
             "narrative_strategy": AgentConfig(model_name="claude-opus-4-6", temperature=0.5, max_retry_attempts=2, concurrency_limit=6),
             "episode_planning": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.5, max_retry_attempts=2, concurrency_limit=6),
@@ -229,7 +229,7 @@ class PipelineRuntimeConfig(BaseModel):
     passage_retrieval_percentage: float = Field(default=0.25, gt=0.0, le=1.0)
     passage_retrieval_min_per_book: int = Field(default=20, ge=1)
     passage_retrieval_max_per_book: int = Field(default=50, ge=1)
-    axis_candidate_target_total: int = Field(default=150, ge=1)
+    axis_candidate_target_total: int = Field(default=180, ge=1)
     admission_floor_per_book: int = Field(default=2, ge=0)
     retrieval_conf_weight: float = Field(default=0.2, ge=0.0, le=1.0)
     retrieval_size_basis: Literal["total_words"] = "total_words"

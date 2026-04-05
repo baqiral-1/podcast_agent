@@ -1,0 +1,13 @@
+{
+  "source_pdf": "/Users/baqir/Downloads/dokumen.pub_indian-summer-the-secret-history-of-the-end-of-an-empire-9781551996202-1551996200.pdf",
+  "file": "sample_books/indian_summer.cleaned.txt",
+  "pages_in_pdf": 367,
+  "start_page_1_indexed": 15,
+  "end_page_1_indexed_exclusive": 288,
+  "removed_in_cleanup_pass": 0,
+  "numeric_markers_removed": 0,
+  "remaining_trailing_1to3_digit_markers": 0,
+  "chapter_heading_like_count": 39,
+  "word_count": 132311,
+  "method": "pdftotext-layout-clean-v3"
+}
