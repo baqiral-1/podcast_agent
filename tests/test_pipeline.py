@@ -278,10 +278,10 @@ class TestBookIngestion:
             description="",
         )
         candidates = [
-            {"text": "alpha beta. alpha. gamma."},
+            {"text": "alpha beta. alpha. gamma. delta."},
         ]
         _trim_candidate_texts_by_bm25(axis, candidates)
-        assert candidates[0]["text"] == "alpha beta."
+        assert candidates[0]["text"] == "alpha beta. alpha."
 
     def test_passage_extraction_preserves_full_text_when_bm25_trims(self, tmp_path):
         settings = Settings(
@@ -605,10 +605,12 @@ class TestBookIngestion:
         )
         assert log_path.exists()
         data = json.loads(log_path.read_text())
-        assert data["budget_strategy"] == "hybrid_percentage_floor_cap"
-        assert data["allocation_policy"] == "floor_5_quadratic_global_rank"
-        assert data["axis_candidate_budget"] == 40
-        assert data["per_book_budget"] == {"book-a": 20, "book-b": 20}
+        assert data["budget_strategy"] == "fixed_target_soft_threshold_backfill"
+        assert data["allocation_policy"] == "floor_3_blended_relevance_confidence_with_chapter_penalty"
+        assert data["axis_candidate_budget_target"] == 150
+        assert data["axis_candidate_budget_effective"] == 6
+        assert data["axis_candidate_budget"] == 6
+        assert data["per_book_budget"] == {"book-a": 3, "book-b": 3}
         assert data["retrieval_depth_by_book"] == {"book-a": 5, "book-b": 2}
         for book in data["books"]:
             used = [c for c in book["candidates"] if c["used"]]
@@ -804,10 +806,10 @@ class TestBookIngestion:
             book["book_id"]: len([candidate for candidate in book["candidates"] if candidate["used"]])
             for book in data["books"]
         }
-        assert data["allocation_policy"] == "floor_5_quadratic_global_rank"
-        assert data["per_book_budget"] == {"book-a": 34, "book-b": 6}
+        assert data["allocation_policy"] == "floor_3_blended_relevance_confidence_with_chapter_penalty"
+        assert data["per_book_budget"] == {"book-a": 29, "book-b": 11}
         assert data["retrieval_depth_by_book"] == {"book-a": 2, "book-b": 2}
-        assert used_by_book == {"book-a": 20, "book-b": 6}
+        assert used_by_book == {"book-a": 20, "book-b": 11}
 
     def test_passage_extraction_retries_on_low_coverage(self, tmp_path):
         settings = Settings(

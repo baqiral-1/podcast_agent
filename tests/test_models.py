@@ -563,12 +563,15 @@ class TestPipelineConfig:
         config = PipelineConfig()
         assert config.max_axes == 15
         assert config.min_axes == 5
-        assert config.passages_per_axis_per_book == 60
         assert config.passage_retrieval_percentage == 0.25
         assert config.passage_retrieval_min_per_book == 20
         assert config.passage_retrieval_max_per_book == 50
+        assert config.axis_candidate_target_total == 150
+        assert config.admission_floor_per_book == 3
+        assert config.retrieval_conf_weight == 0.2
+        assert config.retrieval_soft_threshold == 0.35
+        assert config.chapter_penalty_weight == 0.05
         assert config.rerank_top_k == 30
-        assert config.grounding_threshold == 0.85
         assert config.max_repair_attempts == 3
         assert config.episode_write_concurrency == 5
         assert config.passage_extraction_concurrency == 8

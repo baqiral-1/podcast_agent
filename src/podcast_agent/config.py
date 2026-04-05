@@ -225,16 +225,16 @@ class PipelineRuntimeConfig(BaseModel):
     # Thematic intelligence
     max_axes: int = Field(default=15, ge=1)
     min_axes: int = Field(default=5, ge=1)
-    passages_per_axis_per_book: int = Field(default=60, ge=1)
     passage_retrieval_percentage: float = Field(default=0.25, gt=0.0, le=1.0)
     passage_retrieval_min_per_book: int = Field(default=20, ge=1)
     passage_retrieval_max_per_book: int = Field(default=50, ge=1)
+    axis_candidate_target_total: int = Field(default=150, ge=1)
+    admission_floor_per_book: int = Field(default=3, ge=0)
+    retrieval_conf_weight: float = Field(default=0.2, ge=0.0, le=1.0)
+    retrieval_soft_threshold: float = Field(default=0.35, ge=0.0, le=1.0)
+    chapter_penalty_weight: float = Field(default=0.05, ge=0.0, le=1.0)
     rerank_top_k: int = Field(default=30, ge=1)
-    min_book_coverage: float = Field(default=0.6, ge=0.0, le=1.0)
     synthesis_quality_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
-    grounding_threshold: float = Field(default=0.85, ge=0.0, le=1.0)
-    cross_book_grounding_threshold: float = Field(default=0.85, ge=0.0, le=1.0)
-    book_weights: dict[str, float] | None = None
     spoken_chunk_max_words: int = Field(default=250, ge=50)
 
     @model_validator(mode="after")

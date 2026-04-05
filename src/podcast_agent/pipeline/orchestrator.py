@@ -217,7 +217,7 @@ def _trim_candidate_texts_by_bm25(axis: ThematicAxis, candidates: list[dict]) ->
             score = _bm25_score(tokens, query_terms, idf, avg_len)
             scored.append((score, idx, sentence))
         scored.sort(key=lambda item: (-item[0], item[1]))
-        top_n = max(1, math.ceil(len(sentences) / 4))
+        top_n = max(1, math.ceil(len(sentences) / 3))
         selected = sorted(scored[:top_n], key=lambda item: item[1])
         trimmed = " ".join(sentence for _, _, sentence in selected).strip()
         if trimmed:
@@ -1571,7 +1571,14 @@ class PipelineOrchestrator:
                 )
                 for book_id in book_ids
             }
-            axis_candidate_budget = len(book_ids) * project.config.passage_retrieval_max_per_book
+            axis_candidate_budget_target = max(1, project.config.axis_candidate_target_total)
+            chapter_word_count_by_book = {
+                book.book_id: {
+                    chapter.chapter_id: max(0, chapter.word_count)
+                    for chapter in book.chapters
+                }
+                for book in project.books
+            }
             max_log_per_book = max(
                 200,
                 max((info["per_book_budget"] for info in retrieval_depth_by_book.values()), default=0),
@@ -1592,34 +1599,40 @@ class PipelineOrchestrator:
                     k_per_book=max_log_per_book,
                 )
 
+                axis_candidate_budget_effective = min(
+                    axis_candidate_budget_target,
+                    sum(len(hits_by_book.get(bid, [])) for bid in book_ids),
+                )
+                conf_weight = project.config.retrieval_conf_weight
+                soft_threshold = project.config.retrieval_soft_threshold
+                chapter_penalty_weight = project.config.chapter_penalty_weight
+                allocation_power = 1.0
+                floor_per_book = project.config.admission_floor_per_book
                 retrieval_log: dict[str, Any] = {
                     "axis_id": axis.axis_id,
                     "axis_name": axis.name,
                     "axis_description": axis.description,
                     "max_log_per_book": max_log_per_book,
-                    "axis_candidate_budget": axis_candidate_budget,
-                    "budget_strategy": "hybrid_percentage_floor_cap",
+                    "axis_candidate_budget_target": axis_candidate_budget_target,
+                    "axis_candidate_budget_effective": axis_candidate_budget_effective,
+                    "axis_candidate_budget": axis_candidate_budget_effective,
+                    "budget_strategy": "fixed_target_soft_threshold_backfill",
                     "passage_retrieval_percentage": project.config.passage_retrieval_percentage,
                     "passage_retrieval_min_per_book": project.config.passage_retrieval_min_per_book,
                     "passage_retrieval_max_per_book": project.config.passage_retrieval_max_per_book,
-                    "legacy_passages_per_axis_per_book": project.config.passages_per_axis_per_book,
-                    "allocation_policy": "floor_5_quadratic_global_rank",
-                    "allocation_power": 2.0,
-                    "allocation_floor": 5,
+                    "allocation_policy": (
+                        f"floor_{floor_per_book}_blended_relevance_confidence_with_chapter_penalty"
+                    ),
+                    "allocation_power": allocation_power,
+                    "allocation_floor": floor_per_book,
+                    "retrieval_conf_weight": conf_weight,
+                    "soft_threshold": soft_threshold,
+                    "chapter_penalty_weight": chapter_penalty_weight,
                     "books": [],
                 }
                 relevance_by_book = _resolve_axis_relevance(axis, book_ids)
                 retrieval_log["relevance_by_book"] = relevance_by_book
-                admitted_quota_by_book = _compute_weighted_admitted_budgets(
-                    book_ids=book_ids,
-                    axis_total_budget=axis_candidate_budget,
-                    relevance_by_book=relevance_by_book,
-                    floor_per_book=5,
-                    allocation_power=retrieval_log["allocation_power"],
-                )
-                retrieval_log["admission_quota_by_book"] = admitted_quota_by_book
 
-                ranked_rows: list[dict[str, Any]] = []
                 rows_by_book: dict[str, list[dict[str, Any]]] = {}
                 for bid, hits in hits_by_book.items():
                     book = next((b for b in project.books if b.book_id == bid), None)
@@ -1630,45 +1643,180 @@ class PipelineOrchestrator:
                         "chunk_count": retrieval_depth_by_book.get(bid, {}).get("chunk_count", 0),
                         "percentage_budget": retrieval_depth_by_book.get(bid, {}).get("percentage_budget", 0),
                         "retrieval_depth_budget": retrieval_depth_by_book.get(bid, {}).get("per_book_budget", 0),
-                        "admission_quota": admitted_quota_by_book.get(bid, 0),
+                        "admission_quota": 0,
                         "candidates": [],
                     }
                     for rank, hit in enumerate(hits, start=1):
-                        priority = (relevance_by_book.get(bid, 0.0) ** 2) / max(1, rank)
                         row = {
                             "book_id": bid,
                             "rank": rank,
-                            "priority": priority,
+                            "priority": 0.0,
+                            "retrieval_confidence": 0.0,
+                            "selection_phase": None,
+                            "chapter_penalty": 0.0,
+                            "selection_score": 0.0,
                             "hit": hit,
                             "title": book.title if book else "Unknown",
                             "author": book.author if book else "Unknown",
                         }
-                        ranked_rows.append(row)
                         rows_by_book.setdefault(bid, []).append(row)
                     retrieval_log["books"].append(book_entry)
 
-                ranked_rows.sort(
-                    key=lambda row: (
-                        -row["priority"],
-                        row["rank"],
-                        str(row["hit"].chunk_id),
+                retrieval_signal_by_book: dict[str, float] = {}
+                for bid in book_ids:
+                    rows = rows_by_book.get(bid, [])
+                    if not rows:
+                        retrieval_signal_by_book[bid] = 0.0
+                        continue
+                    scores = [float(row["hit"].score) for row in rows]
+                    min_score = min(scores)
+                    max_score = max(scores)
+                    denom = max_score - min_score
+                    confidences: list[float] = []
+                    for row in rows:
+                        raw_score = float(row["hit"].score)
+                        if denom <= 0:
+                            confidence = 1.0
+                        else:
+                            confidence = _clamp((max_score - raw_score) / denom, 0.0, 1.0)
+                        row["retrieval_confidence"] = confidence
+                        row["priority"] = confidence
+                        confidences.append(confidence)
+                    confidences.sort(reverse=True)
+                    top_n = min(10, len(confidences))
+                    retrieval_signal_by_book[bid] = (
+                        sum(confidences[:top_n]) / max(1, top_n)
                     )
+
+                blended_score_by_book = {
+                    bid: ((1.0 - conf_weight) * relevance_by_book.get(bid, 0.0))
+                    + (conf_weight * retrieval_signal_by_book.get(bid, 0.0))
+                    for bid in book_ids
+                }
+                retrieval_log["retrieval_signal_by_book"] = retrieval_signal_by_book
+                retrieval_log["blended_score_by_book"] = blended_score_by_book
+
+                admitted_quota_by_book = _compute_weighted_admitted_budgets(
+                    book_ids=book_ids,
+                    axis_total_budget=axis_candidate_budget_effective,
+                    relevance_by_book=blended_score_by_book,
+                    floor_per_book=floor_per_book,
+                    allocation_power=allocation_power,
                 )
+                retrieval_log["admission_quota_by_book"] = admitted_quota_by_book
+
                 admitted_by_book: dict[str, int] = {bid: 0 for bid in book_ids}
                 selected_rows: list[dict[str, Any]] = []
-                for row in ranked_rows:
-                    bid = row["book_id"]
-                    per_book_budget = admitted_quota_by_book.get(bid, 0)
-                    if admitted_by_book.get(bid, 0) >= per_book_budget:
+                book_entry_by_id = {entry["book_id"]: entry for entry in retrieval_log["books"]}
+                for bid in book_ids:
+                    rows = list(rows_by_book.get(bid, []))
+                    quota = admitted_quota_by_book.get(bid, 0)
+                    book_entry = book_entry_by_id.get(bid)
+                    if book_entry is None:
                         continue
-                    selected_rows.append(row)
-                    admitted_by_book[bid] = admitted_by_book.get(bid, 0) + 1
-                    if len(selected_rows) >= axis_candidate_budget:
-                        break
+                    book_entry["admission_quota"] = quota
+                    book_entry["eligible_total_count"] = len(rows)
+                    if quota <= 0 or not rows:
+                        book_entry["eligible_above_threshold_count"] = 0
+                        book_entry["selected_above_threshold_count"] = 0
+                        book_entry["selected_backfill_count"] = 0
+                        book_entry["underfill_count"] = max(0, quota)
+                        continue
+
+                    chapter_targets: dict[str, float] = {}
+                    chapter_ids = sorted({
+                        str(row["hit"].chapter_id or "")
+                        for row in rows
+                    })
+                    chapter_word_counts = chapter_word_count_by_book.get(bid, {})
+                    total_visible_chapter_words = sum(
+                        max(0, chapter_word_counts.get(chapter_id, 0))
+                        for chapter_id in chapter_ids
+                    )
+                    if total_visible_chapter_words > 0:
+                        for chapter_id in chapter_ids:
+                            chapter_words = max(0, chapter_word_counts.get(chapter_id, 0))
+                            chapter_targets[chapter_id] = (
+                                quota * (chapter_words / total_visible_chapter_words)
+                            )
+                    elif chapter_ids:
+                        equal_target = quota / len(chapter_ids)
+                        chapter_targets = {
+                            chapter_id: equal_target for chapter_id in chapter_ids
+                        }
+
+                    selected_by_chapter: dict[str, int] = {}
+                    high_pool = [
+                        row for row in rows
+                        if row["retrieval_confidence"] >= soft_threshold
+                    ]
+                    backfill_pool = [
+                        row for row in rows
+                        if row["retrieval_confidence"] < soft_threshold
+                    ]
+                    book_entry["eligible_above_threshold_count"] = len(high_pool)
+
+                    def _pop_best_row(pool: list[dict[str, Any]]) -> dict[str, Any]:
+                        best_idx = 0
+                        best_key: tuple[float, float, int, str] | None = None
+                        best_penalty = 0.0
+                        for idx, row in enumerate(pool):
+                            chapter_id = str(row["hit"].chapter_id or "")
+                            chapter_target = chapter_targets.get(chapter_id, 0.0)
+                            denom = max(1.0, chapter_target)
+                            over_target = max(
+                                0.0,
+                                ((selected_by_chapter.get(chapter_id, 0) + 1) - chapter_target) / denom,
+                            )
+                            chapter_penalty = chapter_penalty_weight * over_target
+                            selection_score = row["retrieval_confidence"] - chapter_penalty
+                            key = (
+                                selection_score,
+                                row["retrieval_confidence"],
+                                -int(row["rank"]),
+                                str(row["hit"].chunk_id),
+                            )
+                            if best_key is None or key > best_key:
+                                best_idx = idx
+                                best_key = key
+                                best_penalty = chapter_penalty
+                        best_row = pool.pop(best_idx)
+                        best_row["chapter_penalty"] = best_penalty
+                        best_row["selection_score"] = (
+                            best_key[0]
+                            if best_key is not None
+                            else best_row["retrieval_confidence"]
+                        )
+                        return best_row
+
+                    selected_above_threshold = 0
+                    selected_backfill = 0
+                    remaining = quota
+                    while remaining > 0 and high_pool:
+                        row = _pop_best_row(high_pool)
+                        row["selection_phase"] = "above_threshold"
+                        chapter_id = str(row["hit"].chapter_id or "")
+                        selected_by_chapter[chapter_id] = selected_by_chapter.get(chapter_id, 0) + 1
+                        admitted_by_book[bid] = admitted_by_book.get(bid, 0) + 1
+                        selected_above_threshold += 1
+                        selected_rows.append(row)
+                        remaining -= 1
+                    while remaining > 0 and backfill_pool:
+                        row = _pop_best_row(backfill_pool)
+                        row["selection_phase"] = "backfill"
+                        chapter_id = str(row["hit"].chapter_id or "")
+                        selected_by_chapter[chapter_id] = selected_by_chapter.get(chapter_id, 0) + 1
+                        admitted_by_book[bid] = admitted_by_book.get(bid, 0) + 1
+                        selected_backfill += 1
+                        selected_rows.append(row)
+                        remaining -= 1
+
+                    book_entry["selected_above_threshold_count"] = selected_above_threshold
+                    book_entry["selected_backfill_count"] = selected_backfill
+                    book_entry["underfill_count"] = max(0, quota - admitted_by_book.get(bid, 0))
+
                 selected_row_ids = {id(row) for row in selected_rows}
                 candidates: list[dict[str, Any]] = []
-
-                book_entry_by_id = {entry["book_id"]: entry for entry in retrieval_log["books"]}
                 for bid in book_ids:
                     book_entry = book_entry_by_id.get(bid)
                     if book_entry is None:
@@ -1680,6 +1828,11 @@ class PipelineOrchestrator:
                             "rank": row["rank"],
                             "used": used,
                             "global_priority": round(float(row["priority"]), 8),
+                            "retrieval_confidence": round(float(row["retrieval_confidence"]), 8),
+                            "meets_soft_threshold": bool(row["retrieval_confidence"] >= soft_threshold),
+                            "selection_phase": row["selection_phase"] if used else None,
+                            "chapter_penalty": round(float(row["chapter_penalty"]), 8) if used else 0.0,
+                            "selection_score": round(float(row["selection_score"]), 8) if used else None,
                             "chunk_id": hit.chunk_id,
                             "chapter_id": hit.chapter_id,
                             "score": hit.score,
@@ -1727,7 +1880,7 @@ class PipelineOrchestrator:
                     empty_policy.update({
                         "allocation_policy": retrieval_log["allocation_policy"],
                         "allocation_power": retrieval_log["allocation_power"],
-                        "axis_candidate_budget": axis_candidate_budget,
+                        "axis_candidate_budget": axis_candidate_budget_effective,
                         "per_book_budget": retrieval_log["per_book_budget"],
                         "admitted_by_book": admitted_by_book,
                     })
@@ -1894,7 +2047,7 @@ class PipelineOrchestrator:
                 rerank_policy.update({
                     "allocation_policy": retrieval_log["allocation_policy"],
                     "allocation_power": retrieval_log["allocation_power"],
-                    "axis_candidate_budget": axis_candidate_budget,
+                    "axis_candidate_budget": axis_candidate_budget_effective,
                     "per_book_budget": retrieval_log["per_book_budget"],
                     "admitted_by_book": admitted_by_book,
                 })
