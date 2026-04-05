@@ -48,6 +48,7 @@ class OpenAICompatibleTTSClient(TTSClient):
         voice: str | None = None,
         audio_format: str | None = None,
         instructions: str | None = None,
+        speed: float | None = None,
     ) -> bytes:
         if not text.strip():
             raise ValueError("Cannot synthesize empty text.")
@@ -60,7 +61,7 @@ class OpenAICompatibleTTSClient(TTSClient):
             "input": text,
             "format": audio_format or self.config.audio_format,
             "instructions": instructions or self.config.instructions,
-            "speed": self.config.speed,
+            "speed": speed if speed is not None else self.config.speed,
         }
         endpoint = f"{(__import__('os').getenv('OPENAI_BASE_URL') or 'https://api.openai.com').rstrip('/')}/v1/audio/speech"
         headers = {
@@ -75,6 +76,7 @@ class OpenAICompatibleTTSClient(TTSClient):
                 voice=payload["voice"],
                 audio_format=payload["format"],
                 instructions=payload["instructions"],
+                speed=payload["speed"],
                 text=text,
             )
         audio_bytes = self.transport.post_json_for_bytes(
@@ -91,6 +93,7 @@ class OpenAICompatibleTTSClient(TTSClient):
                 voice=payload["voice"],
                 audio_format=payload["format"],
                 instructions=payload["instructions"],
+                speed=payload["speed"],
                 byte_count=len(audio_bytes),
             )
         return audio_bytes

@@ -13,18 +13,20 @@ class ThemeDecompositionResponse(BaseModel):
 
 
 class ThemeDecompositionAgent(Agent):
-    """Decomposes a user theme into 5-15 thematic axes spanning all books.
+    """Decomposes a user theme into 7-9 strong thematic axes spanning all books.
 
-    This stage is the intentional consumer of chapter summaries. Later stages use
-    retrieved passage evidence instead of chapter-summary context.
+    This stage is the intentional consumer of chapter summaries and synthesized
+    per-book summaries. Later stages use retrieved passage evidence instead of
+    chapter-summary context.
     """
 
     schema_name = "theme_decomposition"
     response_model = ThemeDecompositionResponse
     instructions = (
-        "You are a thematic analyst preparing a cross-book podcast. Given a theme and "
-        "summaries of N books, decompose the theme into 5-15 specific analytical lenses "
-        "(thematic axes).\n\n"
+        "You are a thematic analyst preparing a cross-book podcast. Given a theme, "
+        "optional sub-themes, "
+        "theme-conditioned per-book summaries, and chapter summaries for N books, "
+        "decompose the theme into 7-9 strong analytical lenses (thematic axes).\n\n"
         "Each axis should be:\n"
         "- Narrow enough to drive targeted passage retrieval\n"
         "- Broad enough that at least 2 of the books have something meaningful to say about it\n\n"
@@ -41,9 +43,12 @@ class ThemeDecompositionAgent(Agent):
     def build_payload(
         self,
         theme: str,
+        sub_themes: list[str] | None,
         theme_elaboration: str | None,
         books: list[BookRecord],
+        book_summaries: dict[str, str] | None = None,
     ) -> dict:
+        summary_by_book = book_summaries or {}
         book_summaries = []
         for book in books:
             # Chapter summaries are provided here for thematic axis discovery only.
@@ -55,10 +60,12 @@ class ThemeDecompositionAgent(Agent):
                 "book_id": book.book_id,
                 "title": book.title,
                 "author": book.author,
+                "book_summary": summary_by_book.get(book.book_id, ""),
                 "chapters": chapter_info,
             })
         return {
             "theme": theme,
+            "sub_themes": sub_themes or [],
             "theme_elaboration": theme_elaboration or "",
             "books": book_summaries,
         }

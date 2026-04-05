@@ -86,6 +86,7 @@ class LLMConfig(BaseModel):
     timeout_seconds_overrides: dict[str, float] = Field(
         default_factory=lambda: {
             "passage_extraction": 480.0,
+            "synthesis_mapping": 1200.0,
             "episode_planning": 900.0,
             "episode_writing": 1200.0,
         },
@@ -102,16 +103,17 @@ class LLMConfig(BaseModel):
         default_factory=lambda: {
             "structuring": AgentConfig(model_name="claude-haiku-4-5", temperature=0.3, max_retry_attempts=3, concurrency_limit=10),
             "chapter_summary": AgentConfig(model_name="claude-haiku-4-5", temperature=0.3, max_retry_attempts=3, concurrency_limit=10),
+            "book_summary": AgentConfig(model_name="claude-haiku-4-5", temperature=0.3, max_retry_attempts=3, concurrency_limit=10),
             "theme_decomposition": AgentConfig(model_name="claude-opus-4-6", temperature=0.7, max_retry_attempts=2, concurrency_limit=6),
-            "passage_extraction": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.1, max_retry_attempts=2, concurrency_limit=6),
+            "passage_extraction": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.1, max_retry_attempts=2, concurrency_limit=8),
             "synthesis_mapping": AgentConfig(model_name="claude-opus-4-6", temperature=0.8, max_retry_attempts=2, concurrency_limit=3),
             "narrative_strategy": AgentConfig(model_name="claude-opus-4-6", temperature=0.5, max_retry_attempts=2, concurrency_limit=6),
             "episode_planning": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.5, max_retry_attempts=2, concurrency_limit=6),
-            "episode_writing": AgentConfig(model_name="claude-opus-4-6", temperature=0.6, max_retry_attempts=2, concurrency_limit=3),
+            "episode_writing": AgentConfig(model_name="claude-opus-4-6", temperature=0.6, max_retry_attempts=2, concurrency_limit=5),
             "source_weaving": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.5, max_retry_attempts=2, concurrency_limit=6),
             "grounding_validation": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.2, max_retry_attempts=2, concurrency_limit=6),
             "repair": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.3, max_retry_attempts=2, concurrency_limit=6),
-            "spoken_delivery": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.7, max_retry_attempts=2, concurrency_limit=6),
+            "spoken_delivery": AgentConfig(model_name="claude-opus-4-6", temperature=0.7, max_retry_attempts=2, concurrency_limit=6),
             "episode_framing": AgentConfig(model_name="claude-haiku-4-5", temperature=0.7, max_retry_attempts=2, concurrency_limit=15),
         },
         description="Per-agent LLM config overrides keyed by schema_name.",
@@ -175,15 +177,10 @@ class TTSConfig(BaseModel):
     audio_format: str = Field(default="mp3")
     instructions: str = Field(
         default=(
-            "Voice Affect: Low, hushed, and suspenseful; convey tension and intrigue.\n\n"
-            "Tone: Deeply serious and mysterious, maintaining an undercurrent of unease throughout.\n\n"
-            "Pacing: Slow, deliberate, pausing slightly after suspenseful moments to heighten drama.\n\n"
-            "Emotion: Restrained yet intense—voice should subtly tremble or tighten at key suspenseful points.\n\n"
-            'Emphasis: Highlight sensory descriptions ("footsteps echoed," "heart hammering," '
-            '"shadows melting into darkness") to amplify atmosphere.\n\n'
-            "Pronunciation: Slightly elongated vowels and softened consonants for an eerie, haunting effect.\n\n"
-            'Pauses: Insert meaningful pauses after phrases like "only shadows melting into darkness," '
-            "and especially before the final line, to enhance suspense dramatically."
+            "Narrate as a clear, grounded documentary host.\n\n"
+            "Keep the delivery controlled, natural, and easy to follow.\n\n"
+            "Use serious tone when the material is weighty, but avoid melodrama unless the segment guidance asks for it.\n\n"
+            "Favor clean diction and steady pacing."
         )
     )
     speed: float = Field(default=1, gt=0.0, le=4.0)
@@ -220,22 +217,33 @@ class PipelineRuntimeConfig(BaseModel):
     chunk_overlap_words: int = Field(default=50, ge=0)
     min_chunk_words: int = Field(default=80, ge=10)
     max_repair_attempts: int = Field(default=3, ge=0)
-    episode_write_concurrency: int = Field(default=3, ge=1)
+    episode_write_concurrency: int = Field(default=5, ge=1)
     tts_concurrency: int = Field(default=4, ge=1)
     llm_global_max_concurrency: int = Field(default=30, ge=1)
     audio_retry_attempts: int = Field(default=3, ge=0)
-    spoken_words_per_minute: int = Field(default=130, ge=80)
+    spoken_words_per_minute: int = Field(default=110, ge=80)
     # Thematic intelligence
     max_axes: int = Field(default=15, ge=1)
     min_axes: int = Field(default=5, ge=1)
-    passages_per_axis_per_book: int = Field(default=25, ge=1)
-    rerank_top_k: int = Field(default=10, ge=1)
+    passages_per_axis_per_book: int = Field(default=60, ge=1)
+    passage_retrieval_percentage: float = Field(default=0.25, gt=0.0, le=1.0)
+    passage_retrieval_min_per_book: int = Field(default=20, ge=1)
+    passage_retrieval_max_per_book: int = Field(default=50, ge=1)
+    rerank_top_k: int = Field(default=30, ge=1)
     min_book_coverage: float = Field(default=0.6, ge=0.0, le=1.0)
     synthesis_quality_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
     grounding_threshold: float = Field(default=0.85, ge=0.0, le=1.0)
     cross_book_grounding_threshold: float = Field(default=0.85, ge=0.0, le=1.0)
     book_weights: dict[str, float] | None = None
     spoken_chunk_max_words: int = Field(default=250, ge=50)
+
+    @model_validator(mode="after")
+    def validate_retrieval_budget_bounds(self) -> PipelineRuntimeConfig:
+        if self.passage_retrieval_max_per_book < self.passage_retrieval_min_per_book:
+            raise ValueError(
+                "passage_retrieval_max_per_book must be >= passage_retrieval_min_per_book"
+            )
+        return self
 
 
 class EmbeddingsConfig(BaseModel):

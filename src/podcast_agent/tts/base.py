@@ -24,5 +24,6 @@ class TTSClient(ABC):
         voice: str | None = None,
         audio_format: str | None = None,
         instructions: str | None = None,
+        speed: float | None = None,
     ) -> bytes:
         """Synthesize speech audio bytes from text."""

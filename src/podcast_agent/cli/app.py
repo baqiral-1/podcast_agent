@@ -12,6 +12,29 @@ import typer
 app = typer.Typer(name="podcast-agent", help="Multi-book thematic podcast pipeline.")
 
 
+def _parse_sub_themes(raw: Optional[str]) -> list[str]:
+    if not raw:
+        return []
+
+    items = raw.split(",")
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        trimmed = item.strip()
+        if not trimmed:
+            raise typer.BadParameter(
+                "Sub-themes must be a comma-separated list of non-empty values."
+            )
+        if trimmed in seen:
+            continue
+        seen.add(trimmed)
+        normalized.append(trimmed)
+
+    if len(normalized) > 8:
+        raise typer.BadParameter("Sub-themes supports at most 8 values.")
+    return normalized
+
+
 @app.command()
 def run(
     sources: list[str] = typer.Argument(..., help="Paths to book files (PDF, TXT, MD)."),
@@ -26,6 +49,11 @@ def run(
         ),
     ),
     theme_elaboration: Optional[str] = typer.Option(None, "--elaboration", help="Optional longer theme description."),
+    sub_themes: Optional[str] = typer.Option(
+        None,
+        "--sub-themes",
+        help="Optional comma-separated sub-themes to augment decomposition.",
+    ),
     titles: Optional[str] = typer.Option(None, "--titles", help="Comma-separated book titles."),
     authors: Optional[str] = typer.Option(None, "--authors", help="Comma-separated author names."),
     output_dir: Optional[str] = typer.Option(None, "--output-dir", "-o", help="Custom output directory."),
@@ -56,6 +84,7 @@ def run(
 
     title_list = [t.strip() for t in titles.split(",")] if titles else None
     author_list = [a.strip() for a in authors.split(",")] if authors else None
+    sub_theme_list = _parse_sub_themes(sub_themes)
 
     orchestrator = PipelineOrchestrator(settings)
 
@@ -71,6 +100,7 @@ def run(
                 episode_count=episodes,
                 config=config,
                 theme_elaboration=theme_elaboration,
+                sub_themes=sub_theme_list,
                 titles=title_list,
                 authors=author_list,
                 project_id=project_id,
@@ -107,6 +137,10 @@ def status(
     data = json.loads(project_file.read_text())
     typer.echo(f"Project: {project_id}")
     typer.echo(f"Theme: {data.get('theme', 'N/A')}")
+    sub_themes = data.get("sub_themes", [])
+    typer.echo(
+        f"Sub-themes: {', '.join(sub_themes) if sub_themes else 'None'}"
+    )
     typer.echo(f"Status: {data.get('status', 'unknown')}")
     typer.echo(f"Books: {len(data.get('books', []))}")
     typer.echo(f"Episodes: {data.get('episode_count', 0)}")

@@ -7,7 +7,7 @@ from enum import Enum
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 def utc_now() -> datetime:
@@ -47,12 +47,11 @@ class SynthesisTag(str, Enum):
 
 
 class InsightType(str, Enum):
-    AGREEMENT = "agreement"
-    DISAGREEMENT = "disagreement"
-    EXTENSION = "extension"
-    TENSION = "tension"
-    SURPRISING_CONNECTION = "surprising_connection"
-    EVOLUTION = "evolution"
+    SYNCHRONICITY = "synchronicity"
+    PRODUCTIVE_FRICTION = "productive_friction"
+    INTELLECTUAL_SCAFFOLDING = "intellectual_scaffolding"
+    LATENT_PATTERN = "latent_pattern"
+    EPISTEMIC_DRIFT = "epistemic_drift"
 
 
 # ---------------------------------------------------------------------------
@@ -76,6 +75,7 @@ class BookRecord(StrictModel):
     source_path: str
     source_type: str  # "pdf", "txt", "md"
     chapters: list[ChapterInfo] = Field(default_factory=list)
+    chunk_count: int = Field(default=0, ge=0)
     total_words: int = Field(default=0, ge=0)
     ingestion_diagnostics: dict[str, Any] = Field(default_factory=dict)
 
@@ -83,8 +83,11 @@ class BookRecord(StrictModel):
 class PipelineConfig(StrictModel):
     max_axes: int = Field(default=15, ge=1)
     min_axes: int = Field(default=5, ge=1)
-    passages_per_axis_per_book: int = Field(default=25, ge=1)
-    rerank_top_k: int = Field(default=10, ge=1)
+    passages_per_axis_per_book: int = Field(default=60, ge=1)
+    passage_retrieval_percentage: float = Field(default=0.25, gt=0.0, le=1.0)
+    passage_retrieval_min_per_book: int = Field(default=20, ge=1)
+    passage_retrieval_max_per_book: int = Field(default=50, ge=1)
+    rerank_top_k: int = Field(default=30, ge=1)
     min_book_coverage: float = Field(default=0.6, ge=0.0, le=1.0)
     synthesis_quality_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
     grounding_threshold: float = Field(default=0.85, ge=0.0, le=1.0)
@@ -93,8 +96,11 @@ class PipelineConfig(StrictModel):
     book_weights: dict[str, float] | None = None
     tts_provider: str = "openai"
     tts_concurrency: int = Field(default=4, ge=1)
-    episode_write_concurrency: int = Field(default=3, ge=1)
-    passage_extraction_concurrency: int = Field(default=6, ge=1)
+    episode_write_concurrency: int = Field(default=5, ge=1)
+    target_episode_minutes: float = Field(default=100.0, gt=0.0)
+    min_episode_minutes: float = Field(default=90.0, gt=0.0)
+    duration_shortfall_policy: Literal["warn"] = "warn"
+    passage_extraction_concurrency: int = Field(default=8, ge=1)
     chunk_max_words: int = Field(default=400, ge=50)
     chunk_overlap_words: int = Field(default=50, ge=0)
     spoken_chunk_max_words: int = Field(default=250, ge=50)
@@ -105,11 +111,20 @@ class PipelineConfig(StrictModel):
     skip_spoken_delivery: bool = False
     skip_audio: bool = False
 
+    @model_validator(mode="after")
+    def validate_retrieval_budget_bounds(self) -> PipelineConfig:
+        if self.passage_retrieval_max_per_book < self.passage_retrieval_min_per_book:
+            raise ValueError(
+                "passage_retrieval_max_per_book must be >= passage_retrieval_min_per_book"
+            )
+        return self
+
 
 class ThematicProject(StrictModel):
     project_id: str = Field(default_factory=new_id)
     theme: str
     theme_elaboration: str | None = None
+    sub_themes: list[str] = Field(default_factory=list, max_length=8)
     books: list[BookRecord] = Field(default_factory=list)
     requested_episode_count: int | None = Field(default=None, ge=1)
     recommended_episode_count: int | None = Field(default=None, ge=2, le=8)
@@ -117,6 +132,31 @@ class ThematicProject(StrictModel):
     config: PipelineConfig = Field(default_factory=PipelineConfig)
     created_at: datetime = Field(default_factory=utc_now)
     status: ProjectStatus = ProjectStatus.INGESTING
+
+    @field_validator("sub_themes", mode="before")
+    @classmethod
+    def normalize_sub_themes(cls, value: Any) -> list[str]:
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            raise ValueError("sub_themes must be a list of strings.")
+
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for raw_item in value:
+            if not isinstance(raw_item, str):
+                raise ValueError("sub_themes must contain only strings.")
+            item = raw_item.strip()
+            if not item:
+                raise ValueError("sub_themes entries must be non-empty after trimming.")
+            if item in seen:
+                continue
+            seen.add(item)
+            normalized.append(item)
+
+        if len(normalized) > 8:
+            raise ValueError("sub_themes supports at most 8 entries.")
+        return normalized
 
 
 # ---------------------------------------------------------------------------
@@ -162,6 +202,7 @@ class ExtractedPassage(StrictModel):
     book_id: str
     chunk_ids: list[str] = Field(min_length=1)
     text: str
+    trimmed_text: str = ""
     full_text: str = ""
     chapter_ref: str = ""
     axis_id: str
@@ -342,7 +383,7 @@ class EpisodePlan(StrictModel):
     narrative_spine: NarrativeSpine | None = None
     book_balance: dict[str, float] = Field(default_factory=dict)
     cross_references: list[CrossReference] = Field(default_factory=list)
-    target_duration_minutes: float = Field(default=90.0, gt=0.0)
+    target_duration_minutes: float = Field(default=100.0, gt=0.0)
     episode_strategy: str = ""
 
 
@@ -432,11 +473,159 @@ class RepairResult(StrictModel):
 # ---------------------------------------------------------------------------
 
 
+class PronunciationHint(StrictModel):
+    text: str = Field(min_length=1)
+    spoken_as: str = Field(min_length=1)
+
+    @field_validator("text", "spoken_as", mode="before")
+    @classmethod
+    def _normalize_text(cls, value: Any) -> str:
+        return str(value or "").strip()
+
+
+class SpeechHints(StrictModel):
+    style: Literal["neutral", "measured", "urgent", "dramatic"] = "neutral"
+    intensity: Literal["none", "light", "medium", "strong"] = "none"
+    pace: Literal["slower", "normal", "faster"] = "normal"
+    pause_before_ms: int = Field(default=300, ge=0, le=2000)
+    pause_after_ms: int = Field(default=300, ge=0, le=2000)
+    pronunciation_hints: list[PronunciationHint] = Field(default_factory=list)
+    emphasis_targets: list[str] = Field(default_factory=list)
+    render_strategy: Literal["plain", "isolate_phrase", "split_sentences", "slow_clause"] = "plain"
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_legacy_keys(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        normalized = dict(value)
+        alias_map = {
+            "delivery_style": "style",
+            "emphasis_level": "intensity",
+            "speech_rate": "pace",
+        }
+        for legacy_key, canonical_key in alias_map.items():
+            if canonical_key not in normalized and legacy_key in normalized:
+                normalized[canonical_key] = normalized.pop(legacy_key)
+        return normalized
+
+    @field_validator("style", mode="before")
+    @classmethod
+    def _normalize_style(cls, value: Any) -> str:
+        allowed = {"neutral", "measured", "urgent", "dramatic"}
+        if value is None:
+            return "neutral"
+        normalized = str(value).strip().lower()
+        return normalized if normalized in allowed else "neutral"
+
+    @field_validator("intensity", mode="before")
+    @classmethod
+    def _normalize_intensity(cls, value: Any) -> str:
+        aliases = {
+            "high": "strong",
+            "maximum": "strong",
+            "max": "strong",
+            "low": "light",
+        }
+        allowed = {"none", "light", "medium", "strong"}
+        if value is None:
+            return "none"
+        normalized = str(value).strip().lower()
+        normalized = aliases.get(normalized, normalized)
+        return normalized if normalized in allowed else "none"
+
+    @field_validator("pace", mode="before")
+    @classmethod
+    def _normalize_pace(cls, value: Any) -> str:
+        aliases = {
+            "slow": "slower",
+            "deliberate": "slower",
+            "conversational": "normal",
+            "fast": "faster",
+        }
+        allowed = {"slower", "normal", "faster"}
+        if value is None:
+            return "normal"
+        normalized = str(value).strip().lower()
+        normalized = aliases.get(normalized, normalized)
+        return normalized if normalized in allowed else "normal"
+
+    @field_validator("pause_before_ms", "pause_after_ms", mode="before")
+    @classmethod
+    def _clamp_pause_ms(cls, value: Any) -> int:
+        if value is None:
+            return 300
+        try:
+            numeric = int(value)
+        except (TypeError, ValueError):
+            return 300
+        return max(0, min(2000, numeric))
+
+    @field_validator("pronunciation_hints", mode="before")
+    @classmethod
+    def _normalize_pronunciation_hints(
+        cls,
+        value: Any,
+    ) -> list[dict[str, Any]] | list[PronunciationHint]:
+        if value is None:
+            return []
+        if isinstance(value, dict):
+            return [value]
+        return value
+
+    @field_validator("emphasis_targets", mode="before")
+    @classmethod
+    def _normalize_emphasis_targets(cls, value: Any) -> list[str]:
+        if value is None:
+            return []
+        raw_values = [value] if isinstance(value, str) else list(value)
+        normalized: list[str] = []
+        for item in raw_values:
+            phrase = str(item or "").strip()
+            if phrase and phrase not in normalized:
+                normalized.append(phrase)
+        return normalized
+
+    @property
+    def delivery_style(self) -> str:
+        return self.style
+
+    @property
+    def emphasis_level(self) -> str:
+        return self.intensity
+
+    @property
+    def speech_rate(self) -> str:
+        return self.pace
+
+
+SpokenDeliveryHints = SpeechHints
+
+
 class SpokenSegment(StrictModel):
     segment_id: str
     text: str
     max_words: int = Field(default=250, ge=1)
-    ssml_hints: dict[str, Any] | None = None
+    speech_hints: SpeechHints = Field(default_factory=SpeechHints)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_legacy_hint_field(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        normalized = dict(value)
+        if "speech_hints" not in normalized and "ssml_hints" in normalized:
+            normalized["speech_hints"] = normalized.pop("ssml_hints")
+        return normalized
+
+    @field_validator("speech_hints", mode="before")
+    @classmethod
+    def _default_speech_hints(cls, value: Any) -> dict[str, Any] | SpeechHints:
+        return {} if value is None else value
+
+    @property
+    def ssml_hints(self) -> SpeechHints:
+        return self.speech_hints
 
 
 class SpokenScript(StrictModel):
@@ -461,6 +650,8 @@ class RenderSegment(StrictModel):
     speed: float = Field(default=1.0, gt=0.0, le=4.0)
     pause_before_ms: int = Field(default=0, ge=0)
     pause_after_ms: int = Field(default=0, ge=0)
+    instructions: str | None = None
+    hint_degradations: list[str] = Field(default_factory=list)
 
 
 class RenderManifest(StrictModel):

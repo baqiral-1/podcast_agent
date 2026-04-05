@@ -130,14 +130,14 @@ class TestSynthesisInsight:
     def test_requires_min_two_passages(self):
         with pytest.raises(ValidationError):
             SynthesisInsight(
-                insight_id="i1", insight_type=InsightType.AGREEMENT,
+                insight_id="i1", insight_type=InsightType.SYNCHRONICITY,
                 title="Test", description="Test",
                 passage_ids=["p1"],  # Only 1, need at least 2
             )
 
     def test_valid_insight(self):
         insight = SynthesisInsight(
-            insight_id="i1", insight_type=InsightType.DISAGREEMENT,
+            insight_id="i1", insight_type=InsightType.PRODUCTIVE_FRICTION,
             title="Authors disagree", description="A vs B",
             passage_ids=["p1", "p2"],
             podcast_potential=0.9, treatment="debate",
@@ -155,7 +155,7 @@ class TestSynthesisMap:
             project_id="proj1",
             insights=[
                 SynthesisInsight(
-                    insight_type=InsightType.TENSION,
+                    insight_type=InsightType.LATENT_PATTERN,
                     title="Test tension", description="Tension desc",
                     passage_ids=["p1", "p2"],
                 )
@@ -197,7 +197,7 @@ class TestEpisodePlan:
 
     def test_default_target_duration_minutes(self):
         plan = EpisodePlan(episode_number=1, title="Episode 1")
-        assert plan.target_duration_minutes == 90.0
+        assert plan.target_duration_minutes == 100.0
 
 
 class TestEpisodeScript:
@@ -306,6 +306,64 @@ class TestSpokenScript:
         data = json.loads(spoken.model_dump_json())
         restored = SpokenScript.model_validate(data)
         assert len(restored.segments) == 1
+        assert restored.segments[0].speech_hints.style == "neutral"
+        assert restored.segments[0].ssml_hints.delivery_style == "neutral"
+
+    def test_spoken_segment_normalizes_invalid_hint_values(self):
+        segment = SpokenSegment.model_validate(
+            {
+                "segment_id": "s1",
+                "text": "Hello listeners.",
+                "ssml_hints": {
+                    "delivery_style": "wild",
+                    "emphasis_level": "MAXIMUM",
+                    "pause_before_ms": -20,
+                    "pause_after_ms": "9999",
+                    "speech_rate": "warp",
+                },
+            }
+        )
+        assert segment.speech_hints.style == "neutral"
+        assert segment.speech_hints.intensity == "strong"
+        assert segment.speech_hints.pause_before_ms == 0
+        assert segment.speech_hints.pause_after_ms == 2000
+        assert segment.speech_hints.pace == "normal"
+        assert segment.ssml_hints.delivery_style == "neutral"
+
+    def test_spoken_segment_rejects_extra_hint_keys(self):
+        with pytest.raises(ValidationError):
+            SpokenSegment.model_validate(
+                {
+                    "segment_id": "s1",
+                    "text": "Hello listeners.",
+                    "ssml_hints": {
+                        "delivery_style": "neutral",
+                        "unexpected": True,
+                    },
+                }
+            )
+
+    def test_spoken_segment_accepts_canonical_speech_hints(self):
+        segment = SpokenSegment.model_validate(
+            {
+                "segment_id": "s1",
+                "text": "Hello listeners.",
+                "speech_hints": {
+                    "style": "measured",
+                    "intensity": "medium",
+                    "pace": "fast",
+                    "pronunciation_hints": {"text": "Nehru", "spoken_as": "NAY-roo"},
+                    "emphasis_targets": "transfer of power",
+                    "render_strategy": "isolate_phrase",
+                },
+            }
+        )
+        assert segment.speech_hints.style == "measured"
+        assert segment.speech_hints.intensity == "medium"
+        assert segment.speech_hints.pace == "faster"
+        assert segment.speech_hints.pronunciation_hints[0].spoken_as == "NAY-roo"
+        assert segment.speech_hints.emphasis_targets == ["transfer of power"]
+        assert segment.speech_hints.render_strategy == "isolate_phrase"
 
 
 class TestRenderManifest:
@@ -374,14 +432,48 @@ class TestThematicProject:
         )
         assert len(project.books) == 2
 
+    def test_sub_themes_trim_dedupe_preserve_order(self):
+        project = ThematicProject(
+            project_id="proj1",
+            theme="Test",
+            sub_themes=[" borders ", "displacement", "borders", " governance "],
+        )
+        assert project.sub_themes == ["borders", "displacement", "governance"]
+
+    def test_sub_themes_rejects_empty_entries(self):
+        with pytest.raises(ValidationError, match="non-empty"):
+            ThematicProject(
+                project_id="proj1",
+                theme="Test",
+                sub_themes=["valid", "   "],
+            )
+
+    def test_sub_themes_max_eight(self):
+        with pytest.raises(ValidationError, match="at most 8"):
+            ThematicProject(
+                project_id="proj1",
+                theme="Test",
+                sub_themes=["a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8", "a9"],
+            )
+
 
 class TestPipelineConfig:
     def test_defaults(self):
         config = PipelineConfig()
         assert config.max_axes == 15
         assert config.min_axes == 5
+        assert config.passages_per_axis_per_book == 60
+        assert config.passage_retrieval_percentage == 0.25
+        assert config.passage_retrieval_min_per_book == 20
+        assert config.passage_retrieval_max_per_book == 50
+        assert config.rerank_top_k == 30
         assert config.grounding_threshold == 0.85
         assert config.max_repair_attempts == 3
+        assert config.episode_write_concurrency == 5
+        assert config.passage_extraction_concurrency == 8
+        assert config.target_episode_minutes == 100.0
+        assert config.min_episode_minutes == 90.0
+        assert config.duration_shortfall_policy == "warn"
 
     def test_custom_values(self):
         config = PipelineConfig(
@@ -391,6 +483,13 @@ class TestPipelineConfig:
         assert config.max_axes == 10
         assert config.synthesis_quality_threshold == 0.7
 
+    def test_retrieval_budget_bounds_validation(self):
+        with pytest.raises(ValidationError, match="passage_retrieval_max_per_book"):
+            PipelineConfig(
+                passage_retrieval_min_per_book=21,
+                passage_retrieval_max_per_book=20,
+            )
+
 
 class TestEnums:
     def test_synthesis_tag_values(self):
@@ -398,8 +497,8 @@ class TestEnums:
         assert SynthesisTag.CONTRADICTS == "contradicts"
 
     def test_insight_type_values(self):
-        assert InsightType.AGREEMENT == "agreement"
-        assert InsightType.SURPRISING_CONNECTION == "surprising_connection"
+        assert InsightType.SYNCHRONICITY == "synchronicity"
+        assert InsightType.EPISTEMIC_DRIFT == "epistemic_drift"
 
     def test_project_status_values(self):
         assert ProjectStatus.INGESTING == "ingesting"

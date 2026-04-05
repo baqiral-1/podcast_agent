@@ -95,16 +95,28 @@ class TestPipelineRuntimeConfig:
         assert config.max_chunk_words == 400
         assert config.chunk_overlap_words == 50
         assert config.max_repair_attempts == 3
-        assert config.episode_write_concurrency == 3
+        assert config.episode_write_concurrency == 5
         assert config.tts_concurrency == 4
+        assert config.spoken_words_per_minute == 110
 
     def test_thematic_defaults(self):
         config = PipelineRuntimeConfig()
         assert config.max_axes == 15
         assert config.min_axes == 5
-        assert config.passages_per_axis_per_book == 25
+        assert config.passages_per_axis_per_book == 60
+        assert config.passage_retrieval_percentage == 0.25
+        assert config.passage_retrieval_min_per_book == 20
+        assert config.passage_retrieval_max_per_book == 50
+        assert config.rerank_top_k == 30
         assert config.synthesis_quality_threshold == 0.5
         assert config.grounding_threshold == 0.85
+
+    def test_retrieval_budget_bounds_validation(self):
+        with pytest.raises(ValueError, match="passage_retrieval_max_per_book"):
+            PipelineRuntimeConfig(
+                passage_retrieval_min_per_book=21,
+                passage_retrieval_max_per_book=20,
+            )
 
 
 class TestLLMConfigResolvers:
@@ -112,19 +124,26 @@ class TestLLMConfigResolvers:
         config = LLMConfig()
         assert config.resolve_max_retry_attempts("structuring") == 3
         assert config.resolve_max_retry_attempts("chapter_summary") == 3
+        assert config.resolve_max_retry_attempts("book_summary") == 3
         assert config.resolve_max_retry_attempts("synthesis_mapping") == 2
 
     def test_resolve_max_retry_attempts_default_for_unknown(self):
         config = LLMConfig()
         assert config.resolve_max_retry_attempts("unknown_agent") == 2
 
+    def test_resolve_timeout_seconds_uses_schema_override(self):
+        config = LLMConfig()
+        assert config.resolve_timeout_seconds("synthesis_mapping") == 1200.0
+        assert config.resolve_timeout_seconds("unknown_agent") == 600.0
+
     def test_resolve_concurrency_limit_from_agent_config(self):
         config = LLMConfig()
         assert config.resolve_concurrency_limit("structuring") == 10
         assert config.resolve_concurrency_limit("chapter_summary") == 10
-        assert config.resolve_concurrency_limit("passage_extraction") == 6
+        assert config.resolve_concurrency_limit("book_summary") == 10
+        assert config.resolve_concurrency_limit("passage_extraction") == 8
         assert config.resolve_concurrency_limit("synthesis_mapping") == 3
-        assert config.resolve_concurrency_limit("episode_writing") == 3
+        assert config.resolve_concurrency_limit("episode_writing") == 5
 
     def test_resolve_concurrency_limit_none_for_unknown(self):
         config = LLMConfig()
@@ -171,7 +190,7 @@ class TestLLMConfigResolvers:
     def test_all_agents_have_model_assigned(self):
         config = LLMConfig()
         expected_agents = [
-            "structuring", "theme_decomposition", "passage_extraction",
+            "structuring", "book_summary", "theme_decomposition", "passage_extraction",
             "synthesis_mapping", "narrative_strategy", "episode_planning",
             "episode_writing", "source_weaving", "grounding_validation",
             "repair", "spoken_delivery", "episode_framing",

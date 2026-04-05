@@ -78,15 +78,50 @@ class HeuristicLLMClient(LLMClient):
             ]
         }
 
+    def _generate_book_summary(self, payload: PromptPayload) -> dict[str, Any]:
+        theme = str(payload.get("theme", "")).strip()
+        sub_themes = [
+            str(item).strip()
+            for item in payload.get("sub_themes", [])
+            if str(item).strip()
+        ]
+        title = str(payload.get("title", "")).strip() or "this book"
+        chapters = payload.get("chapters", [])
+        chapter_titles = [
+            chapter.get("title", "")
+            for chapter in chapters[:3]
+            if isinstance(chapter, dict) and chapter.get("title")
+        ]
+        coverage = ", ".join(chapter_titles) if chapter_titles else "its chapters"
+        if theme:
+            if sub_themes:
+                summary = (
+                    f"{title} addresses {theme} ({', '.join(sub_themes[:2])}) "
+                    f"through {coverage}."
+                )
+            else:
+                summary = f"{title} addresses {theme} through {coverage}."
+        else:
+            summary = f"{title} is summarized through {coverage}."
+        return {"summary": summary}
+
     def _generate_theme_decomposition(self, payload: PromptPayload) -> dict[str, Any]:
         books = payload.get("books", [])
         book_ids = [b.get("book_id", f"b{i}") for i, b in enumerate(books)]
         relevance = {bid: 0.7 for bid in book_ids}
+        axis_label = str(payload.get("theme", "unknown"))
+        sub_themes = [
+            str(item).strip()
+            for item in payload.get("sub_themes", [])
+            if str(item).strip()
+        ]
+        if sub_themes:
+            axis_label = f"{axis_label} + {sub_themes[0]}"
         return {
             "axes": [
                 {
                     "axis_id": uuid4().hex,
-                    "name": f"Axis based on: {payload.get('theme', 'unknown')}",
+                    "name": f"Axis based on: {axis_label}",
                     "description": "Heuristic thematic axis.",
                     "guiding_questions": ["How does this theme manifest?"],
                     "relevance_by_book": relevance,
@@ -121,7 +156,7 @@ class HeuristicLLMClient(LLMClient):
         if len(passage_ids) >= 2:
             insights.append({
                 "insight_id": uuid4().hex,
-                "insight_type": "agreement",
+                "insight_type": "synchronicity",
                 "title": "Shared perspective",
                 "description": "Authors share a common perspective on this topic.",
                 "passage_ids": passage_ids[:2],
@@ -138,7 +173,9 @@ class HeuristicLLMClient(LLMClient):
             "merged_narratives": [
                 {
                     "topic": "Heuristic topic",
-                    "narrative": "Heuristic merged narrative.",
+                    "narrative": "There is a compelling case to be made that a shared pattern emerges here ("
+                    + (passage_ids[0] if passage_ids else "passage_id")
+                    + ").",
                     "source_passage_ids": passage_ids[:3],
                     "points_of_consensus": [],
                     "points_of_disagreement": [],
@@ -203,7 +240,7 @@ class HeuristicLLMClient(LLMClient):
             for passage in passage_pool[:3]
         ]
         beats = []
-        for i in range(30):
+        for i in range(40):
             beats.append(
                 {
                     "beat_id": uuid4().hex,
@@ -236,7 +273,7 @@ class HeuristicLLMClient(LLMClient):
                 "attribution_moments": [],
                 "narrative_voice": "omniscient narrator telling a story",
             },
-            "target_duration_minutes": 80.0,
+            "target_duration_minutes": 100.0,
             "episode_strategy": assignment.get("episode_strategy", ""),
         }
 
@@ -282,12 +319,26 @@ class HeuristicLLMClient(LLMClient):
                 "segment_id": seg.get("segment_id", uuid4().hex),
                 "text": seg.get("text", "Spoken delivery text."),
                 "max_words": payload.get("max_words_per_segment", 250),
+                "speech_hints": {
+                    "style": "neutral",
+                    "intensity": "none",
+                    "pause_before_ms": 300,
+                    "pause_after_ms": 300,
+                    "pace": "normal",
+                },
             })
         if not spoken_segments:
             spoken_segments = [{
                 "segment_id": uuid4().hex,
                 "text": "Heuristic spoken delivery.",
                 "max_words": 250,
+                "speech_hints": {
+                    "style": "neutral",
+                    "intensity": "none",
+                    "pause_before_ms": 300,
+                    "pause_after_ms": 300,
+                    "pace": "normal",
+                },
             }]
         return {"segments": spoken_segments, "arc_plan": None}
 

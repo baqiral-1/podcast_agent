@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from podcast_agent.agents.book_summary import BookSummaryAgent
 from podcast_agent.agents.framing import EpisodeFramingAgent
 from podcast_agent.agents.narrative_strategy import NarrativeStrategyAgent
 from podcast_agent.agents.passage_extraction import PassageExtractionAgent
@@ -64,6 +65,7 @@ from podcast_agent.schemas.models import (
     RepairResult,
     SegmentDiff,
     ScriptSegment,
+    SpeechHints,
     SpokenScript,
     SpokenSegment,
     SynthesisMap,
@@ -115,7 +117,14 @@ def _input_hash(*args: Any) -> str:
 
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 _WORD_RE = re.compile(r"[A-Za-z0-9']+")
+_SPOKEN_TAG_RE = re.compile(r"<[^>]+>")
+_WHITESPACE_RE = re.compile(r"\s+")
 _WRITING_SOURCE_MODE_FULL_CHUNK = "full_chunk"
+_SPOKEN_RATE_MULTIPLIER = {
+    "slower": 0.94,
+    "normal": 1.0,
+    "faster": 1.08,
+}
 
 
 def _split_sentences(text: str) -> list[str]:
@@ -211,6 +220,71 @@ def _trim_candidate_texts_by_bm25(axis: ThematicAxis, candidates: list[dict]) ->
             cand["text"] = trimmed
 
 
+def _compute_passage_retrieval_budget(
+    *,
+    chunk_count: int,
+    percentage: float,
+    min_per_book: int,
+    max_per_book: int,
+) -> dict[str, int]:
+    percentage_budget = int(round(max(0, chunk_count) * percentage))
+    budget = min(max_per_book, max(min_per_book, percentage_budget))
+    return {
+        "chunk_count": max(0, chunk_count),
+        "percentage_budget": percentage_budget,
+        "per_book_budget": budget,
+    }
+
+
+def _compute_weighted_admitted_budgets(
+    *,
+    book_ids: list[str],
+    axis_total_budget: int,
+    relevance_by_book: dict[str, float],
+    floor_per_book: int = 5,
+    allocation_power: float = 2.0,
+) -> dict[str, int]:
+    if not book_ids:
+        return {}
+
+    total_budget = max(0, axis_total_budget)
+    if total_budget <= 0:
+        return {book_id: 0 for book_id in book_ids}
+
+    book_count = len(book_ids)
+    effective_floor = min(max(0, floor_per_book), total_budget // book_count)
+    budgets = {book_id: effective_floor for book_id in book_ids}
+    remaining_budget = total_budget - (effective_floor * book_count)
+    if remaining_budget <= 0:
+        return budgets
+
+    weights: dict[str, float] = {}
+    for book_id in book_ids:
+        score = max(0.0, float(relevance_by_book.get(book_id, 0.0)))
+        weights[book_id] = score ** allocation_power
+
+    total_weight = sum(weights.values())
+    if total_weight <= 0:
+        weights = {book_id: 1.0 for book_id in book_ids}
+        total_weight = float(book_count)
+
+    fractional_allocations: list[tuple[float, int, str]] = []
+    allocated = 0
+    for idx, book_id in enumerate(book_ids):
+        share = remaining_budget * (weights[book_id] / total_weight)
+        extra = int(math.floor(share))
+        budgets[book_id] += extra
+        allocated += extra
+        fractional_allocations.append((share - extra, idx, book_id))
+
+    leftover = remaining_budget - allocated
+    fractional_allocations.sort(key=lambda item: (-item[0], item[1], item[2]))
+    for _, _, book_id in fractional_allocations[:leftover]:
+        budgets[book_id] += 1
+
+    return budgets
+
+
 def _resolve_writing_passage_text(passage: ExtractedPassage) -> str:
     full_text = passage.full_text.strip()
     if full_text:
@@ -221,7 +295,7 @@ def _resolve_writing_passage_text(passage: ExtractedPassage) -> str:
 def _select_top_passages_for_synthesis(
     passages: list[ExtractedPassage],
     *,
-    top_k: int = 10,
+    top_k: int = 30,
 ) -> list[ExtractedPassage]:
     if not passages:
         return []
@@ -254,7 +328,7 @@ def _select_episode_planning_passages(
     passages_by_axis: dict[str, list[ExtractedPassage]],
     assigned_axis_ids: list[str],
     selected_insight_passage_ids: set[str],
-    supporting_passages_per_axis: int = 25,
+    supporting_passages_per_axis: int = 100,
 ) -> dict[str, list[ExtractedPassage]]:
     if not assigned_axis_ids:
         return {axis_id: [] for axis_id in assigned_axis_ids}
@@ -555,6 +629,208 @@ def _split_into_chunks(
     return [c for c in chunks if c.strip()]
 
 
+def _sanitize_spoken_text(text: str) -> str:
+    cleaned = _SPOKEN_TAG_RE.sub(" ", text)
+    return _WHITESPACE_RE.sub(" ", cleaned).strip()
+
+
+def _resolve_spoken_render_speed(speech_rate: str, base_speed: float) -> float:
+    multiplier = _SPOKEN_RATE_MULTIPLIER.get(speech_rate, 1.0)
+    resolved = round(base_speed * multiplier, 2)
+    return min(4.0, max(0.1, resolved))
+
+
+def _supports_segment_tts_instructions(tts_provider: str) -> bool:
+    return tts_provider.strip().lower() in {"openai", "openai-compatible"}
+
+
+def _normalize_tts_instruction_text(text: str | None, *, max_chars: int = 500) -> str | None:
+    if not text:
+        return None
+    normalized = _WHITESPACE_RE.sub(" ", text).strip()
+    if not normalized:
+        return None
+    if len(normalized) <= max_chars:
+        return normalized
+    return normalized[: max_chars - 3].rstrip() + "..."
+
+
+def _segment_hint_degradations(hints: SpeechHints, tts_provider: str) -> list[str]:
+    if _supports_segment_tts_instructions(tts_provider):
+        return []
+    degradations: list[str] = []
+    if hints.style != "neutral" or hints.intensity != "none" or hints.render_strategy == "slow_clause":
+        degradations.append("segment_instructions_not_supported")
+    if hints.pronunciation_hints:
+        degradations.append("pronunciation_hints_not_supported")
+    if hints.emphasis_targets and hints.render_strategy == "plain":
+        degradations.append("phrase_emphasis_requires_prompt_steering")
+    return degradations
+
+
+def _split_render_text(text: str, hints: SpeechHints) -> list[tuple[str | None, str]]:
+    clean_text = text.strip()
+    if not clean_text:
+        return []
+    if hints.render_strategy == "split_sentences":
+        sentences = _split_sentences(clean_text)
+        if len(sentences) > 1:
+            return [(None, sentence) for sentence in sentences]
+    if hints.render_strategy == "isolate_phrase":
+        for phrase in hints.emphasis_targets:
+            match = re.search(re.escape(phrase), clean_text, flags=re.IGNORECASE)
+            if match is None:
+                continue
+            parts: list[tuple[str | None, str]] = []
+            before = clean_text[:match.start()].strip()
+            focus = clean_text[match.start():match.end()].strip()
+            after = clean_text[match.end():].strip()
+            if before:
+                parts.append((None, before))
+            if focus:
+                parts.append((focus, focus))
+            if after:
+                parts.append((None, after))
+            if parts:
+                return parts
+    return [(None, clean_text)]
+
+
+def _build_segment_tts_instructions(
+    hints: SpeechHints,
+    *,
+    base_instructions: str | None,
+    focus_phrase: str | None = None,
+    emphasis_targets: list[str] | None = None,
+) -> str | None:
+    parts: list[str] = []
+    normalized_base = _normalize_tts_instruction_text(base_instructions)
+    if normalized_base:
+        parts.append(normalized_base)
+
+    overlay: list[str] = []
+    if hints.style != "neutral":
+        overlay.append(f"Keep the delivery {hints.style}.")
+    if hints.intensity != "none":
+        overlay.append(f"Use {hints.intensity} vocal emphasis where it feels natural.")
+    if hints.render_strategy == "slow_clause":
+        overlay.append("Linger slightly on the most reflective clause without sounding theatrical.")
+
+    targets = emphasis_targets if emphasis_targets is not None else (
+        [focus_phrase] if focus_phrase else hints.emphasis_targets[:3]
+    )
+    if targets:
+        stress = hints.intensity if hints.intensity != "none" else "light"
+        overlay.append(
+            f"Give {stress} stress to these phrases when natural: {', '.join(repr(target) for target in targets)}."
+        )
+    if hints.pronunciation_hints:
+        pronunciation_text = "; ".join(
+            f"{hint.text} as {hint.spoken_as}"
+            for hint in hints.pronunciation_hints[:4]
+        )
+        overlay.append(f"Use these pronunciations: {pronunciation_text}.")
+
+    if overlay:
+        parts.append("Segment guidance: " + " ".join(overlay))
+    return _normalize_tts_instruction_text("\n\n".join(parts))
+
+
+def _render_segments_for_spoken_segment(
+    segment: SpokenSegment,
+    *,
+    voice_id: str,
+    speed: float,
+    tts_provider: str,
+    base_instructions: str | None,
+) -> list[RenderSegment]:
+    hints = segment.speech_hints
+    render_speed = _resolve_spoken_render_speed(hints.pace, speed)
+    if hints.render_strategy == "slow_clause":
+        render_speed = _resolve_spoken_render_speed("slower", render_speed)
+
+    text_parts = _split_render_text(segment.text, hints)
+    degradations = _segment_hint_degradations(hints, tts_provider)
+    supports_instructions = _supports_segment_tts_instructions(tts_provider)
+    render_segments: list[RenderSegment] = []
+
+    for idx, (focus_phrase, part_text) in enumerate(text_parts, start=1):
+        piece_text = part_text.strip()
+        if not piece_text:
+            continue
+        matched_emphasis_targets: list[str]
+        if focus_phrase:
+            matched_emphasis_targets = [focus_phrase]
+        else:
+            matched_emphasis_targets = []
+            for phrase in hints.emphasis_targets:
+                candidate = phrase.strip()
+                if not candidate:
+                    continue
+                if re.search(re.escape(candidate), piece_text, flags=re.IGNORECASE):
+                    matched_emphasis_targets.append(candidate)
+                if len(matched_emphasis_targets) >= 3:
+                    break
+        is_single_part = len(text_parts) == 1
+        render_segments.append(
+            RenderSegment(
+                segment_id=segment.segment_id if is_single_part else f"{segment.segment_id}_{idx}",
+                text=piece_text,
+                voice_id=voice_id,
+                speed=render_speed,
+                pause_before_ms=hints.pause_before_ms if idx == 1 else 0,
+                pause_after_ms=hints.pause_after_ms if idx == len(text_parts) else 0,
+                instructions=(
+                    _build_segment_tts_instructions(
+                        hints,
+                        base_instructions=base_instructions,
+                        focus_phrase=focus_phrase,
+                        emphasis_targets=matched_emphasis_targets,
+                    )
+                    if supports_instructions
+                    else None
+                ),
+                hint_degradations=degradations,
+            )
+        )
+    return render_segments
+
+
+def _normalize_spoken_segments(
+    segments: list[SpokenSegment],
+    max_words_per_segment: int,
+) -> list[SpokenSegment]:
+    normalized: list[SpokenSegment] = []
+    for seg in segments:
+        max_words = max(1, min(seg.max_words, max_words_per_segment))
+        cleaned_text = _sanitize_spoken_text(seg.text)
+        if not cleaned_text:
+            continue
+
+        chunks = _split_into_chunks(
+            cleaned_text,
+            max_words=max_words,
+            overlap_words=0,
+            min_words=1,
+            split_on=[". ", "? ", "! ", "; ", ", "],
+        )
+        if not chunks:
+            chunks = [cleaned_text]
+
+        for idx, chunk in enumerate(chunks, start=1):
+            segment_id = seg.segment_id if idx == 1 else f"{seg.segment_id}_{idx}"
+            normalized.append(
+                seg.model_copy(
+                    update={
+                        "segment_id": segment_id,
+                        "text": chunk,
+                        "max_words": max_words,
+                    }
+                )
+            )
+    return normalized
+
+
 # ---------------------------------------------------------------------------
 # Render manifest construction (Stage 15 — no LLM)
 # ---------------------------------------------------------------------------
@@ -566,8 +842,10 @@ def build_render_manifest(
     voice_id: str = "ballad",
     speed: float = 1.0,
     words_per_minute: int = 130,
+    base_instructions: str | None = None,
 ) -> RenderManifest:
     segments: list[RenderSegment] = []
+    tts_provider = spoken_script.tts_provider
 
     if framing and framing.cold_open:
         segments.append(RenderSegment(
@@ -582,10 +860,15 @@ def build_render_manifest(
         ))
 
     for seg in spoken_script.segments:
-        segments.append(RenderSegment(
-            segment_id=seg.segment_id, text=seg.text, voice_id=voice_id,
-            speed=speed, pause_before_ms=300, pause_after_ms=300,
-        ))
+        segments.extend(
+            _render_segments_for_spoken_segment(
+                seg,
+                voice_id=voice_id,
+                speed=speed,
+                tts_provider=tts_provider,
+                base_instructions=base_instructions,
+            )
+        )
 
     if framing and framing.preview:
         segments.append(RenderSegment(
@@ -638,6 +921,7 @@ class PipelineOrchestrator:
 
         self.structuring_agent = StructuringAgent(self.llm, max_retry_attempts=_retries("structuring"))
         self.chapter_summary_agent = ChapterSummaryAgent(self.llm, max_retry_attempts=_retries("chapter_summary"))
+        self.book_summary_agent = BookSummaryAgent(self.llm, max_retry_attempts=_retries("book_summary"))
         self.theme_decomposition_agent = ThemeDecompositionAgent(self.llm, max_retry_attempts=_retries("theme_decomposition"))
         self.passage_extraction_agent = PassageExtractionAgent(self.llm, max_retry_attempts=_retries("passage_extraction"))
         self.synthesis_mapping_agent = SynthesisMappingAgent(self.llm, max_retry_attempts=_retries("synthesis_mapping"))
@@ -661,6 +945,7 @@ class PipelineOrchestrator:
         episode_count: int | None,
         config: PipelineConfig | None = None,
         theme_elaboration: str | None = None,
+        sub_themes: list[str] | None = None,
         titles: list[str] | None = None,
         authors: list[str] | None = None,
         project_id: str | None = None,
@@ -675,6 +960,8 @@ class PipelineOrchestrator:
         self.run_logger.log(
             "pipeline_start",
             theme=theme,
+            sub_themes=sub_themes or [],
+            sub_theme_count=len(sub_themes or []),
             episode_count=episode_count,
             requested_episode_count=episode_count,
             book_count=len(source_paths),
@@ -695,6 +982,7 @@ class PipelineOrchestrator:
             project_id=project_id,
             theme=theme,
             theme_elaboration=theme_elaboration,
+            sub_themes=sub_themes or [],
             requested_episode_count=episode_count,
             episode_count=episode_count or 3,
             config=pipeline_config,
@@ -840,6 +1128,7 @@ class PipelineOrchestrator:
             self._render_episode_audio(
                 ep_num,
                 spoken,
+                project.config,
                 framings.get(ep_num),
                 project_dir,
                 audio_sem,
@@ -915,6 +1204,8 @@ class PipelineOrchestrator:
             for c in chunks:
                 c.metadata["author"] = author
                 c.metadata["title"] = title
+            book_record = book_record.model_copy(update={"chunk_count": len(chunks)})
+            _save_json(book_dir / "book_record.json", book_record)
 
             # Stage 4: Embed & Store
             await asyncio.to_thread(self.vector_store.index_chunks, chunks, project_id)
@@ -965,12 +1256,42 @@ class PipelineOrchestrator:
     ) -> list[ThematicAxis]:
         async with _stage_log(
             self.run_logger, "theme_decomposition", project_dir,
-            theme=project.theme, book_count=len(project.books),
+            theme=project.theme, sub_themes=project.sub_themes, book_count=len(project.books),
         ) as ctx:
+            summary_payloads: list[tuple[str, dict[str, Any]]] = []
+            for book in project.books:
+                chapter_info = [
+                    {"title": ch.title, "summary": ch.summary}
+                    for ch in book.chapters
+                ]
+                summary_payloads.append((
+                    book.book_id,
+                    self.book_summary_agent.build_payload(
+                        theme=project.theme,
+                        sub_themes=project.sub_themes,
+                        theme_elaboration=project.theme_elaboration,
+                        book_id=book.book_id,
+                        title=book.title,
+                        author=book.author,
+                        chapters=chapter_info,
+                    ),
+                ))
+
+            summary_results = await asyncio.gather(*[
+                asyncio.to_thread(self.book_summary_agent.run, payload)
+                for _, payload in summary_payloads
+            ])
+            book_summaries = {
+                book_id: result.summary
+                for (book_id, _), result in zip(summary_payloads, summary_results, strict=True)
+            }
+
             payload = self.theme_decomposition_agent.build_payload(
                 theme=project.theme,
+                sub_themes=project.sub_themes,
                 theme_elaboration=project.theme_elaboration,
                 books=project.books,
+                book_summaries=book_summaries,
             )
             result = await asyncio.to_thread(self.theme_decomposition_agent.run, payload)
             axes = result.axes
@@ -992,6 +1313,7 @@ class PipelineOrchestrator:
                         {"axes": [a.model_dump(mode="json") for a in valid_axes]})
 
             ctx["output_summary"] = {
+                "book_summary_count": len(book_summaries),
                 "total_axes_generated": len(axes),
                 "valid_axes": len(valid_axes),
                 "axis_names": [a.name for a in valid_axes],
@@ -1012,8 +1334,21 @@ class PipelineOrchestrator:
                     message="Vector retrieval is disabled; passage extraction will yield zero candidates.",
                 )
             book_ids = [b.book_id for b in project.books]
-            axis_candidate_budget = max(1, project.config.passages_per_axis_per_book * max(1, len(book_ids)))
-            max_log_per_book = max(40, project.config.passages_per_axis_per_book)
+            book_by_id = {book.book_id: book for book in project.books}
+            retrieval_depth_by_book = {
+                book_id: _compute_passage_retrieval_budget(
+                    chunk_count=book_by_id.get(book_id).chunk_count if book_by_id.get(book_id) else 0,
+                    percentage=project.config.passage_retrieval_percentage,
+                    min_per_book=project.config.passage_retrieval_min_per_book,
+                    max_per_book=project.config.passage_retrieval_max_per_book,
+                )
+                for book_id in book_ids
+            }
+            axis_candidate_budget = len(book_ids) * project.config.passage_retrieval_max_per_book
+            max_log_per_book = max(
+                200,
+                max((info["per_book_budget"] for info in retrieval_depth_by_book.values()), default=0),
+            )
             all_passages_by_axis: dict[str, list[ExtractedPassage]] = {}
             all_cross_pairs: list[PassagePair] = []
             candidate_counts_by_axis: dict[str, int] = {}
@@ -1036,12 +1371,26 @@ class PipelineOrchestrator:
                     "axis_description": axis.description,
                     "max_log_per_book": max_log_per_book,
                     "axis_candidate_budget": axis_candidate_budget,
-                    "allocation_policy": "global_relevance_power_rank",
+                    "budget_strategy": "hybrid_percentage_floor_cap",
+                    "passage_retrieval_percentage": project.config.passage_retrieval_percentage,
+                    "passage_retrieval_min_per_book": project.config.passage_retrieval_min_per_book,
+                    "passage_retrieval_max_per_book": project.config.passage_retrieval_max_per_book,
+                    "legacy_passages_per_axis_per_book": project.config.passages_per_axis_per_book,
+                    "allocation_policy": "floor_5_quadratic_global_rank",
                     "allocation_power": 2.0,
+                    "allocation_floor": 5,
                     "books": [],
                 }
                 relevance_by_book = _resolve_axis_relevance(axis, book_ids)
                 retrieval_log["relevance_by_book"] = relevance_by_book
+                admitted_quota_by_book = _compute_weighted_admitted_budgets(
+                    book_ids=book_ids,
+                    axis_total_budget=axis_candidate_budget,
+                    relevance_by_book=relevance_by_book,
+                    floor_per_book=5,
+                    allocation_power=retrieval_log["allocation_power"],
+                )
+                retrieval_log["admission_quota_by_book"] = admitted_quota_by_book
 
                 ranked_rows: list[dict[str, Any]] = []
                 rows_by_book: dict[str, list[dict[str, Any]]] = {}
@@ -1051,6 +1400,10 @@ class PipelineOrchestrator:
                         "book_id": bid,
                         "title": book.title if book else "Unknown",
                         "author": book.author if book else "Unknown",
+                        "chunk_count": retrieval_depth_by_book.get(bid, {}).get("chunk_count", 0),
+                        "percentage_budget": retrieval_depth_by_book.get(bid, {}).get("percentage_budget", 0),
+                        "retrieval_depth_budget": retrieval_depth_by_book.get(bid, {}).get("per_book_budget", 0),
+                        "admission_quota": admitted_quota_by_book.get(bid, 0),
                         "candidates": [],
                     }
                     for rank, hit in enumerate(hits, start=1):
@@ -1074,10 +1427,19 @@ class PipelineOrchestrator:
                         str(row["hit"].chunk_id),
                     )
                 )
-                selected_rows = ranked_rows[:axis_candidate_budget]
+                admitted_by_book: dict[str, int] = {bid: 0 for bid in book_ids}
+                selected_rows: list[dict[str, Any]] = []
+                for row in ranked_rows:
+                    bid = row["book_id"]
+                    per_book_budget = admitted_quota_by_book.get(bid, 0)
+                    if admitted_by_book.get(bid, 0) >= per_book_budget:
+                        continue
+                    selected_rows.append(row)
+                    admitted_by_book[bid] = admitted_by_book.get(bid, 0) + 1
+                    if len(selected_rows) >= axis_candidate_budget:
+                        break
                 selected_row_ids = {id(row) for row in selected_rows}
                 candidates: list[dict[str, Any]] = []
-                admitted_by_book: dict[str, int] = {bid: 0 for bid in book_ids}
 
                 book_entry_by_id = {entry["book_id"]: entry for entry in retrieval_log["books"]}
                 for bid in book_ids:
@@ -1099,7 +1461,6 @@ class PipelineOrchestrator:
                         })
                         if not used:
                             continue
-                        admitted_by_book[bid] = admitted_by_book.get(bid, 0) + 1
                         candidates.append({
                             "passage_id": uuid4().hex,
                             "book_id": bid,
@@ -1112,6 +1473,12 @@ class PipelineOrchestrator:
                         })
 
                 retrieval_log["admitted_by_book"] = admitted_by_book
+                retrieval_log["per_book_budget"] = {
+                    bid: admitted_quota_by_book.get(bid, 0) for bid in book_ids
+                }
+                retrieval_log["retrieval_depth_by_book"] = {
+                    bid: info["per_book_budget"] for bid, info in retrieval_depth_by_book.items()
+                }
 
                 _save_json(
                     project_dir
@@ -1134,6 +1501,7 @@ class PipelineOrchestrator:
                         "allocation_policy": retrieval_log["allocation_policy"],
                         "allocation_power": retrieval_log["allocation_power"],
                         "axis_candidate_budget": axis_candidate_budget,
+                        "per_book_budget": retrieval_log["per_book_budget"],
                         "admitted_by_book": admitted_by_book,
                     })
                     return axis.axis_id, [], [], candidate_count, {
@@ -1182,7 +1550,7 @@ class PipelineOrchestrator:
                             extra_ids=extra_ids,
                             duplicate_ids=duplicate_ids,
                         )
-                    if coverage_ratio >= 0.85:
+                    if coverage_ratio >= 0.60:
                         break
                     self.run_logger.log(
                         "passage_extraction_low_coverage",
@@ -1198,7 +1566,7 @@ class PipelineOrchestrator:
                         time.sleep(backoff)
                         continue
                     raise RuntimeError(
-                        "Passage extraction returned fewer than 85% of candidate passages for axis "
+                        "Passage extraction returned fewer than 60% of candidate passages for axis "
                         f"{axis.axis_id} after {max_attempts} attempts."
                     )
                 assert result is not None
@@ -1212,12 +1580,14 @@ class PipelineOrchestrator:
                     score = scores_by_id.get(candidate["passage_id"])
                     if score is None:
                         continue
+                    trimmed_text = candidate["text"]
                     rehydrated_passages.append(
                         ExtractedPassage(
                             passage_id=score.passage_id,
                             book_id=candidate["book_id"],
                             chunk_ids=candidate["chunk_ids"],
-                            text=candidate["text"],
+                            text=trimmed_text,
+                            trimmed_text=trimmed_text,
                             full_text=candidate_full_text_by_id.get(candidate["passage_id"], ""),
                             chapter_ref=candidate.get("chapter_ref", ""),
                             axis_id=candidate.get("axis_id", axis.axis_id),
@@ -1298,6 +1668,7 @@ class PipelineOrchestrator:
                     "allocation_policy": retrieval_log["allocation_policy"],
                     "allocation_power": retrieval_log["allocation_power"],
                     "axis_candidate_budget": axis_candidate_budget,
+                    "per_book_budget": retrieval_log["per_book_budget"],
                     "admitted_by_book": admitted_by_book,
                 })
                 return axis.axis_id, top_passages, retained_pairs, candidate_count, cross_pair_validation, rerank_policy
@@ -1324,11 +1695,21 @@ class PipelineOrchestrator:
                 relevance_scores = [p.relevance_score for p in axis_passages]
                 quotability_scores = [p.quotability_score for p in axis_passages]
                 books_represented = list(set(p.book_id for p in axis_passages))
+                full_text_count = sum(1 for p in axis_passages if p.full_text.strip())
+                trimmed_text_count = sum(1 for p in axis_passages if p.trimmed_text.strip())
+                full_trim_ratio = round(
+                    full_text_count / max(1, len(axis_passages)),
+                    3,
+                )
 
                 retrieval_metrics["per_axis"][axis.axis_id] = {
                     "axis_name": axis.name,
                     "candidate_count": candidate_counts_by_axis.get(axis.axis_id, 0),
                     "post_rerank_count": len(axis_passages),
+                    "rehydrated_count": len(axis_passages),
+                    "full_text_count": full_text_count,
+                    "trimmed_text_count": trimmed_text_count,
+                    "full_text_coverage_ratio": full_trim_ratio,
                     "selection_policy": axis_policy_by_axis.get(axis.axis_id, {}),
                     "avg_relevance_score": round(sum(relevance_scores) / max(1, len(relevance_scores)), 3),
                     "avg_quotability_score": round(sum(quotability_scores) / max(1, len(quotability_scores)), 3),
@@ -1550,6 +1931,7 @@ class PipelineOrchestrator:
                 )
             project_metadata = {
                 "theme": project.theme,
+                "sub_themes": project.sub_themes,
                 "book_count": len(project.books),
                 "books": [{"book_id": b.book_id, "title": b.title, "author": b.author} for b in project.books],
             }
@@ -1638,6 +2020,7 @@ class PipelineOrchestrator:
                 )
             project_metadata = {
                 "theme": project.theme,
+                "sub_themes": project.sub_themes,
                 "book_count": len(project.books),
                 "books": [
                     {"book_id": b.book_id, "title": b.title, "author": b.author}
@@ -1770,13 +2153,17 @@ class PipelineOrchestrator:
                 if total_beats == 0:
                     adjusted_episodes.append(episode)
                     continue
-                if not 75.0 <= float(episode.target_duration_minutes) <= 90.0:
+                target_minutes = float(project.config.target_episode_minutes)
+                min_minutes = float(project.config.min_episode_minutes)
+                if float(episode.target_duration_minutes) < min_minutes:
                     self.run_logger.log(
                         "episode_plan_duration_warning",
                         episode=episode.episode_number,
                         target_duration_minutes=episode.target_duration_minutes,
+                        configured_target_minutes=target_minutes,
+                        configured_min_minutes=min_minutes,
                     )
-                if not 30 <= total_beats <= 36:
+                if not 40 <= total_beats <= 45:
                     self.run_logger.log(
                         "episode_plan_beats_warning",
                         episode=episode.episode_number,
@@ -1904,17 +2291,21 @@ class PipelineOrchestrator:
                     plan.episode_number, script, project, ep_dir, project_dir,
                 )
             else:
+                raw_segments = [
+                    SpokenSegment(
+                        segment_id=seg.segment_id,
+                        text=seg.text,
+                        max_words=project.config.spoken_chunk_max_words,
+                    )
+                    for seg in script.segments
+                ]
                 spoken = SpokenScript(
                     episode_number=plan.episode_number,
                     title=script.title,
-                    segments=[
-                        SpokenSegment(
-                            segment_id=seg.segment_id,
-                            text=seg.text,
-                            max_words=project.config.spoken_chunk_max_words,
-                        )
-                        for seg in script.segments
-                    ],
+                    segments=_normalize_spoken_segments(
+                        raw_segments,
+                        project.config.spoken_chunk_max_words,
+                    ),
                     arc_plan=None,
                     tts_provider=project.config.tts_provider,
                 )
@@ -1988,7 +2379,9 @@ class PipelineOrchestrator:
             script = EpisodeScript(
                 episode_number=plan.episode_number, title=result.title,
                 segments=result_segments, total_word_count=total_words,
-                estimated_duration_seconds=int(total_words / 130 * 60),
+                estimated_duration_seconds=int(
+                    total_words / self.settings.pipeline.spoken_words_per_minute * 60
+                ),
                 citations=result_citations,
             )
             _save_json(ep_dir / "episode_script.json", script)
@@ -2160,15 +2553,19 @@ class PipelineOrchestrator:
                 tts_provider=project.config.tts_provider,
             )
             result = await asyncio.to_thread(self.spoken_delivery_agent.run, payload)
+            normalized_segments = _normalize_spoken_segments(
+                result.segments,
+                project.config.spoken_chunk_max_words,
+            )
 
             spoken = SpokenScript(
                 episode_number=episode_number, title=script.title,
-                segments=result.segments, arc_plan=result.arc_plan,
+                segments=normalized_segments, arc_plan=result.arc_plan,
                 tts_provider=project.config.tts_provider,
             )
             _save_json(ep_dir / "spoken_script.json", spoken)
 
-            ctx["output_summary"] = {"segment_count": len(result.segments)}
+            ctx["output_summary"] = {"segment_count": len(spoken.segments)}
             return spoken
 
     # -----------------------------------------------------------------------
@@ -2217,6 +2614,7 @@ class PipelineOrchestrator:
 
     async def _render_episode_audio(
         self, episode_number: int, spoken: SpokenScript,
+        config: PipelineConfig,
         framing: EpisodeFraming | None, project_dir: Path,
         semaphore: asyncio.Semaphore, *,
         skip_audio: bool,
@@ -2233,8 +2631,31 @@ class PipelineOrchestrator:
                     voice_id=self.settings.tts.voice,
                     speed=self.settings.tts.speed,
                     words_per_minute=self.settings.pipeline.spoken_words_per_minute,
+                    base_instructions=self.settings.tts.instructions,
                 )
                 _save_json(ep_dir / "render_manifest.json", manifest)
+                for seg in manifest.segments:
+                    if not seg.hint_degradations:
+                        continue
+                    self.run_logger.log(
+                        "tts_hint_degradation",
+                        episode=episode_number,
+                        segment_id=seg.segment_id,
+                        degradations=seg.hint_degradations,
+                    )
+                estimated_minutes = manifest.estimated_duration_seconds / 60.0
+                min_minutes = float(config.min_episode_minutes)
+                target_minutes = float(config.target_episode_minutes)
+                if estimated_minutes < min_minutes:
+                    self.run_logger.log(
+                        "episode_runtime_shortfall_warning",
+                        episode=episode_number,
+                        estimated_duration_minutes=estimated_minutes,
+                        shortfall_minutes=(min_minutes - estimated_minutes),
+                        min_episode_minutes=min_minutes,
+                        target_episode_minutes=target_minutes,
+                        policy=config.duration_shortfall_policy,
+                    )
 
                 if skip_audio:
                     ctx["output_summary"] = {
@@ -2263,8 +2684,11 @@ class PipelineOrchestrator:
                         try:
                             audio_bytes = await asyncio.to_thread(
                                 self.tts_client.synthesize,
-                                seg.text, seg.voice_id,
+                                seg.text,
+                                seg.voice_id,
                                 self.settings.tts.audio_format,
+                                instructions=seg.instructions,
+                                speed=seg.speed,
                             )
                             audio_path = audio_dir / f"{seg.segment_id}.{self.settings.tts.audio_format}"
                             audio_path.write_bytes(audio_bytes)

@@ -50,6 +50,7 @@ class KokoroTTSClient(TTSClient):
         voice: str | None = None,
         audio_format: str | None = None,
         instructions: str | None = None,
+        speed: float | None = None,
     ) -> bytes:
         del audio_format, instructions
         if not text.strip():
@@ -64,13 +65,15 @@ class KokoroTTSClient(TTSClient):
         if not voice_value or voice_value == "ballad":
             voice_value = self.default_voice
 
+        resolved_speed = speed if speed is not None else self.config.speed
+
         if self.run_logger is not None:
             self.run_logger.log(
                 "tts_request",
                 client="kokoro",
                 voice=voice_value,
                 audio_format="wav",
-                speed=self.config.speed,
+                speed=resolved_speed,
                 text=text,
             )
 
@@ -83,7 +86,7 @@ class KokoroTTSClient(TTSClient):
                 "id": request_id,
                 "text": text,
                 "voice": voice_value,
-                "speed": self.config.speed,
+                "speed": resolved_speed,
             }
             try:
                 self._write_worker_request(process, payload)
@@ -113,7 +116,7 @@ class KokoroTTSClient(TTSClient):
                 client="kokoro",
                 voice=voice_value,
                 audio_format="wav",
-                speed=self.config.speed,
+                speed=resolved_speed,
                 byte_count=len(audio_bytes),
             )
         return audio_bytes

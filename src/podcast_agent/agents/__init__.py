@@ -1,5 +1,6 @@
 """Agent exports for the multi-book thematic podcast pipeline."""
 
+from podcast_agent.agents.book_summary import BookSummaryAgent
 from podcast_agent.agents.framing import EpisodeFramingAgent
 from podcast_agent.agents.narrative_strategy import NarrativeStrategyAgent
 from podcast_agent.agents.passage_extraction import PassageExtractionAgent
@@ -15,6 +16,7 @@ from podcast_agent.agents.validation import GroundingValidationAgent
 from podcast_agent.agents.writing import WritingAgent
 
 __all__ = [
+    "BookSummaryAgent",
     "EpisodeFramingAgent",
     "GroundingValidationAgent",
     "NarrativeStrategyAgent",

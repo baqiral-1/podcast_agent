@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, call
 import pytest
 
 from podcast_agent.agents.base import Agent
+from podcast_agent.agents.book_summary import BookSummaryAgent
 from podcast_agent.agents.chapter_summary import ChapterSummaryAgent
 from podcast_agent.langchain.runnables import RetryableGenerationError, TransientLLMError
 from podcast_agent.agents.framing import EpisodeFramingAgent
@@ -74,12 +75,46 @@ class TestThemeDecompositionAgent:
             ),
         ]
         payload = agent.build_payload(
-            theme="AI ethics", theme_elaboration="Focus on bias", books=books,
+            theme="AI ethics",
+            sub_themes=["bias", "governance"],
+            theme_elaboration="Focus on bias",
+            books=books,
+            book_summaries={"b1": "Book 1 summary."},
         )
         assert payload["theme"] == "AI ethics"
+        assert payload["sub_themes"] == ["bias", "governance"]
         assert len(payload["books"]) == 2
+        assert payload["books"][0]["book_summary"] == "Book 1 summary."
+        assert payload["books"][1]["book_summary"] == ""
         assert payload["books"][0]["chapters"][0]["title"] == "Ch1"
         assert payload["books"][0]["chapters"][0]["summary"] == "Summary."
+
+
+class TestBookSummaryAgent:
+    def test_schema_name(self):
+        agent = BookSummaryAgent(_mock_llm())
+        assert agent.schema_name == "book_summary"
+
+    def test_build_payload(self):
+        agent = BookSummaryAgent(_mock_llm())
+        payload = agent.build_payload(
+            theme="AI ethics",
+            sub_themes=["bias", "governance"],
+            theme_elaboration="Focus on bias",
+            book_id="b1",
+            title="Book 1",
+            author="Author A",
+            chapters=[{"title": "Ch1", "summary": "Summary."}],
+        )
+        assert payload["theme"] == "AI ethics"
+        assert payload["sub_themes"] == ["bias", "governance"]
+        assert payload["book_id"] == "b1"
+        assert payload["chapters"][0]["summary"] == "Summary."
+
+    def test_instructions_reference_theme_and_chapter_summaries(self):
+        agent = BookSummaryAgent(_mock_llm())
+        assert "project theme" in agent.instructions
+        assert "chapter-level summaries" in agent.instructions
 
 
 class TestChapterSummaryAgent:
@@ -191,10 +226,11 @@ class TestEpisodePlanningAgent:
         assert payload["episode_assignment"]["episode_number"] == 1
         assert "chapters" not in payload["project"]
 
-    def test_instructions_target_75_to_90_minute_episode(self):
+    def test_instructions_target_100_minute_episode(self):
         agent = EpisodePlanningAgent(_mock_llm())
-        assert "75-90 minutes" in agent.instructions
-        assert "30-36 beats" in agent.instructions
+        assert "100 minutes" in agent.instructions
+        assert "90 minutes" in agent.instructions
+        assert "40-45 beats" in agent.instructions
         assert "summary_text" in agent.instructions
         assert "full_text" in agent.instructions
 
@@ -277,6 +313,15 @@ class TestSpokenDeliveryAgent:
             tts_provider="openai",
         )
         assert payload["max_words_per_segment"] == 250
+
+    def test_instructions_define_strict_speech_hints_contract(self):
+        agent = SpokenDeliveryAgent(_mock_llm())
+        assert "speech_hints" in agent.instructions
+        assert "style" in agent.instructions
+        assert "pause_before_ms" in agent.instructions
+        assert "pace" in agent.instructions
+        assert "render_strategy" in agent.instructions
+        assert "raw SSML, XML, or markup tags" in agent.instructions
 
 
 class TestEpisodeFramingAgent:
@@ -374,6 +419,7 @@ class TestAllAgentsHaveRequiredAttributes:
 
     @pytest.mark.parametrize("agent_class", [
         StructuringAgent,
+        BookSummaryAgent,
         ThemeDecompositionAgent,
         PassageExtractionAgent,
         SynthesisMappingAgent,

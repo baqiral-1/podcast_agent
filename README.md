@@ -71,6 +71,7 @@ Run the full multi-book thematic podcast pipeline.
 ```bash
 podcast-agent run book1.pdf book2.txt book3.md \
   --theme "the psychology of decision-making" \
+  --sub-themes "risk,uncertainty,group dynamics" \
   --episodes 4 \
   --titles "Thinking Fast,Nudge,Predictably Irrational" \
   --authors "Kahneman,Thaler & Sunstein,Ariely"
@@ -82,6 +83,7 @@ podcast-agent run book1.pdf book2.txt book3.md \
 | `--theme` | `-t` | required | Theme to explore across books |
 | `--episodes` | `-n` | inferred | Override episode count (otherwise inferred from narrative strategy) |
 | `--elaboration` | | | Optional longer theme description |
+| `--sub-themes` | | | Optional comma-separated sub-themes (max 8, trimmed and deduped) |
 | `--titles` | | | Comma-separated book titles |
 | `--authors` | | | Comma-separated author names |
 | `--output-dir` | `-o` | `runs/` | Custom output directory |
@@ -111,7 +113,7 @@ podcast-agent status <project-id>
 4. **Embed & store** — Index chunks in PGVector with book/project metadata
 
 ### Phase 2: Thematic Intelligence (sequential)
-5. **Decompose theme** — Break theme into 5-15 thematic axes using chapter-summary context
+5. **Decompose theme** — Break theme into 5-7 strong thematic axes using chapter summaries plus synthesized per-book summaries
 6. **Extract passages** — Vector retrieval + LLM reranking per axis per book
 7. **Map synthesis** — Discover cross-book insights (agreements, disagreements, tensions, extensions)
 8. **Choose narrative strategy** — Select series structure (thesis-driven, debate, convergence, etc.)
@@ -129,8 +131,17 @@ podcast-agent status <project-id>
 16. **Build render manifest** — TTS-ready segment specification
 17. **Synthesize audio** — TTS with retry and concurrency control
 
-Chapter summaries are currently consumed only for theme decomposition. Downstream
-stages rely on retrieved passages and synthesis artifacts rather than chapter summaries.
+Chapter summaries are currently consumed only for theme decomposition, including a
+theme-conditioned per-book summary synthesized from those chapter summaries.
+Downstream stages rely on retrieved passages and synthesis artifacts rather than
+chapter summaries.
+
+Passage extraction now budgets retrieval candidates per book with a hybrid rule:
+`min(max_cap, max(min_floor, round(book_chunk_count * percentage)))`.
+The default knobs are `passage_retrieval_percentage=0.25`,
+`passage_retrieval_min_per_book=20`, and `passage_retrieval_max_per_book=60`.
+`rerank_top_k` still applies after passage-extraction scoring; it does not control
+how many passages are sent into the passage-extraction prompt.
 
 ## Outputs
 

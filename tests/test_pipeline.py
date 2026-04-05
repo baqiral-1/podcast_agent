@@ -12,12 +12,18 @@ from uuid import uuid4
 
 import pytest
 
+from podcast_agent.agents.book_summary import BookSummaryResponse
+from podcast_agent.agents.spoken_delivery_agent import SpokenDeliveryResponse
 from podcast_agent.config import Settings
+from podcast_agent.agents.theme_decomposition import ThemeDecompositionResponse
 from podcast_agent.pipeline.orchestrator import (
     PipelineOrchestrator,
     StructuringStageError,
     _compute_adaptive_rerank_target,
     _compute_passage_utilization,
+    _compute_passage_retrieval_budget,
+    _render_segments_for_spoken_segment,
+    _compute_weighted_admitted_budgets,
     _select_episode_planning_passages,
     _save_json,
     _load_json,
@@ -44,6 +50,7 @@ from podcast_agent.schemas.models import (
     PipelineConfig,
     ProjectStatus,
     ScriptSegment,
+    SpeechHints,
     SpokenScript,
     SpokenSegment,
     SynthesisInsight,
@@ -83,6 +90,68 @@ class TestArtifactPersistence:
         assert _load_json(tmp_path / "missing.json") is None
 
 
+class TestPassageRetrievalBudget:
+    @pytest.mark.parametrize(
+        ("chunk_count", "percentage", "min_per_book", "max_per_book", "expected_percentage", "expected_budget"),
+        [
+            (57, 0.25, 20, 60, 14, 20),
+            (142, 0.25, 20, 60, 36, 36),
+            (582, 0.25, 20, 60, 146, 60),
+        ],
+    )
+    def test_budget_clamps_percentage_between_floor_and_cap(
+        self,
+        chunk_count,
+        percentage,
+        min_per_book,
+        max_per_book,
+        expected_percentage,
+        expected_budget,
+    ):
+        result = _compute_passage_retrieval_budget(
+            chunk_count=chunk_count,
+            percentage=percentage,
+            min_per_book=min_per_book,
+            max_per_book=max_per_book,
+        )
+
+        assert result["chunk_count"] == chunk_count
+        assert result["percentage_budget"] == expected_percentage
+        assert result["per_book_budget"] == expected_budget
+
+
+class TestWeightedAdmittedBudgets:
+    def test_quadratic_allocation_is_asymmetric_and_sums_exactly(self):
+        budgets = _compute_weighted_admitted_budgets(
+            book_ids=["book-a", "book-b"],
+            axis_total_budget=100,
+            relevance_by_book={"book-a": 1.0, "book-b": 0.2},
+        )
+
+        assert budgets == {"book-a": 92, "book-b": 8}
+        assert sum(budgets.values()) == 100
+
+    def test_zero_relevance_falls_back_to_even_distribution(self):
+        budgets = _compute_weighted_admitted_budgets(
+            book_ids=["book-a", "book-b", "book-c"],
+            axis_total_budget=36,
+            relevance_by_book={},
+        )
+
+        assert budgets == {"book-a": 12, "book-b": 12, "book-c": 12}
+        assert sum(budgets.values()) == 36
+
+    def test_floor_clamps_to_feasible_budget(self):
+        budgets = _compute_weighted_admitted_budgets(
+            book_ids=["book-a", "book-b"],
+            axis_total_budget=3,
+            relevance_by_book={"book-a": 1.0, "book-b": 0.2},
+        )
+
+        assert budgets == {"book-a": 2, "book-b": 1}
+        assert sum(budgets.values()) == 3
+
+
 # ---------------------------------------------------------------------------
 # Orchestrator construction
 # ---------------------------------------------------------------------------
@@ -96,6 +165,7 @@ class TestOrchestratorConstruction:
         )
         orch = PipelineOrchestrator(settings)
         assert orch.structuring_agent is not None
+        assert orch.book_summary_agent is not None
         assert orch.theme_decomposition_agent is not None
         assert orch.passage_extraction_agent is not None
         assert orch.synthesis_mapping_agent is not None
@@ -249,7 +319,11 @@ class TestBookIngestion:
             project_id="proj-1",
             theme="T",
             episode_count=2,
-            config=PipelineConfig(passages_per_axis_per_book=1, rerank_top_k=1),
+            config=PipelineConfig(
+                passage_retrieval_min_per_book=1,
+                passage_retrieval_max_per_book=1,
+                rerank_top_k=1,
+            ),
             status=ProjectStatus.ANALYZING,
             books=[book_a, book_b],
         )
@@ -258,7 +332,80 @@ class TestBookIngestion:
         corpus = asyncio.run(orch._extract_passages(project, [axis], project_dir))
         passage = corpus.passages_by_axis[axis.axis_id][0]
         assert passage.text == "alpha beta."
+        assert passage.trimmed_text == "alpha beta."
         assert passage.full_text == "alpha beta. alpha. gamma."
+
+    def test_decompose_theme_adds_book_summaries_to_payload(self, tmp_path):
+        settings = Settings(
+            llm=Settings().llm.model_copy(update={"llm_provider": "heuristic"}),
+            database=Settings().database.model_copy(update={"dsn": None}),
+            pipeline=Settings().pipeline.model_copy(update={"artifact_root": tmp_path}),
+        )
+        orch = PipelineOrchestrator(settings)
+
+        book_a = BookRecord(
+            book_id="book-a",
+            title="Book A",
+            author="Author A",
+            source_path="/a.txt",
+            source_type="txt",
+            chapters=[ChapterInfo(
+                title="Ch1",
+                start_index=0,
+                end_index=100,
+                word_count=50,
+                summary="Summary A.",
+            )],
+        )
+        book_b = BookRecord(
+            book_id="book-b",
+            title="Book B",
+            author="Author B",
+            source_path="/b.txt",
+            source_type="txt",
+            chapters=[ChapterInfo(
+                title="Ch2",
+                start_index=0,
+                end_index=100,
+                word_count=50,
+                summary="Summary B.",
+            )],
+        )
+        project = ThematicProject(
+            project_id="proj-1",
+            theme="Partition",
+            sub_themes=["borders", "displacement"],
+            episode_count=2,
+            books=[book_a, book_b],
+        )
+
+        orch.book_summary_agent.run = MagicMock(side_effect=[
+            BookSummaryResponse(summary="Book A summary."),
+            BookSummaryResponse(summary="Book B summary."),
+        ])
+        orch.theme_decomposition_agent.run = MagicMock(
+            return_value=ThemeDecompositionResponse(
+                axes=[
+                    ThematicAxis(
+                        axis_id="axis_01",
+                        name="State power",
+                        description="desc",
+                        relevance_by_book={book_a.book_id: 0.8, book_b.book_id: 0.7},
+                    )
+                ]
+            )
+        )
+
+        axes = asyncio.run(orch._decompose_theme(project, tmp_path / project.project_id))
+
+        assert len(axes) == 1
+        assert orch.book_summary_agent.run.call_count == 2
+        payload = orch.theme_decomposition_agent.run.call_args.args[0]
+        assert payload["sub_themes"] == ["borders", "displacement"]
+        assert payload["books"][0]["book_summary"] == "Book A summary."
+        assert payload["books"][1]["book_summary"] == "Book B summary."
+        summary_payload = orch.book_summary_agent.run.call_args_list[0].args[0]
+        assert summary_payload["sub_themes"] == ["borders", "displacement"]
 
     def test_retrieval_candidates_logged(self, tmp_path):
         settings = Settings(
@@ -279,11 +426,11 @@ class TestBookIngestion:
 
         book_a = BookRecord(
             book_id="book-a", title="Book A", author="A",
-            source_path="/a.txt", source_type="txt",
+            source_path="/a.txt", source_type="txt", chunk_count=20,
         )
         book_b = BookRecord(
             book_id="book-b", title="Book B", author="B",
-            source_path="/b.txt", source_type="txt",
+            source_path="/b.txt", source_type="txt", chunk_count=8,
         )
         axis = ThematicAxis(
             axis_id="axis_01",
@@ -366,7 +513,11 @@ class TestBookIngestion:
             project_id="proj-1",
             theme="T",
             episode_count=2,
-            config=PipelineConfig(passages_per_axis_per_book=2, rerank_top_k=1),
+            config=PipelineConfig(
+                passage_retrieval_min_per_book=2,
+                passage_retrieval_max_per_book=20,
+                rerank_top_k=1,
+            ),
             status=ProjectStatus.ANALYZING,
             books=[book_a, book_b],
         )
@@ -374,7 +525,7 @@ class TestBookIngestion:
 
         asyncio.run(orch._extract_passages(project, [axis], project_dir))
 
-        assert orch.retrieval.calls == [40]
+        assert orch.retrieval.calls == [200]
         log_path = (
             project_dir
             / "stage_artifacts"
@@ -383,9 +534,14 @@ class TestBookIngestion:
         )
         assert log_path.exists()
         data = json.loads(log_path.read_text())
+        assert data["budget_strategy"] == "hybrid_percentage_floor_cap"
+        assert data["allocation_policy"] == "floor_5_quadratic_global_rank"
+        assert data["axis_candidate_budget"] == 40
+        assert data["per_book_budget"] == {"book-a": 20, "book-b": 20}
+        assert data["retrieval_depth_by_book"] == {"book-a": 5, "book-b": 2}
         for book in data["books"]:
             used = [c for c in book["candidates"] if c["used"]]
-            assert len(used) == 2
+            assert len(used) == 3
 
     def test_passage_extraction_rehydrates_scores(self, tmp_path):
         settings = Settings(
@@ -458,7 +614,11 @@ class TestBookIngestion:
             project_id="proj-1",
             theme="T",
             episode_count=2,
-            config=PipelineConfig(passages_per_axis_per_book=1, rerank_top_k=1),
+            config=PipelineConfig(
+                passage_retrieval_min_per_book=1,
+                passage_retrieval_max_per_book=1,
+                rerank_top_k=1,
+            ),
             status=ProjectStatus.ANALYZING,
             books=[book_a, book_b],
         )
@@ -470,12 +630,13 @@ class TestBookIngestion:
         expected_by_chunk = {"a1": "text a1", "b1": "text b1"}
         for passage in axis_passages:
             assert passage.text == expected_by_chunk[passage.chunk_ids[0]]
+            assert passage.trimmed_text == expected_by_chunk[passage.chunk_ids[0]]
             assert passage.full_text == expected_by_chunk[passage.chunk_ids[0]]
             assert passage.relevance_score == 0.9
             assert passage.quotability_score == 0.8
             assert SynthesisTag.INDEPENDENT in passage.synthesis_tags
 
-    def test_passage_extraction_uses_global_no_floor_allocation(self, tmp_path):
+    def test_passage_extraction_uses_floor_quadratic_allocation(self, tmp_path):
         settings = Settings(
             llm=Settings().llm.model_copy(update={"llm_provider": "heuristic"}),
             database=Settings().database.model_copy(update={"dsn": None}),
@@ -514,7 +675,7 @@ class TestBookIngestion:
                     score=0.1 * i,
                     metadata={"chapter_id": "ch1"},
                 )
-                for i in range(1, 5)
+                for i in range(1, 21)
             ],
             "book-b": [
                 RetrievalHit(
@@ -525,7 +686,7 @@ class TestBookIngestion:
                     score=0.1 * i,
                     metadata={"chapter_id": "ch2"},
                 )
-                for i in range(1, 5)
+                for i in range(1, 21)
             ],
         }
         orch.retrieval = FakeRetrieval(hits_by_book)
@@ -549,7 +710,11 @@ class TestBookIngestion:
             project_id="proj-1",
             theme="T",
             episode_count=2,
-            config=PipelineConfig(passages_per_axis_per_book=2, rerank_top_k=1),
+            config=PipelineConfig(
+                passage_retrieval_min_per_book=2,
+                passage_retrieval_max_per_book=20,
+                rerank_top_k=1,
+            ),
             status=ProjectStatus.ANALYZING,
             books=[book_a, book_b],
         )
@@ -568,7 +733,10 @@ class TestBookIngestion:
             book["book_id"]: len([candidate for candidate in book["candidates"] if candidate["used"]])
             for book in data["books"]
         }
-        assert used_by_book == {"book-a": 4, "book-b": 0}
+        assert data["allocation_policy"] == "floor_5_quadratic_global_rank"
+        assert data["per_book_budget"] == {"book-a": 34, "book-b": 6}
+        assert data["retrieval_depth_by_book"] == {"book-a": 2, "book-b": 2}
+        assert used_by_book == {"book-a": 20, "book-b": 6}
 
     def test_passage_extraction_retries_on_low_coverage(self, tmp_path):
         settings = Settings(
@@ -630,13 +798,17 @@ class TestBookIngestion:
             project_id="proj-1",
             theme="T",
             episode_count=2,
-            config=PipelineConfig(passages_per_axis_per_book=1, rerank_top_k=1),
+            config=PipelineConfig(
+                passage_retrieval_min_per_book=1,
+                passage_retrieval_max_per_book=1,
+                rerank_top_k=1,
+            ),
             status=ProjectStatus.ANALYZING,
             books=[book_a, book_b],
         )
         project_dir = tmp_path / project.project_id
 
-        with pytest.raises(RuntimeError, match="fewer than 85%"):
+        with pytest.raises(RuntimeError, match="fewer than 60%"):
             asyncio.run(orch._extract_passages(project, [axis], project_dir))
         assert orch.passage_extraction_agent.run.call_count == 2
 
@@ -723,7 +895,11 @@ class TestBookIngestion:
             project_id="proj-1",
             theme="T",
             episode_count=2,
-            config=PipelineConfig(passages_per_axis_per_book=1, rerank_top_k=1),
+            config=PipelineConfig(
+                passage_retrieval_min_per_book=1,
+                passage_retrieval_max_per_book=1,
+                rerank_top_k=1,
+            ),
             status=ProjectStatus.ANALYZING,
             books=[book_a, book_b],
         )
@@ -877,7 +1053,11 @@ class TestBookIngestion:
             project_id="proj-1",
             theme="T",
             episode_count=2,
-            config=PipelineConfig(passages_per_axis_per_book=1, rerank_top_k=1),
+            config=PipelineConfig(
+                passage_retrieval_min_per_book=1,
+                passage_retrieval_max_per_book=1,
+                rerank_top_k=1,
+            ),
             status=ProjectStatus.ANALYZING,
             books=[book_a, book_b],
         )
@@ -891,6 +1071,11 @@ class TestBookIngestion:
         assert all(pair.passage_a_id != pair.passage_b_id for pair in corpus.cross_book_pairs)
 
         retrieval_metrics = json.loads((project_dir / "retrieval_metrics.json").read_text())
+        axis_metrics = retrieval_metrics["per_axis"]["axis_01"]
+        assert axis_metrics["rehydrated_count"] == 2
+        assert axis_metrics["full_text_count"] == 2
+        assert axis_metrics["trimmed_text_count"] == 2
+        assert axis_metrics["full_text_coverage_ratio"] == 1.0
         axis_validation = retrieval_metrics["per_axis"]["axis_01"]["cross_pair_validation"]
         assert axis_validation == {
             "candidate_pair_count": 7,
@@ -913,9 +1098,9 @@ class TestBookIngestion:
         assert invalid_payload["dropped_same_book_count"] == 1
 
 
-def test_select_synthesis_passages_top10_plus_pairs():
+def test_select_synthesis_passages_top30_plus_pairs():
     passages = []
-    for i in range(12):
+    for i in range(32):
         passages.append(
             ExtractedPassage(
                 passage_id=f"p{i}",
@@ -928,12 +1113,12 @@ def test_select_synthesis_passages_top10_plus_pairs():
                 synthesis_tags=[SynthesisTag.INDEPENDENT],
             )
         )
-    cross_pair_ids = {"p11"}
+    cross_pair_ids = {"p31"}
     selected = _select_synthesis_passages(passages, cross_pair_ids)
     selected_ids = {p.passage_id for p in selected}
-    assert len(selected) == 11
-    assert "p11" in selected_ids
-    assert "p10" not in selected_ids
+    assert len(selected) == 31
+    assert "p31" in selected_ids
+    assert "p30" not in selected_ids
 
     def test_missing_database_url_fails_fast(self, tmp_path):
         settings = Settings(
@@ -983,28 +1168,27 @@ class TestThematicAxisValidation:
 
 class TestSynthesisQualityGate:
     def test_quality_score_computation(self):
-        """Verify quality score formula from the plan."""
+        """Verify the prompt-level quality score formula arithmetic."""
         insights = [
             SynthesisInsight(
-                insight_type=InsightType.AGREEMENT,
+                insight_type=InsightType.SYNCHRONICITY,
                 title="A", description="D",
                 passage_ids=["p1", "p2"],
                 podcast_potential=0.8,
             ),
             SynthesisInsight(
-                insight_type=InsightType.DISAGREEMENT,
+                insight_type=InsightType.PRODUCTIVE_FRICTION,
                 title="B", description="D",
                 passage_ids=["p3", "p4"],
                 podcast_potential=0.9,
             ),
         ]
-        # All insights involve 2+ books (by passage), 2 types out of 6
-        fraction_multi_book = 1.0
-        diversity = 2 / 6
-        avg_potential = (0.8 + 0.9) / 2
-        fraction_in_threads = 0.0  # No threads
-        expected = 0.3 * fraction_multi_book + 0.3 * diversity + 0.2 * avg_potential + 0.2 * fraction_in_threads
-        assert abs(expected - 0.57) < 0.01
+        assert len(insights) == 2
+        connectivity = 1.0
+        narrative_utility = 0.75
+        nuance = 0.8
+        expected = (0.3 * connectivity) + (0.3 * narrative_utility) + (0.4 * nuance)
+        assert abs(expected - 0.845) < 0.001
 
     def test_low_quality_does_not_hard_fail(self):
         """Low quality should warn, not crash."""
@@ -1041,7 +1225,7 @@ class TestSynthesisSelection:
             quotability_score=quotability_score,
         )
 
-    def test_select_top_passages_uses_top_ten_cap(self):
+    def test_select_top_passages_uses_top_thirty_cap(self):
         passages = [
             self._make_passage("p1", 0.1),
             self._make_passage("p2", 0.2),
@@ -1398,6 +1582,7 @@ class TestSkipFlags:
         )
         assert len(spoken.segments) == 2
         assert spoken.segments[0].text == "First segment content."
+        assert spoken.segments[0].speech_hints.style == "neutral"
 
     def test_skip_audio_writes_render_manifest_only(self, tmp_path):
         """Skipping audio should still write render_manifest.json without TTS."""
@@ -1427,6 +1612,7 @@ class TestSkipFlags:
             orch._render_episode_audio(
                 1,
                 spoken,
+                PipelineConfig(),
                 None,
                 project_dir,
                 asyncio.Semaphore(1),
@@ -1442,6 +1628,178 @@ class TestSkipFlags:
         assert not audio_manifest_path.exists()
         assert not audio_dir.exists()
         orch.tts_client.synthesize.assert_not_called()
+
+    def test_short_episode_logs_runtime_shortfall_warning(self, tmp_path):
+        """Render stage should warn (not fail) when estimated runtime is below configured floor."""
+        from unittest.mock import MagicMock
+
+        from podcast_agent.schemas.models import SpokenScript, SpokenSegment
+
+        settings = Settings(
+            llm=Settings().llm.model_copy(update={"llm_provider": "heuristic"}),
+            database=Settings().database.model_copy(update={"dsn": None}),
+            pipeline=Settings().pipeline.model_copy(update={"artifact_root": tmp_path}),
+        )
+        orch = PipelineOrchestrator(settings)
+        orch.tts_client = MagicMock()
+        log_spy = MagicMock()
+        orch.run_logger.log = log_spy
+
+        project_dir = tmp_path / "run"
+        spoken = SpokenScript(
+            episode_number=1,
+            title="Short Episode",
+            segments=[
+                SpokenSegment(segment_id="s1", text="brief content", max_words=250),
+            ],
+            tts_provider="openai",
+        )
+        config = PipelineConfig(min_episode_minutes=90.0, target_episode_minutes=100.0)
+
+        asyncio.run(
+            orch._render_episode_audio(
+                1,
+                spoken,
+                config,
+                None,
+                project_dir,
+                asyncio.Semaphore(1),
+                skip_audio=True,
+            )
+        )
+
+        assert any(
+            call.args and call.args[0] == "episode_runtime_shortfall_warning"
+            for call in log_spy.call_args_list
+        )
+
+    def test_rewrite_for_speech_normalizes_segments_before_persisting(self, tmp_path):
+        settings = Settings(
+            llm=Settings().llm.model_copy(update={"llm_provider": "heuristic"}),
+            database=Settings().database.model_copy(update={"dsn": None}),
+            pipeline=Settings().pipeline.model_copy(update={"artifact_root": tmp_path}),
+        )
+        orch = PipelineOrchestrator(settings)
+
+        project = ThematicProject(
+            project_id="proj-1",
+            theme="Test",
+            episode_count=2,
+            config=PipelineConfig(spoken_chunk_max_words=50),
+        )
+        long_text = " ".join(f"word{i}" for i in range(1, 56)) + " <break time='1s'/> outro."
+        script = EpisodeScript(
+            episode_number=1,
+            title="Episode 1",
+            segments=[
+                ScriptSegment(
+                    segment_id="s1",
+                    text=long_text,
+                )
+            ],
+            total_word_count=56,
+            estimated_duration_seconds=0,
+        )
+
+        orch.spoken_delivery_agent.run = MagicMock(
+            return_value=SpokenDeliveryResponse.model_validate(
+                {
+                    "segments": [
+                        {
+                            "segment_id": "s1",
+                            "text": long_text,
+                            "max_words": 99,
+                            "speech_hints": {
+                                "style": "urgent",
+                                "intensity": "medium",
+                                "pause_before_ms": 250,
+                                "pause_after_ms": 450,
+                                "pace": "faster",
+                            },
+                        }
+                    ],
+                    "arc_plan": "Arc",
+                }
+            )
+        )
+
+        ep_dir = tmp_path / "proj-1" / "episodes" / "1"
+        spoken = asyncio.run(
+            orch._rewrite_for_speech(
+                1,
+                script,
+                project,
+                ep_dir,
+                tmp_path / "proj-1",
+            )
+        )
+
+        assert len(spoken.segments) == 2
+        assert all("<" not in seg.text for seg in spoken.segments)
+        assert all(len(seg.text.split()) <= 50 for seg in spoken.segments)
+        assert all(seg.max_words == 50 for seg in spoken.segments)
+        assert spoken.segments[0].speech_hints.pace == "faster"
+        assert (ep_dir / "spoken_script.json").exists()
+
+
+class TestSpokenRenderEmphasisFiltering:
+    def test_split_sentences_only_include_piece_local_emphasis_targets(self):
+        segment = SpokenSegment(
+            segment_id="seg_body_36",
+            text=(
+                "The Ottoman system of power was built on controlled violence. "
+                "Some called this for the sake of the good order of the world. "
+                "Blood and Throne became a recurring image."
+            ),
+            speech_hints=SpeechHints(
+                render_strategy="split_sentences",
+                intensity="light",
+                emphasis_targets=[
+                    "controlled violence",
+                    "for the sake of the good order of the world",
+                    "Blood and Throne",
+                ],
+            ),
+        )
+
+        rendered = _render_segments_for_spoken_segment(
+            segment,
+            voice_id="ballad",
+            speed=1.0,
+            tts_provider="openai",
+            base_instructions="Narrate as a clear documentary host.",
+        )
+
+        assert len(rendered) == 3
+        assert "controlled violence" in (rendered[0].instructions or "")
+        assert "for the sake of the good order of the world" not in (rendered[0].instructions or "")
+        assert "Blood and Throne" not in (rendered[0].instructions or "")
+        assert "for the sake of the good order of the world" in (rendered[1].instructions or "")
+        assert "controlled violence" not in (rendered[1].instructions or "")
+        assert "Blood and Throne" in (rendered[2].instructions or "")
+
+    def test_split_sentences_omits_stress_instruction_when_no_local_target_matches(self):
+        segment = SpokenSegment(
+            segment_id="seg_no_match",
+            text="First sentence mentions nothing. Second sentence mentions controlled violence.",
+            speech_hints=SpeechHints(
+                render_strategy="split_sentences",
+                intensity="light",
+                emphasis_targets=["controlled violence"],
+            ),
+        )
+
+        rendered = _render_segments_for_spoken_segment(
+            segment,
+            voice_id="ballad",
+            speed=1.0,
+            tts_provider="openai",
+            base_instructions="Keep the narration measured.",
+        )
+
+        assert len(rendered) == 2
+        assert "Give light stress" not in (rendered[0].instructions or "")
+        assert "controlled violence" in (rendered[1].instructions or "")
 
 
 # ---------------------------------------------------------------------------
@@ -1692,7 +2050,7 @@ class TestEpisodePlanningPayload:
             insights=[
                 SynthesisInsight(
                     insight_id="insight_1",
-                    insight_type=InsightType.AGREEMENT,
+                    insight_type=InsightType.SYNCHRONICITY,
                     title="I1",
                     description="D1",
                     passage_ids=["p_a1_unique", "p_a2_shared"],
@@ -1815,7 +2173,7 @@ class TestEpisodePlanningPayload:
             insights=[
                 SynthesisInsight(
                     insight_id="insight_1",
-                    insight_type=InsightType.AGREEMENT,
+                    insight_type=InsightType.SYNCHRONICITY,
                     title="I1",
                     description="D1",
                     passage_ids=["p39", "p_shared_axis_2"],
@@ -1828,8 +2186,8 @@ class TestEpisodePlanningPayload:
 
         available = captured_payloads[0]["available_passages"]
         total_passages = sum(len(v) for v in available.values())
-        assert total_passages == 27
-        assert len(available["axis_1"]) == 26
+        assert total_passages == 41
+        assert len(available["axis_1"]) == 40
         assert len(available["axis_2"]) == 1
         all_ids = {entry["passage_id"] for axis_entries in available.values() for entry in axis_entries}
         assert "p39" in all_ids
