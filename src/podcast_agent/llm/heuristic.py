@@ -213,6 +213,8 @@ class HeuristicLLMClient(LLMClient):
                     "thematic_focus": f"Focus on axis {axis_id[:8]}",
                     "axis_ids": [axis_id],
                     "insight_ids": assigned_insights,
+                    "merged_narrative_ids": [],
+                    "tension_ids": [],
                     "episode_strategy": "advance main thread",
                 }
             )
@@ -233,6 +235,7 @@ class HeuristicLLMClient(LLMClient):
         axis_ids = assignment.get("axis_ids", [])
         insight_ids = assignment.get("insight_ids", [])
         available_passages = payload.get("available_passages", {})
+        synthesis_map = payload.get("synthesis_map", {})
         first_axis = axis_ids[0] if axis_ids else ""
         passage_pool = available_passages.get(first_axis, []) if first_axis else []
         selected_passage_ids = [
@@ -273,6 +276,7 @@ class HeuristicLLMClient(LLMClient):
                 "attribution_moments": [],
                 "narrative_voice": "omniscient narrator telling a story",
             },
+            "synthesis_context": synthesis_map or None,
             "target_duration_minutes": 100.0,
             "episode_strategy": assignment.get("episode_strategy", ""),
         }

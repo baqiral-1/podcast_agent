@@ -46,6 +46,8 @@ from podcast_agent.schemas.models import (
     ExtractedPassage,
     GroundingReport,
     NarrativeStrategy,
+    NarrativeThread,
+    MergedNarrative,
     PassagePair,
     PipelineConfig,
     ProjectStatus,
@@ -1440,6 +1442,7 @@ class TestWriteEpisodeSourceMode:
         payload = orch.writing_agent.run.call_args.args[0]
         assert payload["passages"][0]["text"] == "full chunk text"
         assert payload["writing_source_mode"] == "full_chunk"
+        assert "synthesis_context" in payload["plan"]
         output_path = project_dir / "stage_artifacts" / "write_episode_1" / "output.json"
         output = json.loads(output_path.read_text())
         assert output["writing_source_mode"] == "full_chunk"
@@ -1990,6 +1993,65 @@ class TestEpisodeCountResolution:
 
 
 class TestEpisodePlanningPayload:
+    def test_narrative_strategy_payload_includes_axis_ids_and_catalogs(self, tmp_path):
+        settings = Settings(
+            llm=Settings().llm.model_copy(update={"llm_provider": "heuristic"}),
+            database=Settings().database.model_copy(update={"dsn": None}),
+            pipeline=Settings().pipeline.model_copy(update={"artifact_root": tmp_path}),
+        )
+        orch = PipelineOrchestrator(settings)
+        captured_payloads: list[dict] = []
+
+        def fake_strategy(payload):
+            captured_payloads.append(payload)
+            return NarrativeStrategy(
+                strategy_type="convergence",
+                justification="J",
+                series_arc="Arc",
+                episode_arc_outline=["Ep1"],
+                recommended_episode_count=2,
+                episode_assignments=[EpisodeAssignment(episode_number=1, title="Ep 1")],
+            )
+
+        orch.narrative_strategy_agent.run = MagicMock(side_effect=fake_strategy)
+        project = ThematicProject(project_id="proj1", theme="Theme", books=[])
+        corpus = ThematicCorpus(
+            project_id="proj1",
+            axes=[ThematicAxis(axis_id="axis_1", name="Axis", description="Desc")],
+        )
+        synthesis_map = SynthesisMap(
+            project_id="proj1",
+            insights=[
+                SynthesisInsight(
+                    insight_id="insight_1",
+                    insight_type=InsightType.SYNCHRONICITY,
+                    title="I1",
+                    description="D1",
+                    passage_ids=["p1", "p2"],
+                    axis_ids=["axis_1"],
+                )
+            ],
+            unresolved_tensions=["Open question"],
+            merged_narratives=[
+                MergedNarrative(
+                    topic="Merged topic",
+                    narrative="Merged narrative",
+                    source_passage_ids=["p1"],
+                )
+            ],
+            book_relationship_matrix={"a": {"b": "unused"}},
+        )
+
+        asyncio.run(
+            orch._choose_narrative_strategy(project, synthesis_map, corpus, tmp_path / "proj1")
+        )
+
+        payload = captured_payloads[0]["synthesis_map"]
+        assert payload["insights"][0]["axis_ids"] == ["axis_1"]
+        assert "book_relationship_matrix" not in payload
+        assert payload["merged_narratives"][0]["merged_narrative_id"] == "merged_narrative_001"
+        assert payload["unresolved_tensions"][0]["tension_id"] == "tension_001"
+
     def test_supporting_ranking_prefers_higher_quality_single_axis_over_lower_multi_axis(self):
         axis_1_passages = [
             ExtractedPassage(
@@ -2078,6 +2140,8 @@ class TestEpisodePlanningPayload:
                     thematic_focus="Focus",
                     axis_ids=["axis_1", "axis_2"],
                     insight_ids=["insight_1"],
+                    merged_narrative_ids=["merged_narrative_001"],
+                    tension_ids=["tension_001"],
                     episode_strategy="Compare",
                 )
             ],
@@ -2130,7 +2194,26 @@ class TestEpisodePlanningPayload:
                     title="I1",
                     description="D1",
                     passage_ids=["p_a1_unique", "p_a2_shared"],
+                    axis_ids=["axis_1", "axis_2"],
                     podcast_potential=0.9,
+                )
+            ],
+            narrative_threads=[
+                NarrativeThread(
+                    thread_id="thread_1",
+                    title="Thread",
+                    description="Thread desc",
+                    insight_ids=["insight_1"],
+                    arc_type="convergence",
+                )
+            ],
+            unresolved_tensions=["Open question"],
+            merged_narratives=[
+                MergedNarrative(
+                    topic="Merged topic",
+                    narrative="Merged narrative",
+                    source_passage_ids=["p_a1_unique"],
+                    points_of_consensus=["c1"],
                 )
             ],
         )
@@ -2140,7 +2223,12 @@ class TestEpisodePlanningPayload:
         )
 
         assert len(plans) == 1
-        assert len(captured_payloads) == 1
+        assert len(captured_payloads) == 2
+        assert captured_payloads[1]["planning_feedback"]["issue"] == "assigned_insight_realization"
+        synthesis_payload = captured_payloads[0]["synthesis_map"]
+        assert synthesis_payload["insights"][0]["axis_ids"] == ["axis_1", "axis_2"]
+        assert synthesis_payload["merged_narratives"][0]["merged_narrative_id"] == "merged_narrative_001"
+        assert synthesis_payload["unresolved_tensions"][0]["tension_id"] == "tension_001"
         available = captured_payloads[0]["available_passages"]
         assert "axis_1" in available and "axis_2" in available
         assert any(p["passage_id"] == "p_a1_shared" for p in available["axis_1"])
@@ -2168,6 +2256,8 @@ class TestEpisodePlanningPayload:
                 assert "chunk_key" not in entry
                 assert "cross_axis_passage_ids" not in entry
                 assert "cross_axis_summaries" not in entry
+        assert plans[0].synthesis_context is not None
+        assert plans[0].synthesis_context.insights[0].axis_ids == ["axis_1", "axis_2"]
 
     def test_payload_keeps_insight_linked_passages_without_cap(self, tmp_path):
         settings = Settings(
@@ -2278,6 +2368,203 @@ class TestEpisodePlanningPayload:
         assert "summary_text" not in insight_by_id["p39"]
         assert "full_text" in insight_by_id["p_shared_axis_2"]
         assert "summary_text" not in insight_by_id["p_shared_axis_2"]
+
+    def test_plan_series_retries_once_when_assigned_insight_has_zero_realization(self, tmp_path):
+        settings = Settings(
+            llm=Settings().llm.model_copy(update={"llm_provider": "heuristic"}),
+            database=Settings().database.model_copy(update={"dsn": None}),
+            pipeline=Settings().pipeline.model_copy(update={"artifact_root": tmp_path}),
+        )
+        orch = PipelineOrchestrator(settings)
+        captured_payloads: list[dict] = []
+
+        def fake_episode_plan(payload):
+            captured_payloads.append(payload)
+            if payload.get("planning_feedback") is None:
+                return EpisodePlan(
+                    episode_number=1,
+                    title="Planned",
+                    beats=[EpisodeBeat(beat_id="beat-1", description="Misses insight", passage_ids=["p_other"])],
+                )
+            return EpisodePlan(
+                episode_number=1,
+                title="Planned retry",
+                beats=[EpisodeBeat(beat_id="beat-2", description="Uses insight", passage_ids=["p_target", "p_missing"])],
+            )
+
+        orch.episode_planning_agent.run = MagicMock(side_effect=fake_episode_plan)
+
+        project = ThematicProject(
+            project_id="proj_retry",
+            theme="Theme",
+            episode_count=1,
+            books=[
+                BookRecord(
+                    book_id="book-a",
+                    title="Book A",
+                    author="A",
+                    source_path="/a.txt",
+                    source_type="txt",
+                )
+            ],
+        )
+        strategy = NarrativeStrategy(
+            strategy_type="convergence",
+            justification="J",
+            series_arc="Arc",
+            episode_arc_outline=["Ep1"],
+            recommended_episode_count=2,
+            episode_assignments=[
+                EpisodeAssignment(
+                    episode_number=1,
+                    title="Ep 1",
+                    axis_ids=["axis_1"],
+                    insight_ids=["insight_1"],
+                )
+            ],
+        )
+        corpus = ThematicCorpus(
+            project_id="proj_retry",
+            passages_by_axis={
+                "axis_1": [
+                    ExtractedPassage(
+                        passage_id="p_target",
+                        book_id="book-a",
+                        chunk_ids=["c1"],
+                        text="target",
+                        full_text="target full",
+                        axis_id="axis_1",
+                    ),
+                    ExtractedPassage(
+                        passage_id="p_other",
+                        book_id="book-a",
+                        chunk_ids=["c2"],
+                        text="other",
+                        full_text="other full",
+                        axis_id="axis_1",
+                    ),
+                ]
+            },
+        )
+        synthesis_map = SynthesisMap(
+            project_id="proj_retry",
+            insights=[
+                SynthesisInsight(
+                    insight_id="insight_1",
+                    insight_type=InsightType.SYNCHRONICITY,
+                    title="Insight",
+                    description="Desc",
+                    passage_ids=["p_target", "p_missing"],
+                    axis_ids=["axis_1"],
+                )
+            ],
+        )
+
+        plans = asyncio.run(
+            orch._plan_series(project, synthesis_map, strategy, corpus, tmp_path / "proj_retry")
+        )
+
+        assert len(captured_payloads) == 2
+        assert captured_payloads[1]["planning_feedback"]["issue"] == "assigned_insight_realization"
+        assert plans[0].beats[0].passage_ids == ["p_target", "p_missing"]
+        realization = json.loads((tmp_path / "proj_retry" / "episode_plan_realization.json").read_text())
+        assert realization["episodes"][0]["has_issues"] is False
+
+    def test_plan_series_logs_warning_after_retry_if_realization_stays_weak(self, tmp_path):
+        settings = Settings(
+            llm=Settings().llm.model_copy(update={"llm_provider": "heuristic"}),
+            database=Settings().database.model_copy(update={"dsn": None}),
+            pipeline=Settings().pipeline.model_copy(update={"artifact_root": tmp_path}),
+        )
+        orch = PipelineOrchestrator(settings)
+        log_spy = MagicMock()
+        orch.run_logger.log = log_spy
+
+        orch.episode_planning_agent.run = MagicMock(
+            return_value=EpisodePlan(
+                episode_number=1,
+                title="Planned",
+                beats=[EpisodeBeat(beat_id="beat-1", description="Still weak", passage_ids=["p_other"])],
+            )
+        )
+
+        project = ThematicProject(
+            project_id="proj_retry_warn",
+            theme="Theme",
+            episode_count=1,
+            books=[
+                BookRecord(
+                    book_id="book-a",
+                    title="Book A",
+                    author="A",
+                    source_path="/a.txt",
+                    source_type="txt",
+                )
+            ],
+        )
+        strategy = NarrativeStrategy(
+            strategy_type="convergence",
+            justification="J",
+            series_arc="Arc",
+            episode_arc_outline=["Ep1"],
+            recommended_episode_count=2,
+            episode_assignments=[
+                EpisodeAssignment(
+                    episode_number=1,
+                    title="Ep 1",
+                    axis_ids=["axis_1"],
+                    insight_ids=["insight_1"],
+                )
+            ],
+        )
+        corpus = ThematicCorpus(
+            project_id="proj_retry_warn",
+            passages_by_axis={
+                "axis_1": [
+                    ExtractedPassage(
+                        passage_id="p_target",
+                        book_id="book-a",
+                        chunk_ids=["c1"],
+                        text="target",
+                        full_text="target full",
+                        axis_id="axis_1",
+                    ),
+                    ExtractedPassage(
+                        passage_id="p_other",
+                        book_id="book-a",
+                        chunk_ids=["c2"],
+                        text="other",
+                        full_text="other full",
+                        axis_id="axis_1",
+                    ),
+                ]
+            },
+        )
+        synthesis_map = SynthesisMap(
+            project_id="proj_retry_warn",
+            insights=[
+                SynthesisInsight(
+                    insight_id="insight_1",
+                    insight_type=InsightType.SYNCHRONICITY,
+                    title="Insight",
+                    description="Desc",
+                    passage_ids=["p_target", "p_unused"],
+                    axis_ids=["axis_1"],
+                )
+            ],
+        )
+
+        asyncio.run(
+            orch._plan_series(project, synthesis_map, strategy, corpus, tmp_path / "proj_retry_warn")
+        )
+
+        warning_logs = [
+            call for call in log_spy.call_args_list
+            if call.args and call.args[0] == "episode_plan_insight_realization_warning"
+        ]
+        assert len(warning_logs) == 1
+        assert warning_logs[0].kwargs["problem_count"] == 1
+        assert orch.episode_planning_agent.run.call_count == 2
 
     def test_plan_series_logs_runtime_budget_warning(self, tmp_path):
         settings = Settings(

@@ -267,6 +267,18 @@ class MergedNarrative(StrictModel):
     points_of_disagreement: list[str] = Field(default_factory=list)
 
 
+class EpisodeSynthesisTension(StrictModel):
+    tension_id: str
+    question: str
+
+
+class EpisodeMergedNarrativeRef(StrictModel):
+    merged_narrative_id: str
+    topic: str
+    narrative: str
+    source_passage_ids: list[str] = Field(default_factory=list)
+
+
 class SynthesisMap(StrictModel):
     project_id: str
     insights: list[SynthesisInsight] = Field(default_factory=list)
@@ -299,6 +311,8 @@ class EpisodeAssignment(StrictModel):
     thematic_focus: str = ""
     axis_ids: list[str] = Field(default_factory=list)
     insight_ids: list[str] = Field(default_factory=list)
+    merged_narrative_ids: list[str] = Field(default_factory=list)
+    tension_ids: list[str] = Field(default_factory=list)
     episode_strategy: str = ""
 
 
@@ -372,6 +386,14 @@ class EpisodeBeat(StrictModel):
     estimated_duration_seconds: int = Field(default=120, ge=0)
 
 
+class EpisodeSynthesisContext(StrictModel):
+    insights: list[SynthesisInsight] = Field(default_factory=list)
+    narrative_threads: list[NarrativeThread] = Field(default_factory=list)
+    merged_narratives: list[EpisodeMergedNarrativeRef] = Field(default_factory=list)
+    unresolved_tensions: list[EpisodeSynthesisTension] = Field(default_factory=list)
+    quality_score: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
 class EpisodePlan(StrictModel):
     episode_number: int = Field(ge=1)
     title: str
@@ -381,6 +403,7 @@ class EpisodePlan(StrictModel):
     beats: list[EpisodeBeat] = Field(default_factory=list)
     attribution_budget: float = Field(default=0.2, ge=0.0, le=1.0)
     narrative_spine: NarrativeSpine | None = None
+    synthesis_context: EpisodeSynthesisContext | None = None
     book_balance: dict[str, float] = Field(default_factory=dict)
     cross_references: list[CrossReference] = Field(default_factory=list)
     target_duration_minutes: float = Field(default=100.0, gt=0.0)

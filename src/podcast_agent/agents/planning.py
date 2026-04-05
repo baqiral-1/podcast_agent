@@ -15,12 +15,17 @@ class EpisodePlanningAgent(Agent):
         "You are a podcast episode planner. Produce a narrative-first episode plan for exactly one episode.\n\n"
         "Constraints you must satisfy:\n"
         "1. Keep coherence to the assignment's axis_ids and insight_ids.\n"
-        "2. Target runtime is 100 minutes with a hard planning floor of 90 minutes.\n"
-        "3. Include 40-45 beats, each designed to sustain long-form pacing.\n"
-        "4. Include at least one cross-reference to previous episodes when available.\n\n"
+        "2. Materially realize every assigned insight in the beat plan using that insight's passage_ids.\n"
+        "3. Target runtime is 100 minutes with a hard planning floor of 90 minutes.\n"
+        "4. Include 40-45 beats, each designed to sustain long-form pacing.\n"
+        "5. Include at least one cross-reference to previous episodes when available.\n\n"
         "Plan episodes around a NarrativeSpine, not around author-by-author comparison. "
         "The listener should feel like they are hearing history unfold, not a book review. "
         "Organize beats around what happened and why it matters.\n\n"
+        "Use the selected synthesis context actively:\n"
+        "- Use assigned insights to shape the core episode argument\n"
+        "- Use selected merged narratives to anchor long-arc synthesis and payoff\n"
+        "- Use selected unresolved tensions to shape open questions, pivots, or endings\n\n"
         "Each EpisodeBeat must include:\n"
         "- narrative_instruction: set_the_scene, advance_events, explain_context, "
         "build_tension, reveal_consequence, or pivot_to_new_thread\n"
@@ -38,6 +43,8 @@ class EpisodePlanningAgent(Agent):
         "supporting context and cross-axis comparisons.\n\n"
         "Assign specific passage_ids from the thematic corpus to each beat. "
         "Use primary_book_id to indicate the best source material, not an author lead.\n\n"
+        "If planning_feedback is provided, treat it as a correction request and fix the cited "
+        "insight-realization gaps in the revised plan.\n\n"
         "Return a JSON object matching the EpisodePlan schema."
     )
 
@@ -50,8 +57,9 @@ class EpisodePlanningAgent(Agent):
         available_passages: dict,
         previous_episode: dict | None,
         next_episode: dict | None,
+        planning_feedback: dict | None = None,
     ) -> dict:
-        return {
+        payload = {
             "episode_assignment": episode_assignment,
             "narrative_strategy": narrative_strategy,
             "synthesis_map": synthesis_map,
@@ -60,3 +68,6 @@ class EpisodePlanningAgent(Agent):
             "previous_episode": previous_episode,
             "next_episode": next_episode,
         }
+        if planning_feedback is not None:
+            payload["planning_feedback"] = planning_feedback
+        return payload

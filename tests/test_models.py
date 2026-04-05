@@ -21,8 +21,11 @@ from podcast_agent.schemas.models import (
     EpisodeAssignment,
     EpisodeBeat,
     EpisodeFraming,
+    EpisodeMergedNarrativeRef,
     EpisodePlan,
     EpisodeScript,
+    EpisodeSynthesisContext,
+    EpisodeSynthesisTension,
     ExtractedPassage,
     FairnessFlag,
     GroundingReport,
@@ -188,12 +191,31 @@ class TestEpisodePlan:
             episode_number=1, title="Episode 1",
             thematic_focus="Decision making",
             beats=[beat],
+            synthesis_context=EpisodeSynthesisContext(
+                merged_narratives=[
+                    EpisodeMergedNarrativeRef(
+                        merged_narrative_id="merged_narrative_001",
+                        topic="Topic",
+                        narrative="Narrative",
+                        source_passage_ids=["p1"],
+                    )
+                ],
+                unresolved_tensions=[
+                    EpisodeSynthesisTension(
+                        tension_id="tension_001",
+                        question="What remains unresolved?",
+                    )
+                ],
+                quality_score=0.8,
+            ),
             book_balance={"b1": 0.6, "b2": 0.4},
         )
         data = json.loads(plan.model_dump_json())
         restored = EpisodePlan.model_validate(data)
         assert len(restored.beats) == 1
         assert restored.beats[0].synthesis_instruction == "contrast"
+        assert restored.synthesis_context is not None
+        assert restored.synthesis_context.merged_narratives[0].merged_narrative_id == "merged_narrative_001"
 
     def test_default_target_duration_minutes(self):
         plan = EpisodePlan(episode_number=1, title="Episode 1")
@@ -285,6 +307,8 @@ class TestNarrativeStrategy:
                     thematic_focus="Focus",
                     axis_ids=["ax1"],
                     insight_ids=["in1"],
+                    merged_narrative_ids=["merged_narrative_001"],
+                    tension_ids=["tension_001"],
                     episode_strategy="Set context",
                 )
             ],
@@ -292,6 +316,7 @@ class TestNarrativeStrategy:
         data = json.loads(strategy.model_dump_json())
         restored = NarrativeStrategy.model_validate(data)
         assert restored.episode_assignments[0].axis_ids == ["ax1"]
+        assert restored.episode_assignments[0].merged_narrative_ids == ["merged_narrative_001"]
 
 
 class TestSpokenScript:

@@ -54,6 +54,9 @@ from podcast_agent.schemas.models import (
     EpisodeFraming,
     EpisodePlan,
     EpisodeScript,
+    EpisodeSynthesisContext,
+    EpisodeSynthesisTension,
+    EpisodeMergedNarrativeRef,
     ExtractedPassage,
     GroundingReport,
     NarrativeStrategy,
@@ -379,6 +382,138 @@ def _select_episode_planning_passages(
         ]
         selected_by_axis[axis_id] = insight_passages + supporting_passages
     return selected_by_axis
+
+
+def _build_merged_narrative_catalog(synthesis_map: SynthesisMap) -> list[dict[str, Any]]:
+    return [
+        {
+            "merged_narrative_id": f"merged_narrative_{idx + 1:03d}",
+            "topic": merged.topic,
+            "narrative": merged.narrative,
+            "source_passage_ids": list(merged.source_passage_ids),
+            "points_of_consensus": list(merged.points_of_consensus),
+            "points_of_disagreement": list(merged.points_of_disagreement),
+        }
+        for idx, merged in enumerate(synthesis_map.merged_narratives)
+    ]
+
+
+def _build_tension_catalog(synthesis_map: SynthesisMap) -> list[dict[str, Any]]:
+    return [
+        {
+            "tension_id": f"tension_{idx + 1:03d}",
+            "question": question,
+        }
+        for idx, question in enumerate(synthesis_map.unresolved_tensions)
+    ]
+
+
+def _build_episode_synthesis_context(
+    *,
+    assignment: EpisodeAssignment,
+    selected_insights: list[Any],
+    synthesis_map: SynthesisMap,
+    merged_catalog: list[dict[str, Any]],
+    tension_catalog: list[dict[str, Any]],
+) -> EpisodeSynthesisContext:
+    selected_merged = [
+        EpisodeMergedNarrativeRef(
+            merged_narrative_id=item["merged_narrative_id"],
+            topic=item["topic"],
+            narrative=item["narrative"],
+            source_passage_ids=item["source_passage_ids"],
+        )
+        for item in merged_catalog
+        if item["merged_narrative_id"] in assignment.merged_narrative_ids
+    ]
+    selected_tensions = [
+        EpisodeSynthesisTension(
+            tension_id=item["tension_id"],
+            question=item["question"],
+        )
+        for item in tension_catalog
+        if item["tension_id"] in assignment.tension_ids
+    ]
+    selected_threads = [
+        thread
+        for thread in synthesis_map.narrative_threads
+        if any(insight_id in assignment.insight_ids for insight_id in thread.insight_ids)
+    ]
+    return EpisodeSynthesisContext(
+        insights=selected_insights,
+        narrative_threads=selected_threads,
+        merged_narratives=selected_merged,
+        unresolved_tensions=selected_tensions,
+        quality_score=synthesis_map.quality_score,
+    )
+
+
+def _evaluate_episode_plan_insight_realization(
+    *,
+    assignment: EpisodeAssignment,
+    selected_insights: list[Any],
+    plan: EpisodePlan,
+) -> dict[str, Any]:
+    planned_passage_ids = {
+        passage_id
+        for beat in plan.beats
+        for passage_id in beat.passage_ids
+    }
+    results: list[dict[str, Any]] = []
+    for insight in selected_insights:
+        realized_passage_ids = sorted(planned_passage_ids & set(insight.passage_ids))
+        realized_count = len(realized_passage_ids)
+        expected_min = min(2, len(insight.passage_ids))
+        if realized_count == 0:
+            status = "zero"
+        elif realized_count < expected_min:
+            status = "weak"
+        else:
+            status = "ok"
+        results.append(
+            {
+                "insight_id": insight.insight_id,
+                "title": insight.title,
+                "status": status,
+                "realized_count": realized_count,
+                "expected_min": expected_min,
+                "assigned_passage_count": len(insight.passage_ids),
+                "realized_passage_ids": realized_passage_ids,
+                "missing_passage_ids": sorted(set(insight.passage_ids) - planned_passage_ids),
+            }
+        )
+    weak_or_zero = [item for item in results if item["status"] in {"weak", "zero"}]
+    return {
+        "episode_number": assignment.episode_number,
+        "title": assignment.title,
+        "insight_ids": list(assignment.insight_ids),
+        "has_issues": bool(weak_or_zero),
+        "problem_count": len(weak_or_zero),
+        "insights": results,
+    }
+
+
+def _build_planning_feedback(realization: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "issue": "assigned_insight_realization",
+        "episode_number": realization["episode_number"],
+        "problem_insights": [
+            {
+                "insight_id": item["insight_id"],
+                "title": item["title"],
+                "status": item["status"],
+                "expected_min": item["expected_min"],
+                "realized_count": item["realized_count"],
+                "missing_passage_ids": item["missing_passage_ids"],
+            }
+            for item in realization["insights"]
+            if item["status"] in {"weak", "zero"}
+        ],
+        "instruction": (
+            "Revise the episode plan so every assigned insight is materially realized in beats "
+            "using the assigned insight passage_ids."
+        ),
+    }
 
 
 def _clamp(value: float, minimum: float, maximum: float) -> float:
@@ -1876,6 +2011,8 @@ class PipelineOrchestrator:
             self.run_logger, "narrative_strategy", project_dir,
             insight_count=len(synthesis_map.insights),
         ) as ctx:
+            merged_catalog = _build_merged_narrative_catalog(synthesis_map)
+            tension_catalog = _build_tension_catalog(synthesis_map)
             synthesis_summary = {
                 "insights": [
                     {
@@ -1884,6 +2021,7 @@ class PipelineOrchestrator:
                         "title": i.title,
                         "description": i.description,
                         "passage_ids": i.passage_ids,
+                        "axis_ids": i.axis_ids,
                         "podcast_potential": i.podcast_potential,
                         "treatment": i.treatment,
                     }
@@ -1899,18 +2037,8 @@ class PipelineOrchestrator:
                     }
                     for t in synthesis_map.narrative_threads
                 ],
-                "book_relationship_matrix": synthesis_map.book_relationship_matrix,
-                "unresolved_tensions": synthesis_map.unresolved_tensions,
-                "merged_narratives": [
-                    {
-                        "topic": m.topic,
-                        "narrative": m.narrative,
-                        "source_passage_ids": m.source_passage_ids,
-                        "points_of_consensus": m.points_of_consensus,
-                        "points_of_disagreement": m.points_of_disagreement,
-                    }
-                    for m in synthesis_map.merged_narratives
-                ],
+                "unresolved_tensions": tension_catalog,
+                "merged_narratives": merged_catalog,
                 "quality_score": synthesis_map.quality_score,
                 "insight_count": len(synthesis_map.insights),
                 "thread_count": len(synthesis_map.narrative_threads),
@@ -2030,12 +2158,15 @@ class PipelineOrchestrator:
                 "attribution_budget": project.config.attribution_budget,
             }
             insights_by_id = {insight.insight_id: insight for insight in synthesis_map.insights}
+            merged_catalog = _build_merged_narrative_catalog(synthesis_map)
+            tension_catalog = _build_tension_catalog(synthesis_map)
             adjusted_episodes: list[EpisodePlan] = []
+            realization_reports: list[dict[str, Any]] = []
             ordered_assignments = [
                 assignment_map[episode_number]
                 for episode_number in range(1, project.episode_count + 1)
             ]
-            planning_requests: list[tuple[int, EpisodeAssignment, dict[str, Any]]] = []
+            planning_requests: list[tuple[int, EpisodeAssignment, list[Any], EpisodeSynthesisContext, dict[str, Any]]] = []
             for idx, assignment in enumerate(ordered_assignments):
                 selected_insights = [
                     insights_by_id[insight_id]
@@ -2047,32 +2178,14 @@ class PipelineOrchestrator:
                     for insight in selected_insights
                     for passage_id in insight.passage_ids
                 }
-                synthesis_subset = {
-                    "insights": [
-                        {
-                            "insight_id": insight.insight_id,
-                            "insight_type": insight.insight_type.value,
-                            "title": insight.title,
-                            "description": insight.description,
-                            "passage_ids": insight.passage_ids,
-                            "podcast_potential": insight.podcast_potential,
-                            "treatment": insight.treatment,
-                        }
-                        for insight in selected_insights
-                    ],
-                    "narrative_threads": [
-                        {
-                            "thread_id": thread.thread_id,
-                            "title": thread.title,
-                            "description": thread.description,
-                            "insight_ids": thread.insight_ids,
-                            "arc_type": thread.arc_type,
-                        }
-                        for thread in synthesis_map.narrative_threads
-                        if any(insight_id in assignment.insight_ids for insight_id in thread.insight_ids)
-                    ],
-                    "quality_score": synthesis_map.quality_score,
-                }
+                synthesis_context = _build_episode_synthesis_context(
+                    assignment=assignment,
+                    selected_insights=selected_insights,
+                    synthesis_map=synthesis_map,
+                    merged_catalog=merged_catalog,
+                    tension_catalog=tension_catalog,
+                )
+                synthesis_subset = synthesis_context.model_dump(mode="json")
                 selected_passages_by_axis = _select_episode_planning_passages(
                     passages_by_axis=corpus.passages_by_axis,
                     assigned_axis_ids=assignment.axis_ids,
@@ -2119,26 +2232,62 @@ class PipelineOrchestrator:
                     previous_episode=previous_episode,
                     next_episode=next_episode,
                 )
-                planning_requests.append((idx, assignment, payload))
+                planning_requests.append((idx, assignment, selected_insights, synthesis_context, payload))
 
             planning_sem = asyncio.Semaphore(project.config.episode_write_concurrency)
 
             async def _plan_single_episode(
                 idx: int,
                 assignment: EpisodeAssignment,
+                selected_insights: list[Any],
+                synthesis_context: EpisodeSynthesisContext,
                 payload: dict[str, Any],
-            ) -> tuple[int, EpisodeAssignment, EpisodePlan]:
+            ) -> tuple[int, EpisodeAssignment, EpisodePlan, dict[str, Any]]:
                 async with planning_sem:
                     episode = await asyncio.to_thread(self.episode_planning_agent.run, payload)
-                return idx, assignment, episode
+                    realization = _evaluate_episode_plan_insight_realization(
+                        assignment=assignment,
+                        selected_insights=selected_insights,
+                        plan=episode,
+                    )
+                    if realization["has_issues"]:
+                        retry_payload = self.episode_planning_agent.build_payload(
+                            episode_assignment=assignment.model_dump(mode="json"),
+                            narrative_strategy=strategy.model_dump(mode="json"),
+                            synthesis_map=synthesis_context.model_dump(mode="json"),
+                            project_metadata=project_metadata,
+                            available_passages=payload["available_passages"],
+                            previous_episode=payload["previous_episode"],
+                            next_episode=payload["next_episode"],
+                            planning_feedback=_build_planning_feedback(realization),
+                        )
+                        episode = await asyncio.to_thread(self.episode_planning_agent.run, retry_payload)
+                        realization = _evaluate_episode_plan_insight_realization(
+                            assignment=assignment,
+                            selected_insights=selected_insights,
+                            plan=episode,
+                        )
+                return idx, assignment, episode, realization
 
             planning_results = await asyncio.gather(*[
-                _plan_single_episode(idx, assignment, payload)
-                for idx, assignment, payload in planning_requests
+                _plan_single_episode(idx, assignment, selected_insights, synthesis_context, payload)
+                for idx, assignment, selected_insights, synthesis_context, payload in planning_requests
             ])
             planning_results.sort(key=lambda row: row[0])
 
-            for _, assignment, episode in planning_results:
+            for _, assignment, episode, realization in planning_results:
+                selected_insights = [
+                    insights_by_id[insight_id]
+                    for insight_id in assignment.insight_ids
+                    if insight_id in insights_by_id
+                ]
+                synthesis_context = _build_episode_synthesis_context(
+                    assignment=assignment,
+                    selected_insights=selected_insights,
+                    synthesis_map=synthesis_map,
+                    merged_catalog=merged_catalog,
+                    tension_catalog=tension_catalog,
+                )
                 episode = episode.model_copy(
                     update={
                         "episode_number": assignment.episode_number,
@@ -2146,9 +2295,32 @@ class PipelineOrchestrator:
                         "thematic_focus": episode.thematic_focus or assignment.thematic_focus,
                         "axis_ids": assignment.axis_ids,
                         "insight_ids": assignment.insight_ids,
+                        "synthesis_context": synthesis_context,
                         "episode_strategy": episode.episode_strategy or assignment.episode_strategy,
                     }
                 )
+                realization_reports.append(
+                    {
+                        **realization,
+                        "title": episode.title,
+                    }
+                )
+                if realization["has_issues"]:
+                    self.run_logger.log(
+                        "episode_plan_insight_realization_warning",
+                        episode=episode.episode_number,
+                        problem_count=realization["problem_count"],
+                        insights=[
+                            {
+                                "insight_id": item["insight_id"],
+                                "status": item["status"],
+                                "realized_count": item["realized_count"],
+                                "expected_min": item["expected_min"],
+                            }
+                            for item in realization["insights"]
+                            if item["status"] in {"weak", "zero"}
+                        ],
+                    )
                 beats = list(episode.beats)
                 total_beats = len(beats)
                 if total_beats == 0:
@@ -2233,6 +2405,10 @@ class PipelineOrchestrator:
             _save_json(
                 project_dir / "series_plan.json",
                 {"episodes": [e.model_dump(mode="json") for e in adjusted_episodes]},
+            )
+            _save_json(
+                project_dir / "episode_plan_realization.json",
+                {"episodes": realization_reports},
             )
 
             ctx["output_summary"] = {
