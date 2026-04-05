@@ -254,6 +254,13 @@ class TestWritingAgent:
         assert payload["skip_grounding"] is True
         assert "chapters" not in payload["books"][0]
 
+    def test_instructions_include_runtime_targets(self):
+        agent = WritingAgent(_mock_llm())
+        assert "target_duration_minutes" in agent.instructions
+        assert "estimated_duration_seconds" in agent.instructions
+        assert "target_duration_minutes" in agent.instructions_no_citations
+        assert "estimated_duration_seconds" in agent.instructions_no_citations
+
 
 class TestSourceWeavingAgent:
     def test_schema_name(self):

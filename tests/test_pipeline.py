@@ -1462,6 +1462,82 @@ class TestWriteEpisodeSourceMode:
         payload = orch.writing_agent.run.call_args.args[0]
         assert payload["passages"][0]["text"] == "trimmed excerpt"
 
+    def test_write_episode_logs_duration_shortfall_warning(self, tmp_path):
+        orch, _, project, corpus, ep_dir, project_dir = self._build_context(
+            tmp_path,
+            full_text="full chunk text",
+        )
+        log_spy = MagicMock()
+        orch.run_logger.log = log_spy
+        plan = EpisodePlan(
+            episode_number=1,
+            title="Episode 1",
+            target_duration_minutes=100.0,
+            beats=[
+                EpisodeBeat(
+                    beat_id="beat-1",
+                    description="Beat",
+                    passage_ids=["p1"],
+                    estimated_duration_seconds=6000,
+                )
+            ],
+        )
+        short_text = " ".join(f"word{i}" for i in range(8800))
+        orch.writing_agent.run = MagicMock(
+            return_value=EpisodeWritingResponse(
+                title="Episode 1",
+                segments=[ScriptSegment(segment_id="s1", text=short_text, beat_id="beat-1")],
+                citations=[],
+            )
+        )
+
+        asyncio.run(orch._write_episode(plan, project, corpus, ep_dir, project_dir))
+
+        shortfall_logs = [
+            call
+            for call in log_spy.call_args_list
+            if call.args and call.args[0] == "episode_write_duration_shortfall_warning"
+        ]
+        assert len(shortfall_logs) == 1
+        assert shortfall_logs[0].kwargs["likely_source"] == "writing"
+        assert shortfall_logs[0].kwargs["shortfall_ratio"] > 0.10
+
+    def test_write_episode_does_not_log_duration_shortfall_at_ten_percent(self, tmp_path):
+        orch, _, project, corpus, ep_dir, project_dir = self._build_context(
+            tmp_path,
+            full_text="full chunk text",
+        )
+        log_spy = MagicMock()
+        orch.run_logger.log = log_spy
+        plan = EpisodePlan(
+            episode_number=1,
+            title="Episode 1",
+            target_duration_minutes=100.0,
+            beats=[
+                EpisodeBeat(
+                    beat_id="beat-1",
+                    description="Beat",
+                    passage_ids=["p1"],
+                    estimated_duration_seconds=6000,
+                )
+            ],
+        )
+        boundary_text = " ".join(f"word{i}" for i in range(9900))
+        orch.writing_agent.run = MagicMock(
+            return_value=EpisodeWritingResponse(
+                title="Episode 1",
+                segments=[ScriptSegment(segment_id="s1", text=boundary_text, beat_id="beat-1")],
+                citations=[],
+            )
+        )
+
+        asyncio.run(orch._write_episode(plan, project, corpus, ep_dir, project_dir))
+
+        assert not any(
+            call.args and call.args[0] == "episode_write_duration_shortfall_warning"
+            for call in log_spy.call_args_list
+        )
+
 
 # ---------------------------------------------------------------------------
 # Repair loop logic
@@ -2202,6 +2278,75 @@ class TestEpisodePlanningPayload:
         assert "summary_text" not in insight_by_id["p39"]
         assert "full_text" in insight_by_id["p_shared_axis_2"]
         assert "summary_text" not in insight_by_id["p_shared_axis_2"]
+
+    def test_plan_series_logs_runtime_budget_warning(self, tmp_path):
+        settings = Settings(
+            llm=Settings().llm.model_copy(update={"llm_provider": "heuristic"}),
+            database=Settings().database.model_copy(update={"dsn": None}),
+            pipeline=Settings().pipeline.model_copy(update={"artifact_root": tmp_path}),
+        )
+        orch = PipelineOrchestrator(settings)
+        log_spy = MagicMock()
+        orch.run_logger.log = log_spy
+
+        orch.episode_planning_agent.run = MagicMock(
+            return_value=EpisodePlan(
+                episode_number=1,
+                title="Planned",
+                target_duration_minutes=100.0,
+                beats=[
+                    EpisodeBeat(
+                        beat_id="beat-1",
+                        description="Short beat budget",
+                        passage_ids=[],
+                        estimated_duration_seconds=3000,
+                    )
+                ],
+            )
+        )
+
+        project = ThematicProject(
+            project_id="proj_runtime_warning",
+            theme="Theme",
+            episode_count=1,
+            books=[
+                BookRecord(
+                    book_id="book-a",
+                    title="Book A",
+                    author="A",
+                    source_path="/a.txt",
+                    source_type="txt",
+                )
+            ],
+        )
+        strategy = NarrativeStrategy(
+            strategy_type="convergence",
+            justification="J",
+            series_arc="Arc",
+            episode_arc_outline=["Ep1"],
+            recommended_episode_count=2,
+            episode_assignments=[EpisodeAssignment(episode_number=1, title="Ep 1")],
+        )
+        corpus = ThematicCorpus(project_id="proj_runtime_warning")
+        synthesis_map = SynthesisMap(project_id="proj_runtime_warning")
+
+        asyncio.run(
+            orch._plan_series(
+                project,
+                synthesis_map,
+                strategy,
+                corpus,
+                tmp_path / "proj_runtime_warning",
+            )
+        )
+
+        warning_logs = [
+            call
+            for call in log_spy.call_args_list
+            if call.args and call.args[0] == "episode_plan_runtime_budget_warning"
+        ]
+        assert len(warning_logs) == 1
+        assert warning_logs[0].kwargs["shortfall_ratio"] > 0.10
 
     def test_parallel_planning_preserves_episode_order(self, tmp_path):
         settings = Settings(

@@ -118,6 +118,7 @@ def _input_hash(*args: Any) -> str:
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 _WORD_RE = re.compile(r"[A-Za-z0-9']+")
 _SPOKEN_TAG_RE = re.compile(r"<[^>]+>")
+_RUNTIME_UNDERSHOOT_WARNING_RATIO = 0.10
 _WHITESPACE_RE = re.compile(r"\s+")
 _WRITING_SOURCE_MODE_FULL_CHUNK = "full_chunk"
 _SPOKEN_RATE_MULTIPLIER = {
@@ -2163,6 +2164,25 @@ class PipelineOrchestrator:
                         configured_target_minutes=target_minutes,
                         configured_min_minutes=min_minutes,
                     )
+                planned_beat_duration_minutes = (
+                    sum(float(beat.estimated_duration_seconds) for beat in beats) / 60.0
+                )
+                target_duration_minutes = float(episode.target_duration_minutes)
+                plan_shortfall_minutes = target_duration_minutes - planned_beat_duration_minutes
+                plan_shortfall_ratio = (
+                    plan_shortfall_minutes / target_duration_minutes
+                    if target_duration_minutes > 0
+                    else 0.0
+                )
+                if plan_shortfall_ratio > _RUNTIME_UNDERSHOOT_WARNING_RATIO:
+                    self.run_logger.log(
+                        "episode_plan_runtime_budget_warning",
+                        episode=episode.episode_number,
+                        target_duration_minutes=target_duration_minutes,
+                        planned_beat_duration_minutes=planned_beat_duration_minutes,
+                        shortfall_minutes=plan_shortfall_minutes,
+                        shortfall_ratio=plan_shortfall_ratio,
+                    )
                 if not 40 <= total_beats <= 45:
                     self.run_logger.log(
                         "episode_plan_beats_warning",
@@ -2385,11 +2405,46 @@ class PipelineOrchestrator:
                 citations=result_citations,
             )
             _save_json(ep_dir / "episode_script.json", script)
+            planned_beat_duration_minutes = (
+                sum(float(beat.estimated_duration_seconds) for beat in plan.beats) / 60.0
+            )
+            target_duration_minutes = float(plan.target_duration_minutes)
+            written_duration_minutes = script.estimated_duration_seconds / 60.0
+            write_shortfall_minutes = target_duration_minutes - written_duration_minutes
+            write_shortfall_ratio = (
+                write_shortfall_minutes / target_duration_minutes
+                if target_duration_minutes > 0
+                else 0.0
+            )
+            if write_shortfall_ratio > _RUNTIME_UNDERSHOOT_WARNING_RATIO:
+                target_floor_minutes = target_duration_minutes * (
+                    1.0 - _RUNTIME_UNDERSHOOT_WARNING_RATIO
+                )
+                likely_source = (
+                    "planning"
+                    if planned_beat_duration_minutes < target_floor_minutes
+                    else "writing"
+                )
+                self.run_logger.log(
+                    "episode_write_duration_shortfall_warning",
+                    episode=plan.episode_number,
+                    target_duration_minutes=target_duration_minutes,
+                    planned_beat_duration_minutes=planned_beat_duration_minutes,
+                    written_duration_minutes=written_duration_minutes,
+                    shortfall_minutes=write_shortfall_minutes,
+                    shortfall_ratio=write_shortfall_ratio,
+                    likely_source=likely_source,
+                )
 
             ctx["output_summary"] = {
                 "words": total_words, "segments": len(result.segments),
                 "citations": len(result_citations),
                 "writing_source_mode": _WRITING_SOURCE_MODE_FULL_CHUNK,
+                "target_duration_minutes": target_duration_minutes,
+                "planned_beat_duration_minutes": planned_beat_duration_minutes,
+                "written_duration_minutes": written_duration_minutes,
+                "write_shortfall_minutes": write_shortfall_minutes,
+                "write_shortfall_ratio": write_shortfall_ratio,
             }
             return script
 
