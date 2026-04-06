@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from podcast_agent.config import TTSConfig
-from podcast_agent.tts.openai_compatible import OpenAICompatibleTTSClient
+from podcast_agent.config import Settings, TTSConfig
+from podcast_agent.tts.kokoro import KokoroTTSClient
+from podcast_agent.tts.openai_compatible import OpenAICompatibleTTSClient, build_tts_client
 
 
 class _FakeTransport:
@@ -58,3 +59,13 @@ class TestOpenAICompatibleTTSClient:
         assert payload["format"] == "wav"
         assert payload["instructions"] == "segment profile"
         assert payload["speed"] == 1.2
+
+
+class TestBuildTTSClient:
+    def test_kokoro_with_ballad_maps_to_previous_default_voice(self):
+        settings = Settings(tts=TTSConfig(provider="kokoro", voice="ballad"))
+
+        client = build_tts_client(settings)
+
+        assert isinstance(client, KokoroTTSClient)
+        assert client.config.voice == "af_heart"

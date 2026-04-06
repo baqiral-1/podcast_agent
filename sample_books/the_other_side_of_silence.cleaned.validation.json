@@ -1,0 +1,13 @@
+{
+  "source_pdf": "/Users/baqir/Downloads/dokumen.pub_the-other-side-of-silence-voices-from-the-partition-of-india-0822324571-9780822324577.pdf",
+  "file": "sample_books/the_other_side_of_silence.cleaned.txt",
+  "pages_in_pdf": 326,
+  "start_page_1_indexed": 19,
+  "end_page_1_indexed_exclusive": 311,
+  "removed_in_cleanup_pass": 210,
+  "numeric_markers_removed": 246,
+  "remaining_trailing_1to3_digit_markers": 0,
+  "chapter_heading_like_count": 86,
+  "word_count": 121557,
+  "method": "pdftotext-layout-clean-v3"
+}

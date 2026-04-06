@@ -102,9 +102,6 @@ class PipelineConfig(StrictModel):
     passage_retrieval_max_per_book: int = Field(default=50, ge=1)
     axis_candidate_target_total: int = Field(default=250, ge=1)
     admission_floor_per_book: int = Field(default=2, ge=0)
-    retrieval_conf_weight: float = Field(default=0.2, ge=0.0, le=1.0)
-    retrieval_size_basis: Literal["total_words"] = "total_words"
-    retrieval_size_exponent: float = Field(default=0.68, ge=0.0)
     retrieval_relevance_power: float = Field(default=1.2, ge=0.0)
     retrieval_soft_threshold: float = Field(default=0.35, ge=0.0, le=1.0)
     chapter_penalty_weight: float = Field(default=0.05, ge=0.0, le=1.0)
@@ -113,11 +110,11 @@ class PipelineConfig(StrictModel):
     max_repair_attempts: int = Field(default=3, ge=0)
     tts_provider: str = "openai"
     tts_concurrency: int = Field(default=4, ge=1)
-    episode_write_concurrency: int = Field(default=5, ge=1)
+    episode_write_concurrency: int = Field(default=7, ge=1)
     target_episode_minutes: float = Field(default=140.0, gt=0.0)
     min_episode_minutes: float = Field(default=125.0, gt=0.0)
     duration_shortfall_policy: Literal["warn"] = "warn"
-    passage_extraction_concurrency: int = Field(default=8, ge=1)
+    passage_extraction_concurrency: int = Field(default=10, ge=1)
     chunk_max_words: int = Field(default=400, ge=50)
     chunk_overlap_words: int = Field(default=50, ge=0)
     spoken_chunk_max_words: int = Field(default=250, ge=50)
@@ -348,15 +345,46 @@ class NarrativeStrategy(StrictModel):
 
 
 class EpisodeAssignment(StrictModel):
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_axis_fields(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        normalized = dict(value)
+        if "axes" not in normalized and "axis_ids" in normalized:
+            axis_ids = normalized.pop("axis_ids") or []
+            normalized["axes"] = [
+                {"axis_id": str(axis_id), "description": ""}
+                for axis_id in axis_ids
+                if str(axis_id).strip()
+            ]
+        elif "axis_ids" in normalized:
+            normalized.pop("axis_ids")
+        return normalized
+
     episode_number: int = Field(ge=1)
     title: str
     driving_question: str = Field(min_length=1)
     thematic_focus: str = ""
-    axis_ids: list[str] = Field(default_factory=list)
+    axes: list["EpisodeAxisRef"] = Field(default_factory=list)
     insight_ids: list[str] = Field(default_factory=list)
     merged_narrative_ids: list[str] = Field(default_factory=list)
     tension_ids: list[str] = Field(default_factory=list)
     episode_strategy: str = ""
+
+    @property
+    def axis_ids(self) -> list[str]:
+        return [axis.axis_id for axis in self.axes]
+
+
+class EpisodeAxisRef(StrictModel):
+    axis_id: str = Field(min_length=1)
+    description: str = ""
+
+
+class EpisodeInquiry(StrictModel):
+    axis_id: str = Field(min_length=1)
+    question: str = Field(min_length=1)
 
 
 class EpisodeArcDetail(StrictModel):
@@ -365,6 +393,7 @@ class EpisodeArcDetail(StrictModel):
     narrative_stakes: str
     progression_beats: list[str] = Field(default_factory=list, min_length=1)
     unresolved_questions: list[str] = Field(default_factory=list, min_length=1)
+    episode_inquiries: list[EpisodeInquiry] = Field(min_length=4, max_length=5)
     payoff_shape: str
 
 

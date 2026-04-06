@@ -6,7 +6,7 @@ import pytest
 import typer
 from typer.testing import CliRunner
 
-from podcast_agent.cli.app import _parse_sub_themes, app
+from podcast_agent.cli.app import _normalize_tts_provider, _parse_sub_themes, app
 
 
 runner = CliRunner()
@@ -35,6 +35,7 @@ class TestSynthesizeAudioCommand:
     def test_synthesize_audio_reports_summary(self, monkeypatch, tmp_path):
         class FakeOrchestrator:
             def __init__(self, settings) -> None:
+                assert settings.tts.provider == "openai-compatible"
                 self.settings = settings
 
             async def synthesize_audio_from_run(self, run_dir):
@@ -54,7 +55,10 @@ class TestSynthesizeAudioCommand:
             FakeOrchestrator,
         )
 
-        result = runner.invoke(app, ["synthesize-audio", str(tmp_path)])
+        result = runner.invoke(
+            app,
+            ["synthesize-audio", str(tmp_path), "--tts-provider", "openai"],
+        )
 
         assert result.exit_code == 0
         assert "Processed: 2" in result.output
@@ -64,6 +68,7 @@ class TestSynthesizeAudioCommand:
     def test_synthesize_audio_exits_nonzero_on_failure(self, monkeypatch, tmp_path):
         class FakeOrchestrator:
             def __init__(self, settings) -> None:
+                assert settings.tts.provider == "kokoro"
                 self.settings = settings
 
             async def synthesize_audio_from_run(self, run_dir):
@@ -74,7 +79,92 @@ class TestSynthesizeAudioCommand:
             FakeOrchestrator,
         )
 
-        result = runner.invoke(app, ["synthesize-audio", str(tmp_path)])
+        result = runner.invoke(
+            app,
+            ["synthesize-audio", str(tmp_path), "--tts-provider", "kokoro"],
+        )
 
         assert result.exit_code == 1
         assert "Audio synthesis failed: No render manifests found" in result.output
+
+    def test_synthesize_audio_requires_tts_provider(self, tmp_path):
+        result = runner.invoke(app, ["synthesize-audio", str(tmp_path)])
+
+        assert result.exit_code != 0
+        assert "Missing option '--tts-provider'" in result.output
+
+    def test_invalid_tts_provider_returns_parameter_error(self, tmp_path):
+        result = runner.invoke(
+            app,
+            ["synthesize-audio", str(tmp_path), "--tts-provider", "invalid"],
+        )
+
+        assert result.exit_code != 0
+        assert "Invalid --tts-provider value 'invalid'" in result.output
+
+
+class TestNormalizeTTSProvider:
+    def test_openai_alias_maps_to_openai_compatible(self):
+        assert _normalize_tts_provider("openai") == "openai-compatible"
+
+    def test_kokoro_is_preserved(self):
+        assert _normalize_tts_provider("kokoro") == "kokoro"
+
+    def test_invalid_provider_raises(self):
+        with pytest.raises(typer.BadParameter, match="Invalid --tts-provider value"):
+            _normalize_tts_provider("bad-provider")
+
+
+class TestRunCommand:
+    def test_run_uses_resolved_tts_provider_for_settings_and_config(self, monkeypatch, tmp_path):
+        from types import SimpleNamespace
+
+        captured: dict[str, str] = {}
+
+        class FakeOrchestrator:
+            def __init__(self, settings) -> None:
+                captured["settings_provider"] = settings.tts.provider
+
+            async def run_multi_book_podcast(
+                self,
+                *,
+                source_paths,
+                theme,
+                episode_count,
+                config,
+                theme_elaboration,
+                sub_themes,
+                titles,
+                authors,
+                project_id,
+            ):
+                captured["config_provider"] = config.tts_provider
+                return SimpleNamespace(
+                    project_id="proj-1",
+                    status=SimpleNamespace(value="complete"),
+                    books=[1, 2],
+                )
+
+        monkeypatch.setenv("DATABASE_URL", "postgresql://localhost:5432/podcast_agent")
+        monkeypatch.setattr(
+            "podcast_agent.pipeline.orchestrator.PipelineOrchestrator",
+            FakeOrchestrator,
+        )
+
+        result = runner.invoke(
+            app,
+            [
+                "run",
+                str(tmp_path / "book1.txt"),
+                str(tmp_path / "book2.txt"),
+                "--theme",
+                "partition",
+                "--skip-audio",
+                "--tts-provider",
+                "openai",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert captured["settings_provider"] == "openai-compatible"
+        assert captured["config_provider"] == "openai-compatible"

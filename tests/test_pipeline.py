@@ -84,6 +84,13 @@ def _episode_arc_details(*episode_numbers: int) -> list[EpisodeArcDetail]:
             narrative_stakes=f"Episode {episode_number} narrative stakes",
             progression_beats=[f"Episode {episode_number} progression beat"],
             unresolved_questions=[f"Episode {episode_number} unresolved question"],
+            episode_inquiries=[
+                {
+                    "axis_id": f"axis_{episode_number}",
+                    "question": f"Episode {episode_number} inquiry {i}?",
+                }
+                for i in range(1, 5)
+            ],
             payoff_shape=f"Episode {episode_number} payoff shape",
         )
         for episode_number in episode_numbers
@@ -187,15 +194,13 @@ class TestWeightedAdmittedBudgets:
         assert budgets == {"book-a": 2, "book-b": 1}
         assert sum(budgets.values()) == 3
 
-    def test_size_share_softens_extreme_relevance_skew(self):
+    def test_relevance_only_prefers_higher_relevance_scores(self):
         budgets = _compute_weighted_admitted_budgets(
             book_ids=["book-a", "book-b"],
             axis_total_budget=100,
             relevance_by_book={"book-a": 0.9, "book-b": 0.7},
-            size_share_by_book={"book-a": 0.9, "book-b": 0.1},
             floor_per_book=2,
             relevance_power=1.2,
-            size_exponent=0.68,
         )
 
         assert budgets["book-a"] > budgets["book-b"]
@@ -596,6 +601,108 @@ class TestBookIngestion:
 
         assert axis_ids == ["valid_1", "valid_2", "valid_3"]
 
+    def test_decompose_theme_retries_when_axis_missing_book_relevance(self, tmp_path):
+        settings = Settings(
+            llm=Settings().llm.model_copy(update={"llm_provider": "heuristic"}),
+            database=Settings().database.model_copy(update={"dsn": None}),
+            pipeline=Settings().pipeline.model_copy(update={"artifact_root": tmp_path}),
+        )
+        orch = PipelineOrchestrator(settings)
+
+        book_a = BookRecord(
+            book_id="book-a", title="Book A", author="A", source_path="/a.txt", source_type="txt",
+        )
+        book_b = BookRecord(
+            book_id="book-b", title="Book B", author="B", source_path="/b.txt", source_type="txt",
+        )
+        project = ThematicProject(
+            project_id="proj-1",
+            theme="Partition",
+            episode_count=2,
+            config=PipelineConfig(min_axes=1, max_axes=3),
+            books=[book_a, book_b],
+        )
+
+        orch.book_summary_agent.run = MagicMock(side_effect=[
+            BookSummaryResponse(summary="Book A summary."),
+            BookSummaryResponse(summary="Book B summary."),
+        ])
+        orch.theme_decomposition_agent.run = MagicMock(side_effect=[
+            ThemeDecompositionResponse(
+                axes=[
+                    ThematicAxis(
+                        axis_id="axis_01",
+                        name="Missing map key",
+                        description="desc",
+                        relevance_by_book={book_a.book_id: 0.8},
+                    )
+                ]
+            ),
+            ThemeDecompositionResponse(
+                axes=[
+                    ThematicAxis(
+                        axis_id="axis_01",
+                        name="Complete map",
+                        description="desc",
+                        relevance_by_book={book_a.book_id: 0.8, book_b.book_id: 0.7},
+                    )
+                ]
+            ),
+        ])
+
+        with patch("podcast_agent.pipeline.orchestrator.time.sleep"):
+            axes = asyncio.run(orch._decompose_theme(project, tmp_path / project.project_id))
+
+        assert len(axes) == 1
+        assert orch.theme_decomposition_agent.run.call_count == 2
+        assert axes[0].axis_id == "axis_01"
+
+    def test_decompose_theme_raises_after_retries_if_book_relevance_missing(self, tmp_path):
+        settings = Settings(
+            llm=Settings().llm.model_copy(update={"llm_provider": "heuristic"}),
+            database=Settings().database.model_copy(update={"dsn": None}),
+            pipeline=Settings().pipeline.model_copy(update={"artifact_root": tmp_path}),
+        )
+        orch = PipelineOrchestrator(settings)
+
+        book_a = BookRecord(
+            book_id="book-a", title="Book A", author="A", source_path="/a.txt", source_type="txt",
+        )
+        book_b = BookRecord(
+            book_id="book-b", title="Book B", author="B", source_path="/b.txt", source_type="txt",
+        )
+        project = ThematicProject(
+            project_id="proj-1",
+            theme="Partition",
+            episode_count=2,
+            config=PipelineConfig(min_axes=1, max_axes=3),
+            books=[book_a, book_b],
+        )
+
+        orch.book_summary_agent.run = MagicMock(side_effect=[
+            BookSummaryResponse(summary="Book A summary."),
+            BookSummaryResponse(summary="Book B summary."),
+        ])
+        bad_response = ThemeDecompositionResponse(
+            axes=[
+                ThematicAxis(
+                    axis_id="axis_01",
+                    name="Missing map key",
+                    description="desc",
+                    relevance_by_book={book_a.book_id: 0.8},
+                )
+            ]
+        )
+        orch.theme_decomposition_agent.run = MagicMock(
+            side_effect=[bad_response, bad_response]
+        )
+
+        with patch("podcast_agent.pipeline.orchestrator.time.sleep"):
+            with pytest.raises(RuntimeError, match="omitted input books"):
+                asyncio.run(orch._decompose_theme(project, tmp_path / project.project_id))
+
+        assert orch.theme_decomposition_agent.run.call_count == 2
+
     def test_structure_chapters_persists_summary_and_analysis(self, tmp_path):
         settings = Settings(
             llm=Settings().llm.model_copy(update={"llm_provider": "heuristic"}),
@@ -779,7 +886,7 @@ class TestBookIngestion:
         assert log_path.exists()
         data = json.loads(log_path.read_text())
         assert data["budget_strategy"] == "fixed_target_soft_threshold_backfill"
-        assert data["allocation_policy"] == "floor_2_relevance_pow_1.2_size_pow_0.68_total_words"
+        assert data["allocation_policy"] == "floor_2_pure_relevance_pow_1.2"
         assert data["axis_candidate_budget_target"] == 250
         assert data["axis_candidate_budget_effective"] == 6
         assert data["axis_candidate_budget"] == 6
@@ -979,7 +1086,7 @@ class TestBookIngestion:
             book["book_id"]: len([candidate for candidate in book["candidates"] if candidate["used"]])
             for book in data["books"]
         }
-        assert data["allocation_policy"] == "floor_2_relevance_pow_1.2_size_pow_0.68_total_words"
+        assert data["allocation_policy"] == "floor_2_pure_relevance_pow_1.2"
         assert data["per_book_budget"] == {"book-a": 31, "book-b": 9}
         assert data["retrieval_depth_by_book"] == {"book-a": 2, "book-b": 2}
         assert used_by_book == {"book-a": 20, "book-b": 9}
@@ -1346,9 +1453,9 @@ class TestBookIngestion:
         assert invalid_payload["dropped_same_book_count"] == 1
 
 
-def test_select_synthesis_passages_top30_plus_pairs():
+def test_select_synthesis_passages_top50_plus_pairs():
     passages = []
-    for i in range(32):
+    for i in range(52):
         passages.append(
             ExtractedPassage(
                 passage_id=f"p{i}",
@@ -1361,12 +1468,12 @@ def test_select_synthesis_passages_top30_plus_pairs():
                 synthesis_tags=[SynthesisTag.INDEPENDENT],
             )
         )
-    cross_pair_ids = {"p31"}
+    cross_pair_ids = {"p51"}
     selected = _select_synthesis_passages(passages, cross_pair_ids)
     selected_ids = {p.passage_id for p in selected}
-    assert len(selected) == 31
-    assert "p31" in selected_ids
-    assert "p30" not in selected_ids
+    assert len(selected) == 51
+    assert "p51" in selected_ids
+    assert "p50" not in selected_ids
 
     def test_missing_database_url_fails_fast(self, tmp_path):
         settings = Settings(
@@ -1485,15 +1592,15 @@ class TestSynthesisSelection:
         assert len(selected) == 5
         assert [p.passage_id for p in selected] == ["p5", "p4", "p3", "p2", "p1"]
 
-    def test_select_top_passages_defaults_to_forty_five(self):
+    def test_select_top_passages_defaults_to_fifty(self):
         passages = [
             self._make_passage(f"p{i:03d}", i / 1000.0)
             for i in range(50)
         ]
         selected = _select_top_passages_for_synthesis(passages)
-        assert len(selected) == 45
+        assert len(selected) == 50
         assert selected[0].passage_id == "p049"
-        assert selected[-1].passage_id == "p005"
+        assert selected[-1].passage_id == "p000"
 
     def test_select_top_passages_breaks_ties_by_quotability(self):
         passages = [
@@ -2795,7 +2902,7 @@ class TestEpisodePlanningPayload:
         assert len(selected["axis_1"]) == 1
         assert selected["axis_1"][0].passage_id == "p_high_single"
 
-    def test_supporting_passages_default_cap_is_one_twenty(self):
+    def test_supporting_passages_default_cap_is_sixty(self):
         axis_1_passages = [
             ExtractedPassage(
                 passage_id=f"p{i:03d}",
@@ -2816,9 +2923,9 @@ class TestEpisodePlanningPayload:
             selected_insight_passage_ids=set(),
         )
 
-        assert len(selected["axis_1"]) == 120
+        assert len(selected["axis_1"]) == 60
         assert selected["axis_1"][0].passage_id == "p000"
-        assert selected["axis_1"][-1].passage_id == "p119"
+        assert selected["axis_1"][-1].passage_id == "p059"
 
     def test_includes_summary_text_and_duplicate_axes_without_extra_fields(self, tmp_path):
         settings = Settings(
@@ -2877,7 +2984,10 @@ class TestEpisodePlanningPayload:
                     title="Ep 1",
                     **_episode_assignment_fields(1),
                     thematic_focus="Focus",
-                    axis_ids=["axis_1", "axis_2"],
+                    axes=[
+                        {"axis_id": "axis_1", "description": "Axis 1 description"},
+                        {"axis_id": "axis_2", "description": "Axis 2 description"},
+                    ],
                     insight_ids=["insight_1"],
                     merged_narrative_ids=["merged_narrative_001"],
                     tension_ids=["tension_001"],
@@ -2993,6 +3103,13 @@ class TestEpisodePlanningPayload:
             }
         }
         assert captured_payloads[0]["narrative_strategy"]["episode_arc_detail"]["episode_number"] == 1
+        assert len(captured_payloads[0]["narrative_strategy"]["episode_arc_detail"]["episode_inquiries"]) == 4
+        assignment_payload = captured_payloads[0]["episode_assignment"]
+        assert "axis_ids" not in assignment_payload
+        assert assignment_payload["axes"] == [
+            {"axis_id": "axis_1", "description": "Axis 1 description"},
+            {"axis_id": "axis_2", "description": "Axis 2 description"},
+        ]
         insight_entries = {
             entry["passage_id"]: entry
             for axis_entries in available.values()

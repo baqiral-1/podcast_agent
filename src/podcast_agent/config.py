@@ -106,15 +106,15 @@ class LLMConfig(BaseModel):
             "chapter_summary": AgentConfig(model_name="claude-haiku-4-5", temperature=0.3, max_retry_attempts=3, concurrency_limit=10),
             "book_summary": AgentConfig(model_name="claude-opus-4-6", temperature=0.3, max_retry_attempts=3, concurrency_limit=10),
             "theme_decomposition": AgentConfig(model_name="claude-opus-4-6", temperature=0.7, max_retry_attempts=2, concurrency_limit=6),
-            "passage_extraction": AgentConfig(model_name="claude-opus-4-6", temperature=0.1, max_retry_attempts=3, concurrency_limit=8),
+            "passage_extraction": AgentConfig(model_name="claude-opus-4-6", temperature=0.1, max_retry_attempts=3, concurrency_limit=10),
             "synthesis_mapping": AgentConfig(model_name="claude-opus-4-6", temperature=0.8, max_retry_attempts=2, concurrency_limit=3),
             "narrative_strategy": AgentConfig(model_name="claude-opus-4-6", temperature=0.5, max_retry_attempts=2, concurrency_limit=6),
-            "episode_planning": AgentConfig(model_name="claude-opus-4-6", temperature=0.5, max_retry_attempts=2, concurrency_limit=6),
-            "episode_writing": AgentConfig(model_name="claude-opus-4-6", temperature=0.6, max_retry_attempts=2, concurrency_limit=5),
+            "episode_planning": AgentConfig(model_name="claude-opus-4-6", temperature=0.5, max_retry_attempts=2, concurrency_limit=8),
+            "episode_writing": AgentConfig(model_name="claude-opus-4-6", temperature=0.6, max_retry_attempts=2, concurrency_limit=7),
             "source_weaving": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.5, max_retry_attempts=2, concurrency_limit=6),
             "grounding_validation": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.2, max_retry_attempts=2, concurrency_limit=6),
             "repair": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.3, max_retry_attempts=2, concurrency_limit=6),
-            "spoken_delivery": AgentConfig(model_name="claude-opus-4-6", temperature=0.7, max_retry_attempts=2, concurrency_limit=6),
+            "spoken_delivery": AgentConfig(model_name="claude-opus-4-6", temperature=0.7, max_retry_attempts=2, concurrency_limit=8),
             "episode_framing": AgentConfig(model_name="claude-haiku-4-5", temperature=0.7, max_retry_attempts=2, concurrency_limit=15),
         },
         description="Per-agent LLM config overrides keyed by schema_name.",
@@ -210,7 +210,7 @@ class SpokenDeliveryConfig(BaseModel):
 class PipelineRuntimeConfig(BaseModel):
     """Orchestration-level runtime parameters."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     artifact_root: Path = Field(default=Path("runs"))
     embedding_dimensions: int = Field(default=8, ge=4)
@@ -218,7 +218,7 @@ class PipelineRuntimeConfig(BaseModel):
     chunk_overlap_words: int = Field(default=50, ge=0)
     min_chunk_words: int = Field(default=80, ge=10)
     max_repair_attempts: int = Field(default=3, ge=0)
-    episode_write_concurrency: int = Field(default=5, ge=1)
+    episode_write_concurrency: int = Field(default=7, ge=1)
     tts_concurrency: int = Field(default=4, ge=1)
     llm_global_max_concurrency: int = Field(default=30, ge=1)
     audio_retry_attempts: int = Field(default=3, ge=0)
@@ -231,9 +231,6 @@ class PipelineRuntimeConfig(BaseModel):
     passage_retrieval_max_per_book: int = Field(default=50, ge=1)
     axis_candidate_target_total: int = Field(default=250, ge=1)
     admission_floor_per_book: int = Field(default=2, ge=0)
-    retrieval_conf_weight: float = Field(default=0.2, ge=0.0, le=1.0)
-    retrieval_size_basis: Literal["total_words"] = "total_words"
-    retrieval_size_exponent: float = Field(default=0.68, ge=0.0)
     retrieval_relevance_power: float = Field(default=1.2, ge=0.0)
     retrieval_soft_threshold: float = Field(default=0.35, ge=0.0, le=1.0)
     chapter_penalty_weight: float = Field(default=0.05, ge=0.0, le=1.0)

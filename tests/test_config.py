@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from podcast_agent.config import (
     AgentConfig,
@@ -95,7 +96,7 @@ class TestPipelineRuntimeConfig:
         assert config.max_chunk_words == 400
         assert config.chunk_overlap_words == 50
         assert config.max_repair_attempts == 3
-        assert config.episode_write_concurrency == 5
+        assert config.episode_write_concurrency == 7
         assert config.tts_concurrency == 4
         assert config.spoken_words_per_minute == 110
 
@@ -108,14 +109,15 @@ class TestPipelineRuntimeConfig:
         assert config.passage_retrieval_max_per_book == 50
         assert config.axis_candidate_target_total == 250
         assert config.admission_floor_per_book == 2
-        assert config.retrieval_conf_weight == 0.2
-        assert config.retrieval_size_basis == "total_words"
-        assert config.retrieval_size_exponent == 0.68
         assert config.retrieval_relevance_power == 1.2
         assert config.retrieval_soft_threshold == 0.35
         assert config.chapter_penalty_weight == 0.05
         assert config.rerank_top_k == 30
         assert config.synthesis_quality_threshold == 0.5
+
+    def test_rejects_removed_retrieval_weighting_fields(self):
+        with pytest.raises(ValidationError):
+            PipelineRuntimeConfig(retrieval_conf_weight=0.2)
 
     def test_retrieval_budget_bounds_validation(self):
         with pytest.raises(ValueError, match="passage_retrieval_max_per_book"):
@@ -149,9 +151,11 @@ class TestLLMConfigResolvers:
         assert config.resolve_concurrency_limit("structuring") == 10
         assert config.resolve_concurrency_limit("chapter_summary") == 10
         assert config.resolve_concurrency_limit("book_summary") == 10
-        assert config.resolve_concurrency_limit("passage_extraction") == 8
+        assert config.resolve_concurrency_limit("passage_extraction") == 10
         assert config.resolve_concurrency_limit("synthesis_mapping") == 3
-        assert config.resolve_concurrency_limit("episode_writing") == 5
+        assert config.resolve_concurrency_limit("episode_planning") == 8
+        assert config.resolve_concurrency_limit("episode_writing") == 7
+        assert config.resolve_concurrency_limit("spoken_delivery") == 8
 
     def test_resolve_concurrency_limit_none_for_unknown(self):
         config = LLMConfig()

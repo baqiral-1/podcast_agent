@@ -260,10 +260,8 @@ def _compute_weighted_admitted_budgets(
     book_ids: list[str],
     axis_total_budget: int,
     relevance_by_book: dict[str, float],
-    size_share_by_book: dict[str, float] | None = None,
     floor_per_book: int = 2,
     relevance_power: float = 1.2,
-    size_exponent: float = 0.68,
 ) -> dict[str, int]:
     if not book_ids:
         return {}
@@ -279,41 +277,13 @@ def _compute_weighted_admitted_budgets(
     if remaining_budget <= 0:
         return budgets
 
-    positive_size = {
-        book_id: max(0.0, float((size_share_by_book or {}).get(book_id, 0.0)))
-        for book_id in book_ids
-    }
-    size_total = sum(positive_size.values())
-    if size_total <= 0:
-        normalized_size = {book_id: 1.0 / book_count for book_id in book_ids}
-    else:
-        normalized_size = {
-            book_id: (positive_size[book_id] / size_total)
-            for book_id in book_ids
-        }
-
     weights: dict[str, float] = {}
     for book_id in book_ids:
         relevance = max(0.0, float(relevance_by_book.get(book_id, 0.0)))
         relevance_factor = relevance ** relevance_power if relevance_power > 0 else 1.0
-        size_factor = (
-            normalized_size[book_id] ** size_exponent
-            if size_exponent > 0
-            else 1.0
-        )
-        weights[book_id] = relevance_factor * size_factor
+        weights[book_id] = relevance_factor
 
     total_weight = sum(weights.values())
-    if total_weight <= 0:
-        weights = {
-            book_id: (
-                normalized_size[book_id] ** size_exponent
-                if size_exponent > 0
-                else 1.0
-            )
-            for book_id in book_ids
-        }
-        total_weight = sum(weights.values())
     if total_weight <= 0:
         weights = {book_id: 1.0 for book_id in book_ids}
         total_weight = float(len(book_ids))
@@ -424,7 +394,7 @@ def _build_chapter_context_by_ref(
 def _select_top_passages_for_synthesis(
     passages: list[ExtractedPassage],
     *,
-    top_k: int = 45,
+    top_k: int = 50,
 ) -> list[ExtractedPassage]:
     if not passages:
         return []
@@ -481,7 +451,7 @@ def _select_episode_planning_passages(
     passages_by_axis: dict[str, list[ExtractedPassage]],
     assigned_axis_ids: list[str],
     selected_insight_passage_ids: set[str],
-    supporting_passages_per_axis: int = 120,
+    supporting_passages_per_axis: int = 60,
 ) -> dict[str, list[ExtractedPassage]]:
     if not assigned_axis_ids:
         return {axis_id: [] for axis_id in assigned_axis_ids}
@@ -1921,8 +1891,46 @@ class PipelineOrchestrator:
                 books=project.books,
                 book_summaries=book_summaries,
             )
-            result = await asyncio.to_thread(self.theme_decomposition_agent.run, payload)
-            axes = result.axes
+            expected_book_ids = [book.book_id for book in project.books]
+            max_attempts = self.theme_decomposition_agent.max_retry_attempts
+            axes: list[ThematicAxis] = []
+            for attempt in range(1, max_attempts + 1):
+                result = await asyncio.to_thread(self.theme_decomposition_agent.run, payload)
+                axes = result.axes
+
+                missing_by_axis = []
+                for axis in axes:
+                    provided_book_ids = set(axis.relevance_by_book.keys())
+                    missing_book_ids = [
+                        book_id for book_id in expected_book_ids
+                        if book_id not in provided_book_ids
+                    ]
+                    if missing_book_ids:
+                        missing_by_axis.append({
+                            "axis_id": axis.axis_id,
+                            "axis_name": axis.name,
+                            "missing_book_ids": missing_book_ids,
+                        })
+
+                if not missing_by_axis:
+                    break
+
+                self.run_logger.log(
+                    "theme_decomposition_missing_relevance_by_book",
+                    attempt=attempt,
+                    max_attempts=max_attempts,
+                    axis_count=len(axes),
+                    missing_axis_count=len(missing_by_axis),
+                    missing_by_axis=missing_by_axis,
+                )
+                if attempt < max_attempts:
+                    backoff = min(2 ** (attempt - 1), 16) + (time.monotonic() % 1)
+                    time.sleep(backoff)
+                    continue
+                raise RuntimeError(
+                    "Theme decomposition omitted input books in relevance_by_book for one or "
+                    f"more axes after {max_attempts} attempts."
+                )
 
             valid_axes = [
                 a for a in axes
@@ -1980,7 +1988,6 @@ class PipelineOrchestrator:
             }
             book_size_share_by_book = _resolve_book_size_shares(
                 project.books,
-                basis=project.config.retrieval_size_basis,
             )
             axis_candidate_budget_target = max(1, project.config.axis_candidate_target_total)
             chapter_word_count_by_book = {
@@ -2014,12 +2021,10 @@ class PipelineOrchestrator:
                     axis_candidate_budget_target,
                     sum(len(hits_by_book.get(bid, [])) for bid in book_ids),
                 )
-                conf_weight = project.config.retrieval_conf_weight
                 soft_threshold = project.config.retrieval_soft_threshold
                 chapter_penalty_weight = project.config.chapter_penalty_weight
                 floor_per_book = project.config.admission_floor_per_book
                 relevance_power = project.config.retrieval_relevance_power
-                size_exponent = project.config.retrieval_size_exponent
                 retrieval_log: dict[str, Any] = {
                     "axis_id": axis.axis_id,
                     "axis_name": axis.name,
@@ -2033,14 +2038,10 @@ class PipelineOrchestrator:
                     "passage_retrieval_min_per_book": project.config.passage_retrieval_min_per_book,
                     "passage_retrieval_max_per_book": project.config.passage_retrieval_max_per_book,
                     "allocation_policy": (
-                        f"floor_{floor_per_book}_relevance_pow_{relevance_power}"
-                        f"_size_pow_{size_exponent}_{project.config.retrieval_size_basis}"
+                        f"floor_{floor_per_book}_pure_relevance_pow_{relevance_power}"
                     ),
                     "allocation_floor": floor_per_book,
-                    "retrieval_size_basis": project.config.retrieval_size_basis,
-                    "retrieval_size_exponent": size_exponent,
                     "retrieval_relevance_power": relevance_power,
-                    "retrieval_conf_weight": conf_weight,
                     "soft_threshold": soft_threshold,
                     "chapter_penalty_weight": chapter_penalty_weight,
                     "book_size_share_by_book": book_size_share_by_book,
@@ -2104,43 +2105,29 @@ class PipelineOrchestrator:
                         sum(confidences[:top_n]) / max(1, top_n)
                     )
 
-                blended_score_by_book = {
-                    bid: ((1.0 - conf_weight) * relevance_by_book.get(bid, 0.0))
-                    + (conf_weight * retrieval_signal_by_book.get(bid, 0.0))
-                    for bid in book_ids
-                }
                 retrieval_log["retrieval_signal_by_book"] = retrieval_signal_by_book
-                retrieval_log["blended_score_by_book"] = blended_score_by_book
+                retrieval_log["blended_score_by_book"] = relevance_by_book
 
                 admitted_quota_by_book = _compute_weighted_admitted_budgets(
                     book_ids=book_ids,
                     axis_total_budget=axis_candidate_budget_effective,
-                    relevance_by_book=blended_score_by_book,
-                    size_share_by_book=book_size_share_by_book,
+                    relevance_by_book=relevance_by_book,
                     floor_per_book=floor_per_book,
                     relevance_power=relevance_power,
-                    size_exponent=size_exponent,
                 )
                 retrieval_log["admission_quota_by_book"] = admitted_quota_by_book
                 relevance_factor_by_book = {
-                    bid: max(0.0, float(blended_score_by_book.get(bid, 0.0))) ** relevance_power
+                    bid: max(0.0, float(relevance_by_book.get(bid, 0.0))) ** relevance_power
                     if relevance_power > 0
                     else 1.0
                     for bid in book_ids
                 }
-                size_factor_by_book = {
-                    bid: max(0.0, float(book_size_share_by_book.get(bid, 0.0))) ** size_exponent
-                    if size_exponent > 0
-                    else 1.0
-                    for bid in book_ids
-                }
                 raw_weight_by_book = {
-                    bid: relevance_factor_by_book[bid] * size_factor_by_book[bid]
+                    bid: relevance_factor_by_book[bid]
                     for bid in book_ids
                 }
                 quota_total = max(1, sum(admitted_quota_by_book.values()))
                 retrieval_log["relevance_factor_by_book"] = relevance_factor_by_book
-                retrieval_log["size_factor_by_book"] = size_factor_by_book
                 retrieval_log["raw_weight_by_book"] = raw_weight_by_book
                 retrieval_log["quota_share_by_book"] = {
                     bid: round(admitted_quota_by_book.get(bid, 0) / quota_total, 6)
@@ -2322,8 +2309,6 @@ class PipelineOrchestrator:
                     empty_policy.update({
                         "allocation_policy": retrieval_log["allocation_policy"],
                         "retrieval_relevance_power": retrieval_log["retrieval_relevance_power"],
-                        "retrieval_size_exponent": retrieval_log["retrieval_size_exponent"],
-                        "retrieval_size_basis": retrieval_log["retrieval_size_basis"],
                         "axis_candidate_budget": axis_candidate_budget_effective,
                         "per_book_budget": retrieval_log["per_book_budget"],
                         "admitted_by_book": admitted_by_book,
@@ -2497,8 +2482,6 @@ class PipelineOrchestrator:
                     "target_total_before_limit": target_total_before_limit,
                     "allocation_policy": retrieval_log["allocation_policy"],
                     "retrieval_relevance_power": retrieval_log["retrieval_relevance_power"],
-                    "retrieval_size_exponent": retrieval_log["retrieval_size_exponent"],
-                    "retrieval_size_basis": retrieval_log["retrieval_size_basis"],
                     "axis_candidate_budget": axis_candidate_budget_effective,
                     "per_book_budget": retrieval_log["per_book_budget"],
                     "admitted_by_book": admitted_by_book,
@@ -2856,12 +2839,11 @@ class PipelineOrchestrator:
             ]
             if missing_assignments:
                 raise RuntimeError(
-                    "Narrative strategy did not assign axis_ids/insight_ids for "
+                    "Narrative strategy did not assign axes/insight_ids for "
                     f"episodes: {missing_assignments}"
                 )
             book_size_share_by_id = _resolve_book_size_shares(
                 project.books,
-                basis=project.config.retrieval_size_basis,
             )
             project_metadata = {
                 "theme": project.theme,

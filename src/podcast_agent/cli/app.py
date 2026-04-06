@@ -35,6 +35,20 @@ def _parse_sub_themes(raw: Optional[str]) -> list[str]:
     return normalized
 
 
+def _normalize_tts_provider(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    if normalized == "openai":
+        return "openai-compatible"
+    if normalized in {"openai-compatible", "kokoro"}:
+        return normalized
+    raise typer.BadParameter(
+        f"Invalid --tts-provider value '{value}'. Expected openai-compatible or kokoro.",
+        param_hint="tts-provider",
+    )
+
+
 @app.command()
 def run(
     sources: list[str] = typer.Argument(..., help="Paths to book files (PDF, TXT, MD)."),
@@ -60,6 +74,11 @@ def run(
     skip_grounding: bool = typer.Option(False, "--skip-grounding", help="Skip grounding validation and repair."),
     skip_spoken_delivery: bool = typer.Option(False, "--skip-spoken-delivery", help="Skip spoken delivery rewrite."),
     skip_audio: bool = typer.Option(False, "--skip-audio", help="Skip audio synthesis (still writes render manifest)."),
+    tts_provider: Optional[str] = typer.Option(
+        None,
+        "--tts-provider",
+        help="TTS provider for audio synthesis (openai-compatible, kokoro).",
+    ),
     project_id: Optional[str] = typer.Option(None, "--project-id", help="Custom project ID (default: auto-generated UUID)."),
 ) -> None:
     """Run the full multi-book thematic podcast pipeline."""
@@ -72,8 +91,13 @@ def run(
         settings = settings.model_copy(
             update={"pipeline": settings.pipeline.model_copy(update={"artifact_root": Path(output_dir)})}
         )
+    resolved_tts_provider = _normalize_tts_provider(tts_provider)
+    if resolved_tts_provider is not None:
+        settings = settings.model_copy(
+            update={"tts": settings.tts.model_copy(update={"provider": resolved_tts_provider})}
+        )
 
-    config_updates: dict = {}
+    config_updates: dict = {"tts_provider": settings.tts.provider}
     if skip_grounding:
         config_updates["skip_grounding"] = True
     if skip_spoken_delivery:
@@ -156,12 +180,22 @@ def synthesize_audio(
         resolve_path=True,
         help="Existing run directory containing episode render manifests.",
     ),
+    tts_provider: str = typer.Option(
+        ...,
+        "--tts-provider",
+        help="TTS provider for audio synthesis (openai-compatible, kokoro).",
+    ),
 ) -> None:
     """Synthesize audio from existing render manifests in a run directory."""
     from podcast_agent.config import Settings
     from podcast_agent.pipeline.orchestrator import PipelineOrchestrator
 
-    orchestrator = PipelineOrchestrator(Settings())
+    settings = Settings()
+    resolved_tts_provider = _normalize_tts_provider(tts_provider)
+    settings = settings.model_copy(
+        update={"tts": settings.tts.model_copy(update={"provider": resolved_tts_provider})}
+    )
+    orchestrator = PipelineOrchestrator(settings)
 
     try:
         summary = asyncio.run(orchestrator.synthesize_audio_from_run(run_dir))

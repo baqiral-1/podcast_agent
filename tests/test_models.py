@@ -347,6 +347,12 @@ class TestNarrativeStrategy:
                     narrative_stakes="Stakes",
                     progression_beats=["Beat 1"],
                     unresolved_questions=["Question 1"],
+                    episode_inquiries=[
+                        {"axis_id": "ax1", "question": "Inquiry 1?"},
+                        {"axis_id": "ax1", "question": "Inquiry 2?"},
+                        {"axis_id": "ax1", "question": "Inquiry 3?"},
+                        {"axis_id": "ax1", "question": "Inquiry 4?"},
+                    ],
                     payoff_shape="Payoff shape",
                 )
             ],
@@ -366,6 +372,7 @@ class TestNarrativeStrategy:
         )
         data = json.loads(strategy.model_dump_json())
         restored = NarrativeStrategy.model_validate(data)
+        assert restored.episode_assignments[0].axes[0].axis_id == "ax1"
         assert restored.episode_assignments[0].axis_ids == ["ax1"]
         assert restored.episode_assignments[0].merged_narrative_ids == ["merged_narrative_001"]
 
@@ -382,6 +389,12 @@ class TestNarrativeStrategy:
                         narrative_stakes="Stakes",
                         progression_beats=["Beat 1"],
                         unresolved_questions=["Question 1"],
+                        episode_inquiries=[
+                            {"axis_id": "ax1", "question": "Inquiry 1?"},
+                            {"axis_id": "ax1", "question": "Inquiry 2?"},
+                            {"axis_id": "ax1", "question": "Inquiry 3?"},
+                            {"axis_id": "ax1", "question": "Inquiry 4?"},
+                        ],
                         payoff_shape="Payoff shape",
                     )
                 ],
@@ -408,9 +421,31 @@ class TestNarrativeStrategy:
                         narrative_stakes="Stakes",
                         progression_beats=["Beat 1"],
                         unresolved_questions=["Question 1"],
+                        episode_inquiries=[
+                            {"axis_id": "ax1", "question": "Inquiry 1?"},
+                            {"axis_id": "ax1", "question": "Inquiry 2?"},
+                            {"axis_id": "ax1", "question": "Inquiry 3?"},
+                            {"axis_id": "ax1", "question": "Inquiry 4?"},
+                        ],
                         payoff_shape="Payoff shape",
                     )
                 ],
+            )
+
+    def test_rejects_episode_inquiries_below_minimum(self):
+        with pytest.raises(ValidationError):
+            EpisodeArcDetail(
+                episode_number=1,
+                arc_summary="Arc summary",
+                narrative_stakes="Stakes",
+                progression_beats=["Beat 1"],
+                unresolved_questions=["Question 1"],
+                episode_inquiries=[
+                    {"axis_id": "ax1", "question": "Inquiry 1?"},
+                    {"axis_id": "ax1", "question": "Inquiry 2?"},
+                    {"axis_id": "ax1", "question": "Inquiry 3?"},
+                ],
+                payoff_shape="Payoff shape",
             )
 
     def test_rejects_recommended_episode_count_above_eight(self):
@@ -608,16 +643,13 @@ class TestPipelineConfig:
         assert config.passage_retrieval_max_per_book == 50
         assert config.axis_candidate_target_total == 250
         assert config.admission_floor_per_book == 2
-        assert config.retrieval_conf_weight == 0.2
-        assert config.retrieval_size_basis == "total_words"
-        assert config.retrieval_size_exponent == 0.68
         assert config.retrieval_relevance_power == 1.2
         assert config.retrieval_soft_threshold == 0.35
         assert config.chapter_penalty_weight == 0.05
         assert config.rerank_top_k == 30
         assert config.max_repair_attempts == 3
-        assert config.episode_write_concurrency == 5
-        assert config.passage_extraction_concurrency == 8
+        assert config.episode_write_concurrency == 7
+        assert config.passage_extraction_concurrency == 10
         assert config.target_episode_minutes == 140.0
         assert config.min_episode_minutes == 125.0
         assert config.duration_shortfall_policy == "warn"
@@ -636,6 +668,10 @@ class TestPipelineConfig:
                 passage_retrieval_min_per_book=21,
                 passage_retrieval_max_per_book=20,
             )
+
+    def test_rejects_removed_retrieval_weighting_fields(self):
+        with pytest.raises(ValidationError):
+            PipelineConfig(retrieval_conf_weight=0.2)
 
 
 class TestEnums:

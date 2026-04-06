@@ -63,7 +63,6 @@ class HeuristicLLMClient(LLMClient):
 
     def _generate_structuring(self, payload: PromptPayload) -> dict[str, Any]:
         text_window = payload.get("text_window", "")
-        offset = payload.get("window_character_offset", 0)
         word_count = len(text_window.split())
         return {
             "chapters": [
@@ -176,7 +175,6 @@ class HeuristicLLMClient(LLMClient):
         return {"passages": passages, "cross_book_pairs": []}
 
     def _generate_synthesis_mapping(self, payload: PromptPayload) -> dict[str, Any]:
-        books = payload.get("books", [])
         passages_by_axis = payload.get("passages_by_axis", {})
 
         # Collect passage IDs across books
@@ -233,13 +231,36 @@ class HeuristicLLMClient(LLMClient):
             recommended_episode_count = max(7, min(8, int(requested_episode_count)))
         episode_assignments = []
         episode_arc_details = []
-        axis_ids = [axis.get("axis_id", uuid4().hex) for axis in thematic_axes] or [uuid4().hex]
+        axis_pool = [
+            {
+                "axis_id": axis.get("axis_id", uuid4().hex),
+                "description": axis.get("description", ""),
+                "guiding_questions": axis.get("guiding_questions", []),
+            }
+            for axis in thematic_axes
+        ] or [{
+            "axis_id": uuid4().hex,
+            "description": "",
+            "guiding_questions": ["What is the central conflict on this axis?"],
+        }]
         insight_ids = [insight.get("insight_id", uuid4().hex) for insight in insights]
         for i in range(recommended_episode_count):
-            axis_id = axis_ids[i % len(axis_ids)]
+            axis_item = axis_pool[i % len(axis_pool)]
+            axis_id = axis_item["axis_id"]
             assigned_insights = []
             if insight_ids:
                 assigned_insights = [insight_ids[i % len(insight_ids)]]
+            guiding_questions = [
+                str(question).strip()
+                for question in axis_item.get("guiding_questions", [])
+                if str(question).strip()
+            ] or ["What changes the stakes on this axis in this episode?"]
+            episode_inquiries: list[dict[str, str]] = []
+            for offset in range(4):
+                question = guiding_questions[offset % len(guiding_questions)]
+                episode_inquiries.append(
+                    {"axis_id": axis_id, "question": question}
+                )
             episode_assignments.append(
                 {
                     "episode_number": i + 1,
@@ -250,7 +271,10 @@ class HeuristicLLMClient(LLMClient):
                         else f"What does episode {i + 1} reveal that the previous episode could not?"
                     ),
                     "thematic_focus": f"Focus on axis {axis_id[:8]}",
-                    "axis_ids": [axis_id],
+                    "axes": [{
+                        "axis_id": axis_id,
+                        "description": axis_item.get("description", ""),
+                    }],
                     "insight_ids": assigned_insights,
                     "merged_narrative_ids": [],
                     "tension_ids": [],
@@ -270,6 +294,7 @@ class HeuristicLLMClient(LLMClient):
                     "unresolved_questions": [
                         "What key uncertainty should remain open at the end of this episode?",
                     ],
+                    "episode_inquiries": episode_inquiries,
                     "payoff_shape": "Escalate tensions now and reserve partial synthesis for later episodes.",
                 }
             )
@@ -288,7 +313,14 @@ class HeuristicLLMClient(LLMClient):
     def _generate_episode_planning(self, payload: PromptPayload) -> dict[str, Any]:
         assignment = payload.get("episode_assignment", {})
         episode_number = int(assignment.get("episode_number", 1))
-        axis_ids = assignment.get("axis_ids", [])
+        axes = assignment.get("axes", [])
+        axis_ids = [
+            axis.get("axis_id", "")
+            for axis in axes
+            if isinstance(axis, dict) and axis.get("axis_id")
+        ]
+        if not axis_ids:
+            axis_ids = assignment.get("axis_ids", [])
         insight_ids = assignment.get("insight_ids", [])
         available_passages = payload.get("available_passages", {})
         synthesis_map = payload.get("synthesis_map", {})

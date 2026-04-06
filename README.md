@@ -90,6 +90,7 @@ podcast-agent run book1.pdf book2.txt book3.md \
 | `--skip-grounding` | | `False` | Skip grounding validation and repair |
 | `--skip-spoken-delivery` | | `False` | Skip spoken delivery rewrite |
 | `--skip-audio` | | `False` | Skip audio synthesis (still writes render manifest) |
+| `--tts-provider` | | settings default | TTS provider for audio synthesis (`openai-compatible`, `kokoro`; `openai` alias accepted) |
 
 ### `podcast-agent status`
 
@@ -109,7 +110,7 @@ podcast-agent status <project-id>
 Synthesize audio from existing `render_manifest.json` artifacts in a completed run directory.
 
 ```bash
-podcast-agent synthesize-audio ./runs/<project-id>
+podcast-agent synthesize-audio ./runs/<project-id> --tts-provider kokoro
 ```
 
 This command:
@@ -117,6 +118,8 @@ This command:
 - synthesizes per-segment audio into `episodes/<N>/audio/`
 - writes a merged `episodes/<N>/episode.mp3`
 - updates `episodes/<N>/audio_manifest.json`
+
+`--tts-provider` is required and accepts `openai-compatible` or `kokoro` (`openai` is accepted as an alias of `openai-compatible`).
 
 `ffmpeg` must be installed and available on `PATH` for merged MP3 output.
 
