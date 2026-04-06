@@ -225,12 +225,12 @@ class HeuristicLLMClient(LLMClient):
             insight_count = int(synthesis_map.get("insight_count", len(insights)))
             thread_count = int(synthesis_map.get("thread_count", 0))
             quality_score = float(synthesis_map.get("quality_score", 0.0))
-            base = max(2, (insight_count // 5) + (thread_count // 2))
+            base = max(7, (insight_count // 5) + (thread_count // 2))
             if quality_score >= 0.75:
                 base += 1
-            recommended_episode_count = max(2, min(8, base))
+            recommended_episode_count = max(7, min(8, base))
         else:
-            recommended_episode_count = max(2, min(8, int(requested_episode_count)))
+            recommended_episode_count = max(7, min(8, int(requested_episode_count)))
         episode_assignments = []
         episode_arc_details = []
         axis_ids = [axis.get("axis_id", uuid4().hex) for axis in thematic_axes] or [uuid4().hex]
@@ -244,6 +244,11 @@ class HeuristicLLMClient(LLMClient):
                 {
                     "episode_number": i + 1,
                     "title": f"Episode {i + 1}",
+                    "driving_question": (
+                        "What larger argument do these books collectively advance?"
+                        if i == 0
+                        else f"What does episode {i + 1} reveal that the previous episode could not?"
+                    ),
                     "thematic_focus": f"Focus on axis {axis_id[:8]}",
                     "axis_ids": [axis_id],
                     "insight_ids": assigned_insights,
@@ -294,7 +299,7 @@ class HeuristicLLMClient(LLMClient):
             for passage in passage_pool[:3]
         ]
         beats = []
-        for i in range(40):
+        for i in range(52):
             beats.append(
                 {
                     "beat_id": uuid4().hex,
@@ -328,7 +333,7 @@ class HeuristicLLMClient(LLMClient):
                 "narrative_voice": "omniscient narrator telling a story",
             },
             "synthesis_context": synthesis_map or None,
-            "target_duration_minutes": 100.0,
+            "target_duration_minutes": 140.0,
             "episode_strategy": assignment.get("episode_strategy", ""),
         }
 

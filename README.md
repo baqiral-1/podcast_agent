@@ -83,7 +83,7 @@ podcast-agent run book1.pdf book2.txt book3.md \
 | `--theme` | `-t` | required | Theme to explore across books |
 | `--episodes` | `-n` | inferred | Override episode count (otherwise inferred from narrative strategy) |
 | `--elaboration` | | | Optional longer theme description |
-| `--sub-themes` | | | Optional comma-separated sub-themes (max 8, trimmed and deduped) |
+| `--sub-themes` | | | Optional comma-separated sub-themes (max 15, trimmed and deduped) |
 | `--titles` | | | Comma-separated book titles |
 | `--authors` | | | Comma-separated author names |
 | `--output-dir` | `-o` | `runs/` | Custom output directory |
@@ -103,6 +103,22 @@ podcast-agent status <project-id>
 |---|---|---|---|
 | `PROJECT_ID` | | required | Project ID to check |
 | `--output-dir` | `-o` | | Output directory |
+
+### `podcast-agent synthesize-audio`
+
+Synthesize audio from existing `render_manifest.json` artifacts in a completed run directory.
+
+```bash
+podcast-agent synthesize-audio ./runs/<project-id>
+```
+
+This command:
+- reads `episodes/<N>/render_manifest.json`
+- synthesizes per-segment audio into `episodes/<N>/audio/`
+- writes a merged `episodes/<N>/episode.mp3`
+- updates `episodes/<N>/audio_manifest.json`
+
+`ffmpeg` must be installed and available on `PATH` for merged MP3 output.
 
 ## Pipeline Phases
 
@@ -169,6 +185,7 @@ runs/<project-id>/
     episode_framing.json
     render_manifest.json
     audio_manifest.json         # only when audio synthesis runs
+    episode.mp3                 # merged episode audio when synthesis runs
     audio/                      # only when audio synthesis runs
 ```
 

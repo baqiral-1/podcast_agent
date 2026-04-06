@@ -101,12 +101,12 @@ class TestPipelineRuntimeConfig:
 
     def test_thematic_defaults(self):
         config = PipelineRuntimeConfig()
-        assert config.max_axes == 15
-        assert config.min_axes == 5
+        assert config.max_axes == 30
+        assert config.min_axes == 25
         assert config.passage_retrieval_percentage == 0.25
         assert config.passage_retrieval_min_per_book == 20
         assert config.passage_retrieval_max_per_book == 50
-        assert config.axis_candidate_target_total == 180
+        assert config.axis_candidate_target_total == 250
         assert config.admission_floor_per_book == 2
         assert config.retrieval_conf_weight == 0.2
         assert config.retrieval_size_basis == "total_words"
@@ -140,7 +140,7 @@ class TestLLMConfigResolvers:
 
     def test_resolve_timeout_seconds_uses_schema_override(self):
         config = LLMConfig()
-        assert config.resolve_timeout_seconds("passage_extraction") == 360.0
+        assert config.resolve_timeout_seconds("passage_extraction") == 900.0
         assert config.resolve_timeout_seconds("synthesis_mapping") == 1200.0
         assert config.resolve_timeout_seconds("unknown_agent") == 600.0
 
@@ -161,6 +161,7 @@ class TestLLMConfigResolvers:
         config = LLMConfig()
         assert config.resolve_model("structuring") == "claude-haiku-4-5"
         assert config.resolve_model("book_summary") == "claude-opus-4-6"
+        assert config.resolve_model("passage_extraction") == "claude-opus-4-6"
         assert config.resolve_model("synthesis_mapping") == "claude-opus-4-6"
         assert config.resolve_model("narrative_strategy") == "claude-opus-4-6"
         assert config.resolve_model("episode_planning") == "claude-opus-4-6"

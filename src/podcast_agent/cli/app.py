@@ -30,8 +30,8 @@ def _parse_sub_themes(raw: Optional[str]) -> list[str]:
         seen.add(trimmed)
         normalized.append(trimmed)
 
-    if len(normalized) > 8:
-        raise typer.BadParameter("Sub-themes supports at most 8 values.")
+    if len(normalized) > 15:
+        raise typer.BadParameter("Sub-themes supports at most 15 values.")
     return normalized
 
 
@@ -144,6 +144,45 @@ def status(
     typer.echo(f"Status: {data.get('status', 'unknown')}")
     typer.echo(f"Books: {len(data.get('books', []))}")
     typer.echo(f"Episodes: {data.get('episode_count', 0)}")
+
+
+@app.command("synthesize-audio")
+def synthesize_audio(
+    run_dir: Path = typer.Argument(
+        ...,
+        exists=True,
+        file_okay=False,
+        dir_okay=True,
+        resolve_path=True,
+        help="Existing run directory containing episode render manifests.",
+    ),
+) -> None:
+    """Synthesize audio from existing render manifests in a run directory."""
+    from podcast_agent.config import Settings
+    from podcast_agent.pipeline.orchestrator import PipelineOrchestrator
+
+    orchestrator = PipelineOrchestrator(Settings())
+
+    try:
+        summary = asyncio.run(orchestrator.synthesize_audio_from_run(run_dir))
+    except RuntimeError as exc:
+        typer.echo(f"Audio synthesis failed: {exc}", err=True)
+        raise typer.Exit(code=1)
+
+    typer.echo(f"Run: {summary['run_dir']}")
+    typer.echo(f"Processed: {summary['processed']}")
+    typer.echo(f"Succeeded: {summary['succeeded']}")
+    typer.echo(f"Failed: {summary['failed']}")
+    typer.echo(f"Skipped: {summary['skipped']}")
+    if summary["skipped_episodes"]:
+        typer.echo(
+            "Skipped episodes: "
+            + ", ".join(str(episode) for episode in summary["skipped_episodes"])
+        )
+    if summary["failures"]:
+        for failure in summary["failures"]:
+            typer.echo(failure, err=True)
+        raise typer.Exit(code=1)
 
 
 def main() -> None:

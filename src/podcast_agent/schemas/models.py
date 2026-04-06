@@ -75,7 +75,7 @@ class ChapterAnalysis(StrictModel):
     key_places: list[str] = Field(default_factory=list, max_length=8)
     key_institutions: list[str] = Field(default_factory=list, max_length=8)
     timeframe: str = ""
-    key_events_or_arguments: list[str] = Field(default_factory=list, max_length=6)
+    key_events_or_arguments: list[str] = Field(default_factory=list)
     major_tensions: list[str] = Field(default_factory=list, max_length=6)
     causal_shifts: list[str] = Field(default_factory=list, max_length=6)
     narrative_hooks: list[str] = Field(default_factory=list, max_length=5)
@@ -95,12 +95,12 @@ class BookRecord(StrictModel):
 
 
 class PipelineConfig(StrictModel):
-    max_axes: int = Field(default=15, ge=1)
-    min_axes: int = Field(default=5, ge=1)
+    max_axes: int = Field(default=30, ge=1)
+    min_axes: int = Field(default=25, ge=1)
     passage_retrieval_percentage: float = Field(default=0.25, gt=0.0, le=1.0)
     passage_retrieval_min_per_book: int = Field(default=20, ge=1)
     passage_retrieval_max_per_book: int = Field(default=50, ge=1)
-    axis_candidate_target_total: int = Field(default=180, ge=1)
+    axis_candidate_target_total: int = Field(default=250, ge=1)
     admission_floor_per_book: int = Field(default=2, ge=0)
     retrieval_conf_weight: float = Field(default=0.2, ge=0.0, le=1.0)
     retrieval_size_basis: Literal["total_words"] = "total_words"
@@ -114,8 +114,8 @@ class PipelineConfig(StrictModel):
     tts_provider: str = "openai"
     tts_concurrency: int = Field(default=4, ge=1)
     episode_write_concurrency: int = Field(default=5, ge=1)
-    target_episode_minutes: float = Field(default=100.0, gt=0.0)
-    min_episode_minutes: float = Field(default=90.0, gt=0.0)
+    target_episode_minutes: float = Field(default=140.0, gt=0.0)
+    min_episode_minutes: float = Field(default=125.0, gt=0.0)
     duration_shortfall_policy: Literal["warn"] = "warn"
     passage_extraction_concurrency: int = Field(default=8, ge=1)
     chunk_max_words: int = Field(default=400, ge=50)
@@ -141,10 +141,10 @@ class ThematicProject(StrictModel):
     project_id: str = Field(default_factory=new_id)
     theme: str
     theme_elaboration: str | None = None
-    sub_themes: list[str] = Field(default_factory=list, max_length=8)
+    sub_themes: list[str] = Field(default_factory=list, max_length=15)
     books: list[BookRecord] = Field(default_factory=list)
     requested_episode_count: int | None = Field(default=None, ge=1)
-    recommended_episode_count: int | None = Field(default=None, ge=2, le=8)
+    recommended_episode_count: int | None = Field(default=None, ge=7, le=8)
     episode_count: int = Field(default=3, ge=1)
     config: PipelineConfig = Field(default_factory=PipelineConfig)
     created_at: datetime = Field(default_factory=utc_now)
@@ -171,8 +171,8 @@ class ThematicProject(StrictModel):
             seen.add(item)
             normalized.append(item)
 
-        if len(normalized) > 8:
-            raise ValueError("sub_themes supports at most 8 entries.")
+        if len(normalized) > 15:
+            raise ValueError("sub_themes supports at most 15 entries.")
         return normalized
 
 
@@ -343,13 +343,14 @@ class NarrativeStrategy(StrictModel):
     series_arc: str
     episode_arc_outline: list[str] = Field(default_factory=list)
     episode_arc_details: list["EpisodeArcDetail"]
-    recommended_episode_count: int | None = Field(default=None, ge=2, le=8)
+    recommended_episode_count: int | None = Field(default=None, ge=7, le=8)
     episode_assignments: list["EpisodeAssignment"] = Field(default_factory=list)
 
 
 class EpisodeAssignment(StrictModel):
     episode_number: int = Field(ge=1)
     title: str
+    driving_question: str = Field(min_length=1)
     thematic_focus: str = ""
     axis_ids: list[str] = Field(default_factory=list)
     insight_ids: list[str] = Field(default_factory=list)
@@ -445,7 +446,7 @@ class EpisodeSynthesisContext(StrictModel):
     quality_score: float = Field(default=0.0, ge=0.0, le=1.0)
 
 
-class EpisodePlan(StrictModel):
+class EpisodePlanDraft(StrictModel):
     episode_number: int = Field(ge=1)
     title: str
     thematic_focus: str = ""
@@ -457,8 +458,14 @@ class EpisodePlan(StrictModel):
     synthesis_context: EpisodeSynthesisContext | None = None
     book_balance: dict[str, float] = Field(default_factory=dict)
     cross_references: list[CrossReference] = Field(default_factory=list)
-    target_duration_minutes: float = Field(default=100.0, gt=0.0)
+    target_duration_minutes: float = Field(default=140.0, gt=0.0)
     episode_strategy: str = ""
+
+
+class EpisodePlan(EpisodePlanDraft):
+    driving_question: str = Field(min_length=1)
+    unresolved_questions: list[str] = Field(default_factory=list, min_length=1)
+    payoff_shape: str = Field(min_length=1)
 
 
 # ---------------------------------------------------------------------------

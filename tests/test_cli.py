@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import pytest
 import typer
+from typer.testing import CliRunner
 
-from podcast_agent.cli.app import _parse_sub_themes
+from podcast_agent.cli.app import _parse_sub_themes, app
+
+
+runner = CliRunner()
 
 
 class TestParseSubThemes:
@@ -21,7 +25,56 @@ class TestParseSubThemes:
         with pytest.raises(typer.BadParameter, match="non-empty"):
             _parse_sub_themes("valid, ,other")
 
-    def test_rejects_more_than_eight(self):
-        raw = "a1,a2,a3,a4,a5,a6,a7,a8,a9"
-        with pytest.raises(typer.BadParameter, match="at most 8"):
+    def test_rejects_more_than_fifteen(self):
+        raw = "a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16"
+        with pytest.raises(typer.BadParameter, match="at most 15"):
             _parse_sub_themes(raw)
+
+
+class TestSynthesizeAudioCommand:
+    def test_synthesize_audio_reports_summary(self, monkeypatch, tmp_path):
+        class FakeOrchestrator:
+            def __init__(self, settings) -> None:
+                self.settings = settings
+
+            async def synthesize_audio_from_run(self, run_dir):
+                assert run_dir == tmp_path
+                return {
+                    "run_dir": str(run_dir),
+                    "processed": 2,
+                    "succeeded": 2,
+                    "failed": 0,
+                    "skipped": 1,
+                    "skipped_episodes": [3],
+                    "failures": [],
+                }
+
+        monkeypatch.setattr(
+            "podcast_agent.pipeline.orchestrator.PipelineOrchestrator",
+            FakeOrchestrator,
+        )
+
+        result = runner.invoke(app, ["synthesize-audio", str(tmp_path)])
+
+        assert result.exit_code == 0
+        assert "Processed: 2" in result.output
+        assert "Succeeded: 2" in result.output
+        assert "Skipped episodes: 3" in result.output
+
+    def test_synthesize_audio_exits_nonzero_on_failure(self, monkeypatch, tmp_path):
+        class FakeOrchestrator:
+            def __init__(self, settings) -> None:
+                self.settings = settings
+
+            async def synthesize_audio_from_run(self, run_dir):
+                raise RuntimeError("No render manifests found")
+
+        monkeypatch.setattr(
+            "podcast_agent.pipeline.orchestrator.PipelineOrchestrator",
+            FakeOrchestrator,
+        )
+
+        result = runner.invoke(app, ["synthesize-audio", str(tmp_path)])
+
+        assert result.exit_code == 1
+        assert "Audio synthesis failed: No render manifests found" in result.output

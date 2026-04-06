@@ -107,6 +107,14 @@ class TestBookRecord:
         assert chapter.analysis is None
 
 
+class TestChapterAnalysis:
+    def test_key_events_or_arguments_allows_more_than_six_items(self):
+        analysis = ChapterAnalysis(
+            key_events_or_arguments=[f"event-{idx}" for idx in range(7)]
+        )
+        assert len(analysis.key_events_or_arguments) == 7
+
+
 class TestTextChunk:
     def test_roundtrip(self):
         chunk = TextChunk(
@@ -211,7 +219,10 @@ class TestEpisodePlan:
         )
         plan = EpisodePlan(
             episode_number=1, title="Episode 1",
+            driving_question="What decision matters most?",
             thematic_focus="Decision making",
+            unresolved_questions=["What remains unresolved?"],
+            payoff_shape="Complicate the question without closing it.",
             beats=[beat],
             synthesis_context=EpisodeSynthesisContext(
                 merged_narratives=[
@@ -240,8 +251,14 @@ class TestEpisodePlan:
         assert restored.synthesis_context.merged_narratives[0].merged_narrative_id == "merged_narrative_001"
 
     def test_default_target_duration_minutes(self):
-        plan = EpisodePlan(episode_number=1, title="Episode 1")
-        assert plan.target_duration_minutes == 100.0
+        plan = EpisodePlan(
+            episode_number=1,
+            title="Episode 1",
+            driving_question="What is at stake?",
+            unresolved_questions=["What remains open?"],
+            payoff_shape="Leave the listener with a sharpened tension.",
+        )
+        assert plan.target_duration_minutes == 140.0
 
 
 class TestEpisodeScript:
@@ -337,6 +354,7 @@ class TestNarrativeStrategy:
                 EpisodeAssignment(
                     episode_number=1,
                     title="Episode 1",
+                    driving_question="What is this episode trying to answer?",
                     thematic_focus="Focus",
                     axis_ids=["ax1"],
                     insight_ids=["in1"],
@@ -371,6 +389,7 @@ class TestNarrativeStrategy:
                     EpisodeAssignment(
                         episode_number=1,
                         title="Episode 1",
+                        driving_question="What is this episode trying to answer?",
                     )
                 ],
             )
@@ -392,6 +411,16 @@ class TestNarrativeStrategy:
                         payoff_shape="Payoff shape",
                     )
                 ],
+            )
+
+    def test_rejects_recommended_episode_count_above_eight(self):
+        with pytest.raises(ValidationError):
+            NarrativeStrategy(
+                strategy_type="convergence",
+                justification="Test",
+                series_arc="Arc",
+                recommended_episode_count=9,
+                episode_arc_details=[],
             )
 
 
@@ -507,14 +536,14 @@ class TestThematicProject:
         project = ThematicProject(
             project_id="proj1", theme="AI and creativity",
             requested_episode_count=4,
-            recommended_episode_count=5,
+            recommended_episode_count=8,
             episode_count=3, status=ProjectStatus.INGESTING,
         )
         data = json.loads(project.model_dump_json())
         restored = ThematicProject.model_validate(data)
         assert restored.status == ProjectStatus.INGESTING
         assert restored.requested_episode_count == 4
-        assert restored.recommended_episode_count == 5
+        assert restored.recommended_episode_count == 8
 
     def test_with_books(self):
         project = ThematicProject(
@@ -549,24 +578,35 @@ class TestThematicProject:
                 sub_themes=["valid", "   "],
             )
 
-    def test_sub_themes_max_eight(self):
-        with pytest.raises(ValidationError, match="at most 8"):
+    def test_sub_themes_max_fifteen(self):
+        with pytest.raises(ValidationError, match="at most 15"):
             ThematicProject(
                 project_id="proj1",
                 theme="Test",
-                sub_themes=["a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8", "a9"],
+                sub_themes=[
+                    "a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8",
+                    "a9", "a10", "a11", "a12", "a13", "a14", "a15", "a16",
+                ],
+            )
+
+    def test_rejects_recommended_episode_count_above_eight(self):
+        with pytest.raises(ValidationError):
+            ThematicProject(
+                project_id="proj1",
+                theme="Test",
+                recommended_episode_count=9,
             )
 
 
 class TestPipelineConfig:
     def test_defaults(self):
         config = PipelineConfig()
-        assert config.max_axes == 15
-        assert config.min_axes == 5
+        assert config.max_axes == 30
+        assert config.min_axes == 25
         assert config.passage_retrieval_percentage == 0.25
         assert config.passage_retrieval_min_per_book == 20
         assert config.passage_retrieval_max_per_book == 50
-        assert config.axis_candidate_target_total == 180
+        assert config.axis_candidate_target_total == 250
         assert config.admission_floor_per_book == 2
         assert config.retrieval_conf_weight == 0.2
         assert config.retrieval_size_basis == "total_words"
@@ -578,8 +618,8 @@ class TestPipelineConfig:
         assert config.max_repair_attempts == 3
         assert config.episode_write_concurrency == 5
         assert config.passage_extraction_concurrency == 8
-        assert config.target_episode_minutes == 100.0
-        assert config.min_episode_minutes == 90.0
+        assert config.target_episode_minutes == 140.0
+        assert config.min_episode_minutes == 125.0
         assert config.duration_shortfall_policy == "warn"
 
     def test_custom_values(self):

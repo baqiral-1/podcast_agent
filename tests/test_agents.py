@@ -8,7 +8,7 @@ import pytest
 
 from podcast_agent.agents.base import Agent
 from podcast_agent.agents.book_summary import BookSummaryAgent
-from podcast_agent.agents.chapter_summary import ChapterSummaryAgent
+from podcast_agent.agents.chapter_summary import ChapterSummaryAgent, ChapterSummaryResponse
 from podcast_agent.langchain.runnables import RetryableGenerationError, TransientLLMError
 from podcast_agent.agents.framing import EpisodeFramingAgent
 from podcast_agent.agents.narrative_strategy import NarrativeStrategyAgent
@@ -22,6 +22,7 @@ from podcast_agent.agents.synthesis_mapping import SynthesisMappingAgent
 from podcast_agent.agents.theme_decomposition import ThemeDecompositionAgent
 from podcast_agent.agents.validation import GroundingValidationAgent
 from podcast_agent.agents.writing import WritingAgent
+from podcast_agent.llm.heuristic import HeuristicLLMClient
 from podcast_agent.schemas.models import (
     BookRecord,
     ChapterAnalysis,
@@ -134,6 +135,37 @@ class TestChapterSummaryAgent:
     def test_instructions_target_longer_summary(self):
         agent = ChapterSummaryAgent(_mock_llm())
         assert "4-6 sentence" in agent.instructions
+        assert "project theme" in agent.instructions
+        assert "do not force keyword mentions" in agent.instructions
+
+    def test_build_payload_includes_theme_context_and_normalizes_optional_fields(self):
+        agent = ChapterSummaryAgent(_mock_llm())
+        payload = agent.build_payload(
+            theme="Iranian Revolution",
+            sub_themes=None,
+            theme_elaboration=None,
+            book_id="b1",
+            title="Book 1",
+            author="Author A",
+            chapter_title="Chapter 1",
+            chapter_text="Some text",
+        )
+        assert payload["theme"] == "Iranian Revolution"
+        assert payload["sub_themes"] == []
+        assert payload["theme_elaboration"] == ""
+        assert payload["chapter_title"] == "Chapter 1"
+
+    def test_response_model_allows_more_than_six_key_events_or_arguments(self):
+        response = ChapterSummaryResponse.model_validate(
+            {
+                "summary": "Summary.",
+                "analysis": {
+                    "key_events_or_arguments": [f"event-{idx}" for idx in range(7)],
+                },
+            }
+        )
+        assert response.analysis is not None
+        assert len(response.analysis.key_events_or_arguments) == 7
 
 
 class TestPassageExtractionAgent:
@@ -176,6 +208,10 @@ class TestSynthesisMappingAgent:
         assert payload["project_id"] == "proj1"
         assert "chapters" not in payload["books"][0]
 
+    def test_instructions_target_insight_volume(self):
+        agent = SynthesisMappingAgent(_mock_llm())
+        assert "Generate between 40 and 50 insights in the insights array." in agent.instructions
+
 
 class TestNarrativeStrategyAgent:
     def test_schema_name(self):
@@ -211,11 +247,25 @@ class TestNarrativeStrategyAgent:
         assert "If project.requested_episode_count is provided, use it as a planning hint for arc shape." in agent.instructions
         assert "Output schema (strict):" in agent.instructions
         assert "episode_arc_details: array of objects" in agent.instructions
+        assert "recommended_episode_count between 7 and 8" in agent.instructions
         assert "narrative_stakes: string" in agent.instructions
         assert "episode_assignments: array of objects" in agent.instructions
+        assert "driving_question: string" in agent.instructions
         assert "strategy_type: one of thesis_driven, debate, chronological, convergence, mosaic" in agent.instructions
         assert "Return only a JSON object matching this schema." in agent.instructions
         assert "Every SynthesisInsight with podcast_potential > 0.5 must appear in at least one " in agent.instructions
+        assert "Target 5-7 insights per episode" in agent.instructions
+        assert (
+            "prioritize full coverage of SynthesisInsights with podcast_potential > 0.5"
+            in agent.instructions
+        )
+
+    def test_heuristic_strategy_caps_recommended_episode_count_to_eight(self):
+        heuristic = HeuristicLLMClient()
+        result = heuristic._generate_narrative_strategy(
+            {"requested_episode_count": 20, "synthesis_map": {}, "thematic_axes": []}
+        )
+        assert result["recommended_episode_count"] == 8
 
 
 class TestEpisodePlanningAgent:
@@ -235,13 +285,17 @@ class TestEpisodePlanningAgent:
             next_episode=None,
         )
         assert payload["episode_assignment"]["episode_number"] == 1
-        assert "chapters" not in payload["project"]
 
-    def test_instructions_target_100_minute_episode(self):
+    def test_instructions_bind_driving_question(self):
         agent = EpisodePlanningAgent(_mock_llm())
-        assert "100 minutes" in agent.instructions
-        assert "90 minutes" in agent.instructions
-        assert "40-45 beats" in agent.instructions
+        assert "episode_assignment.driving_question" in agent.instructions
+        assert "payoff_shape" in agent.instructions
+
+    def test_instructions_target_140_minute_episode(self):
+        agent = EpisodePlanningAgent(_mock_llm())
+        assert "140 minutes" in agent.instructions
+        assert "125 minutes" in agent.instructions
+        assert "50-60 beats" in agent.instructions
         assert "summary_text" in agent.instructions
         assert "full_text" in agent.instructions
         assert "project.book_size_share_by_id" in agent.instructions

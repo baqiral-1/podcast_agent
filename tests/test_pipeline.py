@@ -55,6 +55,8 @@ from podcast_agent.schemas.models import (
     PassagePair,
     PipelineConfig,
     ProjectStatus,
+    RenderManifest,
+    RenderSegment,
     ScriptSegment,
     SpeechHints,
     SpokenScript,
@@ -86,6 +88,20 @@ def _episode_arc_details(*episode_numbers: int) -> list[EpisodeArcDetail]:
         )
         for episode_number in episode_numbers
     ]
+
+
+def _episode_assignment_fields(episode_number: int) -> dict[str, object]:
+    return {
+        "driving_question": f"Episode {episode_number} driving question?",
+    }
+
+
+def _episode_plan_fields(episode_number: int) -> dict[str, object]:
+    return {
+        "driving_question": f"Episode {episode_number} driving question?",
+        "unresolved_questions": [f"Episode {episode_number} unresolved question"],
+        "payoff_shape": f"Episode {episode_number} payoff shape",
+    }
 
 
 class TestArtifactPersistence:
@@ -450,6 +466,136 @@ class TestBookIngestion:
         assert summary_payload["sub_themes"] == ["borders", "displacement"]
         assert summary_payload["chapters"][0]["retrieval_keywords"] == ["border", "delay"]
 
+    def test_decompose_theme_pads_with_fallback_axes_when_valid_below_min(self, tmp_path):
+        settings = Settings(
+            llm=Settings().llm.model_copy(update={"llm_provider": "heuristic"}),
+            database=Settings().database.model_copy(update={"dsn": None}),
+            pipeline=Settings().pipeline.model_copy(update={"artifact_root": tmp_path}),
+        )
+        orch = PipelineOrchestrator(settings)
+
+        book_a = BookRecord(
+            book_id="book-a", title="Book A", author="A", source_path="/a.txt", source_type="txt",
+        )
+        book_b = BookRecord(
+            book_id="book-b", title="Book B", author="B", source_path="/b.txt", source_type="txt",
+        )
+        project = ThematicProject(
+            project_id="proj-1",
+            theme="Partition",
+            episode_count=2,
+            config=PipelineConfig(min_axes=3, max_axes=4),
+            books=[book_a, book_b],
+        )
+
+        orch.book_summary_agent.run = MagicMock(side_effect=[
+            BookSummaryResponse(summary="Book A summary."),
+            BookSummaryResponse(summary="Book B summary."),
+        ])
+        orch.theme_decomposition_agent.run = MagicMock(
+            return_value=ThemeDecompositionResponse(
+                axes=[
+                    ThematicAxis(
+                        axis_id="invalid_a",
+                        name="Invalid A",
+                        description="desc",
+                        relevance_by_book={book_a.book_id: 0.8, book_b.book_id: 0.2},
+                    ),
+                    ThematicAxis(
+                        axis_id="valid_1",
+                        name="Valid 1",
+                        description="desc",
+                        relevance_by_book={book_a.book_id: 0.8, book_b.book_id: 0.7},
+                    ),
+                    ThematicAxis(
+                        axis_id="invalid_b",
+                        name="Invalid B",
+                        description="desc",
+                        relevance_by_book={book_a.book_id: 0.4, book_b.book_id: 0.2},
+                    ),
+                    ThematicAxis(
+                        axis_id="valid_2",
+                        name="Valid 2",
+                        description="desc",
+                        relevance_by_book={book_a.book_id: 0.7, book_b.book_id: 0.6},
+                    ),
+                    ThematicAxis(
+                        axis_id="invalid_c",
+                        name="Invalid C",
+                        description="desc",
+                        relevance_by_book={book_a.book_id: 0.2, book_b.book_id: 0.1},
+                    ),
+                ]
+            )
+        )
+
+        axes = asyncio.run(orch._decompose_theme(project, tmp_path / project.project_id))
+        axis_ids = [axis.axis_id for axis in axes]
+
+        assert axis_ids == ["valid_1", "valid_2", "invalid_a", "invalid_b"]
+
+    def test_decompose_theme_caps_axes_at_max(self, tmp_path):
+        settings = Settings(
+            llm=Settings().llm.model_copy(update={"llm_provider": "heuristic"}),
+            database=Settings().database.model_copy(update={"dsn": None}),
+            pipeline=Settings().pipeline.model_copy(update={"artifact_root": tmp_path}),
+        )
+        orch = PipelineOrchestrator(settings)
+
+        book_a = BookRecord(
+            book_id="book-a", title="Book A", author="A", source_path="/a.txt", source_type="txt",
+        )
+        book_b = BookRecord(
+            book_id="book-b", title="Book B", author="B", source_path="/b.txt", source_type="txt",
+        )
+        project = ThematicProject(
+            project_id="proj-1",
+            theme="Partition",
+            episode_count=2,
+            config=PipelineConfig(min_axes=2, max_axes=3),
+            books=[book_a, book_b],
+        )
+
+        orch.book_summary_agent.run = MagicMock(side_effect=[
+            BookSummaryResponse(summary="Book A summary."),
+            BookSummaryResponse(summary="Book B summary."),
+        ])
+        orch.theme_decomposition_agent.run = MagicMock(
+            return_value=ThemeDecompositionResponse(
+                axes=[
+                    ThematicAxis(
+                        axis_id="valid_1",
+                        name="Valid 1",
+                        description="desc",
+                        relevance_by_book={book_a.book_id: 0.8, book_b.book_id: 0.7},
+                    ),
+                    ThematicAxis(
+                        axis_id="valid_2",
+                        name="Valid 2",
+                        description="desc",
+                        relevance_by_book={book_a.book_id: 0.7, book_b.book_id: 0.6},
+                    ),
+                    ThematicAxis(
+                        axis_id="valid_3",
+                        name="Valid 3",
+                        description="desc",
+                        relevance_by_book={book_a.book_id: 0.6, book_b.book_id: 0.6},
+                    ),
+                    ThematicAxis(
+                        axis_id="valid_4",
+                        name="Valid 4",
+                        description="desc",
+                        relevance_by_book={book_a.book_id: 0.9, book_b.book_id: 0.8},
+                    ),
+                ]
+            )
+        )
+
+        axes = asyncio.run(orch._decompose_theme(project, tmp_path / project.project_id))
+        axis_ids = [axis.axis_id for axis in axes]
+
+        assert axis_ids == ["valid_1", "valid_2", "valid_3"]
+
     def test_structure_chapters_persists_summary_and_analysis(self, tmp_path):
         settings = Settings(
             llm=Settings().llm.model_copy(update={"llm_provider": "heuristic"}),
@@ -486,12 +632,23 @@ class TestBookIngestion:
 
         with patch("podcast_agent.pipeline.orchestrator.extract_chapters_from_source", return_value=[chapter]):
             chapters = asyncio.run(
-                orch._structure_chapters(book, "mock chapter text", tmp_path / "proj-structure")
+                orch._structure_chapters(
+                    book,
+                    "mock chapter text",
+                    tmp_path / "proj-structure",
+                    theme="partition",
+                    sub_themes=["borders", "migration"],
+                    theme_elaboration="Focus on state formation and displacement.",
+                )
             )
 
         assert chapters[0].summary == "Structured summary."
         assert chapters[0].analysis is not None
         assert chapters[0].analysis.major_tensions == ["state vs community"]
+        payload = orch.chapter_summary_agent.run.call_args.args[0]
+        assert payload["theme"] == "partition"
+        assert payload["sub_themes"] == ["borders", "migration"]
+        assert payload["theme_elaboration"] == "Focus on state formation and displacement."
 
 
     def test_retrieval_candidates_logged(self, tmp_path):
@@ -623,7 +780,7 @@ class TestBookIngestion:
         data = json.loads(log_path.read_text())
         assert data["budget_strategy"] == "fixed_target_soft_threshold_backfill"
         assert data["allocation_policy"] == "floor_2_relevance_pow_1.2_size_pow_0.68_total_words"
-        assert data["axis_candidate_budget_target"] == 150
+        assert data["axis_candidate_budget_target"] == 250
         assert data["axis_candidate_budget_effective"] == 6
         assert data["axis_candidate_budget"] == 6
         assert data["per_book_budget"] == {"book-a": 3, "book-b": 3}
@@ -1328,6 +1485,16 @@ class TestSynthesisSelection:
         assert len(selected) == 5
         assert [p.passage_id for p in selected] == ["p5", "p4", "p3", "p2", "p1"]
 
+    def test_select_top_passages_defaults_to_forty_five(self):
+        passages = [
+            self._make_passage(f"p{i:03d}", i / 1000.0)
+            for i in range(50)
+        ]
+        selected = _select_top_passages_for_synthesis(passages)
+        assert len(selected) == 45
+        assert selected[0].passage_id == "p049"
+        assert selected[-1].passage_id == "p005"
+
     def test_select_top_passages_breaks_ties_by_quotability(self):
         passages = [
             self._make_passage("p1", 0.5, quotability_score=0.2),
@@ -1418,6 +1585,18 @@ class TestPostRerankSelection:
         assert selected[0].passage_id == "p000"
         assert selected[-1].passage_id == "p099"
 
+    def test_select_top_passages_for_post_rerank_defaults_to_one_forty(self):
+        passages = [
+            self._make_passage(f"p{i:03d}", 1.0 - (i / 1000.0), 0.5)
+            for i in range(150)
+        ]
+
+        selected = _select_top_passages_for_post_rerank(passages)
+
+        assert len(selected) == 140
+        assert selected[0].passage_id == "p000"
+        assert selected[-1].passage_id == "p139"
+
 
 class TestPassageUtilization:
     def test_compute_passage_utilization(self):
@@ -1463,6 +1642,7 @@ class TestPassageUtilization:
             EpisodePlan(
                 episode_number=1,
                 title="Ep1",
+                **_episode_plan_fields(1),
                 beats=[EpisodeBeat(description="b1", passage_ids=["p1", "p3"])],
             )
         ]
@@ -1504,6 +1684,7 @@ class TestEpisodeScriptPlanAlignment:
         plan = EpisodePlan(
             episode_number=1,
             title="Ep1",
+            **_episode_plan_fields(1),
             insight_ids=["insight-1"],
             beats=[
                 EpisodeBeat(
@@ -1560,6 +1741,7 @@ class TestEpisodeScriptPlanAlignment:
         plan = EpisodePlan(
             episode_number=1,
             title="Ep1",
+            **_episode_plan_fields(1),
             insight_ids=["insight-1"],
             beats=[EpisodeBeat(beat_id="beat-1", description="Beat", passage_ids=["p1"])],
             synthesis_context={
@@ -1592,6 +1774,7 @@ class TestEpisodeScriptPlanAlignment:
         plan = EpisodePlan(
             episode_number=1,
             title="Ep1",
+            **_episode_plan_fields(1),
             cross_references=[
                 {"from_book_id": "book-a", "to_book_id": "book-b", "connection_type": "agrees"},
                 {"from_book_id": "book-a", "to_book_id": "book-c", "connection_type": "agrees"},
@@ -1620,6 +1803,7 @@ class TestEpisodeScriptPlanAlignment:
         plan = EpisodePlan(
             episode_number=1,
             title="Ep1",
+            **_episode_plan_fields(1),
             book_balance={"book-a": 0.5, "book-b": 0.5},
         )
         script = EpisodeScript(
@@ -1642,6 +1826,7 @@ class TestEpisodeScriptPlanAlignment:
         plan = EpisodePlan(
             episode_number=1,
             title="Ep1",
+            **_episode_plan_fields(1),
             book_balance={"book-a": 0.5, "book-b": 0.5},
         )
         script = EpisodeScript(
@@ -1703,6 +1888,7 @@ class TestWriteEpisodeSourceMode:
         plan = EpisodePlan(
             episode_number=1,
             title="Episode 1",
+            **_episode_plan_fields(1),
             beats=[
                 EpisodeBeat(
                     beat_id="beat-1",
@@ -1752,6 +1938,9 @@ class TestWriteEpisodeSourceMode:
         payload = orch.writing_agent.run.call_args.args[0]
         assert payload["passages"][0]["text"] == "full chunk text"
         assert payload["writing_source_mode"] == "full_chunk"
+        assert payload["plan"]["driving_question"] == "Episode 1 driving question?"
+        assert payload["plan"]["unresolved_questions"] == ["Episode 1 unresolved question"]
+        assert payload["plan"]["payoff_shape"] == "Episode 1 payoff shape"
         assert "synthesis_context" in payload["plan"]
         assert payload["passages"][0]["chapter_context"]["chapter_title"] == "Chapter 1"
         assert payload["passages"][0]["chapter_context"]["major_tensions"] == ["policy vs reality"]
@@ -1837,6 +2026,7 @@ class TestWriteEpisodeSourceMode:
         plan = EpisodePlan(
             episode_number=1,
             title="Episode 1",
+            **_episode_plan_fields(1),
             target_duration_minutes=100.0,
             beats=[
                 EpisodeBeat(
@@ -1877,6 +2067,7 @@ class TestWriteEpisodeSourceMode:
         plan = EpisodePlan(
             episode_number=1,
             title="Episode 1",
+            **_episode_plan_fields(1),
             target_duration_minutes=100.0,
             beats=[
                 EpisodeBeat(
@@ -1951,6 +2142,7 @@ class TestEpisodePlanConstraints:
     def test_book_balance_sums_to_one(self):
         plan = EpisodePlan(
             episode_number=1, title="Ep 1",
+            **_episode_plan_fields(1),
             book_balance={"b1": 0.6, "b2": 0.4},
         )
         assert abs(sum(plan.book_balance.values()) - 1.0) < 0.01
@@ -1960,6 +2152,7 @@ class TestEpisodePlanConstraints:
         from podcast_agent.schemas.models import CrossReference
         plan = EpisodePlan(
             episode_number=2, title="Ep 2",
+            **_episode_plan_fields(2),
             cross_references=[
                 CrossReference(
                     from_book_id="b1", to_book_id="b2",
@@ -2069,6 +2262,141 @@ class TestSkipFlags:
         assert not audio_manifest_path.exists()
         assert not audio_dir.exists()
         orch.tts_client.synthesize.assert_not_called()
+
+    def test_render_episode_audio_writes_merged_mp3(self, tmp_path, monkeypatch):
+        """Audio rendering should synthesize segment files and write a merged episode mp3."""
+        settings = Settings(
+            llm=Settings().llm.model_copy(update={"llm_provider": "heuristic"}),
+            database=Settings().database.model_copy(update={"dsn": None}),
+            pipeline=Settings().pipeline.model_copy(update={"artifact_root": tmp_path}),
+        )
+        orch = PipelineOrchestrator(settings)
+        orch.tts_client = MagicMock()
+        orch.tts_client.synthesize.return_value = b"audio-bytes"
+
+        monkeypatch.setattr(
+            "podcast_agent.pipeline.orchestrator.shutil.which",
+            lambda name: "/usr/bin/ffmpeg" if name == "ffmpeg" else None,
+        )
+
+        def _fake_ffmpeg_run(cmd, capture_output, text, check):
+            Path(cmd[-1]).write_bytes(b"merged-audio")
+            return MagicMock(returncode=0, stderr="", stdout="")
+
+        monkeypatch.setattr(
+            "podcast_agent.pipeline.orchestrator.subprocess.run",
+            _fake_ffmpeg_run,
+        )
+
+        project_dir = tmp_path / "run"
+        spoken = SpokenScript(
+            episode_number=1,
+            title="Test",
+            segments=[
+                SpokenSegment(segment_id="s1", text="Hello world.", max_words=250),
+            ],
+            tts_provider="openai",
+        )
+
+        asyncio.run(
+            orch._render_episode_audio(
+                1,
+                spoken,
+                PipelineConfig(),
+                None,
+                project_dir,
+                asyncio.Semaphore(1),
+                skip_audio=False,
+            )
+        )
+
+        render_path = project_dir / "episodes" / "1" / "render_manifest.json"
+        audio_manifest_path = project_dir / "episodes" / "1" / "audio_manifest.json"
+        merged_path = project_dir / "episodes" / "1" / "episode.mp3"
+
+        manifest = _load_json(audio_manifest_path)
+        assert render_path.exists()
+        assert audio_manifest_path.exists()
+        assert merged_path.exists()
+        assert manifest["merged_audio_path"] == str(merged_path)
+        assert manifest["diagnostics"]["merged"] is True
+        assert manifest["diagnostics"]["failed"] == 0
+
+    def test_render_episode_audio_requires_ffmpeg(self, tmp_path, monkeypatch):
+        """Merged episode output should fail fast when ffmpeg is unavailable."""
+        settings = Settings(
+            llm=Settings().llm.model_copy(update={"llm_provider": "heuristic"}),
+            database=Settings().database.model_copy(update={"dsn": None}),
+            pipeline=Settings().pipeline.model_copy(update={"artifact_root": tmp_path}),
+        )
+        orch = PipelineOrchestrator(settings)
+        orch.tts_client = MagicMock()
+        monkeypatch.setattr(
+            "podcast_agent.pipeline.orchestrator.shutil.which",
+            lambda name: None,
+        )
+
+        project_dir = tmp_path / "run"
+        spoken = SpokenScript(
+            episode_number=1,
+            title="Test",
+            segments=[
+                SpokenSegment(segment_id="s1", text="Hello world.", max_words=250),
+            ],
+            tts_provider="openai",
+        )
+
+        with pytest.raises(RuntimeError, match="ffmpeg is required"):
+            asyncio.run(
+                orch._render_episode_audio(
+                    1,
+                    spoken,
+                    PipelineConfig(),
+                    None,
+                    project_dir,
+                    asyncio.Semaphore(1),
+                    skip_audio=False,
+                )
+            )
+
+        orch.tts_client.synthesize.assert_not_called()
+
+    def test_synthesize_audio_from_run_skips_missing_manifests(self, tmp_path, monkeypatch):
+        """Audio-only command should process episodes with manifests and skip missing ones."""
+        settings = Settings(
+            llm=Settings().llm.model_copy(update={"llm_provider": "heuristic"}),
+            database=Settings().database.model_copy(update={"dsn": None}),
+            pipeline=Settings().pipeline.model_copy(update={"artifact_root": tmp_path.parent}),
+        )
+        orch = PipelineOrchestrator(settings)
+        run_dir = tmp_path / "run"
+        ep1 = run_dir / "episodes" / "1"
+        ep2 = run_dir / "episodes" / "2"
+        ep1.mkdir(parents=True)
+        ep2.mkdir(parents=True)
+        _save_json(
+            ep1 / "render_manifest.json",
+            RenderManifest(
+                episode_number=1,
+                segments=[RenderSegment(segment_id="s1", text="Hello world.")],
+                total_segments=1,
+                estimated_duration_seconds=1,
+            ),
+        )
+
+        async def _fake_render_existing_episode_audio(*args, **kwargs):
+            return MagicMock(diagnostics={"merged": True})
+
+        monkeypatch.setattr(orch, "_render_existing_episode_audio", _fake_render_existing_episode_audio)
+        monkeypatch.setattr(orch, "_ensure_ffmpeg_available", lambda: "/usr/bin/ffmpeg")
+
+        summary = asyncio.run(orch.synthesize_audio_from_run(run_dir))
+
+        assert summary["processed"] == 1
+        assert summary["succeeded"] == 1
+        assert summary["failed"] == 0
+        assert summary["skipped"] == 1
+        assert summary["skipped_episodes"] == [2]
 
     def test_short_episode_logs_runtime_shortfall_warning(self, tmp_path):
         """Render stage should warn (not fail) when estimated runtime is below configured floor."""
@@ -2298,12 +2626,12 @@ class TestEpisodeCountResolution:
             series_arc="Arc",
             episode_arc_outline=["Ep1", "Ep2"],
             episode_arc_details=_episode_arc_details(1, 2),
-            recommended_episode_count=6,
+            recommended_episode_count=8,
         )
 
         resolved = orch._resolve_episode_count_from_strategy(project, strategy)
         assert resolved.episode_count == 4
-        assert resolved.recommended_episode_count == 6
+        assert resolved.recommended_episode_count == 8
 
     def test_uses_strategy_count_without_override(self, tmp_path):
         settings = Settings(
@@ -2324,12 +2652,12 @@ class TestEpisodeCountResolution:
             series_arc="Arc",
             episode_arc_outline=["Ep1", "Ep2"],
             episode_arc_details=_episode_arc_details(1, 2),
-            recommended_episode_count=5,
+            recommended_episode_count=8,
         )
 
         resolved = orch._resolve_episode_count_from_strategy(project, strategy)
-        assert resolved.episode_count == 5
-        assert resolved.recommended_episode_count == 5
+        assert resolved.episode_count == 8
+        assert resolved.recommended_episode_count == 8
 
     def test_fails_without_override_when_strategy_missing_count(self, tmp_path):
         settings = Settings(
@@ -2375,8 +2703,8 @@ class TestEpisodePlanningPayload:
                 series_arc="Arc",
                 episode_arc_outline=["Ep1"],
                 episode_arc_details=_episode_arc_details(1),
-                recommended_episode_count=2,
-                episode_assignments=[EpisodeAssignment(episode_number=1, title="Ep 1")],
+                recommended_episode_count=8,
+                episode_assignments=[EpisodeAssignment(episode_number=1, title="Ep 1", **_episode_assignment_fields(1))],
             )
 
         orch.narrative_strategy_agent.run = MagicMock(side_effect=fake_strategy)
@@ -2418,8 +2746,8 @@ class TestEpisodePlanningPayload:
         assert payload["merged_narratives"][0]["merged_narrative_id"] == "merged_narrative_001"
         assert payload["unresolved_tensions"][0]["tension_id"] == "tension_001"
         project_payload = captured_payloads[0]["project"]
-        assert project_payload["target_episode_minutes"] == 100.0
-        assert project_payload["min_episode_minutes"] == 90.0
+        assert project_payload["target_episode_minutes"] == 140.0
+        assert project_payload["min_episode_minutes"] == 125.0
 
     def test_supporting_ranking_prefers_higher_quality_single_axis_over_lower_multi_axis(self):
         axis_1_passages = [
@@ -2467,6 +2795,31 @@ class TestEpisodePlanningPayload:
         assert len(selected["axis_1"]) == 1
         assert selected["axis_1"][0].passage_id == "p_high_single"
 
+    def test_supporting_passages_default_cap_is_one_twenty(self):
+        axis_1_passages = [
+            ExtractedPassage(
+                passage_id=f"p{i:03d}",
+                book_id="book-a",
+                chunk_ids=[f"chunk_{i:03d}"],
+                text=f"summary {i}",
+                full_text=f"full text {i}",
+                axis_id="axis_1",
+                relevance_score=1.0 - (i / 1000.0),
+                quotability_score=0.5,
+            )
+            for i in range(130)
+        ]
+
+        selected = _select_episode_planning_passages(
+            passages_by_axis={"axis_1": axis_1_passages},
+            assigned_axis_ids=["axis_1"],
+            selected_insight_passage_ids=set(),
+        )
+
+        assert len(selected["axis_1"]) == 120
+        assert selected["axis_1"][0].passage_id == "p000"
+        assert selected["axis_1"][-1].passage_id == "p119"
+
     def test_includes_summary_text_and_duplicate_axes_without_extra_fields(self, tmp_path):
         settings = Settings(
             llm=Settings().llm.model_copy(update={"llm_provider": "heuristic"}),
@@ -2478,7 +2831,7 @@ class TestEpisodePlanningPayload:
 
         def fake_episode_plan(payload):
             captured_payloads.append(payload)
-            return EpisodePlan(episode_number=999, title="Planned", beats=[])
+            return EpisodePlan(episode_number=999, title="Planned", beats=[], **_episode_plan_fields(999))
 
         orch.episode_planning_agent.run = MagicMock(side_effect=fake_episode_plan)
 
@@ -2517,11 +2870,12 @@ class TestEpisodePlanningPayload:
             series_arc="Arc",
             episode_arc_outline=["Ep1"],
             episode_arc_details=_episode_arc_details(1),
-            recommended_episode_count=2,
+            recommended_episode_count=8,
             episode_assignments=[
                 EpisodeAssignment(
                     episode_number=1,
                     title="Ep 1",
+                    **_episode_assignment_fields(1),
                     thematic_focus="Focus",
                     axis_ids=["axis_1", "axis_2"],
                     insight_ids=["insight_1"],
@@ -2664,6 +3018,9 @@ class TestEpisodePlanningPayload:
                 assert "cross_axis_summaries" not in entry
         assert plans[0].synthesis_context is not None
         assert plans[0].synthesis_context.insights[0].axis_ids == ["axis_1", "axis_2"]
+        assert plans[0].driving_question == "Episode 1 driving question?"
+        assert plans[0].unresolved_questions == ["Episode 1 unresolved question"]
+        assert plans[0].payoff_shape == "Episode 1 payoff shape"
 
     def test_payload_keeps_insight_linked_passages_without_cap(self, tmp_path):
         settings = Settings(
@@ -2676,7 +3033,7 @@ class TestEpisodePlanningPayload:
 
         def fake_episode_plan(payload):
             captured_payloads.append(payload)
-            return EpisodePlan(episode_number=1, title="Planned", beats=[])
+            return EpisodePlan(episode_number=1, title="Planned", beats=[], **_episode_plan_fields(1))
 
         orch.episode_planning_agent.run = MagicMock(side_effect=fake_episode_plan)
 
@@ -2725,11 +3082,12 @@ class TestEpisodePlanningPayload:
             series_arc="Arc",
             episode_arc_outline=["Ep1"],
             episode_arc_details=_episode_arc_details(1),
-            recommended_episode_count=2,
+            recommended_episode_count=8,
             episode_assignments=[
                 EpisodeAssignment(
                     episode_number=1,
                     title="Ep 1",
+                    **_episode_assignment_fields(1),
                     thematic_focus="Focus",
                     axis_ids=["axis_1", "axis_2"],
                     insight_ids=["insight_1"],
@@ -2790,7 +3148,7 @@ class TestEpisodePlanningPayload:
 
         def fake_episode_plan(payload):
             captured_payloads.append(payload)
-            return EpisodePlan(episode_number=1, title="Planned", beats=[])
+            return EpisodePlan(episode_number=1, title="Planned", beats=[], **_episode_plan_fields(1))
 
         orch.episode_planning_agent.run = MagicMock(side_effect=fake_episode_plan)
         project = ThematicProject(
@@ -2813,11 +3171,12 @@ class TestEpisodePlanningPayload:
             series_arc="Arc",
             episode_arc_outline=["Ep1"],
             episode_arc_details=_episode_arc_details(1),
-            recommended_episode_count=2,
+            recommended_episode_count=8,
             episode_assignments=[
                 EpisodeAssignment(
                     episode_number=1,
                     title="Ep 1",
+                    **_episode_assignment_fields(1),
                     axis_ids=["axis_1"],
                     insight_ids=["insight_1"],
                 )
@@ -2902,11 +3261,13 @@ class TestEpisodePlanningPayload:
                 return EpisodePlan(
                     episode_number=1,
                     title="Planned",
+                    **_episode_plan_fields(1),
                     beats=[EpisodeBeat(beat_id="beat-1", description="Misses insight", passage_ids=["p_other"])],
                 )
             return EpisodePlan(
                 episode_number=1,
                 title="Planned retry",
+                **_episode_plan_fields(1),
                 beats=[EpisodeBeat(beat_id="beat-2", description="Uses insight", passage_ids=["p_target", "p_missing"])],
             )
 
@@ -2932,11 +3293,12 @@ class TestEpisodePlanningPayload:
             series_arc="Arc",
             episode_arc_outline=["Ep1"],
             episode_arc_details=_episode_arc_details(1),
-            recommended_episode_count=2,
+            recommended_episode_count=8,
             episode_assignments=[
                 EpisodeAssignment(
                     episode_number=1,
                     title="Ep 1",
+                    **_episode_assignment_fields(1),
                     axis_ids=["axis_1"],
                     insight_ids=["insight_1"],
                 )
@@ -3006,6 +3368,7 @@ class TestEpisodePlanningPayload:
             return_value=EpisodePlan(
                 episode_number=1,
                 title="Planned",
+                **_episode_plan_fields(1),
                 beats=[EpisodeBeat(beat_id="beat-1", description="Still weak", passage_ids=["p_other"])],
             )
         )
@@ -3030,11 +3393,12 @@ class TestEpisodePlanningPayload:
             series_arc="Arc",
             episode_arc_outline=["Ep1"],
             episode_arc_details=_episode_arc_details(1),
-            recommended_episode_count=2,
+            recommended_episode_count=8,
             episode_assignments=[
                 EpisodeAssignment(
                     episode_number=1,
                     title="Ep 1",
+                    **_episode_assignment_fields(1),
                     axis_ids=["axis_1"],
                     insight_ids=["insight_1"],
                 )
@@ -3103,6 +3467,7 @@ class TestEpisodePlanningPayload:
             return_value=EpisodePlan(
                 episode_number=1,
                 title="Planned",
+                **_episode_plan_fields(1),
                 target_duration_minutes=100.0,
                 beats=[
                     EpisodeBeat(
@@ -3135,8 +3500,8 @@ class TestEpisodePlanningPayload:
             series_arc="Arc",
             episode_arc_outline=["Ep1"],
             episode_arc_details=_episode_arc_details(1),
-            recommended_episode_count=2,
-            episode_assignments=[EpisodeAssignment(episode_number=1, title="Ep 1")],
+            recommended_episode_count=8,
+            episode_assignments=[EpisodeAssignment(episode_number=1, title="Ep 1", **_episode_assignment_fields(1))],
         )
         corpus = ThematicCorpus(project_id="proj_runtime_warning")
         synthesis_map = SynthesisMap(project_id="proj_runtime_warning")
@@ -3172,7 +3537,12 @@ class TestEpisodePlanningPayload:
         def fake_episode_plan(payload):
             ep_number = payload["episode_assignment"]["episode_number"]
             time.sleep(delays.get(ep_number, 0.0))
-            return EpisodePlan(episode_number=ep_number, title=f"Generated {ep_number}", beats=[])
+            return EpisodePlan(
+                episode_number=ep_number,
+                title=f"Generated {ep_number}",
+                beats=[],
+                **_episode_plan_fields(ep_number),
+            )
 
         orch.episode_planning_agent.run = MagicMock(side_effect=fake_episode_plan)
 
@@ -3197,11 +3567,11 @@ class TestEpisodePlanningPayload:
             series_arc="Arc",
             episode_arc_outline=["Ep1", "Ep2", "Ep3"],
             episode_arc_details=_episode_arc_details(1, 2, 3),
-            recommended_episode_count=3,
+            recommended_episode_count=8,
             episode_assignments=[
-                EpisodeAssignment(episode_number=1, title="Ep 1", thematic_focus="F1"),
-                EpisodeAssignment(episode_number=2, title="Ep 2", thematic_focus="F2"),
-                EpisodeAssignment(episode_number=3, title="Ep 3", thematic_focus="F3"),
+                EpisodeAssignment(episode_number=1, title="Ep 1", thematic_focus="F1", **_episode_assignment_fields(1)),
+                EpisodeAssignment(episode_number=2, title="Ep 2", thematic_focus="F2", **_episode_assignment_fields(2)),
+                EpisodeAssignment(episode_number=3, title="Ep 3", thematic_focus="F3", **_episode_assignment_fields(3)),
             ],
         )
         corpus = ThematicCorpus(project_id="proj_parallel_order")
@@ -3225,7 +3595,12 @@ class TestEpisodePlanningPayload:
         def fake_episode_plan(payload):
             ep_number = payload["episode_assignment"]["episode_number"]
             captured_payloads[ep_number] = payload
-            return EpisodePlan(episode_number=ep_number, title=f"Generated {ep_number}", beats=[])
+            return EpisodePlan(
+                episode_number=ep_number,
+                title=f"Generated {ep_number}",
+                beats=[],
+                **_episode_plan_fields(ep_number),
+            )
 
         orch.episode_planning_agent.run = MagicMock(side_effect=fake_episode_plan)
 
@@ -3250,11 +3625,11 @@ class TestEpisodePlanningPayload:
             series_arc="Arc",
             episode_arc_outline=["Ep1", "Ep2", "Ep3"],
             episode_arc_details=_episode_arc_details(1, 2, 3),
-            recommended_episode_count=3,
+            recommended_episode_count=8,
             episode_assignments=[
-                EpisodeAssignment(episode_number=1, title="Assignment 1", thematic_focus="Focus 1"),
-                EpisodeAssignment(episode_number=2, title="Assignment 2", thematic_focus="Focus 2"),
-                EpisodeAssignment(episode_number=3, title="Assignment 3", thematic_focus="Focus 3"),
+                EpisodeAssignment(episode_number=1, title="Assignment 1", thematic_focus="Focus 1", **_episode_assignment_fields(1)),
+                EpisodeAssignment(episode_number=2, title="Assignment 2", thematic_focus="Focus 2", **_episode_assignment_fields(2)),
+                EpisodeAssignment(episode_number=3, title="Assignment 3", thematic_focus="Focus 3", **_episode_assignment_fields(3)),
             ],
         )
         corpus = ThematicCorpus(project_id="proj_context")
@@ -3266,7 +3641,9 @@ class TestEpisodePlanningPayload:
 
         assert captured_payloads[1]["previous_episode"] is None
         assert captured_payloads[1]["next_episode"]["title"] == "Assignment 2"
+        assert captured_payloads[1]["next_episode"]["driving_question"] == "Episode 2 driving question?"
         assert captured_payloads[2]["previous_episode"]["title"] == "Assignment 1"
+        assert captured_payloads[2]["previous_episode"]["driving_question"] == "Episode 1 driving question?"
         assert captured_payloads[2]["next_episode"]["title"] == "Assignment 3"
         assert captured_payloads[3]["previous_episode"]["title"] == "Assignment 2"
         assert captured_payloads[3]["next_episode"] is None
@@ -3292,7 +3669,12 @@ class TestEpisodePlanningPayload:
             with lock:
                 in_flight -= 1
             ep_number = payload["episode_assignment"]["episode_number"]
-            return EpisodePlan(episode_number=ep_number, title=f"Generated {ep_number}", beats=[])
+            return EpisodePlan(
+                episode_number=ep_number,
+                title=f"Generated {ep_number}",
+                beats=[],
+                **_episode_plan_fields(ep_number),
+            )
 
         orch.episode_planning_agent.run = MagicMock(side_effect=fake_episode_plan)
 
@@ -3317,12 +3699,12 @@ class TestEpisodePlanningPayload:
             series_arc="Arc",
             episode_arc_outline=["Ep1", "Ep2", "Ep3", "Ep4"],
             episode_arc_details=_episode_arc_details(1, 2, 3, 4),
-            recommended_episode_count=4,
+            recommended_episode_count=8,
             episode_assignments=[
-                EpisodeAssignment(episode_number=1, title="Assignment 1"),
-                EpisodeAssignment(episode_number=2, title="Assignment 2"),
-                EpisodeAssignment(episode_number=3, title="Assignment 3"),
-                EpisodeAssignment(episode_number=4, title="Assignment 4"),
+                EpisodeAssignment(episode_number=1, title="Assignment 1", **_episode_assignment_fields(1)),
+                EpisodeAssignment(episode_number=2, title="Assignment 2", **_episode_assignment_fields(2)),
+                EpisodeAssignment(episode_number=3, title="Assignment 3", **_episode_assignment_fields(3)),
+                EpisodeAssignment(episode_number=4, title="Assignment 4", **_episode_assignment_fields(4)),
             ],
         )
         corpus = ThematicCorpus(project_id="proj_concurrency")

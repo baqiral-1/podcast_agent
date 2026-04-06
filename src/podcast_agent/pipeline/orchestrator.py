@@ -15,6 +15,9 @@ import json
 import logging
 import math
 import re
+import shutil
+import subprocess
+import tempfile
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -82,7 +85,7 @@ from podcast_agent.tts.openai_compatible import build_tts_client
 
 logger = logging.getLogger(__name__)
 
-_POST_RERANK_PASSAGE_LIMIT = 100
+_POST_RERANK_PASSAGE_LIMIT = 140
 
 
 class StructuringStageError(RuntimeError):
@@ -115,6 +118,13 @@ def _load_json(path: Path) -> dict | None:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _load_model(path: Path, model_type: type[Any]) -> Any:
+    payload = _load_json(path)
+    if payload is None:
+        raise FileNotFoundError(path)
+    return model_type.model_validate(payload)
+
+
 def _input_hash(*args: Any) -> str:
     content = json.dumps(args, sort_keys=True, default=str)
     return hashlib.sha256(content.encode()).hexdigest()[:16]
@@ -133,6 +143,7 @@ _SPOKEN_RATE_MULTIPLIER = {
     "normal": 1.0,
     "faster": 1.08,
 }
+_MERGED_EPISODE_FILENAME = "episode.mp3"
 
 
 def _split_sentences(text: str) -> list[str]:
@@ -413,7 +424,7 @@ def _build_chapter_context_by_ref(
 def _select_top_passages_for_synthesis(
     passages: list[ExtractedPassage],
     *,
-    top_k: int = 30,
+    top_k: int = 45,
 ) -> list[ExtractedPassage]:
     if not passages:
         return []
@@ -470,7 +481,7 @@ def _select_episode_planning_passages(
     passages_by_axis: dict[str, list[ExtractedPassage]],
     assigned_axis_ids: list[str],
     selected_insight_passage_ids: set[str],
-    supporting_passages_per_axis: int = 100,
+    supporting_passages_per_axis: int = 120,
 ) -> dict[str, list[ExtractedPassage]]:
     if not assigned_axis_ids:
         return {axis_id: [] for axis_id in assigned_axis_ids}
@@ -1139,6 +1150,11 @@ def _split_into_chunks(
     return [c for c in chunks if c.strip()]
 
 
+def _concat_file_entry(path: Path) -> str:
+    escaped = str(path.resolve()).replace("'", r"'\''")
+    return f"file '{escaped}'\n"
+
+
 def _sanitize_spoken_text(text: str) -> str:
     cleaned = _SPOKEN_TAG_RE.sub(" ", text)
     return _WHITESPACE_RE.sub(" ", cleaned).strip()
@@ -1444,6 +1460,13 @@ class PipelineOrchestrator:
         self.spoken_delivery_agent = SpokenDeliveryAgent(self.llm, max_retry_attempts=_retries("spoken_delivery"))
         self.framing_agent = EpisodeFramingAgent(self.llm, max_retry_attempts=_retries("episode_framing"))
 
+    def _bind_run_logger(self, project_dir: Path) -> None:
+        if self.run_logger.artifact_root != project_dir.parent:
+            self.run_logger = RunLogger(project_dir.parent)
+            self.llm.set_run_logger(self.run_logger)
+            self.tts_client.set_run_logger(self.run_logger)
+        self.run_logger.bind_run(project_dir.name)
+
     # -----------------------------------------------------------------------
     # Main entry point
     # -----------------------------------------------------------------------
@@ -1464,7 +1487,7 @@ class PipelineOrchestrator:
         project_id = project_id or uuid4().hex
         project_dir = self.settings.pipeline.artifact_root / project_id
 
-        self.run_logger.bind_run(project_id)
+        self._bind_run_logger(project_dir)
         database_configured = bool(self.settings.database.dsn)
         retrieval_enabled = self.vector_store.enabled
         self.run_logger.log(
@@ -1507,7 +1530,15 @@ class PipelineOrchestrator:
             author = authors[i] if authors and i < len(authors) else "Unknown"
             book_tasks.append(
                 self._ingest_and_index_book(
-                    path, title, author, project_id, project_dir, pipeline_config,
+                    path,
+                    title,
+                    author,
+                    project_id,
+                    project_dir,
+                    pipeline_config,
+                    theme=theme,
+                    sub_themes=sub_themes,
+                    theme_elaboration=theme_elaboration,
                 )
             )
         book_results = await asyncio.gather(*book_tasks, return_exceptions=True)
@@ -1655,6 +1686,69 @@ class PipelineOrchestrator:
 
         return project
 
+    async def synthesize_audio_from_run(self, run_dir: Path) -> dict[str, Any]:
+        project_dir = run_dir.resolve()
+        if not project_dir.exists() or not project_dir.is_dir():
+            raise RuntimeError(f"Run directory not found: {project_dir}")
+
+        episodes_dir = project_dir / "episodes"
+        if not episodes_dir.exists() or not episodes_dir.is_dir():
+            raise RuntimeError(f"Run directory does not contain episodes/: {project_dir}")
+
+        self._bind_run_logger(project_dir)
+
+        episode_dirs = sorted(
+            [path for path in episodes_dir.iterdir() if path.is_dir() and path.name.isdigit()],
+            key=lambda path: int(path.name),
+        )
+        if not episode_dirs:
+            raise RuntimeError(f"No episode directories found under {episodes_dir}")
+
+        manifests: list[tuple[int, Path]] = []
+        skipped_episodes: list[int] = []
+        for episode_dir in episode_dirs:
+            episode_number = int(episode_dir.name)
+            manifest_path = episode_dir / "render_manifest.json"
+            if manifest_path.exists():
+                manifests.append((episode_number, manifest_path))
+            else:
+                skipped_episodes.append(episode_number)
+
+        if not manifests:
+            raise RuntimeError(f"No render_manifest.json files found under {episodes_dir}")
+
+        self._ensure_ffmpeg_available()
+        semaphore = asyncio.Semaphore(self.settings.pipeline.tts_concurrency)
+        tasks = [
+            self._render_existing_episode_audio(
+                episode_number, manifest_path, project_dir, semaphore,
+            )
+            for episode_number, manifest_path in manifests
+        ]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        succeeded = 0
+        failed = 0
+        failures: list[str] = []
+        for episode_number, result in zip((ep for ep, _ in manifests), results, strict=True):
+            if isinstance(result, Exception):
+                failed += 1
+                failures.append(f"episode {episode_number}: {result}")
+            else:
+                succeeded += 1
+
+        summary = {
+            "run_dir": str(project_dir),
+            "processed": len(manifests),
+            "succeeded": succeeded,
+            "failed": failed,
+            "skipped": len(skipped_episodes),
+            "skipped_episodes": skipped_episodes,
+            "failures": failures,
+        }
+        self.run_logger.log("audio_resynthesis_complete", **summary)
+        return summary
+
     # -----------------------------------------------------------------------
     # Phase 1: Ingest & Index
     # -----------------------------------------------------------------------
@@ -1667,6 +1761,10 @@ class PipelineOrchestrator:
         project_id: str,
         project_dir: Path,
         config: PipelineConfig,
+        *,
+        theme: str,
+        sub_themes: list[str] | None = None,
+        theme_elaboration: str | None = None,
     ) -> BookRecord:
         path = Path(source_path)
         book_id = uuid4().hex
@@ -1694,7 +1792,14 @@ class PipelineOrchestrator:
 
             # Stage 2: Structure chapters
             try:
-                chapters = await self._structure_chapters(book_record, raw_text, project_dir)
+                chapters = await self._structure_chapters(
+                    book_record,
+                    raw_text,
+                    project_dir,
+                    theme=theme,
+                    sub_themes=sub_themes,
+                    theme_elaboration=theme_elaboration,
+                )
             except Exception as exc:
                 raise StructuringStageError(
                     f"Structuring failed for book '{title}' ({source_path}): {exc}",
@@ -1727,7 +1832,14 @@ class PipelineOrchestrator:
             return book_record
 
     async def _structure_chapters(
-        self, book_record: BookRecord, raw_text: str, project_dir: Path,
+        self,
+        book_record: BookRecord,
+        raw_text: str,
+        project_dir: Path,
+        *,
+        theme: str,
+        sub_themes: list[str] | None = None,
+        theme_elaboration: str | None = None,
     ) -> list[ChapterInfo]:
         async with _stage_log(
             self.run_logger, f"structure_{book_record.book_id[:8]}", project_dir,
@@ -1738,6 +1850,9 @@ class PipelineOrchestrator:
             for chapter in chapters:
                 chapter_text = raw_text[chapter.start_index : chapter.end_index]
                 payload = self.chapter_summary_agent.build_payload(
+                    theme=theme,
+                    sub_themes=sub_themes,
+                    theme_elaboration=theme_elaboration,
                     book_id=book_record.book_id,
                     title=book_record.title,
                     author=book_record.author,
@@ -1815,11 +1930,17 @@ class PipelineOrchestrator:
             ]
 
             if len(valid_axes) < project.config.min_axes:
+                valid_axis_ids = {axis.axis_id for axis in valid_axes}
+                fallback_axes = [axis for axis in axes if axis.axis_id not in valid_axis_ids]
+                padded_axes = valid_axes + fallback_axes
                 logger.warning(
-                    "Only %d valid axes (min %d). Using all %d.",
-                    len(valid_axes), project.config.min_axes, len(axes),
+                    "Only %d valid axes (min %d). Padding with %d fallback axes from %d total.",
+                    len(valid_axes),
+                    project.config.min_axes,
+                    max(0, project.config.min_axes - len(valid_axes)),
+                    len(axes),
                 )
-                valid_axes = axes[:project.config.max_axes]
+                valid_axes = padded_axes
 
             valid_axes = valid_axes[:project.config.max_axes]
             _save_json(project_dir / "thematic_axes.json",
@@ -2831,6 +2952,7 @@ class PipelineOrchestrator:
                     previous_episode = {
                         "episode_number": prev.episode_number,
                         "title": prev.title,
+                        "driving_question": prev.driving_question,
                         "thematic_focus": prev.thematic_focus,
                     }
                 next_episode = None
@@ -2839,6 +2961,7 @@ class PipelineOrchestrator:
                     next_episode = {
                         "episode_number": nxt.episode_number,
                         "title": nxt.title,
+                        "driving_question": nxt.driving_question,
                         "thematic_focus": nxt.thematic_focus,
                     }
                 payload = self.episode_planning_agent.build_payload(
@@ -2910,17 +3033,27 @@ class PipelineOrchestrator:
                     merged_catalog=merged_catalog,
                     tension_catalog=tension_catalog,
                 )
-                episode = episode.model_copy(
-                    update={
-                        "episode_number": assignment.episode_number,
-                        "title": episode.title or assignment.title,
-                        "thematic_focus": episode.thematic_focus or assignment.thematic_focus,
-                        "axis_ids": assignment.axis_ids,
-                        "insight_ids": assignment.insight_ids,
-                        "synthesis_context": synthesis_context,
-                        "episode_strategy": episode.episode_strategy or assignment.episode_strategy,
-                    }
-                )
+                episode = EpisodePlan.model_validate({
+                    **episode.model_dump(mode="json"),
+                    "episode_number": assignment.episode_number,
+                    "title": episode.title or assignment.title,
+                    "driving_question": assignment.driving_question,
+                    "thematic_focus": episode.thematic_focus or assignment.thematic_focus,
+                    "axis_ids": assignment.axis_ids,
+                    "insight_ids": assignment.insight_ids,
+                    "unresolved_questions": (
+                        list(episode_arc_detail_by_number[assignment.episode_number].unresolved_questions)
+                        if assignment.episode_number in episode_arc_detail_by_number
+                        else []
+                    ),
+                    "payoff_shape": (
+                        episode_arc_detail_by_number[assignment.episode_number].payoff_shape
+                        if assignment.episode_number in episode_arc_detail_by_number
+                        else ""
+                    ),
+                    "synthesis_context": synthesis_context,
+                    "episode_strategy": episode.episode_strategy or assignment.episode_strategy,
+                })
                 if episode.book_balance:
                     positive_balance = {
                         bid: max(0.0, float(share))
@@ -3015,7 +3148,7 @@ class PipelineOrchestrator:
                         shortfall_minutes=plan_shortfall_minutes,
                         shortfall_ratio=plan_shortfall_ratio,
                     )
-                if not 40 <= total_beats <= 45:
+                if not 50 <= total_beats <= 60:
                     self.run_logger.log(
                         "episode_plan_beats_warning",
                         episode=episode.episode_number,
@@ -3520,6 +3653,185 @@ class PipelineOrchestrator:
     # Phase 4: Audio Rendering
     # -----------------------------------------------------------------------
 
+    def _ensure_ffmpeg_available(self) -> str:
+        ffmpeg_path = shutil.which("ffmpeg")
+        if ffmpeg_path is None:
+            raise RuntimeError(
+                "ffmpeg is required to merge episode audio into mp3 output. "
+                "Install ffmpeg and ensure it is available on PATH."
+            )
+        return ffmpeg_path
+
+    def _merge_audio_segments(self, segment_paths: list[Path], output_path: Path) -> None:
+        ffmpeg_path = self._ensure_ffmpeg_available()
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.unlink(missing_ok=True)
+
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".txt", delete=False, encoding="utf-8"
+        ) as handle:
+            concat_file = Path(handle.name)
+            for segment_path in segment_paths:
+                handle.write(_concat_file_entry(segment_path))
+
+        try:
+            result = subprocess.run(
+                [
+                    ffmpeg_path,
+                    "-y",
+                    "-f",
+                    "concat",
+                    "-safe",
+                    "0",
+                    "-i",
+                    str(concat_file),
+                    "-vn",
+                    "-acodec",
+                    "mp3",
+                    str(output_path),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        finally:
+            concat_file.unlink(missing_ok=True)
+
+        if result.returncode != 0:
+            error_text = (result.stderr or result.stdout or "").strip()
+            raise RuntimeError(
+                "ffmpeg failed to merge episode audio"
+                + (f": {error_text}" if error_text else ".")
+            )
+
+    async def _render_existing_episode_audio(
+        self,
+        episode_number: int,
+        manifest_path: Path,
+        project_dir: Path,
+        semaphore: asyncio.Semaphore,
+    ) -> AudioManifest:
+        async with semaphore:
+            ep_dir = manifest_path.parent
+            manifest = _load_model(manifest_path, RenderManifest)
+            async with _stage_log(
+                self.run_logger,
+                f"audio_resynthesis_{episode_number}",
+                project_dir,
+                episode=episode_number,
+                segment_count=len(manifest.segments),
+                source_manifest=str(manifest_path),
+            ) as ctx:
+                audio_manifest = await self._synthesize_audio_manifest(
+                    episode_number=episode_number,
+                    manifest=manifest,
+                    ep_dir=ep_dir,
+                )
+                ctx["output_summary"] = audio_manifest.diagnostics
+                return audio_manifest
+
+    async def _synthesize_audio_manifest(
+        self,
+        *,
+        episode_number: int,
+        manifest: RenderManifest,
+        ep_dir: Path,
+    ) -> AudioManifest:
+        self._ensure_ffmpeg_available()
+        audio_dir = ep_dir / "audio"
+        audio_dir.mkdir(parents=True, exist_ok=True)
+
+        audio_segments: list[AudioSegmentResult] = []
+        retry_count = 0
+        successful_paths: list[Path] = []
+        merged_path = ep_dir / _MERGED_EPISODE_FILENAME
+        merged_path.unlink(missing_ok=True)
+
+        for seg in manifest.segments:
+            if not seg.text.strip():
+                continue
+            for attempt in range(self.settings.pipeline.audio_retry_attempts + 1):
+                try:
+                    audio_bytes = await asyncio.to_thread(
+                        self.tts_client.synthesize,
+                        seg.text,
+                        seg.voice_id,
+                        self.settings.tts.audio_format,
+                        instructions=seg.instructions,
+                        speed=seg.speed,
+                    )
+                    audio_path = audio_dir / f"{seg.segment_id}.{self.settings.tts.audio_format}"
+                    audio_path.write_bytes(audio_bytes)
+                    successful_paths.append(audio_path)
+                    audio_segments.append(
+                        AudioSegmentResult(
+                            segment_id=seg.segment_id,
+                            audio_path=str(audio_path),
+                            success=True,
+                        )
+                    )
+                    break
+                except Exception as exc:
+                    retry_count += 1
+                    self.run_logger.log(
+                        "tts_retry",
+                        episode=episode_number,
+                        segment_id=seg.segment_id,
+                        attempt=attempt + 1,
+                        error=str(exc),
+                    )
+                    if attempt == self.settings.pipeline.audio_retry_attempts:
+                        logger.error("TTS failed for segment %s: %s", seg.segment_id, exc)
+                        audio_segments.append(
+                            AudioSegmentResult(
+                                segment_id=seg.segment_id,
+                                audio_path="",
+                                success=False,
+                                error=str(exc),
+                            )
+                        )
+
+        diagnostics: dict[str, Any] = {
+            "total_segments": len(manifest.segments),
+            "successful": sum(1 for s in audio_segments if s.success),
+            "failed": sum(1 for s in audio_segments if not s.success),
+            "retries": retry_count,
+            "merged": False,
+        }
+        merged_audio_path: str | None = None
+
+        if diagnostics["failed"] == 0:
+            if not successful_paths:
+                diagnostics["merge_error"] = "No audio segments were rendered."
+            else:
+                try:
+                    await asyncio.to_thread(
+                        self._merge_audio_segments,
+                        successful_paths,
+                        merged_path,
+                    )
+                    merged_audio_path = str(merged_path)
+                    diagnostics["merged"] = True
+                except Exception as exc:
+                    diagnostics["merge_error"] = str(exc)
+
+        audio_manifest = AudioManifest(
+            episode_number=episode_number,
+            audio_segments=audio_segments,
+            merged_audio_path=merged_audio_path,
+            total_duration_seconds=float(manifest.estimated_duration_seconds),
+            diagnostics=diagnostics,
+        )
+        _save_json(ep_dir / "audio_manifest.json", audio_manifest)
+
+        if diagnostics["failed"] > 0:
+            raise RuntimeError(
+                f"Audio rendering failed for {diagnostics['failed']} segment(s)."
+            )
+        if not diagnostics["merged"]:
+            raise RuntimeError(diagnostics.get("merge_error", "Audio merge failed."))
+        return audio_manifest
+
     async def _render_episode_audio(
         self, episode_number: int, spoken: SpokenScript,
         config: PipelineConfig,
@@ -3578,58 +3890,10 @@ class PipelineOrchestrator:
                             "total_segments": len(manifest.segments),
                         },
                     )
-
-                audio_dir = ep_dir / "audio"
-                audio_dir.mkdir(parents=True, exist_ok=True)
-
-                audio_segments: list[AudioSegmentResult] = []
-                retry_count = 0
-
-                for seg in manifest.segments:
-                    if not seg.text.strip():
-                        continue
-                    for attempt in range(self.settings.pipeline.audio_retry_attempts + 1):
-                        try:
-                            audio_bytes = await asyncio.to_thread(
-                                self.tts_client.synthesize,
-                                seg.text,
-                                seg.voice_id,
-                                self.settings.tts.audio_format,
-                                instructions=seg.instructions,
-                                speed=seg.speed,
-                            )
-                            audio_path = audio_dir / f"{seg.segment_id}.{self.settings.tts.audio_format}"
-                            audio_path.write_bytes(audio_bytes)
-                            audio_segments.append(AudioSegmentResult(
-                                segment_id=seg.segment_id,
-                                audio_path=str(audio_path), success=True,
-                            ))
-                            break
-                        except Exception as exc:
-                            retry_count += 1
-                            self.run_logger.log(
-                                "tts_retry", episode=episode_number,
-                                segment_id=seg.segment_id, attempt=attempt + 1,
-                                error=str(exc),
-                            )
-                            if attempt == self.settings.pipeline.audio_retry_attempts:
-                                logger.error("TTS failed for segment %s: %s", seg.segment_id, exc)
-                                audio_segments.append(AudioSegmentResult(
-                                    segment_id=seg.segment_id, audio_path="",
-                                    success=False, error=str(exc),
-                                ))
-
-                audio_manifest = AudioManifest(
+                audio_manifest = await self._synthesize_audio_manifest(
                     episode_number=episode_number,
-                    audio_segments=audio_segments,
-                    diagnostics={
-                        "total_segments": len(manifest.segments),
-                        "successful": sum(1 for s in audio_segments if s.success),
-                        "failed": sum(1 for s in audio_segments if not s.success),
-                        "retries": retry_count,
-                    },
+                    manifest=manifest,
+                    ep_dir=ep_dir,
                 )
-                _save_json(ep_dir / "audio_manifest.json", audio_manifest)
-
                 ctx["output_summary"] = audio_manifest.diagnostics
                 return audio_manifest

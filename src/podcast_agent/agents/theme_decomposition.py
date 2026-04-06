@@ -13,7 +13,7 @@ class ThemeDecompositionResponse(BaseModel):
 
 
 class ThemeDecompositionAgent(Agent):
-    """Decomposes a user theme into 7-9 strong thematic axes spanning all books.
+    """Decomposes a user theme into 25-30 strong thematic axes spanning all books.
 
     This stage is the intentional consumer of chapter summaries and synthesized
     per-book summaries. Later stages use retrieved passage evidence instead of
@@ -26,7 +26,7 @@ class ThemeDecompositionAgent(Agent):
         "You are a thematic analyst preparing a cross-book podcast. Given a theme, "
         "optional sub-themes, "
         "theme-conditioned per-book summaries, and chapter summaries for N books, "
-        "decompose the theme into 7-9 strong analytical lenses (thematic axes).\n\n"
+        "decompose the theme into 25-30 strong analytical lenses (thematic axes).\n\n"
         "Each axis should be:\n"
         "- Narrow enough to drive targeted passage retrieval\n"
         "- Broad enough that at least 2 of the books have something meaningful to say about it\n\n"
