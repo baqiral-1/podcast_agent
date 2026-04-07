@@ -1,0 +1,109 @@
+{
+  "episode_number": 1,
+  "source_render_manifest_path": "/Users/baqir/Python/podcast_agent/runs/iranian_revolution_v12_audio/episodes/1/render_manifest.json",
+  "source_render_manifest_sha256": "f4a7f99eab8c8f14c900c9b3427f026b7bc37c4d9b21029f318622ca0e25510a",
+  "included_terms": [
+    {
+      "grapheme": "Khomeini",
+      "alias": "Kho-may-nee"
+    },
+    {
+      "grapheme": "Tehran",
+      "alias": "Teh-rahn"
+    },
+    {
+      "grapheme": "Shah",
+      "alias": "Shah"
+    },
+    {
+      "grapheme": "Majlis",
+      "alias": "Mah-jlees"
+    },
+    {
+      "grapheme": "Qom",
+      "alias": "Qohm"
+    },
+    {
+      "grapheme": "Mashhad",
+      "alias": "Mash-had"
+    },
+    {
+      "grapheme": "Muharram",
+      "alias": "Muh-harr-um"
+    },
+    {
+      "grapheme": "Ashura",
+      "alias": "Ah-shoo-rah"
+    },
+    {
+      "grapheme": "Karbala",
+      "alias": "Kar-bah-lah"
+    },
+    {
+      "grapheme": "Bazargan",
+      "alias": "Bah-zar-gahn"
+    },
+    {
+      "grapheme": "Sanjabi",
+      "alias": "Sahn-jah-bee"
+    },
+    {
+      "grapheme": "Shariati",
+      "alias": "Sha-ree-ah-tee"
+    },
+    {
+      "grapheme": "Mossadegh",
+      "alias": "Moh-sah-degh"
+    },
+    {
+      "grapheme": "velayat-e faqih",
+      "alias": "veh-lah-yat eh fah-keeh"
+    },
+    {
+      "grapheme": "Fada'iyan-e Islam",
+      "alias": "Fah-dah-ee-yan eh Ees-lahm"
+    },
+    {
+      "grapheme": "mashru'eh",
+      "alias": "mash-roo-eh"
+    },
+    {
+      "grapheme": "mashruteh",
+      "alias": "mash-roo-teh"
+    },
+    {
+      "grapheme": "Shi'ite",
+      "alias": "Shee-ite"
+    },
+    {
+      "grapheme": "Twelver",
+      "alias": "Twelve-er"
+    },
+    {
+      "grapheme": "Usuli",
+      "alias": "Oo-soo-lee"
+    },
+    {
+      "grapheme": "mojtaheds",
+      "alias": "moj-ta-heds"
+    },
+    {
+      "grapheme": "ejtehad",
+      "alias": "ej-teh-had"
+    },
+    {
+      "grapheme": "Nasir al-Din",
+      "alias": "Nah-seer al Deen"
+    },
+    {
+      "grapheme": "Abdul Azim",
+      "alias": "Ab-dool Ah-zeem"
+    }
+  ],
+  "skipped_terms_not_found_in_text": [
+    {
+      "grapheme": "Shari'at-madari",
+      "alias": "Sha-ree-at mah-dah-ree"
+    }
+  ]
+}

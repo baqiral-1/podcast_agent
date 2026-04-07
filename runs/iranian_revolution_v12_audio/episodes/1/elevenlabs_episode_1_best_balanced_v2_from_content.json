@@ -1,0 +1,3837 @@
+[
+  {
+    "name": "Episode 1",
+    "blocks": [
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "\"A revolution of the middle class, led by clergy in turbans, against a king who called himself the King of Kings.\" How did Iran arrive at this paradox in 1979? Today, we spiral backward through nearly a century to find out. <break time=\"1.5s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.5s\" /> Tehran."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "February, 1979."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The luxury apartments of north Tehran stand untouched."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "No looting."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "No arson."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "No mobs storming the villas of the rich."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "You can take a taxi from the smoldering barricades of south Tehran, drive north beneath the mountains, and find the opulent townhouses with their tree-shaded verandas and goldfish ponds perfectly intact."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Accumulated wealth has not been seized by the state."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "This is not the French Revolution."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "This is not the Russian Revolution."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "This is something else entirely. <break time=\"0.9s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.4s\" /> In a modest government office — two desks, a sofa, a clutter of chairs, a telephone purring unanswered in the corner — a man named Amir Abbas Entezam leans forward and taps his chest."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "He's the new deputy prime minister."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "He's an engineer."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Educated in America."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Speaks English with an American accent."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "And he's telling a foreign journalist something that defies every Western expectation about what a revolution looks like."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "\"I am proud that this has been a middle-class revolution,\" Entezam says."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "\"I'm proud of that.\" <break time=\"0.6s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> And in his way, he's telling the truth."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The physical power behind the revolution lay in those colossal street demonstrations by the urban poor and the Islamic revivalists — hundreds of thousands marching, shouting the name of a seventy-eight-year-old cleric who'd spent the last fifteen years in exile."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "But the economic backing came from somewhere else: the bazaar."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Tens of thousands of merchants from the Middle East's largest marketplace had provided the financial infrastructure for Khomeini's return. <break time=\"0.4s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> It was this merchant class and its alliance with the mullahs that emerged as the critical combination."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "That's why the homes of the rich were left standing."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The revolution had been bankrolled by the rich — a different kind of rich."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The traditional rich."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The bazaar rich."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Their wealth was rooted not in the Shah's patronage but in centuries of commerce conducted under the vaulted arcades of Iran's ancient marketplaces. <break time=\"0.7s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.5s\" /> How did this happen?"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "How did the Shah of Iran — a man who had built more schools, more hospitals, more factories, and more universities than any ruler in Iranian history — create the very forces that destroyed him?"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "And why, when those forces converged, did they produce not a democracy but a theocracy?"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "This is the central puzzle of the Iranian Revolution."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "And it's the question that will drive this entire series. <break time=\"0.5s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> The march toward revolutionary upheaval was arguably set as early as 1953, when the last chance for a democratic process was lost — or was taken away, depending on how you look at it. You could trace the origins even further back, to the aftermath of the Constitutional Revolution and the rise of Pahlavi modernity, when Iran's nascent political process effectively came to a standstill. Yet even more important than 1921 or 1953 were the developments of the 1960s, when land reform freed generations of land-bound villagers and brought them flooding into the cities. These newcomers fueled a popular revolution that came to fruition in large part because of their sheer multitude. <break time=\"0.4s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.4s\" /> But to understand why this revolution took the specific form it did — why it was Islamic rather than democratic, why it was led by a cleric rather than a politician — we need to go back much further than the 1960s."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "We need to go back to 1891"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": ". <break time=\"0.9s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.4s\" /> In 1891, Nasir al-Din Shah — isolated in the private world of the Qajar court, oblivious to the rising discontent around him — sold the entire Iranian tobacco industry to a British company."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The price?"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Fifteen thousand pounds."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Under the terms of the concession, every farmer who grew tobacco had to sell it to the British Imperial Tobacco Company."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Every smoker had to buy it at a shop that was part of British Imperial's retail network."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Iran was then, as it is today, both an agricultural country and a country of smokers."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Many thousands of poor farmers grew tobacco on small plots."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "A whole class of middlemen cut, dried, packaged, and distributed it."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "And countless Iranians smoked it. <break time=\"0.4s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> That this native product would now be taken from the people who produced it and turned into a tool for the exclusive profit of foreigners — it proved too great an insult."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "A coalition of intellectuals, farmers, merchants, and clerics — such as had never before been seen in Iran — resolved to resist."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Sporadic protests began in Shiraz and spread through Isfahan, Tabriz, and Mashhad."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "In nearly all instances, it was the merchants who pleaded with local religious authorities to lend their support."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Public gatherings in the mosques denounced the foreigners."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "And the slowing of religious taxes from the bazaar brought the message home to the clergy: their livelihoods depended on the merchants' prosperity."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "And that prosperity was under threat. <break time=\"0.5s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.5s\" /> Then came the fatwa."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The country's leading religious figure, Sheikh Shirazi, endorsed a religious order declaring that as long as foreigners controlled the tobacco industry, smoking would constitute defiance of the Twelfth Imam — \"may God hasten his appearance.\" News of this order flashed across the country through telegraph wires the British themselves had built several decades earlier."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Almost all who heard it obeyed. <break time=\"0.5s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> Nasir al-Din Shah was bewildered, frightened, and then overwhelmed by the unanimity of the protest. When his own wives stopped smoking, he realized he had no choice but to cancel the concession. To add to the indignity, he had to borrow half a million pounds from a British bank to compensate British Imperial for its loss. <break time=\"0.4s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.4s\" /> The crisis revealed fundamental changes in nineteenth-century Iran."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "It demonstrated that local revolts could now spread into general rebellions, that the intelligentsia and the traditional middle class could work together, and that the Shah, despite his claims, was a Titan with feet of clay."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "A template had been born: clerical fatwa, bazaar strike, mass civil disobedience."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "It was a template that would be reproduced — with variations, refinements, and escalating ambition — in 1906, in 1953, in 1963, and finally, catastrophically, in 1979."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "History changes course when people realize there is an alternative to blind obedience. <break time=\"0.8s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> The tobacco protest was, as one historian put it, a dress rehearsal for the forthcoming Constitutional Revolution. It had shown that a protest movement starting in the south of the country could be fully embraced in the northern commercial center — signifying a shared economy that surpassed Iran's typical regional polarity. The Shah was not merely a despot who could be petitioned. He was a despot who could be defied. <break time=\"0.6s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.4s\" /> But why was this alliance between mosque and bazaar possible in Iran and virtually nowhere else in the Muslim world? The answer lies in a structural peculiarity of Shi'ite Islam that has no parallel in the Sunni tradition. In the late eighteenth and early nineteenth centuries, the Usuli movement — a revival of Twelver Shi'ite jurisprudence — vigorously reaffirmed the principle of ejtehad: the independent reasoning of qualified religious scholars. This movement greatly augmented the prerogatives of the Shi'ite mojtaheds as authoritative interpreters of Sacred Law. More critically, it assured the independence of religious authority from the political authority of the ruler. <break time=\"0.4s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> A novel interpretation of the religious tax known as \"the share of the Imam\" was introduced, enabling the clergy to collect voluntary religious dues as the lawful recipients of funds belonging to the Hidden Imam."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "From the nineteenth century onward, this voluntarily discharged tax gave the Shi'ite clergy a source of income that was immune from state encroachment."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The result was a dual structure of authority unique to Iran."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Unlike Sunni clerical institutions, which for centuries had been under the aegis of the Ottoman state, the Iranian ulama maintained their institutional independence."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "They controlled the religious life of over ninety percent of the population."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "They ran the courts, the schools, the endowments."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "And they answered to no king. <break time=\"0.5s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> In the sixteenth century, the Iranian Shi'ite ulama had made a deal: they agreed to affirm the monarchy's legitimacy as long as the throne defended Shi'ite identity and the Shi'ite realm."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The first cracks in this partnership came in the nineteenth century, as the Qajar monarchy proved weak and increasingly did the bidding of Britain and Russia."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The Pahlavis, who came later, never conceived of Iran as a Shi'ite realm and refused to see defending Shi'ism as their duty."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "On the contrary — they saw Shi'ism as a stumbling block to their modernizing agenda."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "This broke the centuries-old compact."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "And it left the clergy free to become the champions of the nation against both the state and the foreigners. <break time=\"0.5s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.4s\" /> And on the other side of this autonomous clergy stood the bazaar — an institution that was far more than a marketplace."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The bazaar and the mosque are the two lungs of public life in Iran."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The bazaar is not just an economic arena."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "It's a region of the human spirit — the lineal descendant of the Greek agora and the Roman forum."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Not only prices but men's reputations are set, reset, and continually adjusted in the bazaar, as information flows through networks of reliable friends. <break time=\"0.3s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "When political life comes to a boil, the bazaar isn't just the public assessor of values — it becomes a direct arena for political expression. And when the bazaar boils over, it simply shuts. Streets of shop fronts barred by heavy shutters testify to the determination of merchants not to let normal life continue until the common concern is dealt with. Moments at which the Tehran bazaar closed punctuate the last two centuries of Iranian history. <break time=\"0.5s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> Western economic penetration in the nineteenth century threatened the many urban bazaars, and gradually induced the scattered regional commercial interests to coalesce into one cross-regional middle class — conscious for the first time of its own common grievances. Simultaneously, Western contact introduced new concepts, new aspirations, and eventually a new professional middle class known as the intelligentsia. These two middle classes — traditional and modern — would be the revolution's twin engines, converging in every subsequent political upheaval. <break time=\"0.5s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.4s\" /> In December 1905, the economic crisis hit."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Bad harvests throughout the country."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "A sudden disruption in northern trade caused by the Russo-Japanese War."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The subsequent revolution in Russia led to rapid inflation."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "During the first three months of 1905, the price of sugar rose by thirty-three percent."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Wheat went up by as much as ninety percent."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The governor of Tehran tried to lower sugar prices by bastinadoing two of the leading sugar importers — caning the soft soles of their feet."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "One of the victims was a highly respected seventy-nine-year-old merchant who had financed the repair of the central bazaar and the building of three mosques. <break time=\"0.4s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> The news of the beatings, according to one eyewitness, flashed like lightning through the bazaars."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Stores and workshops closed."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Crowds congregated in the main mosque."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Two thousand merchants and theology students took sanctuary at the shrine of Abdul Azim south of the capital."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The first Iranian revolution had begun."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The merchants took the lead from constitutional activists in persuading the ranking mojtaheds to support the idea of a constitution."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Even more than the Tobacco Protest fifteen years earlier, the merchant class was the engine behind the protesters. <break time=\"0.4s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The British legation offered not only immunity but a secular space — one outside the mosque and religious sanctuaries — a space where the idea of a \"house of justice\" could be refashioned into a demand for a European-style constitution. <break time=\"0.5s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.4s\" /> In the summer of 1906, emotions reached a feverish pitch."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Several hundred radicals decided to take bast — refuge — on the grounds of the British Legation, a sprawling compound covering the space of sixteen city blocks."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Before long, fourteen thousand Iranians were inside."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "They lived in tents according to their guilds and ate from great cauldrons of food prepared in a common kitchen."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Massive copper cauldrons were brought from the mosques and placed on makeshift hearths."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Banners identified the guilds — cobblers, porcelain menders, fresh walnut vendors. <break time=\"0.4s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> This assemblage quickly turned into a school where the principles of democracy formed the core curriculum. Every day, articles from reformist newspapers were read aloud. Agitators gave speeches about social progress. Foreign-educated intellectuals translated the works of European philosophers. According to one participant, the students transformed the gathering into \"one vast open-air school of political science.\" The Shah finally agreed to a Majlis — a parliament — with true power. <break time=\"0.4s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> One British diplomat cabled his amazement back to London: \"One remarkable feature of this revolution here — for it is surely worthy to be called a revolution — is that the priesthood have found themselves on the side of progress and freedom."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "This, I should think, is almost unexampled in the world's history.\" The Constitutional Revolution represented the nationwide, concerted political action of the urban mercantile strata acting as a class for itself."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "But civil society was small and weak."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The mercantile bourgeoisie could not act effectively without seeking support from the clergy."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "And the urban alliance of the mosque and the bazaar could not fail to draw the military might of the tribal periphery into the political arena. <break time=\"0.5s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.4s\" /> But this alliance between clerics and secular reformers was fragile from the start."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Sheikh Fazlollah Nuri — a prominent cleric who had initially supported the movement — now turned against it."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "He coined a concept for the system of government he envisioned: mashru'eh — Islamic constitutionalism."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The Majlis should not be contrary to Islam, he argued."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "\"We see today that in the Majlis they have brought the legal books of the European parliaments and have deemed it necessary to expand the law, whereas we the people of Islam have a heavenly and eternal Sacred Law.\" <break time=\"0.4s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> Nuri's propaganda caused quite a stir. It articulated an ideology for all those whose interests were threatened by the proposed reforms. It turned against parliamentarianism a considerable number of those who had piously withdrawn from politics. Parliamentarianism was now presented as a threat to the Islamic tradition. The impact was immediate. It affected religious craftsmen and shopkeepers, and many Majlis deputies. But above all, it gave definitive form to the clerical estate's orientation toward parliamentarianism. It caused a split within the clergy that would never heal. <break time=\"0.4s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> Some mojtaheds supported parliamentary democracy unflinchingly. Others insisted on the supervisory veto power of religious authority. This debate — mashruteh versus mashru'eh, constitutional versus Islamic constitutional —"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "would resurface in 1979"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": ". <break time=\"0.8s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.4s\" /> Confident that most of the country's religious leaders were with him, Mohammad Ali Shah began a campaign of terror against the Majlis."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "In June 1908, he ordered his elite Cossack Brigade to bombard and sack the building where the Majlis was meeting."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The American financial adviser Morgan Shuster was hired by the Majlis to dismantle the elaborate systems of tax exemptions through which British and Russian syndicates were looting Iran."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Both foreign governments demanded his removal."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "When the Majlis defiantly refused, the Russians sent troops."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The royal court, immeasurably strengthened by the presence of foreign soldiers, shut the Majlis down. <break time=\"0.5s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> Iran's tumultuous five-year Constitutional Revolution — the first concerted attempt to synthesize Iranian tradition with modern democracy — was over."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "It was crushed with the decisive help of foreign powers."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "But only after it had laid the foundation for a democratic Iran."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "A constitution had been written and adopted."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Under its provisions there would be regular elections."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "In the years to come, Iranian rulers could and would ignore, overrule, and act against public opinion."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "But they would never manage to extinguish the people's conviction that they were endowed with rights no government could take from them. <break time=\"0.7s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.5s\" /> Here we should pause to note a disagreement among historians that matters enormously for how we understand 1979. Was the Constitutional Revolution primarily destroyed by foreign intervention — British and Russian imperialism — or by the internal clerical-secular split? One school of thought emphasizes the geopolitical constraints: the all-embracing assault of hostile foreign forces. Another highlights the ideological fracture between mashruteh and mashru'eh as the deeper structural problem — a fracture that would recur in every subsequent political settlement. As the historian Abbas Amanat has noted, the predominance of the Qajar nobility, domestic unrest, and mere inexperience also bear a share of the blame. This disagreement can't be resolved here. But it will recur throughout this series, because how you explain the Constitutional Revolution's failure shapes how you explain 1979. <break time=\"0.5s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> Yet it's wrong to view the Constitutional Revolution as an outright failure. Iran in 1914 was fundamentally different from the Iran of 1905. In less than a decade, not only were the two pillars of the old order — the Qajar monarchy and the mojtahed establishment — weakened; the revolution had also managed to remove important barriers to social and cultural change. State centralization, an integrated army, reforms in finances, civil and penal codes, modern public education — all grew out of the debates of the constitutional period. The ideology of Iranian nationalism was nurtured during this era. <break time=\"0.3s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> Most statesmen who saw through the reforms of the postconstitutional era, including Reza Shah himself, were shaped by the experience of the revolution and burned by its political setbacks."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The Constitutional Revolution was both failure and foundation."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Its modernizing project became the Pahlavi legacy."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Its democratic aspirations became the ghost. <break time=\"0.8s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.5s\" /> Enter Reza Shah — the child of the Constitutional Revolution who would betray its democratic promise."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "A Cossack officer who seized power in 1921, he built the army, the railroads, the schools, the courts."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "He gave the country new avenues, plazas, highways, factories, ports, hospitals, and government buildings."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "He created the country's first civil service and the first national army it had known for centuries."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "He introduced the metric system, the modern calendar, the use of surnames, and civil marriage and divorce. <break time=\"0.4s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> In many ways, Reza Shah resembled his better-known contemporary Mustafa Kemal of Turkey. Both aimed at transforming their traditional societies into modern nation-states. Both associated modernization with Westernization. Both tried to force women out of their homes into public life. Both rose to power mainly with the assistance of the military. But the two differed in one crucial respect. Whereas Mustafa Kemal conscientiously channeled the enthusiastic backing of the intelligentsia into the Republican Party, Reza Shah gradually lost his initial civilian support and, failing to secure social foundations for his institutions, ruled without an organized political party. His state hovered somewhat precariously, without class foundations, over Iranian society. This structural weakness would be inherited by his son. <break time=\"0.5s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.4s\" /> When the Allies invaded Iran in 1941, Reza Shah's much-vaunted military all but disappeared overnight. His son, Mohammad Reza Shah, inherited the lesson — and the contradiction. Father and son shared nearly every element of their authoritarian modernization. They both believed in the indispensable necessity of an authoritarian monarch. They both valued industrialization. They both wanted a more educated working class, a larger middle class. They both believed women should be fully enfranchised. They were both fierce advocates of cultural and aesthetic modernity — so long as it didn't tread in political waters. <break time=\"0.4s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> The idea of a modernizing monarch is almost an oxymoron."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Monarchy is, by definition, a traditional form of rule."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Its legitimizing narrative is invariably based on the traditional idea of divine right."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Modernity, on the other hand, is founded on the idea of popular sovereignty and natural rights."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The Shah was a historical anomaly — a man who promoted social and economic policies that hurled Iran into the modern age, yet insisted on ruling the country like a nineteenth-century Oriental despot. <break time=\"0.6s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.4s\" /> But first, a brief detour through the 1953 coup — the event that would define the Shah's legitimacy crisis."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Mossadegh's overthrow taught two bitter lessons."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "For the Shah: he could never trust democracy."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "For the opposition: if the Shah was ever to be dethroned, there could be no flirtation with constitutional rights, no half-measures, no counter-revolutionaries left to restore Western power in Iran."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "A future revolution would have to be final, absolute — and unforgiving. <break time=\"0.5s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> The 1953 coup made 1979 more radical than it might otherwise have been. Mossadegh, whose worldview was largely shaped by the Constitutional Revolution and its prescribed parliamentary process, had been the last hope for constitutional nationalism. His overthrow discredited the constitutional-nationalist project and left a lasting impact on the Iranian intelligentsia, who remained wary of foreign intrigue and arbitrary rule. The ghost of the Constitutional Revolution now haunted from a new angle — not as an aspiration that might yet be fulfilled, but as a warning that democracy in Iran would always be sabotaged from abroad. <break time=\"0.6s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.4s\" /> With Mossadegh gone and the Shah restored, the stage was set for the White Revolution."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "In January 1963, the Shah held a national referendum approving six points of his reform program: land reform, the sale of some state-owned factories, the enfranchisement of women, nationalization of forests and pastures, a literacy corps, and profit-sharing schemes for industrial workers."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "For what slogans are worth, the White Revolution of the 1960s did set in motion a revolution of the Shah and the people."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "However, there was a sharp disjunction."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The Shah did his revolution first, completing it by 1978."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Then the people began theirs. <break time=\"0.4s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> The White House was not pleased — but for an entirely different reason. They concluded the Shah had decided to wrap himself firmly in the mantle of \"revolutionary monarch.\" Moreover, in what turned out to be an almost prophetic prediction, the White House was worried that land redistribution without extensive social reform would result in chaos and turn the newly activated peasantry against the Shah. What they failed to predict was that with the rise of oil revenues, cities would become magnets for these disgruntled peasants — and that in the cities, they would be absorbed by the clergy's wide network of organizations, becoming foot soldiers of the Islamic Revolution. <break time=\"0.5s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.4s\" /> The clergy's response was immediate and fierce."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "In early October 1962, the government publicized a bill for the election of town councils that eliminated the profession of Islam as a condition for electors and enfranchised women."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "A religious teacher in Qom named Ruhollah Khomeini vigorously denounced all these propositions."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "He called the bill the first step toward the abolition of Islam."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Holding a copy of the Koran in one hand and a copy of the Constitution in the other, he publicly accused the Shah of violating his oath to defend Islam and the Constitution. <break time=\"0.4s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> On June 3, 1963, Khomeini denounced the Shah in words remarkable for their slanderous tone: \"O Mr."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Shah, dear Mr."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Shah, abandon these improper acts."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "I don't want people to offer thanks should your masters decide that you must leave.\" Khomeini's detention triggered violent clashes across Iran that briefly threatened the monarchy."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The prime minister issued the order for troops to open fire, restoring order at the cost of about one hundred lives. <break time=\"0.4s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> The Shah felt sure he had seen off the threat from Iran's religious right with a few rounds of grapeshot. He bundled Khomeini aboard an airplane and cast him from the country. Now he could get back to the real work of modernizing Iran. <break time=\"0.6s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.4s\" /> The Shah thought he had neutralized the clerical threat."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "He was wrong — and the reason goes back to the structural autonomy we discussed earlier."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The Pahlavi state's stripping of the ulama's judicial and educational functions paradoxically \"disembedded\" them from the state apparatus."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Religious courts were replaced by secular courts."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Authentication and registration of deeds was transferred to state notaries."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The Endowments Law established centralized control over religious endowments."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The land reform of the 1960s redistributed land owned by mosques and seminaries. <break time=\"0.3s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> But these developments had an unintended consequence. The religious institutions became totally independent of the state. This independence was sustained by the one source of income inevitably immune from state encroachment: the voluntary payment of religious taxes. With the economic prosperity of the 1960s and 1970s, this revenue increased considerably. By the 1970s, the ulama retained very few of the ties that had bound them to the court, the state, and the landlords in 1907. They had become more homogeneous, more distinct from the secular intelligentsia — and more autonomous than ever before. Such autonomy, as one sociologist of revolutions has emphasized, facilitates the development of coalitions with broader groups and tends to result in far-reaching restructuring of social institutions. <break time=\"0.5s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.4s\" /> And on the other side of this disembedded clergy stood the bazaar — also under attack."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The encouragement of chain supermarkets and department stores created direct competition with the traditional sector."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Machine-made bread and shoes adversely affected the guilds."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The bazaar became increasingly excluded from access to huge amounts of credit for developmental projects."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Then, in 1975, the Shah launched an anti-profiteering campaign."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Some ten thousand students were hired to inspect the shops."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Eight thousand merchants and retailers were imprisoned."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "A very large number were exiled and fined. <break time=\"0.4s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> By early 1976, every bazaar family had at least one member who had directly suffered."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "One shopkeeper told a French correspondent that the White Revolution was beginning to resemble a Red Revolution."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Another confided to an American journalist: \"If we let him, the Shah will destroy us."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The banks are taking over."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The big stores are taking away our livelihoods."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "And the government will flatten our bazaars to make space for state offices.\" Not for the first time, the bazaar community increasingly turned to its traditional ally, the ulama, for help and protection. <break time=\"0.5s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> Khomeini relied primarily on the bazaar for moral and financial support. The bazaaris who ran businesses in the bazaar's stores and caravansaries preserved professional loyalties. They held ties with the clerical establishment and contributed, at times generously, to their coffers. They made up the mosque congregations, funded the Muharram mourning associations, and their rank and file packed religious events. The neighborhood associations — often named \"association of mourners of Husain\" — represented indigenous civic organizations. They allowed men, and especially youth, to uphold a group identity and were fertile ground for Islamist activism. <break time=\"0.5s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.4s\" /> The bazaar and the mosque were reuniting. But what about the new middle class the Shah had created? The statistical portrait of his accomplishments was indeed impressive. In 1941, there were only 351 high schools and 8 universities in the country. By 1974, there were 2,314 high schools and 148 universities. The annual growth of industry went from five percent per year in 1962 to twenty percent in 1974. Between 1961 and 1972, the number of female students increased thirteen percent for primary schools, thirty percent for high schools, eighty-eight percent for technical schools, and sixty-five percent for institutions of higher education. <break time=\"0.3s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> The Shah had created a massive, educated, ambitious middle class."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "And he had given them no political voice whatsoever."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Iran spent 10.6 percent of its GNP on the military — France spent only 3.9 percent."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The sudden fivefold increase in oil revenues inflated expectations and widened the gap between what the regime promised and what the public obtained."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The Shah followed a scorched-earth policy against the country's moderate and leftist forces while believing the clergy — with the exception of Khomeini's supporters — were his reliable allies."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "His policy left the clergy and their nimble network of organizations an opportunity to grow and to monopolize the public domain. <break time=\"0.5s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.4s\" /> The contradiction was captured by a single businessman's complaint. As one prominent Iranian industrialist cautiously put it, capitalism needs security, rule of law, and the force of the market to develop — and it cannot grow if it is held hostage to the vagaries of a single person, even if he is a sagacious leader like the Shah. In that cautious criticism, as the historian Abbas Milani has observed, lay the essence of the contradiction that threatened the Shah's modernizing authoritarianism: the more he succeeded, the more he inadvertently prepared the conditions of his own downfall. <break time=\"0.6s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.4s\" /> The land reform's unintended consequences were equally dramatic. It freed generations of land-bound villagers and brought them flooding into the cities. Between 1956 and 1976, the urban population of Iran increased from thirty-one percent to forty-seven percent of the total — from six million to sixteen million. Rural-urban migration accounted for a substantial proportion of this growth. These newcomers — \"the disinherited\" of Islamic revolutionary ideology — fueled a popular revolution because of their sheer multitude. The life of Iran's controversial twenty-first-century president, Mahmoud Ahmadinejad, follows this trajectory closely: village to city to revolution to power. <break time=\"0.4s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The key to the social composition of Islamic and university activists of the 1970s is that they came to big city universities from small towns, or they were the first generation from their traditional lower-middle-class background to attend a university — or both. These young men crucially contributed to the revolutionary politicization of the Islamic revival. <break time=\"0.4s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> One Iranian intellectual had foreseen it: \"We have wearied the minds of our people for years with chemical, physical and mathematical formulas — but to what purpose? There's no practical setting for the hypotheses and equations.\" The Shah's education system had created angry mobs of graduates who couldn't even find any queue to join. The combination of higher education and social dislocation was of particular importance in explaining the politicization of integrative movements — and in explaining why those movements took an Islamic rather than a secular form. <break time=\"0.5s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> In the cities, these migrants found the clergy's network waiting for them. By the 1970s, religious forces had developed the idea of the hosseiniye — a modern lecture hall that used modern trappings to cultivate a Shi'ite theology shorn of superstition. People sat on chairs — a habit of the middle classes. Financial support came from bazaar merchants close to the Freedom Movement. Ideological management was in the hands of Khomeini supporters. Every move they made, we now know, was made after consultation with Khomeini in exile. <break time=\"0.3s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "At these lecture halls, more moderate clergy and eloquent Islamist orators offered a version of Shi'ism that was more amenable to modernity and democracy. By allowing only the clergy to organize and mobilize the population, the Shah inadvertently pushed moderate forces into Khomeini's camp. <break time=\"0.5s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.4s\" /> By the mid-1970s, the Shah had created three distinct social forces arrayed against him."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The new middle class: government employees, teachers, intelligentsia, white-collar workers — by and large the product of the modern state created by the Pahlavis."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The traditional bourgeoisie: bazaar merchants, petty traders, craftsmen."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "And the urban migrants: recent arrivals from the countryside, the disinherited."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Each had different motives."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Each proposed different alternatives to the Pahlavi regime."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The new middle class wanted national sovereignty and popular democratic government — not an Islamic government."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The bazaar wanted economic protection and respect for traditional values."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The clergy wanted to regain lost prerogatives."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The urban poor wanted inclusion. <break time=\"0.4s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> But a secret government poll of the Tehran bazaar revealed an even more complex picture. Guild elders and workshop owners supported conservative politicians and religious leaders, while guild members, wage earners, and shop assistants favored the Tudeh party. Class conflicts had entered the bazaar itself, dividing employees from employers. The mosque-bazaar alliance was real — but it was not monolithic. <break time=\"0.5s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> They shared one thing: the desire for political enfranchisement. They all lacked political power and were denied any meaningful political participation. One of the most serious shortcomings of the Pahlavi regime was its failure to increase political participation in the face of rapid social change. But their visions for Iran's future were radically different. <break time=\"0.3s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The leading clerical militants came from traditional urban backgrounds and had a keen awareness of the dispossessions of the Shi'ite clergy by the Pahlavi state. The younger militant clerics were heavily drawn from humbler rural and small-town backgrounds and saw all avenues of upward social mobility blocked for their profession. An Islamic government would guarantee them rapid social ascent. The first-generation provincial university students — mostly in applied sciences and engineering — also saw themselves barred from Westernized high society and high government positions. It would be absurd to attribute any class interest to this group other than the desire to gain power, to move up on the social ladder, and to put an end to a cultural climate they found alien and deeply resented. <break time=\"0.5s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.4s\" /> This is where the deepest analytical disagreement in the field emerges — a disagreement that will run through this entire series. One framework, developed most rigorously by the sociologist Said Amir Arjomand, emphasizes political and moral motives over class interest. In remarkable contrast to the efficacy of political and moral motives, Arjomand argues, stands the inefficacy of class interest. The bazaar, which had the strongest class interest in overthrowing the Shah, is minimally represented in the post-revolutionary Majlis. The one social class that has benefited most from the Islamic government's policies — the peasantry — didn't participate in the revolution at all. The new middle class, especially middle-class women, \"suicidally\" joined the Islamic revolutionary movement against their own class interests. <break time=\"0.4s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> Against this stands the materialist class analysis developed by Ervand Abrahamian, who insists that economic grievances — the bazaar's exclusion from credit, the new middle class's political frustration, the working class's wage stagnation — were the primary revolutionary motors. For Abrahamian, the revolution came not from religious conviction alone but from the convergence of class interests under conditions of uneven development. <break time=\"0.3s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The traditional bourgeoisie — the merchants of the bazaar, the petty bourgeoisie of distributive trades, and the craftsmen of the bazaar guilds — was the one social group for which class interest was the primary motive for overthrowing the Shah. This class felt threatened by the developmental economic policies of the state, excluded from credit, and invaded by competing supermarkets and chain stores. To this motivating class interest was added a sense of relative deprivation and considerable moral indignation at the disregard of Islam under foreign cultural influence. <break time=\"0.4s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.4s\" /> Which framework is correct? Perhaps both. Perhaps neither is sufficient alone. This tension — between structural and economic explanations, between religion and class as the engine of revolution — cannot be resolved in a single episode. But it will drive the entire series. <break time=\"0.7s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.4s\" /> The puzzle of the new middle class is especially vexing. How can one comprehend that this unprepared middle class could not think beyond the instant gratification of regicidal vengefulness? Why, instead of wringing concession after concession from a desperate Shah and a frightened military elite, did they choose to become subordinate allies of a man who treated them with haughty contempt and rejected their principles of national sovereignty and democracy? <break time=\"0.3s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "How can one account for the abject surrender to the clerical party of one after another of the feeble, middle-class-based political factions — liberals, nationalists, and Stalinist communists alike?"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "During the first massive peaceful demonstration in September 1978, the leader of the National Front was moved to remark that during the march \"there was no longer an I but only a We.\" A middle-class feminist, tears streaming down her face, explained to French reporters that Khomeini was making her rediscover her \"Iranianness.\" The new middle class was too inebriated by a newly discovered national communion and too seduced by the myth of the revolution to think clearly. <break time=\"0.6s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.4s\" /> One answer lies in the Shah's systematic atomization of potential opposition. In twentieth-century Iran, the centralizing state had atomized society to a considerable degree. It had detached the tribal chiefs and dissolved the landowning class. It had created an intelligentsia, a bureaucratic class, a body of army officers, and an industrial-entrepreneurial group — all of whom were unattached to any solidary social community, be it a tribe, an estate, or a corporation. The Shah had kept the new middle class under constant surveillance of the secret police and had not allowed it to form associations or gain any political experience. <break time=\"0.4s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> The atomized new middle class proved to be the proverbial Marxian sack of potatoes. Meanwhile, three elements of the old civil society escaped atomization: the Shi'ite clerical estate, the bazaar and traditional bourgeoisie, and urban communities in certain older city quarters dominated by those two groups. To these one should add new urban communities created by chained migration from rural areas. When the state collapsed, only the clergy had an autonomous institutional basis capable of organizing mass resistance. <break time=\"0.5s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> An American Peace Corps volunteer stationed in rural Iran saw this divide with his own eyes. At one college campus, cosmopolitan students dreamed of Western-style democracy. \"They didn't advertise any of it,\" he recalled, \"and certainly they weren't going to confide in me, because they were all still quite afraid of SAVAK, but resentment of the state was everywhere.\" But he also recognized the others — the traditionalists and religious conservatives whose passion was born not of progressivism or Western emulation but of the fierce rejection of those very elements. These revolutionaries he recognized from the countryside. <break time=\"0.5s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.4s\" /> The Shah's blindness was structural, not merely personal."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "He felt, in the words of a confidante, \"like a man who had lavished everything on a beautiful woman for years, only to find that she had been unfaithful all along.\" He dismissed every form of opposition as a tool of Western governments."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Even when he looked for domestic causes, he was under an illusion."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "He concluded that he should have exercised more authoritarianism, not less."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "\"Today, I have come to realize that the events of 1978-79 were attributable in part to the fact that I moved too rapidly in opening the doors of the universities, without imposing more severe preliminary selection.\" He blamed the universities he had opened — not the democracy he had denied. <break time=\"0.6s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> The Shah's blindness was mirrored by those closest to him. Asadollah Alam, his most trusted confidant, drove through a new slum on the outskirts of Tehran one day when his limousine was stranded by a traffic accident. He saw pariah dogs and a few unwashed babies pawing over a heap of rubbish at the street corner. Shaven-headed servicemen in badly-cut trousers and ill-fitting boots. It was, he wrote in his diary, \"both droll and desperately depressing, a scene from a top-heavy society.\" <break time=\"0.4s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> The heretical thought occurred to him that at least in the Soviet Union there was an element of social equality — that almost everyone was poor together, rather than the chasm between rich and poor that one saw in Iran. \"The Shah struggles day and night, confident that within a decade we shall have surpassed much of the developed world,\" Alam wrote. \"Yet no manner of wishful thinking can alter life in those streets.\" <break time=\"0.7s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> By the summer of 1977, conditions in the restive southern suburbs of Tehran were deplorable — power cuts lasting eight to ten hours a day."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Young men standing around waiting for something to do."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "People flocking from the countryside, crammed into impossible living quarters."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Those who ventured onto the streets of south Tehran were struck by the sullen atmosphere."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "\"There was more under- and unemployment than you could shake a stick at,\" one frequent American visitor recalled."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "\"If you went down into South Tehran in 1977 on a warm summer's day, you wondered why the place didn't blow up earlier.\" <break time=\"0.5s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.4s\" /> In 1971, the Shah invited world leaders to celebrate 2,500 years of monarchy at the ancient capital of Persepolis."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Iranian troops were dressed as Medes and Persians, Safavids and Parthians."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Everything — from the fine wines to the furnishings in the vast tent beside the ruins — was imported from abroad."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "At a dinner party, a guest whispered to Anwar Sadat's wife: \"There will be a revolution."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "I can feel it."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The rich here are too rich and the poor too poor without enough of a middle class to provide stability.\" Her husband forbade her to say anything to the Shah."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "\"You must not stick your nose into other people's business."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The Shah will listen to you out of politeness and then he will not change anything."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "So what's the use?\" <break time=\"0.5s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.4s\" /> The Shah's declaration of a one-party state in March 1975 closed the last door to peaceful dialogue."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Ambassador Helms took this to mean the Shah was circling the wagons."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "\"Press reports to the contrary, the Shah's announcement was received by most of the embassy's contacts with a wave of cynicism and confusion,\" Helms informed Kissinger."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "\"This inhibits the process by which political institutions can learn to function without his guidance.\" Political parties act as steam vents in a democracy."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The Shah had sealed them shut. <break time=\"0.5s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.4s\" /> The Rastakhiz Party disaster of 1975 was the point of no return."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The Shah abolished his two-party system and created a one-party state."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Everyone must join or leave the country."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The party opened branches in the bazaars, forced donations from small businessmen, and threatened to uproot the bazaars and replace them with supermarkets."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "It replaced the Islamic calendar with an imperial one — Iran jumped overnight from the Muslim year 1355 to the imperial year 2535."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Few regimes have been foolhardy enough to scrap their own religious calendar. <break time=\"0.4s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> The party claimed the Shah to be a spiritual as well as a political leader."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "It denounced the ulama as \"medieval black reactionaries.\" It sent cadres into the countryside to teach peasants \"true Islam.\" Khomeini, from exile, advised all true believers to stay away."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The aims of the Rastakhiz Party and its actual achievements were diametrically opposed."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Its aim was to strengthen the regime."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Instead, it destroyed the few bridges that had in the past connected the regime with society. <break time=\"0.6s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.4s\" /> Two very different interpretations have been offered to explain the long-term causes of the Islamic Revolution."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "One — accepted by supporters of the Pahlavi regime — claims that the revolution occurred because the Shah modernized too much and too quickly for his traditional-minded people."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The other — favored by opponents of the regime — argues that the revolution occurred because the Shah didn't modernize fast enough to overcome his initial handicap of being a CIA-installed monarch in an age of nationalism and republicanism. <break time=\"0.3s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> A third synthesis, developed most rigorously by the historian Ervand Abrahamian, contends that both interpretations are half right and half wrong: that the revolution came because the Shah modernized on the socioeconomic level — expanding the ranks of the modern middle class and the industrial working class — but failed to modernize on the political level. This failure inevitably strained the links between the government and the social structure, widened the gap between the ruling circles and the new social forces, and cut down the few bridges connecting the political establishment with the traditional social forces. <break time=\"0.4s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> By 1977, the gulf between the developing socioeconomic system and the underdeveloped political system was so wide that an economic crisis was able to bring down the whole regime. In short, the revolution took place neither because of overdevelopment nor because of underdevelopment, but because of"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "uneven development"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": ". <break time=\"0.8s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.4s\" /> The uneven development thesis helps explain the revolution's occurrence. But it doesn't fully explain its Islamic character. For that, we must return to the structural argument about clerical autonomy. The Western revolutions were against state and church. The church had been anglicanized in England, gallicanized in France, and disestablished by Peter the Great in Russia — in all instances, it was part and parcel of the monarchical regime. In the Islamic Revolution in Iran, the entire beleaguered Shi'ite clergy rose against the state. <break time=\"0.4s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> Unlike Sunni clerical institutions in other Muslim lands, which for centuries were under the aegis of the Ottoman state, the Shi'ite Iranian ulama had maintained their institutional independence even after the demise of the Qajars. When central authority disintegrated during the Constitutional Revolution, both the clergy and the tribal forces of the periphery stepped into the central political arena. By 1978, the tribes had been eliminated as structures of military power. Only the clergy had the capacity to act when the authority of the state disintegrated. Many groups and individuals who wanted the Shah out but had no interest whatsoever in a theocracy accepted Khomeini's leadership — because there was no one else left standing. <break time=\"0.6s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> As early as 1962, Khomeini's advisors had written that the political future of Iran was in the hands of those who could mobilize the rising middle class. Using a modern iteration of Shi'ism, the clergy were virtually the only group given a chance to mobilize and organize this critical social class. The Shah had banned Khomeini's books for decades, making them unavailable to Iranian readers or critics. From his first book to his sermons on Islamic government, Khomeini consistently advocated the absolute rule of jurists enforcing sharia law. <break time=\"0.3s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> Ironically, he was aided in his deception by the very censorship meant to silence him. But Khomeini's doctrine — and how he concealed it — is a story for the next episode. <break time=\"0.8s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.4s\" /> Before we get to Khomeini, let's return to the recurring pattern that made his revolution possible."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The Tobacco Protest of 1891 established a template: clerical fatwa, bazaar strike, mass civil disobedience."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The Constitutional Revolution of 1906 was the template writ large — bast at the British legation, bazaar closure, mass mobilization."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The oil nationalization crisis of 1951-53 saw the mosque-bazaar alliance join forces with Mossadegh."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The 1963 uprising was the dress rehearsal — Khomeini's arrest, bazaar riots, clerical mobilization."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "And 1978-79 was the final iteration. <break time=\"0.4s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Just as the tobacco crisis of 1891 had been a dress rehearsal for the Constitutional Revolution, the Muharram upheavals of June 1963 were a dress rehearsal for the Islamic Revolution. Each time the template was refined while preserving its essential structure. The revolution of 1979 was not a spontaneous eruption but the fifth iteration of a well-practiced repertoire of contention. <break time=\"0.6s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.4s\" /> But in 1979, something new was added: the scale of urbanization. Population growth and urbanization were vital forces in shaping the Islamic Revolution. The youthful age of the population proved an indispensable boon. At no time in Iran's past half millennium had there been more favorable demographics for revolutionary change — a reservoir of a vigorous urban population ready to rise for a cause. Neither in sixteenth-century Tabriz, nor in Tehran of the Constitutional era, nor during the National Movement of the early 1950s did such a demographic concentration with a thirst for political participation exist. Throughout the 1970s, a vast number of immigrants from the countryside brought with them a culture of large families. These factors explain the rapid growth of the cities — and the explosive potential of the urban poor. <break time=\"0.5s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> And what held these millions together was not just economic grievance — it was also a search for meaning. What underlay the widespread desire for revolutionary change was fundamental disorientation and anomie, more than a superficial frustration of material expectation. There was widespread cultural malaise — from confusion among the nouveaux riches to intense rejection of foreign cultural influences among the mullahs and the bazaar. Crises of prosperity, as Durkheim pointed out, generate disorientation by disturbing the collective normative order. The massive inflow of petrodollars had created tremendous confusion and disorder. The consequent sense of moral disorder and desire for the reaffirmation of absolute standards should not be minimized. <break time=\"0.5s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.4s\" /> This search for authenticity found its most powerful expression in the writings of Ali Shariati. \"Since World War II,\" he wrote, \"many intellectuals in the Third World have stressed that their societies must return to their roots. For us a return to our roots means not a rediscovery of pre-Islamic Iran, but a return to our Islamic, especially Shi'ite roots.\" Shariati was keenly aware of Shi'ite theology and history, but his worldview was shaped by the Marxism and Third Worldism he encountered in Paris. He believed in class war and revolution. The challenge was how to translate Marxist ideas into cultural symbols the Shi'ite masses could relate to — how to make Marx go down easier by giving him a Shi'ite coating. <break time=\"0.4s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> Shariati produced exactly what the young intelligentsia craved: a radical layman's religion that disassociated itself from the traditional clergy and associated itself with the secular trinity of social revolution, technological innovation, and cultural self-assertion. He saw Imam Husayn as a seventh-century Che Guevara and Karbala as a revolutionary drama. \""
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Every day is Ashura"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": ",\" he often said. \"Every place is Karbala.\" <break time=\"0.6s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> Among the urban poor, the hay'ats — religious associations — were practically the only voluntary organizations that existed. They brought out the masses without telephones. The mullahs, who had telephones, knew whom to contact. Many of those who marched came as members of their hay'ats. And many felt that they had internalized the fearless spirit of Husayn. As one squatter told an Iranian social scientist in the mid-seventies: \"Nothing brings us together more than love for Imam Husayn.\" <break time=\"0.4s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "If this mood motivated a few thousand squatters to fight the Tehran municipality in 1977, it motivated hundreds of thousands of the working and lower-middle classes to march in the revolutionary demonstrations of 1979. Of the angry, they were the angriest. They created neither the strategy nor the ideology of the revolution, and their opposition alone would never have cowed the regime. But they contributed the gigantic numbers before which the will of the government and the army collapsed. <break time=\"0.6s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.4s\" /> So the revolution had deep structural roots, a practiced template, a demographic explosion, a cultural crisis, and an organizational infrastructure."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "But was it inevitable?"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The short answer is a cautious no."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "It can be argued that in August 1978 the appointment of the Sharif-Emami government removed the last chance for an evolutionary rather than a revolutionary course."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Even as late as 1975, if — instead of creating the bogus Rastakhiz Party — the Pahlavi regime had allowed some measure of liberalization and had permitted moderate but genuine political parties to emerge, there still would have been a chance."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "If SAVAK had not engendered an atmosphere of fear and intimidation, of arrest and torture, there could have been a different political outcome."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Instead, the Shah's regime inadvertently paved the way for revolution as the only alternative to his autocratic conduct. <break time=\"0.6s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.5s\" /> The revolution was not one story but many stories converging."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Centuries of clerical autonomy."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Decades of foreign intervention."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Years of economic distortion."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Months of psychological collapse."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Each causal stream was insufficient alone."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Together, they were irresistible. <break time=\"0.6s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> This is the intellectual challenge the series poses: the listener must hold multiple causal frameworks simultaneously. The Islamic Revolution was backed by Islamic activists, the urban poor, merchants of the bazaar, university students, lower-ranking government employees, and men and women of modest urban backgrounds. Ideologically, it was a strange mix of return to pristine Islam, notions of Islamic modernity, dormant Shi'ite messianic aspirations, rampant anti-Westernism, and anti-Pahlavi sentiment. Each subsequent episode will trace one stream. The final episodes will show the convergence. <break time=\"0.5s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> Every subsequent political settlement in Iran can be understood as an attempt to fulfill, co-opt, or suppress the 1906 aspirations."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Reza Shah claimed to fulfill them through authoritarian modernization."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "His son through the White Revolution."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Khomeini through Islamic government."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Each claim was contested."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Mossadegh was shaped by the constitutional experience."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Khomeini's doctrine of velayat-e faqih was a clear rejection of the secular liberalism of the constitutional period, and more along the lines first preached by Fazlollah Nuri. <break time=\"0.4s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Without falling victim to historical teleology, one can draw a line — a zigzagging and broken but nevertheless traceable one — from the mashru'eh demand of the constitutional period to the extremism of the Fada'iyan-e Islam of the postwar era and the ideology of the Islamic Revolution. <break time=\"0.5s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> In 1977 and 1978, when the opposition first began to organize, none of the major opposition parties openly called for the establishment of either a republic or an Islamic republic."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "On the contrary, they all stressed that their immediate goal was to reestablish the 1906-1909 fundamental laws that had created a constitutional monarchy."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Bazargan revived the Liberation Movement and called for the implementation of the 1905-1909 constitution."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Sanjabi stressed that the National Front would continue to pursue the course set by the late Mossadegh."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The Constitutional Revolution's ghost was still the animating aspiration."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The shift to Islamic republic came later — and it came from Khomeini. <break time=\"0.5s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> The Islamic Revolution was not a bolt from the blue. It was the culmination of a counter-tradition that had existed since the Constitutional Revolution itself — the tradition that said: if there must be a constitution, it must be Islamic. From Sheikh Fazlollah Nuri's 1907 demand that the constitution conform to Sacred Law, through the Fada'iyan-e Islam of the postwar era, to Khomeini's doctrine of velayat-e faqih — the line is zigzagging and broken, but it is traceable. <break time=\"0.4s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.4s\" /> The Constitutional Revolution's ghost has two faces — the democratic aspiration and the Islamic counter-tradition. Both were alive in 1979. Both claimed to speak for the Iranian people. And"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "the counter-tradition won"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": ". <break time=\"0.8s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.5s\" /> Here is the deepest irony of the Iranian Revolution."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "On the eve of the revolution, political freedom was the focus of the opposition's demands."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "And in one of the great ironies of modern history, this movement chose as its leader the man most likely to severely curtail the cultural and political freedom people were demanding."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The movement that overthrew the Shah was democratic in nature and aspirations."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Some eleven percent of Iran's thirty-eight million people participated — compared to seven percent in the French Revolution and nine percent in the Russian Revolution. <break time=\"0.4s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> The slogans of the day were unmistakably democratic: thirty-eight to fifty percent were directed against the Shah himself."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Sixteen to thirty percent favored Khomeini personally."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "At most, thirty-eight percent asked for an Islamic Republic — none asked for a clerical regime."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The armed forces, despite their large numbers and ultrasophisticated weapons, were traumatized by having to go out into the streets day in and day out to shoot down unarmed fellow citizens shouting religious slogans."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Civil servants placed institutional interests behind class sentiments and proved they viewed themselves not as cogs in the state machinery but as members of the discontented middle classes. <break time=\"0.4s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.5s\" /> How did Khomeini conceal his true intentions? That is a story for the next episode. <break time=\"0.8s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.4s\" /> One final analytical tension deserves mention. One analysis argues that the clergy's \"disembedding\" from the state was the decisive structural precondition — they were the only group with autonomous institutional capacity. Another emphasizes that without the bazaar's economic resources, clerical mobilization would have been impotent. The question is whether institutional autonomy or economic interest was the engine. As one sociological account puts it, the disengagement of the clergy from the Pahlavi polity further disposed the religious institution toward perpetuating the alliance with the bazaar. As a class-based account counters, the bazaar's economic grievances provided the material base without which the clergy's moral authority would have remained abstract. This tension — between structural and economic explanations — will recur throughout the series. <break time=\"0.5s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> This series will trace each of these causal streams in turn."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Episode Two will follow the longest arc: four centuries of clerical autonomy and Khomeini's radical extension of juristic authority into political sovereignty."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Episode Three will examine foreign intervention — the 1953 coup and its consequences."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Later episodes will trace oil economics, the revolution's unfolding, and the post-revolutionary consolidation."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Each stream is insufficient alone."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The final episodes will show the convergence."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "But before we close — one final image. <break time=\"0.5s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.5s\" /> Return to Tehran, February 1979."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The middle-class engineer who was proud of his revolution."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Within months, Khomeini would waste no time in liquidating the Westernized intelligentsia."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The coalition between the Shi'ite clerics and the new middle class was highly unstable."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "It rested on fraudulent silence on the part of the former and on wishful thinking on the part of the latter."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "It did not last long. <break time=\"0.4s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> All the other segments of the urban population had actively opposed the Shah and accepted Khomeini's revolutionary leadership. The militant clerics' two most important coalition partners were the new middle class and the traditional bourgeoisie of the bazaar. Having ejected the Shah, Khomeini wasted no time. The middle-class revolution was real — and"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "it was stolen"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": ". <break time=\"0.8s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> For while the physical power behind the revolution lay in those colossal street demonstrations by the urban poor and the Islamic revivalists, it was the middle class from the bazaar that provided the economic backing for Khomeini's return. It was this merchant class and its alliance with the mullahs that emerged as the critical combination of secular and religious opposition. <break time=\"0.4s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> The coalition between the revolutionary clerics and the traditional bourgeoisie, on the other hand, rested on more tangible grievances on both sides and on a more solid historical basis. It proved more enduring. It was the most recent instance of the alliance of the mosque and the bazaar — forged again in the late 1970s under the immediate impact of the Shah's destruction of the seminaries in Mashhad and his massive anti-profiteering campaign against the bazaar merchants. The pattern that began in 1891 had reached its culmination. But even this alliance would eventually be tested by the Islamic Republic's own contradictions. <break time=\"0.6s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.3s\" /> The revolution was far less loyal to its own democratic and liberalizing promises than the Constitutional Revolution had been. It tried to complement the unfulfilled aspirations of both the Constitutional Revolution and the National Movement. But it became a radical state with theocratic underpinnings — a hierocracy headed by an authoritarian guardian jurist and buttressed by an oligarchy with militant clergy at its core. Utilizing modern means of ascendancy and control, the republic's clerical elite quickly deployed weapons of intimidation and violence. <break time=\"0.4s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.5s\" /> The Constitutional Revolution's ghost was not laid to rest."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "It was imprisoned."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "It is imprisoned still — within the Islamic Republic, still haunting, still unresolved."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The aspirations of 1906 were never fulfilled and never abandoned."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "They remain the live wire running through every chapter of modern Iranian history. <break time=\"0.9s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.4s\" /> The unresolved questions remain."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Was the revolution primarily structural or contingent?"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Can class analysis and religious analysis be reconciled, or are they fundamentally incompatible frameworks?"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Why did Iran's modernization produce theocracy rather than democracy?"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "And the question that haunts every modernizing authoritarian regime on earth: is the Shah's paradox universal?"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Does every ruler who builds schools and factories without building parliaments and parties plant the seeds of his own destruction?"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "These are the questions this series will pursue."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "They cannot be answered by any single explanation — class, religion, foreign intervention, personality."
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "The listener must hold all of them simultaneously. <break time=\"0.7s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"0.5s\" /> Next time on this series: \"The Hidden State.\" How did the Usuli movement's consolidation of clerical independence in the early nineteenth century create the institutional foundation for a revolution that wouldn't come for another century and a half?"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "How did Khomeini transform the jurisconsult's role from legal interpreter to political sovereign?"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "Next time, we trace the longest arc in the story of the Iranian Revolution. <break time=\"1.0s\" />"
+          }
+        ]
+      },
+      {
+        "sub_type": "p",
+        "nodes": [
+          {
+            "type": "tts_node",
+            "voice_id": "ErXwobaYiN019PkySvjV",
+            "text": "<break time=\"1.0s\" /> Next time, we ask: How did the clergy transform from marginalized subjects into the architects of revolution? We'll trace the doctrine of velayat-e faqih from the Safavids to Khomeini—and discover whether the Islamic Republic was truly unprecedented, or the culmination of centuries of clerical ambition."
+          }
+        ]
+      }
+    ]
+  }
+]
