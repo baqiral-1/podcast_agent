@@ -54,6 +54,7 @@ from podcast_agent.schemas.models import (
     ChunkingConfig,
     CoverageStats,
     EpisodeAssignment,
+    EpisodeBeat,
     EpisodeFraming,
     EpisodePlan,
     EpisodeScript,
@@ -136,6 +137,8 @@ _SPOKEN_TAG_RE = re.compile(r"<[^>]+>")
 _RUNTIME_UNDERSHOOT_WARNING_RATIO = 0.10
 _WHITESPACE_RE = re.compile(r"\s+")
 _WRITING_SOURCE_MODE_FULL_CHUNK = "full_chunk"
+_WRITING_WINDOW_COUNT = 3
+_INSIGHT_REF_RE = re.compile(r"\bins_\d+\b")
 _CROSS_REFERENCE_MIN_COVERAGE = 0.5
 _BOOK_BALANCE_MAX_ABS_DRIFT = 0.15
 _SPOKEN_RATE_MULTIPLIER = {
@@ -144,6 +147,8 @@ _SPOKEN_RATE_MULTIPLIER = {
     "faster": 1.08,
 }
 _MERGED_EPISODE_FILENAME = "episode.mp3"
+_SYNTHESIS_MERGED_NARRATIVE_MIN = 7
+_SYNTHESIS_MERGED_NARRATIVE_MAX = 8
 
 
 def _split_sentences(text: str) -> list[str]:
@@ -157,6 +162,96 @@ def _split_sentences(text: str) -> list[str]:
 
 def _tokenize(text: str) -> list[str]:
     return _WORD_RE.findall(text.lower())
+
+
+def _split_contiguous_windows(items: list[Any], window_count: int) -> list[list[Any]]:
+    if not items:
+        return []
+    effective_windows = max(1, min(window_count, len(items)))
+    base = len(items) // effective_windows
+    remainder = len(items) % effective_windows
+    windows: list[list[Any]] = []
+    start = 0
+    for idx in range(effective_windows):
+        size = base + (1 if idx < remainder else 0)
+        end = start + size
+        windows.append(items[start:end])
+        start = end
+    return windows
+
+
+def _extract_insight_refs(text: str) -> list[str]:
+    if not text:
+        return []
+    seen: set[str] = set()
+    refs: list[str] = []
+    for match in _INSIGHT_REF_RE.findall(text):
+        if match in seen:
+            continue
+        seen.add(match)
+        refs.append(match)
+    return refs
+
+
+def _normalize_beat_insight_linkage(
+    beats: list[EpisodeBeat],
+) -> tuple[list[EpisodeBeat], dict[str, Any]]:
+    adjusted: list[EpisodeBeat] = []
+    beats_with_refs = 0
+    missing_total = 0
+    injected_total = 0
+    for beat in beats:
+        referenced_ids = _extract_insight_refs(beat.description)
+        if referenced_ids:
+            beats_with_refs += 1
+        existing_ids: list[str] = []
+        seen_existing: set[str] = set()
+        for insight_id in beat.insight_ids:
+            if not insight_id or insight_id in seen_existing:
+                continue
+            seen_existing.add(insight_id)
+            existing_ids.append(insight_id)
+        missing_ids = [insight_id for insight_id in referenced_ids if insight_id not in seen_existing]
+        missing_total += len(missing_ids)
+        if missing_ids:
+            injected_total += len(missing_ids)
+            adjusted.append(beat.model_copy(update={"insight_ids": [*existing_ids, *missing_ids]}))
+        elif len(existing_ids) != len(beat.insight_ids):
+            adjusted.append(beat.model_copy(update={"insight_ids": existing_ids}))
+        else:
+            adjusted.append(beat)
+    return adjusted, {
+        "beat_count": len(beats),
+        "beats_with_description_insight_refs": beats_with_refs,
+        "missing_references": missing_total,
+        "injected_references": injected_total,
+    }
+
+
+def _build_window_synthesis_context(
+    plan: EpisodePlan,
+    window_beats: list[EpisodeBeat],
+) -> EpisodeSynthesisContext | None:
+    if plan.synthesis_context is None:
+        return None
+    window_insight_ids = {
+        insight_id
+        for beat in window_beats
+        for insight_id in beat.insight_ids
+        if insight_id
+    }
+    window_insights = [
+        insight
+        for insight in plan.synthesis_context.insights
+        if insight.insight_id in window_insight_ids
+    ]
+    return plan.synthesis_context.model_copy(
+        update={
+            "insights": window_insights,
+            # Keep all narrative threads in each window for continuity.
+            "narrative_threads": list(plan.synthesis_context.narrative_threads),
+        }
+    )
 
 
 def _bm25_score(
@@ -565,6 +660,120 @@ def _build_tension_catalog(synthesis_map: SynthesisMap) -> list[dict[str, Any]]:
     ]
 
 
+def _evaluate_synthesis_merged_narrative_count(
+    synthesis_map: SynthesisMap,
+    *,
+    minimum: int = _SYNTHESIS_MERGED_NARRATIVE_MIN,
+    maximum: int = _SYNTHESIS_MERGED_NARRATIVE_MAX,
+) -> dict[str, Any]:
+    count = len(synthesis_map.merged_narratives)
+    return {
+        "count": count,
+        "minimum": minimum,
+        "maximum": maximum,
+        "is_in_range": minimum <= count <= maximum,
+    }
+
+
+def _build_synthesis_feedback_for_merged_narrative_count(report: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "issue": "merged_narrative_count_out_of_range",
+        "observed_count": report["count"],
+        "target_min": report["minimum"],
+        "target_max": report["maximum"],
+        "instruction": (
+            "Regenerate the synthesis map so merged_narratives contains between "
+            f"{report['minimum']} and {report['maximum']} items."
+        ),
+    }
+
+
+def _evaluate_strategy_merged_narrative_assignments(
+    *,
+    strategy: NarrativeStrategy,
+    merged_catalog: list[dict[str, Any]],
+) -> dict[str, Any]:
+    valid_ids = {item["merged_narrative_id"] for item in merged_catalog}
+    merged_available = bool(valid_ids)
+    episodes: list[dict[str, Any]] = []
+    episode_numbers_by_id: dict[str, list[int]] = {}
+    for assignment in strategy.episode_assignments:
+        assigned_id = (assignment.merged_narrative_id or "").strip() or None
+        expected_count = 1 if merged_available else 0
+        if merged_available:
+            is_ok = assigned_id in valid_ids
+            invalid_assigned_id = assigned_id if assigned_id and assigned_id not in valid_ids else None
+            if assigned_id in valid_ids:
+                episode_numbers_by_id.setdefault(assigned_id, []).append(assignment.episode_number)
+        else:
+            is_ok = assigned_id is None
+            invalid_assigned_id = assigned_id
+        episodes.append(
+            {
+                "episode_number": assignment.episode_number,
+                "title": assignment.title,
+                "assigned_id": assigned_id,
+                "invalid_assigned_id": invalid_assigned_id,
+                "expected_count": expected_count,
+                "status": "ok" if is_ok else "invalid",
+            }
+        )
+
+    duplicate_groups = [
+        {
+            "merged_narrative_id": merged_narrative_id,
+            "episode_numbers": sorted(episode_numbers),
+        }
+        for merged_narrative_id, episode_numbers in sorted(episode_numbers_by_id.items())
+        if len(episode_numbers) > 1
+    ]
+    duplicate_id_set = {item["merged_narrative_id"] for item in duplicate_groups}
+    if duplicate_id_set:
+        for item in episodes:
+            if item["assigned_id"] not in duplicate_id_set:
+                continue
+            item["status"] = "duplicate"
+            item["duplicate_episode_numbers"] = next(
+                group["episode_numbers"]
+                for group in duplicate_groups
+                if group["merged_narrative_id"] == item["assigned_id"]
+            )
+    invalid_episodes = [item for item in episodes if item["status"] != "ok"]
+    return {
+        "merged_available": merged_available,
+        "valid_ids": sorted(valid_ids),
+        "has_issues": bool(invalid_episodes),
+        "problem_count": len(invalid_episodes),
+        "duplicate_groups": duplicate_groups,
+        "episodes": episodes,
+    }
+
+
+def _build_strategy_feedback_for_merged_narratives(report: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "issue": "episode_merged_narrative_assignment",
+        "merged_available": report["merged_available"],
+        "valid_merged_narrative_ids": report["valid_ids"],
+        "problem_episodes": [
+            {
+                "episode_number": item["episode_number"],
+                "assigned_id": item["assigned_id"],
+                "invalid_assigned_id": item["invalid_assigned_id"],
+                "expected_count": item["expected_count"],
+                "status": item["status"],
+                "duplicate_episode_numbers": item.get("duplicate_episode_numbers", []),
+            }
+            for item in report["episodes"]
+            if item["status"] != "ok"
+        ],
+        "duplicate_groups": report.get("duplicate_groups", []),
+        "instruction": (
+            "Revise episode_assignments so each episode has exactly one valid merged_narrative_id and "
+            "no merged_narrative_id is reused across episodes."
+        ),
+    }
+
+
 def _build_episode_synthesis_context(
     *,
     assignment: EpisodeAssignment,
@@ -581,7 +790,7 @@ def _build_episode_synthesis_context(
             source_passage_ids=item["source_passage_ids"],
         )
         for item in merged_catalog
-        if item["merged_narrative_id"] in assignment.merged_narrative_ids
+        if item["merged_narrative_id"] == assignment.merged_narrative_id
     ]
     selected_tensions = [
         EpisodeSynthesisTension(
@@ -650,26 +859,131 @@ def _evaluate_episode_plan_insight_realization(
     }
 
 
-def _build_planning_feedback(realization: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "issue": "assigned_insight_realization",
-        "episode_number": realization["episode_number"],
-        "problem_insights": [
+def _evaluate_episode_plan_merged_narrative_realization(
+    *,
+    assignment: EpisodeAssignment,
+    synthesis_context: EpisodeSynthesisContext,
+    plan: EpisodePlan,
+) -> dict[str, Any]:
+    planned_passage_ids = {
+        passage_id
+        for beat in plan.beats
+        for passage_id in beat.passage_ids
+    }
+    results: list[dict[str, Any]] = []
+    for merged in synthesis_context.merged_narratives:
+        source_ids = set(merged.source_passage_ids)
+        realized_passage_ids = sorted(planned_passage_ids & source_ids)
+        realized_count = len(realized_passage_ids)
+        expected_min = 1 if source_ids else 0
+        if expected_min == 0:
+            status = "not_applicable"
+        elif realized_count == 0:
+            status = "zero"
+        else:
+            status = "ok"
+        results.append(
             {
-                "insight_id": item["insight_id"],
-                "title": item["title"],
-                "status": item["status"],
-                "expected_min": item["expected_min"],
-                "realized_count": item["realized_count"],
-                "missing_passage_ids": item["missing_passage_ids"],
+                "merged_narrative_id": merged.merged_narrative_id,
+                "topic": merged.topic,
+                "status": status,
+                "realized_count": realized_count,
+                "expected_min": expected_min,
+                "assigned_passage_count": len(source_ids),
+                "realized_passage_ids": realized_passage_ids,
+                "missing_passage_ids": sorted(source_ids - planned_passage_ids),
             }
-            for item in realization["insights"]
-            if item["status"] in {"weak", "zero"}
-        ],
-        "instruction": (
+        )
+    zero_only = [item for item in results if item["status"] == "zero"]
+    return {
+        "episode_number": assignment.episode_number,
+        "title": assignment.title,
+        "merged_narrative_id": assignment.merged_narrative_id,
+        "has_issues": bool(zero_only),
+        "problem_count": len(zero_only),
+        "merged_narratives": results,
+    }
+
+
+def _evaluate_episode_plan_realization(
+    *,
+    assignment: EpisodeAssignment,
+    selected_insights: list[Any],
+    synthesis_context: EpisodeSynthesisContext,
+    plan: EpisodePlan,
+) -> dict[str, Any]:
+    insight_realization = _evaluate_episode_plan_insight_realization(
+        assignment=assignment,
+        selected_insights=selected_insights,
+        plan=plan,
+    )
+    merged_realization = _evaluate_episode_plan_merged_narrative_realization(
+        assignment=assignment,
+        synthesis_context=synthesis_context,
+        plan=plan,
+    )
+    return {
+        "episode_number": assignment.episode_number,
+        "title": assignment.title,
+        "insight_ids": insight_realization["insight_ids"],
+        "has_issues": insight_realization["has_issues"] or merged_realization["has_issues"],
+        "problem_count": insight_realization["problem_count"] + merged_realization["problem_count"],
+        "insight_problem_count": insight_realization["problem_count"],
+        "merged_narrative_problem_count": merged_realization["problem_count"],
+        "insights": insight_realization["insights"],
+        "merged_narratives": merged_realization["merged_narratives"],
+    }
+
+
+def _build_planning_feedback(realization: dict[str, Any]) -> dict[str, Any]:
+    problem_insights = [
+        {
+            "insight_id": item["insight_id"],
+            "title": item["title"],
+            "status": item["status"],
+            "expected_min": item["expected_min"],
+            "realized_count": item["realized_count"],
+            "missing_passage_ids": item["missing_passage_ids"],
+        }
+        for item in realization["insights"]
+        if item["status"] in {"weak", "zero"}
+    ]
+    problem_merged_narratives = [
+        {
+            "merged_narrative_id": item["merged_narrative_id"],
+            "topic": item["topic"],
+            "status": item["status"],
+            "expected_min": item["expected_min"],
+            "realized_count": item["realized_count"],
+            "missing_passage_ids": item["missing_passage_ids"],
+        }
+        for item in realization.get("merged_narratives", [])
+        if item["status"] in {"weak", "zero"}
+    ]
+    if problem_insights and problem_merged_narratives:
+        issue = "assigned_insight_and_merged_narrative_realization"
+        instruction = (
+            "Revise the episode plan so every assigned insight and assigned merged narrative is "
+            "materially realized in beats using the provided passage_ids."
+        )
+    elif problem_merged_narratives:
+        issue = "assigned_merged_narrative_realization"
+        instruction = (
+            "Revise the episode plan so each assigned merged narrative is materially realized "
+            "using its source_passage_ids."
+        )
+    else:
+        issue = "assigned_insight_realization"
+        instruction = (
             "Revise the episode plan so every assigned insight is materially realized in beats "
             "using the assigned insight passage_ids."
-        ),
+        )
+    return {
+        "issue": issue,
+        "episode_number": realization["episode_number"],
+        "problem_insights": problem_insights,
+        "problem_merged_narratives": problem_merged_narratives,
+        "instruction": instruction,
     }
 
 
@@ -1998,7 +2312,7 @@ class PipelineOrchestrator:
                 for book in project.books
             }
             max_log_per_book = max(
-                200,
+                100,
                 max((info["per_book_budget"] for info in retrieval_depth_by_book.values()), default=0),
             )
             all_passages_by_axis: dict[str, list[ExtractedPassage]] = {}
@@ -2024,7 +2338,7 @@ class PipelineOrchestrator:
                 soft_threshold = project.config.retrieval_soft_threshold
                 chapter_penalty_weight = project.config.chapter_penalty_weight
                 floor_per_book = project.config.admission_floor_per_book
-                relevance_power = project.config.retrieval_relevance_power
+                adaptive_relevance_powers = {"default": 1.0, "risky": 0.8}
                 retrieval_log: dict[str, Any] = {
                     "axis_id": axis.axis_id,
                     "axis_name": axis.name,
@@ -2033,15 +2347,13 @@ class PipelineOrchestrator:
                     "axis_candidate_budget_target": axis_candidate_budget_target,
                     "axis_candidate_budget_effective": axis_candidate_budget_effective,
                     "axis_candidate_budget": axis_candidate_budget_effective,
-                    "budget_strategy": "fixed_target_soft_threshold_backfill",
+                    "budget_strategy": "fixed_target_soft_threshold_spillover_backfill",
                     "passage_retrieval_percentage": project.config.passage_retrieval_percentage,
                     "passage_retrieval_min_per_book": project.config.passage_retrieval_min_per_book,
                     "passage_retrieval_max_per_book": project.config.passage_retrieval_max_per_book,
-                    "allocation_policy": (
-                        f"floor_{floor_per_book}_pure_relevance_pow_{relevance_power}"
-                    ),
+                    "allocation_policy": "floor_2_adaptive_relevance_power_spillover",
                     "allocation_floor": floor_per_book,
-                    "retrieval_relevance_power": relevance_power,
+                    "retrieval_relevance_power": adaptive_relevance_powers["default"],
                     "soft_threshold": soft_threshold,
                     "chapter_penalty_weight": chapter_penalty_weight,
                     "book_size_share_by_book": book_size_share_by_book,
@@ -2108,6 +2420,44 @@ class PipelineOrchestrator:
                 retrieval_log["retrieval_signal_by_book"] = retrieval_signal_by_book
                 retrieval_log["blended_score_by_book"] = relevance_by_book
 
+                provisional_quota_by_book = _compute_weighted_admitted_budgets(
+                    book_ids=book_ids,
+                    axis_total_budget=axis_candidate_budget_effective,
+                    relevance_by_book=relevance_by_book,
+                    floor_per_book=floor_per_book,
+                    relevance_power=adaptive_relevance_powers["default"],
+                )
+                provisional_total = max(1, sum(provisional_quota_by_book.values()))
+                provisional_top2_share = (
+                    sum(sorted(provisional_quota_by_book.values(), reverse=True)[:2]) / provisional_total
+                )
+                above_threshold_available_by_book = {
+                    bid: sum(
+                        1
+                        for row in rows_by_book.get(bid, [])
+                        if row["retrieval_confidence"] >= soft_threshold
+                    )
+                    for bid in book_ids
+                }
+                provisional_predicted_backfill = sum(
+                    max(
+                        0,
+                        provisional_quota_by_book.get(bid, 0)
+                        - above_threshold_available_by_book.get(bid, 0),
+                    )
+                    for bid in book_ids
+                )
+                provisional_predicted_backfill_share = (
+                    provisional_predicted_backfill / max(1, axis_candidate_budget_effective)
+                )
+                concentration_trigger = provisional_top2_share >= 0.60
+                backfill_trigger = provisional_predicted_backfill_share >= 0.20
+                relevance_power = (
+                    adaptive_relevance_powers["risky"]
+                    if concentration_trigger or backfill_trigger
+                    else adaptive_relevance_powers["default"]
+                )
+
                 admitted_quota_by_book = _compute_weighted_admitted_budgets(
                     book_ids=book_ids,
                     axis_total_budget=axis_candidate_budget_effective,
@@ -2116,6 +2466,16 @@ class PipelineOrchestrator:
                     relevance_power=relevance_power,
                 )
                 retrieval_log["admission_quota_by_book"] = admitted_quota_by_book
+                retrieval_log["adaptive_policy"] = {
+                    "provisional_relevance_power": adaptive_relevance_powers["default"],
+                    "provisional_top2_share": round(provisional_top2_share, 6),
+                    "provisional_predicted_backfill": provisional_predicted_backfill,
+                    "provisional_predicted_backfill_share": round(provisional_predicted_backfill_share, 6),
+                    "concentration_trigger": concentration_trigger,
+                    "backfill_trigger": backfill_trigger,
+                    "selected_relevance_power": relevance_power,
+                    "risky_relevance_power": adaptive_relevance_powers["risky"],
+                }
                 relevance_factor_by_book = {
                     bid: max(0.0, float(relevance_by_book.get(bid, 0.0))) ** relevance_power
                     if relevance_power > 0
@@ -2133,10 +2493,22 @@ class PipelineOrchestrator:
                     bid: round(admitted_quota_by_book.get(bid, 0) / quota_total, 6)
                     for bid in book_ids
                 }
+                retrieval_log["retrieval_relevance_power"] = relevance_power
+                retrieval_log["allocation_policy"] = (
+                    f"floor_{floor_per_book}_adaptive_relevance_pow_{relevance_power}_spillover"
+                )
 
                 admitted_by_book: dict[str, int] = {bid: 0 for bid in book_ids}
                 selected_rows: list[dict[str, Any]] = []
+                selected_above_threshold_by_book: dict[str, int] = {bid: 0 for bid in book_ids}
+                selected_spillover_by_book: dict[str, int] = {bid: 0 for bid in book_ids}
+                selected_backfill_by_book: dict[str, int] = {bid: 0 for bid in book_ids}
                 book_entry_by_id = {entry["book_id"]: entry for entry in retrieval_log["books"]}
+                chapter_targets_by_book: dict[str, dict[str, float]] = {}
+                selected_by_chapter_by_book: dict[str, dict[str, int]] = {}
+                high_pool_by_book: dict[str, list[dict[str, Any]]] = {}
+                backfill_pool_by_book: dict[str, list[dict[str, Any]]] = {}
+
                 for bid in book_ids:
                     rows = list(rows_by_book.get(bid, []))
                     quota = admitted_quota_by_book.get(bid, 0)
@@ -2145,36 +2517,30 @@ class PipelineOrchestrator:
                         continue
                     book_entry["admission_quota"] = quota
                     book_entry["eligible_total_count"] = len(rows)
-                    if quota <= 0 or not rows:
-                        book_entry["eligible_above_threshold_count"] = 0
-                        book_entry["selected_above_threshold_count"] = 0
-                        book_entry["selected_backfill_count"] = 0
-                        book_entry["underfill_count"] = max(0, quota)
-                        continue
-
                     chapter_targets: dict[str, float] = {}
-                    chapter_ids = sorted({
-                        str(row["hit"].chapter_id or "")
-                        for row in rows
-                    })
-                    chapter_word_counts = chapter_word_count_by_book.get(bid, {})
-                    total_visible_chapter_words = sum(
-                        max(0, chapter_word_counts.get(chapter_id, 0))
-                        for chapter_id in chapter_ids
-                    )
-                    if total_visible_chapter_words > 0:
-                        for chapter_id in chapter_ids:
-                            chapter_words = max(0, chapter_word_counts.get(chapter_id, 0))
-                            chapter_targets[chapter_id] = (
-                                quota * (chapter_words / total_visible_chapter_words)
-                            )
-                    elif chapter_ids:
-                        equal_target = quota / len(chapter_ids)
-                        chapter_targets = {
-                            chapter_id: equal_target for chapter_id in chapter_ids
-                        }
-
-                    selected_by_chapter: dict[str, int] = {}
+                    if rows and quota > 0:
+                        chapter_ids = sorted({
+                            str(row["hit"].chapter_id or "")
+                            for row in rows
+                        })
+                        chapter_word_counts = chapter_word_count_by_book.get(bid, {})
+                        total_visible_chapter_words = sum(
+                            max(0, chapter_word_counts.get(chapter_id, 0))
+                            for chapter_id in chapter_ids
+                        )
+                        if total_visible_chapter_words > 0:
+                            for chapter_id in chapter_ids:
+                                chapter_words = max(0, chapter_word_counts.get(chapter_id, 0))
+                                chapter_targets[chapter_id] = (
+                                    quota * (chapter_words / total_visible_chapter_words)
+                                )
+                        elif chapter_ids:
+                            equal_target = quota / len(chapter_ids)
+                            chapter_targets = {
+                                chapter_id: equal_target for chapter_id in chapter_ids
+                            }
+                    chapter_targets_by_book[bid] = chapter_targets
+                    selected_by_chapter_by_book[bid] = {}
                     high_pool = [
                         row for row in rows
                         if row["retrieval_confidence"] >= soft_threshold
@@ -2183,65 +2549,119 @@ class PipelineOrchestrator:
                         row for row in rows
                         if row["retrieval_confidence"] < soft_threshold
                     ]
+                    high_pool_by_book[bid] = high_pool
+                    backfill_pool_by_book[bid] = backfill_pool
                     book_entry["eligible_above_threshold_count"] = len(high_pool)
 
-                    def _pop_best_row(pool: list[dict[str, Any]]) -> dict[str, Any]:
-                        best_idx = 0
-                        best_key: tuple[float, float, int, str] | None = None
-                        best_penalty = 0.0
-                        for idx, row in enumerate(pool):
-                            chapter_id = str(row["hit"].chapter_id or "")
-                            chapter_target = chapter_targets.get(chapter_id, 0.0)
-                            denom = max(1.0, chapter_target)
-                            over_target = max(
-                                0.0,
-                                ((selected_by_chapter.get(chapter_id, 0) + 1) - chapter_target) / denom,
-                            )
-                            chapter_penalty = chapter_penalty_weight * over_target
-                            selection_score = row["retrieval_confidence"] - chapter_penalty
-                            key = (
-                                selection_score,
-                                row["retrieval_confidence"],
-                                -int(row["rank"]),
-                                str(row["hit"].chunk_id),
-                            )
-                            if best_key is None or key > best_key:
-                                best_idx = idx
-                                best_key = key
-                                best_penalty = chapter_penalty
-                        best_row = pool.pop(best_idx)
-                        best_row["chapter_penalty"] = best_penalty
-                        best_row["selection_score"] = (
-                            best_key[0]
-                            if best_key is not None
-                            else best_row["retrieval_confidence"]
+                def _pop_best_row(pool: list[dict[str, Any]], *, bid: str) -> dict[str, Any]:
+                    best_idx = 0
+                    best_key: tuple[float, float, int, str] | None = None
+                    best_penalty = 0.0
+                    chapter_targets = chapter_targets_by_book.get(bid, {})
+                    selected_by_chapter = selected_by_chapter_by_book.get(bid, {})
+                    for idx, row in enumerate(pool):
+                        chapter_id = str(row["hit"].chapter_id or "")
+                        chapter_target = chapter_targets.get(chapter_id, 0.0)
+                        denom = max(1.0, chapter_target)
+                        over_target = max(
+                            0.0,
+                            ((selected_by_chapter.get(chapter_id, 0) + 1) - chapter_target) / denom,
                         )
-                        return best_row
+                        chapter_penalty = chapter_penalty_weight * over_target
+                        selection_score = row["retrieval_confidence"] - chapter_penalty
+                        key = (
+                            selection_score,
+                            row["retrieval_confidence"],
+                            -int(row["rank"]),
+                            str(row["hit"].chunk_id),
+                        )
+                        if best_key is None or key > best_key:
+                            best_idx = idx
+                            best_key = key
+                            best_penalty = chapter_penalty
+                    best_row = pool.pop(best_idx)
+                    chapter_id = str(best_row["hit"].chapter_id or "")
+                    selected_by_chapter[chapter_id] = selected_by_chapter.get(chapter_id, 0) + 1
+                    best_row["chapter_penalty"] = best_penalty
+                    best_row["selection_score"] = (
+                        best_key[0]
+                        if best_key is not None
+                        else best_row["retrieval_confidence"]
+                    )
+                    return best_row
 
-                    selected_above_threshold = 0
-                    selected_backfill = 0
-                    remaining = quota
-                    while remaining > 0 and high_pool:
-                        row = _pop_best_row(high_pool)
+                # Phase 1: per-book above-threshold selection up to quota.
+                for bid in book_ids:
+                    quota = admitted_quota_by_book.get(bid, 0)
+                    if quota <= 0:
+                        continue
+                    high_pool = high_pool_by_book.get(bid, [])
+                    while admitted_by_book.get(bid, 0) < quota and high_pool:
+                        row = _pop_best_row(high_pool, bid=bid)
                         row["selection_phase"] = "above_threshold"
-                        chapter_id = str(row["hit"].chapter_id or "")
-                        selected_by_chapter[chapter_id] = selected_by_chapter.get(chapter_id, 0) + 1
-                        admitted_by_book[bid] = admitted_by_book.get(bid, 0) + 1
-                        selected_above_threshold += 1
                         selected_rows.append(row)
-                        remaining -= 1
-                    while remaining > 0 and backfill_pool:
-                        row = _pop_best_row(backfill_pool)
-                        row["selection_phase"] = "backfill"
-                        chapter_id = str(row["hit"].chapter_id or "")
-                        selected_by_chapter[chapter_id] = selected_by_chapter.get(chapter_id, 0) + 1
                         admitted_by_book[bid] = admitted_by_book.get(bid, 0) + 1
-                        selected_backfill += 1
-                        selected_rows.append(row)
-                        remaining -= 1
+                        selected_above_threshold_by_book[bid] = (
+                            selected_above_threshold_by_book.get(bid, 0) + 1
+                        )
 
-                    book_entry["selected_above_threshold_count"] = selected_above_threshold
-                    book_entry["selected_backfill_count"] = selected_backfill
+                # Phase 2: spillover from unused above-threshold rows across books.
+                total_deficit = sum(
+                    max(0, admitted_quota_by_book.get(bid, 0) - admitted_by_book.get(bid, 0))
+                    for bid in book_ids
+                )
+                if total_deficit > 0:
+                    spillover_pool: list[dict[str, Any]] = []
+                    for bid in book_ids:
+                        spillover_pool.extend(high_pool_by_book.get(bid, []))
+                    spillover_pool.sort(
+                        key=lambda row: (
+                            float(row["retrieval_confidence"]),
+                            -int(row["rank"]),
+                            str(row["hit"].chunk_id),
+                        ),
+                        reverse=True,
+                    )
+                    for row in spillover_pool[:total_deficit]:
+                        row["selection_phase"] = "spillover"
+                        row["chapter_penalty"] = 0.0
+                        row["selection_score"] = row["retrieval_confidence"]
+                        selected_rows.append(row)
+                        bid = str(row["book_id"])
+                        admitted_by_book[bid] = admitted_by_book.get(bid, 0) + 1
+                        selected_spillover_by_book[bid] = selected_spillover_by_book.get(bid, 0) + 1
+
+                # Phase 3: global backfill only if deficits remain after spillover.
+                remaining_deficit = max(0, axis_candidate_budget_effective - len(selected_rows))
+                if remaining_deficit > 0:
+                    global_backfill_pool: list[dict[str, Any]] = []
+                    for bid in book_ids:
+                        global_backfill_pool.extend(backfill_pool_by_book.get(bid, []))
+                    global_backfill_pool.sort(
+                        key=lambda row: (
+                            float(row["retrieval_confidence"]),
+                            -int(row["rank"]),
+                            str(row["hit"].chunk_id),
+                        ),
+                        reverse=True,
+                    )
+                    for row in global_backfill_pool[:remaining_deficit]:
+                        row["selection_phase"] = "backfill"
+                        row["chapter_penalty"] = 0.0
+                        row["selection_score"] = row["retrieval_confidence"]
+                        selected_rows.append(row)
+                        bid = str(row["book_id"])
+                        admitted_by_book[bid] = admitted_by_book.get(bid, 0) + 1
+                        selected_backfill_by_book[bid] = selected_backfill_by_book.get(bid, 0) + 1
+
+                for bid in book_ids:
+                    book_entry = book_entry_by_id.get(bid)
+                    if book_entry is None:
+                        continue
+                    quota = admitted_quota_by_book.get(bid, 0)
+                    book_entry["selected_above_threshold_count"] = selected_above_threshold_by_book.get(bid, 0)
+                    book_entry["selected_spillover_count"] = selected_spillover_by_book.get(bid, 0)
+                    book_entry["selected_backfill_count"] = selected_backfill_by_book.get(bid, 0)
                     book_entry["underfill_count"] = max(0, quota - admitted_by_book.get(bid, 0))
 
                 selected_row_ids = {id(row) for row in selected_rows}
@@ -2673,7 +3093,6 @@ class PipelineOrchestrator:
                 book_metadata=book_metadata,
             )
             result = await asyncio.to_thread(self.synthesis_mapping_agent.run, payload)
-
             synthesis_map = SynthesisMap(
                 project_id=project.project_id,
                 insights=result.insights,
@@ -2683,6 +3102,44 @@ class PipelineOrchestrator:
                 quality_score=result.quality_score,
                 merged_narratives=result.merged_narratives,
             )
+            merged_narrative_count = _evaluate_synthesis_merged_narrative_count(synthesis_map)
+            if not merged_narrative_count["is_in_range"]:
+                retry_payload = self.synthesis_mapping_agent.build_payload(
+                    project_id=project.project_id,
+                    axes_summary=axes_summary,
+                    passages_by_axis=passages_summary,
+                    cross_book_pairs=cross_pairs,
+                    book_metadata=book_metadata,
+                    synthesis_feedback=_build_synthesis_feedback_for_merged_narrative_count(
+                        merged_narrative_count
+                    ),
+                )
+                retry_result = await asyncio.to_thread(self.synthesis_mapping_agent.run, retry_payload)
+                synthesis_map = SynthesisMap(
+                    project_id=project.project_id,
+                    insights=retry_result.insights,
+                    narrative_threads=retry_result.narrative_threads,
+                    book_relationship_matrix=retry_result.book_relationship_matrix,
+                    unresolved_tensions=retry_result.unresolved_tensions,
+                    quality_score=retry_result.quality_score,
+                    merged_narratives=retry_result.merged_narratives,
+                )
+                merged_narrative_count = _evaluate_synthesis_merged_narrative_count(synthesis_map)
+            if merged_narrative_count["count"] == 0:
+                self.run_logger.log(
+                    "synthesis_mapping_missing_merged_narratives",
+                    observed_count=merged_narrative_count["count"],
+                )
+                raise RuntimeError(
+                    "Synthesis mapping returned zero merged_narratives after retry."
+                )
+            if not merged_narrative_count["is_in_range"]:
+                self.run_logger.log(
+                    "synthesis_mapping_merged_narrative_count_warning",
+                    observed_count=merged_narrative_count["count"],
+                    target_min=merged_narrative_count["minimum"],
+                    target_max=merged_narrative_count["maximum"],
+                )
             _save_json(project_dir / "synthesis_map.json", synthesis_map)
 
             ctx["output_summary"] = {
@@ -2690,6 +3147,7 @@ class PipelineOrchestrator:
                 "threads": len(synthesis_map.narrative_threads),
                 "quality_score": synthesis_map.quality_score,
                 "synthesis_passages": synthesis_passage_total,
+                "merged_narratives": len(synthesis_map.merged_narratives),
             }
             return synthesis_map
 
@@ -2767,12 +3225,53 @@ class PipelineOrchestrator:
                 episode_count=project.requested_episode_count,
             )
             strategy = await asyncio.to_thread(self.narrative_strategy_agent.run, payload)
+            merged_assignment_report = _evaluate_strategy_merged_narrative_assignments(
+                strategy=strategy,
+                merged_catalog=merged_catalog,
+            )
+            if merged_assignment_report["has_issues"]:
+                retry_payload = self.narrative_strategy_agent.build_payload(
+                    synthesis_map=synthesis_summary,
+                    thematic_axes=thematic_axes,
+                    project_metadata=project_metadata,
+                    episode_count=project.requested_episode_count,
+                    strategy_feedback=_build_strategy_feedback_for_merged_narratives(
+                        merged_assignment_report
+                    ),
+                )
+                strategy = await asyncio.to_thread(self.narrative_strategy_agent.run, retry_payload)
+                merged_assignment_report = _evaluate_strategy_merged_narrative_assignments(
+                    strategy=strategy,
+                    merged_catalog=merged_catalog,
+                )
+            if merged_assignment_report["has_issues"]:
+                self.run_logger.log(
+                    "narrative_strategy_merged_narrative_assignment_failed",
+                    problem_count=merged_assignment_report["problem_count"],
+                    duplicate_groups=merged_assignment_report.get("duplicate_groups", []),
+                    episodes=[
+                        {
+                            "episode_number": item["episode_number"],
+                            "assigned_id": item["assigned_id"],
+                            "expected_count": item["expected_count"],
+                            "invalid_assigned_id": item["invalid_assigned_id"],
+                            "status": item["status"],
+                            "duplicate_episode_numbers": item.get("duplicate_episode_numbers", []),
+                        }
+                        for item in merged_assignment_report["episodes"]
+                        if item["status"] != "ok"
+                    ],
+                )
+                raise RuntimeError(
+                    "Narrative strategy merged_narrative_id assignments invalid after retry."
+                )
             _save_json(project_dir / "narrative_strategy.json", strategy)
 
             ctx["output_summary"] = {
                 "strategy": strategy.strategy_type,
                 "recommended_episode_count": strategy.recommended_episode_count,
                 "episode_assignments": len(strategy.episode_assignments),
+                "merged_assignment_issues": merged_assignment_report["problem_count"],
             }
             return strategy
 
@@ -2970,9 +3469,10 @@ class PipelineOrchestrator:
             ) -> tuple[int, EpisodeAssignment, EpisodePlan, dict[str, Any]]:
                 async with planning_sem:
                     episode = await asyncio.to_thread(self.episode_planning_agent.run, payload)
-                    realization = _evaluate_episode_plan_insight_realization(
+                    realization = _evaluate_episode_plan_realization(
                         assignment=assignment,
                         selected_insights=selected_insights,
+                        synthesis_context=synthesis_context,
                         plan=episode,
                     )
                     if realization["has_issues"]:
@@ -2989,9 +3489,10 @@ class PipelineOrchestrator:
                             planning_feedback=_build_planning_feedback(realization),
                         )
                         episode = await asyncio.to_thread(self.episode_planning_agent.run, retry_payload)
-                        realization = _evaluate_episode_plan_insight_realization(
+                        realization = _evaluate_episode_plan_realization(
                             assignment=assignment,
                             selected_insights=selected_insights,
+                            synthesis_context=synthesis_context,
                             plan=episode,
                         )
                 return idx, assignment, episode, realization
@@ -3035,7 +3536,25 @@ class PipelineOrchestrator:
                     ),
                     "synthesis_context": synthesis_context,
                     "episode_strategy": episode.episode_strategy or assignment.episode_strategy,
+                    "target_word_count": int(round(
+                        float(episode.target_duration_minutes)
+                        * float(self.settings.pipeline.spoken_words_per_minute)
+                    )),
                 })
+                normalized_beats, linkage_stats = _normalize_beat_insight_linkage(list(episode.beats))
+                if normalized_beats != list(episode.beats):
+                    episode = episode.model_copy(update={"beats": normalized_beats})
+                if linkage_stats["missing_references"] > 0:
+                    self.run_logger.log(
+                        "episode_plan_beat_insight_linkage_autofill",
+                        episode=episode.episode_number,
+                        beat_count=linkage_stats["beat_count"],
+                        beats_with_description_insight_refs=(
+                            linkage_stats["beats_with_description_insight_refs"]
+                        ),
+                        missing_references=linkage_stats["missing_references"],
+                        injected_references=linkage_stats["injected_references"],
+                    )
                 if episode.book_balance:
                     positive_balance = {
                         bid: max(0.0, float(share))
@@ -3081,21 +3600,38 @@ class PipelineOrchestrator:
                     }
                 )
                 if realization["has_issues"]:
-                    self.run_logger.log(
-                        "episode_plan_insight_realization_warning",
-                        episode=episode.episode_number,
-                        problem_count=realization["problem_count"],
-                        insights=[
-                            {
-                                "insight_id": item["insight_id"],
-                                "status": item["status"],
-                                "realized_count": item["realized_count"],
-                                "expected_min": item["expected_min"],
-                            }
-                            for item in realization["insights"]
-                            if item["status"] in {"weak", "zero"}
-                        ],
-                    )
+                    if realization.get("insight_problem_count", 0) > 0:
+                        self.run_logger.log(
+                            "episode_plan_insight_realization_warning",
+                            episode=episode.episode_number,
+                            problem_count=realization["insight_problem_count"],
+                            insights=[
+                                {
+                                    "insight_id": item["insight_id"],
+                                    "status": item["status"],
+                                    "realized_count": item["realized_count"],
+                                    "expected_min": item["expected_min"],
+                                }
+                                for item in realization["insights"]
+                                if item["status"] in {"weak", "zero"}
+                            ],
+                        )
+                    if realization.get("merged_narrative_problem_count", 0) > 0:
+                        self.run_logger.log(
+                            "episode_plan_merged_narrative_realization_warning",
+                            episode=episode.episode_number,
+                            problem_count=realization["merged_narrative_problem_count"],
+                            merged_narratives=[
+                                {
+                                    "merged_narrative_id": item["merged_narrative_id"],
+                                    "status": item["status"],
+                                    "realized_count": item["realized_count"],
+                                    "expected_min": item["expected_min"],
+                                }
+                                for item in realization.get("merged_narratives", [])
+                                if item["status"] in {"weak", "zero"}
+                            ],
+                        )
                 beats = list(episode.beats)
                 total_beats = len(beats)
                 if total_beats == 0:
@@ -3130,7 +3666,7 @@ class PipelineOrchestrator:
                         shortfall_minutes=plan_shortfall_minutes,
                         shortfall_ratio=plan_shortfall_ratio,
                     )
-                if not 50 <= total_beats <= 60:
+                if not 70 <= total_beats <= 80:
                     self.run_logger.log(
                         "episode_plan_beats_warning",
                         episode=episode.episode_number,
@@ -3308,89 +3844,162 @@ class PipelineOrchestrator:
             beat_count=len(plan.beats),
             writing_source_mode=_WRITING_SOURCE_MODE_FULL_CHUNK,
         ) as ctx:
-            passage_ids = set()
             chapter_lookup = _build_chapter_lookup(project.books)
-            for beat in plan.beats:
-                passage_ids.update(beat.passage_ids)
-
-            passages = []
+            passage_payload_by_id: dict[str, dict[str, Any]] = {}
             for axis_passages in corpus.passages_by_axis.values():
                 for p in axis_passages:
-                    if p.passage_id in passage_ids:
-                        passages.append({
-                            "passage_id": p.passage_id, "book_id": p.book_id,
-                            "text": _resolve_writing_passage_text(p),
-                            "chapter_ref": p.chapter_ref,
-                            "chapter_context": _build_chapter_context(
-                                chapter_lookup.get((p.book_id, p.chapter_ref))
-                            ),
-                            "synthesis_tags": [t.value for t in p.synthesis_tags],
-                        })
+                    if p.passage_id in passage_payload_by_id:
+                        continue
+                    passage_payload_by_id[p.passage_id] = {
+                        "passage_id": p.passage_id,
+                        "book_id": p.book_id,
+                        "text": _resolve_writing_passage_text(p),
+                        "chapter_ref": p.chapter_ref,
+                        "chapter_context": _build_chapter_context(
+                            chapter_lookup.get((p.book_id, p.chapter_ref))
+                        ),
+                        "synthesis_tags": [t.value for t in p.synthesis_tags],
+                    }
 
             book_metadata = [
                 {"book_id": b.book_id, "title": b.title, "author": b.author}
                 for b in project.books
             ]
+            words_per_minute = float(self.settings.pipeline.spoken_words_per_minute)
+            beat_word_targets = [
+                {
+                    "beat_id": beat.beat_id,
+                    "target_words": int(round(
+                        (float(beat.estimated_duration_seconds) / 60.0)
+                        * words_per_minute
+                    )),
+                }
+                for beat in plan.beats
+            ]
+            beat_target_by_id = {
+                item["beat_id"]: int(item["target_words"])
+                for item in beat_word_targets
+            }
+            windows = _split_contiguous_windows(list(plan.beats), _WRITING_WINDOW_COUNT)
+            all_segments: list[ScriptSegment] = []
+            all_citations: list[Any] = []
+            final_title = plan.title
 
-            payload = self.writing_agent.build_payload(
-                episode_number=plan.episode_number,
-                episode_plan=plan.model_dump(mode="json"),
-                passages=passages, book_metadata=book_metadata,
-                max_author_names_per_episode=project.config.max_author_names_per_episode,
-                prefer_indirect_attribution=project.config.prefer_indirect_attribution,
-                skip_grounding=project.config.skip_grounding,
-            )
-            payload["writing_source_mode"] = _WRITING_SOURCE_MODE_FULL_CHUNK
-            result = await asyncio.to_thread(self.writing_agent.run, payload)
-
-            if project.config.skip_grounding:
-                normalized_segments = []
-                for seg in result.segments:
-                    segment_kwargs = {
-                        "text": seg.text,
-                        "segment_type": seg.segment_type,
-                        "beat_id": seg.beat_id,
-                        "source_book_ids": seg.source_book_ids,
-                        "attribution_level": seg.attribution_level,
-                        "citations": [],
+            for window_idx, window_beats in enumerate(windows):
+                window_passage_ids: list[str] = []
+                seen_passages: set[str] = set()
+                for beat in window_beats:
+                    for passage_id in beat.passage_ids:
+                        if passage_id in seen_passages or passage_id not in passage_payload_by_id:
+                            continue
+                        seen_passages.add(passage_id)
+                        window_passage_ids.append(passage_id)
+                window_passages = [
+                    passage_payload_by_id[passage_id]
+                    for passage_id in window_passage_ids
+                ]
+                window_beat_word_targets = [
+                    {
+                        "beat_id": beat.beat_id,
+                        "target_words": beat_target_by_id.get(beat.beat_id, 0),
                     }
-                    if seg.segment_id:
-                        segment_kwargs["segment_id"] = seg.segment_id
-                    normalized_segments.append(ScriptSegment(**segment_kwargs))
-                result_segments = normalized_segments
-                result_citations = []
-            else:
-                result_segments = result.segments
-                result_citations = result.citations
+                    for beat in window_beats
+                ]
+                window_target_word_count = sum(
+                    int(item["target_words"]) for item in window_beat_word_targets
+                )
+                window_synthesis_context = _build_window_synthesis_context(plan, window_beats)
+                window_plan = plan.model_copy(
+                    update={
+                        "beats": window_beats,
+                        "target_word_count": window_target_word_count,
+                        "synthesis_context": window_synthesis_context,
+                    }
+                )
 
-            total_words = sum(len(seg.text.split()) for seg in result_segments)
+                payload = self.writing_agent.build_payload(
+                    episode_number=plan.episode_number,
+                    episode_plan=window_plan.model_dump(mode="json"),
+                    passages=window_passages,
+                    book_metadata=book_metadata,
+                    max_author_names_per_episode=project.config.max_author_names_per_episode,
+                    prefer_indirect_attribution=project.config.prefer_indirect_attribution,
+                    skip_grounding=project.config.skip_grounding,
+                )
+                payload["writing_source_mode"] = _WRITING_SOURCE_MODE_FULL_CHUNK
+                payload["target_word_count"] = window_target_word_count
+                payload["beat_word_targets"] = window_beat_word_targets
+
+                self.run_logger.log(
+                    "episode_write_window_payload",
+                    episode=plan.episode_number,
+                    window_index=window_idx + 1,
+                    window_count=len(windows),
+                    beat_count=len(window_beats),
+                    passage_count=len(window_passages),
+                    synthesis_insight_count=len(window_synthesis_context.insights)
+                    if window_synthesis_context
+                    else 0,
+                    target_word_count=window_target_word_count,
+                )
+
+                result = await asyncio.to_thread(self.writing_agent.run, payload)
+                if result.title:
+                    final_title = result.title
+                if project.config.skip_grounding:
+                    normalized_segments = []
+                    for seg in result.segments:
+                        segment_kwargs = {
+                            "text": seg.text,
+                            "segment_type": seg.segment_type,
+                            "beat_id": seg.beat_id,
+                            "source_book_ids": seg.source_book_ids,
+                            "attribution_level": seg.attribution_level,
+                            "citations": [],
+                        }
+                        if seg.segment_id:
+                            segment_kwargs["segment_id"] = seg.segment_id
+                        normalized_segments.append(ScriptSegment(**segment_kwargs))
+                    all_segments.extend(normalized_segments)
+                else:
+                    all_segments.extend(result.segments)
+                    all_citations.extend(result.citations)
+
+            total_words = sum(len(seg.text.split()) for seg in all_segments)
             script = EpisodeScript(
-                episode_number=plan.episode_number, title=result.title,
-                segments=result_segments, total_word_count=total_words,
+                episode_number=plan.episode_number,
+                title=final_title,
+                segments=all_segments,
+                total_word_count=total_words,
                 estimated_duration_seconds=int(
-                    total_words / self.settings.pipeline.spoken_words_per_minute * 60
+                    total_words / words_per_minute * 60
                 ),
-                citations=result_citations,
+                citations=all_citations,
             )
             _save_json(ep_dir / "episode_script.json", script)
             planned_beat_duration_minutes = (
                 sum(float(beat.estimated_duration_seconds) for beat in plan.beats) / 60.0
             )
-            target_duration_minutes = float(plan.target_duration_minutes)
+            target_word_count = int(plan.target_word_count)
+            target_duration_minutes = target_word_count / words_per_minute
             written_duration_minutes = script.estimated_duration_seconds / 60.0
-            write_shortfall_minutes = target_duration_minutes - written_duration_minutes
+            planned_target_word_count = int(round(
+                planned_beat_duration_minutes * words_per_minute
+            ))
+            written_word_count = int(total_words)
+            write_shortfall_words = target_word_count - written_word_count
             write_shortfall_ratio = (
-                write_shortfall_minutes / target_duration_minutes
-                if target_duration_minutes > 0
+                write_shortfall_words / target_word_count
+                if target_word_count > 0
                 else 0.0
             )
             if write_shortfall_ratio > _RUNTIME_UNDERSHOOT_WARNING_RATIO:
-                target_floor_minutes = target_duration_minutes * (
+                target_floor_words = target_word_count * (
                     1.0 - _RUNTIME_UNDERSHOOT_WARNING_RATIO
                 )
                 likely_source = (
                     "planning"
-                    if planned_beat_duration_minutes < target_floor_minutes
+                    if planned_target_word_count < target_floor_words
                     else "writing"
                 )
                 self.run_logger.log(
@@ -3399,19 +4008,27 @@ class PipelineOrchestrator:
                     target_duration_minutes=target_duration_minutes,
                     planned_beat_duration_minutes=planned_beat_duration_minutes,
                     written_duration_minutes=written_duration_minutes,
-                    shortfall_minutes=write_shortfall_minutes,
+                    target_word_count=target_word_count,
+                    planned_target_word_count=planned_target_word_count,
+                    written_word_count=written_word_count,
+                    shortfall_words=write_shortfall_words,
                     shortfall_ratio=write_shortfall_ratio,
                     likely_source=likely_source,
                 )
 
             ctx["output_summary"] = {
-                "words": total_words, "segments": len(result.segments),
-                "citations": len(result_citations),
+                "words": total_words,
+                "segments": len(all_segments),
+                "citations": len(all_citations),
                 "writing_source_mode": _WRITING_SOURCE_MODE_FULL_CHUNK,
+                "window_count": len(windows),
                 "target_duration_minutes": target_duration_minutes,
                 "planned_beat_duration_minutes": planned_beat_duration_minutes,
                 "written_duration_minutes": written_duration_minutes,
-                "write_shortfall_minutes": write_shortfall_minutes,
+                "target_word_count": target_word_count,
+                "planned_target_word_count": planned_target_word_count,
+                "written_word_count": written_word_count,
+                "write_shortfall_words": write_shortfall_words,
                 "write_shortfall_ratio": write_shortfall_ratio,
             }
             return script

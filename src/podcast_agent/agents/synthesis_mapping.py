@@ -64,6 +64,8 @@ class SynthesisMappingAgent(Agent):
         "Phase 4: Omniscient Merged Narratives\n"
         "Draft topic-level summaries in a single authoritative voice. The voice should feel "
         "omniscient and literary, like a high-end documentary script.\n"
+        "- Generate between 7 and 8 merged narratives in merged_narratives so downstream "
+        "episode mapping has one topic-level anchor per episode\n"
         "- Do not mention author names\n"
         "- Treat disagreements as complications in the data, not tennis matches\n"
         "- Include inline passage citations in parentheses after specific claims, for "
@@ -97,11 +99,15 @@ class SynthesisMappingAgent(Agent):
         passages_by_axis: dict[str, list[dict]],
         cross_book_pairs: list[dict],
         book_metadata: list[dict],
+        synthesis_feedback: dict | None = None,
     ) -> dict:
-        return {
+        payload = {
             "project_id": project_id,
             "axes": axes_summary,
             "passages_by_axis": passages_by_axis,
             "cross_book_pairs": cross_book_pairs,
             "books": book_metadata,
         }
+        if synthesis_feedback is not None:
+            payload["synthesis_feedback"] = synthesis_feedback
+        return payload

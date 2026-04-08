@@ -195,23 +195,35 @@ class HeuristicLLMClient(LLMClient):
                 "treatment": "build",
             })
 
+        merged_narratives = []
+        merged_count = 7
+        for idx in range(merged_count):
+            start = idx * 3
+            end = start + 3
+            source_passage_ids = passage_ids[start:end]
+            if not source_passage_ids and passage_ids:
+                source_passage_ids = passage_ids[: min(3, len(passage_ids))]
+            citation_passage_id = source_passage_ids[0] if source_passage_ids else "passage_id"
+            merged_narratives.append(
+                {
+                    "topic": f"Heuristic topic {idx + 1}",
+                    "narrative": (
+                        "There is a compelling case to be made that a shared pattern emerges here "
+                        f"({citation_passage_id})."
+                    ),
+                    "source_passage_ids": source_passage_ids,
+                    "points_of_consensus": [],
+                    "points_of_disagreement": [],
+                }
+            )
+
         return {
             "insights": insights,
             "narrative_threads": [],
             "book_relationship_matrix": {},
             "unresolved_tensions": [],
             "quality_score": 0.5,
-            "merged_narratives": [
-                {
-                    "topic": "Heuristic topic",
-                    "narrative": "There is a compelling case to be made that a shared pattern emerges here ("
-                    + (passage_ids[0] if passage_ids else "passage_id")
-                    + ").",
-                    "source_passage_ids": passage_ids[:3],
-                    "points_of_consensus": [],
-                    "points_of_disagreement": [],
-                }
-            ],
+            "merged_narratives": merged_narratives,
         }
 
     def _generate_narrative_strategy(self, payload: PromptPayload) -> dict[str, Any]:
@@ -244,22 +256,43 @@ class HeuristicLLMClient(LLMClient):
             "guiding_questions": ["What is the central conflict on this axis?"],
         }]
         insight_ids = [insight.get("insight_id", uuid4().hex) for insight in insights]
+        merged_narrative_id_pool = [
+            str(item.get("merged_narrative_id", "")).strip()
+            for item in synthesis_map.get("merged_narratives", [])
+            if str(item.get("merged_narrative_id", "")).strip()
+        ]
         for i in range(recommended_episode_count):
-            axis_item = axis_pool[i % len(axis_pool)]
+            if len(axis_pool) >= 4:
+                target_axis_count = 3 + (i % 2)
+            else:
+                target_axis_count = min(len(axis_pool), max(1, len(axis_pool)))
+            selected_axes = [
+                axis_pool[(i + offset) % len(axis_pool)]
+                for offset in range(target_axis_count)
+            ]
+            axis_item = selected_axes[0]
             axis_id = axis_item["axis_id"]
             assigned_insights = []
             if insight_ids:
                 assigned_insights = [insight_ids[i % len(insight_ids)]]
-            guiding_questions = [
-                str(question).strip()
-                for question in axis_item.get("guiding_questions", [])
-                if str(question).strip()
-            ] or ["What changes the stakes on this axis in this episode?"]
+            guiding_questions_by_axis: list[tuple[str, str]] = []
+            for selected_axis in selected_axes:
+                axis_questions = [
+                    str(question).strip()
+                    for question in selected_axis.get("guiding_questions", [])
+                    if str(question).strip()
+                ] or ["What changes the stakes on this axis in this episode?"]
+                for question in axis_questions:
+                    guiding_questions_by_axis.append(
+                        (selected_axis["axis_id"], question)
+                    )
             episode_inquiries: list[dict[str, str]] = []
             for offset in range(4):
-                question = guiding_questions[offset % len(guiding_questions)]
+                axis_for_question, question = guiding_questions_by_axis[
+                    offset % len(guiding_questions_by_axis)
+                ]
                 episode_inquiries.append(
-                    {"axis_id": axis_id, "question": question}
+                    {"axis_id": axis_for_question, "question": question}
                 )
             episode_assignments.append(
                 {
@@ -271,12 +304,19 @@ class HeuristicLLMClient(LLMClient):
                         else f"What does episode {i + 1} reveal that the previous episode could not?"
                     ),
                     "thematic_focus": f"Focus on axis {axis_id[:8]}",
-                    "axes": [{
-                        "axis_id": axis_id,
-                        "description": axis_item.get("description", ""),
-                    }],
+                    "axes": [
+                        {
+                            "axis_id": selected_axis["axis_id"],
+                            "description": selected_axis.get("description", ""),
+                        }
+                        for selected_axis in selected_axes
+                    ],
                     "insight_ids": assigned_insights,
-                    "merged_narrative_ids": [],
+                    "merged_narrative_id": (
+                        merged_narrative_id_pool[i % len(merged_narrative_id_pool)]
+                        if merged_narrative_id_pool
+                        else None
+                    ),
                     "tension_ids": [],
                     "episode_strategy": "advance main thread",
                 }
@@ -332,10 +372,12 @@ class HeuristicLLMClient(LLMClient):
         ]
         beats = []
         for i in range(52):
+            beat_insight_ids = [insight_ids[i % len(insight_ids)]] if insight_ids else []
             beats.append(
                 {
                     "beat_id": uuid4().hex,
                     "description": f"Beat {i + 1} for episode {episode_number}",
+                    "insight_ids": beat_insight_ids,
                     "passage_ids": selected_passage_ids,
                     "narrative_instruction": "advance_events",
                     "attribution_level": "none",

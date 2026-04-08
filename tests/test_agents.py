@@ -99,6 +99,10 @@ class TestThemeDecompositionAgent:
         assert payload["books"][0]["chapters"][0]["summary"] == "Summary."
         assert payload["books"][0]["chapters"][0]["themes_touched"] == ["bias"]
 
+    def test_instructions_target_20_to_25_axes(self):
+        agent = ThemeDecompositionAgent(_mock_llm())
+        assert "20-25 strong analytical lenses" in agent.instructions
+
 
 class TestBookSummaryAgent:
     def test_schema_name(self):
@@ -211,6 +215,7 @@ class TestSynthesisMappingAgent:
     def test_instructions_target_insight_volume(self):
         agent = SynthesisMappingAgent(_mock_llm())
         assert "Generate between 40 and 50 insights in the insights array." in agent.instructions
+        assert "Generate between 7 and 8 merged narratives" in agent.instructions
 
 
 class TestNarrativeStrategyAgent:
@@ -255,10 +260,12 @@ class TestNarrativeStrategyAgent:
         assert "Return only a JSON object matching this schema." in agent.instructions
         assert "Every SynthesisInsight with podcast_potential > 0.5 must appear in at least one " in agent.instructions
         assert "Target 5-7 insights per episode" in agent.instructions
+        assert "usually 3-4 axes" in agent.instructions
         assert (
             "prioritize full coverage of SynthesisInsights with podcast_potential > 0.5"
             in agent.instructions
         )
+        assert "exactly one merged_narrative_id" in agent.instructions
 
     def test_heuristic_strategy_caps_recommended_episode_count_to_eight(self):
         heuristic = HeuristicLLMClient()
@@ -266,6 +273,40 @@ class TestNarrativeStrategyAgent:
             {"requested_episode_count": 20, "synthesis_map": {}, "thematic_axes": []}
         )
         assert result["recommended_episode_count"] == 8
+
+    def test_heuristic_strategy_assigns_one_merged_narrative_per_episode_when_available(self):
+        heuristic = HeuristicLLMClient()
+        result = heuristic._generate_narrative_strategy(
+            {
+                "synthesis_map": {
+                    "merged_narratives": [
+                        {"merged_narrative_id": "merged_narrative_001"},
+                        {"merged_narrative_id": "merged_narrative_002"},
+                    ],
+                    "insights": [],
+                },
+                "thematic_axes": [{"axis_id": "axis_1", "description": "", "guiding_questions": []}],
+            }
+        )
+        assert result["episode_assignments"]
+        assert all(item["merged_narrative_id"] is not None for item in result["episode_assignments"])
+
+    def test_heuristic_strategy_targets_three_to_four_axes_when_available(self):
+        heuristic = HeuristicLLMClient()
+        thematic_axes = [
+            {"axis_id": f"axis_{idx}", "description": f"Axis {idx}", "guiding_questions": [f"Q{idx}?"]}
+            for idx in range(1, 7)
+        ]
+        result = heuristic._generate_narrative_strategy(
+            {
+                "requested_episode_count": 8,
+                "synthesis_map": {"insights": []},
+                "thematic_axes": thematic_axes,
+            }
+        )
+        axis_counts = [len(item["axes"]) for item in result["episode_assignments"]]
+        assert axis_counts
+        assert all(3 <= count <= 4 for count in axis_counts)
 
 
 class TestEpisodePlanningAgent:
@@ -295,7 +336,7 @@ class TestEpisodePlanningAgent:
         agent = EpisodePlanningAgent(_mock_llm())
         assert "140 minutes" in agent.instructions
         assert "125 minutes" in agent.instructions
-        assert "50-60 beats" in agent.instructions
+        assert "70-80 beats" in agent.instructions
         assert "summary_text" in agent.instructions
         assert "full_text" in agent.instructions
         assert "project.book_size_share_by_id" in agent.instructions
@@ -322,10 +363,14 @@ class TestWritingAgent:
 
     def test_instructions_include_runtime_targets(self):
         agent = WritingAgent(_mock_llm())
-        assert "target_duration_minutes" in agent.instructions
+        assert "plan.target_word_count" in agent.instructions
+        assert "payload.beat_word_targets" in agent.instructions
         assert "estimated_duration_seconds" in agent.instructions
-        assert "target_duration_minutes" in agent.instructions_no_citations
+        assert "plan.target_word_count" in agent.instructions_no_citations
+        assert "payload.beat_word_targets" in agent.instructions_no_citations
         assert "estimated_duration_seconds" in agent.instructions_no_citations
+        assert "Target plan.target_duration_minutes for total runtime" not in agent.instructions
+        assert "Target plan.target_duration_minutes for total runtime" not in agent.instructions_no_citations
         assert "Required writing constraints" in agent.instructions
         assert "plan.narrative_spine" in agent.instructions
         assert "plan.cross_references" in agent.instructions

@@ -219,6 +219,7 @@ class TestEpisodePlan:
         )
         plan = EpisodePlan(
             episode_number=1, title="Episode 1",
+            target_word_count=16800,
             driving_question="What decision matters most?",
             thematic_focus="Decision making",
             unresolved_questions=["What remains unresolved?"],
@@ -254,6 +255,7 @@ class TestEpisodePlan:
         plan = EpisodePlan(
             episode_number=1,
             title="Episode 1",
+            target_word_count=16800,
             driving_question="What is at stake?",
             unresolved_questions=["What remains open?"],
             payoff_shape="Leave the listener with a sharpened tension.",
@@ -364,7 +366,7 @@ class TestNarrativeStrategy:
                     thematic_focus="Focus",
                     axis_ids=["ax1"],
                     insight_ids=["in1"],
-                    merged_narrative_ids=["merged_narrative_001"],
+                    merged_narrative_id="merged_narrative_001",
                     tension_ids=["tension_001"],
                     episode_strategy="Set context",
                 )
@@ -374,7 +376,7 @@ class TestNarrativeStrategy:
         restored = NarrativeStrategy.model_validate(data)
         assert restored.episode_assignments[0].axes[0].axis_id == "ax1"
         assert restored.episode_assignments[0].axis_ids == ["ax1"]
-        assert restored.episode_assignments[0].merged_narrative_ids == ["merged_narrative_001"]
+        assert restored.episode_assignments[0].merged_narrative_id == "merged_narrative_001"
 
     def test_rejects_misaligned_episode_arc_details(self):
         with pytest.raises(ValidationError, match="episode_arc_details must align"):
@@ -636,20 +638,20 @@ class TestThematicProject:
 class TestPipelineConfig:
     def test_defaults(self):
         config = PipelineConfig()
-        assert config.max_axes == 30
-        assert config.min_axes == 25
+        assert config.max_axes == 25
+        assert config.min_axes == 20
         assert config.passage_retrieval_percentage == 0.25
         assert config.passage_retrieval_min_per_book == 20
         assert config.passage_retrieval_max_per_book == 50
-        assert config.axis_candidate_target_total == 250
+        assert config.axis_candidate_target_total == 200
         assert config.admission_floor_per_book == 2
         assert config.retrieval_relevance_power == 1.2
         assert config.retrieval_soft_threshold == 0.35
         assert config.chapter_penalty_weight == 0.05
         assert config.rerank_top_k == 30
         assert config.max_repair_attempts == 3
-        assert config.episode_write_concurrency == 7
-        assert config.passage_extraction_concurrency == 10
+        assert config.episode_write_concurrency == 8
+        assert config.passage_extraction_concurrency == 13
         assert config.target_episode_minutes == 140.0
         assert config.min_episode_minutes == 125.0
         assert config.duration_shortfall_policy == "warn"

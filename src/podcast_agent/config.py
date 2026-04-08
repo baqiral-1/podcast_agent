@@ -103,14 +103,14 @@ class LLMConfig(BaseModel):
     agent_configs: dict[str, AgentConfig] = Field(
         default_factory=lambda: {
             "structuring": AgentConfig(model_name="claude-haiku-4-5", temperature=0.3, max_retry_attempts=3, concurrency_limit=10),
-            "chapter_summary": AgentConfig(model_name="claude-haiku-4-5", temperature=0.3, max_retry_attempts=3, concurrency_limit=10),
+            "chapter_summary": AgentConfig(model_name="claude-haiku-4-5", temperature=0.3, max_retry_attempts=3, concurrency_limit=15),
             "book_summary": AgentConfig(model_name="claude-opus-4-6", temperature=0.3, max_retry_attempts=3, concurrency_limit=10),
             "theme_decomposition": AgentConfig(model_name="claude-opus-4-6", temperature=0.7, max_retry_attempts=2, concurrency_limit=6),
-            "passage_extraction": AgentConfig(model_name="claude-opus-4-6", temperature=0.1, max_retry_attempts=3, concurrency_limit=10),
+            "passage_extraction": AgentConfig(model_name="claude-opus-4-6", temperature=0.1, max_retry_attempts=3, concurrency_limit=13),
             "synthesis_mapping": AgentConfig(model_name="claude-opus-4-6", temperature=0.8, max_retry_attempts=2, concurrency_limit=3),
             "narrative_strategy": AgentConfig(model_name="claude-opus-4-6", temperature=0.5, max_retry_attempts=2, concurrency_limit=6),
             "episode_planning": AgentConfig(model_name="claude-opus-4-6", temperature=0.5, max_retry_attempts=2, concurrency_limit=8),
-            "episode_writing": AgentConfig(model_name="claude-opus-4-6", temperature=0.6, max_retry_attempts=2, concurrency_limit=7),
+            "episode_writing": AgentConfig(model_name="claude-opus-4-6", temperature=0.6, max_retry_attempts=2, concurrency_limit=8),
             "source_weaving": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.5, max_retry_attempts=2, concurrency_limit=6),
             "grounding_validation": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.2, max_retry_attempts=2, concurrency_limit=6),
             "repair": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.3, max_retry_attempts=2, concurrency_limit=6),
@@ -187,7 +187,7 @@ class TTSConfig(BaseModel):
     speed: float = Field(default=1, gt=0.0, le=4.0)
     timeout_seconds: float = Field(default=300.0, gt=0.0)
     kokoro_parallelism: int = Field(default=2, ge=1)
-    kokoro_worker_threads: int = Field(default=4, ge=1)
+    kokoro_worker_threads: int = Field(default=2, ge=1)
     kokoro_chunk_min_words: int = Field(default=550, ge=100)
     kokoro_chunk_max_words: int = Field(default=600, ge=100)
 
@@ -218,24 +218,25 @@ class PipelineRuntimeConfig(BaseModel):
     chunk_overlap_words: int = Field(default=50, ge=0)
     min_chunk_words: int = Field(default=80, ge=10)
     max_repair_attempts: int = Field(default=3, ge=0)
-    episode_write_concurrency: int = Field(default=7, ge=1)
+    episode_write_concurrency: int = Field(default=8, ge=1)
     tts_concurrency: int = Field(default=4, ge=1)
     llm_global_max_concurrency: int = Field(default=30, ge=1)
     audio_retry_attempts: int = Field(default=3, ge=0)
-    spoken_words_per_minute: int = Field(default=110, ge=80)
+    spoken_words_per_minute: int = Field(default=120, ge=80)
     # Thematic intelligence
-    max_axes: int = Field(default=30, ge=1)
-    min_axes: int = Field(default=25, ge=1)
+    max_axes: int = Field(default=25, ge=1)
+    min_axes: int = Field(default=20, ge=1)
     passage_retrieval_percentage: float = Field(default=0.25, gt=0.0, le=1.0)
     passage_retrieval_min_per_book: int = Field(default=20, ge=1)
     passage_retrieval_max_per_book: int = Field(default=50, ge=1)
-    axis_candidate_target_total: int = Field(default=250, ge=1)
+    axis_candidate_target_total: int = Field(default=200, ge=1)
     admission_floor_per_book: int = Field(default=2, ge=0)
     retrieval_relevance_power: float = Field(default=1.2, ge=0.0)
     retrieval_soft_threshold: float = Field(default=0.35, ge=0.0, le=1.0)
     chapter_penalty_weight: float = Field(default=0.05, ge=0.0, le=1.0)
     rerank_top_k: int = Field(default=30, ge=1)
     synthesis_quality_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
+    passage_extraction_concurrency: int = Field(default=13, ge=1)
     spoken_chunk_max_words: int = Field(default=250, ge=50)
 
     @model_validator(mode="after")

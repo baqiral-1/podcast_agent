@@ -95,12 +95,12 @@ class BookRecord(StrictModel):
 
 
 class PipelineConfig(StrictModel):
-    max_axes: int = Field(default=30, ge=1)
-    min_axes: int = Field(default=25, ge=1)
+    max_axes: int = Field(default=25, ge=1)
+    min_axes: int = Field(default=20, ge=1)
     passage_retrieval_percentage: float = Field(default=0.25, gt=0.0, le=1.0)
     passage_retrieval_min_per_book: int = Field(default=20, ge=1)
     passage_retrieval_max_per_book: int = Field(default=50, ge=1)
-    axis_candidate_target_total: int = Field(default=250, ge=1)
+    axis_candidate_target_total: int = Field(default=200, ge=1)
     admission_floor_per_book: int = Field(default=2, ge=0)
     retrieval_relevance_power: float = Field(default=1.2, ge=0.0)
     retrieval_soft_threshold: float = Field(default=0.35, ge=0.0, le=1.0)
@@ -110,11 +110,11 @@ class PipelineConfig(StrictModel):
     max_repair_attempts: int = Field(default=3, ge=0)
     tts_provider: str = "openai"
     tts_concurrency: int = Field(default=4, ge=1)
-    episode_write_concurrency: int = Field(default=7, ge=1)
+    episode_write_concurrency: int = Field(default=8, ge=1)
     target_episode_minutes: float = Field(default=140.0, gt=0.0)
     min_episode_minutes: float = Field(default=125.0, gt=0.0)
     duration_shortfall_policy: Literal["warn"] = "warn"
-    passage_extraction_concurrency: int = Field(default=10, ge=1)
+    passage_extraction_concurrency: int = Field(default=13, ge=1)
     chunk_max_words: int = Field(default=400, ge=50)
     chunk_overlap_words: int = Field(default=50, ge=0)
     spoken_chunk_max_words: int = Field(default=250, ge=50)
@@ -368,7 +368,7 @@ class EpisodeAssignment(StrictModel):
     thematic_focus: str = ""
     axes: list["EpisodeAxisRef"] = Field(default_factory=list)
     insight_ids: list[str] = Field(default_factory=list)
-    merged_narrative_ids: list[str] = Field(default_factory=list)
+    merged_narrative_id: str | None = None
     tension_ids: list[str] = Field(default_factory=list)
     episode_strategy: str = ""
 
@@ -450,6 +450,7 @@ class NarrativeSpine(StrictModel):
 class EpisodeBeat(StrictModel):
     beat_id: str = Field(default_factory=new_id)
     description: str
+    insight_ids: list[str] = Field(default_factory=list)
     passage_ids: list[str] = Field(default_factory=list)
     primary_book_id: str = ""
     supporting_book_ids: list[str] = Field(default_factory=list)
@@ -492,6 +493,7 @@ class EpisodePlanDraft(StrictModel):
 
 
 class EpisodePlan(EpisodePlanDraft):
+    target_word_count: int = Field(ge=1)
     driving_question: str = Field(min_length=1)
     unresolved_questions: list[str] = Field(default_factory=list, min_length=1)
     payoff_shape: str = Field(min_length=1)

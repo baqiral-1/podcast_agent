@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from podcast_agent.config import Settings, TTSConfig
 from podcast_agent.tts.kokoro import KokoroTTSClient
 from podcast_agent.tts.openai_compatible import OpenAICompatibleTTSClient, build_tts_client
@@ -69,3 +71,30 @@ class TestBuildTTSClient:
 
         assert isinstance(client, KokoroTTSClient)
         assert client.config.voice == "af_heart"
+
+
+class TestKokoroTTSClientTransport:
+    def test_read_worker_response_ignores_non_json_lines(self, monkeypatch):
+        client = KokoroTTSClient(
+            TTSConfig(provider="kokoro"),
+            binary_path=Path("/tmp/does-not-matter"),
+        )
+        lines = iter(
+            [
+                "this is not json\n",
+                '{"id": 99, "ok": true, "audio_b64": "x"}\n',
+                '{"id": 3, "ok": true, "audio_b64": "YWJj"}\n',
+            ]
+        )
+        monkeypatch.setattr(
+            client,
+            "_read_worker_response_line",
+            lambda stdout, process, timeout_seconds: next(lines),
+        )
+
+        class _Process:
+            stdout = object()
+
+        payload = client._read_worker_response(process=_Process(), request_id=3)
+
+        assert payload == {"id": 3, "ok": True, "audio_b64": "YWJj"}

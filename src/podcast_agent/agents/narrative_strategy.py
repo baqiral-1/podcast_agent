@@ -36,10 +36,11 @@ class NarrativeStrategyAgent(Agent):
         "Then build the episode assignment plan that expresses that strategy.\n\n"
         "You must also assign each episode's axes and insight_ids. "
         "These assignments are required and should follow the selected strategy arc.\n"
-        "You must also assign merged_narrative_ids and tension_ids for each episode from the "
+        "You must also assign merged_narrative_id and tension_ids for each episode from the "
         "provided synthesis catalogs. Only assign items that materially support that episode.\n"
+        "Every episode must include exactly one merged_narrative_id; this must be unique for each episode.\n"
         "Every SynthesisInsight with podcast_potential > 0.5 must be assigned to at least one episode.\n"
-        "Target 5-7 insights per episode while keeping each episode coherent: usually 2-3 axes.\n"
+        "Target 5-7 insights per episode while keeping each episode coherent: usually 3-4 axes.\n"
         "If constraints conflict, prioritize full coverage of SynthesisInsights with "
         "podcast_potential > 0.5, even if an episode needs more than 7 insights.\n\n"
         "Every episode must have a single driving_question. Episode 1 may state the global "
@@ -79,7 +80,7 @@ class NarrativeStrategyAgent(Agent):
         "  - thematic_focus: string\n"
         "  - axes: array of objects, each with axis_id and description\n"
         "  - insight_ids: array of strings\n"
-        "  - merged_narrative_ids: array of strings\n"
+        "  - merged_narrative_id: string\n"
         "  - tension_ids: array of strings\n"
         "  - episode_strategy: string\n\n"
         "Assignment consistency rules:\n"
@@ -89,7 +90,8 @@ class NarrativeStrategyAgent(Agent):
         "- Keep assigned insights coherent with their axes.\n"
         "- episode_arc_details[*].episode_inquiries[*].axis_id must be one of that episode's assigned "
         "axes[*].axis_id.\n"
-        "- Keep merged_narrative_ids and tension_ids selective: usually 0-2 of each per episode.\n\n"
+        "episode_assignments[*].merged_narrative_id must be one valid merged_narrative_id.\n"
+        "- Keep tension_ids selective: usually 0-2 per episode.\n\n"
         "Quality rules:\n"
         "- Avoid duplicating the same insight across many episodes unless repetition is required for "
         "clear narrative progression.\n"
@@ -103,6 +105,7 @@ class NarrativeStrategyAgent(Agent):
         thematic_axes: list[dict],
         project_metadata: dict,
         episode_count: int | None,
+        strategy_feedback: dict | None = None,
     ) -> dict:
         payload = {
             "synthesis_map": synthesis_map,
@@ -111,4 +114,6 @@ class NarrativeStrategyAgent(Agent):
         }
         if episode_count is not None:
             payload["requested_episode_count"] = episode_count
+        if strategy_feedback is not None:
+            payload["strategy_feedback"] = strategy_feedback
         return payload

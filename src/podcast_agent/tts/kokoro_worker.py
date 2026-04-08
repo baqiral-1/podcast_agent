@@ -17,19 +17,19 @@ from kokoro import KPipeline
 from kokoro.model import KModel
 
 PROTOCOL_STDOUT = sys.stdout
-KOKORO_REPO_ID = "hexgrad/Kokoro-82M"
+KOKORO_REPO_ID = "mlx-community/Kokoro-82M-bf16"
 
 
 class KokoroWorker:
     """Serve Kokoro synthesis requests over stdin/stdout."""
 
     def __init__(self) -> None:
-        thread_count = max(1, int(os.environ.get("KOKORO_WORKER_THREADS", "4")))
+        thread_count = max(1, int(os.environ.get("KOKORO_WORKER_THREADS", "2")))
         torch.set_num_threads(thread_count)
         torch.set_num_interop_threads(1)
         self._snapshot_dir = self._resolve_snapshot_dir()
         self._config_path = self._snapshot_dir / "config.json"
-        self._model_path = self._snapshot_dir / "kokoro-v1_0.pth"
+        self._model_path = self._ensure_model_weights(self._snapshot_dir)
         self._pipelines: dict[str, KPipeline] = {}
         self._models: dict[str, KModel] = {}
 
@@ -102,16 +102,24 @@ class KokoroWorker:
     def _voice_path(self, voice: str) -> Path:
         if voice.endswith(".pt"):
             return Path(voice)
-        voice_path = self._snapshot_dir / "voices" / f"{voice}.pt"
-        if not voice_path.exists():
-            raise FileNotFoundError(f"Local Kokoro voice not found: {voice_path}")
-        return voice_path
+        voice_dir = self._snapshot_dir / "voices"
+        voice_pt_path = voice_dir / f"{voice}.pt"
+        if voice_pt_path.exists():
+            return voice_pt_path
+        voice_safetensors_path = voice_dir / f"{voice}.safetensors"
+        if not voice_safetensors_path.exists():
+            raise FileNotFoundError(
+                "Local Kokoro voice not found. Expected one of: "
+                f"{voice_pt_path} or {voice_safetensors_path}"
+            )
+        self._convert_voice_safetensors_to_pt(voice_safetensors_path, voice_pt_path)
+        return voice_pt_path
 
     def _resolve_snapshot_dir(self) -> Path:
-        hf_home = Path(os.environ.get("HF_HOME", "/tmp/hf_cache_kokoro"))
+        hf_home = Path(os.environ.get("HF_HOME", str(Path.home() / ".cache" / "huggingface")))
         candidates = [
-            hf_home / "hub" / "models--hexgrad--Kokoro-82M",
-            hf_home / "models--hexgrad--Kokoro-82M",
+            hf_home / "hub" / "models--mlx-community--Kokoro-82M-bf16",
+            hf_home / "models--mlx-community--Kokoro-82M-bf16",
         ]
         for root in candidates:
             refs_main = root / "refs" / "main"
@@ -119,11 +127,83 @@ class KokoroWorker:
                 continue
             revision = refs_main.read_text(encoding="utf-8").strip()
             snapshot_dir = root / "snapshots" / revision
-            if (snapshot_dir / "config.json").exists() and (snapshot_dir / "kokoro-v1_0.pth").exists():
+            if (
+                (snapshot_dir / "config.json").exists()
+                and (snapshot_dir / "kokoro-v1_0.safetensors").exists()
+                and (snapshot_dir / "voices").exists()
+            ):
                 return snapshot_dir
         raise FileNotFoundError(
-            f"Unable to locate a local Kokoro snapshot under '{hf_home}'."
+            "Unable to locate a local MLX Kokoro snapshot under "
+            f"'{hf_home}'. Expected models--mlx-community--Kokoro-82M-bf16 "
+            "with config.json, kokoro-v1_0.safetensors, and voices/."
         )
+
+    def _ensure_model_weights(self, snapshot_dir: Path) -> Path:
+        pth_path = snapshot_dir / "kokoro-v1_0.pth"
+        if pth_path.exists():
+            return pth_path
+        safetensors_path = snapshot_dir / "kokoro-v1_0.safetensors"
+        if not safetensors_path.exists():
+            raise FileNotFoundError(f"Local Kokoro model not found: {safetensors_path}")
+        self._convert_safetensors_to_pth(safetensors_path, pth_path)
+        return pth_path
+
+    def _convert_safetensors_to_pth(self, safetensors_path: Path, pth_path: Path) -> None:
+        try:
+            from safetensors.torch import load_file
+        except Exception as exc:  # pragma: no cover - import failure is environment-specific
+            raise RuntimeError(
+                "safetensors is required to load MLX Kokoro weights. "
+                "Install it in the kokoro environment and retry."
+            ) from exc
+
+        state = load_file(str(safetensors_path))
+        grouped_state: dict[str, dict[str, torch.Tensor]] = {
+            "bert": {},
+            "bert_encoder": {},
+            "predictor": {},
+            "text_encoder": {},
+            "decoder": {},
+        }
+        for key, value in state.items():
+            prefix, separator, suffix = key.partition(".")
+            if not separator or prefix not in grouped_state:
+                raise RuntimeError(f"Unexpected tensor key in Kokoro safetensors: '{key}'")
+            grouped_state[prefix][suffix] = value
+        missing = [prefix for prefix, mapping in grouped_state.items() if not mapping]
+        if missing:
+            raise RuntimeError(
+                "Kokoro safetensors is missing required module weights: "
+                + ", ".join(sorted(missing))
+            )
+
+        temp_path = pth_path.with_name(f"{pth_path.name}.{os.getpid()}.tmp")
+        torch.save(grouped_state, temp_path)
+        temp_path.replace(pth_path)
+
+    def _convert_voice_safetensors_to_pt(
+        self,
+        safetensors_path: Path,
+        pt_path: Path,
+    ) -> None:
+        try:
+            from safetensors.torch import load_file
+        except Exception as exc:  # pragma: no cover - import failure is environment-specific
+            raise RuntimeError(
+                "safetensors is required to load MLX Kokoro voice weights. "
+                "Install it in the kokoro environment and retry."
+            ) from exc
+        voice_state = load_file(str(safetensors_path))
+        voice_tensor = voice_state.get("voice")
+        if not isinstance(voice_tensor, torch.Tensor):
+            raise RuntimeError(
+                f"Unexpected Kokoro voice format in '{safetensors_path}': "
+                "expected a 'voice' tensor."
+            )
+        temp_path = pt_path.with_name(f"{pt_path.name}.{os.getpid()}.tmp")
+        torch.save(voice_tensor, temp_path)
+        temp_path.replace(pt_path)
 
     @staticmethod
     def _write_response(payload: dict[str, object]) -> None:

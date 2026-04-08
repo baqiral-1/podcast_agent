@@ -8,3 +8,9 @@ __pycache__/
 .DS_Store
 page-0001.png
 *.pyc
+sample_books/gandhi-the-years-that-changed-the-world.cleaned.v2.txt
+sample_books/jinnah_of_pakistan.cleaned.txt
+sample_books/shameful_flight.cleaned.txt
+sample_books/the_great_war_for_civilisation.cleaned.iran.text
+sample_books/the_oil_kings.cleaned.txt
+sample_books/the_shia_revival.cleaned.txt

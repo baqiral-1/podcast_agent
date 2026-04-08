@@ -10,6 +10,7 @@ import queue
 import select
 import subprocess
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TextIO
@@ -37,7 +38,7 @@ class KokoroTTSClient(TTSClient):
         super().__init__()
         self.config = config
         self.binary_path = binary_path or Path("/tmp/tts-kokoro/bin/kokoro")
-        self.hf_home = hf_home or Path("/tmp/hf_cache_kokoro")
+        self.hf_home = hf_home or (Path.home() / ".cache" / "huggingface")
         self.default_voice = "af_heart"
         self._available_workers: queue.Queue[_KokoroWorkerHandle] = queue.Queue()
         self._pool_lock = threading.Lock()
@@ -217,29 +218,39 @@ class KokoroTTSClient(TTSClient):
         process: subprocess.Popen[str],
         request_id: int,
     ) -> dict[str, object]:
-        line = self._read_worker_response_line(process.stdout, process)
-        try:
-            payload = json.loads(line)
-        except json.JSONDecodeError as exc:
-            raise RuntimeError("kokoro worker returned malformed JSON.") from exc
-        if not isinstance(payload, dict):
-            raise RuntimeError("kokoro worker returned an invalid response.")
-        if payload.get("id") != request_id:
-            raise RuntimeError("kokoro worker returned a mismatched response id.")
-        return payload
+        deadline = time.monotonic() + self.config.timeout_seconds
+        while True:
+            remaining_seconds = deadline - time.monotonic()
+            if remaining_seconds <= 0:
+                raise RuntimeError(
+                    f"kokoro worker timed out after {self.config.timeout_seconds} seconds."
+                )
+            line = self._read_worker_response_line(
+                process.stdout,
+                process,
+                remaining_seconds,
+            )
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(payload, dict):
+                continue
+            if payload.get("id") != request_id:
+                continue
+            return payload
 
     def _read_worker_response_line(
         self,
         stdout: TextIO | None,
         process: subprocess.Popen[str],
+        timeout_seconds: float,
     ) -> str:
         if stdout is None:
             raise RuntimeError("kokoro worker stdout is unavailable.")
-        ready, _, _ = select.select([stdout], [], [], self.config.timeout_seconds)
+        ready, _, _ = select.select([stdout], [], [], timeout_seconds)
         if not ready:
-            raise RuntimeError(
-                f"kokoro worker timed out after {self.config.timeout_seconds} seconds."
-            )
+            raise RuntimeError("kokoro worker timed out while waiting for response output.")
         line = stdout.readline()
         if line:
             return line

@@ -96,24 +96,26 @@ class TestPipelineRuntimeConfig:
         assert config.max_chunk_words == 400
         assert config.chunk_overlap_words == 50
         assert config.max_repair_attempts == 3
-        assert config.episode_write_concurrency == 7
+        assert config.episode_write_concurrency == 8
         assert config.tts_concurrency == 4
-        assert config.spoken_words_per_minute == 110
+        assert config.spoken_words_per_minute == 120
 
     def test_thematic_defaults(self):
         config = PipelineRuntimeConfig()
-        assert config.max_axes == 30
-        assert config.min_axes == 25
+        assert config.max_axes == 25
+        assert config.min_axes == 20
         assert config.passage_retrieval_percentage == 0.25
         assert config.passage_retrieval_min_per_book == 20
         assert config.passage_retrieval_max_per_book == 50
-        assert config.axis_candidate_target_total == 250
+        assert config.axis_candidate_target_total == 200
         assert config.admission_floor_per_book == 2
         assert config.retrieval_relevance_power == 1.2
         assert config.retrieval_soft_threshold == 0.35
         assert config.chapter_penalty_weight == 0.05
         assert config.rerank_top_k == 30
         assert config.synthesis_quality_threshold == 0.5
+        assert config.passage_extraction_concurrency == 13
+        assert config.llm_global_max_concurrency == 30
 
     def test_rejects_removed_retrieval_weighting_fields(self):
         with pytest.raises(ValidationError):
@@ -149,13 +151,33 @@ class TestLLMConfigResolvers:
     def test_resolve_concurrency_limit_from_agent_config(self):
         config = LLMConfig()
         assert config.resolve_concurrency_limit("structuring") == 10
-        assert config.resolve_concurrency_limit("chapter_summary") == 10
+        assert config.resolve_concurrency_limit("chapter_summary") == 15
         assert config.resolve_concurrency_limit("book_summary") == 10
-        assert config.resolve_concurrency_limit("passage_extraction") == 10
+        assert config.resolve_concurrency_limit("passage_extraction") == 13
         assert config.resolve_concurrency_limit("synthesis_mapping") == 3
         assert config.resolve_concurrency_limit("episode_planning") == 8
-        assert config.resolve_concurrency_limit("episode_writing") == 7
+        assert config.resolve_concurrency_limit("episode_writing") == 8
         assert config.resolve_concurrency_limit("spoken_delivery") == 8
+
+    def test_runtime_caps_cover_bumped_stage_defaults(self):
+        llm = LLMConfig()
+        runtime = PipelineRuntimeConfig()
+
+        assert runtime.passage_extraction_concurrency >= llm.resolve_concurrency_limit(
+            "passage_extraction"
+        )
+        assert runtime.episode_write_concurrency >= llm.resolve_concurrency_limit(
+            "episode_planning"
+        )
+        assert runtime.episode_write_concurrency >= llm.resolve_concurrency_limit(
+            "episode_writing"
+        )
+        assert runtime.llm_global_max_concurrency >= max(
+            llm.resolve_concurrency_limit("chapter_summary") or 0,
+            llm.resolve_concurrency_limit("passage_extraction") or 0,
+            llm.resolve_concurrency_limit("episode_planning") or 0,
+            llm.resolve_concurrency_limit("episode_writing") or 0,
+        )
 
     def test_resolve_concurrency_limit_none_for_unknown(self):
         config = LLMConfig()
