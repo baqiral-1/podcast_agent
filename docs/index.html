@@ -55,7 +55,7 @@
     transform: translateY(-50%);
     height: 300px;
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(6, 1fr);
     grid-template-rows: 1fr;
     gap: 6px;
     overflow: hidden;
@@ -87,6 +87,17 @@
   .scene-grid img:nth-child(8) { transition-delay: 0.84s; }
   .scene-grid img:nth-child(9) { transition-delay: 0.96s; }
 
+
+  /* mobile gradient overlay (hidden on desktop) */
+  .scene::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at center, rgba(6,7,8,0.7), rgba(6,7,8,0.5));
+    z-index: 1;
+    pointer-events: none;
+    display: none;
+  }
 
   /* film grain */
   .scene::after {
@@ -216,7 +227,15 @@
     .scene { min-height: 85vh; }
     .scene-inner { padding: 0 1.5rem; }
     .glow { width: 300px; height: 300px; }
-    .scene-grid { display: none; }
+    .scene-grid {
+      top: 0; left: 0; right: 0; bottom: 0;
+      height: 100%;
+      transform: none;
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: repeat(2, 1fr);
+    }
+    .scene.visible .scene-grid img { opacity: 0.2; }
+    .scene::before { display: block; }
   }
 </style>
 </head>
@@ -229,11 +248,12 @@
 <!-- ═══ Iranian Revolution ═══ -->
 <section class="scene" data-scene>
   <div class="scene-grid">
-    <img src="./images/iran-revolution.jpg" alt="">
     <img src="./images/iran-2.jpg" alt="">
     <img src="./images/iran-4.jpg" alt="">
+    <img src="./images/iran-shah.jpg" alt="">
+    <img src="./images/iran-hostage.jpg" alt="">
+    <img src="./images/iran-3.jpg" alt="">
     <img src="./images/iran-5.jpg" alt="">
-    <img src="./images/iran-7.jpg" alt="">
   </div>
   <div class="glow glow-crimson"></div>
   <div class="scene-inner">
@@ -246,11 +266,12 @@
 <!-- ═══ Partition of India ═══ -->
 <section class="scene" data-scene>
   <div class="scene-grid">
+    <img src="./images/partition-gandhi.jpg" alt="">
+    <img src="./images/partition-jinnah-gandhi.jpg" alt="">
+    <img src="./images/partition-leaders.jpg" alt="">
     <img src="./images/partition-refugees.jpg" alt="">
     <img src="./images/partition-2.jpg" alt="">
-    <img src="./images/partition-3.jpg" alt="">
-    <img src="./images/partition-5.jpg" alt="">
-    <img src="./images/partition-7.jpg" alt="">
+    <img src="./images/partition-salt-march.jpg" alt="">
   </div>
   <div class="glow glow-amber"></div>
   <div class="scene-inner">
@@ -263,11 +284,12 @@
 <!-- ═══ The Question of Palestine ═══ -->
 <section class="scene" data-scene>
   <div class="scene-grid">
-    <img src="./images/palestine-1.jpg" alt="">
     <img src="./images/palestine-2.jpg" alt="">
     <img src="./images/palestine-3.jpg" alt="">
+    <img src="./images/palestine-oslo.jpg" alt="">
+    <img src="./images/palestine-wall.jpg" alt="">
+    <img src="./images/palestine-1.jpg" alt="">
     <img src="./images/palestine-4.jpg" alt="">
-    <img src="./images/palestine-5.jpg" alt="">
   </div>
   <div class="glow" style="background:#6a8a5a;"></div>
   <div class="scene-inner">
@@ -280,11 +302,12 @@
 <!-- ═══ War on Terror ═══ -->
 <section class="scene" data-scene>
   <div class="scene-grid">
-    <img src="./images/afghanistan-war.jpg" alt="">
-    <img src="./images/afghan-2.jpg" alt="">
-    <img src="./images/afghan-3.jpg" alt="">
     <img src="./images/wot-towers.jpg" alt="">
     <img src="./images/wot-saddam.jpg" alt="">
+    <img src="./images/wot-binladen.jpg" alt="">
+    <img src="./images/afghan-2.jpg" alt="">
+    <img src="./images/afghanistan-war.jpg" alt="">
+    <img src="./images/afghan-3.jpg" alt="">
   </div>
   <div class="glow glow-teal"></div>
   <div class="scene-inner">
