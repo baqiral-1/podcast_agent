@@ -201,6 +201,20 @@ pytest                    # Run all tests (141 tests)
 pytest tests/ -x --tb=short  # Stop on first failure
 ```
 
+## Knowledge Wiki
+
+This repo includes a code-focused impact-mapping wiki under `knowledge_wiki/`.
+
+- Entry point: `knowledge_wiki/index.md`
+- Rules and operation contract: `knowledge_wiki/AGENTS.md`
+- Operation history: `knowledge_wiki/log.md`
+
+Use these operation phrases with your coding agent when updating wiki state:
+
+- `ingest repo` (refresh impacted pages from current codebase state)
+- `query wiki` (answer questions using wiki citations)
+- `lint wiki` (repair links/orphans/stale references inside `knowledge_wiki/`)
+
 ## Requirements
 
 - Python >= 3.11

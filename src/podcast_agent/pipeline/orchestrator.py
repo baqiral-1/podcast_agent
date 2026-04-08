@@ -21,7 +21,7 @@ import tempfile
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from uuid import uuid4
 
 from podcast_agent.agents.book_summary import BookSummaryAgent
@@ -85,8 +85,6 @@ from podcast_agent.schemas.models import (
 from podcast_agent.tts.openai_compatible import build_tts_client
 
 logger = logging.getLogger(__name__)
-
-_POST_RERANK_PASSAGE_LIMIT = 140
 
 
 class StructuringStageError(RuntimeError):
@@ -400,6 +398,202 @@ def _compute_weighted_admitted_budgets(
     return budgets
 
 
+def _compute_weighted_axis_budgets(
+    *,
+    axis_ids: list[str],
+    total_budget: int,
+    weight_by_axis: dict[str, float],
+    floor_per_axis: int = 0,
+    cap_per_axis: int | None = None,
+) -> dict[str, int]:
+    if not axis_ids:
+        return {}
+
+    budget = max(0, int(total_budget))
+    if budget <= 0:
+        return {axis_id: 0 for axis_id in axis_ids}
+
+    axis_count = len(axis_ids)
+    effective_floor = min(max(0, floor_per_axis), budget // axis_count)
+    budgets = {axis_id: effective_floor for axis_id in axis_ids}
+    remaining = budget - (effective_floor * axis_count)
+    if remaining <= 0:
+        return budgets
+
+    for _ in range(max(1, axis_count * 2)):
+        if remaining <= 0:
+            break
+        available_ids = [
+            axis_id
+            for axis_id in axis_ids
+            if cap_per_axis is None or budgets[axis_id] < cap_per_axis
+        ]
+        if not available_ids:
+            break
+
+        weights = {
+            axis_id: max(0.0, float(weight_by_axis.get(axis_id, 0.0)))
+            for axis_id in available_ids
+        }
+        total_weight = sum(weights.values())
+        if total_weight <= 0:
+            weights = {axis_id: 1.0 for axis_id in available_ids}
+            total_weight = float(len(available_ids))
+
+        fractional: list[tuple[float, int, str]] = []
+        allocated = 0
+        for idx, axis_id in enumerate(available_ids):
+            raw_share = remaining * (weights[axis_id] / total_weight)
+            extra = int(math.floor(raw_share))
+            if cap_per_axis is not None:
+                extra = min(extra, max(0, cap_per_axis - budgets[axis_id]))
+            if extra > 0:
+                budgets[axis_id] += extra
+                allocated += extra
+            fractional.append((raw_share - extra, idx, axis_id))
+
+        remaining -= allocated
+        if remaining <= 0:
+            break
+
+        fractional.sort(key=lambda item: (-item[0], item[1], item[2]))
+        distributed = 0
+        for _, _, axis_id in fractional:
+            if remaining <= 0:
+                break
+            if cap_per_axis is not None and budgets[axis_id] >= cap_per_axis:
+                continue
+            budgets[axis_id] += 1
+            remaining -= 1
+            distributed += 1
+        if distributed == 0:
+            break
+
+    return budgets
+
+
+def _build_axis_budget_by_relevance(
+    *,
+    axes: list[ThematicAxis],
+    book_ids: list[str],
+    total_budget: int,
+    floor_per_axis: int,
+    relevance_power: float,
+    cap_per_axis: int | None = None,
+) -> dict[str, int]:
+    axis_ids = [axis.axis_id for axis in axes]
+    weights: dict[str, float] = {}
+    for axis in axes:
+        relevance = _resolve_axis_relevance(axis, book_ids)
+        avg_relevance = sum(relevance.values()) / max(1, len(book_ids))
+        weights[axis.axis_id] = max(0.0, avg_relevance) ** max(0.0, relevance_power)
+    return _compute_weighted_axis_budgets(
+        axis_ids=axis_ids,
+        total_budget=total_budget,
+        weight_by_axis=weights,
+        floor_per_axis=floor_per_axis,
+        cap_per_axis=cap_per_axis,
+    )
+
+
+def _derive_axis_budget_from_signal(
+    *,
+    axis_ids: list[str],
+    signal_by_axis: dict[str, float],
+    total_budget: int,
+    floor_per_axis: int,
+    cap_per_axis: int | None,
+    signal_power: float,
+) -> dict[str, int]:
+    weighted_signal = {
+        axis_id: max(0.0, float(signal_by_axis.get(axis_id, 0.0))) ** max(0.0, signal_power)
+        for axis_id in axis_ids
+    }
+    return _compute_weighted_axis_budgets(
+        axis_ids=axis_ids,
+        total_budget=total_budget,
+        weight_by_axis=weighted_signal,
+        floor_per_axis=floor_per_axis,
+        cap_per_axis=cap_per_axis,
+    )
+
+
+def _compute_stage_axis_target_count(
+    *,
+    axis_total: int,
+    percentage: float,
+    minimum: int,
+    maximum: int,
+) -> int:
+    target = int(round(max(0, axis_total) * _clamp(percentage, 0.0, 1.0)))
+    target = max(minimum, target)
+    target = min(maximum, target)
+    return max(0, min(target, max(0, axis_total)))
+
+
+def _passage_similarity_tokens(passage: ExtractedPassage, *, max_chars: int = 1200) -> set[str]:
+    text = (passage.trimmed_text or passage.full_text or passage.text or "")[:max_chars]
+    return set(_tokenize(text))
+
+
+def _jaccard_similarity(left: set[str], right: set[str]) -> float:
+    if not left and not right:
+        return 0.0
+    intersection = len(left & right)
+    if intersection <= 0:
+        return 0.0
+    return intersection / max(1, len(left | right))
+
+
+def _select_mmr_passages(
+    *,
+    passages: list[ExtractedPassage],
+    top_k: int,
+    base_score_fn: Callable[[ExtractedPassage], float],
+    lambda_weight: float,
+) -> list[ExtractedPassage]:
+    if not passages:
+        return []
+    top_n = max(1, min(top_k, len(passages)))
+    if top_n >= len(passages):
+        return sorted(
+            passages,
+            key=lambda p: (-base_score_fn(p), -p.relevance_score, -p.quotability_score, p.passage_id),
+        )
+
+    lambda_weight = _clamp(lambda_weight, 0.0, 1.0)
+    token_sets = [_passage_similarity_tokens(passage) for passage in passages]
+    base_scores = [base_score_fn(passage) for passage in passages]
+    similarity_matrix: list[list[float]] = [[0.0] * len(passages) for _ in passages]
+    for idx, left in enumerate(token_sets):
+        for jdx in range(idx + 1, len(passages)):
+            similarity = _jaccard_similarity(left, token_sets[jdx])
+            similarity_matrix[idx][jdx] = similarity
+            similarity_matrix[jdx][idx] = similarity
+
+    candidates = list(range(len(passages)))
+    max_similarity_to_selected = [0.0] * len(passages)
+    selected_indices: list[int] = []
+    for _ in range(top_n):
+        best_idx = max(
+            candidates,
+            key=lambda idx: (
+                (lambda_weight * base_scores[idx]) - ((1.0 - lambda_weight) * max_similarity_to_selected[idx]),
+                base_scores[idx],
+                passages[idx].relevance_score,
+                passages[idx].quotability_score,
+                -idx,
+            ),
+        )
+        selected_indices.append(best_idx)
+        candidates.remove(best_idx)
+        row = similarity_matrix[best_idx]
+        for idx in candidates:
+            if row[idx] > max_similarity_to_selected[idx]:
+                max_similarity_to_selected[idx] = row[idx]
+    return [passages[idx] for idx in selected_indices]
+
+
 def _resolve_writing_passage_text(passage: ExtractedPassage) -> str:
     full_text = passage.full_text.strip()
     if full_text:
@@ -490,10 +684,19 @@ def _select_top_passages_for_synthesis(
     passages: list[ExtractedPassage],
     *,
     top_k: int = 50,
+    use_mmr: bool = False,
+    mmr_lambda: float = 0.75,
 ) -> list[ExtractedPassage]:
     if not passages:
         return []
     top_n = max(1, min(top_k, len(passages)))
+    if use_mmr:
+        return _select_mmr_passages(
+            passages=passages,
+            top_k=top_n,
+            base_score_fn=lambda p: (0.7 * p.relevance_score) + (0.3 * p.quotability_score),
+            lambda_weight=mmr_lambda,
+        )
     ranked = sorted(
         passages,
         key=lambda p: (-p.relevance_score, -p.quotability_score, p.passage_id),
@@ -508,11 +711,20 @@ def _score_post_rerank_passage(passage: ExtractedPassage) -> float:
 def _select_top_passages_for_post_rerank(
     passages: list[ExtractedPassage],
     *,
-    top_k: int = _POST_RERANK_PASSAGE_LIMIT,
+    top_k: int,
+    use_mmr: bool = False,
+    mmr_lambda: float = 0.8,
 ) -> list[ExtractedPassage]:
     if not passages:
         return []
     top_n = max(1, min(top_k, len(passages)))
+    if use_mmr:
+        return _select_mmr_passages(
+            passages=passages,
+            top_k=top_n,
+            base_score_fn=_score_post_rerank_passage,
+            lambda_weight=mmr_lambda,
+        )
     ranked = sorted(
         passages,
         key=lambda p: (
@@ -528,8 +740,17 @@ def _select_top_passages_for_post_rerank(
 def _select_synthesis_passages(
     passages: list[ExtractedPassage],
     cross_pair_ids: set[str],
+    *,
+    top_k: int = 50,
+    use_mmr: bool = False,
+    mmr_lambda: float = 0.75,
 ) -> list[ExtractedPassage]:
-    selected = _select_top_passages_for_synthesis(passages)
+    selected = _select_top_passages_for_synthesis(
+        passages,
+        top_k=top_k,
+        use_mmr=use_mmr,
+        mmr_lambda=mmr_lambda,
+    )
     selected_by_id = {p.passage_id: p for p in selected}
     additions = [
         p for p in passages
@@ -547,6 +768,9 @@ def _select_episode_planning_passages(
     assigned_axis_ids: list[str],
     selected_insight_passage_ids: set[str],
     supporting_passages_per_axis: int = 60,
+    supporting_passages_per_axis_by_axis: dict[str, int] | None = None,
+    use_mmr: bool = False,
+    mmr_lambda: float = 0.65,
 ) -> dict[str, list[ExtractedPassage]]:
     if not assigned_axis_ids:
         return {axis_id: [] for axis_id in assigned_axis_ids}
@@ -565,35 +789,49 @@ def _select_episode_planning_passages(
     selected_by_axis: dict[str, list[ExtractedPassage]] = {axis_id: [] for axis_id in assigned_axis_ids}
     for axis_id in assigned_axis_ids:
         insight_passages: list[ExtractedPassage] = []
-        supporting_ranked: list[tuple[float, float, float, str, ExtractedPassage]] = []
+        supporting_pool: list[ExtractedPassage] = []
         for passage in passages_by_axis.get(axis_id, []):
             if passage.passage_id in selected_insight_passage_ids:
                 insight_passages.append(passage)
                 continue
+            supporting_pool.append(passage)
+        insight_passages.sort(
+            key=lambda p: (-p.relevance_score, -p.quotability_score, p.passage_id)
+        )
+        target_supporting_count = supporting_passages_per_axis
+        if supporting_passages_per_axis_by_axis is not None:
+            target_supporting_count = supporting_passages_per_axis_by_axis.get(
+                axis_id, supporting_passages_per_axis
+            )
+        supporting_top_n = max(0, min(target_supporting_count, len(supporting_pool)))
+
+        def _planning_score(passage: ExtractedPassage) -> float:
             key = _chunk_key(passage)
             is_multi_axis = len(chunk_axes.get(key, set())) > 1
-            weighted_score = (
+            return (
                 (0.65 * passage.relevance_score)
                 + (0.35 * passage.quotability_score)
                 + (0.04 if is_multi_axis else 0.0)
             )
-            supporting_ranked.append(
-                (
-                    -weighted_score,
+
+        if use_mmr and supporting_top_n > 0:
+            supporting_passages = _select_mmr_passages(
+                passages=supporting_pool,
+                top_k=supporting_top_n,
+                base_score_fn=_planning_score,
+                lambda_weight=mmr_lambda,
+            )
+        else:
+            supporting_ranked = sorted(
+                supporting_pool,
+                key=lambda passage: (
+                    -_planning_score(passage),
                     -passage.relevance_score,
                     -passage.quotability_score,
                     passage.passage_id,
-                    passage,
-                )
+                ),
             )
-        insight_passages.sort(
-            key=lambda p: (-p.relevance_score, -p.quotability_score, p.passage_id)
-        )
-        supporting_ranked.sort()
-        supporting_passages = [
-            passage
-            for _, _, _, _, passage in supporting_ranked[:supporting_passages_per_axis]
-        ]
+            supporting_passages = supporting_ranked[:supporting_top_n]
         selected_by_axis[axis_id] = insight_passages + supporting_passages
     return selected_by_axis
 
@@ -2304,6 +2542,26 @@ class PipelineOrchestrator:
                 project.books,
             )
             axis_candidate_budget_target = max(1, project.config.axis_candidate_target_total)
+            axis_ids = [axis.axis_id for axis in axes]
+            pre_axis_budget_by_axis = _build_axis_budget_by_relevance(
+                axes=axes,
+                book_ids=book_ids,
+                total_budget=project.config.pre_axis_total_budget,
+                floor_per_axis=project.config.pre_axis_floor,
+                relevance_power=project.config.pre_axis_relevance_power,
+            )
+            fallback_axis_budget = max(1, axis_candidate_budget_target)
+            post_axis_target_by_axis = _derive_axis_budget_from_signal(
+                axis_ids=axis_ids,
+                signal_by_axis={
+                    axis_id: float(pre_axis_budget_by_axis.get(axis_id, fallback_axis_budget))
+                    for axis_id in axis_ids
+                },
+                total_budget=project.config.post_axis_total_budget,
+                floor_per_axis=project.config.post_axis_floor,
+                cap_per_axis=project.config.post_axis_cap,
+                signal_power=project.config.post_axis_signal_power,
+            )
             chapter_word_count_by_book = {
                 book.book_id: {
                     chapter.chapter_id: max(0, chapter.word_count)
@@ -2332,13 +2590,16 @@ class PipelineOrchestrator:
                 )
 
                 axis_candidate_budget_effective = min(
-                    axis_candidate_budget_target,
+                    max(1, pre_axis_budget_by_axis.get(axis.axis_id, axis_candidate_budget_target)),
                     sum(len(hits_by_book.get(bid, [])) for bid in book_ids),
                 )
                 soft_threshold = project.config.retrieval_soft_threshold
                 chapter_penalty_weight = project.config.chapter_penalty_weight
                 floor_per_book = project.config.admission_floor_per_book
-                adaptive_relevance_powers = {"default": 1.0, "risky": 0.8}
+                adaptive_relevance_powers = {
+                    "default": project.config.retrieval_relevance_power,
+                    "risky": max(0.0, project.config.retrieval_relevance_power - 0.2),
+                }
                 retrieval_log: dict[str, Any] = {
                     "axis_id": axis.axis_id,
                     "axis_name": axis.name,
@@ -2347,6 +2608,10 @@ class PipelineOrchestrator:
                     "axis_candidate_budget_target": axis_candidate_budget_target,
                     "axis_candidate_budget_effective": axis_candidate_budget_effective,
                     "axis_candidate_budget": axis_candidate_budget_effective,
+                    "pre_axis_budget": pre_axis_budget_by_axis.get(axis.axis_id, axis_candidate_budget_target),
+                    "post_axis_target": post_axis_target_by_axis.get(axis.axis_id, project.config.post_axis_floor),
+                    "pre_axis_total_budget": project.config.pre_axis_total_budget,
+                    "post_axis_total_budget": project.config.post_axis_total_budget,
                     "budget_strategy": "fixed_target_soft_threshold_spillover_backfill",
                     "passage_retrieval_percentage": project.config.passage_retrieval_percentage,
                     "passage_retrieval_min_per_book": project.config.passage_retrieval_min_per_book,
@@ -2730,6 +2995,8 @@ class PipelineOrchestrator:
                         "allocation_policy": retrieval_log["allocation_policy"],
                         "retrieval_relevance_power": retrieval_log["retrieval_relevance_power"],
                         "axis_candidate_budget": axis_candidate_budget_effective,
+                        "pre_axis_budget": retrieval_log["pre_axis_budget"],
+                        "post_axis_target": retrieval_log["post_axis_target"],
                         "per_book_budget": retrieval_log["per_book_budget"],
                         "admitted_by_book": admitted_by_book,
                     })
@@ -2888,21 +3155,31 @@ class PipelineOrchestrator:
                     rerank_top_k=project.config.rerank_top_k,
                 )
                 target_total_before_limit = rerank_policy["target_total"]
-                target_total = min(target_total_before_limit, _POST_RERANK_PASSAGE_LIMIT)
+                post_axis_target = post_axis_target_by_axis.get(
+                    axis.axis_id,
+                    project.config.post_axis_floor,
+                )
+                target_total = max(1, min(post_axis_target, len(rehydrated_passages)))
                 top_passages = _select_top_passages_for_post_rerank(
                     rehydrated_passages,
                     top_k=target_total,
+                    use_mmr=project.config.mmr_enabled,
+                    mmr_lambda=project.config.mmr_post_lambda,
                 )
                 rerank_policy.update({
                     "post_rerank_score_weights": {
                         "relevance": 0.8,
                         "quotability": 0.2,
                     },
-                    "post_rerank_passage_limit": _POST_RERANK_PASSAGE_LIMIT,
+                    "post_rerank_passage_limit": project.config.post_axis_cap,
                     "target_total_before_limit": target_total_before_limit,
                     "allocation_policy": retrieval_log["allocation_policy"],
                     "retrieval_relevance_power": retrieval_log["retrieval_relevance_power"],
                     "axis_candidate_budget": axis_candidate_budget_effective,
+                    "pre_axis_budget": retrieval_log["pre_axis_budget"],
+                    "post_axis_target": post_axis_target,
+                    "mmr_enabled": project.config.mmr_enabled,
+                    "mmr_lambda": project.config.mmr_post_lambda,
                     "per_book_budget": retrieval_log["per_book_budget"],
                     "admitted_by_book": admitted_by_book,
                     "target_total": target_total,
@@ -3061,7 +3338,19 @@ class PipelineOrchestrator:
             passages_summary: dict[str, list[dict]] = {}
             synthesis_passage_total = 0
             for axis_id, passages in corpus.passages_by_axis.items():
-                selected_passages = _select_synthesis_passages(passages, cross_pair_ids)
+                synthesis_top_k = _compute_stage_axis_target_count(
+                    axis_total=len(passages),
+                    percentage=project.config.synthesis_axis_pct,
+                    minimum=project.config.synthesis_axis_min,
+                    maximum=project.config.synthesis_axis_max,
+                )
+                selected_passages = _select_synthesis_passages(
+                    passages,
+                    cross_pair_ids,
+                    top_k=synthesis_top_k,
+                    use_mmr=project.config.mmr_enabled,
+                    mmr_lambda=project.config.mmr_synthesis_lambda,
+                )
                 synthesis_passage_total += len(selected_passages)
                 passages_summary[axis_id] = [
                     {
@@ -3394,10 +3683,22 @@ class PipelineOrchestrator:
                     selected_insight_passage_ids=selected_insight_passage_ids,
                     chapter_lookup=chapter_lookup,
                 )
+                supporting_by_axis = {
+                    axis_id: _compute_stage_axis_target_count(
+                        axis_total=len(corpus.passages_by_axis.get(axis_id, [])),
+                        percentage=project.config.planning_axis_pct,
+                        minimum=project.config.planning_axis_min,
+                        maximum=project.config.planning_axis_max,
+                    )
+                    for axis_id in assignment.axis_ids
+                }
                 selected_passages_by_axis = _select_episode_planning_passages(
                     passages_by_axis=corpus.passages_by_axis,
                     assigned_axis_ids=assignment.axis_ids,
                     selected_insight_passage_ids=selected_insight_passage_ids,
+                    supporting_passages_per_axis_by_axis=supporting_by_axis,
+                    use_mmr=project.config.mmr_enabled,
+                    mmr_lambda=project.config.mmr_planning_lambda,
                 )
                 chapter_context_by_ref = _build_chapter_context_by_ref(
                     chapter_lookup=chapter_lookup,

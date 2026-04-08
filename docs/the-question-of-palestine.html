@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agentic Podcasts | The Question of Palestine</title>
+  <meta name="description" content="An 8-episode series examining the Israel-Palestine conflict, drawn from 10 landmark works of history.">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html {
+      line-height: 1.6;
+      -webkit-text-size-adjust: 100%;
+    }
+
+    body {
+      background: #060708;
+      color: #e8dcc8;
+      font-family: "Avenir Next", "SF Pro Text", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+      font-weight: 300;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a { color: inherit; text-decoration: none; }
+
+    /* ── Header ── */
+    .site-header {
+      padding: 1.5rem 2rem;
+    }
+
+    .site-header a {
+      font-variant: small-caps;
+      font-size: 0.85rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      color: #e8dcc8;
+      transition: opacity 0.2s;
+    }
+
+    .site-header a:hover { opacity: 0.7; }
+
+    /* ── Centered shell ── */
+    .shell {
+      max-width: 700px;
+      margin: 0 auto;
+      padding: 0 1.5rem;
+    }
+
+    /* ── Series header ── */
+    .series-header {
+      padding-top: 3rem;
+    }
+
+    .series-title {
+      font-size: clamp(2rem, 5vw, 3.5rem);
+      font-weight: 300;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      line-height: 1.15;
+      color: #e8dcc8;
+    }
+
+    .series-meta {
+      margin-top: 0.6rem;
+      font-size: 0.9rem;
+      color: rgba(232, 220, 200, 0.35);
+    }
+
+    .series-description {
+      margin-top: 1.4rem;
+      font-size: 1rem;
+      font-weight: 300;
+      line-height: 1.75;
+      color: rgba(232, 220, 200, 0.72);
+    }
+
+    .series-description-more {
+      display: none;
+      margin-top: 0.8rem;
+      font-size: 1rem;
+      font-weight: 300;
+      line-height: 1.75;
+      color: rgba(232, 220, 200, 0.72);
+    }
+
+    .series-description-more p { margin-top: 0.8rem; }
+    .series-description-more p:first-child { margin-top: 0; }
+
+    .series-details.is-open .series-description-more {
+      display: block;
+    }
+
+    .series-toggle {
+      display: inline-block;
+      margin-top: 0.5rem;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: #6a8a5a;
+      font: inherit;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+
+    .series-toggle:hover { opacity: 0.7; }
+
+    .series-sources {
+      margin-top: 1.2rem;
+      font-size: 0.85rem;
+      font-style: italic;
+      color: rgba(232, 220, 200, 0.3);
+      line-height: 1.6;
+    }
+
+    /* ── Episode list ── */
+    .episode-list {
+      padding-top: 3rem;
+      padding-bottom: 4rem;
+    }
+
+    .episode {
+      padding: 2.5rem 0;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      opacity: 0;
+      transform: translateY(20px);
+      transition: opacity 0.6s ease, transform 0.6s ease;
+    }
+
+    .episode.is-visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .episode:last-child {
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .episode-number {
+      font-size: clamp(3rem, 6vw, 5rem);
+      font-weight: 200;
+      color: rgba(106, 138, 90, 0.5);
+      line-height: 1;
+    }
+
+    .episode-title {
+      margin-top: 0.3rem;
+      font-size: clamp(1.2rem, 2.5vw, 1.6rem);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      line-height: 1.25;
+      color: #e8dcc8;
+    }
+
+    .episode-duration {
+      margin-top: 0.4rem;
+      font-size: 0.82rem;
+      color: rgba(232, 220, 200, 0.35);
+    }
+
+    .episode-preview {
+      margin-top: 1rem;
+      font-size: 0.95rem;
+      font-weight: 300;
+      line-height: 1.7;
+      color: rgba(232, 220, 200, 0.6);
+      max-width: 40rem;
+    }
+
+    .episode-arc {
+      display: none;
+      margin-top: 0.8rem;
+      font-size: 0.95rem;
+      font-weight: 300;
+      line-height: 1.7;
+      color: rgba(232, 220, 200, 0.6);
+      max-width: 40rem;
+    }
+
+    .episode-details.is-open .episode-arc {
+      display: block;
+    }
+
+    .episode-toggle {
+      display: inline-block;
+      margin-top: 0.6rem;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: #6a8a5a;
+      font: inherit;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+
+    .episode-toggle:hover { opacity: 0.7; }
+
+    /* ── Audio player ── */
+    .player {
+      margin-top: 1.4rem;
+    }
+
+    .player-controls {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .play-btn {
+      width: 2.8rem;
+      height: 2.8rem;
+      flex-shrink: 0;
+      border-radius: 50%;
+      border: 1.5px solid #6a8a5a;
+      background: transparent;
+      color: #6a8a5a;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.15s;
+    }
+
+    .play-btn:hover {
+      background: rgba(106, 138, 90, 0.1);
+      transform: scale(1.05);
+    }
+
+    .play-btn svg {
+      width: 0.9rem;
+      height: 0.9rem;
+      fill: currentColor;
+    }
+
+    .timeline-wrap {
+      flex: 1;
+    }
+
+    .timeline {
+      width: 100%;
+      -webkit-appearance: none;
+      appearance: none;
+      background: transparent;
+      cursor: pointer;
+      height: 3px;
+    }
+
+    .timeline::-webkit-slider-runnable-track {
+      height: 3px;
+      border-radius: 3px;
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    .timeline::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #6a8a5a;
+      margin-top: -4.5px;
+    }
+
+    .timeline::-moz-range-track {
+      height: 3px;
+      border-radius: 3px;
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    .timeline::-moz-range-thumb {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #6a8a5a;
+      border: none;
+    }
+
+    .player-info {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 0.5rem;
+      font-size: 0.8rem;
+      color: rgba(232, 220, 200, 0.35);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .speed-btn {
+      padding: 0.2rem 0.55rem;
+      border-radius: 999px;
+      border: none;
+      background: rgba(106, 138, 90, 0.12);
+      color: #6a8a5a;
+      font: inherit;
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .speed-btn:hover {
+      background: rgba(106, 138, 90, 0.22);
+    }
+
+    audio { display: none; }
+
+    /* ── Footer ── */
+    .site-footer {
+      padding: 2rem 0 2.5rem;
+      text-align: center;
+    }
+
+    .site-footer a {
+      font-size: 0.8rem;
+      color: rgba(232, 220, 200, 0.2);
+      transition: color 0.2s;
+    }
+
+    .site-footer a:hover { color: rgba(232, 220, 200, 0.45); }
+
+    /* ── Responsive ── */
+    @media (max-width: 640px) {
+      .episode-number {
+        font-size: clamp(2.2rem, 5vw, 3rem);
+      }
+
+      .shell {
+        padding: 0 1rem;
+      }
+
+      .site-header {
+        padding: 1.2rem 1rem;
+      }
+
+      .episode {
+        padding: 2rem 0;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="site-header">
+    <a href="./index.html">Agentic Podcasts</a>
+  </header>
+
+  <main>
+    <!-- Series header -->
+    <section class="shell series-header">
+      <h1 class="series-title">The Question of Palestine</h1>
+      <p class="series-meta">Eight episodes. Ten books.</p>
+      <div class="series-details">
+        <p class="series-description">
+          The series opens by establishing the conflict&#8217;s foundational paradox: how a movement born from persecution became an instrument of dispossession, and how every voice in the corpus&#8202;&mdash;&#8202;however sympathetic to one side&#8202;&mdash;&#8202;converges on this structural diagnosis. Episodes 2&#8211;3 stage the sharpest disagreements: Was 1948 premeditated or emergent? Was Britain cynical or incompetent? Did violence help or hurt?
+        </p>
+        <div class="series-description-more" data-role="series-more">
+          <p>Episodes 4&#8211;5 reveal the shared foundations beneath these disagreements: the pattern of biased mediation, the demographic obsession that drives all policy, the gap between public rhetoric and private planning.</p>
+          <p>Episodes 6&#8211;7 show how these converging forces produced the occupation system, the Oslo mirage, and the global export of domination technologies. Episode 8 confronts the moral labyrinth that all authors enter but none escape: can two peoples share one land when every proposed solution requires losses both consider existential? The arc moves from apparent disagreement through structural convergence to irreducible moral complexity.</p>
+        </div>
+        <button class="series-toggle" data-role="series-toggle" type="button" aria-expanded="false">Read more</button>
+      </div>
+      <p class="series-sources">Drawn from 10 works including O Jerusalem!, Righteous Victims, The Hundred Years&#8217; War on Palestine, The Question of Palestine, The Ethnic Cleansing of Palestine, and others.</p>
+    </section>
+
+    <!-- Episodes -->
+    <section class="shell episode-list" id="episodes">
+
+      <!-- Episode 1 -->
+      <article class="episode">
+        <div class="episode-number">01</div>
+        <h2 class="episode-title">A Land Without a People</h2>
+        <p class="episode-duration">1:46:25</p>
+        <p class="episode-preview">
+          Establishes the foundational erasure and colonial logic that all authors converge upon, staging the central tension between Zionism as liberation and Zionism as colonization.
+        </p>
+        <div class="episode-details">
+          <div class="episode-arc" data-role="episode-arc">
+            The series opens by establishing the foundational question: Is the Israel-Palestine conflict best understood as a colonial enterprise, a clash of national movements, or both? Drawing on voices from across the corpus, the episode traces how early Zionist leaders consciously adopted colonial language and methods while simultaneously responding to genuine persecution. It reveals the &#8216;land without a people&#8217; myth as the foundational erasure that enabled all subsequent dispossession, and introduces the demographic obsession that would drive policy for 125 years. The episode establishes that all authors&#8202;&mdash;&#8202;even the most sympathetic Israeli voice&#8202;&mdash;&#8202;converge on the recognition that Zionism operated within a colonial-settler logic, while disagreeing sharply on whether this diagnosis delegitimizes the enterprise.
+          </div>
+          <button class="episode-toggle" data-role="episode-toggle" type="button" aria-expanded="false">Read more</button>
+        </div>
+        <div class="player">
+          <audio preload="metadata">
+            <source src="https://github.com/baqiral-1/podcast_agent/releases/download/palestine-episodes-1-8-20260408T0000/episode-1.mp3" type="audio/mpeg">
+          </audio>
+          <div class="player-controls">
+            <button class="play-btn" data-role="play" type="button" aria-label="Play episode 1">
+              <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+            </button>
+            <div class="timeline-wrap">
+              <input class="timeline" data-role="timeline" type="range" min="0" max="100" step="0.1" value="0" aria-label="Seek">
+            </div>
+          </div>
+          <div class="player-info">
+            <span data-role="time">0:00:00 / 1:46:25</span>
+            <button class="speed-btn" data-role="speed" type="button">1x</button>
+          </div>
+        </div>
+      </article>
+
+      <!-- Episode 2 -->
+      <article class="episode">
+        <div class="episode-number">02</div>
+        <h2 class="episode-title">The Catastrophe</h2>
+        <p class="episode-duration">1:33:33</p>
+        <p class="episode-preview">
+          Stages the sharpest historiographical debate in the corpus: Was 1948 a premeditated ethnic cleansing or the cumulative product of wartime chaos? Reveals convergence on outcomes even where causation is contested.
+        </p>
+        <div class="episode-details">
+          <div class="episode-arc" data-role="episode-arc">
+            This episode confronts 1948&#8202;&mdash;&#8202;the foundational event that created both Israel and the Palestinian refugee crisis. It stages the corpus&#8217;s sharpest historiographical debate: Was the displacement of 700,000+ Palestinians a premeditated plan of ethnic cleansing or the cumulative product of wartime chaos? Through the paradigmatic case of Lydda, it shows how military orders, political calculation, and human suffering converge in a single event that crystallizes the Nakba&#8217;s meaning. The episode reveals that even where causation is fiercely contested, all accounts converge on the outcome: the transformation of Palestine&#8217;s demographic character and Israel&#8217;s categorical refusal of refugee return.
+          </div>
+          <button class="episode-toggle" data-role="episode-toggle" type="button" aria-expanded="false">Read more</button>
+        </div>
+        <div class="player">
+          <audio preload="metadata">
+            <source src="https://github.com/baqiral-1/podcast_agent/releases/download/palestine-episodes-1-8-20260408T0000/episode-2.mp3" type="audio/mpeg">
+          </audio>
+          <div class="player-controls">
+            <button class="play-btn" data-role="play" type="button" aria-label="Play episode 2">
+              <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+            </button>
+            <div class="timeline-wrap">
+              <input class="timeline" data-role="timeline" type="range" min="0" max="100" step="0.1" value="0" aria-label="Seek">
+            </div>
+          </div>
+          <div class="player-info">
+            <span data-role="time">0:00:00 / 1:33:33</span>
+            <button class="speed-btn" data-role="speed" type="button">1x</button>
+          </div>
+        </div>
+      </article>
+
+      <!-- Episode 3 -->
+      <article class="episode">
+        <div class="episode-number">03</div>
+        <h2 class="episode-title">The Iron Wall</h2>
+        <p class="episode-duration">1:49:37</p>
+        <p class="episode-preview">
+          Traces the pattern of imperial enablement from Balfour through the British Mandate, revealing how every supposed neutral broker was structurally aligned with one side.
+        </p>
+        <div class="episode-details">
+          <div class="episode-arc" data-role="episode-arc">
+            This episode reveals the pattern of the structurally biased mediator&#8202;&mdash;&#8202;the recurring dynamic in which every major power that positions itself as neutral broker is structurally aligned with one side. It traces this pattern from Britain&#8217;s contradictory wartime promises through the Mandate&#8217;s asymmetric treatment of Jewish and Arab communities, to the United States&#8217; post-1967 role as Israel&#8217;s patron disguised as mediator. The episode shows how Jabotinsky&#8217;s 1923 &#8216;iron wall&#8217; doctrine&#8202;&mdash;&#8202;the idea that colonization could only proceed behind a barrier of force&#8202;&mdash;&#8202;was successively embodied by the British military, the IDF, and American diplomatic protection.
+          </div>
+          <button class="episode-toggle" data-role="episode-toggle" type="button" aria-expanded="false">Read more</button>
+        </div>
+        <div class="player">
+          <audio preload="metadata">
+            <source src="https://github.com/baqiral-1/podcast_agent/releases/download/palestine-episodes-1-8-20260408T0000/episode-3.mp3" type="audio/mpeg">
+          </audio>
+          <div class="player-controls">
+            <button class="play-btn" data-role="play" type="button" aria-label="Play episode 3">
+              <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+            </button>
+            <div class="timeline-wrap">
+              <input class="timeline" data-role="timeline" type="range" min="0" max="100" step="0.1" value="0" aria-label="Seek">
+            </div>
+          </div>
+          <div class="player-info">
+            <span data-role="time">0:00:00 / 1:49:37</span>
+            <button class="speed-btn" data-role="speed" type="button">1x</button>
+          </div>
+        </div>
+      </article>
+
+      <!-- Episode 4 -->
+      <article class="episode">
+        <div class="episode-number">04</div>
+        <h2 class="episode-title">The Myth of Existential Threat</h2>
+        <p class="episode-duration">1:42:55</p>
+        <p class="episode-preview">
+          Examines 1967 and the gap between public rhetoric and private planning, showing how manufactured vulnerability justified expansion and permanent occupation.
+        </p>
+        <div class="episode-details">
+          <div class="episode-arc" data-role="episode-arc">
+            This episode examines the 1967 war as the pivotal moment when the conflict transformed from a genuine military contest into a system of permanent domination. It traces the epistemic drift of the war&#8217;s meaning&#8202;&mdash;&#8202;from existential threat to preventive war of choice&#8202;&mdash;&#8202;and shows how the gap between public rhetoric and private planning has been a defining structural feature across the conflict&#8217;s entire span. The episode reveals how manufactured vulnerability justified territorial expansion, how the occupation&#8217;s administrative apparatus was built, and how the concept of &#8216;security&#8217; inflated from physical survival to permanent demographic control.
+          </div>
+          <button class="episode-toggle" data-role="episode-toggle" type="button" aria-expanded="false">Read more</button>
+        </div>
+        <div class="player">
+          <audio preload="metadata">
+            <source src="https://github.com/baqiral-1/podcast_agent/releases/download/palestine-episodes-1-8-20260408T0000/episode-4.mp3" type="audio/mpeg">
+          </audio>
+          <div class="player-controls">
+            <button class="play-btn" data-role="play" type="button" aria-label="Play episode 4">
+              <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+            </button>
+            <div class="timeline-wrap">
+              <input class="timeline" data-role="timeline" type="range" min="0" max="100" step="0.1" value="0" aria-label="Seek">
+            </div>
+          </div>
+          <div class="player-info">
+            <span data-role="time">0:00:00 / 1:42:55</span>
+            <button class="speed-btn" data-role="speed" type="button">1x</button>
+          </div>
+        </div>
+      </article>
+
+      <!-- Episode 5 -->
+      <article class="episode">
+        <div class="episode-number">05</div>
+        <h2 class="episode-title">The Resistance Paradox</h2>
+        <p class="episode-duration">1:43:36</p>
+        <p class="episode-preview">
+          Stages the debate over whether Palestinian violence advanced or retarded the national cause, revealing the structural trap that made every strategy simultaneously necessary and counterproductive.
+        </p>
+        <div class="episode-details">
+          <div class="episode-arc" data-role="episode-arc">
+            This episode stages the debate over Palestinian resistance&#8202;&mdash;&#8202;whether violence advanced or retarded the national cause&#8202;&mdash;&#8202;while revealing the structural trap that made every strategy simultaneously necessary and counterproductive. It traces the evolution from peasant revolt through armed struggle to popular uprising, showing how the First Intifada&#8217;s largely unarmed character achieved more than any armed campaign, while the Second Intifada&#8217;s violence was catastrophic. The episode also examines the PLO&#8217;s structural trap and the recurring pattern of Arab state betrayal that left Palestinians without reliable allies.
+          </div>
+          <button class="episode-toggle" data-role="episode-toggle" type="button" aria-expanded="false">Read more</button>
+        </div>
+        <div class="player">
+          <audio preload="metadata">
+            <source src="https://github.com/baqiral-1/podcast_agent/releases/download/palestine-episodes-1-8-20260408T0000/episode-5.mp3" type="audio/mpeg">
+          </audio>
+          <div class="player-controls">
+            <button class="play-btn" data-role="play" type="button" aria-label="Play episode 5">
+              <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+            </button>
+            <div class="timeline-wrap">
+              <input class="timeline" data-role="timeline" type="range" min="0" max="100" step="0.1" value="0" aria-label="Seek">
+            </div>
+          </div>
+          <div class="player-info">
+            <span data-role="time">0:00:00 / 1:43:36</span>
+            <button class="speed-btn" data-role="speed" type="button">1x</button>
+          </div>
+        </div>
+      </article>
+
+      <!-- Episode 6 -->
+      <article class="episode">
+        <div class="episode-number">06</div>
+        <h2 class="episode-title">The Mirage of Peace</h2>
+        <p class="episode-duration">1:49:09</p>
+        <p class="episode-preview">
+          Traces Oslo from historic breakthrough to Palestinian Versailles, showing how every peace process was designed to preserve rather than end domination.
+        </p>
+        <div class="episode-details">
+          <div class="episode-arc" data-role="episode-arc">
+            This episode traces the Oslo process from its celebrated signing to its catastrophic collapse, revealing how the most significant diplomatic breakthrough in the conflict&#8217;s history was designed from the start to preserve Israeli control while offloading the cost of occupation. It examines Camp David 2000&#8217;s failure, the competing accounts of who killed the peace process, and the dramatic epistemic shift from &#8216;historic breakthrough&#8217; to &#8216;Palestinian Versailles.&#8217; The episode shows how Jerusalem&#8202;&mdash;&#8202;where political compromise becomes theological impossibility&#8202;&mdash;&#8202;was the reef on which every negotiation foundered.
+          </div>
+          <button class="episode-toggle" data-role="episode-toggle" type="button" aria-expanded="false">Read more</button>
+        </div>
+        <div class="player">
+          <audio preload="metadata">
+            <source src="https://github.com/baqiral-1/podcast_agent/releases/download/palestine-episodes-1-8-20260408T0000/episode-6.mp3" type="audio/mpeg">
+          </audio>
+          <div class="player-controls">
+            <button class="play-btn" data-role="play" type="button" aria-label="Play episode 6">
+              <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+            </button>
+            <div class="timeline-wrap">
+              <input class="timeline" data-role="timeline" type="range" min="0" max="100" step="0.1" value="0" aria-label="Seek">
+            </div>
+          </div>
+          <div class="player-info">
+            <span data-role="time">0:00:00 / 1:49:09</span>
+            <button class="speed-btn" data-role="speed" type="button">1x</button>
+          </div>
+        </div>
+      </article>
+
+      <!-- Episode 7 -->
+      <article class="episode">
+        <div class="episode-number">07</div>
+        <h2 class="episode-title">The Laboratory</h2>
+        <p class="episode-duration">1:44:43</p>
+        <p class="episode-preview">
+          Reveals how occupation became a globally exportable product, how narrative control sustains impunity, and how the conflict&#8217;s representational asymmetry is reproduced in the digital age.
+        </p>
+        <div class="episode-details">
+          <div class="episode-arc" data-role="episode-arc">
+            This episode reveals how the occupation transformed from international liability into globally exportable product, how narrative control sustains impunity, and how the battle over memory and representation is the conflict&#8217;s most consequential front. It traces the physical erasure of Palestinian villages, the representational asymmetry in Western discourse, the weaponization of Holocaust memory, and the new digital battlefield where algorithmic censorship reproduces old patterns of silencing. The episode shows how the occupation became economically profitable, creating perverse incentives against peace.
+          </div>
+          <button class="episode-toggle" data-role="episode-toggle" type="button" aria-expanded="false">Read more</button>
+        </div>
+        <div class="player">
+          <audio preload="metadata">
+            <source src="https://github.com/baqiral-1/podcast_agent/releases/download/palestine-episodes-1-8-20260408T0000/episode-7.mp3" type="audio/mpeg">
+          </audio>
+          <div class="player-controls">
+            <button class="play-btn" data-role="play" type="button" aria-label="Play episode 7">
+              <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+            </button>
+            <div class="timeline-wrap">
+              <input class="timeline" data-role="timeline" type="range" min="0" max="100" step="0.1" value="0" aria-label="Seek">
+            </div>
+          </div>
+          <div class="player-info">
+            <span data-role="time">0:00:00 / 1:44:43</span>
+            <button class="speed-btn" data-role="speed" type="button">1x</button>
+          </div>
+        </div>
+      </article>
+
+      <!-- Episode 8 -->
+      <article class="episode">
+        <div class="episode-number">08</div>
+        <h2 class="episode-title">The Moral Labyrinth</h2>
+        <p class="episode-duration">1:47:06</p>
+        <p class="episode-preview">
+          Confronts the irreducible tension at the conflict&#8217;s heart: two peoples, one land, no clean exit. Stages the final convergence and the questions that remain open.
+        </p>
+        <div class="episode-details">
+          <div class="episode-arc" data-role="episode-arc">
+            The series culminates by confronting the irreducible moral tension at the conflict&#8217;s heart: that the survival and flourishing of the Jewish people in Palestine required the dispossession of another people, and that no amount of historical analysis can dissolve this tension. The episode stages the final convergence&#8202;&mdash;&#8202;Shavit&#8217;s agonized Zionism against Said&#8217;s structural critique, both acknowledging the same facts but differing on whether Jewish survival needs can morally justify Palestinian dispossession. It traces the epistemic shift from two-state solution to apartheid diagnosis, examines whether Israel can be both Jewish and democratic, and confronts the four paths that remain: ethnic cleansing, apartheid, binational state, or withdrawal. The episode does not resolve but deepens, showing how both peoples are trapped in a moral labyrinth from which no clean exit is visible.
+          </div>
+          <button class="episode-toggle" data-role="episode-toggle" type="button" aria-expanded="false">Read more</button>
+        </div>
+        <div class="player">
+          <audio preload="metadata">
+            <source src="https://github.com/baqiral-1/podcast_agent/releases/download/palestine-episodes-1-8-20260408T0000/episode-8.mp3" type="audio/mpeg">
+          </audio>
+          <div class="player-controls">
+            <button class="play-btn" data-role="play" type="button" aria-label="Play episode 8">
+              <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+            </button>
+            <div class="timeline-wrap">
+              <input class="timeline" data-role="timeline" type="range" min="0" max="100" step="0.1" value="0" aria-label="Seek">
+            </div>
+          </div>
+          <div class="player-info">
+            <span data-role="time">0:00:00 / 1:47:06</span>
+            <button class="speed-btn" data-role="speed" type="button">1x</button>
+          </div>
+        </div>
+      </article>
+
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer class="site-footer">
+    <a href="https://github.com/baqiral-1/podcast_agent" target="_blank" rel="noopener">github</a>
+  </footer>
+
+  <script>
+  (function () {
+    /* ── Series description toggle ── */
+    var seriesToggle = document.querySelector('[data-role="series-toggle"]');
+    if (seriesToggle) {
+      seriesToggle.addEventListener('click', function () {
+        var details = seriesToggle.closest('.series-details');
+        if (!details) return;
+        var open = details.classList.toggle('is-open');
+        seriesToggle.setAttribute('aria-expanded', open);
+        seriesToggle.textContent = open ? 'Show less' : 'Read more';
+      });
+    }
+
+    /* ── Episode description toggles ── */
+    document.querySelectorAll('[data-role="episode-toggle"]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var details = btn.closest('.episode-details');
+        if (!details) return;
+        var open = details.classList.toggle('is-open');
+        btn.setAttribute('aria-expanded', open);
+        btn.textContent = open ? 'Show less' : 'Read more';
+      });
+    });
+
+    /* ── Scroll fade-in ── */
+    var observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('is-visible');
+          observer.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.1 });
+
+    document.querySelectorAll('.episode').forEach(function (el) {
+      observer.observe(el);
+    });
+
+    /* ── Audio players ── */
+    var PLAY = 'M8 5v14l11-7z';
+    var PAUSE = 'M6 19h4V5H6v14zm8-14v14h4V5h-4z';
+    var speeds = [1, 1.25, 1.5, 2];
+
+    function fmt(s) {
+      var h = Math.floor(s / 3600);
+      var m = Math.floor((s % 3600) / 60);
+      var sec = Math.floor(s % 60);
+      return h + ':' + String(m).padStart(2, '0') + ':' + String(sec).padStart(2, '0');
+    }
+
+    var players = document.querySelectorAll('.player');
+
+    players.forEach(function (p) {
+      var audio = p.querySelector('audio');
+      var playBtn = p.querySelector('[data-role="play"]');
+      var timeline = p.querySelector('[data-role="timeline"]');
+      var timeDisplay = p.querySelector('[data-role="time"]');
+      var speedBtn = p.querySelector('[data-role="speed"]');
+      var svgPath = playBtn.querySelector('path');
+      var si = 0;
+
+      function pauseOthers() {
+        players.forEach(function (other) {
+          if (other === p) return;
+          var oa = other.querySelector('audio');
+          var op = other.querySelector('[data-role="play"] path');
+          if (oa && !oa.paused) {
+            oa.pause();
+            if (op) op.setAttribute('d', PLAY);
+          }
+        });
+      }
+
+      playBtn.addEventListener('click', function () {
+        if (audio.paused) {
+          pauseOthers();
+          audio.play();
+          svgPath.setAttribute('d', PAUSE);
+        } else {
+          audio.pause();
+          svgPath.setAttribute('d', PLAY);
+        }
+      });
+
+      audio.addEventListener('timeupdate', function () {
+        if (!audio.duration) return;
+        timeline.value = (audio.currentTime / audio.duration) * 100;
+        timeDisplay.textContent = fmt(audio.currentTime) + ' / ' + fmt(audio.duration);
+      });
+
+      audio.addEventListener('ended', function () {
+        svgPath.setAttribute('d', PLAY);
+      });
+
+      timeline.addEventListener('input', function () {
+        if (!audio.duration) return;
+        audio.currentTime = (timeline.value / 100) * audio.duration;
+      });
+
+      speedBtn.addEventListener('click', function () {
+        si = (si + 1) % speeds.length;
+        audio.playbackRate = speeds[si];
+        speedBtn.textContent = speeds[si] + 'x';
+      });
+    });
+  }());
+  </script>
+</body>
+</html>

@@ -30,6 +30,7 @@ from podcast_agent.llm.base import (
 )
 from podcast_agent.llm.heuristic import HeuristicLLMClient
 from podcast_agent.llm.json_utils import normalize_json_content, unwrap_response_payload
+from podcast_agent.schemas.models import ChapterAnalysis
 
 
 def _normalize_provider(provider: str) -> str:
@@ -62,6 +63,47 @@ class _ProviderTarget:
     max_tokens: int | None
     temperature: float
     timeout_seconds: float
+
+
+def _apply_schema_caps(
+    payload: dict[str, Any], response_model: type, schema_name: str
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Apply list maxItems caps before validation for selected schemas."""
+    if schema_name != "chapter_summary":
+        return payload, []
+
+    analysis = payload.get("analysis")
+    if not isinstance(analysis, dict):
+        return payload, []
+
+    capped_payload = dict(payload)
+    capped_analysis = dict(analysis)
+    truncations: list[dict[str, Any]] = []
+
+    for name, model_field in ChapterAnalysis.model_fields.items():
+        field_value = capped_analysis.get(name)
+        if not isinstance(field_value, list):
+            continue
+        max_length: int | None = None
+        for metadata in model_field.metadata:
+            metadata_max = getattr(metadata, "max_length", None)
+            if isinstance(metadata_max, int):
+                max_length = metadata_max
+                break
+        if max_length is None or len(field_value) <= max_length:
+            continue
+        capped_analysis[name] = field_value[:max_length]
+        truncations.append(
+            {
+                "path": f"analysis.{name}",
+                "original_length": len(field_value),
+                "capped_length": max_length,
+            }
+        )
+
+    if truncations:
+        capped_payload["analysis"] = capped_analysis
+    return capped_payload, truncations
 
 
 class LangChainLLMClient(LLMClient):
@@ -315,6 +357,18 @@ class LangChainLLMClient(LLMClient):
                         data={"raw_content": str(content)},
                     ) from parse_exc
                 raise
+            normalized_payload, cap_truncations = _apply_schema_caps(
+                normalized_payload, response_model, schema_name
+            )
+            if self.run_logger is not None and cap_truncations:
+                self.run_logger.log(
+                    "llm_schema_cap_filter",
+                    request_uuid=request_uuid,
+                    client="langchain",
+                    schema_name=schema_name,
+                    truncation_count=len(cap_truncations),
+                    truncations=cap_truncations,
+                )
             if self.run_logger is not None:
                 response_metadata = response_metadata or {}
                 provider_request_id = (

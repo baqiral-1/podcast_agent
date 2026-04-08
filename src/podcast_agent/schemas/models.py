@@ -101,11 +101,28 @@ class PipelineConfig(StrictModel):
     passage_retrieval_min_per_book: int = Field(default=20, ge=1)
     passage_retrieval_max_per_book: int = Field(default=50, ge=1)
     axis_candidate_target_total: int = Field(default=200, ge=1)
+    pre_axis_total_budget: int = Field(default=6000, ge=1)
+    pre_axis_floor: int = Field(default=120, ge=0)
+    pre_axis_relevance_power: float = Field(default=1.3, ge=0.0)
     admission_floor_per_book: int = Field(default=2, ge=0)
-    retrieval_relevance_power: float = Field(default=1.2, ge=0.0)
+    retrieval_relevance_power: float = Field(default=1.3, ge=0.0)
     retrieval_soft_threshold: float = Field(default=0.35, ge=0.0, le=1.0)
     chapter_penalty_weight: float = Field(default=0.05, ge=0.0, le=1.0)
     rerank_top_k: int = Field(default=30, ge=1)
+    post_axis_total_budget: int = Field(default=4000, ge=1)
+    post_axis_floor: int = Field(default=20, ge=0)
+    post_axis_cap: int = Field(default=240, ge=1)
+    post_axis_signal_power: float = Field(default=2.5, ge=0.0)
+    mmr_enabled: bool = True
+    mmr_post_lambda: float = Field(default=0.8, ge=0.0, le=1.0)
+    mmr_synthesis_lambda: float = Field(default=0.75, ge=0.0, le=1.0)
+    mmr_planning_lambda: float = Field(default=0.65, ge=0.0, le=1.0)
+    synthesis_axis_pct: float = Field(default=0.35, ge=0.0, le=1.0)
+    synthesis_axis_min: int = Field(default=30, ge=0)
+    synthesis_axis_max: int = Field(default=110, ge=1)
+    planning_axis_pct: float = Field(default=0.45, ge=0.0, le=1.0)
+    planning_axis_min: int = Field(default=35, ge=0)
+    planning_axis_max: int = Field(default=110, ge=1)
     synthesis_quality_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
     max_repair_attempts: int = Field(default=3, ge=0)
     tts_provider: str = "openai"
@@ -131,6 +148,12 @@ class PipelineConfig(StrictModel):
             raise ValueError(
                 "passage_retrieval_max_per_book must be >= passage_retrieval_min_per_book"
             )
+        if self.post_axis_cap < self.post_axis_floor:
+            raise ValueError("post_axis_cap must be >= post_axis_floor")
+        if self.synthesis_axis_max < self.synthesis_axis_min:
+            raise ValueError("synthesis_axis_max must be >= synthesis_axis_min")
+        if self.planning_axis_max < self.planning_axis_min:
+            raise ValueError("planning_axis_max must be >= planning_axis_min")
         return self
 
 

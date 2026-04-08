@@ -19,10 +19,13 @@ from podcast_agent.agents.theme_decomposition import ThemeDecompositionResponse
 from podcast_agent.pipeline.orchestrator import (
     PipelineOrchestrator,
     StructuringStageError,
+    _build_axis_budget_by_relevance,
+    _compute_stage_axis_target_count,
     _compute_adaptive_rerank_target,
     _evaluate_episode_script_plan_alignment,
     _compute_passage_utilization,
     _compute_passage_retrieval_budget,
+    _compute_weighted_axis_budgets,
     _render_segments_for_spoken_segment,
     _compute_weighted_admitted_budgets,
     _select_episode_planning_passages,
@@ -206,6 +209,65 @@ class TestWeightedAdmittedBudgets:
 
         assert budgets["book-a"] > budgets["book-b"]
         assert sum(budgets.values()) == 100
+
+
+class TestAxisBudgetAllocation:
+    def test_weighted_axis_budgets_respect_floor_cap_and_total(self):
+        budgets = _compute_weighted_axis_budgets(
+            axis_ids=["axis_1", "axis_2", "axis_3"],
+            total_budget=40,
+            weight_by_axis={"axis_1": 9.0, "axis_2": 4.0, "axis_3": 1.0},
+            floor_per_axis=5,
+            cap_per_axis=20,
+        )
+
+        assert sum(budgets.values()) == 40
+        assert budgets["axis_1"] >= budgets["axis_2"] >= budgets["axis_3"]
+        assert min(budgets.values()) >= 5
+        assert max(budgets.values()) <= 20
+
+    def test_build_axis_budget_by_relevance_uses_axis_scores(self):
+        axes = [
+            ThematicAxis(
+                axis_id="axis_1",
+                name="Axis 1",
+                description="",
+                relevance_by_book={"a": 0.9, "b": 0.8},
+            ),
+            ThematicAxis(
+                axis_id="axis_2",
+                name="Axis 2",
+                description="",
+                relevance_by_book={"a": 0.4, "b": 0.3},
+            ),
+        ]
+
+        budgets = _build_axis_budget_by_relevance(
+            axes=axes,
+            book_ids=["a", "b"],
+            total_budget=100,
+            floor_per_axis=10,
+            relevance_power=1.3,
+        )
+
+        assert sum(budgets.values()) == 100
+        assert budgets["axis_1"] > budgets["axis_2"]
+
+    @pytest.mark.parametrize(
+        ("axis_total", "pct", "minimum", "maximum", "expected"),
+        [
+            (240, 0.35, 30, 110, 84),
+            (60, 0.35, 30, 110, 30),
+            (400, 0.45, 35, 110, 110),
+        ],
+    )
+    def test_compute_stage_axis_target_count_clamps(self, axis_total, pct, minimum, maximum, expected):
+        assert _compute_stage_axis_target_count(
+            axis_total=axis_total,
+            percentage=pct,
+            minimum=minimum,
+            maximum=maximum,
+        ) == expected
 
 
 # ---------------------------------------------------------------------------
@@ -1624,6 +1686,52 @@ class TestSynthesisSelection:
         selected = _select_synthesis_passages(passages, {"a"})
         assert [p.passage_id for p in selected] == ["b", "e", "d", "c", "a"]
 
+    def test_select_top_passages_with_mmr_reduces_near_duplicates(self):
+        passages = [
+            ExtractedPassage(
+                passage_id="p1",
+                book_id="b1",
+                chunk_ids=["c1"],
+                text="same repeated phrase alpha beta",
+                trimmed_text="same repeated phrase alpha beta",
+                full_text="same repeated phrase alpha beta",
+                axis_id="ax1",
+                relevance_score=0.95,
+                quotability_score=0.9,
+            ),
+            ExtractedPassage(
+                passage_id="p2",
+                book_id="b1",
+                chunk_ids=["c2"],
+                text="same repeated phrase alpha beta",
+                trimmed_text="same repeated phrase alpha beta",
+                full_text="same repeated phrase alpha beta",
+                axis_id="ax1",
+                relevance_score=0.94,
+                quotability_score=0.89,
+            ),
+            ExtractedPassage(
+                passage_id="p3",
+                book_id="b2",
+                chunk_ids=["c3"],
+                text="distinct language about labor unions and strikes",
+                trimmed_text="distinct language about labor unions and strikes",
+                full_text="distinct language about labor unions and strikes",
+                axis_id="ax1",
+                relevance_score=0.9,
+                quotability_score=0.6,
+            ),
+        ]
+        selected = _select_top_passages_for_synthesis(
+            passages,
+            top_k=2,
+            use_mmr=True,
+            mmr_lambda=0.5,
+        )
+        selected_ids = [passage.passage_id for passage in selected]
+        assert selected_ids[0] == "p1"
+        assert selected_ids[1] == "p3"
+
 
 class TestAdaptiveRerankTarget:
     def test_dense_axis_is_capped_to_one_point_five_x(self):
@@ -1695,17 +1803,14 @@ class TestPostRerankSelection:
         assert selected[0].passage_id == "p000"
         assert selected[-1].passage_id == "p099"
 
-    def test_select_top_passages_for_post_rerank_defaults_to_one_forty(self):
+    def test_select_top_passages_for_post_rerank_requires_explicit_top_k(self):
         passages = [
             self._make_passage(f"p{i:03d}", 1.0 - (i / 1000.0), 0.5)
             for i in range(150)
         ]
 
-        selected = _select_top_passages_for_post_rerank(passages)
-
-        assert len(selected) == 140
-        assert selected[0].passage_id == "p000"
-        assert selected[-1].passage_id == "p139"
+        with pytest.raises(TypeError):
+            _select_top_passages_for_post_rerank(passages)
 
 
 class TestPassageUtilization:
@@ -3613,8 +3718,8 @@ class TestEpisodePlanningPayload:
 
         available = captured_payloads[0]["available_passages"]
         total_passages = sum(len(v) for v in available.values())
-        assert total_passages == 41
-        assert len(available["axis_1"]) == 40
+        assert total_passages == 37
+        assert len(available["axis_1"]) == 36
         assert len(available["axis_2"]) == 1
         all_ids = {entry["passage_id"] for axis_entries in available.values() for entry in axis_entries}
         assert "p39" in all_ids

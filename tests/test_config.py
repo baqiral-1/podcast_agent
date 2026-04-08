@@ -108,11 +108,25 @@ class TestPipelineRuntimeConfig:
         assert config.passage_retrieval_min_per_book == 20
         assert config.passage_retrieval_max_per_book == 50
         assert config.axis_candidate_target_total == 200
+        assert config.pre_axis_total_budget == 6000
+        assert config.pre_axis_floor == 120
+        assert config.pre_axis_relevance_power == 1.3
         assert config.admission_floor_per_book == 2
-        assert config.retrieval_relevance_power == 1.2
+        assert config.retrieval_relevance_power == 1.3
         assert config.retrieval_soft_threshold == 0.35
         assert config.chapter_penalty_weight == 0.05
         assert config.rerank_top_k == 30
+        assert config.post_axis_total_budget == 4000
+        assert config.post_axis_floor == 20
+        assert config.post_axis_cap == 240
+        assert config.post_axis_signal_power == 2.5
+        assert config.mmr_enabled is True
+        assert config.synthesis_axis_pct == 0.35
+        assert config.synthesis_axis_min == 30
+        assert config.synthesis_axis_max == 110
+        assert config.planning_axis_pct == 0.45
+        assert config.planning_axis_min == 35
+        assert config.planning_axis_max == 110
         assert config.synthesis_quality_threshold == 0.5
         assert config.passage_extraction_concurrency == 13
         assert config.llm_global_max_concurrency == 30
@@ -127,6 +141,14 @@ class TestPipelineRuntimeConfig:
                 passage_retrieval_min_per_book=21,
                 passage_retrieval_max_per_book=20,
             )
+
+    def test_axis_budget_bounds_validation(self):
+        with pytest.raises(ValueError, match="post_axis_cap"):
+            PipelineRuntimeConfig(post_axis_floor=50, post_axis_cap=20)
+        with pytest.raises(ValueError, match="synthesis_axis_max"):
+            PipelineRuntimeConfig(synthesis_axis_min=40, synthesis_axis_max=20)
+        with pytest.raises(ValueError, match="planning_axis_max"):
+            PipelineRuntimeConfig(planning_axis_min=50, planning_axis_max=30)
 
 
 class TestLLMConfigResolvers:
