@@ -5,6 +5,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from podcast_agent.agents.base import Agent
+from podcast_agent.prompts import book_summary_instructions
 
 
 class BookSummaryResponse(BaseModel):
@@ -16,16 +17,7 @@ class BookSummaryAgent(Agent):
 
     schema_name = "book_summary"
     response_model = BookSummaryResponse
-    instructions = (
-        "You are a thematic analyst preparing a cross-book podcast. Given the project theme "
-        "plus optional sub-themes "
-        "and chapter-level summaries for a single book, write one concise book summary for "
-        "axis discovery.\n\n"
-        "Focus on the material most relevant to the theme, highlighting recurring patterns, "
-        "major tensions, and arguments or events likely to matter across books. Use the "
-        "chapter summaries as evidence. Keep the summary tight and information-dense.\n\n"
-        "Return a JSON object with a 'summary' field."
-    )
+    instructions = book_summary_instructions()
 
     def build_payload(
         self,

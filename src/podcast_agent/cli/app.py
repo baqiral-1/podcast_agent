@@ -74,6 +74,12 @@ def run(
     skip_grounding: bool = typer.Option(False, "--skip-grounding", help="Skip grounding validation and repair."),
     skip_spoken_delivery: bool = typer.Option(False, "--skip-spoken-delivery", help="Skip spoken delivery rewrite."),
     skip_audio: bool = typer.Option(False, "--skip-audio", help="Skip audio synthesis (still writes render manifest)."),
+    passage_extraction_concurrency: Optional[int] = typer.Option(
+        None,
+        "--passage-extraction-concurrency",
+        min=1,
+        help="Override concurrent axis workers in passage extraction.",
+    ),
     tts_provider: Optional[str] = typer.Option(
         None,
         "--tts-provider",
@@ -104,6 +110,8 @@ def run(
         config_updates["skip_spoken_delivery"] = True
     if skip_audio:
         config_updates["skip_audio"] = True
+    if passage_extraction_concurrency is not None:
+        config_updates["passage_extraction_concurrency"] = passage_extraction_concurrency
     config = PipelineConfig(**config_updates) if config_updates else PipelineConfig()
 
     title_list = [t.strip() for t in titles.split(",")] if titles else None

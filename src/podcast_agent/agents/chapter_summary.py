@@ -5,6 +5,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from podcast_agent.agents.base import Agent
+from podcast_agent.prompts import chapter_summary_instructions
 from podcast_agent.schemas.models import ChapterAnalysis
 
 
@@ -18,20 +19,7 @@ class ChapterSummaryAgent(Agent):
 
     schema_name = "chapter_summary"
     response_model = ChapterSummaryResponse
-    instructions = (
-        "You are a thematic analyst preparing a cross-book podcast. Given the project theme, "
-        "optional sub-themes and theme elaboration, and a chapter of a book, produce a concise "
-        "2-3 sentence summary focused on thematic analysis. Capture key events or arguments, "
-        "the central actors or institutions, major tensions/disagreements, and any meaningful "
-        "causal shifts.\n\n"
-        "Use the theme context to prioritize what matters for downstream synthesis, but keep "
-        "all claims anchored to the chapter text. Use lexical overlap naturally when supported "
-        "by the source; do not force keyword mentions when unsupported.\n\n"
-        "Also return structured chapter analysis for downstream planning and retrieval. "
-        "Populate only details clearly supported by the chapter text, keep lists tight, and "
-        "prefer concrete historical terms over abstract labels.\n\n"
-        "Return a JSON object with 'summary' and optional 'analysis' fields."
-    )
+    instructions = chapter_summary_instructions()
 
     def build_payload(
         self,

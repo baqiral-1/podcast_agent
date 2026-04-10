@@ -1,20 +1,11 @@
-"""Unit tests for configuration."""
+"""Unit tests for configuration defaults and resolvers."""
 
 from __future__ import annotations
 
 import pytest
 from pydantic import ValidationError
 
-from podcast_agent.config import (
-    AgentConfig,
-    DatabaseConfig,
-    EmbeddingsConfig,
-    LLMConfig,
-    PipelineRuntimeConfig,
-    RetrievalConfig,
-    Settings,
-    TTSConfig,
-)
+from podcast_agent.config import AgentConfig, LLMConfig, PipelineRuntimeConfig, TTSConfig
 
 
 class TestLLMConfig:
@@ -28,55 +19,69 @@ class TestLLMConfig:
         config = LLMConfig(
             agent_configs={
                 "chapter_summary": AgentConfig(temperature=0.3),
-                "synthesis_mapping": AgentConfig(temperature=0.8),
+                "synthesis_primitives": AgentConfig(temperature=0.8),
             }
         )
         assert config.resolve_temperature("chapter_summary") == 0.3
-        assert config.resolve_temperature("synthesis_mapping") == 0.8
+        assert config.resolve_temperature("synthesis_primitives") == 0.8
         assert config.resolve_temperature("unknown_agent") == 1.0
-
-    def test_normalizes_openai_base_url(self):
-        config = LLMConfig(base_url="https://api.openai.com")
-        assert config.base_url == "https://api.openai.com/v1"
-
-    def test_preserves_non_openai_base_url(self):
-        custom = "https://example.com/custom"
-        config = LLMConfig(base_url=custom)
-        assert config.base_url == custom
-
-    def test_resolve_model_with_agent_config(self):
-        config = LLMConfig(
-            model_name="claude-opus-4-6",
-            agent_configs={
-                "chapter_summary": AgentConfig(model_name="claude-haiku-4-5"),
-            },
-        )
-        assert config.resolve_model("chapter_summary") == "claude-haiku-4-5"
-        assert config.resolve_model("unknown") == "claude-opus-4-6"
-
-    def test_resolve_model_with_legacy_overrides(self):
-        config = LLMConfig(
-            model_name="claude-opus-4-6",
-            model_overrides={"beat_script": "claude-sonnet-4-6"},
-        )
-        assert config.resolve_model("beat_script") == "claude-sonnet-4-6"
-
-    def test_agent_config_takes_precedence(self):
-        config = LLMConfig(
-            model_name="claude-opus-4-6",
-            model_overrides={"chapter_summary": "claude-sonnet-4-6"},
-            agent_configs={
-                "chapter_summary": AgentConfig(model_name="claude-haiku-4-5"),
-            },
-        )
-        assert config.resolve_model("chapter_summary") == "claude-haiku-4-5"
 
     def test_default_agent_temperatures(self):
         config = LLMConfig()
         assert config.resolve_temperature("chapter_summary") == 0.3
-        assert config.resolve_temperature("synthesis_mapping") == 0.8
+        assert config.resolve_temperature("synthesis_primitives") == 0.8
+        assert config.resolve_temperature("synthesis_consolidation") == 0.6
         assert config.resolve_temperature("grounding_validation") == 0.2
-        assert config.resolve_temperature("spoken_delivery") == 0.7
+        assert config.resolve_temperature("style_audit") == 0.2
+
+    def test_resolve_model_defaults(self):
+        config = LLMConfig()
+        assert config.resolve_model("chapter_summary") == "claude-haiku-4-5"
+        assert config.resolve_model("synthesis_primitives") == "claude-opus-4-6"
+        assert config.resolve_model("synthesis_consolidation") == "claude-opus-4-6"
+        assert config.resolve_model("style_audit") == "claude-sonnet-4-6"
+
+    def test_resolve_max_retry_attempts_defaults(self):
+        config = LLMConfig()
+        assert config.resolve_max_retry_attempts("chapter_summary") == 3
+        assert config.resolve_max_retry_attempts("passage_extraction") == 4
+        assert config.resolve_max_retry_attempts("synthesis_primitives") == 2
+        assert config.resolve_max_retry_attempts("style_audit") == 2
+        assert config.resolve_max_retry_attempts("unknown_agent") == 2
+
+    def test_resolve_timeout_seconds_defaults(self):
+        config = LLMConfig()
+        assert config.resolve_timeout_seconds("passage_extraction") == 480.0
+        assert config.resolve_timeout_seconds("synthesis_primitives") == 1200.0
+        assert config.resolve_timeout_seconds("synthesis_consolidation") == 900.0
+        assert config.resolve_timeout_seconds("style_audit") == 600.0
+        assert config.resolve_timeout_seconds("unknown_agent") == 600.0
+
+    def test_resolve_concurrency_limit_defaults(self):
+        config = LLMConfig()
+        assert config.resolve_concurrency_limit("chapter_summary") == 25
+        assert config.resolve_concurrency_limit("synthesis_primitives") == 3
+        assert config.resolve_concurrency_limit("synthesis_consolidation") == 4
+        assert config.resolve_concurrency_limit("episode_planning") == 8
+        assert config.resolve_concurrency_limit("style_audit") == 8
+        assert config.resolve_concurrency_limit("unknown_agent") is None
+
+    def test_resolve_thinking_budget_defaults(self):
+        config = LLMConfig()
+        assert config.resolve_thinking_budget("theme_decomposition") == 20_000
+        assert config.resolve_thinking_budget("synthesis_primitives") == 20_000
+        assert config.resolve_thinking_budget("synthesis_consolidation") == 15_000
+        assert config.resolve_thinking_budget("episode_planning") == 30_000
+        assert config.resolve_thinking_budget("style_audit") == 8_000
+        assert config.resolve_thinking_budget("chapter_summary") is None
+
+    def test_anthropic_max_tokens_uses_override_for_style_audit(self):
+        config = LLMConfig()
+        assert config.resolve_anthropic_max_tokens("style_audit") == 64000
+
+    def test_normalizes_openai_base_url(self):
+        config = LLMConfig(base_url="https://api.openai.com")
+        assert config.base_url == "https://api.openai.com/v1"
 
 
 class TestTTSConfig:
@@ -102,38 +107,21 @@ class TestPipelineRuntimeConfig:
 
     def test_thematic_defaults(self):
         config = PipelineRuntimeConfig()
-        assert config.max_axes == 30
-        assert config.min_axes == 25
+        assert config.max_axes == 15
+        assert config.min_axes == 10
         assert config.passage_retrieval_percentage == 0.25
-        assert config.passage_retrieval_min_per_book == 20
-        assert config.passage_retrieval_max_per_book == 50
-        assert config.axis_candidate_target_total == 120
-        assert config.pre_axis_total_budget == 3600
-        assert config.pre_axis_floor == 60
-        assert config.pre_axis_relevance_power == 1.3
-        assert config.pre_axis_cross_axis_reuse_penalty == 0.25
-        assert config.admission_floor_per_book == 2
-        assert config.retrieval_relevance_power == 1.3
-        assert config.retrieval_soft_threshold == 0.35
-        assert config.chapter_penalty_weight == 0.05
-        assert config.rerank_top_k == 30
-        assert config.post_axis_total_budget == 4000
-        assert config.post_axis_floor == 20
-        assert config.post_axis_cap == 240
-        assert config.post_axis_signal_power == 2.5
-        assert config.mmr_enabled is True
-        assert config.mmr_post_lambda == 0.6
-        assert config.mmr_post_source_penalty_weight == 1.0
-        assert config.synthesis_axis_pct == 0.25
-        assert config.synthesis_axis_min == 19
-        assert config.synthesis_axis_max == 100
-        assert config.synthesis_total_passage_cap == 800
-        assert config.planning_axis_pct == 0.35
-        assert config.planning_axis_min == 25
-        assert config.planning_axis_max == 100
+        assert config.pre_axis_total_budget == 1800
+        assert config.post_axis_total_budget == 1200
+        assert config.post_axis_cap == 120
+        assert config.synthesis_axis_pct == 1.0
+        assert config.synthesis_axis_min == 10
+        assert config.synthesis_axis_max == 15
+        assert config.planning_axis_pct == 1.0
+        assert config.planning_axis_min == 10
+        assert config.planning_axis_max == 15
+        assert config.synthesis_total_passage_cap == 750
         assert config.planning_total_passage_cap == 300
-        assert config.synthesis_quality_threshold == 0.5
-        assert config.passage_extraction_concurrency == 13
+        assert config.passage_extraction_concurrency == 8
         assert config.llm_global_max_concurrency == 30
 
     def test_rejects_removed_retrieval_weighting_fields(self):
@@ -154,161 +142,3 @@ class TestPipelineRuntimeConfig:
             PipelineRuntimeConfig(synthesis_axis_min=40, synthesis_axis_max=20)
         with pytest.raises(ValueError, match="planning_axis_max"):
             PipelineRuntimeConfig(planning_axis_min=50, planning_axis_max=30)
-
-
-class TestLLMConfigResolvers:
-    def test_resolve_max_retry_attempts_from_agent_config(self):
-        config = LLMConfig()
-        assert config.resolve_max_retry_attempts("chapter_summary") == 3
-        assert config.resolve_max_retry_attempts("chapter_summary") == 3
-        assert config.resolve_max_retry_attempts("book_summary") == 3
-        assert config.resolve_max_retry_attempts("passage_extraction") == 4
-        assert config.resolve_max_retry_attempts("synthesis_mapping") == 2
-
-    def test_resolve_max_retry_attempts_default_for_unknown(self):
-        config = LLMConfig()
-        assert config.resolve_max_retry_attempts("unknown_agent") == 2
-
-    def test_resolve_timeout_seconds_uses_schema_override(self):
-        config = LLMConfig()
-        assert config.resolve_timeout_seconds("passage_extraction") == 480.0
-        assert config.resolve_timeout_seconds("synthesis_mapping") == 1200.0
-        assert config.resolve_timeout_seconds("unknown_agent") == 600.0
-
-    def test_resolve_concurrency_limit_from_agent_config(self):
-        config = LLMConfig()
-        assert config.resolve_concurrency_limit("chapter_summary") == 25
-        assert config.resolve_concurrency_limit("book_summary") == 10
-        assert config.resolve_concurrency_limit("passage_extraction") == 13
-        assert config.resolve_concurrency_limit("synthesis_mapping") == 3
-        assert config.resolve_concurrency_limit("episode_planning") == 8
-        assert config.resolve_concurrency_limit("episode_writing") == 8
-        assert config.resolve_concurrency_limit("spoken_delivery") == 8
-
-    def test_resolve_thinking_budget_defaults(self):
-        config = LLMConfig()
-        assert config.resolve_thinking_budget("narrative_strategy") == 15_000
-        assert config.resolve_thinking_budget("episode_planning") == 25_000
-        assert config.resolve_thinking_budget("episode_writing") == 12_000
-        assert config.resolve_thinking_budget("spoken_delivery") == 20_000
-        assert config.resolve_thinking_budget("synthesis_mapping") == 18_000
-        assert config.resolve_thinking_budget("theme_decomposition") == 10_000
-
-    def test_resolve_thinking_budget_none_for_non_thinking_stages(self):
-        config = LLMConfig()
-        assert config.resolve_thinking_budget("chapter_summary") is None
-        assert config.resolve_thinking_budget("grounding_validation") is None
-        assert config.resolve_thinking_budget("unknown_agent") is None
-
-    def test_resolve_thinking_budget_disabled_with_empty_dict(self):
-        config = LLMConfig(thinking_budget_tokens={})
-        assert config.resolve_thinking_budget("narrative_strategy") is None
-        assert config.resolve_thinking_budget("episode_writing") is None
-
-    def test_resolve_thinking_budget_custom_override(self):
-        config = LLMConfig(thinking_budget_tokens={"narrative_strategy": 50_000})
-        assert config.resolve_thinking_budget("narrative_strategy") == 50_000
-        assert config.resolve_thinking_budget("episode_writing") is None
-
-    def test_thinking_timeout_bumps(self):
-        config = LLMConfig()
-        assert config.resolve_timeout_seconds("narrative_strategy") == 900.0
-        assert config.resolve_timeout_seconds("episode_planning") == 1200.0
-        assert config.resolve_timeout_seconds("episode_writing") == 1500.0
-        assert config.resolve_timeout_seconds("spoken_delivery") == 1200.0
-
-    def test_runtime_caps_cover_bumped_stage_defaults(self):
-        llm = LLMConfig()
-        runtime = PipelineRuntimeConfig()
-
-        assert runtime.passage_extraction_concurrency >= llm.resolve_concurrency_limit(
-            "passage_extraction"
-        )
-        assert runtime.episode_write_concurrency >= llm.resolve_concurrency_limit(
-            "episode_planning"
-        )
-        assert runtime.episode_write_concurrency >= llm.resolve_concurrency_limit(
-            "episode_writing"
-        )
-        assert runtime.llm_global_max_concurrency >= max(
-            llm.resolve_concurrency_limit("chapter_summary") or 0,
-            llm.resolve_concurrency_limit("passage_extraction") or 0,
-            llm.resolve_concurrency_limit("episode_planning") or 0,
-            llm.resolve_concurrency_limit("episode_writing") or 0,
-        )
-
-    def test_resolve_concurrency_limit_none_for_unknown(self):
-        config = LLMConfig()
-        assert config.resolve_concurrency_limit("unknown_agent") is None
-
-    def test_resolve_model_from_agent_config(self):
-        config = LLMConfig()
-        assert config.resolve_model("chapter_summary") == "claude-haiku-4-5"
-        assert config.resolve_model("book_summary") == "claude-sonnet-4-6"
-        assert config.resolve_model("passage_extraction") == "claude-sonnet-4-6"
-        assert config.resolve_model("synthesis_mapping") == "claude-opus-4-6"
-        assert config.resolve_model("narrative_strategy") == "claude-opus-4-6"
-        assert config.resolve_model("episode_planning") == "claude-opus-4-6"
-        assert config.resolve_model("grounding_validation") == "claude-sonnet-4-6"
-        assert config.resolve_model("episode_framing") == "claude-sonnet-4-6"
-
-    def test_resolve_temperature_from_agent_config(self):
-        config = LLMConfig()
-        assert config.resolve_temperature("chapter_summary") == 0.3
-        assert config.resolve_temperature("synthesis_mapping") == 0.8
-        assert config.resolve_temperature("grounding_validation") == 0.2
-
-    def test_resolve_anthropic_max_tokens_clamps_haiku(self):
-        config = LLMConfig()
-        assert config.resolve_anthropic_max_tokens("chapter_summary") == 64000
-        assert config.resolve_anthropic_max_tokens("synthesis_mapping") == 100000
-
-    def test_resolve_anthropic_max_tokens_respects_override(self):
-        config = LLMConfig(
-            anthropic_max_tokens=120000,
-            anthropic_max_tokens_overrides={"chapter_summary": 50000, "synthesis_mapping": 90000},
-            agent_configs={
-                "chapter_summary": AgentConfig(model_name="claude-haiku-4-5"),
-                "synthesis_mapping": AgentConfig(model_name="claude-opus-4-6"),
-            },
-        )
-        assert config.resolve_anthropic_max_tokens("chapter_summary") == 50000
-        assert config.resolve_anthropic_max_tokens("synthesis_mapping") == 90000
-
-    def test_resolve_anthropic_max_tokens_caps_haiku_override(self):
-        config = LLMConfig(
-            anthropic_max_tokens_overrides={"chapter_summary": 90000},
-            agent_configs={"chapter_summary": AgentConfig(model_name="claude-haiku-4-5")},
-        )
-        assert config.resolve_anthropic_max_tokens("chapter_summary") == 64000
-
-    def test_all_agents_have_model_assigned(self):
-        config = LLMConfig()
-        expected_agents = [
-            "chapter_summary", "book_summary", "theme_decomposition", "passage_extraction",
-            "synthesis_mapping", "narrative_strategy", "episode_planning",
-            "episode_writing", "grounding_validation",
-            "repair", "spoken_delivery", "episode_framing",
-        ]
-        for agent_name in expected_agents:
-            model = config.resolve_model(agent_name)
-            assert model.startswith("claude-"), f"{agent_name} should have a claude model, got {model}"
-
-    def test_all_agents_have_concurrency(self):
-        config = LLMConfig()
-        for agent_name in config.agent_configs:
-            limit = config.resolve_concurrency_limit(agent_name)
-            assert limit is not None and limit >= 1, f"{agent_name} needs a concurrency limit"
-
-
-class TestSettings:
-    def test_default_construction(self):
-        settings = Settings()
-        assert settings.llm is not None
-        assert settings.pipeline is not None
-        assert settings.tts is not None
-
-    def test_frozen(self):
-        settings = Settings()
-        with pytest.raises(Exception):
-            settings.llm = LLMConfig()

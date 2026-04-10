@@ -1,15 +1,17 @@
-"""Stage 12: Repair agent for grounding failures."""
+"""Stage 12: repair agent for grounding failures."""
 
 from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
 from podcast_agent.agents.base import Agent
-from podcast_agent.schemas.models import ScriptSegment
+from podcast_agent.prompts import repair_instructions
+from podcast_agent.schemas.models import ProseSection, ScriptTransition
 
 
 class RepairResponse(BaseModel):
-    repaired_segments: list[ScriptSegment] = Field(default_factory=list)
+    repaired_sections: list[ProseSection] = Field(default_factory=list)
+    repaired_transitions: list[ScriptTransition] = Field(default_factory=list)
 
 
 class RepairAgent(Agent):
@@ -17,24 +19,18 @@ class RepairAgent(Agent):
 
     schema_name = "repair"
     response_model = RepairResponse
-    instructions = (
-        "You are a script editor. Fix the following claims that failed grounding validation.\n\n"
-        "For misattributions: correct which author said what.\n"
-        "For unsupported claims: rewrite using the cited passage.\n"
-        "For fairness issues: represent the author's position more accurately.\n\n"
-        "Change only what's necessary — preserve the surrounding narrative flow.\n"
-        "Maintain all existing citations and add new ones where needed.\n\n"
-        "Return a JSON object with a 'repaired_segments' array containing the fixed segments."
-    )
+    instructions = repair_instructions()
 
     def build_payload(
         self,
-        failing_segments: list[dict],
+        failing_sections: list[dict],
+        failing_transitions: list[dict],
         failure_reasons: list[dict],
         passages: dict[str, dict],
     ) -> dict:
         return {
-            "failing_segments": failing_segments,
+            "failing_sections": failing_sections,
+            "failing_transitions": failing_transitions,
             "failure_reasons": failure_reasons,
             "cited_passages": passages,
         }

@@ -87,7 +87,7 @@ class BookRecord(StrictModel):
     title: str
     author: str
     source_path: str
-    source_type: str  # "pdf", "txt", "md"
+    source_type: str
     chapters: list[ChapterInfo] = Field(default_factory=list)
     chunk_count: int = Field(default=0, ge=0)
     total_words: int = Field(default=0, ge=0)
@@ -95,13 +95,13 @@ class BookRecord(StrictModel):
 
 
 class PipelineConfig(StrictModel):
-    max_axes: int = Field(default=30, ge=1)
-    min_axes: int = Field(default=25, ge=1)
+    max_axes: int = Field(default=15, ge=1)
+    min_axes: int = Field(default=10, ge=1)
     passage_retrieval_percentage: float = Field(default=0.25, gt=0.0, le=1.0)
     passage_retrieval_min_per_book: int = Field(default=20, ge=1)
     passage_retrieval_max_per_book: int = Field(default=50, ge=1)
     axis_candidate_target_total: int = Field(default=120, ge=1)
-    pre_axis_total_budget: int = Field(default=3600, ge=1)
+    pre_axis_total_budget: int = Field(default=1800, ge=1)
     pre_axis_floor: int = Field(default=60, ge=0)
     pre_axis_relevance_power: float = Field(default=1.3, ge=0.0)
     pre_axis_cross_axis_reuse_penalty: float = Field(default=0.25, ge=0.0, le=1.0)
@@ -110,22 +110,22 @@ class PipelineConfig(StrictModel):
     retrieval_soft_threshold: float = Field(default=0.35, ge=0.0, le=1.0)
     chapter_penalty_weight: float = Field(default=0.05, ge=0.0, le=1.0)
     rerank_top_k: int = Field(default=30, ge=1)
-    post_axis_total_budget: int = Field(default=4000, ge=1)
+    post_axis_total_budget: int = Field(default=1200, ge=1)
     post_axis_floor: int = Field(default=20, ge=0)
-    post_axis_cap: int = Field(default=240, ge=1)
+    post_axis_cap: int = Field(default=120, ge=1)
     post_axis_signal_power: float = Field(default=2.5, ge=0.0)
     mmr_enabled: bool = True
     mmr_post_lambda: float = Field(default=0.6, ge=0.0, le=1.0)
     mmr_post_source_penalty_weight: float = Field(default=1.0, ge=0.0, le=1.0)
     mmr_synthesis_lambda: float = Field(default=0.75, ge=0.0, le=1.0)
     mmr_planning_lambda: float = Field(default=0.75, ge=0.0, le=1.0)
-    synthesis_axis_pct: float = Field(default=0.25, ge=0.0, le=1.0)
-    synthesis_axis_min: int = Field(default=19, ge=0)
-    synthesis_axis_max: int = Field(default=100, ge=1)
-    synthesis_total_passage_cap: int = Field(default=800, ge=1)
-    planning_axis_pct: float = Field(default=0.35, ge=0.0, le=1.0)
-    planning_axis_min: int = Field(default=25, ge=0)
-    planning_axis_max: int = Field(default=100, ge=1)
+    synthesis_axis_pct: float = Field(default=1.0, ge=0.0, le=1.0)
+    synthesis_axis_min: int = Field(default=10, ge=0)
+    synthesis_axis_max: int = Field(default=15, ge=1)
+    synthesis_total_passage_cap: int = Field(default=750, ge=1)
+    planning_axis_pct: float = Field(default=1.0, ge=0.0, le=1.0)
+    planning_axis_min: int = Field(default=10, ge=0)
+    planning_axis_max: int = Field(default=15, ge=1)
     planning_total_passage_cap: int = Field(default=300, ge=1)
     synthesis_quality_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
     max_repair_attempts: int = Field(default=3, ge=0)
@@ -135,7 +135,7 @@ class PipelineConfig(StrictModel):
     target_episode_minutes: float = Field(default=140.0, gt=0.0)
     min_episode_minutes: float = Field(default=125.0, gt=0.0)
     duration_shortfall_policy: Literal["warn"] = "warn"
-    passage_extraction_concurrency: int = Field(default=13, ge=1)
+    passage_extraction_concurrency: int = Field(default=8, ge=1)
     chunk_max_words: int = Field(default=400, ge=50)
     chunk_overlap_words: int = Field(default=50, ge=0)
     spoken_chunk_max_words: int = Field(default=250, ge=50)
@@ -147,7 +147,7 @@ class PipelineConfig(StrictModel):
     skip_audio: bool = False
 
     @model_validator(mode="after")
-    def validate_retrieval_budget_bounds(self) -> PipelineConfig:
+    def validate_retrieval_budget_bounds(self) -> "PipelineConfig":
         if self.passage_retrieval_max_per_book < self.passage_retrieval_min_per_book:
             raise ValueError(
                 "passage_retrieval_max_per_book must be >= passage_retrieval_min_per_book"
@@ -168,7 +168,7 @@ class ThematicProject(StrictModel):
     sub_themes: list[str] = Field(default_factory=list, max_length=15)
     books: list[BookRecord] = Field(default_factory=list)
     requested_episode_count: int | None = Field(default=None, ge=1)
-    recommended_episode_count: int | None = Field(default=None, ge=7, le=9)
+    recommended_episode_count: int | None = Field(default=None, ge=6, le=10)
     episode_count: int = Field(default=3, ge=1)
     config: PipelineConfig = Field(default_factory=PipelineConfig)
     created_at: datetime = Field(default_factory=utc_now)
@@ -181,7 +181,6 @@ class ThematicProject(StrictModel):
             return []
         if not isinstance(value, list):
             raise ValueError("sub_themes must be a list of strings.")
-
         normalized: list[str] = []
         seen: set[str] = set()
         for raw_item in value:
@@ -194,7 +193,6 @@ class ThematicProject(StrictModel):
                 continue
             seen.add(item)
             normalized.append(item)
-
         if len(normalized) > 15:
             raise ValueError("sub_themes supports at most 15 entries.")
         return normalized
@@ -281,53 +279,111 @@ class ThematicCorpus(StrictModel):
 # ---------------------------------------------------------------------------
 
 
-class SynthesisInsight(StrictModel):
-    insight_id: str = Field(default_factory=new_id)
-    insight_type: InsightType
-    title: str
-    description: str
-    passage_ids: list[str] = Field(min_length=2)
+class SynthesisPrimitiveBase(StrictModel):
+    id: str = Field(default_factory=new_id)
+    title: str = Field(min_length=1)
+    summary: str = Field(min_length=1)
     axis_ids: list[str] = Field(default_factory=list)
-    podcast_potential: float = Field(default=0.5, ge=0.0, le=1.0)
-    treatment: Literal["debate", "build", "contrast", "resolve", "leave_open"] = "contrast"
+    core_passage_ids: list[str] = Field(default_factory=list)
+    support_passage_ids: list[str] = Field(default_factory=list)
+    timeframe: str | None = None
+    geography: str | None = None
+    actor_tags: list[str] = Field(default_factory=list)
+    institution_tags: list[str] = Field(default_factory=list)
+
+    @property
+    def passage_ids(self) -> list[str]:
+        combined: list[str] = []
+        seen: set[str] = set()
+        for passage_id in [*self.core_passage_ids, *self.support_passage_ids]:
+            if not passage_id or passage_id in seen:
+                continue
+            seen.add(passage_id)
+            combined.append(passage_id)
+        return combined
 
 
-class NarrativeThread(StrictModel):
-    thread_id: str = Field(default_factory=new_id)
-    title: str
-    description: str
-    insight_ids: list[str] = Field(default_factory=list)
-    arc_type: Literal["convergence", "divergence", "evolution", "dialectic", "deepening"] = "convergence"
+class CandidateReading(StrictModel):
+    label: str = Field(min_length=1)
+    summary: str = Field(min_length=1)
+    support_passage_ids: list[str] = Field(default_factory=list)
 
 
-class MergedNarrative(StrictModel):
-    topic: str
-    narrative: str
-    source_passage_ids: list[str] = Field(default_factory=list)
-    points_of_consensus: list[str] = Field(default_factory=list)
-    points_of_disagreement: list[str] = Field(default_factory=list)
+class TurningPoint(SynthesisPrimitiveBase):
+    pass
 
 
-class EpisodeSynthesisTension(StrictModel):
-    tension_id: str
-    question: str
+class SceneWorthyConsequence(SynthesisPrimitiveBase):
+    pass
 
 
-class EpisodeMergedNarrativeRef(StrictModel):
-    merged_narrative_id: str
-    topic: str
-    narrative: str
-    source_passage_ids: list[str] = Field(default_factory=list)
+class CausalMechanism(SynthesisPrimitiveBase):
+    pass
+
+
+class LiveQuestion(SynthesisPrimitiveBase):
+    candidate_readings: list[CandidateReading] = Field(default_factory=list, min_length=2)
+
+
+class EpisodeCandidateCluster(StrictModel):
+    cluster_id: str = Field(default_factory=lambda: f"cluster_{new_id()[:8]}")
+    title: str = Field(min_length=1)
+    summary: str = Field(min_length=1)
+    primary_member_id: str = Field(min_length=1)
+    member_ids: list[str] = Field(min_length=1)
+    local_question: str = Field(min_length=1)
+    local_payoff_shape: Literal[
+        "reveal", "reversal", "escalation", "fallout", "unresolved"
+    ]
+
+    @model_validator(mode="after")
+    def validate_membership(self) -> "EpisodeCandidateCluster":
+        if self.primary_member_id not in self.member_ids:
+            raise ValueError("primary_member_id must also appear in member_ids")
+        return self
+
+
+class SynthesisPrimitivesArtifact(StrictModel):
+    project_id: str
+    turning_points: list[TurningPoint] = Field(default_factory=list)
+    scene_worthy_consequences: list[SceneWorthyConsequence] = Field(default_factory=list)
+    causal_mechanisms: list[CausalMechanism] = Field(default_factory=list)
+    live_questions: list[LiveQuestion] = Field(default_factory=list)
+    quality_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    quality_notes: list[str] = Field(default_factory=list)
 
 
 class SynthesisMap(StrictModel):
     project_id: str
-    insights: list[SynthesisInsight] = Field(default_factory=list)
-    narrative_threads: list[NarrativeThread] = Field(default_factory=list)
-    book_relationship_matrix: dict[str, dict[str, str]] = Field(default_factory=dict)
-    unresolved_tensions: list[str] = Field(default_factory=list)
+    episode_candidate_clusters: list[EpisodeCandidateCluster] = Field(default_factory=list)
+    turning_points: list[TurningPoint] = Field(default_factory=list)
+    scene_worthy_consequences: list[SceneWorthyConsequence] = Field(default_factory=list)
+    causal_mechanisms: list[CausalMechanism] = Field(default_factory=list)
+    live_questions: list[LiveQuestion] = Field(default_factory=list)
     quality_score: float = Field(default=0.0, ge=0.0, le=1.0)
-    merged_narratives: list[MergedNarrative] = Field(default_factory=list)
+    quality_notes: list[str] = Field(default_factory=list)
+
+    def primitive_by_id(self) -> dict[str, SynthesisPrimitiveBase]:
+        mapping: dict[str, SynthesisPrimitiveBase] = {}
+        for item in [
+            *self.turning_points,
+            *self.scene_worthy_consequences,
+            *self.causal_mechanisms,
+            *self.live_questions,
+        ]:
+            mapping[item.id] = item
+        return mapping
+
+    @model_validator(mode="after")
+    def validate_cluster_members(self) -> "SynthesisMap":
+        primitive_ids = set(self.primitive_by_id())
+        for cluster in self.episode_candidate_clusters:
+            missing = [member_id for member_id in cluster.member_ids if member_id not in primitive_ids]
+            if missing:
+                raise ValueError(
+                    f"episode_candidate_clusters contains unknown member_ids for {cluster.cluster_id}: {missing}"
+                )
+        return self
 
 
 # ---------------------------------------------------------------------------
@@ -335,156 +391,88 @@ class SynthesisMap(StrictModel):
 # ---------------------------------------------------------------------------
 
 
-class NarrativeStrategy(StrictModel):
+class ChronologyBreak(StrictModel):
+    break_type: Literal["setup_jump", "flashback", "payoff_return"]
+    note: str = Field(min_length=1)
+
+
+class ClusterPathOccurrence(StrictModel):
+    occurrence_id: str = Field(default_factory=lambda: f"occ_{new_id()[:8]}")
+    cluster_id: str = Field(min_length=1)
+    usage: Literal["primary", "echo"]
+    transition_note: str = ""
+    chronology_break: ChronologyBreak | None = None
+
+
+class StrategyEpisode(StrictModel):
+    episode_number: int = Field(ge=1)
+    title: str = Field(min_length=1)
+    driving_question: str = Field(min_length=1)
+    thematic_focus: str = Field(default="")
+    arc_summary: str = Field(min_length=1)
+    unresolved_questions: list[str] = Field(default_factory=list)
+    cluster_path: list[ClusterPathOccurrence] = Field(default_factory=list, min_length=1)
+
     @model_validator(mode="after")
-    def validate_episode_arc_details(self) -> NarrativeStrategy:
-        detail_numbers = [detail.episode_number for detail in self.episode_arc_details]
-        if len(detail_numbers) != len(set(detail_numbers)):
-            raise ValueError("episode_arc_details must not contain duplicate episode_number values.")
-
-        if self.episode_arc_outline and len(self.episode_arc_outline) != len(self.episode_arc_details):
-            raise ValueError(
-                "episode_arc_outline and episode_arc_details must have the same length when outlines are provided."
-            )
-
-        assignment_numbers = {assignment.episode_number for assignment in self.episode_assignments}
-        detail_number_set = set(detail_numbers)
-        if assignment_numbers and assignment_numbers != detail_number_set:
-            missing = sorted(assignment_numbers - detail_number_set)
-            extra = sorted(detail_number_set - assignment_numbers)
-            parts: list[str] = []
-            if missing:
-                parts.append(f"missing episode_arc_details for episode_numbers={missing}")
-            if extra:
-                parts.append(f"unexpected episode_arc_details for episode_numbers={extra}")
-            raise ValueError("episode_arc_details must align with episode_assignments: " + "; ".join(parts))
+    def validate_cluster_path(self) -> "StrategyEpisode":
+        if self.cluster_path[0].usage != "primary":
+            raise ValueError("the first cluster_path occurrence must be primary")
+        if self.cluster_path[-1].usage != "primary":
+            raise ValueError("the last cluster_path occurrence must be primary")
+        for idx, occurrence in enumerate(self.cluster_path[1:], start=1):
+            if not occurrence.transition_note.strip():
+                raise ValueError(
+                    f"cluster_path occurrence {idx + 1} must include a transition_note"
+                )
         return self
 
+
+class NarrativeStrategy(StrictModel):
     strategy_type: Literal[
         "thesis_driven", "debate", "chronological", "convergence", "mosaic"
     ]
-    justification: str
-    series_arc: str
+    justification: str = Field(min_length=1)
+    series_arc: str = Field(min_length=1)
     episode_arc_outline: list[str] = Field(default_factory=list)
-    episode_arc_details: list["EpisodeArcDetail"]
-    recommended_episode_count: int | None = Field(default=None, ge=7, le=9)
-    episode_assignments: list["EpisodeAssignment"] = Field(default_factory=list)
+    recommended_episode_count: int | None = Field(default=None, ge=6, le=10)
+    episodes: list[StrategyEpisode] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_strategy(self) -> "NarrativeStrategy":
+        episode_numbers = [episode.episode_number for episode in self.episodes]
+        if len(episode_numbers) != len(set(episode_numbers)):
+            raise ValueError("episodes must not contain duplicate episode_number values")
+        if self.episode_arc_outline and len(self.episode_arc_outline) != len(self.episodes):
+            raise ValueError("episode_arc_outline must align with episodes when provided")
+        if self.recommended_episode_count is not None and self.episodes:
+            if self.recommended_episode_count != len(self.episodes):
+                raise ValueError("recommended_episode_count must match the number of episodes")
+        cluster_primary_homes: dict[str, int] = {}
+        for episode in self.episodes:
+            has_primary = False
+            for occurrence in episode.cluster_path:
+                if occurrence.usage == "primary":
+                    has_primary = True
+                    if occurrence.cluster_id not in cluster_primary_homes:
+                        cluster_primary_homes[occurrence.cluster_id] = episode.episode_number
+                    elif cluster_primary_homes[occurrence.cluster_id] != episode.episode_number:
+                        raise ValueError(
+                            f"cluster {occurrence.cluster_id} has multiple primary home episodes"
+                        )
+            if not has_primary:
+                raise ValueError(
+                    f"episode {episode.episode_number} must contain at least one primary cluster"
+                )
+        return self
 
 
-class EpisodeAssignment(StrictModel):
-    @model_validator(mode="before")
-    @classmethod
-    def _normalize_axis_fields(cls, value: Any) -> Any:
-        if not isinstance(value, dict):
-            return value
-        normalized = dict(value)
-        if "axes" not in normalized and "axis_ids" in normalized:
-            axis_ids = normalized.pop("axis_ids") or []
-            normalized["axes"] = [
-                {"axis_id": str(axis_id), "description": ""}
-                for axis_id in axis_ids
-                if str(axis_id).strip()
-            ]
-        elif "axis_ids" in normalized:
-            normalized.pop("axis_ids")
-        return normalized
-
-    episode_number: int = Field(ge=1)
-    title: str
-    driving_question: str = Field(min_length=1)
-    thematic_focus: str = ""
-    axes: list["EpisodeAxisRef"] = Field(default_factory=list)
-    insight_ids: list[str] = Field(default_factory=list)
-    merged_narrative_id: str | None = None
-    tension_ids: list[str] = Field(default_factory=list)
-    episode_strategy: str = ""
-
-    @property
-    def axis_ids(self) -> list[str]:
-        return [axis.axis_id for axis in self.axes]
-
-
-class EpisodeAxisRef(StrictModel):
-    axis_id: str = Field(min_length=1)
-    description: str = ""
-
-
-class EpisodeInquiry(StrictModel):
-    axis_id: str = Field(min_length=1)
-    question: str = Field(min_length=1)
-
-
-class EpisodeArcDetail(StrictModel):
-    episode_number: int = Field(ge=1)
-    arc_summary: str
-    narrative_stakes: str
-    progression_beats: list[str] = Field(default_factory=list, min_length=1)
-    unresolved_questions: list[str] = Field(default_factory=list, min_length=1)
-    episode_inquiries: list[EpisodeInquiry] = Field(min_length=4, max_length=5)
-    payoff_shape: str
-
-
-class CrossReference(StrictModel):
-    from_book_id: str
-    to_book_id: str
-    connection_type: Literal["agrees", "disagrees", "extends", "provides_example"]
-    bridge_note: str = ""
-
-
-class SpineSegment(StrictModel):
-    @model_validator(mode="before")
-    @classmethod
-    def _normalize_legacy_fields(cls, value: Any) -> Any:
-        if not isinstance(value, dict):
-            return value
-        normalized = dict(value)
-        if "spine_segment_id" not in normalized and "segment_id" in normalized:
-            normalized["spine_segment_id"] = normalized.pop("segment_id")
-        if "summary" not in normalized and "narrative_text" in normalized:
-            normalized["summary"] = normalized.pop("narrative_text")
-        return normalized
-
-    spine_segment_id: str = Field(default_factory=new_id)
-    title: str = ""
-    summary: str
-    source_passages: list[str] = Field(default_factory=list)
-    segment_function: Literal[
-        "scene_setting",
-        "event",
-        "context",
-        "consequence",
-        "turning_point",
-        "tension",
-        "resolution",
-    ] = "context"
-    era_or_moment: str = ""
-
-
-class AttributionMoment(StrictModel):
-    moment_id: str = Field(default_factory=new_id)
-    insert_after_segment_id: str
-    disagreement_type: Literal["factual", "interpretive", "causal"]
-    description: str
-    books_involved: list[str] = Field(default_factory=list)
-    narrative_function: Literal[
-        "complicates_simple_reading",
-        "reveals_hidden_motive",
-        "shows_stakes_of_interpretation",
-        "listener_must_choose",
-    ] = "complicates_simple_reading"
-    suggested_treatment: Literal[
-        "brief_aside",
-        "extended_exploration",
-        "rhetorical_question",
-        "cliffhanger",
-    ] = "brief_aside"
-
-
-class NarrativeSpine(StrictModel):
-    episode_number: int = Field(ge=1)
-    spine_segments: list[SpineSegment] = Field(default_factory=list)
-    attribution_moments: list[AttributionMoment] = Field(default_factory=list)
-    narrative_voice: str = "omniscient narrator telling a story"
+class FramingBlock(StrictModel):
+    opening_image: str = Field(min_length=1)
+    threat_or_unresolved_action: str = Field(min_length=1)
+    opening_question: str = Field(min_length=1)
+    handoff_scene_card_id: str = Field(min_length=1)
+    recap: str | None = None
+    preview: str | None = None
 
 
 class SceneActor(StrictModel):
@@ -494,160 +482,77 @@ class SceneActor(StrictModel):
 
 
 class SceneCard(StrictModel):
-    scene_id: str = Field(default_factory=new_id)
-    spine_segment_id: str = Field(min_length=1)
+    scene_id: str = Field(default_factory=lambda: f"scene_{new_id()[:8]}")
     title: str = Field(min_length=1)
-    narrative_purpose: str = Field(min_length=1)
-    timeframe: str = ""
-    location: str = ""
-    actors: list[SceneActor] = Field(default_factory=list, max_length=4)
+    card_kind: Literal["normal", "bridge"] = "normal"
+    scene_role: Literal[
+        "setup", "shock", "consequence", "reaction", "contestation", "process", "synthesis"
+    ]
+    dominant_cluster_occurrence_id: str | None = None
+    bridge_from_occurrence_id: str | None = None
+    bridge_to_occurrence_id: str | None = None
     entry_image: str = ""
-    exit_turn: str = ""
-    insight_ids: list[str] = Field(default_factory=list)
+    local_question: str = ""
+    observable_detail: str = ""
+    withhold_until: str | None = None
+    what_becomes_legible_later: str | None = None
+    intended_move: str = ""
+    timeframe: str | None = None
+    location: str | None = None
+    actors: list[SceneActor] = Field(default_factory=list, max_length=4)
+    primitive_ids: list[str] = Field(default_factory=list)
     passage_ids: list[str] = Field(default_factory=list)
     estimated_duration_seconds: int = Field(default=0, ge=0)
 
-
-class EpisodeBeat(StrictModel):
-    beat_id: str = Field(default_factory=new_id)
-    scene_id: str | None = None
-    description: str
-    insight_ids: list[str] = Field(default_factory=list)
-    passage_ids: list[str] = Field(default_factory=list)
-    primary_book_id: str = ""
-    supporting_book_ids: list[str] = Field(default_factory=list)
-    synthesis_instruction: str | None = None
-    narrative_instruction: Literal[
-        "set_the_scene",
-        "advance_events",
-        "explain_context",
-        "build_tension",
-        "reveal_consequence",
-        "pivot_to_new_thread",
-    ] = "advance_events"
-    attribution_level: Literal["none", "light", "full"] = "none"
-    transition_hint: str | None = None
-    estimated_duration_seconds: int = Field(default=120, ge=0)
-
-
-class EpisodeSynthesisContext(StrictModel):
-    insights: list[SynthesisInsight] = Field(default_factory=list)
-    narrative_threads: list[NarrativeThread] = Field(default_factory=list)
-    merged_narratives: list[EpisodeMergedNarrativeRef] = Field(default_factory=list)
-    unresolved_tensions: list[EpisodeSynthesisTension] = Field(default_factory=list)
-    quality_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    @model_validator(mode="after")
+    def validate_card_shape(self) -> "SceneCard":
+        if self.card_kind == "normal":
+            if not self.dominant_cluster_occurrence_id:
+                raise ValueError("normal scene cards require dominant_cluster_occurrence_id")
+            if self.bridge_from_occurrence_id or self.bridge_to_occurrence_id:
+                raise ValueError("normal scene cards must not define bridge occurrence ids")
+        else:
+            if not self.bridge_from_occurrence_id or not self.bridge_to_occurrence_id:
+                raise ValueError("bridge scene cards require bridge_from_occurrence_id and bridge_to_occurrence_id")
+            if self.dominant_cluster_occurrence_id is not None:
+                raise ValueError("bridge scene cards must not define dominant_cluster_occurrence_id")
+        return self
 
 
 class EpisodePlanDraft(StrictModel):
-    @model_validator(mode="before")
-    @classmethod
-    def _normalize_narrative_spine(cls, value: Any) -> Any:
-        if not isinstance(value, dict):
-            return value
-        normalized = dict(value)
-        narrative_spine = normalized.get("narrative_spine")
-        if isinstance(narrative_spine, list):
-            normalized["narrative_spine"] = {
-                "episode_number": normalized.get("episode_number", 1),
-                "spine_segments": narrative_spine,
-            }
-        return normalized
-
     episode_number: int = Field(ge=1)
-    title: str
+    title: str = Field(min_length=1)
+    driving_question: str = Field(min_length=1)
     thematic_focus: str = ""
-    axis_ids: list[str] = Field(default_factory=list)
-    insight_ids: list[str] = Field(default_factory=list)
-    scene_cards: list[SceneCard] = Field(default_factory=list)
-    anchor_scene_ids: list[str] = Field(default_factory=list)
-    beats: list[EpisodeBeat] = Field(default_factory=list)
-    attribution_budget: float = Field(default=0.2, ge=0.0, le=1.0)
-    narrative_spine: NarrativeSpine | None = None
-    synthesis_context: EpisodeSynthesisContext | None = None
-    book_balance: dict[str, float] = Field(default_factory=dict)
-    cross_references: list[CrossReference] = Field(default_factory=list)
+    arc_summary: str = ""
+    unresolved_questions: list[str] = Field(default_factory=list)
+    framing: FramingBlock
+    scene_cards: list[SceneCard] = Field(default_factory=list, min_length=1)
     target_duration_minutes: float = Field(default=140.0, gt=0.0)
-    episode_strategy: str = ""
 
     @model_validator(mode="after")
-    def _validate_scene_structure(self) -> "EpisodePlanDraft":
-        if not self.scene_cards:
-            return self
-
+    def validate_scene_cards(self) -> "EpisodePlanDraft":
         scene_ids = [scene.scene_id for scene in self.scene_cards]
         if len(scene_ids) != len(set(scene_ids)):
             raise ValueError("scene_cards must use unique scene_id values")
-
-        scene_ids_set = set(scene_ids)
-        anchor_scene_ids = [scene_id for scene_id in self.anchor_scene_ids if scene_id]
-        if len(anchor_scene_ids) != len(set(anchor_scene_ids)):
-            raise ValueError("anchor_scene_ids must be unique")
-        unknown_anchor_ids = [scene_id for scene_id in anchor_scene_ids if scene_id not in scene_ids_set]
-        if unknown_anchor_ids:
-            raise ValueError(
-                f"anchor_scene_ids must reference existing scene_cards: {unknown_anchor_ids}"
-            )
-
-        if self.narrative_spine is not None:
-            spine_ids = [
-                segment.spine_segment_id
-                for segment in self.narrative_spine.spine_segments
-            ]
-            spine_ids_set = set(spine_ids)
-            unknown_spine_ids = [
-                scene.spine_segment_id
-                for scene in self.scene_cards
-                if scene.spine_segment_id not in spine_ids_set
-            ]
-            if unknown_spine_ids:
-                raise ValueError(
-                    "scene_cards must reference spine_segment_id values present in narrative_spine"
-                )
-            spine_order = {segment_id: idx for idx, segment_id in enumerate(spine_ids)}
-            prior_order = -1
-            for scene in self.scene_cards:
-                current_order = spine_order[scene.spine_segment_id]
-                if current_order < prior_order:
-                    raise ValueError("scene_cards must appear in narrative spine order")
-                prior_order = current_order
-
-        if any(not beat.scene_id for beat in self.beats):
-            raise ValueError("every beat must include scene_id when scene_cards are present")
-
-        beat_scene_ids = [beat.scene_id for beat in self.beats if beat.scene_id]
-        unknown_beat_scene_ids = [
-            scene_id for scene_id in beat_scene_ids if scene_id not in scene_ids_set
-        ]
-        if unknown_beat_scene_ids:
-            raise ValueError("every beat.scene_id must reference an existing scene_card")
-
-        collapsed_scene_order: list[str] = []
-        prior_scene_id: str | None = None
-        closed_scene_ids: set[str] = set()
-        for scene_id in beat_scene_ids:
-            if scene_id == prior_scene_id:
-                continue
-            if prior_scene_id is not None:
-                closed_scene_ids.add(prior_scene_id)
-            if scene_id in closed_scene_ids:
-                raise ValueError("beats for a scene must form one contiguous block")
-            collapsed_scene_order.append(scene_id)
-            prior_scene_id = scene_id
-
-        if collapsed_scene_order != scene_ids:
-            raise ValueError("scene_cards must match the contiguous scene order implied by beats")
-
-        if scene_ids_set.difference(beat_scene_ids):
-            raise ValueError("every scene_card must own at least one beat")
-
+        if self.framing.handoff_scene_card_id not in set(scene_ids):
+            raise ValueError("framing.handoff_scene_card_id must reference an existing scene card")
+        bridge_count = sum(1 for scene in self.scene_cards if scene.card_kind == "bridge")
+        if bridge_count > 1:
+            raise ValueError("at most one bridge scene card is allowed per episode")
+        withhold_ids = {
+            scene.withhold_until
+            for scene in self.scene_cards
+            if scene.withhold_until is not None
+        }
+        unknown = sorted(scene_id for scene_id in withhold_ids if scene_id not in set(scene_ids))
+        if unknown:
+            raise ValueError(f"withhold_until must reference existing scene_ids: {unknown}")
         return self
 
 
 class EpisodePlan(EpisodePlanDraft):
     target_word_count: int = Field(ge=1)
-    driving_question: str = Field(min_length=1)
-    unresolved_questions: list[str] = Field(default_factory=list, min_length=1)
-    payoff_shape: str = Field(min_length=1)
 
 
 # ---------------------------------------------------------------------------
@@ -657,34 +562,50 @@ class EpisodePlan(EpisodePlanDraft):
 
 class Citation(StrictModel):
     citation_id: str = Field(default_factory=new_id)
-    text_span: str
+    text_span: str = ""
     passage_id: str
     book_id: str
     chunk_ids: list[str] = Field(default_factory=list)
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
 
 
-class ScriptSegment(StrictModel):
-    segment_id: str = Field(default_factory=new_id)
-    text: str
-    segment_type: Literal["intro", "body", "transition", "outro", "recap", "bridge"] = "body"
-    beat_id: str | None = None
-    scene_id: str | None = None
-    source_book_ids: list[str] = Field(default_factory=list)
+class ProseSection(StrictModel):
+    section_id: str = Field(default_factory=lambda: f"section_{new_id()[:8]}")
+    scene_card_ids: list[str] = Field(default_factory=list, min_length=1)
+    movement_goal: Literal["pose", "discover", "complicate", "connect", "judge", "land"]
+    text: str = Field(min_length=1)
     citations: list[Citation] = Field(default_factory=list)
-    attribution_level: Literal["none", "light", "full"] = "none"
+    source_book_ids: list[str] = Field(default_factory=list)
+
+
+class ScriptTransition(StrictModel):
+    transition_id: str = Field(default_factory=lambda: f"transition_{new_id()[:8]}")
+    after_section_id: str = Field(min_length=1)
+    before_section_id: str | None = None
+    text: str = Field(min_length=1)
+    citations: list[Citation] = Field(default_factory=list)
+    source_book_ids: list[str] = Field(default_factory=list)
+
+
+class WindowMapEntry(StrictModel):
+    batch_id: str = Field(min_length=1)
+    section_ids: list[str] = Field(default_factory=list)
+    transition_ids: list[str] = Field(default_factory=list)
 
 
 class EpisodeScript(StrictModel):
     episode_number: int = Field(ge=1)
     title: str
-    segments: list[ScriptSegment] = Field(default_factory=list)
+    framing: FramingBlock
+    prose_sections: list[ProseSection] = Field(default_factory=list)
+    transitions: list[ScriptTransition] = Field(default_factory=list)
+    window_map: list[WindowMapEntry] = Field(default_factory=list)
     total_word_count: int = Field(default=0, ge=0)
     estimated_duration_seconds: int = Field(default=0, ge=0)
-    citations: list[Citation] = Field(default_factory=list)
 
 
 class ClaimAssessment(StrictModel):
+    text_unit_id: str = Field(min_length=1)
     claim_text: str
     cited_passage_id: str
     status: Literal["SUPPORTED", "PARTIALLY_SUPPORTED", "UNSUPPORTED", "FABRICATED"]
@@ -692,6 +613,7 @@ class ClaimAssessment(StrictModel):
 
 
 class CrossBookClaimAssessment(StrictModel):
+    text_unit_id: str = Field(min_length=1)
     claim_text: str
     book_ids: list[str] = Field(default_factory=list)
     passage_ids: list[str] = Field(default_factory=list)
@@ -700,6 +622,7 @@ class CrossBookClaimAssessment(StrictModel):
 
 
 class FairnessFlag(StrictModel):
+    text_unit_id: str = Field(min_length=1)
     book_id: str
     claim_text: str
     issue: Literal["straw_man", "oversimplified", "out_of_context", "false_equivalence"]
@@ -717,7 +640,7 @@ class GroundingReport(StrictModel):
 
 
 class SegmentDiff(StrictModel):
-    segment_id: str
+    text_unit_id: str
     before: str
     after: str
 
@@ -733,7 +656,7 @@ class RepairResult(StrictModel):
 
 
 # ---------------------------------------------------------------------------
-# 3.7 Speech & Audio Models
+# 3.7 Speech, Style, & Audio Models
 # ---------------------------------------------------------------------------
 
 
@@ -757,154 +680,44 @@ class SpeechHints(StrictModel):
     emphasis_targets: list[str] = Field(default_factory=list)
     render_strategy: Literal["plain", "isolate_phrase", "split_sentences", "slow_clause"] = "plain"
 
-    @model_validator(mode="before")
-    @classmethod
-    def _normalize_legacy_keys(cls, value: Any) -> Any:
-        if not isinstance(value, dict):
-            return value
-        normalized = dict(value)
-        alias_map = {
-            "delivery_style": "style",
-            "emphasis_level": "intensity",
-            "speech_rate": "pace",
-        }
-        for legacy_key, canonical_key in alias_map.items():
-            if canonical_key not in normalized and legacy_key in normalized:
-                normalized[canonical_key] = normalized.pop(legacy_key)
-        return normalized
 
-    @field_validator("style", mode="before")
-    @classmethod
-    def _normalize_style(cls, value: Any) -> str:
-        allowed = {"neutral", "measured", "urgent", "dramatic"}
-        if value is None:
-            return "neutral"
-        normalized = str(value).strip().lower()
-        return normalized if normalized in allowed else "neutral"
-
-    @field_validator("intensity", mode="before")
-    @classmethod
-    def _normalize_intensity(cls, value: Any) -> str:
-        aliases = {
-            "high": "strong",
-            "maximum": "strong",
-            "max": "strong",
-            "low": "light",
-        }
-        allowed = {"none", "light", "medium", "strong"}
-        if value is None:
-            return "none"
-        normalized = str(value).strip().lower()
-        normalized = aliases.get(normalized, normalized)
-        return normalized if normalized in allowed else "none"
-
-    @field_validator("pace", mode="before")
-    @classmethod
-    def _normalize_pace(cls, value: Any) -> str:
-        aliases = {
-            "slow": "slower",
-            "deliberate": "slower",
-            "conversational": "normal",
-            "fast": "faster",
-        }
-        allowed = {"slower", "normal", "faster"}
-        if value is None:
-            return "normal"
-        normalized = str(value).strip().lower()
-        normalized = aliases.get(normalized, normalized)
-        return normalized if normalized in allowed else "normal"
-
-    @field_validator("pause_before_ms", "pause_after_ms", mode="before")
-    @classmethod
-    def _clamp_pause_ms(cls, value: Any) -> int:
-        if value is None:
-            return 300
-        try:
-            numeric = int(value)
-        except (TypeError, ValueError):
-            return 300
-        return max(0, min(2000, numeric))
-
-    @field_validator("pronunciation_hints", mode="before")
-    @classmethod
-    def _normalize_pronunciation_hints(
-        cls,
-        value: Any,
-    ) -> list[dict[str, Any]] | list[PronunciationHint]:
-        if value is None:
-            return []
-        if isinstance(value, dict):
-            return [value]
-        return value
-
-    @field_validator("emphasis_targets", mode="before")
-    @classmethod
-    def _normalize_emphasis_targets(cls, value: Any) -> list[str]:
-        if value is None:
-            return []
-        raw_values = [value] if isinstance(value, str) else list(value)
-        normalized: list[str] = []
-        for item in raw_values:
-            phrase = str(item or "").strip()
-            if phrase and phrase not in normalized:
-                normalized.append(phrase)
-        return normalized
-
-    @property
-    def delivery_style(self) -> str:
-        return self.style
-
-    @property
-    def emphasis_level(self) -> str:
-        return self.intensity
-
-    @property
-    def speech_rate(self) -> str:
-        return self.pace
-
-
-SpokenDeliveryHints = SpeechHints
-
-
-class SpokenSegment(StrictModel):
-    segment_id: str
+class SpokenSection(StrictModel):
+    section_id: str
     text: str
-    max_words: int = Field(default=250, ge=1)
     speech_hints: SpeechHints = Field(default_factory=SpeechHints)
 
-    @model_validator(mode="before")
-    @classmethod
-    def _normalize_legacy_hint_field(cls, value: Any) -> Any:
-        if not isinstance(value, dict):
-            return value
-        normalized = dict(value)
-        if "speech_hints" not in normalized and "ssml_hints" in normalized:
-            normalized["speech_hints"] = normalized.pop("ssml_hints")
-        return normalized
 
-    @field_validator("speech_hints", mode="before")
-    @classmethod
-    def _default_speech_hints(cls, value: Any) -> dict[str, Any] | SpeechHints:
-        return {} if value is None else value
-
-    @property
-    def ssml_hints(self) -> SpeechHints:
-        return self.speech_hints
+class SpokenTransition(StrictModel):
+    transition_id: str
+    text: str
+    speech_hints: SpeechHints = Field(default_factory=SpeechHints)
 
 
 class SpokenScript(StrictModel):
     episode_number: int = Field(ge=1)
     title: str
-    segments: list[SpokenSegment] = Field(default_factory=list)
-    arc_plan: str | None = None
+    framing: FramingBlock
+    sections: list[SpokenSection] = Field(default_factory=list)
+    transitions: list[SpokenTransition] = Field(default_factory=list)
     tts_provider: str = "openai"
 
 
-class EpisodeFraming(StrictModel):
+class StyleWarning(StrictModel):
+    warning_type: Literal[
+        "early_thesis_reveal",
+        "abstract_noun_cluster_repeat",
+        "governing_metaphor_repeat",
+        "author_hand_language",
+        "recap_style_framing",
+    ]
+    text_unit_id: str | None = None
+    message: str = Field(min_length=1)
+
+
+class StyleAuditReport(StrictModel):
     episode_number: int = Field(ge=1)
-    recap: str | None = None
-    preview: str | None = None
-    cold_open: str | None = None
+    warnings: list[StyleWarning] = Field(default_factory=list)
+    counts_by_type: dict[str, int] = Field(default_factory=dict)
 
 
 class RenderSegment(StrictModel):

@@ -1,4 +1,4 @@
-"""Unit tests for data model serialization and validation."""
+"""Unit tests for the redesigned schema contracts."""
 
 from __future__ import annotations
 
@@ -8,868 +8,343 @@ import pytest
 from pydantic import ValidationError
 
 from podcast_agent.schemas.models import (
-    AudioManifest,
-    AudioSegmentResult,
-    BookRecord,
-    ChapterAnalysis,
-    ChapterInfo,
-    ChunkingConfig,
-    Citation,
-    ClaimAssessment,
-    CoverageStats,
-    CrossBookClaimAssessment,
-    CrossReference,
-    EpisodeArcDetail,
-    EpisodeAssignment,
-    EpisodeBeat,
-    EpisodeFraming,
-    EpisodeMergedNarrativeRef,
+    CandidateReading,
+    ClusterPathOccurrence,
+    EpisodeCandidateCluster,
     EpisodePlan,
-    EpisodeScript,
-    EpisodeSynthesisContext,
-    EpisodeSynthesisTension,
-    ExtractedPassage,
-    FairnessFlag,
-    GroundingReport,
-    InsightType,
+    EpisodePlanDraft,
+    FramingBlock,
+    LiveQuestion,
     NarrativeStrategy,
-    NarrativeThread,
-    PassagePair,
-    PipelineConfig,
-    ProjectStatus,
-    RenderManifest,
-    RenderSegment,
-    RepairResult,
-    ScriptSegment,
-    SegmentDiff,
+    SceneActor,
+    SceneCard,
+    SpeechHints,
     SpokenScript,
-    SpokenSegment,
-    SynthesisInsight,
+    SpokenSection,
+    SpokenTransition,
+    StrategyEpisode,
+    StyleAuditReport,
+    StyleWarning,
     SynthesisMap,
-    SynthesisTag,
-    TextChunk,
-    ThematicAxis,
-    ThematicCorpus,
     ThematicProject,
+    TurningPoint,
 )
 
 
-# ---------------------------------------------------------------------------
-# Serialization roundtrip tests
-# ---------------------------------------------------------------------------
+def _turning_point(primitive_id: str = "tp_1") -> TurningPoint:
+    return TurningPoint(
+        id=primitive_id,
+        title="Threshold breaks",
+        summary="A decision changes the field.",
+        axis_ids=["axis_1"],
+        core_passage_ids=["p1"],
+        support_passage_ids=["p2"],
+    )
 
 
-class TestBookRecord:
-    def test_roundtrip(self):
-        book = BookRecord(
-            book_id="b1", title="Test Book", author="Author A",
-            source_path="/tmp/test.txt", source_type="txt", total_words=5000,
-        )
-        data = json.loads(book.model_dump_json())
-        restored = BookRecord.model_validate(data)
-        assert restored.book_id == "b1"
-        assert restored.title == "Test Book"
-
-    def test_with_chapters(self):
-        ch = ChapterInfo(
-            chapter_id="ch1", title="Chapter 1",
-            start_index=0, end_index=1000, word_count=200,
-            summary="First chapter.",
-            analysis=ChapterAnalysis(
-                themes_touched=["partition"],
-                major_tensions=["deadline vs legitimacy"],
-                causal_shifts=["announcement accelerates unrest"],
-                narrative_hooks=["A decision made in private reshapes millions of lives."],
-                retrieval_keywords=["partition", "deadline"],
-            ),
-        )
-        book = BookRecord(
-            book_id="b1", title="Test", author="A",
-            source_path="/test.txt", source_type="txt",
-            chapters=[ch], total_words=200,
-        )
-        data = json.loads(book.model_dump_json())
-        restored = BookRecord.model_validate(data)
-        assert len(restored.chapters) == 1
-        assert restored.chapters[0].chapter_id == "ch1"
-        assert restored.chapters[0].analysis is not None
-        assert restored.chapters[0].analysis.themes_touched == ["partition"]
-
-    def test_chapter_info_accepts_missing_analysis_for_backward_compatibility(self):
-        chapter = ChapterInfo(
-            chapter_id="ch1",
-            title="Chapter 1",
-            start_index=0,
-            end_index=100,
-            word_count=50,
-            summary="Legacy summary.",
-        )
-        assert chapter.analysis is None
+def _framing() -> FramingBlock:
+    return FramingBlock(
+        opening_image="A convoy moves at dawn.",
+        threat_or_unresolved_action="Nobody yet knows what the order will trigger.",
+        opening_question="Why does this decision land so hard?",
+        handoff_scene_card_id="scene_1",
+        recap="Previously on the series.",
+        preview="Next, the fallout spreads.",
+    )
 
 
-class TestChapterAnalysis:
-    def test_key_events_or_arguments_allows_more_than_six_items(self):
-        analysis = ChapterAnalysis(
-            key_events_or_arguments=[f"event-{idx}" for idx in range(7)]
-        )
-        assert len(analysis.key_events_or_arguments) == 7
-
-
-class TestTextChunk:
-    def test_roundtrip(self):
-        chunk = TextChunk(
-            chunk_id="c1", book_id="b1", chapter_id="ch1",
-            text="Some text here", word_count=3, position=0,
-        )
-        data = json.loads(chunk.model_dump_json())
-        restored = TextChunk.model_validate(data)
-        assert restored.chunk_id == "c1"
-
-    def test_with_metadata(self):
-        chunk = TextChunk(
-            chunk_id="c1", book_id="b1", chapter_id="ch1",
-            text="text", word_count=1, position=0,
-            metadata={"author": "Author A", "title": "Book A"},
-        )
-        assert chunk.metadata["author"] == "Author A"
-
-
-class TestThematicAxis:
-    def test_roundtrip(self):
-        axis = ThematicAxis(
-            axis_id="ax1", name="Decision Making",
-            description="How decisions are made under pressure.",
-            guiding_questions=["What drives decisions?"],
-            relevance_by_book={"b1": 0.8, "b2": 0.6},
-            keywords=["decision", "pressure"],
-        )
-        data = json.loads(axis.model_dump_json())
-        restored = ThematicAxis.model_validate(data)
-        assert restored.relevance_by_book["b1"] == 0.8
-
-    def test_multi_book_relevance(self):
-        axis = ThematicAxis(
-            axis_id="ax1", name="Test",
-            description="Test axis",
-            relevance_by_book={"b1": 0.9, "b2": 0.7, "b3": 0.1},
-        )
-        books_above_threshold = sum(
-            1 for s in axis.relevance_by_book.values() if s >= 0.3
-        )
-        assert books_above_threshold == 2
-
-
-class TestSynthesisInsight:
-    def test_requires_min_two_passages(self):
-        with pytest.raises(ValidationError):
-            SynthesisInsight(
-                insight_id="i1", insight_type=InsightType.SYNCHRONICITY,
-                title="Test", description="Test",
-                passage_ids=["p1"],  # Only 1, need at least 2
-            )
-
-    def test_valid_insight(self):
-        insight = SynthesisInsight(
-            insight_id="i1", insight_type=InsightType.PRODUCTIVE_FRICTION,
-            title="Authors disagree", description="A vs B",
-            passage_ids=["p1", "p2"],
-            podcast_potential=0.9, treatment="debate",
-        )
-        assert insight.treatment == "debate"
-
-
-class TestSynthesisMap:
-    def test_quality_score_range(self):
-        sm = SynthesisMap(project_id="proj1", quality_score=0.75)
-        assert 0 <= sm.quality_score <= 1
-
-    def test_roundtrip(self):
-        sm = SynthesisMap(
-            project_id="proj1",
-            insights=[
-                SynthesisInsight(
-                    insight_type=InsightType.LATENT_PATTERN,
-                    title="Test tension", description="Tension desc",
-                    passage_ids=["p1", "p2"],
-                )
-            ],
-            narrative_threads=[
-                NarrativeThread(
-                    title="Main thread",
-                    description="The main narrative",
-                    insight_ids=["i1"],
-                    arc_type="convergence",
-                )
-            ],
-            quality_score=0.65,
-        )
-        data = json.loads(sm.model_dump_json())
-        restored = SynthesisMap.model_validate(data)
-        assert len(restored.insights) == 1
-        assert restored.quality_score == 0.65
-
-
-class TestEpisodePlan:
-    def test_roundtrip(self):
-        beat = EpisodeBeat(
-            beat_id="bt1", scene_id="scene_01", description="Compare perspectives",
-            passage_ids=["p1", "p2"],
-            primary_book_id="b1", supporting_book_ids=["b2"],
-            synthesis_instruction="contrast",
-        )
-        plan = EpisodePlan(
-            episode_number=1, title="Episode 1",
-            target_word_count=16800,
-            driving_question="What decision matters most?",
-            thematic_focus="Decision making",
-            unresolved_questions=["What remains unresolved?"],
-            payoff_shape="Complicate the question without closing it.",
-            scene_cards=[
-                {
-                    "scene_id": "scene_01",
-                    "spine_segment_id": "spine_01",
-                    "title": "Opening scene",
-                    "narrative_purpose": "Frame the core decision.",
-                    "passage_ids": ["p1"],
-                    "estimated_duration_seconds": 120,
-                }
-            ],
-            anchor_scene_ids=["scene_01"],
-            beats=[beat],
-            narrative_spine={
-                "episode_number": 1,
-                "spine_segments": [
-                    {
-                        "spine_segment_id": "spine_01",
-                        "title": "The question",
-                        "summary": "Set up the episode's governing choice.",
-                    }
-                ],
-            },
-            synthesis_context=EpisodeSynthesisContext(
-                merged_narratives=[
-                    EpisodeMergedNarrativeRef(
-                        merged_narrative_id="merged_narrative_001",
-                        topic="Topic",
-                        narrative="Narrative",
-                        source_passage_ids=["p1"],
-                    )
-                ],
-                unresolved_tensions=[
-                    EpisodeSynthesisTension(
-                        tension_id="tension_001",
-                        question="What remains unresolved?",
-                    )
-                ],
-                quality_score=0.8,
-            ),
-            book_balance={"b1": 0.6, "b2": 0.4},
-        )
-        data = json.loads(plan.model_dump_json())
-        restored = EpisodePlan.model_validate(data)
-        assert len(restored.beats) == 1
-        assert restored.beats[0].scene_id == "scene_01"
-        assert restored.scene_cards[0].scene_id == "scene_01"
-        assert restored.beats[0].synthesis_instruction == "contrast"
-        assert restored.synthesis_context is not None
-        assert restored.synthesis_context.merged_narratives[0].merged_narrative_id == "merged_narrative_001"
-
-    def test_default_target_duration_minutes(self):
-        plan = EpisodePlan(
-            episode_number=1,
-            title="Episode 1",
-            target_word_count=16800,
-            driving_question="What is at stake?",
-            unresolved_questions=["What remains open?"],
-            payoff_shape="Leave the listener with a sharpened tension.",
-        )
-        assert plan.target_duration_minutes == 140.0
-
-    def test_scene_cards_require_existing_anchor_ids(self):
-        with pytest.raises(ValidationError):
-            EpisodePlan(
-                episode_number=1,
-                title="Episode 1",
-                target_word_count=16800,
-                driving_question="What is at stake?",
-                unresolved_questions=["What remains open?"],
-                payoff_shape="Leave the listener with a sharpened tension.",
-                scene_cards=[
-                    {
-                        "scene_id": "scene_01",
-                        "spine_segment_id": "spine_01",
-                        "title": "Opening scene",
-                        "narrative_purpose": "Set up the episode.",
-                    }
-                ],
-                anchor_scene_ids=["scene_02"],
-                beats=[
-                    {
-                        "scene_id": "scene_01",
-                        "description": "Beat 1",
-                    }
-                ],
-                narrative_spine={
-                    "episode_number": 1,
-                    "spine_segments": [
-                        {
-                            "spine_segment_id": "spine_01",
-                            "title": "Spine",
-                            "summary": "Summary",
-                        }
-                    ],
-                },
-            )
-
-    def test_scene_card_beats_must_be_contiguous(self):
-        with pytest.raises(ValidationError):
-            EpisodePlan(
-                episode_number=1,
-                title="Episode 1",
-                target_word_count=16800,
-                driving_question="What is at stake?",
-                unresolved_questions=["What remains open?"],
-                payoff_shape="Leave the listener with a sharpened tension.",
-                scene_cards=[
-                    {
-                        "scene_id": "scene_01",
-                        "spine_segment_id": "spine_01",
-                        "title": "Scene 1",
-                        "narrative_purpose": "Start",
-                    },
-                    {
-                        "scene_id": "scene_02",
-                        "spine_segment_id": "spine_01",
-                        "title": "Scene 2",
-                        "narrative_purpose": "Continue",
-                    },
-                ],
-                beats=[
-                    {"scene_id": "scene_01", "description": "Beat 1"},
-                    {"scene_id": "scene_02", "description": "Beat 2"},
-                    {"scene_id": "scene_01", "description": "Beat 3"},
-                ],
-                narrative_spine={
-                    "episode_number": 1,
-                    "spine_segments": [
-                        {
-                            "spine_segment_id": "spine_01",
-                            "title": "Spine",
-                            "summary": "Summary",
-                        }
-                    ],
-                },
-            )
-
-    def test_scene_cards_must_follow_spine_order(self):
-        with pytest.raises(ValidationError):
-            EpisodePlan(
-                episode_number=1,
-                title="Episode 1",
-                target_word_count=16800,
-                driving_question="What is at stake?",
-                unresolved_questions=["What remains open?"],
-                payoff_shape="Leave the listener with a sharpened tension.",
-                scene_cards=[
-                    {
-                        "scene_id": "scene_01",
-                        "spine_segment_id": "spine_02",
-                        "title": "Later scene",
-                        "narrative_purpose": "Advance the back half.",
-                    },
-                    {
-                        "scene_id": "scene_02",
-                        "spine_segment_id": "spine_01",
-                        "title": "Earlier scene",
-                        "narrative_purpose": "Advance the front half.",
-                    },
-                ],
-                beats=[
-                    {"scene_id": "scene_01", "description": "Beat 1"},
-                    {"scene_id": "scene_02", "description": "Beat 2"},
-                ],
-                narrative_spine={
-                    "episode_number": 1,
-                    "spine_segments": [
-                        {
-                            "spine_segment_id": "spine_01",
-                            "title": "First spine",
-                            "summary": "Summary 1",
-                        },
-                        {
-                            "spine_segment_id": "spine_02",
-                            "title": "Second spine",
-                            "summary": "Summary 2",
-                        },
-                    ],
-                },
-            )
-
-
-class TestEpisodeScript:
-    def test_roundtrip(self):
-        citation = Citation(
-            text_span="Author argues X", passage_id="p1",
-            book_id="b1", chunk_ids=["c1"], confidence=0.95,
-        )
-        segment = ScriptSegment(
-            segment_id="s1", text="The narration text.",
-            segment_type="body", scene_id="scene_01", beat_id="bt1",
-            source_book_ids=["b1"], citations=[citation],
-        )
-        script = EpisodeScript(
-            episode_number=1, title="Ep 1",
-            segments=[segment], total_word_count=4,
-            citations=[citation],
-        )
-        data = json.loads(script.model_dump_json())
-        restored = EpisodeScript.model_validate(data)
-        assert len(restored.segments) == 1
-        assert restored.segments[0].scene_id == "scene_01"
-        assert restored.citations[0].confidence == 0.95
-
-
-class TestGroundingReport:
-    def test_status_values(self):
-        report = GroundingReport(
-            episode_number=1,
-            claim_assessments=[
-                ClaimAssessment(
-                    claim_text="Claim 1",
-                    cited_passage_id="p1",
-                    status="SUPPORTED",
-                ),
-                ClaimAssessment(
-                    claim_text="Claim 2",
-                    cited_passage_id="p2",
-                    status="FABRICATED",
-                    explanation="No support in passage.",
-                ),
-            ],
-            overall_status="NEEDS_REPAIR",
-            grounding_score=0.5,
-        )
-        supported = [ca for ca in report.claim_assessments if ca.status == "SUPPORTED"]
-        assert len(supported) == 1
-
-    def test_cross_book_claims(self):
-        report = GroundingReport(
-            episode_number=1,
-            cross_book_claims=[
-                CrossBookClaimAssessment(
-                    claim_text="Author A agrees with Author B",
-                    book_ids=["b1", "b2"],
-                    passage_ids=["p1", "p2"],
-                    comparison_valid=False,
-                    failure_reason="false_equivalence",
-                ),
-            ],
-            overall_status="NEEDS_REPAIR",
-            attribution_accuracy=0.5,
-        )
-        assert not report.cross_book_claims[0].comparison_valid
-
-
-class TestNarrativeStrategy:
-    def test_valid_strategies(self):
-        for strategy_type in ["thesis_driven", "debate", "chronological", "convergence", "mosaic"]:
-            strategy = NarrativeStrategy(
-                strategy_type=strategy_type,
-                justification="Test",
-                series_arc="Test arc",
-                episode_arc_details=[],
-            )
-            assert strategy.strategy_type == strategy_type
-
-    def test_episode_assignments_roundtrip(self):
-        strategy = NarrativeStrategy(
-            strategy_type="convergence",
-            justification="Test",
-            series_arc="Arc",
-            episode_arc_details=[
-                EpisodeArcDetail(
-                    episode_number=1,
-                    arc_summary="Arc summary",
-                    narrative_stakes="Stakes",
-                    progression_beats=["Beat 1"],
-                    unresolved_questions=["Question 1"],
-                    episode_inquiries=[
-                        {"axis_id": "ax1", "question": "Inquiry 1?"},
-                        {"axis_id": "ax1", "question": "Inquiry 2?"},
-                        {"axis_id": "ax1", "question": "Inquiry 3?"},
-                        {"axis_id": "ax1", "question": "Inquiry 4?"},
-                    ],
-                    payoff_shape="Payoff shape",
-                )
-            ],
-            episode_assignments=[
-                EpisodeAssignment(
-                    episode_number=1,
-                    title="Episode 1",
-                    driving_question="What is this episode trying to answer?",
-                    thematic_focus="Focus",
-                    axis_ids=["ax1"],
-                    insight_ids=["in1"],
-                    merged_narrative_id="merged_narrative_001",
-                    tension_ids=["tension_001"],
-                    episode_strategy="Set context",
-                )
-            ],
-        )
-        data = json.loads(strategy.model_dump_json())
-        restored = NarrativeStrategy.model_validate(data)
-        assert restored.episode_assignments[0].axes[0].axis_id == "ax1"
-        assert restored.episode_assignments[0].axis_ids == ["ax1"]
-        assert restored.episode_assignments[0].merged_narrative_id == "merged_narrative_001"
-
-    def test_rejects_misaligned_episode_arc_details(self):
-        with pytest.raises(ValidationError, match="episode_arc_details must align"):
-            NarrativeStrategy(
-                strategy_type="convergence",
-                justification="Test",
-                series_arc="Arc",
-                episode_arc_details=[
-                    EpisodeArcDetail(
-                        episode_number=2,
-                        arc_summary="Arc summary",
-                        narrative_stakes="Stakes",
-                        progression_beats=["Beat 1"],
-                        unresolved_questions=["Question 1"],
-                        episode_inquiries=[
-                            {"axis_id": "ax1", "question": "Inquiry 1?"},
-                            {"axis_id": "ax1", "question": "Inquiry 2?"},
-                            {"axis_id": "ax1", "question": "Inquiry 3?"},
-                            {"axis_id": "ax1", "question": "Inquiry 4?"},
-                        ],
-                        payoff_shape="Payoff shape",
-                    )
-                ],
-                episode_assignments=[
-                    EpisodeAssignment(
-                        episode_number=1,
-                        title="Episode 1",
-                        driving_question="What is this episode trying to answer?",
-                    )
-                ],
-            )
-
-    def test_rejects_outline_and_detail_length_mismatch(self):
-        with pytest.raises(ValidationError, match="episode_arc_outline and episode_arc_details"):
-            NarrativeStrategy(
-                strategy_type="convergence",
-                justification="Test",
-                series_arc="Arc",
-                episode_arc_outline=["Ep1", "Ep2"],
-                episode_arc_details=[
-                    EpisodeArcDetail(
-                        episode_number=1,
-                        arc_summary="Arc summary",
-                        narrative_stakes="Stakes",
-                        progression_beats=["Beat 1"],
-                        unresolved_questions=["Question 1"],
-                        episode_inquiries=[
-                            {"axis_id": "ax1", "question": "Inquiry 1?"},
-                            {"axis_id": "ax1", "question": "Inquiry 2?"},
-                            {"axis_id": "ax1", "question": "Inquiry 3?"},
-                            {"axis_id": "ax1", "question": "Inquiry 4?"},
-                        ],
-                        payoff_shape="Payoff shape",
-                    )
-                ],
-            )
-
-    def test_rejects_episode_inquiries_below_minimum(self):
-        with pytest.raises(ValidationError):
-            EpisodeArcDetail(
-                episode_number=1,
-                arc_summary="Arc summary",
-                narrative_stakes="Stakes",
-                progression_beats=["Beat 1"],
-                unresolved_questions=["Question 1"],
-                episode_inquiries=[
-                    {"axis_id": "ax1", "question": "Inquiry 1?"},
-                    {"axis_id": "ax1", "question": "Inquiry 2?"},
-                    {"axis_id": "ax1", "question": "Inquiry 3?"},
-                ],
-                payoff_shape="Payoff shape",
-            )
-
-    def test_rejects_recommended_episode_count_above_nine(self):
-        with pytest.raises(ValidationError):
-            NarrativeStrategy(
-                strategy_type="convergence",
-                justification="Test",
-                series_arc="Arc",
-                recommended_episode_count=10,
-                episode_arc_details=[],
-            )
-
-
-class TestSpokenScript:
-    def test_roundtrip(self):
-        spoken = SpokenScript(
-            episode_number=1, title="Ep 1",
-            segments=[
-                SpokenSegment(segment_id="s1", text="Hello listeners.", max_words=250),
-            ],
-            tts_provider="openai",
-        )
-        data = json.loads(spoken.model_dump_json())
-        restored = SpokenScript.model_validate(data)
-        assert len(restored.segments) == 1
-        assert restored.segments[0].speech_hints.style == "neutral"
-        assert restored.segments[0].ssml_hints.delivery_style == "neutral"
-
-    def test_spoken_segment_normalizes_invalid_hint_values(self):
-        segment = SpokenSegment.model_validate(
-            {
-                "segment_id": "s1",
-                "text": "Hello listeners.",
-                "ssml_hints": {
-                    "delivery_style": "wild",
-                    "emphasis_level": "MAXIMUM",
-                    "pause_before_ms": -20,
-                    "pause_after_ms": "9999",
-                    "speech_rate": "warp",
-                },
-            }
-        )
-        assert segment.speech_hints.style == "neutral"
-        assert segment.speech_hints.intensity == "strong"
-        assert segment.speech_hints.pause_before_ms == 0
-        assert segment.speech_hints.pause_after_ms == 2000
-        assert segment.speech_hints.pace == "normal"
-        assert segment.ssml_hints.delivery_style == "neutral"
-
-    def test_spoken_segment_rejects_extra_hint_keys(self):
-        with pytest.raises(ValidationError):
-            SpokenSegment.model_validate(
-                {
-                    "segment_id": "s1",
-                    "text": "Hello listeners.",
-                    "ssml_hints": {
-                        "delivery_style": "neutral",
-                        "unexpected": True,
-                    },
-                }
-            )
-
-    def test_spoken_segment_accepts_canonical_speech_hints(self):
-        segment = SpokenSegment.model_validate(
-            {
-                "segment_id": "s1",
-                "text": "Hello listeners.",
-                "speech_hints": {
-                    "style": "measured",
-                    "intensity": "medium",
-                    "pace": "fast",
-                    "pronunciation_hints": {"text": "Nehru", "spoken_as": "NAY-roo"},
-                    "emphasis_targets": "transfer of power",
-                    "render_strategy": "isolate_phrase",
-                },
-            }
-        )
-        assert segment.speech_hints.style == "measured"
-        assert segment.speech_hints.intensity == "medium"
-        assert segment.speech_hints.pace == "faster"
-        assert segment.speech_hints.pronunciation_hints[0].spoken_as == "NAY-roo"
-        assert segment.speech_hints.emphasis_targets == ["transfer of power"]
-        assert segment.speech_hints.render_strategy == "isolate_phrase"
-
-
-class TestRenderManifest:
-    def test_roundtrip(self):
-        manifest = RenderManifest(
-            episode_number=1,
-            segments=[
-                RenderSegment(
-                    segment_id="rs1", text="Hello",
-                    voice_id="ballad", speed=1.0,
-                ),
-            ],
-            total_segments=1,
-            estimated_duration_seconds=120,
-        )
-        data = json.loads(manifest.model_dump_json())
-        restored = RenderManifest.model_validate(data)
-        assert restored.total_segments == 1
-
-
-class TestAudioManifest:
-    def test_roundtrip(self):
-        manifest = AudioManifest(
-            episode_number=1,
-            audio_segments=[
-                AudioSegmentResult(
-                    segment_id="as1", audio_path="/tmp/audio.mp3",
-                    duration_seconds=60.0, success=True,
-                ),
-            ],
-            total_duration_seconds=60.0,
-        )
-        data = json.loads(manifest.model_dump_json())
-        restored = AudioManifest.model_validate(data)
-        assert restored.audio_segments[0].success
+def _normal_scene(scene_id: str = "scene_1", occurrence_id: str = "occ_1") -> SceneCard:
+    return SceneCard(
+        scene_id=scene_id,
+        title="The order arrives",
+        scene_role="setup",
+        dominant_cluster_occurrence_id=occurrence_id,
+        entry_image="A clerk opens the envelope.",
+        local_question="What changes first?",
+        observable_detail="Hands freeze over the paper.",
+        intended_move="Move from abstract policy to lived consequence.",
+        actors=[SceneActor(name="Clerk", role_in_scene="recipient")],
+        primitive_ids=["tp_1"],
+        passage_ids=["p1", "p2"],
+        estimated_duration_seconds=600,
+    )
 
 
 class TestThematicProject:
-    def test_roundtrip(self):
-        project = ThematicProject(
-            project_id="proj1", theme="AI and creativity",
-            requested_episode_count=4,
-            recommended_episode_count=8,
-            episode_count=3, status=ProjectStatus.INGESTING,
-        )
-        data = json.loads(project.model_dump_json())
-        restored = ThematicProject.model_validate(data)
-        assert restored.status == ProjectStatus.INGESTING
-        assert restored.requested_episode_count == 4
-        assert restored.recommended_episode_count == 8
+    def test_recommended_episode_count_accepts_new_bounds(self):
+        project = ThematicProject(theme="War on terror", recommended_episode_count=6)
+        assert project.recommended_episode_count == 6
 
-    def test_with_books(self):
-        project = ThematicProject(
-            project_id="proj1", theme="Test",
-            books=[
-                BookRecord(
-                    book_id="b1", title="Book 1", author="Author A",
-                    source_path="/test.txt", source_type="txt",
-                ),
-                BookRecord(
-                    book_id="b2", title="Book 2", author="Author B",
-                    source_path="/test2.txt", source_type="txt",
-                ),
-            ],
-            episode_count=3,
-        )
-        assert len(project.books) == 2
+    def test_recommended_episode_count_rejects_old_lower_bound(self):
+        with pytest.raises(ValidationError):
+            ThematicProject(theme="War on terror", recommended_episode_count=5)
 
-    def test_sub_themes_trim_dedupe_preserve_order(self):
-        project = ThematicProject(
-            project_id="proj1",
-            theme="Test",
-            sub_themes=[" borders ", "displacement", "borders", " governance "],
-        )
-        assert project.sub_themes == ["borders", "displacement", "governance"]
 
-    def test_sub_themes_rejects_empty_entries(self):
-        with pytest.raises(ValidationError, match="non-empty"):
-            ThematicProject(
-                project_id="proj1",
-                theme="Test",
-                sub_themes=["valid", "   "],
+class TestSynthesisModels:
+    def test_episode_candidate_cluster_requires_primary_member_in_member_ids(self):
+        with pytest.raises(ValidationError, match="primary_member_id"):
+            EpisodeCandidateCluster(
+                title="Cluster",
+                summary="Summary",
+                primary_member_id="tp_missing",
+                member_ids=["tp_1"],
+                local_question="What changes?",
+                local_payoff_shape="reveal",
             )
 
-    def test_sub_themes_max_fifteen(self):
-        with pytest.raises(ValidationError, match="at most 15"):
-            ThematicProject(
-                project_id="proj1",
-                theme="Test",
-                sub_themes=[
-                    "a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8",
-                    "a9", "a10", "a11", "a12", "a13", "a14", "a15", "a16",
+    def test_synthesis_map_rejects_unknown_cluster_member_ids(self):
+        with pytest.raises(ValidationError, match="unknown member_ids"):
+            SynthesisMap(
+                project_id="proj",
+                turning_points=[_turning_point("tp_1")],
+                episode_candidate_clusters=[
+                    EpisodeCandidateCluster(
+                        cluster_id="cluster_1",
+                        title="Cluster",
+                        summary="Summary",
+                        primary_member_id="tp_1",
+                        member_ids=["tp_1", "tp_999"],
+                        local_question="What changes?",
+                        local_payoff_shape="reveal",
+                    )
                 ],
             )
 
-    def test_rejects_recommended_episode_count_above_nine(self):
+    def test_live_question_requires_at_least_two_candidate_readings(self):
         with pytest.raises(ValidationError):
-            ThematicProject(
-                project_id="proj1",
-                theme="Test",
-                recommended_episode_count=10,
+            LiveQuestion(
+                id="lq_1",
+                title="Competing readings",
+                summary="The evidence supports multiple paths.",
+                core_passage_ids=["p1"],
+                candidate_readings=[
+                    CandidateReading(
+                        label="reading_a",
+                        summary="Only one reading present.",
+                        support_passage_ids=["p1"],
+                    )
+                ],
             )
 
-
-class TestPipelineConfig:
-    def test_defaults(self):
-        config = PipelineConfig()
-        assert config.max_axes == 30
-        assert config.min_axes == 25
-        assert config.passage_retrieval_percentage == 0.25
-        assert config.passage_retrieval_min_per_book == 20
-        assert config.passage_retrieval_max_per_book == 50
-        assert config.axis_candidate_target_total == 120
-        assert config.pre_axis_total_budget == 3600
-        assert config.pre_axis_floor == 60
-        assert config.pre_axis_relevance_power == 1.3
-        assert config.pre_axis_cross_axis_reuse_penalty == 0.25
-        assert config.admission_floor_per_book == 2
-        assert config.retrieval_relevance_power == 1.3
-        assert config.retrieval_soft_threshold == 0.35
-        assert config.chapter_penalty_weight == 0.05
-        assert config.rerank_top_k == 30
-        assert config.post_axis_total_budget == 4000
-        assert config.post_axis_floor == 20
-        assert config.post_axis_cap == 240
-        assert config.post_axis_signal_power == 2.5
-        assert config.mmr_enabled is True
-        assert config.mmr_post_lambda == 0.6
-        assert config.mmr_post_source_penalty_weight == 1.0
-        assert config.mmr_synthesis_lambda == 0.75
-        assert config.mmr_planning_lambda == 0.75
-        assert config.synthesis_axis_pct == 0.25
-        assert config.synthesis_axis_min == 19
-        assert config.synthesis_axis_max == 100
-        assert config.synthesis_total_passage_cap == 800
-        assert config.planning_axis_pct == 0.35
-        assert config.planning_axis_min == 25
-        assert config.planning_axis_max == 100
-        assert config.planning_total_passage_cap == 300
-        assert config.max_repair_attempts == 3
-        assert config.episode_write_concurrency == 8
-        assert config.passage_extraction_concurrency == 13
-        assert config.target_episode_minutes == 140.0
-        assert config.min_episode_minutes == 125.0
-        assert config.duration_shortfall_policy == "warn"
-
-    def test_custom_values(self):
-        config = PipelineConfig(
-            max_axes=10, synthesis_quality_threshold=0.7,
-            episode_write_concurrency=4,
+    def test_synthesis_map_roundtrip_preserves_cluster_first_shape(self):
+        synthesis_map = SynthesisMap(
+            project_id="proj",
+            turning_points=[_turning_point("tp_1")],
+            live_questions=[
+                LiveQuestion(
+                    id="lq_1",
+                    title="Competing readings",
+                    summary="The evidence supports multiple paths.",
+                    core_passage_ids=["p1"],
+                    candidate_readings=[
+                        CandidateReading(
+                            label="reading_a",
+                            summary="One reading.",
+                            support_passage_ids=["p1"],
+                        ),
+                        CandidateReading(
+                            label="reading_b",
+                            summary="Another reading.",
+                            support_passage_ids=["p2"],
+                        ),
+                    ],
+                )
+            ],
+            episode_candidate_clusters=[
+                EpisodeCandidateCluster(
+                    cluster_id="cluster_1",
+                    title="Opening cluster",
+                    summary="A compact causal chain.",
+                    primary_member_id="tp_1",
+                    member_ids=["tp_1", "lq_1"],
+                    local_question="Why does the order matter?",
+                    local_payoff_shape="reveal",
+                )
+            ],
+            quality_score=0.7,
         )
-        assert config.max_axes == 10
-        assert config.synthesis_quality_threshold == 0.7
+        restored = SynthesisMap.model_validate(json.loads(synthesis_map.model_dump_json()))
+        assert restored.episode_candidate_clusters[0].primary_member_id == "tp_1"
+        assert restored.live_questions[0].candidate_readings[1].label == "reading_b"
 
-    def test_retrieval_budget_bounds_validation(self):
-        with pytest.raises(ValidationError, match="passage_retrieval_max_per_book"):
-            PipelineConfig(
-                passage_retrieval_min_per_book=21,
-                passage_retrieval_max_per_book=20,
+
+class TestNarrativeStrategy:
+    def test_strategy_episode_requires_primary_on_first_and_last_occurrence(self):
+        with pytest.raises(ValidationError, match="first cluster_path occurrence must be primary"):
+            StrategyEpisode(
+                episode_number=1,
+                title="Episode 1",
+                driving_question="What changed?",
+                arc_summary="Arc",
+                cluster_path=[
+                    ClusterPathOccurrence(
+                        occurrence_id="occ_1",
+                        cluster_id="cluster_1",
+                        usage="echo",
+                        transition_note="",
+                    )
+                ],
             )
 
-    def test_axis_budget_bounds_validation(self):
-        with pytest.raises(ValidationError, match="post_axis_cap"):
-            PipelineConfig(post_axis_floor=50, post_axis_cap=20)
-        with pytest.raises(ValidationError, match="synthesis_axis_max"):
-            PipelineConfig(synthesis_axis_min=40, synthesis_axis_max=20)
-        with pytest.raises(ValidationError, match="planning_axis_max"):
-            PipelineConfig(planning_axis_min=50, planning_axis_max=30)
+    def test_strategy_episode_requires_transition_notes_after_first_occurrence(self):
+        with pytest.raises(ValidationError, match="transition_note"):
+            StrategyEpisode(
+                episode_number=1,
+                title="Episode 1",
+                driving_question="What changed?",
+                arc_summary="Arc",
+                cluster_path=[
+                    ClusterPathOccurrence(
+                        occurrence_id="occ_1",
+                        cluster_id="cluster_1",
+                        usage="primary",
+                        transition_note="",
+                    ),
+                    ClusterPathOccurrence(
+                        occurrence_id="occ_2",
+                        cluster_id="cluster_1",
+                        usage="primary",
+                        transition_note="",
+                    ),
+                ],
+            )
 
-    def test_rejects_removed_retrieval_weighting_fields(self):
-        with pytest.raises(ValidationError):
-            PipelineConfig(retrieval_conf_weight=0.2)
+    def test_narrative_strategy_rejects_primary_cluster_in_multiple_home_episodes(self):
+        with pytest.raises(ValidationError, match="multiple primary home episodes"):
+            NarrativeStrategy(
+                strategy_type="convergence",
+                justification="Use converging local causal chains.",
+                series_arc="Each episode carries one cluster home.",
+                episode_arc_outline=["Ep 1", "Ep 2"],
+                episodes=[
+                    StrategyEpisode(
+                        episode_number=1,
+                        title="Episode 1",
+                        driving_question="Why begin here?",
+                        arc_summary="Arc 1",
+                        cluster_path=[
+                            ClusterPathOccurrence(
+                                occurrence_id="occ_1",
+                                cluster_id="cluster_1",
+                                usage="primary",
+                                transition_note="",
+                            )
+                        ],
+                    ),
+                    StrategyEpisode(
+                        episode_number=2,
+                        title="Episode 2",
+                        driving_question="Why return?",
+                        arc_summary="Arc 2",
+                        cluster_path=[
+                            ClusterPathOccurrence(
+                                occurrence_id="occ_2",
+                                cluster_id="cluster_1",
+                                usage="primary",
+                                transition_note="",
+                            )
+                        ],
+                    ),
+                ],
+            )
 
 
-class TestEnums:
-    def test_synthesis_tag_values(self):
-        assert SynthesisTag.AGREES_WITH == "agrees_with"
-        assert SynthesisTag.CONTRADICTS == "contradicts"
+class TestPlanningModels:
+    def test_normal_scene_card_requires_dominant_occurrence(self):
+        with pytest.raises(ValidationError, match="normal scene cards require"):
+            SceneCard(
+                scene_id="scene_1",
+                title="The order arrives",
+                scene_role="setup",
+                entry_image="Envelope on desk.",
+                local_question="What changes first?",
+                observable_detail="Hands stop.",
+                intended_move="Set up the stakes.",
+                passage_ids=["p1"],
+            )
 
-    def test_insight_type_values(self):
-        assert InsightType.SYNCHRONICITY == "synchronicity"
-        assert InsightType.EPISTEMIC_DRIFT == "epistemic_drift"
+    def test_bridge_scene_card_requires_bridge_references(self):
+        with pytest.raises(ValidationError, match="bridge scene cards require"):
+            SceneCard(
+                scene_id="scene_bridge",
+                title="Bridge",
+                card_kind="bridge",
+                scene_role="synthesis",
+                entry_image="The silence shifts.",
+                local_question="How do we move forward?",
+                observable_detail="A messenger leaves.",
+                intended_move="Bridge occurrences.",
+                passage_ids=["p1"],
+            )
 
-    def test_project_status_values(self):
-        assert ProjectStatus.INGESTING == "ingesting"
-        assert ProjectStatus.COMPLETE == "complete"
+    def test_episode_plan_draft_validates_framing_handoff_and_bridge_limit(self):
+        with pytest.raises(ValidationError, match="handoff_scene_card_id"):
+            EpisodePlanDraft(
+                episode_number=1,
+                title="Episode 1",
+                driving_question="Why begin here?",
+                framing=FramingBlock(
+                    opening_image="Image",
+                    threat_or_unresolved_action="Threat",
+                    opening_question="Question",
+                    handoff_scene_card_id="missing_scene",
+                ),
+                scene_cards=[_normal_scene()],
+            )
+
+    def test_episode_plan_roundtrip(self):
+        draft = EpisodePlan(
+            episode_number=1,
+            title="Episode 1",
+            driving_question="Why begin here?",
+            thematic_focus="Opening moves",
+            arc_summary="The episode traces one local causal chain.",
+            unresolved_questions=["What still remains unclear?"],
+            framing=_framing(),
+            scene_cards=[_normal_scene()],
+            target_duration_minutes=140.0,
+            target_word_count=16800,
+        )
+        restored = EpisodePlan.model_validate(json.loads(draft.model_dump_json()))
+        assert restored.framing.handoff_scene_card_id == "scene_1"
+        assert restored.scene_cards[0].actors[0].name == "Clerk"
 
 
-class TestChunkingConfig:
-    def test_defaults(self):
-        config = ChunkingConfig()
-        assert config.max_chunk_words == 400
-        assert config.overlap_words == 50
-        assert config.min_chunk_words == 80
+class TestSpeechAndStyleModels:
+    def test_spoken_script_roundtrip_preserves_sections_and_transitions(self):
+        spoken = SpokenScript(
+            episode_number=1,
+            title="Episode 1",
+            framing=_framing(),
+            sections=[
+                SpokenSection(
+                    section_id="section_1",
+                    text="The convoy moves before dawn.",
+                    speech_hints=SpeechHints(style="measured", pace="slower"),
+                )
+            ],
+            transitions=[
+                SpokenTransition(
+                    transition_id="transition_1",
+                    text="Then the order reaches the city.",
+                )
+            ],
+        )
+        restored = SpokenScript.model_validate(json.loads(spoken.model_dump_json()))
+        assert restored.sections[0].speech_hints.style == "measured"
+        assert restored.transitions[0].transition_id == "transition_1"
 
-    def test_custom_split_on(self):
-        config = ChunkingConfig(split_on=["\n\n", ". ", "! "])
-        assert len(config.split_on) == 3
+    def test_style_audit_report_counts_roundtrip(self):
+        report = StyleAuditReport(
+            episode_number=1,
+            warnings=[
+                StyleWarning(
+                    warning_type="author_hand_language",
+                    text_unit_id="section_1",
+                    message="Avoid telling the listener what the author means.",
+                )
+            ],
+            counts_by_type={"author_hand_language": 1},
+        )
+        restored = StyleAuditReport.model_validate(json.loads(report.model_dump_json()))
+        assert restored.counts_by_type["author_hand_language"] == 1

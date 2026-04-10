@@ -139,6 +139,7 @@ class TestRunCommand:
                 project_id,
             ):
                 captured["config_provider"] = config.tts_provider
+                captured["passage_extraction_concurrency"] = config.passage_extraction_concurrency
                 return SimpleNamespace(
                     project_id="proj-1",
                     status=SimpleNamespace(value="complete"),
@@ -162,9 +163,12 @@ class TestRunCommand:
                 "--skip-audio",
                 "--tts-provider",
                 "openai",
+                "--passage-extraction-concurrency",
+                "8",
             ],
         )
 
         assert result.exit_code == 0
         assert captured["settings_provider"] == "openai-compatible"
         assert captured["config_provider"] == "openai-compatible"
+        assert captured["passage_extraction_concurrency"] == 8

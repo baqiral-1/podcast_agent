@@ -25,17 +25,18 @@ from typing import Any, Callable
 from uuid import uuid4
 
 from podcast_agent.agents.book_summary import BookSummaryAgent
-from podcast_agent.agents.framing import EpisodeFramingAgent
+from podcast_agent.agents.chapter_summary import ChapterSummaryAgent
 from podcast_agent.agents.narrative_strategy import NarrativeStrategyAgent
 from podcast_agent.agents.passage_extraction import PassageExtractionAgent
 from podcast_agent.agents.planning import EpisodePlanningAgent
 from podcast_agent.agents.repair import RepairAgent
 from podcast_agent.agents.spoken_delivery_agent import SpokenDeliveryAgent
-from podcast_agent.agents.synthesis_mapping import SynthesisMappingAgent
+from podcast_agent.agents.style_audit import StyleAuditAgent
+from podcast_agent.agents.synthesis_consolidation import SynthesisConsolidationAgent
+from podcast_agent.agents.synthesis_primitives import SynthesisPrimitivesAgent
 from podcast_agent.agents.theme_decomposition import ThemeDecompositionAgent
-from podcast_agent.agents.chapter_summary import ChapterSummaryAgent
 from podcast_agent.agents.validation import GroundingValidationAgent
-from podcast_agent.agents.writing import WritingAgent
+from podcast_agent.agents.writing import WritingAgent, WritingAgentNoCitations
 from podcast_agent.config import Settings
 from podcast_agent.ingestion import read_source_text, extract_chapters_from_source
 from podcast_agent.langchain.llm import build_llm_client
@@ -51,30 +52,35 @@ from podcast_agent.schemas.models import (
     ChapterInfo,
     ChunkingConfig,
     CoverageStats,
-    EpisodeAssignment,
-    EpisodeBeat,
-    EpisodeFraming,
+    EpisodeCandidateCluster,
     EpisodePlan,
     EpisodeScript,
-    EpisodeSynthesisContext,
-    EpisodeSynthesisTension,
-    EpisodeMergedNarrativeRef,
     ExtractedPassage,
+    FramingBlock,
     GroundingReport,
+    LiveQuestion,
     NarrativeStrategy,
     PassagePair,
     PipelineConfig,
+    ProseSection,
     ProjectStatus,
     RenderManifest,
     RenderSegment,
     RepairResult,
+    ScriptTransition,
+    SceneCard,
+    SceneWorthyConsequence,
     SegmentDiff,
-    ScriptSegment,
-    SpeechHints,
+    SpokenSection,
     SpokenScript,
-    SpokenSegment,
+    SpokenTransition,
+    StyleAuditReport,
     SynthesisMap,
+    SynthesisPrimitiveBase,
+    SynthesisPrimitivesArtifact,
     SynthesisTag,
+    TurningPoint,
+    CausalMechanism,
     TextChunk,
     ThematicAxis,
     ThematicCorpus,
@@ -475,7 +481,7 @@ def _trim_candidate_texts_by_bm25(axis: ThematicAxis, candidates: list[dict]) ->
             score = _bm25_score(tokens, query_terms, idf, avg_len)
             scored.append((score, idx, sentence))
         scored.sort(key=lambda item: (-item[0], item[1]))
-        top_n = max(1, math.ceil(len(sentences) / 5))
+        top_n = max(1, math.ceil(len(sentences) / 3))
         selected = sorted(scored[:top_n], key=lambda item: item[1])
         trimmed = " ".join(sentence for _, _, sentence in selected).strip()
         if trimmed:
@@ -2175,7 +2181,6 @@ def _normalize_spoken_segments(
 
 def build_render_manifest(
     spoken_script: SpokenScript,
-    framing: EpisodeFraming | None,
     voice_id: str = "ballad",
     speed: float = 1.0,
     words_per_minute: int = 130,
@@ -2183,35 +2188,54 @@ def build_render_manifest(
 ) -> RenderManifest:
     segments: list[RenderSegment] = []
     tts_provider = spoken_script.tts_provider
-
-    if framing and framing.cold_open:
-        segments.append(RenderSegment(
-            text=framing.cold_open, voice_id=voice_id, speed=speed,
-            pause_after_ms=1500,
-        ))
-
-    if framing and framing.recap:
-        segments.append(RenderSegment(
-            text=framing.recap, voice_id=voice_id, speed=speed,
-            pause_before_ms=500, pause_after_ms=1000,
-        ))
-
-    for seg in spoken_script.segments:
-        segments.extend(
-            _render_segments_for_spoken_segment(
-                seg,
+    framing = spoken_script.framing
+    framing_texts = [
+        ("framing_opening_image", framing.opening_image, 0, 900),
+        ("framing_threat", framing.threat_or_unresolved_action, 200, 800),
+        ("framing_question", framing.opening_question, 200, 1000),
+    ]
+    if framing.recap:
+        framing_texts.insert(0, ("framing_recap", framing.recap, 500, 900))
+    if framing.preview:
+        framing_texts.append(("framing_preview", framing.preview, 900, 0))
+    for segment_id, text, pause_before, pause_after in framing_texts:
+        if not text.strip():
+            continue
+        segments.append(
+            RenderSegment(
+                segment_id=segment_id,
+                text=text,
                 voice_id=voice_id,
                 speed=speed,
-                tts_provider=tts_provider,
-                base_instructions=base_instructions,
+                pause_before_ms=pause_before,
+                pause_after_ms=pause_after,
             )
         )
 
-    if framing and framing.preview:
-        segments.append(RenderSegment(
-            text=framing.preview, voice_id=voice_id, speed=speed,
-            pause_before_ms=1000,
-        ))
+    for section in spoken_script.sections:
+        segments.append(
+            RenderSegment(
+                segment_id=section.section_id,
+                text=section.text,
+                voice_id=voice_id,
+                speed=speed,
+                pause_before_ms=section.speech_hints.pause_before_ms,
+                pause_after_ms=section.speech_hints.pause_after_ms,
+                instructions=base_instructions,
+            )
+        )
+    for transition in spoken_script.transitions:
+        segments.append(
+            RenderSegment(
+                segment_id=transition.transition_id,
+                text=transition.text,
+                voice_id=voice_id,
+                speed=speed,
+                pause_before_ms=transition.speech_hints.pause_before_ms,
+                pause_after_ms=transition.speech_hints.pause_after_ms,
+                instructions=base_instructions,
+            )
+        )
 
     total_words = sum(len(seg.text.split()) for seg in segments)
     estimated_seconds = int(total_words / words_per_minute * 60)
@@ -2222,6 +2246,63 @@ def build_render_manifest(
         total_segments=len(segments),
         estimated_duration_seconds=estimated_seconds,
     )
+
+
+def _script_text_units(script: EpisodeScript) -> list[tuple[str, str]]:
+    units: list[tuple[str, str]] = []
+    for section in script.prose_sections:
+        units.append((section.section_id, section.text))
+    for transition in script.transitions:
+        units.append((transition.transition_id, transition.text))
+    return units
+
+
+def _script_total_word_count(script: EpisodeScript) -> int:
+    return sum(len(text.split()) for _, text in _script_text_units(script))
+
+
+def _estimate_duration_seconds_from_words(word_count: int, words_per_minute: float) -> int:
+    if words_per_minute <= 0:
+        return 0
+    return int((float(word_count) / float(words_per_minute)) * 60)
+
+
+def _build_passage_lookup(corpus: ThematicCorpus) -> dict[str, ExtractedPassage]:
+    passage_lookup: dict[str, ExtractedPassage] = {}
+    for axis_passages in corpus.passages_by_axis.values():
+        for passage in axis_passages:
+            passage_lookup[passage.passage_id] = passage
+    return passage_lookup
+
+
+def _primitive_passage_ids(primitive: SynthesisPrimitiveBase) -> list[str]:
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for passage_id in [*primitive.core_passage_ids, *primitive.support_passage_ids]:
+        if not passage_id or passage_id in seen:
+            continue
+        seen.add(passage_id)
+        ordered.append(passage_id)
+    return ordered
+
+
+def _flatten_synthesis_primitives(synthesis_map: SynthesisMap) -> dict[str, SynthesisPrimitiveBase]:
+    flattened: dict[str, SynthesisPrimitiveBase] = {}
+    for item in [
+        *synthesis_map.turning_points,
+        *synthesis_map.scene_worthy_consequences,
+        *synthesis_map.causal_mechanisms,
+        *synthesis_map.live_questions,
+    ]:
+        flattened[item.id] = item
+    return flattened
+
+
+def _scene_cards_to_batches(scene_cards: list[SceneCard]) -> list[list[SceneCard]]:
+    if len(scene_cards) <= 1:
+        return [list(scene_cards)]
+    midpoint = max(1, len(scene_cards) // 2)
+    return [list(scene_cards[:midpoint]), list(scene_cards[midpoint:])]
 
 
 # ---------------------------------------------------------------------------
@@ -2260,14 +2341,19 @@ class PipelineOrchestrator:
         self.book_summary_agent = BookSummaryAgent(self.llm, max_retry_attempts=_retries("book_summary"))
         self.theme_decomposition_agent = ThemeDecompositionAgent(self.llm, max_retry_attempts=_retries("theme_decomposition"))
         self.passage_extraction_agent = PassageExtractionAgent(self.llm, max_retry_attempts=_retries("passage_extraction"))
-        self.synthesis_mapping_agent = SynthesisMappingAgent(self.llm, max_retry_attempts=_retries("synthesis_mapping"))
+        self.synthesis_primitives_agent = SynthesisPrimitivesAgent(self.llm, max_retry_attempts=_retries("synthesis_primitives"))
+        self.synthesis_consolidation_agent = SynthesisConsolidationAgent(self.llm, max_retry_attempts=_retries("synthesis_consolidation"))
         self.narrative_strategy_agent = NarrativeStrategyAgent(self.llm, max_retry_attempts=_retries("narrative_strategy"))
         self.episode_planning_agent = EpisodePlanningAgent(self.llm, max_retry_attempts=_retries("episode_planning"))
         self.writing_agent = WritingAgent(self.llm, max_retry_attempts=_retries("episode_writing"))
+        self.writing_agent_no_citations = WritingAgentNoCitations(
+            self.llm,
+            max_retry_attempts=_retries("episode_writing"),
+        )
         self.grounding_agent = GroundingValidationAgent(self.llm, max_retry_attempts=_retries("grounding_validation"))
         self.repair_agent = RepairAgent(self.llm, max_retry_attempts=_retries("repair"))
         self.spoken_delivery_agent = SpokenDeliveryAgent(self.llm, max_retry_attempts=_retries("spoken_delivery"))
-        self.framing_agent = EpisodeFramingAgent(self.llm, max_retry_attempts=_retries("episode_framing"))
+        self.style_audit_agent = StyleAuditAgent(self.llm, max_retry_attempts=_retries("style_audit"))
 
     def _bind_run_logger(self, project_dir: Path) -> None:
         if self.run_logger.artifact_root != project_dir.parent:
@@ -2417,7 +2503,7 @@ class PipelineOrchestrator:
         ]
         ep_results = await asyncio.gather(*ep_tasks, return_exceptions=True)
 
-        spoken_scripts: list[tuple[int, SpokenScript]] = []
+        spoken_scripts: list[tuple[int, SpokenScript, StyleAuditReport]] = []
         for result in ep_results:
             if isinstance(result, Exception):
                 logger.error("Episode production failed: %s", result)
@@ -2429,23 +2515,8 @@ class PipelineOrchestrator:
             corpus=corpus,
             episode_plans=episode_plans,
             project_dir=project_dir,
-            episode_numbers=[episode_number for episode_number, _ in spoken_scripts],
+            episode_numbers=[episode_number for episode_number, _, _ in spoken_scripts],
         )
-
-        # Framing (sequential)
-        framings: dict[int, EpisodeFraming] = {}
-        for i, (ep_num, spoken) in enumerate(spoken_scripts):
-            prev_summary = spoken_scripts[i - 1][1].arc_plan if i > 0 else None
-            next_summary = None
-            if i < len(spoken_scripts) - 1:
-                next_idx = spoken_scripts[i + 1][0] - 1
-                if next_idx < len(episode_plans):
-                    next_summary = episode_plans[next_idx].thematic_focus
-            framing = await self._frame_episode(
-                ep_num, len(spoken_scripts), spoken, prev_summary, next_summary,
-                project, project_dir,
-            )
-            framings[ep_num] = framing
 
         # Phase 4: Audio Rendering (parallel per episode)
         logger.info("Phase 4: Audio Rendering")
@@ -2455,12 +2526,11 @@ class PipelineOrchestrator:
                 ep_num,
                 spoken,
                 project.config,
-                framings.get(ep_num),
                 project_dir,
                 audio_sem,
                 skip_audio=pipeline_config.skip_audio,
             )
-            for ep_num, spoken in spoken_scripts
+            for ep_num, spoken, _ in spoken_scripts
         ]
         await asyncio.gather(*audio_tasks, return_exceptions=True)
 
@@ -3835,60 +3905,62 @@ class PipelineOrchestrator:
             self.run_logger, "synthesis_mapping", project_dir,
             axis_count=len(corpus.axes), total_passages=corpus.total_passages,
         ) as ctx:
+            selected_axis_count = _compute_stage_axis_target_count(
+                axis_total=len(corpus.axes),
+                percentage=project.config.synthesis_axis_pct,
+                minimum=project.config.synthesis_axis_min,
+                maximum=project.config.synthesis_axis_max,
+            )
+            selected_axes = list(corpus.axes[:selected_axis_count])
+            selected_axis_ids = {axis.axis_id for axis in selected_axes}
+            synthesis_total_cap = max(1, project.config.synthesis_total_passage_cap)
+            axis_divisor = max(1, len(selected_axes))
+            base_axis_cap = max(1, synthesis_total_cap // axis_divisor)
+            remainder = max(0, synthesis_total_cap - (base_axis_cap * axis_divisor))
             cross_pair_ids = {
-                pid
+                passage_id
                 for pair in corpus.cross_book_pairs
-                for pid in (pair.passage_a_id, pair.passage_b_id)
+                if pair.axis_id in selected_axis_ids
+                for passage_id in (pair.passage_a_id, pair.passage_b_id)
             }
-            axes_summary = [
-                {"axis_id": a.axis_id, "name": a.name, "description": a.description}
-                for a in corpus.axes
-            ]
-            passages_summary: dict[str, list[dict]] = {}
-            synthesis_selected_by_axis: dict[str, list[ExtractedPassage]] = {}
-            for axis_id, passages in corpus.passages_by_axis.items():
-                synthesis_top_k = _compute_stage_axis_target_count(
-                    axis_total=len(passages),
-                    percentage=project.config.synthesis_axis_pct,
-                    minimum=project.config.synthesis_axis_min,
-                    maximum=project.config.synthesis_axis_max,
-                )
-                selected_passages = _select_synthesis_passages(
-                    passages,
+            synthesis_passages_by_axis: dict[str, list[ExtractedPassage]] = {}
+            for idx, axis in enumerate(selected_axes):
+                axis_cap = base_axis_cap + (1 if idx < remainder else 0)
+                synthesis_passages_by_axis[axis.axis_id] = _select_synthesis_passages(
+                    corpus.passages_by_axis.get(axis.axis_id, []),
                     cross_pair_ids,
-                    top_k=synthesis_top_k,
+                    top_k=axis_cap,
                     use_mmr=project.config.mmr_enabled,
                     mmr_lambda=project.config.mmr_synthesis_lambda,
                 )
-                synthesis_selected_by_axis[axis_id] = selected_passages
-
-            capped_synthesis_by_axis, synthesis_cap_stats = _apply_passage_total_cap_by_axis(
-                passages_by_axis=synthesis_selected_by_axis,
-                total_cap=project.config.synthesis_total_passage_cap,
+            capped_passages_by_axis, cap_report = _apply_passage_total_cap_by_axis(
+                passages_by_axis=synthesis_passages_by_axis,
+                total_cap=synthesis_total_cap,
                 priority_passage_ids=cross_pair_ids,
             )
-            synthesis_passage_total = int(synthesis_cap_stats["output_total"])
-            self.run_logger.log(
-                "synthesis_passage_cap_applied",
-                total_cap=project.config.synthesis_total_passage_cap,
-                input_total=synthesis_cap_stats["input_total"],
-                output_total=synthesis_cap_stats["output_total"],
-                priority_total=synthesis_cap_stats["priority_total"],
-                trimmed_non_priority=synthesis_cap_stats["trimmed_non_priority"],
-                soft_overrun=synthesis_cap_stats["soft_overrun"],
-            )
 
-            for axis_id, selected_passages in capped_synthesis_by_axis.items():
+            axes_summary = [
+                {
+                    "axis_id": a.axis_id,
+                    "name": a.name,
+                    "description": a.description,
+                    "guiding_questions": a.guiding_questions,
+                }
+                for a in selected_axes
+            ]
+            passages_summary: dict[str, list[dict[str, Any]]] = {}
+            for axis_id, passages in capped_passages_by_axis.items():
                 passages_summary[axis_id] = [
                     {
-                        "passage_id": p.passage_id, "book_id": p.book_id,
-                        "text": p.text,
-                        "relevance_score": p.relevance_score,
-                        "synthesis_tags": [t.value for t in p.synthesis_tags],
+                        "passage_id": passage.passage_id,
+                        "book_id": passage.book_id,
+                        "text": passage.text,
+                        "axis_id": passage.axis_id,
+                        "relevance_score": passage.relevance_score,
+                        "synthesis_tags": [tag.value for tag in passage.synthesis_tags],
                     }
-                    for p in selected_passages
+                    for passage in passages
                 ]
-
             cross_pairs = [
                 {
                     "passage_a_id": pp.passage_a_id,
@@ -3897,73 +3969,45 @@ class PipelineOrchestrator:
                     "strength": pp.strength,
                 }
                 for pp in corpus.cross_book_pairs
+                if pp.axis_id in selected_axis_ids
             ]
             book_metadata = [
                 {"book_id": b.book_id, "title": b.title, "author": b.author}
                 for b in project.books
             ]
 
-            payload = self.synthesis_mapping_agent.build_payload(
+            primitives_payload = self.synthesis_primitives_agent.build_payload(
                 project_id=project.project_id, axes_summary=axes_summary,
                 passages_by_axis=passages_summary, cross_book_pairs=cross_pairs,
                 book_metadata=book_metadata,
             )
-            result = await asyncio.to_thread(self.synthesis_mapping_agent.run, payload)
-            synthesis_map = SynthesisMap(
+            primitives = await asyncio.to_thread(self.synthesis_primitives_agent.run, primitives_payload)
+            _save_json(project_dir / "synthesis_primitives.json", primitives)
+
+            consolidation_payload = self.synthesis_consolidation_agent.build_payload(
                 project_id=project.project_id,
-                insights=result.insights,
-                narrative_threads=result.narrative_threads,
-                book_relationship_matrix=result.book_relationship_matrix,
-                unresolved_tensions=result.unresolved_tensions,
-                quality_score=result.quality_score,
-                merged_narratives=result.merged_narratives,
+                primitives=primitives.model_dump(mode="json"),
+                axes_summary=axes_summary,
+                book_metadata=book_metadata,
+                series_size_hint=project.requested_episode_count,
             )
-            merged_narrative_count = _evaluate_synthesis_merged_narrative_count(synthesis_map)
-            if not merged_narrative_count["is_in_range"]:
-                retry_payload = self.synthesis_mapping_agent.build_payload(
-                    project_id=project.project_id,
-                    axes_summary=axes_summary,
-                    passages_by_axis=passages_summary,
-                    cross_book_pairs=cross_pairs,
-                    book_metadata=book_metadata,
-                    synthesis_feedback=_build_synthesis_feedback_for_merged_narrative_count(
-                        merged_narrative_count
-                    ),
-                )
-                retry_result = await asyncio.to_thread(self.synthesis_mapping_agent.run, retry_payload)
-                synthesis_map = SynthesisMap(
-                    project_id=project.project_id,
-                    insights=retry_result.insights,
-                    narrative_threads=retry_result.narrative_threads,
-                    book_relationship_matrix=retry_result.book_relationship_matrix,
-                    unresolved_tensions=retry_result.unresolved_tensions,
-                    quality_score=retry_result.quality_score,
-                    merged_narratives=retry_result.merged_narratives,
-                )
-                merged_narrative_count = _evaluate_synthesis_merged_narrative_count(synthesis_map)
-            if merged_narrative_count["count"] == 0:
-                self.run_logger.log(
-                    "synthesis_mapping_missing_merged_narratives",
-                    observed_count=merged_narrative_count["count"],
-                )
-                raise RuntimeError(
-                    "Synthesis mapping returned zero merged_narratives after retry."
-                )
-            if not merged_narrative_count["is_in_range"]:
-                self.run_logger.log(
-                    "synthesis_mapping_merged_narrative_count_warning",
-                    observed_count=merged_narrative_count["count"],
-                    target_min=merged_narrative_count["minimum"],
-                    target_max=merged_narrative_count["maximum"],
-                )
+            synthesis_map = await asyncio.to_thread(
+                self.synthesis_consolidation_agent.run,
+                consolidation_payload,
+            )
             _save_json(project_dir / "synthesis_map.json", synthesis_map)
 
             ctx["output_summary"] = {
-                "insights": len(synthesis_map.insights),
-                "threads": len(synthesis_map.narrative_threads),
+                "selected_axes": len(selected_axes),
+                "selected_passages": sum(len(items) for items in capped_passages_by_axis.values()),
+                "synthesis_cap": synthesis_total_cap,
+                "cap_report": cap_report,
+                "clusters": len(synthesis_map.episode_candidate_clusters),
+                "turning_points": len(synthesis_map.turning_points),
+                "consequences": len(synthesis_map.scene_worthy_consequences),
+                "mechanisms": len(synthesis_map.causal_mechanisms),
+                "live_questions": len(synthesis_map.live_questions),
                 "quality_score": synthesis_map.quality_score,
-                "synthesis_passages": synthesis_passage_total,
-                "merged_narratives": len(synthesis_map.merged_narratives),
             }
             return synthesis_map
 
@@ -3976,40 +4020,9 @@ class PipelineOrchestrator:
     ) -> NarrativeStrategy:
         async with _stage_log(
             self.run_logger, "narrative_strategy", project_dir,
-            insight_count=len(synthesis_map.insights),
+            cluster_count=len(synthesis_map.episode_candidate_clusters),
         ) as ctx:
-            merged_catalog = _build_merged_narrative_catalog(synthesis_map)
-            tension_catalog = _build_tension_catalog(synthesis_map)
-            synthesis_summary = {
-                "insights": [
-                    {
-                        "insight_id": i.insight_id,
-                        "insight_type": i.insight_type.value,
-                        "title": i.title,
-                        "description": i.description,
-                        "passage_ids": i.passage_ids,
-                        "axis_ids": i.axis_ids,
-                        "podcast_potential": i.podcast_potential,
-                        "treatment": i.treatment,
-                    }
-                    for i in synthesis_map.insights
-                ],
-                "narrative_threads": [
-                    {
-                        "thread_id": t.thread_id,
-                        "title": t.title,
-                        "description": t.description,
-                        "insight_ids": t.insight_ids,
-                        "arc_type": t.arc_type,
-                    }
-                    for t in synthesis_map.narrative_threads
-                ],
-                "unresolved_tensions": tension_catalog,
-                "merged_narratives": merged_catalog,
-                "quality_score": synthesis_map.quality_score,
-                "insight_count": len(synthesis_map.insights),
-                "thread_count": len(synthesis_map.narrative_threads),
-            }
+            synthesis_summary = synthesis_map.model_dump(mode="json")
             thematic_axes = []
             for axis in corpus.axes:
                 passages = corpus.passages_by_axis.get(axis.axis_id, [])
@@ -4041,53 +4054,12 @@ class PipelineOrchestrator:
                 episode_count=project.requested_episode_count,
             )
             strategy = await asyncio.to_thread(self.narrative_strategy_agent.run, payload)
-            merged_assignment_report = _evaluate_strategy_merged_narrative_assignments(
-                strategy=strategy,
-                merged_catalog=merged_catalog,
-            )
-            if merged_assignment_report["has_issues"]:
-                retry_payload = self.narrative_strategy_agent.build_payload(
-                    synthesis_map=synthesis_summary,
-                    thematic_axes=thematic_axes,
-                    project_metadata=project_metadata,
-                    episode_count=project.requested_episode_count,
-                    strategy_feedback=_build_strategy_feedback_for_merged_narratives(
-                        merged_assignment_report
-                    ),
-                )
-                strategy = await asyncio.to_thread(self.narrative_strategy_agent.run, retry_payload)
-                merged_assignment_report = _evaluate_strategy_merged_narrative_assignments(
-                    strategy=strategy,
-                    merged_catalog=merged_catalog,
-                )
-            if merged_assignment_report["has_issues"]:
-                self.run_logger.log(
-                    "narrative_strategy_merged_narrative_assignment_failed",
-                    problem_count=merged_assignment_report["problem_count"],
-                    duplicate_groups=merged_assignment_report.get("duplicate_groups", []),
-                    episodes=[
-                        {
-                            "episode_number": item["episode_number"],
-                            "assigned_id": item["assigned_id"],
-                            "expected_count": item["expected_count"],
-                            "invalid_assigned_id": item["invalid_assigned_id"],
-                            "status": item["status"],
-                            "duplicate_episode_numbers": item.get("duplicate_episode_numbers", []),
-                        }
-                        for item in merged_assignment_report["episodes"]
-                        if item["status"] != "ok"
-                    ],
-                )
-                raise RuntimeError(
-                    "Narrative strategy merged_narrative_id assignments invalid after retry."
-                )
             _save_json(project_dir / "narrative_strategy.json", strategy)
 
             ctx["output_summary"] = {
                 "strategy": strategy.strategy_type,
                 "recommended_episode_count": strategy.recommended_episode_count,
-                "episode_assignments": len(strategy.episode_assignments),
-                "merged_assignment_issues": merged_assignment_report["problem_count"],
+                "episodes": len(strategy.episodes),
             }
             return strategy
 
@@ -4143,23 +4115,26 @@ class PipelineOrchestrator:
             self.run_logger, "episode_planning", project_dir,
             episode_count=project.episode_count, strategy=strategy.strategy_type,
         ) as ctx:
-            assignment_map: dict[int, EpisodeAssignment] = {
-                assignment.episode_number: assignment
-                for assignment in strategy.episode_assignments
+            episode_map = {
+                episode.episode_number: episode
+                for episode in strategy.episodes
             }
-            missing_assignments = [
+            missing_episodes = [
                 episode_number
                 for episode_number in range(1, project.episode_count + 1)
-                if episode_number not in assignment_map
+                if episode_number not in episode_map
             ]
-            if missing_assignments:
+            if missing_episodes:
                 raise RuntimeError(
-                    "Narrative strategy did not assign axes/insight_ids for "
-                    f"episodes: {missing_assignments}"
+                    "Narrative strategy did not assign cluster paths for "
+                    f"episodes: {missing_episodes}"
                 )
-            book_size_share_by_id = _resolve_book_size_shares(
-                project.books,
-            )
+            passage_lookup = _build_passage_lookup(corpus)
+            primitive_lookup = _flatten_synthesis_primitives(synthesis_map)
+            cluster_lookup = {
+                cluster.cluster_id: cluster
+                for cluster in synthesis_map.episode_candidate_clusters
+            }
             project_metadata = {
                 "theme": project.theme,
                 "sub_themes": project.sub_themes,
@@ -4168,409 +4143,130 @@ class PipelineOrchestrator:
                     {"book_id": b.book_id, "title": b.title, "author": b.author}
                     for b in project.books
                 ],
-                "attribution_budget": project.config.attribution_budget,
-                "book_size_share_by_id": book_size_share_by_id,
+                "target_episode_minutes": project.config.target_episode_minutes,
+                "min_episode_minutes": project.config.min_episode_minutes,
             }
-            insights_by_id = {insight.insight_id: insight for insight in synthesis_map.insights}
-            merged_catalog = _build_merged_narrative_catalog(synthesis_map)
-            tension_catalog = _build_tension_catalog(synthesis_map)
-            cross_pair_ids = {
-                pid
-                for pair in corpus.cross_book_pairs
-                for pid in (pair.passage_a_id, pair.passage_b_id)
-            }
-            adjusted_episodes: list[EpisodePlan] = []
-            realization_reports: list[dict[str, Any]] = []
-            ordered_assignments = [
-                assignment_map[episode_number]
+            planned_episodes: list[EpisodePlan] = []
+            planning_reports: list[dict[str, Any]] = []
+            ordered_episodes = [
+                episode_map[episode_number]
                 for episode_number in range(1, project.episode_count + 1)
             ]
-            planning_requests: list[tuple[int, EpisodeAssignment, list[Any], EpisodeSynthesisContext, dict[str, Any]]] = []
-            episode_arc_detail_by_number = {
-                detail.episode_number: detail
-                for detail in strategy.episode_arc_details
-            }
-            for idx, assignment in enumerate(ordered_assignments):
-                selected_insights = [
-                    insights_by_id[insight_id]
-                    for insight_id in assignment.insight_ids
-                    if insight_id in insights_by_id
-                ]
-                selected_insight_passage_ids = {
-                    passage_id
-                    for insight in selected_insights
-                    for passage_id in insight.passage_ids
+            for episode in ordered_episodes:
+                cluster_ids = [occurrence.cluster_id for occurrence in episode.cluster_path]
+                primary_occurrence_ids = {
+                    occurrence.occurrence_id
+                    for occurrence in episode.cluster_path
+                    if occurrence.usage == "primary"
                 }
-                insight_passages_by_id: dict[str, ExtractedPassage] = {}
-                for axis_passages in corpus.passages_by_axis.values():
-                    for passage in axis_passages:
-                        if passage.passage_id not in selected_insight_passage_ids:
+                primitive_ids: list[str] = []
+                seen_primitive_ids: set[str] = set()
+                for cluster_id in cluster_ids:
+                    cluster = cluster_lookup.get(cluster_id)
+                    if cluster is None:
+                        raise RuntimeError(f"Unknown cluster_id in strategy: {cluster_id}")
+                    for member_id in cluster.member_ids:
+                        if member_id in seen_primitive_ids:
                             continue
-                        existing = insight_passages_by_id.get(passage.passage_id)
-                        if existing is None or (
-                            passage.relevance_score,
-                            passage.quotability_score,
-                        ) > (
-                            existing.relevance_score,
-                            existing.quotability_score,
-                        ):
-                            insight_passages_by_id[passage.passage_id] = passage
-                extra_insight_passages = [
-                    insight_passages_by_id[passage_id]
-                    for passage_id in sorted(insight_passages_by_id)
+                        seen_primitive_ids.add(member_id)
+                        primitive_ids.append(member_id)
+                passage_ids: list[str] = []
+                seen_passage_ids: set[str] = set()
+                for primitive_id in primitive_ids:
+                    primitive = primitive_lookup.get(primitive_id)
+                    if primitive is None:
+                        continue
+                    for passage_id in _primitive_passage_ids(primitive):
+                        if passage_id in seen_passage_ids or passage_id not in passage_lookup:
+                            continue
+                        seen_passage_ids.add(passage_id)
+                        passage_ids.append(passage_id)
+                available_passages = [
+                    {
+                        "passage_id": passage_lookup[passage_id].passage_id,
+                        "book_id": passage_lookup[passage_id].book_id,
+                        "text": passage_lookup[passage_id].text,
+                        "chapter_ref": passage_lookup[passage_id].chapter_ref,
+                    }
+                    for passage_id in passage_ids
                 ]
-                synthesis_context = _build_episode_synthesis_context(
-                    assignment=assignment,
-                    selected_insights=selected_insights,
-                    synthesis_map=synthesis_map,
-                    merged_catalog=merged_catalog,
-                    tension_catalog=tension_catalog,
-                )
-                synthesis_subset = synthesis_context.model_dump(mode="json")
-                supporting_by_axis = {
-                    axis_id: _compute_stage_axis_target_count(
-                        axis_total=len(corpus.passages_by_axis.get(axis_id, [])),
-                        percentage=project.config.planning_axis_pct,
-                        minimum=project.config.planning_axis_min,
-                        maximum=project.config.planning_axis_max,
-                    )
-                    for axis_id in assignment.axis_ids
-                }
-                selected_passages_by_axis = _select_episode_planning_passages(
-                    passages_by_axis=corpus.passages_by_axis,
-                    assigned_axis_ids=assignment.axis_ids,
-                    selected_insight_passage_ids=selected_insight_passage_ids,
-                    supporting_passages_per_axis_by_axis=supporting_by_axis,
-                    use_mmr=project.config.mmr_enabled,
-                    mmr_lambda=project.config.mmr_planning_lambda,
-                )
-                planning_priority_ids = selected_insight_passage_ids | cross_pair_ids
-                capped_passages_by_axis, planning_cap_stats = _apply_passage_total_cap_by_axis(
-                    passages_by_axis=selected_passages_by_axis,
-                    total_cap=project.config.planning_total_passage_cap,
-                    priority_passage_ids=planning_priority_ids,
-                )
-                self.run_logger.log(
-                    "planning_passage_cap_applied",
-                    episode=assignment.episode_number,
-                    total_cap=project.config.planning_total_passage_cap,
-                    input_total=planning_cap_stats["input_total"],
-                    output_total=planning_cap_stats["output_total"],
-                    priority_total=planning_cap_stats["priority_total"],
-                    trimmed_non_priority=planning_cap_stats["trimmed_non_priority"],
-                    soft_overrun=planning_cap_stats["soft_overrun"],
-                )
-                available_passages = _build_flat_planning_passage_payload(
-                    assigned_axis_ids=assignment.axis_ids,
-                    passages_by_axis=capped_passages_by_axis,
-                    selected_insight_passage_ids=selected_insight_passage_ids,
-                    extra_insight_passages=extra_insight_passages,
-                )
-                episode_arc_detail = episode_arc_detail_by_number.get(assignment.episode_number)
-                narrative_strategy_payload: dict[str, Any] = {
-                    "strategy_type": strategy.strategy_type,
-                    "episode_arc_detail": (
-                        episode_arc_detail.model_dump(mode="json")
-                        if episode_arc_detail is not None
-                        else None
-                    ),
-                }
-                previous_episode = None
-                if idx > 0:
-                    prev = ordered_assignments[idx - 1]
-                    previous_episode = {
-                        "episode_number": prev.episode_number,
-                        "title": prev.title,
-                        "driving_question": prev.driving_question,
-                        "thematic_focus": prev.thematic_focus,
-                    }
-                next_episode = None
-                if idx + 1 < len(ordered_assignments):
-                    nxt = ordered_assignments[idx + 1]
-                    next_episode = {
-                        "episode_number": nxt.episode_number,
-                        "title": nxt.title,
-                        "driving_question": nxt.driving_question,
-                        "thematic_focus": nxt.thematic_focus,
-                    }
                 payload = self.episode_planning_agent.build_payload(
-                    episode_assignment=assignment.model_dump(mode="json"),
-                    narrative_strategy=narrative_strategy_payload,
-                    synthesis_map=synthesis_subset,
+                    episode=episode.model_dump(mode="json"),
+                    synthesis_map=synthesis_map.model_dump(mode="json"),
                     project_metadata=project_metadata,
                     available_passages=available_passages,
-                    previous_episode=previous_episode,
-                    next_episode=next_episode,
                 )
-                planning_requests.append((idx, assignment, selected_insights, synthesis_context, payload))
-
-            planning_sem = asyncio.Semaphore(project.config.episode_write_concurrency)
-
-            async def _plan_single_episode(
-                idx: int,
-                assignment: EpisodeAssignment,
-                selected_insights: list[Any],
-                synthesis_context: EpisodeSynthesisContext,
-                payload: dict[str, Any],
-            ) -> tuple[int, EpisodeAssignment, EpisodePlan, dict[str, Any]]:
-                async with planning_sem:
-                    episode = await asyncio.to_thread(self.episode_planning_agent.run, payload)
-                    realization = _evaluate_episode_plan_realization(
-                        assignment=assignment,
-                        selected_insights=selected_insights,
-                        synthesis_context=synthesis_context,
-                        plan=episode,
+                plan_draft = await asyncio.to_thread(self.episode_planning_agent.run, payload)
+                covered_primary_occurrence_ids = {
+                    scene.dominant_cluster_occurrence_id
+                    for scene in plan_draft.scene_cards
+                    if scene.card_kind == "normal" and scene.dominant_cluster_occurrence_id
+                }
+                missing_primary_occurrence_ids = sorted(
+                    primary_occurrence_ids.difference(covered_primary_occurrence_ids)
+                )
+                if missing_primary_occurrence_ids:
+                    retry_payload = self.episode_planning_agent.build_payload(
+                        episode=episode.model_dump(mode="json"),
+                        synthesis_map=synthesis_map.model_dump(mode="json"),
+                        project_metadata=project_metadata,
+                        available_passages=available_passages,
+                        planning_feedback={
+                            "issue": "missing_primary_occurrence_coverage",
+                            "missing_primary_occurrence_ids": missing_primary_occurrence_ids,
+                        },
                     )
-                    if realization["has_issues"]:
-                        retry_payload = self.episode_planning_agent.build_payload(
-                            episode_assignment=assignment.model_dump(mode="json"),
-                            narrative_strategy=payload["narrative_strategy"],
-                            synthesis_map=synthesis_context.model_dump(mode="json"),
-                            project_metadata=project_metadata,
-                            available_passages=payload["available_passages"],
-                            previous_episode=payload["previous_episode"],
-                            next_episode=payload["next_episode"],
-                            planning_feedback=_build_planning_feedback(realization),
-                        )
-                        episode = await asyncio.to_thread(self.episode_planning_agent.run, retry_payload)
-                        realization = _evaluate_episode_plan_realization(
-                            assignment=assignment,
-                            selected_insights=selected_insights,
-                            synthesis_context=synthesis_context,
-                            plan=episode,
-                        )
-                return idx, assignment, episode, realization
-
-            planning_results = await asyncio.gather(*[
-                _plan_single_episode(idx, assignment, selected_insights, synthesis_context, payload)
-                for idx, assignment, selected_insights, synthesis_context, payload in planning_requests
-            ])
-            planning_results.sort(key=lambda row: row[0])
-
-            for _, assignment, episode, realization in planning_results:
-                selected_insights = [
-                    insights_by_id[insight_id]
-                    for insight_id in assignment.insight_ids
-                    if insight_id in insights_by_id
-                ]
-                synthesis_context = _build_episode_synthesis_context(
-                    assignment=assignment,
-                    selected_insights=selected_insights,
-                    synthesis_map=synthesis_map,
-                    merged_catalog=merged_catalog,
-                    tension_catalog=tension_catalog,
-                )
-                episode = EpisodePlan.model_validate({
-                    **episode.model_dump(mode="json"),
-                    "episode_number": assignment.episode_number,
-                    "title": episode.title or assignment.title,
-                    "driving_question": assignment.driving_question,
-                    "thematic_focus": episode.thematic_focus or assignment.thematic_focus,
-                    "axis_ids": assignment.axis_ids,
-                    "insight_ids": assignment.insight_ids,
-                    "unresolved_questions": (
-                        list(episode_arc_detail_by_number[assignment.episode_number].unresolved_questions)
-                        if assignment.episode_number in episode_arc_detail_by_number
-                        else []
-                    ),
-                    "payoff_shape": (
-                        episode_arc_detail_by_number[assignment.episode_number].payoff_shape
-                        if assignment.episode_number in episode_arc_detail_by_number
-                        else ""
-                    ),
-                    "synthesis_context": synthesis_context,
-                    "episode_strategy": episode.episode_strategy or assignment.episode_strategy,
-                    "target_word_count": int(round(
-                        float(episode.target_duration_minutes)
+                    plan_draft = await asyncio.to_thread(self.episode_planning_agent.run, retry_payload)
+                    covered_primary_occurrence_ids = {
+                        scene.dominant_cluster_occurrence_id
+                        for scene in plan_draft.scene_cards
+                        if scene.card_kind == "normal" and scene.dominant_cluster_occurrence_id
+                    }
+                    missing_primary_occurrence_ids = sorted(
+                        primary_occurrence_ids.difference(covered_primary_occurrence_ids)
+                    )
+                if missing_primary_occurrence_ids:
+                    raise RuntimeError(
+                        f"Episode planning failed to cover primary occurrences for episode {episode.episode_number}: "
+                        f"{missing_primary_occurrence_ids}"
+                    )
+                target_word_count = int(
+                    round(
+                        float(plan_draft.target_duration_minutes)
                         * float(self.settings.pipeline.spoken_words_per_minute)
-                    )),
-                })
-                normalized_beats, linkage_stats = _normalize_beat_insight_linkage(list(episode.beats))
-                if normalized_beats != list(episode.beats):
-                    episode = episode.model_copy(update={"beats": normalized_beats})
-                if linkage_stats["missing_references"] > 0:
-                    self.run_logger.log(
-                        "episode_plan_beat_insight_linkage_autofill",
-                        episode=episode.episode_number,
-                        beat_count=linkage_stats["beat_count"],
-                        beats_with_description_insight_refs=(
-                            linkage_stats["beats_with_description_insight_refs"]
-                        ),
-                        missing_references=linkage_stats["missing_references"],
-                        injected_references=linkage_stats["injected_references"],
                     )
-                if episode.book_balance:
-                    positive_balance = {
-                        bid: max(0.0, float(share))
-                        for bid, share in episode.book_balance.items()
-                        if bid in book_size_share_by_id
-                    }
-                    total_balance = sum(positive_balance.values())
-                    if total_balance > 0:
-                        normalized_balance = {
-                            bid: (positive_balance.get(bid, 0.0) / total_balance)
-                            for bid in book_size_share_by_id
-                        }
-                        uniform_share = 1.0 / max(1, len(book_size_share_by_id))
-                        max_uniform_delta = max(
-                            abs(normalized_balance.get(bid, 0.0) - uniform_share)
-                            for bid in book_size_share_by_id
-                        )
-                        max_prior_delta = max(
-                            abs(normalized_balance.get(bid, 0.0) - float(book_size_share_by_id.get(bid, 0.0)))
-                            for bid in book_size_share_by_id
-                        )
-                        if max_prior_delta > 0.20 or (
-                            max_prior_delta > 0.15 and max_uniform_delta <= 0.08
-                        ):
-                            self.run_logger.log(
-                                "episode_plan_book_balance_prior_warning",
-                                episode=episode.episode_number,
-                                max_prior_delta=round(max_prior_delta, 4),
-                                max_uniform_delta=round(max_uniform_delta, 4),
-                                normalized_book_balance={
-                                    bid: round(normalized_balance.get(bid, 0.0), 4)
-                                    for bid in book_size_share_by_id
-                                },
-                                book_size_share_by_id={
-                                    bid: round(float(book_size_share_by_id.get(bid, 0.0)), 4)
-                                    for bid in book_size_share_by_id
-                                },
-                            )
-                realization_reports.append(
+                )
+                plan = EpisodePlan.model_validate(
                     {
-                        **realization,
-                        "title": episode.title,
+                        **plan_draft.model_dump(mode="json"),
+                        "target_word_count": target_word_count,
                     }
                 )
-                if realization["has_issues"]:
-                    if realization.get("insight_problem_count", 0) > 0:
-                        self.run_logger.log(
-                            "episode_plan_insight_realization_warning",
-                            episode=episode.episode_number,
-                            problem_count=realization["insight_problem_count"],
-                            insights=[
-                                {
-                                    "insight_id": item["insight_id"],
-                                    "status": item["status"],
-                                    "realized_count": item["realized_count"],
-                                    "expected_min": item["expected_min"],
-                                }
-                                for item in realization["insights"]
-                                if item["status"] in {"weak", "zero"}
-                            ],
-                        )
-                    if realization.get("merged_narrative_problem_count", 0) > 0:
-                        self.run_logger.log(
-                            "episode_plan_merged_narrative_realization_warning",
-                            episode=episode.episode_number,
-                            problem_count=realization["merged_narrative_problem_count"],
-                            merged_narratives=[
-                                {
-                                    "merged_narrative_id": item["merged_narrative_id"],
-                                    "status": item["status"],
-                                    "realized_count": item["realized_count"],
-                                    "expected_min": item["expected_min"],
-                                }
-                                for item in realization.get("merged_narratives", [])
-                                if item["status"] in {"weak", "zero"}
-                            ],
-                        )
-                beats = list(episode.beats)
-                total_beats = len(beats)
-                if total_beats == 0:
-                    adjusted_episodes.append(episode)
-                    continue
-                target_minutes = float(project.config.target_episode_minutes)
-                min_minutes = float(project.config.min_episode_minutes)
-                if float(episode.target_duration_minutes) < min_minutes:
-                    self.run_logger.log(
-                        "episode_plan_duration_warning",
-                        episode=episode.episode_number,
-                        target_duration_minutes=episode.target_duration_minutes,
-                        configured_target_minutes=target_minutes,
-                        configured_min_minutes=min_minutes,
-                    )
-                planned_beat_duration_minutes = (
-                    sum(float(beat.estimated_duration_seconds) for beat in beats) / 60.0
+                planned_episodes.append(plan)
+                planning_reports.append(
+                    {
+                        "episode_number": episode.episode_number,
+                        "scene_card_count": len(plan.scene_cards),
+                        "primary_occurrence_count": len(primary_occurrence_ids),
+                        "covered_primary_occurrence_count": len(covered_primary_occurrence_ids),
+                        "missing_primary_occurrence_ids": missing_primary_occurrence_ids,
+                    }
                 )
-                target_duration_minutes = float(episode.target_duration_minutes)
-                plan_shortfall_minutes = target_duration_minutes - planned_beat_duration_minutes
-                plan_shortfall_ratio = (
-                    plan_shortfall_minutes / target_duration_minutes
-                    if target_duration_minutes > 0
-                    else 0.0
-                )
-                if plan_shortfall_ratio > _RUNTIME_UNDERSHOOT_WARNING_RATIO:
-                    self.run_logger.log(
-                        "episode_plan_runtime_budget_warning",
-                        episode=episode.episode_number,
-                        target_duration_minutes=target_duration_minutes,
-                        planned_beat_duration_minutes=planned_beat_duration_minutes,
-                        shortfall_minutes=plan_shortfall_minutes,
-                        shortfall_ratio=plan_shortfall_ratio,
-                    )
-                if not 70 <= total_beats <= 80:
-                    self.run_logger.log(
-                        "episode_plan_beats_warning",
-                        episode=episode.episode_number,
-                        beats=total_beats,
-                    )
-                budget = episode.attribution_budget or project.config.attribution_budget
-                max_attributed = int(total_beats * budget)
-                attributed_indices = [
-                    i for i, beat in enumerate(beats)
-                    if beat.attribution_level in ("light", "full")
-                ]
-                if len(attributed_indices) <= max_attributed:
-                    adjusted_episodes.append(episode)
-                    continue
-                ordered_indices = [
-                    i for i, beat in enumerate(beats) if beat.attribution_level == "full"
-                ] + [
-                    i for i, beat in enumerate(beats) if beat.attribution_level == "light"
-                ]
-                keep_set = set(ordered_indices[:max_attributed])
-                adjusted_beats = []
-                dropped_indices: list[int] = []
-                for idx, beat in enumerate(beats):
-                    if idx in keep_set:
-                        adjusted_beats.append(beat)
-                        continue
-                    if beat.attribution_level in ("light", "full"):
-                        dropped_indices.append(idx)
-                        adjusted_beats.append(
-                            beat.model_copy(update={"attribution_level": "none"})
-                        )
-                    else:
-                        adjusted_beats.append(beat)
-                episode = episode.model_copy(update={"beats": adjusted_beats})
-                self.run_logger.log(
-                    "attribution_budget_enforced",
-                    episode=episode.episode_number,
-                    attribution_budget=budget,
-                    total_beats=total_beats,
-                    max_attributed=max_attributed,
-                    attributed_before=len(attributed_indices),
-                    attributed_after=max_attributed,
-                    adjusted_indices=dropped_indices,
-                )
-                adjusted_episodes.append(episode)
 
             _save_json(
                 project_dir / "series_plan.json",
-                {"episodes": [e.model_dump(mode="json") for e in adjusted_episodes]},
+                {"episodes": [episode.model_dump(mode="json") for episode in planned_episodes]},
             )
             _save_json(
                 project_dir / "episode_plan_realization.json",
-                {"episodes": realization_reports},
+                {"episodes": planning_reports},
             )
 
             ctx["output_summary"] = {
-                "episode_count": len(adjusted_episodes),
-                "titles": [e.title for e in adjusted_episodes],
+                "episode_count": len(planned_episodes),
+                "titles": [episode.title for episode in planned_episodes],
             }
-            return adjusted_episodes
+            return planned_episodes
 
     def _write_passage_utilization(
         self,
@@ -4581,29 +4277,37 @@ class PipelineOrchestrator:
         project_dir: Path,
         episode_numbers: list[int],
     ) -> None:
-        episode_scripts: list[EpisodeScript] = []
+        utilized_passage_ids: set[str] = set()
         for episode_number in episode_numbers:
-            script_path = project_dir / "episodes" / str(episode_number) / "episode_script.json"
-            payload = _load_json(script_path)
+            payload = _load_json(project_dir / "episodes" / str(episode_number) / "episode_script.json")
             if payload is None:
                 continue
             try:
-                episode_scripts.append(EpisodeScript.model_validate(payload))
+                script = EpisodeScript.model_validate(payload)
             except Exception as exc:
                 self.run_logger.log(
                     "passage_utilization_script_parse_error",
                     episode_number=episode_number,
-                    path=str(script_path),
                     error_type=type(exc).__name__,
                     error_message=str(exc),
                 )
+                continue
+            for section in script.prose_sections:
+                utilized_passage_ids.update(citation.passage_id for citation in section.citations)
+            for transition in script.transitions:
+                utilized_passage_ids.update(citation.passage_id for citation in transition.citations)
 
-        utilization = _compute_passage_utilization(
-            corpus=corpus,
-            episode_plans=episode_plans,
-            episode_scripts=episode_scripts,
-            books=project.books,
-        )
+        utilization = {
+            "summary": {
+                "episode_count": len(episode_numbers),
+                "planned_episode_count": len(episode_plans),
+                "total_passages": corpus.total_passages,
+                "utilized_passages": len(utilized_passage_ids),
+                "utilization_ratio": (
+                    len(utilized_passage_ids) / max(1, corpus.total_passages)
+                ),
+            }
+        }
         _save_json(project_dir / "passage_utilization.json", utilization)
         self.run_logger.log("passage_utilization", **utilization["summary"])
 
@@ -4618,7 +4322,7 @@ class PipelineOrchestrator:
         corpus: ThematicCorpus,
         project_dir: Path,
         semaphore: asyncio.Semaphore,
-    ) -> tuple[int, SpokenScript]:
+    ) -> tuple[int, SpokenScript, StyleAuditReport]:
         async with semaphore:
             ep_dir = project_dir / "episodes" / str(plan.episode_number)
             ep_dir.mkdir(parents=True, exist_ok=True)
@@ -4637,50 +4341,35 @@ class PipelineOrchestrator:
             else:
                 self.run_logger.log("grounding_skipped", episode=plan.episode_number)
 
-            alignment_report = _evaluate_episode_script_plan_alignment(plan=plan, script=script)
-            _save_json(ep_dir / "plan_alignment_report.json", alignment_report)
-            if alignment_report["has_issues"]:
-                self.run_logger.log(
-                    "episode_plan_alignment_warning",
-                    episode=plan.episode_number,
-                    problem_count=alignment_report["problem_count"],
-                    insight_problem_count=alignment_report["insight_realization"]["problem_count"],
-                    scene_coverage_ratio=alignment_report["scene_structure"]["coverage_ratio"],
-                    missing_anchor_scene_count=len(
-                        alignment_report["scene_structure"]["missing_anchor_scene_ids"]
-                    ),
-                    cross_reference_coverage=alignment_report["cross_references"]["coverage_ratio"],
-                    book_balance_max_abs_drift=alignment_report["book_balance"]["max_abs_drift"],
-                    insufficient_book_signal=alignment_report["book_balance"]["insufficient_signal"],
-                )
-
             if not project.config.skip_spoken_delivery:
                 spoken = await self._rewrite_for_speech(
                     plan.episode_number, script, project, ep_dir, project_dir,
                 )
             else:
-                raw_segments = [
-                    SpokenSegment(
-                        segment_id=seg.segment_id,
-                        text=seg.text,
-                        max_words=project.config.spoken_chunk_max_words,
-                    )
-                    for seg in script.segments
-                ]
                 spoken = SpokenScript(
                     episode_number=plan.episode_number,
                     title=script.title,
-                    segments=_normalize_spoken_segments(
-                        raw_segments,
-                        project.config.spoken_chunk_max_words,
-                    ),
-                    arc_plan=None,
+                    framing=script.framing,
+                    sections=[
+                        SpokenSection(section_id=section.section_id, text=section.text)
+                        for section in script.prose_sections
+                    ],
+                    transitions=[
+                        SpokenTransition(transition_id=transition.transition_id, text=transition.text)
+                        for transition in script.transitions
+                    ],
                     tts_provider=project.config.tts_provider,
                 )
                 _save_json(ep_dir / "spoken_script.json", spoken)
                 self.run_logger.log("spoken_delivery_skipped", episode=plan.episode_number)
 
-            return (plan.episode_number, spoken)
+            style_audit = await self._audit_style(
+                plan.episode_number,
+                spoken,
+                ep_dir,
+                project_dir,
+            )
+            return (plan.episode_number, spoken, style_audit)
 
     async def _write_episode(
         self, plan: EpisodePlan, project: ThematicProject,
@@ -4689,220 +4378,117 @@ class PipelineOrchestrator:
         async with _stage_log(
             self.run_logger, f"write_episode_{plan.episode_number}", project_dir,
             episode=plan.episode_number,
-            beat_count=len(plan.beats),
+            scene_card_count=len(plan.scene_cards),
             writing_source_mode=_WRITING_SOURCE_MODE_FULL_CHUNK,
         ) as ctx:
-            chapter_lookup = _build_chapter_lookup(project.books)
-            passage_payload_by_id: dict[str, dict[str, Any]] = {}
-            for axis_passages in corpus.passages_by_axis.values():
-                for p in axis_passages:
-                    if p.passage_id in passage_payload_by_id:
-                        continue
-                    passage_payload_by_id[p.passage_id] = {
-                        "passage_id": p.passage_id,
-                        "book_id": p.book_id,
-                        "text": _resolve_writing_passage_text(p),
-                        "chapter_ref": p.chapter_ref,
-                        "chapter_context": _build_chapter_context(
-                            chapter_lookup.get((p.book_id, p.chapter_ref))
-                        ),
-                        "synthesis_tags": [t.value for t in p.synthesis_tags],
-                    }
-
+            passage_lookup = _build_passage_lookup(corpus)
             book_metadata = [
                 {"book_id": b.book_id, "title": b.title, "author": b.author}
                 for b in project.books
             ]
-            words_per_minute = float(self.settings.pipeline.spoken_words_per_minute)
-            beat_word_targets = [
-                {
-                    "beat_id": beat.beat_id,
-                    "target_words": int(round(
-                        (float(beat.estimated_duration_seconds) / 60.0)
-                        * words_per_minute
-                    )),
-                }
-                for beat in plan.beats
-            ]
-            beat_target_by_id = {
-                item["beat_id"]: int(item["target_words"])
-                for item in beat_word_targets
-            }
-            windows = _build_writing_windows(plan, _WRITING_WINDOW_COUNT)
-            all_segments: list[ScriptSegment] = []
-            all_citations: list[Any] = []
-            final_title = plan.title
+            scene_batches = _scene_cards_to_batches(plan.scene_cards)
+            all_sections: list[ProseSection] = []
+            all_transitions: list[ScriptTransition] = []
+            all_window_maps: list[Any] = []
+            writing_agent = (
+                self.writing_agent_no_citations
+                if project.config.skip_grounding
+                else self.writing_agent
+            )
 
-            for window_idx, window in enumerate(windows):
-                window_beats = list(window["beats"])
-                window_scene_cards = list(window.get("scene_cards", []))
-                window_spine_segments = list(window.get("spine_segments", []))
-                window_anchor_scene_ids = list(window.get("anchor_scene_ids", []))
-                window_passage_ids: list[str] = []
-                seen_passages: set[str] = set()
-                for beat in window_beats:
-                    for passage_id in beat.passage_ids:
-                        if passage_id in seen_passages or passage_id not in passage_payload_by_id:
+            for batch_index, batch_scene_cards in enumerate(scene_batches, start=1):
+                active_scene_card_ids = [scene.scene_id for scene in batch_scene_cards]
+                batch_passage_ids: list[str] = []
+                seen_passage_ids: set[str] = set()
+                for scene in batch_scene_cards:
+                    for passage_id in scene.passage_ids:
+                        if passage_id in seen_passage_ids or passage_id not in passage_lookup:
                             continue
-                        seen_passages.add(passage_id)
-                        window_passage_ids.append(passage_id)
-                window_passages = [
-                    passage_payload_by_id[passage_id]
-                    for passage_id in window_passage_ids
-                ]
-                window_beat_word_targets = [
+                        seen_passage_ids.add(passage_id)
+                        batch_passage_ids.append(passage_id)
+                passages = [
                     {
-                        "beat_id": beat.beat_id,
-                        "target_words": beat_target_by_id.get(beat.beat_id, 0),
+                        "passage_id": passage_lookup[passage_id].passage_id,
+                        "book_id": passage_lookup[passage_id].book_id,
+                        "text": _resolve_writing_passage_text(passage_lookup[passage_id]),
+                        "chapter_ref": passage_lookup[passage_id].chapter_ref,
                     }
-                    for beat in window_beats
+                    for passage_id in batch_passage_ids
                 ]
-                window_target_word_count = sum(
-                    int(item["target_words"]) for item in window_beat_word_targets
-                )
-                window_synthesis_context = _build_window_synthesis_context(
-                    plan,
-                    window_beats,
-                    window_scene_cards,
-                )
-                window_plan = plan.model_copy(
-                    update={
-                        "narrative_spine": (
-                            plan.narrative_spine.model_copy(
-                                update={
-                                    "spine_segments": window_spine_segments,
-                                    "attribution_moments": list(
-                                        window.get("attribution_moments", [])
-                                    ),
-                                }
-                            )
-                            if plan.narrative_spine is not None
-                            else None
-                        ),
-                        "scene_cards": window_scene_cards,
-                        "anchor_scene_ids": window_anchor_scene_ids,
-                        "beats": window_beats,
-                        "target_word_count": window_target_word_count,
-                        "synthesis_context": window_synthesis_context,
-                    }
-                )
-
-                payload = self.writing_agent.build_payload(
+                payload = writing_agent.build_payload(
                     episode_number=plan.episode_number,
-                    episode_plan=window_plan.model_dump(mode="json"),
-                    passages=window_passages,
+                    batch_id=f"batch_{batch_index}",
+                    episode_plan=plan.model_dump(mode="json"),
+                    active_scene_card_ids=active_scene_card_ids,
+                    passages=passages,
                     book_metadata=book_metadata,
-                    max_author_names_per_episode=project.config.max_author_names_per_episode,
-                    prefer_indirect_attribution=project.config.prefer_indirect_attribution,
+                    previous_sections=[section.model_dump(mode="json") for section in all_sections] or None,
+                    previous_transitions=[transition.model_dump(mode="json") for transition in all_transitions] or None,
                     skip_grounding=project.config.skip_grounding,
                 )
-                payload["writing_source_mode"] = _WRITING_SOURCE_MODE_FULL_CHUNK
-                payload["target_word_count"] = window_target_word_count
-                payload["beat_word_targets"] = window_beat_word_targets
-
-                self.run_logger.log(
-                    "episode_write_window_payload",
-                    episode=plan.episode_number,
-                    window_index=window_idx + 1,
-                    window_count=len(windows),
-                    spine_segment_count=len(window_spine_segments),
-                    scene_count=len(window_scene_cards),
-                    beat_count=len(window_beats),
-                    passage_count=len(window_passages),
-                    synthesis_insight_count=len(window_synthesis_context.insights)
-                    if window_synthesis_context
-                    else 0,
-                    target_word_count=window_target_word_count,
-                )
-
-                result = await asyncio.to_thread(self.writing_agent.run, payload)
-                if result.title:
-                    final_title = result.title
+                result = await asyncio.to_thread(writing_agent.run, payload)
                 if project.config.skip_grounding:
-                    normalized_segments = []
-                    for seg in result.segments:
-                        segment_kwargs = {
-                            "text": seg.text,
-                            "segment_type": seg.segment_type,
-                            "beat_id": seg.beat_id,
-                            "scene_id": seg.scene_id,
-                            "source_book_ids": seg.source_book_ids,
-                            "attribution_level": seg.attribution_level,
+                    normalized_sections = [
+                        ProseSection.model_validate({
+                            **section.model_dump(mode="json"),
                             "citations": [],
-                        }
-                        if seg.segment_id:
-                            segment_kwargs["segment_id"] = seg.segment_id
-                        normalized_segments.append(ScriptSegment(**segment_kwargs))
-                    all_segments.extend(normalized_segments)
+                        })
+                        for section in result.prose_sections
+                    ]
+                    normalized_transitions = [
+                        ScriptTransition.model_validate({
+                            **transition.model_dump(mode="json"),
+                            "citations": [],
+                        })
+                        for transition in result.transitions
+                    ]
                 else:
-                    all_segments.extend(result.segments)
-                    all_citations.extend(result.citations)
+                    normalized_sections = [
+                        ProseSection.model_validate(section.model_dump(mode="json"))
+                        for section in result.prose_sections
+                    ]
+                    normalized_transitions = [
+                        ScriptTransition.model_validate(transition.model_dump(mode="json"))
+                        for transition in result.transitions
+                    ]
+                all_sections.extend(normalized_sections)
+                all_transitions.extend(normalized_transitions)
+                all_window_maps.extend(result.window_map)
 
-            total_words = sum(len(seg.text.split()) for seg in all_segments)
             script = EpisodeScript(
                 episode_number=plan.episode_number,
-                title=final_title,
-                segments=all_segments,
-                total_word_count=total_words,
-                estimated_duration_seconds=int(
-                    total_words / words_per_minute * 60
+                title=plan.title,
+                framing=plan.framing,
+                prose_sections=all_sections,
+                transitions=all_transitions,
+                window_map=all_window_maps,
+                total_word_count=_script_total_word_count(
+                    EpisodeScript(
+                        episode_number=plan.episode_number,
+                        title=plan.title,
+                        framing=plan.framing,
+                        prose_sections=all_sections,
+                        transitions=all_transitions,
+                        window_map=all_window_maps,
+                    )
                 ),
-                citations=all_citations,
+                estimated_duration_seconds=0,
+            )
+            script = script.model_copy(
+                update={
+                    "estimated_duration_seconds": _estimate_duration_seconds_from_words(
+                        script.total_word_count,
+                        float(self.settings.pipeline.spoken_words_per_minute),
+                    )
+                }
             )
             _save_json(ep_dir / "episode_script.json", script)
-            planned_beat_duration_minutes = (
-                sum(float(beat.estimated_duration_seconds) for beat in plan.beats) / 60.0
-            )
-            target_word_count = int(plan.target_word_count)
-            target_duration_minutes = target_word_count / words_per_minute
-            written_duration_minutes = script.estimated_duration_seconds / 60.0
-            planned_target_word_count = int(round(
-                planned_beat_duration_minutes * words_per_minute
-            ))
-            written_word_count = int(total_words)
-            write_shortfall_words = target_word_count - written_word_count
-            write_shortfall_ratio = (
-                write_shortfall_words / target_word_count
-                if target_word_count > 0
-                else 0.0
-            )
-            if write_shortfall_ratio > _RUNTIME_UNDERSHOOT_WARNING_RATIO:
-                target_floor_words = target_word_count * (
-                    1.0 - _RUNTIME_UNDERSHOOT_WARNING_RATIO
-                )
-                likely_source = (
-                    "planning"
-                    if planned_target_word_count < target_floor_words
-                    else "writing"
-                )
-                self.run_logger.log(
-                    "episode_write_duration_shortfall_warning",
-                    episode=plan.episode_number,
-                    target_duration_minutes=target_duration_minutes,
-                    planned_beat_duration_minutes=planned_beat_duration_minutes,
-                    written_duration_minutes=written_duration_minutes,
-                    target_word_count=target_word_count,
-                    planned_target_word_count=planned_target_word_count,
-                    written_word_count=written_word_count,
-                    shortfall_words=write_shortfall_words,
-                    shortfall_ratio=write_shortfall_ratio,
-                    likely_source=likely_source,
-                )
 
             ctx["output_summary"] = {
-                "words": total_words,
-                "segments": len(all_segments),
-                "citations": len(all_citations),
-                "writing_source_mode": _WRITING_SOURCE_MODE_FULL_CHUNK,
-                "window_count": len(windows),
-                "target_duration_minutes": target_duration_minutes,
-                "planned_beat_duration_minutes": planned_beat_duration_minutes,
-                "written_duration_minutes": written_duration_minutes,
-                "target_word_count": target_word_count,
-                "planned_target_word_count": planned_target_word_count,
-                "written_word_count": written_word_count,
-                "write_shortfall_words": write_shortfall_words,
-                "write_shortfall_ratio": write_shortfall_ratio,
+                "words": script.total_word_count,
+                "sections": len(script.prose_sections),
+                "transitions": len(script.transitions),
+                "window_count": len(scene_batches),
             }
             return script
 
@@ -4912,14 +4498,15 @@ class PipelineOrchestrator:
     ) -> GroundingReport:
         async with _stage_log(
             self.run_logger, f"grounding_{episode_number}", project_dir,
-            episode=episode_number, segment_count=len(script.segments),
+            episode=episode_number, text_unit_count=len(script.prose_sections) + len(script.transitions),
         ) as ctx:
             passage_lookup: dict[str, dict] = {}
             for axis_passages in corpus.passages_by_axis.values():
                 for p in axis_passages:
                     passage_lookup[p.passage_id] = {
                         "passage_id": p.passage_id,
-                        "book_id": p.book_id, "text": p.text,
+                        "book_id": p.book_id,
+                        "text": _resolve_writing_passage_text(p),
                     }
 
             payload = self.grounding_agent.build_payload(
@@ -4968,47 +4555,93 @@ class PipelineOrchestrator:
                     for p in axis_passages:
                         passage_lookup[p.passage_id] = {
                             "passage_id": p.passage_id,
-                            "book_id": p.book_id, "text": p.text,
+                            "book_id": p.book_id,
+                            "text": _resolve_writing_passage_text(p),
                         }
 
-                failing_segments = [
-                    seg.model_dump(mode="json") for seg in current_script.segments
-                    if any(
-                        c.cited_passage_id in [cit.passage_id for cit in seg.citations]
-                        for c in failing_claims
-                    )
+                failing_unit_ids = {claim.text_unit_id for claim in failing_claims}
+                failing_unit_ids.update(flag.text_unit_id for flag in current_report.fairness_flags)
+                failing_sections = [
+                    section.model_dump(mode="json")
+                    for section in current_script.prose_sections
+                    if section.section_id in failing_unit_ids
+                ]
+                failing_transitions = [
+                    transition.model_dump(mode="json")
+                    for transition in current_script.transitions
+                    if transition.transition_id in failing_unit_ids
                 ]
                 failure_reasons = [
-                    {"claim_text": c.claim_text, "status": c.status, "explanation": c.explanation}
+                    {
+                        "text_unit_id": c.text_unit_id,
+                        "claim_text": c.claim_text,
+                        "status": c.status,
+                        "explanation": c.explanation,
+                    }
                     for c in failing_claims
                 ]
 
                 payload = self.repair_agent.build_payload(
-                    failing_segments=failing_segments,
+                    failing_sections=failing_sections,
+                    failing_transitions=failing_transitions,
                     failure_reasons=failure_reasons,
                     passages=passage_lookup,
                 )
                 result = await asyncio.to_thread(self.repair_agent.run, payload)
 
-                repaired_map = {seg.segment_id: seg for seg in result.repaired_segments}
-                new_segments = []
+                repaired_sections = {
+                    section.section_id: section
+                    for section in result.repaired_sections
+                }
+                repaired_transitions = {
+                    transition.transition_id: transition
+                    for transition in result.repaired_transitions
+                }
+                new_sections = []
+                new_transitions = []
                 diffs: list[SegmentDiff] = []
-                for seg in current_script.segments:
-                    if seg.segment_id in repaired_map:
-                        new_seg = repaired_map[seg.segment_id]
-                        diffs.append(SegmentDiff(
-                            segment_id=seg.segment_id,
-                            before=seg.text, after=new_seg.text,
-                        ))
-                        new_segments.append(new_seg)
+                for section in current_script.prose_sections:
+                    if section.section_id in repaired_sections:
+                        repaired = repaired_sections[section.section_id]
+                        diffs.append(
+                            SegmentDiff(
+                                text_unit_id=section.section_id,
+                                before=section.text,
+                                after=repaired.text,
+                            )
+                        )
+                        new_sections.append(repaired)
                     else:
-                        new_segments.append(seg)
+                        new_sections.append(section)
+                for transition in current_script.transitions:
+                    if transition.transition_id in repaired_transitions:
+                        repaired = repaired_transitions[transition.transition_id]
+                        diffs.append(
+                            SegmentDiff(
+                                text_unit_id=transition.transition_id,
+                                before=transition.text,
+                                after=repaired.text,
+                            )
+                        )
+                        new_transitions.append(repaired)
+                    else:
+                        new_transitions.append(transition)
 
-                total_words = sum(len(s.text.split()) for s in new_segments)
-                new_script = current_script.model_copy(update={
-                    "segments": new_segments,
-                    "total_word_count": total_words,
-                })
+                new_script = current_script.model_copy(
+                    update={
+                        "prose_sections": new_sections,
+                        "transitions": new_transitions,
+                    }
+                )
+                new_script = new_script.model_copy(
+                    update={
+                        "total_word_count": _script_total_word_count(new_script),
+                        "estimated_duration_seconds": _estimate_duration_seconds_from_words(
+                            _script_total_word_count(new_script),
+                            float(self.settings.pipeline.spoken_words_per_minute),
+                        ),
+                    }
+                )
                 new_report = await self._validate_grounding(
                     episode_number, new_script, corpus, ep_dir, project_dir,
                 )
@@ -5055,71 +4688,54 @@ class PipelineOrchestrator:
     ) -> SpokenScript:
         async with _stage_log(
             self.run_logger, f"spoken_delivery_{episode_number}", project_dir,
-            episode=episode_number, segment_count=len(script.segments),
+            episode=episode_number, section_count=len(script.prose_sections),
         ) as ctx:
-            script_segments = [seg.model_dump(mode="json") for seg in script.segments]
-
             payload = self.spoken_delivery_agent.build_payload(
                 episode_number=episode_number,
-                script_segments=script_segments,
+                script=script.model_dump(mode="json"),
                 max_words_per_segment=project.config.spoken_chunk_max_words,
                 tts_provider=project.config.tts_provider,
             )
             result = await asyncio.to_thread(self.spoken_delivery_agent.run, payload)
-            normalized_segments = _normalize_spoken_segments(
-                result.segments,
-                project.config.spoken_chunk_max_words,
-            )
 
             spoken = SpokenScript(
-                episode_number=episode_number, title=script.title,
-                segments=normalized_segments, arc_plan=result.arc_plan,
+                episode_number=episode_number,
+                title=script.title,
+                framing=script.framing,
+                sections=result.sections,
+                transitions=result.transitions,
                 tts_provider=project.config.tts_provider,
             )
             _save_json(ep_dir / "spoken_script.json", spoken)
 
-            ctx["output_summary"] = {"segment_count": len(spoken.segments)}
+            ctx["output_summary"] = {
+                "sections": len(spoken.sections),
+                "transitions": len(spoken.transitions),
+            }
             return spoken
 
-    # -----------------------------------------------------------------------
-    # Framing (sequential)
-    # -----------------------------------------------------------------------
-
-    async def _frame_episode(
-        self, episode_number: int, total_episodes: int,
-        spoken: SpokenScript, previous_summary: str | None,
-        next_summary: str | None, project: ThematicProject,
+    async def _audit_style(
+        self,
+        episode_number: int,
+        spoken: SpokenScript,
+        ep_dir: Path,
         project_dir: Path,
-    ) -> EpisodeFraming:
-        ep_dir = project_dir / "episodes" / str(episode_number)
-
+    ) -> StyleAuditReport:
         async with _stage_log(
-            self.run_logger, f"framing_{episode_number}", project_dir,
-            episode=episode_number, total_episodes=total_episodes,
+            self.run_logger, f"style_audit_{episode_number}", project_dir,
+            episode=episode_number,
         ) as ctx:
-            current_summary = spoken.arc_plan or spoken.title
-            book_metadata = [
-                {"book_id": b.book_id, "title": b.title, "author": b.author}
-                for b in project.books
-            ]
-
-            payload = self.framing_agent.build_payload(
+            payload = self.style_audit_agent.build_payload(
                 episode_number=episode_number,
-                total_episodes=total_episodes,
-                current_episode_summary=current_summary,
-                previous_episode_summary=previous_summary,
-                next_episode_summary=next_summary,
-                book_metadata=book_metadata,
+                script=spoken.model_dump(mode="json"),
             )
-            framing = await asyncio.to_thread(self.framing_agent.run, payload)
-            _save_json(ep_dir / "episode_framing.json", framing)
-
+            report = await asyncio.to_thread(self.style_audit_agent.run, payload)
+            _save_json(ep_dir / "style_audit.json", report)
             ctx["output_summary"] = {
-                "has_recap": framing.recap is not None,
-                "has_preview": framing.preview is not None,
-                "has_cold_open": framing.cold_open is not None,
+                "warning_count": len(report.warnings),
+                "counts_by_type": report.counts_by_type,
             }
-            return framing
+            return report
 
     # -----------------------------------------------------------------------
     # Phase 4: Audio Rendering
@@ -5307,7 +4923,7 @@ class PipelineOrchestrator:
     async def _render_episode_audio(
         self, episode_number: int, spoken: SpokenScript,
         config: PipelineConfig,
-        framing: EpisodeFraming | None, project_dir: Path,
+        project_dir: Path,
         semaphore: asyncio.Semaphore, *,
         skip_audio: bool,
     ) -> AudioManifest:
@@ -5316,10 +4932,10 @@ class PipelineOrchestrator:
 
             async with _stage_log(
                 self.run_logger, f"audio_{episode_number}", project_dir,
-                episode=episode_number, segment_count=len(spoken.segments),
+                episode=episode_number, segment_count=len(spoken.sections) + len(spoken.transitions),
             ) as ctx:
                 manifest = build_render_manifest(
-                    spoken, framing,
+                    spoken,
                     voice_id=self.settings.tts.voice,
                     speed=self.settings.tts.speed,
                     words_per_minute=self.settings.pipeline.spoken_words_per_minute,

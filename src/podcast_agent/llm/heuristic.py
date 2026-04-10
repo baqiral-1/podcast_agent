@@ -22,6 +22,8 @@ class HeuristicLLMClient(LLMClient):
         instructions: str,
         payload: PromptPayload,
         response_model: type[BaseModel],
+        attempt: int | None = None,
+        max_attempts: int | None = None,
     ) -> BaseModel:
         if self.run_logger is not None:
             self.run_logger.log(
@@ -32,10 +34,10 @@ class HeuristicLLMClient(LLMClient):
             )
         try:
             generator = getattr(self, f"_generate_{schema_name}", None)
-            if generator is not None:
-                response = generator(payload)
-            else:
+            if generator is None:
                 response = self._generate_default(schema_name, payload)
+            else:
+                response = generator(payload)
             if self.run_logger is not None:
                 self.run_logger.log(
                     "llm_response",
@@ -58,28 +60,14 @@ class HeuristicLLMClient(LLMClient):
             raise
 
     def _generate_default(self, schema_name: str, payload: PromptPayload) -> dict[str, Any]:
-        """Produce a minimal valid response for unknown schemas."""
         raise ValueError(f"No heuristic generator for schema '{schema_name}'.")
 
     def _generate_chapter_summary(self, payload: PromptPayload) -> dict[str, Any]:
         chapter_title = str(payload.get("chapter_title", "")).strip() or "This chapter"
-        chapter_text = str(payload.get("chapter_text", "")).strip()
-        words = chapter_text.split()
-        first_terms = [word.strip(".,;:!?()[]\"'") for word in words[:40]]
-        keywords: list[str] = []
-        for term in first_terms:
-            cleaned = term.strip()
-            if len(cleaned) < 5:
-                continue
-            if cleaned.lower() in {item.lower() for item in keywords}:
-                continue
-            keywords.append(cleaned)
-            if len(keywords) >= 5:
-                break
         return {
             "summary": f"{chapter_title} is summarized heuristically from the source text.",
             "analysis": {
-                "themes_touched": [chapter_title] if chapter_title else [],
+                "themes_touched": [chapter_title],
                 "major_actors": [],
                 "key_places": [],
                 "key_institutions": [],
@@ -90,357 +78,306 @@ class HeuristicLLMClient(LLMClient):
                 "major_tensions": [],
                 "causal_shifts": [],
                 "narrative_hooks": [f"Return to {chapter_title} for episode construction."],
-                "retrieval_keywords": keywords,
+                "retrieval_keywords": [chapter_title.lower().replace(" ", "_")],
             },
         }
 
     def _generate_book_summary(self, payload: PromptPayload) -> dict[str, Any]:
         theme = str(payload.get("theme", "")).strip()
-        sub_themes = [
-            str(item).strip()
-            for item in payload.get("sub_themes", [])
-            if str(item).strip()
-        ]
         title = str(payload.get("title", "")).strip() or "this book"
-        chapters = payload.get("chapters", [])
-        chapter_titles = [
-            chapter.get("title", "")
-            for chapter in chapters[:3]
-            if isinstance(chapter, dict) and chapter.get("title")
-        ]
-        coverage = ", ".join(chapter_titles) if chapter_titles else "its chapters"
-        if theme:
-            if sub_themes:
-                summary = (
-                    f"{title} addresses {theme} ({', '.join(sub_themes[:2])}) "
-                    f"through {coverage}."
-                )
-            else:
-                summary = f"{title} addresses {theme} through {coverage}."
-        else:
-            summary = f"{title} is summarized through {coverage}."
-        return {"summary": summary}
+        return {
+            "summary": f"{title} addresses {theme or 'the project theme'} through its chapter structure."
+        }
 
     def _generate_theme_decomposition(self, payload: PromptPayload) -> dict[str, Any]:
         books = payload.get("books", [])
         book_ids = [b.get("book_id", f"b{i}") for i, b in enumerate(books)]
         relevance = {bid: 0.7 for bid in book_ids}
         axis_label = str(payload.get("theme", "unknown"))
-        sub_themes = [
-            str(item).strip()
-            for item in payload.get("sub_themes", [])
-            if str(item).strip()
-        ]
-        if sub_themes:
-            axis_label = f"{axis_label} + {sub_themes[0]}"
-        return {
-            "axes": [
+        axes = []
+        for idx in range(1, 11):
+            axes.append(
                 {
-                    "axis_id": uuid4().hex,
-                    "name": f"Axis based on: {axis_label}",
-                    "description": "Heuristic thematic axis.",
-                    "guiding_questions": ["How does this theme manifest?"],
+                    "axis_id": f"axis_{idx:02d}",
+                    "name": f"{axis_label} axis {idx}",
+                    "description": f"Heuristic thematic axis {idx} for {axis_label}.",
+                    "guiding_questions": [
+                        f"How does axis {idx} appear across the books?",
+                        f"What changes become legible through axis {idx}?",
+                    ],
                     "relevance_by_book": relevance,
-                    "keywords": ["theme"],
+                    "keywords": ["theme", f"axis_{idx}"],
                 }
-            ]
-        }
+            )
+        return {"axes": axes}
 
     def _generate_passage_extraction(self, payload: PromptPayload) -> dict[str, Any]:
         candidates = payload.get("candidate_passages", [])
         passages = []
-        for c in candidates[:5]:
-            passages.append({
-                "passage_id": c.get("passage_id", uuid4().hex),
-                "relevance_score": 0.7,
-                "quotability_score": 0.6,
-                "synthesis_tags": ["independent"],
-            })
-        return {"passages": passages, "cross_book_pairs": []}
-
-    def _generate_synthesis_mapping(self, payload: PromptPayload) -> dict[str, Any]:
-        passages_by_axis = payload.get("passages_by_axis", {})
-
-        # Collect passage IDs across books
-        passage_ids: list[str] = []
-        for axis_passages in passages_by_axis.values():
-            for p in axis_passages:
-                passage_ids.append(p.get("passage_id", uuid4().hex))
-
-        insights = []
-        if len(passage_ids) >= 2:
-            insights.append({
-                "insight_id": uuid4().hex,
-                "insight_type": "synchronicity",
-                "title": "Shared perspective",
-                "description": "Authors share a common perspective on this topic.",
-                "passage_ids": passage_ids[:2],
-                "podcast_potential": 0.7,
-                "treatment": "build",
-            })
-
-        merged_narratives = []
-        merged_count = 7
-        for idx in range(merged_count):
-            start = idx * 3
-            end = start + 3
-            source_passage_ids = passage_ids[start:end]
-            if not source_passage_ids and passage_ids:
-                source_passage_ids = passage_ids[: min(3, len(passage_ids))]
-            citation_passage_id = source_passage_ids[0] if source_passage_ids else "passage_id"
-            merged_narratives.append(
+        for candidate in candidates[:5]:
+            passages.append(
                 {
-                    "topic": f"Heuristic topic {idx + 1}",
-                    "narrative": (
-                        "There is a compelling case to be made that a shared pattern emerges here "
-                        f"({citation_passage_id})."
-                    ),
-                    "source_passage_ids": source_passage_ids,
-                    "points_of_consensus": [],
-                    "points_of_disagreement": [],
+                    "passage_id": candidate.get("passage_id", uuid4().hex),
+                    "relevance_score": 0.7,
+                    "quotability_score": 0.6,
+                    "synthesis_tags": ["independent"],
                 }
             )
+        return {"passages": passages, "cross_book_pairs": []}
 
+    def _collect_passage_ids(self, passages_by_axis: dict[str, Any]) -> list[str]:
+        passage_ids: list[str] = []
+        for axis_passages in passages_by_axis.values():
+            for passage in axis_passages:
+                if not isinstance(passage, dict):
+                    continue
+                passage_ids.append(str(passage.get("passage_id", uuid4().hex)))
+        return passage_ids
+
+    def _build_primitive(
+        self,
+        *,
+        primitive_id: str,
+        title: str,
+        summary: str,
+        axis_ids: list[str],
+        passage_ids: list[str],
+    ) -> dict[str, Any]:
         return {
-            "insights": insights,
-            "narrative_threads": [],
-            "book_relationship_matrix": {},
-            "unresolved_tensions": [],
+            "id": primitive_id,
+            "title": title,
+            "summary": summary,
+            "axis_ids": axis_ids,
+            "core_passage_ids": passage_ids[:1],
+            "support_passage_ids": passage_ids[1:3],
+            "timeframe": None,
+            "geography": None,
+            "actor_tags": [],
+            "institution_tags": [],
+        }
+
+    def _generate_synthesis_primitives(self, payload: PromptPayload) -> dict[str, Any]:
+        passages_by_axis = payload.get("passages_by_axis", {})
+        axis_ids = list(passages_by_axis.keys()) or ["axis_01"]
+        passage_ids = self._collect_passage_ids(passages_by_axis) or [uuid4().hex, uuid4().hex]
+        return {
+            "project_id": payload.get("project_id", "project"),
+            "turning_points": [
+                self._build_primitive(
+                    primitive_id="tp_001",
+                    title="Heuristic turning point",
+                    summary="A threshold crossing changes what becomes possible next.",
+                    axis_ids=axis_ids[:1],
+                    passage_ids=passage_ids[:3],
+                )
+            ],
+            "scene_worthy_consequences": [
+                self._build_primitive(
+                    primitive_id="sc_001",
+                    title="Heuristic consequence",
+                    summary="A visible consequence follows from the turn.",
+                    axis_ids=axis_ids[:1],
+                    passage_ids=passage_ids[1:4] or passage_ids[:2],
+                )
+            ],
+            "causal_mechanisms": [
+                self._build_primitive(
+                    primitive_id="cm_001",
+                    title="Heuristic mechanism",
+                    summary="A process explains how local change propagates.",
+                    axis_ids=axis_ids[:1],
+                    passage_ids=passage_ids[2:5] or passage_ids[:2],
+                )
+            ],
+            "live_questions": [
+                {
+                    **self._build_primitive(
+                        primitive_id="lq_001",
+                        title="Heuristic live question",
+                        summary="The evidence supports more than one plausible reading.",
+                        axis_ids=axis_ids[:1],
+                        passage_ids=passage_ids[:3],
+                    ),
+                    "candidate_readings": [
+                        {
+                            "label": "reading_a",
+                            "summary": "A cautious interpretation of the evidence.",
+                            "support_passage_ids": passage_ids[:1],
+                        },
+                        {
+                            "label": "reading_b",
+                            "summary": "A competing interpretation that remains plausible.",
+                            "support_passage_ids": passage_ids[1:2] or passage_ids[:1],
+                        },
+                    ],
+                }
+            ],
             "quality_score": 0.5,
-            "merged_narratives": merged_narratives,
+            "quality_notes": ["Heuristic primitives artifact."],
+        }
+
+    def _generate_synthesis_consolidation(self, payload: PromptPayload) -> dict[str, Any]:
+        primitives = payload.get("primitives", {})
+        turning_points = primitives.get("turning_points", [])
+        consequences = primitives.get("scene_worthy_consequences", [])
+        mechanisms = primitives.get("causal_mechanisms", [])
+        live_questions = primitives.get("live_questions", [])
+        member_ids: list[str] = []
+        for family in (turning_points, consequences, mechanisms, live_questions):
+            for item in family[:1]:
+                member_ids.append(str(item.get("id", uuid4().hex)))
+        primary_member_id = member_ids[0] if member_ids else "tp_001"
+        return {
+            "project_id": payload.get("project_id", "project"),
+            "episode_candidate_clusters": [
+                {
+                    "cluster_id": "cluster_001",
+                    "title": "Heuristic cluster",
+                    "summary": "A compact local causal chain.",
+                    "primary_member_id": primary_member_id,
+                    "member_ids": member_ids or [primary_member_id],
+                    "local_question": "What changes the stakes locally?",
+                    "local_payoff_shape": "reveal",
+                }
+            ],
+            "turning_points": turning_points,
+            "scene_worthy_consequences": consequences,
+            "causal_mechanisms": mechanisms,
+            "live_questions": live_questions,
+            "quality_score": float(primitives.get("quality_score", 0.5)),
+            "quality_notes": ["Heuristic consolidated synthesis map."],
         }
 
     def _generate_narrative_strategy(self, payload: PromptPayload) -> dict[str, Any]:
         requested_episode_count = payload.get("requested_episode_count")
         synthesis_map = payload.get("synthesis_map", {})
-        thematic_axes = payload.get("thematic_axes", [])
-        insights = synthesis_map.get("insights", [])
+        clusters = synthesis_map.get("episode_candidate_clusters", [])
+        if not clusters:
+            clusters = [{"cluster_id": "cluster_001", "title": "Heuristic cluster"}]
         if requested_episode_count is None:
-            insight_count = int(synthesis_map.get("insight_count", len(insights)))
-            thread_count = int(synthesis_map.get("thread_count", 0))
-            quality_score = float(synthesis_map.get("quality_score", 0.0))
-            base = max(7, (insight_count // 5) + (thread_count // 2))
-            if quality_score >= 0.75:
-                base += 1
-            recommended_episode_count = max(7, min(9, base))
+            recommended_episode_count = max(6, min(10, len(clusters)))
         else:
-            recommended_episode_count = max(7, min(9, int(requested_episode_count)))
-        episode_assignments = []
-        episode_arc_details = []
-        axis_pool = [
-            {
-                "axis_id": axis.get("axis_id", uuid4().hex),
-                "description": axis.get("description", ""),
-                "guiding_questions": axis.get("guiding_questions", []),
-            }
-            for axis in thematic_axes
-        ] or [{
-            "axis_id": uuid4().hex,
-            "description": "",
-            "guiding_questions": ["What is the central conflict on this axis?"],
-        }]
-        insight_ids = [insight.get("insight_id", uuid4().hex) for insight in insights]
-        merged_narrative_id_pool = [
-            str(item.get("merged_narrative_id", "")).strip()
-            for item in synthesis_map.get("merged_narratives", [])
-            if str(item.get("merged_narrative_id", "")).strip()
-        ]
-        for i in range(recommended_episode_count):
-            if len(axis_pool) >= 4:
-                target_axis_count = 2 + (i % 3)
-            else:
-                target_axis_count = min(len(axis_pool), max(1, len(axis_pool)))
-            selected_axes = [
-                axis_pool[(i + offset) % len(axis_pool)]
-                for offset in range(target_axis_count)
-            ]
-            axis_item = selected_axes[0]
-            axis_id = axis_item["axis_id"]
-            assigned_insights = []
-            if insight_ids:
-                assigned_insights = [insight_ids[i % len(insight_ids)]]
-            guiding_questions_by_axis: list[tuple[str, str]] = []
-            for selected_axis in selected_axes:
-                axis_questions = [
-                    str(question).strip()
-                    for question in selected_axis.get("guiding_questions", [])
-                    if str(question).strip()
-                ] or ["What changes the stakes on this axis in this episode?"]
-                for question in axis_questions:
-                    guiding_questions_by_axis.append(
-                        (selected_axis["axis_id"], question)
-                    )
-            episode_inquiries: list[dict[str, str]] = []
-            for offset in range(4):
-                axis_for_question, question = guiding_questions_by_axis[
-                    offset % len(guiding_questions_by_axis)
-                ]
-                episode_inquiries.append(
-                    {"axis_id": axis_for_question, "question": question}
-                )
-            episode_assignments.append(
+            recommended_episode_count = max(6, min(10, int(requested_episode_count)))
+        while len(clusters) < recommended_episode_count:
+            idx = len(clusters) + 1
+            clusters.append(
                 {
-                    "episode_number": i + 1,
-                    "title": f"Episode {i + 1}",
-                    "driving_question": (
-                        "What larger argument do these books collectively advance?"
-                        if i == 0
-                        else f"What does episode {i + 1} reveal that the previous episode could not?"
-                    ),
-                    "thematic_focus": f"Focus on axis {axis_id[:8]}",
-                    "axes": [
-                        {
-                            "axis_id": selected_axis["axis_id"],
-                            "description": selected_axis.get("description", ""),
-                        }
-                        for selected_axis in selected_axes
-                    ],
-                    "insight_ids": assigned_insights,
-                    "merged_narrative_id": (
-                        merged_narrative_id_pool[i % len(merged_narrative_id_pool)]
-                        if merged_narrative_id_pool
-                        else None
-                    ),
-                    "tension_ids": [],
-                    "episode_strategy": "advance main thread",
+                    "cluster_id": f"cluster_{idx:03d}",
+                    "title": f"Heuristic cluster {idx}",
                 }
             )
-            episode_arc_details.append(
+        episodes = []
+        for idx in range(recommended_episode_count):
+            cluster = clusters[idx % len(clusters)]
+            episodes.append(
                 {
-                    "episode_number": i + 1,
-                    "arc_summary": f"Episode {i + 1} advances the central series argument.",
-                    "narrative_stakes": "Clarify why this turning point matters for the full series arc.",
-                    "progression_beats": [
-                        "Re-establish the core conflict and what changed since the previous episode.",
-                        "Push the argument into a higher-stakes contradiction.",
-                        "End on a forward-driving implication for the next episode.",
+                    "episode_number": idx + 1,
+                    "title": f"Episode {idx + 1}",
+                    "driving_question": (
+                        "What local turn best explains the series?"
+                        if idx == 0
+                        else f"What does episode {idx + 1} newly reveal?"
+                    ),
+                    "thematic_focus": cluster.get("title", "Heuristic focus"),
+                    "arc_summary": f"Episode {idx + 1} follows a discovery-ordered cluster path.",
+                    "unresolved_questions": [],
+                    "cluster_path": [
+                        {
+                            "occurrence_id": f"occ_{idx + 1:03d}",
+                            "cluster_id": cluster.get("cluster_id", "cluster_001"),
+                            "usage": "primary",
+                            "transition_note": "",
+                            "chronology_break": None,
+                        }
                     ],
-                    "unresolved_questions": [
-                        "What key uncertainty should remain open at the end of this episode?",
-                    ],
-                    "episode_inquiries": episode_inquiries,
-                    "payoff_shape": "Escalate tensions now and reserve partial synthesis for later episodes.",
                 }
             )
         return {
             "strategy_type": "convergence",
             "justification": "Heuristic: defaulting to convergence strategy.",
             "series_arc": "Books converge on shared themes.",
-            "episode_arc_outline": [
-                f"Episode {i + 1}" for i in range(recommended_episode_count)
-            ],
-            "episode_arc_details": episode_arc_details,
+            "episode_arc_outline": [f"Episode {idx + 1}" for idx in range(recommended_episode_count)],
             "recommended_episode_count": recommended_episode_count,
-            "episode_assignments": episode_assignments,
+            "episodes": episodes,
         }
 
     def _generate_episode_planning(self, payload: PromptPayload) -> dict[str, Any]:
-        assignment = payload.get("episode_assignment", {})
-        episode_number = int(assignment.get("episode_number", 1))
-        axes = assignment.get("axes", [])
-        axis_ids = [
-            axis.get("axis_id", "")
-            for axis in axes
-            if isinstance(axis, dict) and axis.get("axis_id")
-        ]
-        if not axis_ids:
-            axis_ids = assignment.get("axis_ids", [])
-        insight_ids = assignment.get("insight_ids", [])
+        episode = payload.get("episode", {})
+        episode_number = int(episode.get("episode_number", 1))
+        cluster_path = episode.get("cluster_path", [])
         available_passages = payload.get("available_passages", [])
-        synthesis_map = payload.get("synthesis_map", {})
-        passage_pool = available_passages if isinstance(available_passages, list) else []
-        selected_passage_ids = [
-            passage.get("passage_id", uuid4().hex)
-            for passage in passage_pool[:3]
+        passage_ids = [
+            str(passage.get("passage_id", uuid4().hex))
+            for passage in available_passages[:3]
         ]
-        spine_segments = [
-            {
-                "spine_segment_id": f"spine_{idx + 1:02d}",
-                "title": f"Heuristic spine segment {idx + 1}",
-                "summary": f"Heuristic spine segment {idx + 1} for episode {episode_number}.",
-                "source_passages": selected_passage_ids,
-                "segment_function": "context",
-                "era_or_moment": "",
-            }
-            for idx in range(2)
-        ]
+        occurrence_id = (
+            str(cluster_path[0].get("occurrence_id", "occ_001"))
+            if cluster_path
+            else "occ_001"
+        )
         scene_cards = [
             {
-                "scene_id": f"scene_{idx + 1:02d}",
-                "spine_segment_id": (
-                    spine_segments[0]["spine_segment_id"]
-                    if idx < 2
-                    else spine_segments[1]["spine_segment_id"]
-                ),
-                "title": f"Heuristic scene {idx + 1}",
-                "narrative_purpose": f"Advance heuristic scene {idx + 1}.",
-                "timeframe": "",
-                "location": "",
+                "scene_id": "scene_01",
+                "title": "Heuristic scene 1",
+                "card_kind": "normal",
+                "scene_role": "setup",
+                "dominant_cluster_occurrence_id": occurrence_id,
+                "entry_image": "A concrete opening image.",
+                "local_question": "What changes here?",
+                "observable_detail": "A visible consequence lands in the scene.",
+                "intended_move": "Move the listener into the next discovery step.",
+                "timeframe": None,
+                "location": None,
                 "actors": [],
-                "entry_image": "",
-                "exit_turn": "",
-                "insight_ids": insight_ids[:1],
-                "passage_ids": selected_passage_ids,
-                "estimated_duration_seconds": 3900,
+                "primitive_ids": [],
+                "passage_ids": passage_ids,
+                "estimated_duration_seconds": 4200,
             }
-            for idx in range(4)
         ]
-        beats = []
-        for i in range(72):
-            beat_insight_ids = [insight_ids[i % len(insight_ids)]] if insight_ids else []
-            scene_card = scene_cards[min(len(scene_cards) - 1, i // 18)]
-            beats.append(
-                {
-                    "beat_id": uuid4().hex,
-                    "scene_id": scene_card["scene_id"],
-                    "description": f"Beat {i + 1} for episode {episode_number}",
-                    "insight_ids": beat_insight_ids,
-                    "passage_ids": selected_passage_ids,
-                    "primary_book_id": passage_pool[0].get("book_id", "") if passage_pool else "",
-                    "supporting_book_ids": [],
-                    "narrative_instruction": "advance_events",
-                    "attribution_level": "none",
-                    "estimated_duration_seconds": 150,
-                }
-            )
         return {
             "episode_number": episode_number,
-            "title": assignment.get("title", f"Episode {episode_number}"),
-            "thematic_focus": assignment.get("thematic_focus", "Heuristic focus"),
-            "axis_ids": axis_ids,
-            "insight_ids": insight_ids,
-            "scene_cards": scene_cards,
-            "anchor_scene_ids": [scene_cards[0]["scene_id"], scene_cards[-1]["scene_id"]],
-            "attribution_budget": 0.2,
-            "beats": beats,
-            "narrative_spine": {
-                "episode_number": episode_number,
-                "spine_segments": spine_segments,
-                "attribution_moments": [],
-                "narrative_voice": "omniscient narrator telling a story",
+            "title": episode.get("title", f"Episode {episode_number}"),
+            "driving_question": episode.get("driving_question", "What changes here?"),
+            "thematic_focus": episode.get("thematic_focus", "Heuristic focus"),
+            "arc_summary": episode.get("arc_summary", "A heuristic episode arc."),
+            "unresolved_questions": episode.get("unresolved_questions", []),
+            "framing": {
+                "opening_image": "A listener-facing opening image.",
+                "threat_or_unresolved_action": "A threat remains active as the episode starts.",
+                "opening_question": episode.get("driving_question", "What changes here?"),
+                "handoff_scene_card_id": "scene_01",
+                "recap": None,
+                "preview": None,
             },
-            "synthesis_context": synthesis_map or None,
+            "scene_cards": scene_cards,
             "target_duration_minutes": 140.0,
-            "episode_strategy": assignment.get("episode_strategy", ""),
         }
 
     def _generate_episode_writing(self, payload: PromptPayload) -> dict[str, Any]:
-        ep_num = payload.get("episode_number", 1)
-        beats = payload.get("plan", {}).get("beats", [])
-        first_beat = beats[0] if beats else {}
+        batch_id = str(payload.get("batch_id", "batch_1"))
+        active_scene_card_ids = [
+            str(scene_id) for scene_id in payload.get("active_scene_card_ids", [])
+        ] or ["scene_01"]
         return {
-            "title": f"Episode {ep_num}",
-            "segments": [
+            "batch_id": batch_id,
+            "prose_sections": [
                 {
-                    "segment_id": uuid4().hex,
+                    "section_id": f"section_{batch_id}",
+                    "scene_card_ids": active_scene_card_ids,
+                    "movement_goal": "discover",
                     "text": "Heuristic narration content.",
-                    "segment_type": "body",
-                    "scene_id": first_beat.get("scene_id"),
-                    "beat_id": first_beat.get("beat_id"),
-                    "attribution_level": "none",
+                    "citations": [],
+                    "source_book_ids": [],
                 }
             ],
-            "citations": [],
+            "transitions": [],
+            "window_map": [
+                {
+                    "batch_id": batch_id,
+                    "section_ids": [f"section_{batch_id}"],
+                    "transition_ids": [],
+                }
+            ],
         }
 
     def _generate_grounding_validation(self, payload: PromptPayload) -> dict[str, Any]:
@@ -455,45 +392,44 @@ class HeuristicLLMClient(LLMClient):
         }
 
     def _generate_repair(self, payload: PromptPayload) -> dict[str, Any]:
-        return {"repaired_segments": []}
+        return {"repaired_sections": [], "repaired_transitions": []}
 
     def _generate_spoken_delivery(self, payload: PromptPayload) -> dict[str, Any]:
-        segments = payload.get("script_segments", [])
-        spoken_segments = []
-        for seg in segments:
-            spoken_segments.append({
-                "segment_id": seg.get("segment_id", uuid4().hex),
-                "text": seg.get("text", "Spoken delivery text."),
-                "max_words": payload.get("max_words_per_segment", 250),
-                "speech_hints": {
-                    "style": "neutral",
-                    "intensity": "none",
-                    "pause_before_ms": 300,
-                    "pause_after_ms": 300,
-                    "pace": "normal",
-                },
-            })
-        if not spoken_segments:
-            spoken_segments = [{
-                "segment_id": uuid4().hex,
-                "text": "Heuristic spoken delivery.",
-                "max_words": 250,
-                "speech_hints": {
-                    "style": "neutral",
-                    "intensity": "none",
-                    "pause_before_ms": 300,
-                    "pause_after_ms": 300,
-                    "pace": "normal",
-                },
-            }]
-        return {"segments": spoken_segments, "arc_plan": None}
-
-    def _generate_episode_framing(self, payload: PromptPayload) -> dict[str, Any]:
-        ep_num = payload.get("episode_number", 1)
-        total = payload.get("total_episodes", 1)
+        script = payload.get("script", {})
         return {
-            "episode_number": ep_num,
-            "recap": "Previously, we explored..." if ep_num > 1 else None,
-            "preview": "Next time, we'll discover..." if ep_num < total else None,
-            "cold_open": None,
+            "sections": [
+                {
+                    "section_id": str(section.get("section_id", uuid4().hex)),
+                    "text": str(section.get("text", "Spoken delivery text.")),
+                    "speech_hints": {
+                        "style": "neutral",
+                        "intensity": "none",
+                        "pause_before_ms": 300,
+                        "pause_after_ms": 300,
+                        "pace": "normal",
+                    },
+                }
+                for section in script.get("prose_sections", [])
+            ],
+            "transitions": [
+                {
+                    "transition_id": str(transition.get("transition_id", uuid4().hex)),
+                    "text": str(transition.get("text", "Transition.")),
+                    "speech_hints": {
+                        "style": "neutral",
+                        "intensity": "none",
+                        "pause_before_ms": 300,
+                        "pause_after_ms": 300,
+                        "pace": "normal",
+                    },
+                }
+                for transition in script.get("transitions", [])
+            ],
+        }
+
+    def _generate_style_audit(self, payload: PromptPayload) -> dict[str, Any]:
+        return {
+            "episode_number": payload.get("episode_number", 1),
+            "warnings": [],
+            "counts_by_type": {},
         }

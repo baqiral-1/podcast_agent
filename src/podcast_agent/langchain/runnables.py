@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from contextvars import Context, copy_context
 import json
+import re
 import socket
 from typing import Any, Callable, Sequence, TypeVar
 
@@ -70,8 +71,64 @@ def is_connection_error(exc: Exception) -> bool:
     return False
 
 
+def _extract_http_status_code(exc: Exception) -> int | None:
+    for attr_name in ("status_code", "status", "http_status"):
+        value = getattr(exc, attr_name, None)
+        if isinstance(value, int):
+            return value
+
+    response = getattr(exc, "response", None)
+    if response is not None:
+        response_status = getattr(response, "status_code", None)
+        if isinstance(response_status, int):
+            return response_status
+
+    message = str(exc)
+    for pattern in (
+        r"\bstatus(?:_code)?\s*[:=]\s*(\d{3})\b",
+        r"\bhttp\s*(\d{3})\b",
+        r"\bcode\s*[:=]\s*(\d{3})\b",
+    ):
+        match = re.search(pattern, message, flags=re.IGNORECASE)
+        if not match:
+            continue
+        try:
+            return int(match.group(1))
+        except ValueError:
+            continue
+    return None
+
+
+def is_api_status_transient_error(exc: Exception) -> bool:
+    error_name = type(exc).__name__.lower()
+    status_code = _extract_http_status_code(exc)
+    if isinstance(status_code, int):
+        if status_code == 429 or status_code >= 500:
+            return True
+        return False
+
+    if "ratelimit" in error_name:
+        return True
+    if "apistatuserror" not in error_name:
+        return False
+
+    message = str(exc).lower()
+    if (
+        "internal server error" in message
+        or "service unavailable" in message
+        or "gateway timeout" in message
+        or "temporarily unavailable" in message
+    ):
+        return True
+    return False
+
+
 def is_transient_error(exc: Exception) -> bool:
-    return is_timeout_error(exc) or is_connection_error(exc)
+    return (
+        is_timeout_error(exc)
+        or is_connection_error(exc)
+        or is_api_status_transient_error(exc)
+    )
 
 
 def is_json_parse_error(exc: Exception) -> bool:

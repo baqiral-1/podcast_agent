@@ -17,6 +17,12 @@ class RemoteProtocolError(Exception):
     pass
 
 
+class APIStatusError(Exception):
+    def __init__(self, message: str, *, status_code: int | None = None):
+        super().__init__(message)
+        self.status_code = status_code
+
+
 def test_connection_error_detects_builtin_connection_error() -> None:
     assert is_connection_error(ConnectionError("socket disconnected"))
 
@@ -41,6 +47,25 @@ def test_connection_error_detects_server_disconnected_message() -> None:
 
 def test_transient_error_false_for_non_transient_value_error() -> None:
     assert not is_transient_error(ValueError("schema validation failed"))
+
+
+def test_transient_error_true_for_api_429() -> None:
+    assert is_transient_error(APIStatusError("rate limited", status_code=429))
+
+
+def test_transient_error_true_for_api_5xx() -> None:
+    assert is_transient_error(APIStatusError("upstream failure", status_code=503))
+
+
+def test_transient_error_false_for_api_4xx() -> None:
+    assert not is_transient_error(APIStatusError("bad request", status_code=400))
+
+
+def test_transient_error_true_for_api_internal_server_message_without_status() -> None:
+    exc = APIStatusError(
+        "{'type': 'error', 'error': {'type': 'api_error', 'message': 'Internal server error'}}"
+    )
+    assert is_transient_error(exc)
 
 
 def test_json_parse_error_detects_jsondecodeerror() -> None:
