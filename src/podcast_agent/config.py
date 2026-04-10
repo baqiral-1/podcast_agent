@@ -89,7 +89,7 @@ class LLMConfig(BaseModel):
             "synthesis_mapping": 1200.0,
             "narrative_strategy": 900.0,
             "theme_decomposition": 900.0,
-            "episode_planning": 1200.0,
+            "episode_planning": 1500.0,
             "episode_writing": 1500.0,
             "spoken_delivery": 1200.0,
         },

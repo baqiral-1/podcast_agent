@@ -353,15 +353,51 @@ class HeuristicLLMClient(LLMClient):
             passage.get("passage_id", uuid4().hex)
             for passage in passage_pool[:3]
         ]
+        spine_segments = [
+            {
+                "spine_segment_id": f"spine_{idx + 1:02d}",
+                "title": f"Heuristic spine segment {idx + 1}",
+                "summary": f"Heuristic spine segment {idx + 1} for episode {episode_number}.",
+                "source_passages": selected_passage_ids,
+                "segment_function": "context",
+                "era_or_moment": "",
+            }
+            for idx in range(2)
+        ]
+        scene_cards = [
+            {
+                "scene_id": f"scene_{idx + 1:02d}",
+                "spine_segment_id": (
+                    spine_segments[0]["spine_segment_id"]
+                    if idx < 2
+                    else spine_segments[1]["spine_segment_id"]
+                ),
+                "title": f"Heuristic scene {idx + 1}",
+                "narrative_purpose": f"Advance heuristic scene {idx + 1}.",
+                "timeframe": "",
+                "location": "",
+                "actors": [],
+                "entry_image": "",
+                "exit_turn": "",
+                "insight_ids": insight_ids[:1],
+                "passage_ids": selected_passage_ids,
+                "estimated_duration_seconds": 3900,
+            }
+            for idx in range(4)
+        ]
         beats = []
-        for i in range(52):
+        for i in range(72):
             beat_insight_ids = [insight_ids[i % len(insight_ids)]] if insight_ids else []
+            scene_card = scene_cards[min(len(scene_cards) - 1, i // 18)]
             beats.append(
                 {
                     "beat_id": uuid4().hex,
+                    "scene_id": scene_card["scene_id"],
                     "description": f"Beat {i + 1} for episode {episode_number}",
                     "insight_ids": beat_insight_ids,
                     "passage_ids": selected_passage_ids,
+                    "primary_book_id": passage_pool[0].get("book_id", "") if passage_pool else "",
+                    "supporting_book_ids": [],
                     "narrative_instruction": "advance_events",
                     "attribution_level": "none",
                     "estimated_duration_seconds": 150,
@@ -373,19 +409,13 @@ class HeuristicLLMClient(LLMClient):
             "thematic_focus": assignment.get("thematic_focus", "Heuristic focus"),
             "axis_ids": axis_ids,
             "insight_ids": insight_ids,
+            "scene_cards": scene_cards,
+            "anchor_scene_ids": [scene_cards[0]["scene_id"], scene_cards[-1]["scene_id"]],
             "attribution_budget": 0.2,
             "beats": beats,
             "narrative_spine": {
                 "episode_number": episode_number,
-                "spine_segments": [
-                    {
-                        "segment_id": uuid4().hex,
-                        "narrative_text": f"Heuristic spine segment {episode_number}.",
-                        "source_passages": selected_passage_ids,
-                        "segment_function": "context",
-                        "era_or_moment": "",
-                    }
-                ],
+                "spine_segments": spine_segments,
                 "attribution_moments": [],
                 "narrative_voice": "omniscient narrator telling a story",
             },
@@ -396,6 +426,8 @@ class HeuristicLLMClient(LLMClient):
 
     def _generate_episode_writing(self, payload: PromptPayload) -> dict[str, Any]:
         ep_num = payload.get("episode_number", 1)
+        beats = payload.get("plan", {}).get("beats", [])
+        first_beat = beats[0] if beats else {}
         return {
             "title": f"Episode {ep_num}",
             "segments": [
@@ -403,6 +435,8 @@ class HeuristicLLMClient(LLMClient):
                     "segment_id": uuid4().hex,
                     "text": "Heuristic narration content.",
                     "segment_type": "body",
+                    "scene_id": first_beat.get("scene_id"),
+                    "beat_id": first_beat.get("beat_id"),
                     "attribution_level": "none",
                 }
             ],

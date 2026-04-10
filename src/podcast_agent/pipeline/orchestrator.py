@@ -166,6 +166,47 @@ def _split_contiguous_windows(items: list[Any], window_count: int) -> list[list[
     return windows
 
 
+def _split_weighted_contiguous_windows(
+    items: list[Any],
+    weights: list[float],
+    window_count: int,
+) -> list[list[Any]]:
+    if not items:
+        return []
+    if len(items) != len(weights):
+        raise ValueError("items and weights must have the same length")
+
+    effective_windows = max(1, min(window_count, len(items)))
+    if effective_windows == 1:
+        return [list(items)]
+
+    normalized_weights = [max(float(weight), 0.0) for weight in weights]
+    remaining_total = sum(normalized_weights)
+    windows: list[list[Any]] = []
+    start = 0
+
+    for idx in range(effective_windows):
+        if idx == effective_windows - 1:
+            windows.append(items[start:])
+            break
+        windows_left = effective_windows - idx
+        max_end = len(items) - (windows_left - 1)
+        target_weight = remaining_total / windows_left if windows_left > 0 else remaining_total
+        accumulated = 0.0
+        end = start
+        while end < max_end:
+            accumulated += normalized_weights[end]
+            end += 1
+            if accumulated >= target_weight:
+                break
+        if end <= start:
+            end = start + 1
+        windows.append(items[start:end])
+        remaining_total -= sum(normalized_weights[start:end])
+        start = end
+    return windows
+
+
 def _extract_insight_refs(text: str) -> list[str]:
     if not text:
         return []
@@ -217,6 +258,7 @@ def _normalize_beat_insight_linkage(
 def _build_window_synthesis_context(
     plan: EpisodePlan,
     window_beats: list[EpisodeBeat],
+    window_scene_cards: list[Any] | None = None,
 ) -> EpisodeSynthesisContext | None:
     if plan.synthesis_context is None:
         return None
@@ -226,6 +268,13 @@ def _build_window_synthesis_context(
         for insight_id in beat.insight_ids
         if insight_id
     }
+    if window_scene_cards:
+        window_insight_ids.update(
+            insight_id
+            for scene in window_scene_cards
+            for insight_id in scene.insight_ids
+            if insight_id
+        )
     window_insights = [
         insight
         for insight in plan.synthesis_context.insights
@@ -238,6 +287,119 @@ def _build_window_synthesis_context(
             "narrative_threads": list(plan.synthesis_context.narrative_threads),
         }
     )
+
+
+def _build_writing_windows(plan: EpisodePlan, window_count: int) -> list[dict[str, Any]]:
+    if (
+        plan.narrative_spine is None
+        or not plan.narrative_spine.spine_segments
+        or not plan.scene_cards
+    ):
+        return [
+            {
+                "spine_segments": (
+                    list(plan.narrative_spine.spine_segments)
+                    if plan.narrative_spine is not None
+                    else []
+                ),
+                "attribution_moments": (
+                    list(plan.narrative_spine.attribution_moments)
+                    if plan.narrative_spine is not None
+                    else []
+                ),
+                "scene_cards": list(plan.scene_cards),
+                "anchor_scene_ids": list(plan.anchor_scene_ids),
+                "beats": window_beats,
+            }
+            for window_beats in _split_contiguous_windows(list(plan.beats), window_count)
+        ]
+
+    beats_by_scene_id: dict[str, list[EpisodeBeat]] = {
+        scene.scene_id: []
+        for scene in plan.scene_cards
+    }
+    for beat in plan.beats:
+        if beat.scene_id in beats_by_scene_id:
+            beats_by_scene_id[beat.scene_id].append(beat)
+
+    scenes_by_spine_id: dict[str, list[Any]] = {}
+    for scene in plan.scene_cards:
+        scenes_by_spine_id.setdefault(scene.spine_segment_id, []).append(scene)
+
+    active_spine_segments: list[dict[str, Any]] = []
+    for spine_segment in plan.narrative_spine.spine_segments:
+        window_scene_cards = scenes_by_spine_id.get(spine_segment.spine_segment_id, [])
+        if not window_scene_cards:
+            continue
+        window_beats = [
+            beat
+            for scene in window_scene_cards
+            for beat in beats_by_scene_id.get(scene.scene_id, [])
+        ]
+        weight = sum(float(beat.estimated_duration_seconds) for beat in window_beats)
+        if weight <= 0:
+            weight = sum(float(scene.estimated_duration_seconds) for scene in window_scene_cards)
+        active_spine_segments.append(
+            {
+                "spine_segment": spine_segment,
+                "scene_cards": window_scene_cards,
+                "beats": window_beats,
+                "weight": max(weight, 1.0),
+            }
+        )
+
+    if not active_spine_segments:
+        return [
+            {
+                "spine_segments": list(plan.narrative_spine.spine_segments),
+                "attribution_moments": list(plan.narrative_spine.attribution_moments),
+                "scene_cards": list(plan.scene_cards),
+                "anchor_scene_ids": list(plan.anchor_scene_ids),
+                "beats": window_beats,
+            }
+            for window_beats in _split_contiguous_windows(list(plan.beats), window_count)
+        ]
+
+    spine_windows = _split_weighted_contiguous_windows(
+        active_spine_segments,
+        [float(item["weight"]) for item in active_spine_segments],
+        window_count,
+    )
+    window_specs: list[dict[str, Any]] = []
+    for spine_window in spine_windows:
+        window_spine_segments = [item["spine_segment"] for item in spine_window]
+        window_scene_cards = [
+            scene
+            for item in spine_window
+            for scene in item["scene_cards"]
+        ]
+        window_scene_ids = {scene.scene_id for scene in window_scene_cards}
+        window_beats = [
+            beat
+            for beat in plan.beats
+            if beat.scene_id in window_scene_ids
+        ]
+        window_spine_segment_ids = {
+            segment.spine_segment_id for segment in window_spine_segments
+        }
+        window_specs.append(
+            {
+                "spine_segments": window_spine_segments,
+                "attribution_moments": [
+                    moment
+                    for moment in plan.narrative_spine.attribution_moments
+                    if moment.insert_after_segment_id in window_spine_segment_ids
+                ],
+                "scene_cards": window_scene_cards,
+                "anchor_scene_ids": [
+                    scene_id
+                    for scene_id in plan.anchor_scene_ids
+                    if scene_id in window_scene_ids
+                ],
+                "beats": window_beats,
+            }
+        )
+    return window_specs
 
 
 def _bm25_score(
@@ -1446,13 +1608,24 @@ def _evaluate_episode_script_plan_alignment(
         beat.beat_id: set(beat.passage_ids)
         for beat in plan.beats
     }
+    beat_scene_by_id = {
+        beat.beat_id: beat.scene_id
+        for beat in plan.beats
+        if beat.scene_id
+    }
 
     observed_passage_ids: set[str] = set()
+    observed_scene_ids: list[str] = []
     for citation in script.citations:
         observed_passage_ids.add(citation.passage_id)
     for segment in script.segments:
         if segment.beat_id and segment.beat_id in beat_passages_by_id:
             observed_passage_ids.update(beat_passages_by_id[segment.beat_id])
+        segment_scene_id = segment.scene_id or (
+            beat_scene_by_id.get(segment.beat_id) if segment.beat_id else None
+        )
+        if segment_scene_id:
+            observed_scene_ids.append(segment_scene_id)
         for citation in segment.citations:
             observed_passage_ids.add(citation.passage_id)
 
@@ -1559,12 +1732,73 @@ def _evaluate_episode_script_plan_alignment(
         and max_abs_drift > max_book_balance_abs_drift
     )
 
+    planned_scene_ids = [scene.scene_id for scene in plan.scene_cards]
+    planned_scene_id_set = set(planned_scene_ids)
+    observed_scene_id_set = {scene_id for scene_id in observed_scene_ids if scene_id}
+    covered_scene_ids = [
+        scene_id for scene_id in planned_scene_ids
+        if scene_id in observed_scene_id_set
+    ]
+    collapsed_observed_scene_order: list[str] = []
+    previous_scene_id: str | None = None
+    for scene_id in observed_scene_ids:
+        if scene_id == previous_scene_id:
+            continue
+        collapsed_observed_scene_order.append(scene_id)
+        previous_scene_id = scene_id
+    unexpected_scene_ids = [
+        scene_id for scene_id in collapsed_observed_scene_order
+        if scene_id not in planned_scene_id_set
+    ]
+    planned_scene_index = {
+        scene_id: idx for idx, scene_id in enumerate(planned_scene_ids)
+    }
+    observed_scene_indices = [
+        planned_scene_index[scene_id]
+        for scene_id in collapsed_observed_scene_order
+        if scene_id in planned_scene_index
+    ]
+    scene_order_preserved = observed_scene_indices == sorted(observed_scene_indices)
+    scene_coverage_ratio = (
+        len(covered_scene_ids) / len(planned_scene_ids)
+        if planned_scene_ids
+        else 1.0
+    )
+    anchor_scene_ids = [scene_id for scene_id in plan.anchor_scene_ids if scene_id]
+    missing_anchor_scene_ids = [
+        scene_id for scene_id in anchor_scene_ids
+        if scene_id not in observed_scene_id_set
+    ]
+    scene_structure_has_issues = bool(planned_scene_ids) and (
+        len(covered_scene_ids) < len(planned_scene_ids)
+        or bool(unexpected_scene_ids)
+        or not scene_order_preserved
+        or bool(missing_anchor_scene_ids)
+    )
+
     sections = {
         "insight_realization": {
             "has_issues": bool(insight_issues),
             "problem_count": len(insight_issues),
             "insights": insight_results,
             "observed_passage_count": len(observed_passage_ids),
+        },
+        "scene_structure": {
+            "has_issues": scene_structure_has_issues,
+            "planned_scene_count": len(planned_scene_ids),
+            "covered_scene_count": len(covered_scene_ids),
+            "coverage_ratio": round(scene_coverage_ratio, 4),
+            "anchor_scene_count": len(anchor_scene_ids),
+            "covered_anchor_scene_count": (
+                len(anchor_scene_ids) - len(missing_anchor_scene_ids)
+            ),
+            "missing_scene_ids": [
+                scene_id for scene_id in planned_scene_ids
+                if scene_id not in observed_scene_id_set
+            ],
+            "missing_anchor_scene_ids": missing_anchor_scene_ids,
+            "unexpected_scene_ids": unexpected_scene_ids,
+            "order_preserved": scene_order_preserved,
         },
         "cross_references": {
             "has_issues": cross_reference_has_issues,
@@ -4411,6 +4645,10 @@ class PipelineOrchestrator:
                     episode=plan.episode_number,
                     problem_count=alignment_report["problem_count"],
                     insight_problem_count=alignment_report["insight_realization"]["problem_count"],
+                    scene_coverage_ratio=alignment_report["scene_structure"]["coverage_ratio"],
+                    missing_anchor_scene_count=len(
+                        alignment_report["scene_structure"]["missing_anchor_scene_ids"]
+                    ),
                     cross_reference_coverage=alignment_report["cross_references"]["coverage_ratio"],
                     book_balance_max_abs_drift=alignment_report["book_balance"]["max_abs_drift"],
                     insufficient_book_signal=alignment_report["book_balance"]["insufficient_signal"],
@@ -4490,12 +4728,16 @@ class PipelineOrchestrator:
                 item["beat_id"]: int(item["target_words"])
                 for item in beat_word_targets
             }
-            windows = _split_contiguous_windows(list(plan.beats), _WRITING_WINDOW_COUNT)
+            windows = _build_writing_windows(plan, _WRITING_WINDOW_COUNT)
             all_segments: list[ScriptSegment] = []
             all_citations: list[Any] = []
             final_title = plan.title
 
-            for window_idx, window_beats in enumerate(windows):
+            for window_idx, window in enumerate(windows):
+                window_beats = list(window["beats"])
+                window_scene_cards = list(window.get("scene_cards", []))
+                window_spine_segments = list(window.get("spine_segments", []))
+                window_anchor_scene_ids = list(window.get("anchor_scene_ids", []))
                 window_passage_ids: list[str] = []
                 seen_passages: set[str] = set()
                 for beat in window_beats:
@@ -4518,9 +4760,27 @@ class PipelineOrchestrator:
                 window_target_word_count = sum(
                     int(item["target_words"]) for item in window_beat_word_targets
                 )
-                window_synthesis_context = _build_window_synthesis_context(plan, window_beats)
+                window_synthesis_context = _build_window_synthesis_context(
+                    plan,
+                    window_beats,
+                    window_scene_cards,
+                )
                 window_plan = plan.model_copy(
                     update={
+                        "narrative_spine": (
+                            plan.narrative_spine.model_copy(
+                                update={
+                                    "spine_segments": window_spine_segments,
+                                    "attribution_moments": list(
+                                        window.get("attribution_moments", [])
+                                    ),
+                                }
+                            )
+                            if plan.narrative_spine is not None
+                            else None
+                        ),
+                        "scene_cards": window_scene_cards,
+                        "anchor_scene_ids": window_anchor_scene_ids,
                         "beats": window_beats,
                         "target_word_count": window_target_word_count,
                         "synthesis_context": window_synthesis_context,
@@ -4545,6 +4805,8 @@ class PipelineOrchestrator:
                     episode=plan.episode_number,
                     window_index=window_idx + 1,
                     window_count=len(windows),
+                    spine_segment_count=len(window_spine_segments),
+                    scene_count=len(window_scene_cards),
                     beat_count=len(window_beats),
                     passage_count=len(window_passages),
                     synthesis_insight_count=len(window_synthesis_context.insights)
@@ -4563,6 +4825,7 @@ class PipelineOrchestrator:
                             "text": seg.text,
                             "segment_type": seg.segment_type,
                             "beat_id": seg.beat_id,
+                            "scene_id": seg.scene_id,
                             "source_book_ids": seg.source_book_ids,
                             "attribution_level": seg.attribution_level,
                             "citations": [],

@@ -432,8 +432,21 @@ class CrossReference(StrictModel):
 
 
 class SpineSegment(StrictModel):
-    segment_id: str = Field(default_factory=new_id)
-    narrative_text: str
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_legacy_fields(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        normalized = dict(value)
+        if "spine_segment_id" not in normalized and "segment_id" in normalized:
+            normalized["spine_segment_id"] = normalized.pop("segment_id")
+        if "summary" not in normalized and "narrative_text" in normalized:
+            normalized["summary"] = normalized.pop("narrative_text")
+        return normalized
+
+    spine_segment_id: str = Field(default_factory=new_id)
+    title: str = ""
+    summary: str
     source_passages: list[str] = Field(default_factory=list)
     segment_function: Literal[
         "scene_setting",
@@ -443,7 +456,7 @@ class SpineSegment(StrictModel):
         "turning_point",
         "tension",
         "resolution",
-    ]
+    ] = "context"
     era_or_moment: str = ""
 
 
@@ -474,8 +487,30 @@ class NarrativeSpine(StrictModel):
     narrative_voice: str = "omniscient narrator telling a story"
 
 
+class SceneActor(StrictModel):
+    name: str = Field(min_length=1)
+    role_in_scene: str = Field(min_length=1)
+    affiliation: str | None = None
+
+
+class SceneCard(StrictModel):
+    scene_id: str = Field(default_factory=new_id)
+    spine_segment_id: str = Field(min_length=1)
+    title: str = Field(min_length=1)
+    narrative_purpose: str = Field(min_length=1)
+    timeframe: str = ""
+    location: str = ""
+    actors: list[SceneActor] = Field(default_factory=list, max_length=4)
+    entry_image: str = ""
+    exit_turn: str = ""
+    insight_ids: list[str] = Field(default_factory=list)
+    passage_ids: list[str] = Field(default_factory=list)
+    estimated_duration_seconds: int = Field(default=0, ge=0)
+
+
 class EpisodeBeat(StrictModel):
     beat_id: str = Field(default_factory=new_id)
+    scene_id: str | None = None
     description: str
     insight_ids: list[str] = Field(default_factory=list)
     passage_ids: list[str] = Field(default_factory=list)
@@ -504,11 +539,27 @@ class EpisodeSynthesisContext(StrictModel):
 
 
 class EpisodePlanDraft(StrictModel):
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_narrative_spine(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        normalized = dict(value)
+        narrative_spine = normalized.get("narrative_spine")
+        if isinstance(narrative_spine, list):
+            normalized["narrative_spine"] = {
+                "episode_number": normalized.get("episode_number", 1),
+                "spine_segments": narrative_spine,
+            }
+        return normalized
+
     episode_number: int = Field(ge=1)
     title: str
     thematic_focus: str = ""
     axis_ids: list[str] = Field(default_factory=list)
     insight_ids: list[str] = Field(default_factory=list)
+    scene_cards: list[SceneCard] = Field(default_factory=list)
+    anchor_scene_ids: list[str] = Field(default_factory=list)
     beats: list[EpisodeBeat] = Field(default_factory=list)
     attribution_budget: float = Field(default=0.2, ge=0.0, le=1.0)
     narrative_spine: NarrativeSpine | None = None
@@ -517,6 +568,79 @@ class EpisodePlanDraft(StrictModel):
     cross_references: list[CrossReference] = Field(default_factory=list)
     target_duration_minutes: float = Field(default=140.0, gt=0.0)
     episode_strategy: str = ""
+
+    @model_validator(mode="after")
+    def _validate_scene_structure(self) -> "EpisodePlanDraft":
+        if not self.scene_cards:
+            return self
+
+        scene_ids = [scene.scene_id for scene in self.scene_cards]
+        if len(scene_ids) != len(set(scene_ids)):
+            raise ValueError("scene_cards must use unique scene_id values")
+
+        scene_ids_set = set(scene_ids)
+        anchor_scene_ids = [scene_id for scene_id in self.anchor_scene_ids if scene_id]
+        if len(anchor_scene_ids) != len(set(anchor_scene_ids)):
+            raise ValueError("anchor_scene_ids must be unique")
+        unknown_anchor_ids = [scene_id for scene_id in anchor_scene_ids if scene_id not in scene_ids_set]
+        if unknown_anchor_ids:
+            raise ValueError(
+                f"anchor_scene_ids must reference existing scene_cards: {unknown_anchor_ids}"
+            )
+
+        if self.narrative_spine is not None:
+            spine_ids = [
+                segment.spine_segment_id
+                for segment in self.narrative_spine.spine_segments
+            ]
+            spine_ids_set = set(spine_ids)
+            unknown_spine_ids = [
+                scene.spine_segment_id
+                for scene in self.scene_cards
+                if scene.spine_segment_id not in spine_ids_set
+            ]
+            if unknown_spine_ids:
+                raise ValueError(
+                    "scene_cards must reference spine_segment_id values present in narrative_spine"
+                )
+            spine_order = {segment_id: idx for idx, segment_id in enumerate(spine_ids)}
+            prior_order = -1
+            for scene in self.scene_cards:
+                current_order = spine_order[scene.spine_segment_id]
+                if current_order < prior_order:
+                    raise ValueError("scene_cards must appear in narrative spine order")
+                prior_order = current_order
+
+        if any(not beat.scene_id for beat in self.beats):
+            raise ValueError("every beat must include scene_id when scene_cards are present")
+
+        beat_scene_ids = [beat.scene_id for beat in self.beats if beat.scene_id]
+        unknown_beat_scene_ids = [
+            scene_id for scene_id in beat_scene_ids if scene_id not in scene_ids_set
+        ]
+        if unknown_beat_scene_ids:
+            raise ValueError("every beat.scene_id must reference an existing scene_card")
+
+        collapsed_scene_order: list[str] = []
+        prior_scene_id: str | None = None
+        closed_scene_ids: set[str] = set()
+        for scene_id in beat_scene_ids:
+            if scene_id == prior_scene_id:
+                continue
+            if prior_scene_id is not None:
+                closed_scene_ids.add(prior_scene_id)
+            if scene_id in closed_scene_ids:
+                raise ValueError("beats for a scene must form one contiguous block")
+            collapsed_scene_order.append(scene_id)
+            prior_scene_id = scene_id
+
+        if collapsed_scene_order != scene_ids:
+            raise ValueError("scene_cards must match the contiguous scene order implied by beats")
+
+        if scene_ids_set.difference(beat_scene_ids):
+            raise ValueError("every scene_card must own at least one beat")
+
+        return self
 
 
 class EpisodePlan(EpisodePlanDraft):
@@ -545,6 +669,7 @@ class ScriptSegment(StrictModel):
     text: str
     segment_type: Literal["intro", "body", "transition", "outro", "recap", "bridge"] = "body"
     beat_id: str | None = None
+    scene_id: str | None = None
     source_book_ids: list[str] = Field(default_factory=list)
     citations: list[Citation] = Field(default_factory=list)
     attribution_level: Literal["none", "light", "full"] = "none"

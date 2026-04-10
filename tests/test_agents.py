@@ -140,7 +140,7 @@ class TestChapterSummaryAgent:
 
     def test_instructions_target_longer_summary(self):
         agent = ChapterSummaryAgent(_mock_llm())
-        assert "4-6 sentence" in agent.instructions
+        assert "2-3 sentence" in agent.instructions
         assert "project theme" in agent.instructions
         assert "do not force keyword mentions" in agent.instructions
 
@@ -340,6 +340,9 @@ class TestEpisodePlanningAgent:
         assert "140 minutes" in agent.instructions
         assert "125 minutes" in agent.instructions
         assert "70-80 beats" in agent.instructions
+        assert "scene_cards" in agent.instructions
+        assert "anchor_scene_ids" in agent.instructions
+        assert "scene_id" in agent.instructions
         assert "summary_text" in agent.instructions
         assert "full_text" in agent.instructions
         assert "flat list" in agent.instructions
@@ -376,12 +379,17 @@ class TestWritingAgent:
         assert "Target plan.target_duration_minutes for total runtime" not in agent.instructions_no_citations
         assert "Required writing constraints" in agent.instructions
         assert "plan.narrative_spine" in agent.instructions
+        assert "plan.scene_cards" in agent.instructions
+        assert "plan.anchor_scene_ids" in agent.instructions
         assert "plan.cross_references" in agent.instructions
         assert "plan.book_balance" in agent.instructions
         assert "synthesis_instruction" in agent.instructions
         assert "transition_hint" in agent.instructions
+        assert "scene_id" in agent.instructions
         assert "Required writing constraints" in agent.instructions_no_citations
         assert "plan.narrative_spine" in agent.instructions_no_citations
+        assert "plan.scene_cards" in agent.instructions_no_citations
+        assert "plan.anchor_scene_ids" in agent.instructions_no_citations
         assert "plan.cross_references" in agent.instructions_no_citations
         assert "plan.book_balance" in agent.instructions_no_citations
 

@@ -212,7 +212,7 @@ class TestSynthesisMap:
 class TestEpisodePlan:
     def test_roundtrip(self):
         beat = EpisodeBeat(
-            beat_id="bt1", description="Compare perspectives",
+            beat_id="bt1", scene_id="scene_01", description="Compare perspectives",
             passage_ids=["p1", "p2"],
             primary_book_id="b1", supporting_book_ids=["b2"],
             synthesis_instruction="contrast",
@@ -224,7 +224,28 @@ class TestEpisodePlan:
             thematic_focus="Decision making",
             unresolved_questions=["What remains unresolved?"],
             payoff_shape="Complicate the question without closing it.",
+            scene_cards=[
+                {
+                    "scene_id": "scene_01",
+                    "spine_segment_id": "spine_01",
+                    "title": "Opening scene",
+                    "narrative_purpose": "Frame the core decision.",
+                    "passage_ids": ["p1"],
+                    "estimated_duration_seconds": 120,
+                }
+            ],
+            anchor_scene_ids=["scene_01"],
             beats=[beat],
+            narrative_spine={
+                "episode_number": 1,
+                "spine_segments": [
+                    {
+                        "spine_segment_id": "spine_01",
+                        "title": "The question",
+                        "summary": "Set up the episode's governing choice.",
+                    }
+                ],
+            },
             synthesis_context=EpisodeSynthesisContext(
                 merged_narratives=[
                     EpisodeMergedNarrativeRef(
@@ -247,6 +268,8 @@ class TestEpisodePlan:
         data = json.loads(plan.model_dump_json())
         restored = EpisodePlan.model_validate(data)
         assert len(restored.beats) == 1
+        assert restored.beats[0].scene_id == "scene_01"
+        assert restored.scene_cards[0].scene_id == "scene_01"
         assert restored.beats[0].synthesis_instruction == "contrast"
         assert restored.synthesis_context is not None
         assert restored.synthesis_context.merged_narratives[0].merged_narrative_id == "merged_narrative_001"
@@ -262,6 +285,126 @@ class TestEpisodePlan:
         )
         assert plan.target_duration_minutes == 140.0
 
+    def test_scene_cards_require_existing_anchor_ids(self):
+        with pytest.raises(ValidationError):
+            EpisodePlan(
+                episode_number=1,
+                title="Episode 1",
+                target_word_count=16800,
+                driving_question="What is at stake?",
+                unresolved_questions=["What remains open?"],
+                payoff_shape="Leave the listener with a sharpened tension.",
+                scene_cards=[
+                    {
+                        "scene_id": "scene_01",
+                        "spine_segment_id": "spine_01",
+                        "title": "Opening scene",
+                        "narrative_purpose": "Set up the episode.",
+                    }
+                ],
+                anchor_scene_ids=["scene_02"],
+                beats=[
+                    {
+                        "scene_id": "scene_01",
+                        "description": "Beat 1",
+                    }
+                ],
+                narrative_spine={
+                    "episode_number": 1,
+                    "spine_segments": [
+                        {
+                            "spine_segment_id": "spine_01",
+                            "title": "Spine",
+                            "summary": "Summary",
+                        }
+                    ],
+                },
+            )
+
+    def test_scene_card_beats_must_be_contiguous(self):
+        with pytest.raises(ValidationError):
+            EpisodePlan(
+                episode_number=1,
+                title="Episode 1",
+                target_word_count=16800,
+                driving_question="What is at stake?",
+                unresolved_questions=["What remains open?"],
+                payoff_shape="Leave the listener with a sharpened tension.",
+                scene_cards=[
+                    {
+                        "scene_id": "scene_01",
+                        "spine_segment_id": "spine_01",
+                        "title": "Scene 1",
+                        "narrative_purpose": "Start",
+                    },
+                    {
+                        "scene_id": "scene_02",
+                        "spine_segment_id": "spine_01",
+                        "title": "Scene 2",
+                        "narrative_purpose": "Continue",
+                    },
+                ],
+                beats=[
+                    {"scene_id": "scene_01", "description": "Beat 1"},
+                    {"scene_id": "scene_02", "description": "Beat 2"},
+                    {"scene_id": "scene_01", "description": "Beat 3"},
+                ],
+                narrative_spine={
+                    "episode_number": 1,
+                    "spine_segments": [
+                        {
+                            "spine_segment_id": "spine_01",
+                            "title": "Spine",
+                            "summary": "Summary",
+                        }
+                    ],
+                },
+            )
+
+    def test_scene_cards_must_follow_spine_order(self):
+        with pytest.raises(ValidationError):
+            EpisodePlan(
+                episode_number=1,
+                title="Episode 1",
+                target_word_count=16800,
+                driving_question="What is at stake?",
+                unresolved_questions=["What remains open?"],
+                payoff_shape="Leave the listener with a sharpened tension.",
+                scene_cards=[
+                    {
+                        "scene_id": "scene_01",
+                        "spine_segment_id": "spine_02",
+                        "title": "Later scene",
+                        "narrative_purpose": "Advance the back half.",
+                    },
+                    {
+                        "scene_id": "scene_02",
+                        "spine_segment_id": "spine_01",
+                        "title": "Earlier scene",
+                        "narrative_purpose": "Advance the front half.",
+                    },
+                ],
+                beats=[
+                    {"scene_id": "scene_01", "description": "Beat 1"},
+                    {"scene_id": "scene_02", "description": "Beat 2"},
+                ],
+                narrative_spine={
+                    "episode_number": 1,
+                    "spine_segments": [
+                        {
+                            "spine_segment_id": "spine_01",
+                            "title": "First spine",
+                            "summary": "Summary 1",
+                        },
+                        {
+                            "spine_segment_id": "spine_02",
+                            "title": "Second spine",
+                            "summary": "Summary 2",
+                        },
+                    ],
+                },
+            )
+
 
 class TestEpisodeScript:
     def test_roundtrip(self):
@@ -271,7 +414,7 @@ class TestEpisodeScript:
         )
         segment = ScriptSegment(
             segment_id="s1", text="The narration text.",
-            segment_type="body", beat_id="bt1",
+            segment_type="body", scene_id="scene_01", beat_id="bt1",
             source_book_ids=["b1"], citations=[citation],
         )
         script = EpisodeScript(
@@ -282,6 +425,7 @@ class TestEpisodeScript:
         data = json.loads(script.model_dump_json())
         restored = EpisodeScript.model_validate(data)
         assert len(restored.segments) == 1
+        assert restored.segments[0].scene_id == "scene_01"
         assert restored.citations[0].confidence == 0.95
 
 

@@ -115,6 +115,47 @@ def _episode_plan_fields(
     }
 
 
+def _scene_plan_structure(
+    episode_number: int,
+    scene_specs: list[tuple[str, str]],
+) -> dict[str, object]:
+    spine_ids: list[str] = []
+    for _, spine_segment_id in scene_specs:
+        if spine_segment_id not in spine_ids:
+            spine_ids.append(spine_segment_id)
+    scene_cards = [
+        {
+            "scene_id": scene_id,
+            "spine_segment_id": spine_segment_id,
+            "title": scene_id,
+            "narrative_purpose": f"Advance {scene_id}.",
+            "estimated_duration_seconds": 600,
+        }
+        for scene_id, spine_segment_id in scene_specs
+    ]
+    return {
+        "scene_cards": scene_cards,
+        "anchor_scene_ids": (
+            [scene_specs[0][0], scene_specs[-1][0]]
+            if len(scene_specs) >= 2
+            else [scene_specs[0][0]]
+            if scene_specs
+            else []
+        ),
+        "narrative_spine": {
+            "episode_number": episode_number,
+            "spine_segments": [
+                {
+                    "spine_segment_id": spine_segment_id,
+                    "title": spine_segment_id,
+                    "summary": f"Summary for {spine_segment_id}",
+                }
+                for spine_segment_id in spine_ids
+            ],
+        },
+    }
+
+
 class TestArtifactPersistence:
     def test_save_and_load_json(self, tmp_path):
         data = {"key": "value", "nested": {"a": 1}}
@@ -2477,6 +2518,7 @@ class TestEpisodeScriptPlanAlignment:
         report = _evaluate_episode_script_plan_alignment(plan=plan, script=script)
 
         assert report["has_issues"] is False
+        assert report["scene_structure"]["has_issues"] is False
         assert report["cross_references"]["coverage_ratio"] == 1.0
         assert report["book_balance"]["max_abs_drift"] == 0.0
 
@@ -2584,6 +2626,47 @@ class TestEpisodeScriptPlanAlignment:
         assert report["book_balance"]["signal_counts"]["book-a"] == 1
         assert report["book_balance"]["signal_counts"]["book-b"] == 1
         assert report["book_balance"]["has_issues"] is False
+
+    def test_missing_anchor_scene_is_flagged_via_scene_or_beat_linkage(self):
+        plan = EpisodePlan(
+            episode_number=1,
+            title="Ep1",
+            **_episode_plan_fields(1),
+            **_scene_plan_structure(
+                1,
+                [
+                    ("scene_01", "spine_01"),
+                    ("scene_02", "spine_02"),
+                ],
+            ),
+            beats=[
+                EpisodeBeat(
+                    beat_id="beat-1",
+                    scene_id="scene_01",
+                    description="Beat 1",
+                    passage_ids=["p1"],
+                ),
+                EpisodeBeat(
+                    beat_id="beat-2",
+                    scene_id="scene_02",
+                    description="Beat 2",
+                    passage_ids=["p2"],
+                ),
+            ],
+        )
+        script = EpisodeScript(
+            episode_number=1,
+            title="Ep1",
+            segments=[ScriptSegment(text="Narration", beat_id="beat-1")],
+            citations=[],
+        )
+
+        report = _evaluate_episode_script_plan_alignment(plan=plan, script=script)
+
+        assert report["has_issues"] is True
+        assert report["scene_structure"]["has_issues"] is True
+        assert report["scene_structure"]["coverage_ratio"] == 0.5
+        assert report["scene_structure"]["missing_anchor_scene_ids"] == ["scene_02"]
 
 
 # ---------------------------------------------------------------------------
@@ -2817,7 +2900,7 @@ class TestWriteEpisodeSourceMode:
         assert payload["passages"][0]["text"] == "cross axis full text"
         assert payload["passages"][0]["chapter_context"] is None
 
-    def test_write_episode_splits_into_two_windowed_requests(self, tmp_path):
+    def test_write_episode_splits_into_two_spine_windowed_requests(self, tmp_path):
         orch, _, project, _, ep_dir, project_dir = self._build_context(
             tmp_path,
             full_text="",
@@ -2825,6 +2908,11 @@ class TestWriteEpisodeSourceMode:
         beats = [
             EpisodeBeat(
                 beat_id=f"beat-{idx}",
+                scene_id=(
+                    "scene_01" if idx <= 2 else
+                    "scene_02" if idx <= 4 else
+                    "scene_03"
+                ),
                 description=f"Beat {idx}",
                 insight_ids=(["ins_01"] if idx <= 2 else ["ins_02"] if idx <= 4 else []),
                 passage_ids=[f"p{idx}"],
@@ -2836,6 +2924,14 @@ class TestWriteEpisodeSourceMode:
             episode_number=1,
             title="Episode 1",
             **_episode_plan_fields(1),
+            **_scene_plan_structure(
+                1,
+                [
+                    ("scene_01", "spine_01"),
+                    ("scene_02", "spine_01"),
+                    ("scene_03", "spine_02"),
+                ],
+            ),
             synthesis_context=EpisodeSynthesisContext(
                 insights=[
                     SynthesisInsight(
@@ -2897,6 +2993,7 @@ class TestWriteEpisodeSourceMode:
                 ScriptSegment(
                     segment_id=f"s-{beat['beat_id']}",
                     text=f"Narration for {beat['beat_id']}",
+                    scene_id=beat["scene_id"],
                     beat_id=beat["beat_id"],
                 )
                 for beat in payload_beats
@@ -2913,17 +3010,33 @@ class TestWriteEpisodeSourceMode:
 
         assert orch.writing_agent.run.call_count == 2
         payloads = [call.args[0] for call in orch.writing_agent.run.call_args_list]
-        assert [len(payload["plan"]["beats"]) for payload in payloads] == [3, 3]
-        assert [len(payload["passages"]) for payload in payloads] == [3, 3]
+        assert [len(payload["plan"]["narrative_spine"]["spine_segments"]) for payload in payloads] == [1, 1]
+        assert [len(payload["plan"]["scene_cards"]) for payload in payloads] == [2, 1]
+        assert [len(payload["plan"]["beats"]) for payload in payloads] == [4, 2]
+        assert [len(payload["passages"]) for payload in payloads] == [4, 2]
+        assert [
+            [scene["scene_id"] for scene in payload["plan"]["scene_cards"]]
+            for payload in payloads
+        ] == [["scene_01", "scene_02"], ["scene_03"]]
+        assert [
+            [beat["scene_id"] for beat in payload["plan"]["beats"]]
+            for payload in payloads
+        ] == [
+            ["scene_01", "scene_01", "scene_02", "scene_02"],
+            ["scene_03", "scene_03"],
+        ]
         assert [
             [item["insight_id"] for item in payload["plan"]["synthesis_context"]["insights"]]
             for payload in payloads
-        ] == [["ins_01", "ins_02"], ["ins_02"]]
+        ] == [["ins_01", "ins_02"], []]
         assert all(
             len(payload["plan"]["synthesis_context"]["narrative_threads"]) == 2
             for payload in payloads
         )
         assert len(script.segments) == 6
+        assert [seg.scene_id for seg in script.segments] == [
+            "scene_01", "scene_01", "scene_02", "scene_02", "scene_03", "scene_03",
+        ]
 
     def test_apply_passage_total_cap_by_axis_soft_overrun_keeps_only_priority(self):
         p1 = ExtractedPassage(passage_id="p1", book_id="b1", chunk_ids=["c1"], text="x", axis_id="a", relevance_score=0.9, quotability_score=0.8)
