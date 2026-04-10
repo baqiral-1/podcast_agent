@@ -132,7 +132,7 @@ This command:
 4. **Embed & store** — Index chunks in PGVector with book/project metadata
 
 ### Phase 2: Thematic Intelligence (sequential)
-5. **Decompose theme** — Break theme into 5-7 strong thematic axes using chapter summaries plus synthesized per-book summaries
+5. **Decompose theme** — Break theme into 25-30 strong thematic axes using chapter summaries plus synthesized per-book summaries
 6. **Extract passages** — Vector retrieval + LLM reranking per axis per book
 7. **Map synthesis** — Discover cross-book insights (agreements, disagreements, tensions, extensions)
 8. **Choose narrative strategy** — Select series structure (thesis-driven, debate, convergence, etc.)
@@ -158,7 +158,10 @@ chapter summaries.
 Passage extraction now budgets retrieval candidates per book with a hybrid rule:
 `min(max_cap, max(min_floor, round(book_chunk_count * percentage)))`.
 The default knobs are `passage_retrieval_percentage=0.25`,
-`passage_retrieval_min_per_book=20`, and `passage_retrieval_max_per_book=60`.
+`passage_retrieval_min_per_book=20`, and `passage_retrieval_max_per_book=50`.
+The global pre-axis candidate budget defaults to
+`pre_axis_total_budget=3600` with `pre_axis_floor=60`
+(about `120` candidates per axis on average across 30 axes).
 `rerank_top_k` still applies after passage-extraction scoring; it does not control
 how many passages are sent into the passage-extraction prompt.
 

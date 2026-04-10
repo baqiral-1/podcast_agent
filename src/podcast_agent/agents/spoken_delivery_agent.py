@@ -44,7 +44,7 @@ class SpokenDeliveryAgent(Agent):
         "- Pretend these hints are literal SSML or backend-specific tags\n"
         "- Output any extra keys inside speech_hints\n"
         "- Use intense controls unless the narration clearly needs them\n"
-        "- Repeat any sentence or distinctive phrase verbatim more than twice.\n"
+        "- Repeat any sentence or distinctive phrase verbatim more than once.\n"
         "- If a point must recur, paraphrase it with materially different wording\n\n"
         "Default control style:\n"
         "- Prefer neutral style\n"

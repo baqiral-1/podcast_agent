@@ -15,9 +15,7 @@ from podcast_agent.agents.narrative_strategy import NarrativeStrategyAgent
 from podcast_agent.agents.passage_extraction import PassageExtractionAgent
 from podcast_agent.agents.planning import EpisodePlanningAgent
 from podcast_agent.agents.repair import RepairAgent
-from podcast_agent.agents.source_weaving import SourceWeavingAgent
 from podcast_agent.agents.spoken_delivery_agent import SpokenDeliveryAgent
-from podcast_agent.agents.structuring import StructuringAgent
 from podcast_agent.agents.synthesis_mapping import SynthesisMappingAgent
 from podcast_agent.agents.theme_decomposition import ThemeDecompositionAgent
 from podcast_agent.agents.validation import GroundingValidationAgent
@@ -38,21 +36,25 @@ def _mock_llm():
     return MagicMock()
 
 
-class TestStructuringAgent:
+class TestChapterSummaryAgentBasic:
     def test_schema_name(self):
-        agent = StructuringAgent(_mock_llm())
-        assert agent.schema_name == "structuring"
+        agent = ChapterSummaryAgent(_mock_llm())
+        assert agent.schema_name == "chapter_summary"
 
     def test_build_payload(self):
-        agent = StructuringAgent(_mock_llm())
-        book = BookRecord(
-            book_id="b1", title="Test", author="A",
-            source_path="/test.txt", source_type="txt",
+        agent = ChapterSummaryAgent(_mock_llm())
+        payload = agent.build_payload(
+            theme="Theme",
+            sub_themes=["Sub"],
+            theme_elaboration="Focus",
+            book_id="b1",
+            title="Book 1",
+            author="Author A",
+            chapter_title="Ch 1",
+            chapter_text="Some text window",
         )
-        payload = agent.build_payload(book, "Some text window", window_offset=100)
         assert payload["book_id"] == "b1"
-        assert payload["text_window"] == "Some text window"
-        assert payload["window_character_offset"] == 100
+        assert payload["chapter_text"] == "Some text window"
 
 
 class TestThemeDecompositionAgent:
@@ -99,9 +101,9 @@ class TestThemeDecompositionAgent:
         assert payload["books"][0]["chapters"][0]["summary"] == "Summary."
         assert payload["books"][0]["chapters"][0]["themes_touched"] == ["bias"]
 
-    def test_instructions_target_20_to_25_axes(self):
+    def test_instructions_target_25_to_30_axes(self):
         agent = ThemeDecompositionAgent(_mock_llm())
-        assert "20-25 strong analytical lenses" in agent.instructions
+        assert "25-30 strong analytical lenses" in agent.instructions
 
 
 class TestBookSummaryAgent:
@@ -214,8 +216,8 @@ class TestSynthesisMappingAgent:
 
     def test_instructions_target_insight_volume(self):
         agent = SynthesisMappingAgent(_mock_llm())
-        assert "Generate between 40 and 50 insights in the insights array." in agent.instructions
-        assert "Generate between 7 and 8 merged narratives" in agent.instructions
+        assert "Generate between 60 and 80 insights in the insights array." in agent.instructions
+        assert "Generate between 7 and 9 merged narratives" in agent.instructions
 
 
 class TestNarrativeStrategyAgent:
@@ -252,14 +254,14 @@ class TestNarrativeStrategyAgent:
         assert "If project.requested_episode_count is provided, use it as a planning hint for arc shape." in agent.instructions
         assert "Output schema (strict):" in agent.instructions
         assert "episode_arc_details: array of objects" in agent.instructions
-        assert "recommended_episode_count between 7 and 8" in agent.instructions
+        assert "recommended_episode_count between 7 and 9" in agent.instructions
         assert "narrative_stakes: string" in agent.instructions
         assert "episode_assignments: array of objects" in agent.instructions
         assert "driving_question: string" in agent.instructions
         assert "strategy_type: one of thesis_driven, debate, chronological, convergence, mosaic" in agent.instructions
         assert "Return only a JSON object matching this schema." in agent.instructions
         assert "Every SynthesisInsight with podcast_potential > 0.5 must appear in at least one " in agent.instructions
-        assert "Target 5-7 insights per episode" in agent.instructions
+        assert "Target 8-10 insights per episode" in agent.instructions
         assert "usually 3-4 axes" in agent.instructions
         assert (
             "prioritize full coverage of SynthesisInsights with podcast_potential > 0.5"
@@ -267,12 +269,12 @@ class TestNarrativeStrategyAgent:
         )
         assert "exactly one merged_narrative_id" in agent.instructions
 
-    def test_heuristic_strategy_caps_recommended_episode_count_to_eight(self):
+    def test_heuristic_strategy_caps_recommended_episode_count_to_nine(self):
         heuristic = HeuristicLLMClient()
         result = heuristic._generate_narrative_strategy(
             {"requested_episode_count": 20, "synthesis_map": {}, "thematic_axes": []}
         )
-        assert result["recommended_episode_count"] == 8
+        assert result["recommended_episode_count"] == 9
 
     def test_heuristic_strategy_assigns_one_merged_narrative_per_episode_when_available(self):
         heuristic = HeuristicLLMClient()
@@ -291,7 +293,7 @@ class TestNarrativeStrategyAgent:
         assert result["episode_assignments"]
         assert all(item["merged_narrative_id"] is not None for item in result["episode_assignments"])
 
-    def test_heuristic_strategy_targets_three_to_four_axes_when_available(self):
+    def test_heuristic_strategy_targets_two_to_four_axes_when_available(self):
         heuristic = HeuristicLLMClient()
         thematic_axes = [
             {"axis_id": f"axis_{idx}", "description": f"Axis {idx}", "guiding_questions": [f"Q{idx}?"]}
@@ -306,7 +308,7 @@ class TestNarrativeStrategyAgent:
         )
         axis_counts = [len(item["axes"]) for item in result["episode_assignments"]]
         assert axis_counts
-        assert all(3 <= count <= 4 for count in axis_counts)
+        assert all(2 <= count <= 4 for count in axis_counts)
 
 
 class TestEpisodePlanningAgent:
@@ -321,11 +323,12 @@ class TestEpisodePlanningAgent:
             narrative_strategy={},
             synthesis_map={},
             project_metadata={},
-            available_passages={},
+            available_passages=[],
             previous_episode=None,
             next_episode=None,
         )
         assert payload["episode_assignment"]["episode_number"] == 1
+        assert "chapter_context_by_ref" not in payload
 
     def test_instructions_bind_driving_question(self):
         agent = EpisodePlanningAgent(_mock_llm())
@@ -339,6 +342,7 @@ class TestEpisodePlanningAgent:
         assert "70-80 beats" in agent.instructions
         assert "summary_text" in agent.instructions
         assert "full_text" in agent.instructions
+        assert "flat list" in agent.instructions
         assert "project.book_size_share_by_id" in agent.instructions
 
 
@@ -368,7 +372,6 @@ class TestWritingAgent:
         assert "estimated_duration_seconds" in agent.instructions
         assert "plan.target_word_count" in agent.instructions_no_citations
         assert "payload.beat_word_targets" in agent.instructions_no_citations
-        assert "estimated_duration_seconds" in agent.instructions_no_citations
         assert "Target plan.target_duration_minutes for total runtime" not in agent.instructions
         assert "Target plan.target_duration_minutes for total runtime" not in agent.instructions_no_citations
         assert "Required writing constraints" in agent.instructions
@@ -381,21 +384,6 @@ class TestWritingAgent:
         assert "plan.narrative_spine" in agent.instructions_no_citations
         assert "plan.cross_references" in agent.instructions_no_citations
         assert "plan.book_balance" in agent.instructions_no_citations
-
-
-class TestSourceWeavingAgent:
-    def test_schema_name(self):
-        agent = SourceWeavingAgent(_mock_llm())
-        assert agent.schema_name == "source_weaving"
-
-    def test_build_payload(self):
-        agent = SourceWeavingAgent(_mock_llm())
-        payload = agent.build_payload(
-            moment={"synthesis_instruction": "contrast"},
-            passages=[{"text": "A"}, {"text": "B"}],
-            books=[{"title": "Book A"}, {"title": "Book B"}],
-        )
-        assert payload["moment"]["synthesis_instruction"] == "contrast"
 
 
 class TestGroundingValidationAgent:
@@ -476,16 +464,26 @@ class TestAgentRetry:
     def test_retries_on_retryable_error(self):
         """Agent retries on RetryableGenerationError and succeeds on 3rd attempt."""
         mock_llm = _mock_llm()
+        mock_llm.run_logger = MagicMock()
         mock_result = MagicMock()
         mock_llm.generate_json.side_effect = [
             RetryableGenerationError("validation failed"),
             RetryableGenerationError("validation failed again"),
             mock_result,
         ]
-        agent = StructuringAgent(mock_llm, max_retry_attempts=3)
+        agent = ChapterSummaryAgent(mock_llm, max_retry_attempts=3)
         result = agent.run({"test": "payload"})
         assert result == mock_result
         assert mock_llm.generate_json.call_count == 3
+        retry_calls = [
+            call_kwargs
+            for call_args, call_kwargs in mock_llm.run_logger.log.call_args_list
+            if call_args and call_args[0] == "llm_retry_scheduled"
+        ]
+        assert len(retry_calls) == 2
+        assert retry_calls[0]["schema_name"] == "chapter_summary"
+        assert retry_calls[0]["attempt"] == 1
+        assert retry_calls[0]["next_attempt"] == 2
 
     def test_retries_on_transient_error(self):
         """Agent retries on TransientLLMError."""
@@ -495,7 +493,7 @@ class TestAgentRetry:
             TransientLLMError("timeout"),
             mock_result,
         ]
-        agent = StructuringAgent(mock_llm, max_retry_attempts=3)
+        agent = ChapterSummaryAgent(mock_llm, max_retry_attempts=3)
         result = agent.run({"test": "payload"})
         assert result == mock_result
         assert mock_llm.generate_json.call_count == 2
@@ -504,7 +502,7 @@ class TestAgentRetry:
         """Non-retryable errors are raised immediately without retry."""
         mock_llm = _mock_llm()
         mock_llm.generate_json.side_effect = ValueError("non-retryable")
-        agent = StructuringAgent(mock_llm, max_retry_attempts=3)
+        agent = ChapterSummaryAgent(mock_llm, max_retry_attempts=3)
         with pytest.raises(ValueError, match="non-retryable"):
             agent.run({"test": "payload"})
         assert mock_llm.generate_json.call_count == 1
@@ -513,7 +511,7 @@ class TestAgentRetry:
         """After all retries exhausted, the last error is raised."""
         mock_llm = _mock_llm()
         mock_llm.generate_json.side_effect = RetryableGenerationError("always fails")
-        agent = StructuringAgent(mock_llm, max_retry_attempts=2)
+        agent = ChapterSummaryAgent(mock_llm, max_retry_attempts=2)
         with pytest.raises(RetryableGenerationError, match="always fails"):
             agent.run({"test": "payload"})
         assert mock_llm.generate_json.call_count == 2
@@ -526,19 +524,40 @@ class TestAgentRetry:
             RetryableGenerationError("fail"),
             mock_result,
         ]
-        agent = StructuringAgent(mock_llm, max_retry_attempts=3)
+        agent = ChapterSummaryAgent(mock_llm, max_retry_attempts=3)
         agent.run({"test": "payload"})
         calls = mock_llm.generate_json.call_args_list
         assert calls[0].kwargs["attempt"] == 1
         assert calls[0].kwargs["max_attempts"] == 3
         assert calls[1].kwargs["attempt"] == 2
 
+    def test_writing_agent_logs_retry_schedule(self):
+        mock_llm = _mock_llm()
+        mock_llm.run_logger = MagicMock()
+        mock_result = MagicMock()
+        mock_llm.generate_json.side_effect = [
+            RetryableGenerationError("retry me"),
+            mock_result,
+        ]
+        agent = WritingAgent(mock_llm, max_retry_attempts=2)
+        result = agent.run({"skip_grounding": False})
+        assert result == mock_result
+        retry_calls = [
+            call_kwargs
+            for call_args, call_kwargs in mock_llm.run_logger.log.call_args_list
+            if call_args and call_args[0] == "llm_retry_scheduled"
+        ]
+        assert len(retry_calls) == 1
+        assert retry_calls[0]["schema_name"] == "episode_writing"
+        assert retry_calls[0]["attempt"] == 1
+        assert retry_calls[0]["next_attempt"] == 2
+
     def test_default_max_retry_attempts(self):
-        agent = StructuringAgent(_mock_llm())
+        agent = ChapterSummaryAgent(_mock_llm())
         assert agent.max_retry_attempts == 3
 
     def test_custom_max_retry_attempts(self):
-        agent = StructuringAgent(_mock_llm(), max_retry_attempts=5)
+        agent = ChapterSummaryAgent(_mock_llm(), max_retry_attempts=5)
         assert agent.max_retry_attempts == 5
 
 
@@ -546,15 +565,14 @@ class TestAllAgentsHaveRequiredAttributes:
     """Verify every agent has schema_name, instructions, and response_model."""
 
     @pytest.mark.parametrize("agent_class", [
-        StructuringAgent,
         BookSummaryAgent,
+        ChapterSummaryAgent,
         ThemeDecompositionAgent,
         PassageExtractionAgent,
         SynthesisMappingAgent,
         NarrativeStrategyAgent,
         EpisodePlanningAgent,
         WritingAgent,
-        SourceWeavingAgent,
         GroundingValidationAgent,
         RepairAgent,
         SpokenDeliveryAgent,

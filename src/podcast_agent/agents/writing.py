@@ -107,14 +107,14 @@ class WritingAgent(Agent):
         "brief finale synthesis; "
         "preserve plan.cross_references through bridge moments; keep source usage aligned with "
         "plan.book_balance; use beat-level synthesis_instruction and transition_hint when "
-        "present; follow each beat's narrative_instruction and attribution_level; and honor "
+        "present; follow each beat's narrative_instruction and attribution_level; and stric honor "
         "plan.target_word_count as pacing guidance\n"
         "  - Optional writing guidance: use plan.episode_strategy and plan.synthesis_context to "
         "shape emphasis and framing\n"
         "  - Analytics-only metadata: non-directive metadata must not override required writing "
         "constraints\n"
         "- Treat plan.target_word_count as the primary runtime control for episode length\n"
-        "- Use payload.beat_word_targets[*].target_words as beat-level pacing targets\n"
+        "- Use payload.beat_word_targets[*].target_words as strict beat-level pacing targets\n"
         "- Use the assigned passages as source material, but do not organize by author\n"
         "- Use optional passage.chapter_context to preserve chapter-level tensions, causal shifts, "
         "and narrative hooks when shaping transitions or scene framing\n"
@@ -161,6 +161,11 @@ class WritingAgent(Agent):
                     last_exc = exc
                     if attempt < self.max_retry_attempts:
                         backoff = min(2 ** (attempt - 1), 16) + (time.monotonic() % 1)
+                        self._log_retry_scheduled(
+                            attempt=attempt,
+                            backoff=backoff,
+                            exc=exc,
+                        )
                         logger.warning(
                             "Agent %s attempt %d/%d failed (%s: %s), retrying in %.1fs",
                             self.schema_name, attempt, self.max_retry_attempts,

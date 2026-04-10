@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -29,6 +30,8 @@ from podcast_agent.llm.base import (
     prompt_log_metadata,
 )
 from podcast_agent.llm.heuristic import HeuristicLLMClient
+
+logger = logging.getLogger(__name__)
 from podcast_agent.llm.json_utils import normalize_json_content, unwrap_response_payload
 from podcast_agent.schemas.models import ChapterAnalysis
 
@@ -63,6 +66,7 @@ class _ProviderTarget:
     max_tokens: int | None
     temperature: float
     timeout_seconds: float
+    thinking_budget: int | None = None
 
 
 def _apply_schema_caps(
@@ -106,6 +110,31 @@ def _apply_schema_caps(
     return capped_payload, truncations
 
 
+def _summarize_retryable_error(exc: Exception) -> dict[str, Any]:
+    summary: dict[str, Any] = {}
+    if isinstance(exc, RetryableGenerationError):
+        data = exc.data or {}
+        if data:
+            summary["data_keys"] = sorted(str(key) for key in data.keys())
+        raw_content = data.get("raw_content")
+        if isinstance(raw_content, str):
+            summary["raw_content_chars"] = len(raw_content)
+            summary["raw_content_head"] = raw_content[:2000]
+        raw_response_type = data.get("raw_response_type")
+        if raw_response_type:
+            summary["raw_response_type"] = raw_response_type
+        raw_response_parts = data.get("raw_response_parts")
+        if raw_response_parts:
+            summary["raw_response_parts"] = raw_response_parts
+        raw_payload = data.get("raw_payload")
+        if raw_payload is not None:
+            try:
+                summary["raw_payload_chars"] = len(json.dumps(raw_payload, default=str))
+            except Exception:
+                summary["raw_payload_type"] = type(raw_payload).__name__
+    return summary
+
+
 class LangChainLLMClient(LLMClient):
     """LangChain wrapper implementing the repository LLMClient interface."""
 
@@ -143,14 +172,23 @@ class LangChainLLMClient(LLMClient):
         temperature = self.config.resolve_temperature(schema_name)
         timeout_seconds = self.config.resolve_timeout_seconds(schema_name)
         max_tokens: int | None = None
+        thinking_budget: int | None = None
         if provider == "anthropic":
             max_tokens = self.config.resolve_anthropic_max_tokens(schema_name)
+            thinking_budget = self.config.resolve_thinking_budget(schema_name)
+            if thinking_budget is not None and temperature != 1.0:
+                logger.warning(
+                    "Extended thinking requires temperature=1.0; overriding %.1f for %s",
+                    temperature, schema_name,
+                )
+                temperature = 1.0
         target = _ProviderTarget(
             provider=provider,
             model=model,
             max_tokens=max_tokens,
             temperature=temperature,
             timeout_seconds=timeout_seconds,
+            thinking_budget=thinking_budget,
         )
         cached = self._model_cache.get(target)
         if cached is not None:
@@ -160,15 +198,25 @@ class LangChainLLMClient(LLMClient):
         elif provider == "anthropic":
             if not self.config.anthropic_api_key:
                 raise RuntimeError("ANTHROPIC_API_KEY is required for the Anthropic LLM client.")
-            model_client = ChatAnthropic(
-                model=model,
-                anthropic_api_key=self.config.anthropic_api_key,
-                anthropic_api_url=self.config.anthropic_base_url,
-                max_tokens=max_tokens,
-                default_request_timeout=timeout_seconds,
-                temperature=temperature,
-                max_retries=0,
-            )
+            anthropic_kwargs: dict[str, Any] = {
+                "model": model,
+                "anthropic_api_key": self.config.anthropic_api_key,
+                "anthropic_api_url": self.config.anthropic_base_url,
+                "max_tokens": max_tokens,
+                "default_request_timeout": timeout_seconds,
+                "temperature": temperature,
+                "max_retries": 0,
+            }
+            if thinking_budget is not None:
+                anthropic_kwargs["thinking"] = {
+                    "type": "enabled",
+                    "budget_tokens": thinking_budget,
+                }
+                logger.info(
+                    "Extended thinking enabled for %s with budget %d tokens",
+                    schema_name, thinking_budget,
+                )
+            model_client = ChatAnthropic(**anthropic_kwargs)
         elif provider == "openai-compatible":
             if not self.config.api_key:
                 raise RuntimeError("OPENAI_API_KEY is required for the OpenAI LLM client.")
@@ -302,7 +350,17 @@ class LangChainLLMClient(LLMClient):
                     for chunk in stream_iter:
                         chunk_content = getattr(chunk, "content", "")
                         if isinstance(chunk_content, list):
-                            chunk_content = "".join(str(part) for part in chunk_content)
+                            # Filter out thinking blocks from extended thinking.
+                            # Parts may be dicts ({"type": "thinking", ...}) or
+                            # objects with .type attribute — handle both.
+                            text_parts = []
+                            for part in chunk_content:
+                                part_type = part.get("type") if isinstance(part, dict) else getattr(part, "type", None)
+                                if part_type == "thinking":
+                                    continue
+                                part_text = part.get("text") if isinstance(part, dict) else getattr(part, "text", None)
+                                text_parts.append(part_text if part_text is not None else str(part))
+                            chunk_content = "".join(text_parts)
                         chunks.append(str(chunk_content))
                         chunk_meta = getattr(chunk, "response_metadata", None)
                         if isinstance(chunk_meta, dict):
@@ -344,7 +402,15 @@ class LangChainLLMClient(LLMClient):
                     response = model_client.invoke(messages, **invoke_kwargs)
                 content = response.content
                 if isinstance(content, list):
-                    content = "".join(str(part) for part in content)
+                    # Filter out thinking blocks — parts may be dicts or objects.
+                    text_parts = []
+                    for part in content:
+                        part_type = part.get("type") if isinstance(part, dict) else getattr(part, "type", None)
+                        if part_type == "thinking":
+                            continue
+                        part_text = part.get("text") if isinstance(part, dict) else getattr(part, "text", None)
+                        text_parts.append(part_text if part_text is not None else str(part))
+                    content = "".join(text_parts)
                 if response_metadata is None:
                     response_metadata = getattr(response, "response_metadata", {}) or {}
             try:
@@ -352,9 +418,27 @@ class LangChainLLMClient(LLMClient):
                 normalized_payload = unwrap_response_payload(json.loads(normalized_json))
             except Exception as parse_exc:
                 if is_json_parse_error(parse_exc):
+                    # Capture the original response structure for debugging
+                    raw_response = getattr(response, "content", None) if response else None
+                    raw_structure = None
+                    if isinstance(raw_response, list):
+                        raw_structure = [
+                            {
+                                "type": p.get("type") if isinstance(p, dict) else getattr(p, "type", "?"),
+                                "text_head": (
+                                    (p.get("text") if isinstance(p, dict) else getattr(p, "text", ""))
+                                    or ""
+                                )[:200],
+                            }
+                            for p in raw_response
+                        ]
                     raise RetryableGenerationError(
                         f"JSON parsing failed for {schema_name}: {parse_exc}",
-                        data={"raw_content": str(content)},
+                        data={
+                            "raw_content": str(content),
+                            "raw_response_type": type(raw_response).__name__ if raw_response is not None else "none",
+                            "raw_response_parts": raw_structure,
+                        },
                     ) from parse_exc
                 raise
             normalized_payload, cap_truncations = _apply_schema_caps(
@@ -394,6 +478,7 @@ class LangChainLLMClient(LLMClient):
                     input_tokens=usage.get("input_tokens") or usage.get("prompt_tokens"),
                     output_tokens=usage.get("output_tokens") or usage.get("completion_tokens"),
                     cache_read_tokens=usage.get("cache_read_input_tokens"),
+                    thinking_tokens=usage.get("thinking_tokens"),
                 )
                 self.run_logger.log(
                     "llm_response",
@@ -409,7 +494,20 @@ class LangChainLLMClient(LLMClient):
                     f"Schema validation failed for {schema_name}: {validation_exc}",
                     data={"raw_payload": normalized_payload},
                 ) from validation_exc
-        except (LLMContentFilterError, RetryableGenerationError, TransientLLMError):
+        except (LLMContentFilterError, RetryableGenerationError, TransientLLMError) as exc:
+            if self.run_logger is not None:
+                self.run_logger.log(
+                    "llm_retryable_error",
+                    request_uuid=request_uuid,
+                    client="langchain",
+                    schema_name=schema_name,
+                    attempt=attempt,
+                    max_attempts=max_attempts,
+                    will_retry=attempt < max_attempts,
+                    error_type=type(exc).__name__,
+                    error_message=str(exc),
+                    **_summarize_retryable_error(exc),
+                )
             raise
         except Exception as exc:
             if self.run_logger is not None:

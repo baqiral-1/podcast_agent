@@ -47,12 +47,10 @@ class EpisodePlanningAgent(Agent):
         "- Provide enough spine segments to support the beat count and 140-minute target\n"
         "- Include 3-5 attribution moments per episode\n"
         "- Spine segments must not include author names\n\n"
-        "available_passages entries include summary_text only.\n"
-        "Use chapter_context_by_ref[book_id][chapter_ref] when chapter-level context is needed "
-        "(themes, tensions, causal shifts, hooks).\n"
-        "insight_passages entries contain the full_text passages for assigned insights, even when "
-        "those passages live outside the episode's assigned axes.\n"
-        "Use insight_passages for assigned-insight realization, and use available_passages for "
+        "available_passages is a flat list.\n"
+        "Each entry contains either summary_text (non-insight support passages) or full_text "
+        "(passages linked to assigned insights).\n"
+        "Use full_text entries for assigned-insight realization and use summary_text entries for "
         "supporting context and cross-axis comparisons.\n\n"
         "For merged narrative realization, use synthesis_map.merged_narratives[*].source_passage_ids "
         "as the grounding set for that episode's assigned merged_narrative_id.\n\n"
@@ -71,9 +69,7 @@ class EpisodePlanningAgent(Agent):
         narrative_strategy: dict,
         synthesis_map: dict,
         project_metadata: dict,
-        available_passages: dict,
-        insight_passages: list[dict] | None = None,
-        chapter_context_by_ref: dict[str, dict[str, dict]] | None = None,
+        available_passages: list[dict],
         previous_episode: dict | None = None,
         next_episode: dict | None = None,
         planning_feedback: dict | None = None,
@@ -84,8 +80,6 @@ class EpisodePlanningAgent(Agent):
             "synthesis_map": synthesis_map,
             "project": project_metadata,
             "available_passages": available_passages,
-            "insight_passages": insight_passages or [],
-            "chapter_context_by_ref": chapter_context_by_ref or {},
             "previous_episode": previous_episode,
             "next_episode": next_episode,
         }

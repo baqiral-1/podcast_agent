@@ -18,7 +18,7 @@ from podcast_agent.config import Settings
 from podcast_agent.agents.theme_decomposition import ThemeDecompositionResponse
 from podcast_agent.pipeline.orchestrator import (
     PipelineOrchestrator,
-    StructuringStageError,
+    _apply_passage_total_cap_by_axis,
     _build_axis_budget_by_relevance,
     _compute_stage_axis_target_count,
     _compute_adaptive_rerank_target,
@@ -259,6 +259,8 @@ class TestAxisBudgetAllocation:
             (240, 0.35, 30, 110, 84),
             (60, 0.35, 30, 110, 30),
             (400, 0.45, 35, 110, 110),
+            (320, 0.50, 30, 170, 160),
+            (320, 0.65, 35, 210, 208),
         ],
     )
     def test_compute_stage_axis_target_count_clamps(self, axis_total, pct, minimum, maximum, expected):
@@ -282,7 +284,6 @@ class TestOrchestratorConstruction:
             database=Settings().database.model_copy(update={"dsn": None}),
         )
         orch = PipelineOrchestrator(settings)
-        assert orch.structuring_agent is not None
         assert orch.book_summary_agent is not None
         assert orch.theme_decomposition_agent is not None
         assert orch.passage_extraction_agent is not None
@@ -290,7 +291,6 @@ class TestOrchestratorConstruction:
         assert orch.narrative_strategy_agent is not None
         assert orch.episode_planning_agent is not None
         assert orch.writing_agent is not None
-        assert orch.source_weaving_agent is not None
         assert orch.grounding_agent is not None
         assert orch.repair_agent is not None
         assert orch.spoken_delivery_agent is not None
@@ -320,7 +320,7 @@ class TestBookIngestion:
                 episode_count=2,
             ))
 
-    def test_structuring_failure_blocks_phase_two(self, tmp_path):
+    def test_single_ingest_failure_does_not_block_phase_two(self, tmp_path):
         settings = Settings(
             llm=Settings().llm.model_copy(update={"llm_provider": "heuristic"}),
             database=Settings().database.model_copy(update={"dsn": None}),
@@ -348,40 +348,35 @@ class TestBookIngestion:
             idx = calls["n"]
             calls["n"] += 1
             if idx == 1:
-                raise StructuringStageError(
-                    "boom",
-                    book_id="b2",
-                    title="B2",
-                    source_path="/tmp/b2.txt",
-                )
+                raise RuntimeError("boom")
             return books[idx]
 
         orch._ingest_and_index_book = AsyncMock(side_effect=fake_ingest)
-        orch._decompose_theme = AsyncMock(side_effect=AssertionError("Phase 2 should not run"))
+        orch._decompose_theme = AsyncMock(side_effect=RuntimeError("phase2_reached"))
 
-        with pytest.raises(RuntimeError, match="Structuring failed for 1 book\\(s\\)"):
+        with pytest.raises(RuntimeError, match="phase2_reached"):
             asyncio.run(orch.run_multi_book_podcast(
                 source_paths=["/tmp/b1.txt", "/tmp/b2.txt", "/tmp/b3.txt"],
                 theme="test",
                 episode_count=2,
-                project_id="proj-structuring-fail",
+                project_id="proj-ingest-fail",
             ))
 
-        project_file = tmp_path / "proj-structuring-fail" / "thematic_project.json"
+        assert orch._decompose_theme.await_count == 1
+        project_file = tmp_path / "proj-ingest-fail" / "thematic_project.json"
         data = json.loads(project_file.read_text())
-        assert data["status"] == ProjectStatus.FAILED.value
-        assert not (tmp_path / "proj-structuring-fail" / "thematic_axes.json").exists()
+        assert data["status"] == ProjectStatus.ANALYZING.value
 
-    def test_bm25_trims_top_third_sentences(self):
+    def test_bm25_trims_top_fifth_sentences(self):
         axis = ThematicAxis(
             name="alpha beta",
             description="",
         )
         candidates = [
-            {"text": "alpha beta. alpha. gamma. delta."},
+            {"text": "alpha beta. alpha beta. gamma. delta. epsilon. zeta. eta. theta. iota. kappa."},
         ]
         _trim_candidate_texts_by_bm25(axis, candidates)
-        assert candidates[0]["text"] == "alpha beta. alpha."
+        assert candidates[0]["text"] == "alpha beta. alpha beta."
 
     def test_passage_extraction_preserves_full_text_when_bm25_trims(self, tmp_path):
         settings = Settings(
@@ -452,6 +447,84 @@ class TestBookIngestion:
         assert passage.text == "alpha beta."
         assert passage.trimmed_text == "alpha beta."
         assert passage.full_text == "alpha beta. alpha. gamma."
+
+    def test_passage_extraction_payload_uses_slim_candidate_metadata(self, tmp_path):
+        settings = Settings(
+            llm=Settings().llm.model_copy(update={"llm_provider": "heuristic"}),
+            database=Settings().database.model_copy(update={"dsn": None}),
+            pipeline=Settings().pipeline.model_copy(update={"artifact_root": tmp_path}),
+        )
+        orch = PipelineOrchestrator(settings)
+
+        class FakeRetrieval:
+            def retrieve_for_axis(self, *, axis, project_id, book_ids, k_per_book):
+                hit_a = RetrievalHit(
+                    chunk_id="a1",
+                    book_id="book-a",
+                    chapter_id="ch1",
+                    text="alpha beta. alpha. gamma.",
+                    score=0.1,
+                    metadata={"chapter_id": "ch1"},
+                )
+                hit_b = RetrievalHit(
+                    chunk_id="b1",
+                    book_id="book-b",
+                    chapter_id="ch2",
+                    text="alpha beta. delta. epsilon.",
+                    score=0.2,
+                    metadata={"chapter_id": "ch2"},
+                )
+                return {"book-a": [hit_a], "book-b": [hit_b]}
+
+        orch.retrieval = FakeRetrieval()
+        seen_candidate_keys: set[str] = set()
+
+        def fake_run(payload):
+            for candidate in payload["candidate_passages"]:
+                seen_candidate_keys.update(candidate.keys())
+            passages = [
+                PassageExtractionScore(
+                    passage_id=c["passage_id"],
+                    relevance_score=0.9,
+                    quotability_score=0.8,
+                    synthesis_tags=[SynthesisTag.INDEPENDENT],
+                )
+                for c in payload["candidate_passages"]
+            ]
+            return PassageExtractionResponse(passages=passages, cross_book_pairs=[])
+
+        orch.passage_extraction_agent.run = MagicMock(side_effect=fake_run)
+
+        book_a = BookRecord(
+            book_id="book-a", title="Book A", author="A",
+            source_path="/a.txt", source_type="txt",
+        )
+        book_b = BookRecord(
+            book_id="book-b", title="Book B", author="B",
+            source_path="/b.txt", source_type="txt",
+        )
+        axis = ThematicAxis(
+            axis_id="axis_01",
+            name="alpha beta",
+            description="desc",
+            relevance_by_book={book_a.book_id: 0.9, book_b.book_id: 0.9},
+        )
+        project = ThematicProject(
+            project_id="proj-1",
+            theme="T",
+            episode_count=2,
+            config=PipelineConfig(
+                passage_retrieval_min_per_book=1,
+                passage_retrieval_max_per_book=1,
+                rerank_top_k=1,
+            ),
+            status=ProjectStatus.ANALYZING,
+            books=[book_a, book_b],
+        )
+        project_dir = tmp_path / project.project_id
+
+        asyncio.run(orch._extract_passages(project, [axis], project_dir))
+        assert seen_candidate_keys == {"passage_id", "book_id", "text"}
 
     def test_decompose_theme_adds_book_summaries_to_payload(self, tmp_path):
         settings = Settings(
@@ -948,9 +1021,9 @@ class TestBookIngestion:
         )
         assert log_path.exists()
         data = json.loads(log_path.read_text())
-        assert data["budget_strategy"] == "fixed_target_soft_threshold_spillover_backfill"
+        assert data["budget_strategy"] == "fixed_target_soft_threshold_spillover_backfill_cross_axis_reuse"
         assert data["allocation_policy"].startswith("floor_2_adaptive_relevance_pow_")
-        assert data["axis_candidate_budget_target"] == 200
+        assert data["axis_candidate_budget_target"] == 120
         assert data["axis_candidate_budget_effective"] == 6
         assert data["axis_candidate_budget"] == 6
         assert data["per_book_budget"] == {"book-a": 3, "book-b": 3}
@@ -958,6 +1031,349 @@ class TestBookIngestion:
         for book in data["books"]:
             used = [c for c in book["candidates"] if c["used"]]
             assert len(used) == 3
+
+    def test_passage_extraction_spillover_uses_round_robin_across_books(self, tmp_path):
+        settings = Settings(
+            llm=Settings().llm.model_copy(update={"llm_provider": "heuristic"}),
+            database=Settings().database.model_copy(update={"dsn": None}),
+            pipeline=Settings().pipeline.model_copy(update={"artifact_root": tmp_path}),
+        )
+        orch = PipelineOrchestrator(settings)
+
+        class FakeRetrieval:
+            def __init__(self, hits_by_book):
+                self.hits_by_book = hits_by_book
+
+            def retrieve_for_axis(self, *, axis, project_id, book_ids, k_per_book):
+                return {bid: self.hits_by_book[bid] for bid in book_ids}
+
+        def _hits(book_id: str, scores: list[float]) -> list[RetrievalHit]:
+            return [
+                RetrievalHit(
+                    chunk_id=f"{book_id}-{idx}",
+                    book_id=book_id,
+                    chapter_id=f"ch{idx}",
+                    text=f"{book_id} text {idx}",
+                    score=score,
+                    metadata={"chapter_id": f"ch{idx}"},
+                )
+                for idx, score in enumerate(scores, start=1)
+            ]
+
+        hits_by_book = {
+            "book-a": _hits("book-a", [0.1, 0.11, 0.12, 0.13, 0.14, 0.15, 0.16, 0.17, 0.18, 0.19, 0.2, 10.0]),
+            "book-b": _hits("book-b", [0.1, 0.3, 0.5, 0.7, 0.9, 1.1, 1.3, 1.5, 1.7, 1.9, 2.1, 10.0]),
+            "book-c": _hits("book-c", [0.1, 0.5, 0.9, 1.3, 1.7, 2.1, 2.5, 2.9, 3.3, 3.7, 4.1, 10.0]),
+            "book-d": _hits("book-d", [0.1, 8.0, 9.0, 10.0]),
+            "book-e": _hits("book-e", [0.1, 8.0, 9.0, 10.0]),
+        }
+        orch.retrieval = FakeRetrieval(hits_by_book)
+        orch.passage_extraction_agent.run = MagicMock(
+            side_effect=lambda payload: PassageExtractionResponse(
+                passages=[
+                    PassageExtractionScore(
+                        passage_id=c["passage_id"],
+                        relevance_score=0.5,
+                        quotability_score=0.5,
+                        synthesis_tags=[],
+                    )
+                    for c in payload["candidate_passages"]
+                ],
+                cross_book_pairs=[],
+            )
+        )
+
+        books = [
+            BookRecord(
+                book_id=book_id,
+                title=book_id,
+                author=book_id,
+                source_path=f"/{book_id}.txt",
+                source_type="txt",
+                chunk_count=len(hits_by_book[book_id]),
+            )
+            for book_id in ["book-a", "book-b", "book-c", "book-d", "book-e"]
+        ]
+        axis = ThematicAxis(
+            axis_id="axis_01",
+            name="Axis",
+            description="Desc",
+            relevance_by_book={book.book_id: 0.5 for book in books},
+        )
+        project = ThematicProject(
+            project_id="proj-1",
+            theme="T",
+            episode_count=1,
+            config=PipelineConfig(
+                pre_axis_total_budget=20,
+                pre_axis_floor=0,
+                post_axis_total_budget=20,
+                post_axis_floor=1,
+                passage_retrieval_min_per_book=1,
+                passage_retrieval_max_per_book=20,
+                rerank_top_k=1,
+            ),
+            status=ProjectStatus.ANALYZING,
+            books=books,
+        )
+        project_dir = tmp_path / project.project_id
+
+        asyncio.run(orch._extract_passages(project, [axis], project_dir))
+
+        data = json.loads(
+            (
+                project_dir
+                / "stage_artifacts"
+                / "passage_extraction"
+                / "retrieval_candidates_axis_01.json"
+            ).read_text()
+        )
+        spillover_counts = {
+            book["book_id"]: book["selected_spillover_count"]
+            for book in data["books"]
+        }
+        assert data["axis_candidate_budget_effective"] == 20
+        assert data["per_book_budget"] == {
+            "book-a": 4,
+            "book-b": 4,
+            "book-c": 4,
+            "book-d": 4,
+            "book-e": 4,
+        }
+        assert spillover_counts == {
+            "book-a": 2,
+            "book-b": 2,
+            "book-c": 2,
+            "book-d": 0,
+            "book-e": 0,
+        }
+        used_by_book = {
+            book["book_id"]: len([candidate for candidate in book["candidates"] if candidate["used"]])
+            for book in data["books"]
+        }
+        assert used_by_book == {
+            "book-a": 6,
+            "book-b": 6,
+            "book-c": 6,
+            "book-d": 1,
+            "book-e": 1,
+        }
+        assert sum(used_by_book.values()) == 20
+
+    @pytest.mark.parametrize(
+        ("reuse_penalty", "expected_axis2_chunk"),
+        [
+            (0.0, "chunk_shared"),
+            (0.25, "chunk_unique_axis2"),
+        ],
+    )
+    def test_passage_extraction_cross_axis_reuse_penalty_changes_second_axis_choice(
+        self,
+        tmp_path,
+        reuse_penalty,
+        expected_axis2_chunk,
+    ):
+        settings = Settings(
+            llm=Settings().llm.model_copy(update={"llm_provider": "heuristic"}),
+            database=Settings().database.model_copy(update={"dsn": None}),
+            pipeline=Settings().pipeline.model_copy(update={"artifact_root": tmp_path}),
+        )
+        orch = PipelineOrchestrator(settings)
+
+        class FakeRetrieval:
+            def __init__(self, hits_by_axis):
+                self.hits_by_axis = hits_by_axis
+
+            def retrieve_for_axis(self, *, axis, project_id, book_ids, k_per_book):
+                return self.hits_by_axis[axis.axis_id]
+
+        def _hit(chunk_id: str, score: float) -> RetrievalHit:
+            return RetrievalHit(
+                chunk_id=chunk_id,
+                book_id="book-a",
+                chapter_id="ch1",
+                text=f"text {chunk_id}",
+                score=score,
+                metadata={"chapter_id": "ch1"},
+            )
+
+        hits_by_axis = {
+            "axis_01": {
+                "book-a": [
+                    _hit("chunk_shared", 0.10),
+                    _hit("chunk_unique_axis1", 0.1005),
+                    _hit("chunk_tail_axis1", 0.20),
+                ]
+            },
+            "axis_02": {
+                "book-a": [
+                    _hit("chunk_shared", 0.10),
+                    _hit("chunk_unique_axis2", 0.1005),
+                    _hit("chunk_tail_axis2", 0.20),
+                ]
+            },
+        }
+        orch.retrieval = FakeRetrieval(hits_by_axis)
+        orch.passage_extraction_agent.run = MagicMock(
+            side_effect=lambda payload: PassageExtractionResponse(
+                passages=[
+                    PassageExtractionScore(
+                        passage_id=c["passage_id"],
+                        relevance_score=0.8,
+                        quotability_score=0.6,
+                        synthesis_tags=[SynthesisTag.INDEPENDENT],
+                    )
+                    for c in payload["candidate_passages"]
+                ],
+                cross_book_pairs=[],
+            )
+        )
+
+        book = BookRecord(
+            book_id="book-a",
+            title="Book A",
+            author="A",
+            source_path="/a.txt",
+            source_type="txt",
+            chunk_count=3,
+        )
+        axes = [
+            ThematicAxis(
+                axis_id="axis_01",
+                name="Axis 1",
+                description="Desc",
+                relevance_by_book={"book-a": 1.0},
+            ),
+            ThematicAxis(
+                axis_id="axis_02",
+                name="Axis 2",
+                description="Desc",
+                relevance_by_book={"book-a": 1.0},
+            ),
+        ]
+        project = ThematicProject(
+            project_id=f"proj-cross-axis-{str(reuse_penalty).replace('.', '-')}",
+            theme="T",
+            episode_count=1,
+            config=PipelineConfig(
+                pre_axis_total_budget=2,
+                pre_axis_floor=0,
+                post_axis_total_budget=2,
+                post_axis_floor=1,
+                post_axis_cap=3,
+                pre_axis_cross_axis_reuse_penalty=reuse_penalty,
+                passage_retrieval_min_per_book=1,
+                passage_retrieval_max_per_book=3,
+                mmr_enabled=False,
+                rerank_top_k=1,
+            ),
+            status=ProjectStatus.ANALYZING,
+            books=[book],
+        )
+
+        project_dir = tmp_path / project.project_id
+        corpus = asyncio.run(orch._extract_passages(project, axes, project_dir))
+
+        axis1_chunks = [p.chunk_ids[0] for p in corpus.passages_by_axis["axis_01"]]
+        axis2_chunks = [p.chunk_ids[0] for p in corpus.passages_by_axis["axis_02"]]
+        assert axis1_chunks == ["chunk_shared"]
+        assert axis2_chunks == [expected_axis2_chunk]
+
+    def test_passage_extraction_parallel_llm_calls_respect_configured_concurrency_cap(self, tmp_path):
+        settings = Settings(
+            llm=Settings().llm.model_copy(update={"llm_provider": "heuristic"}),
+            database=Settings().database.model_copy(update={"dsn": None}),
+            pipeline=Settings().pipeline.model_copy(update={"artifact_root": tmp_path}),
+        )
+        orch = PipelineOrchestrator(settings)
+
+        class FakeRetrieval:
+            def retrieve_for_axis(self, *, axis, project_id, book_ids, k_per_book):
+                return {
+                    "book-a": [
+                        RetrievalHit(
+                            chunk_id=f"{axis.axis_id}-chunk",
+                            book_id="book-a",
+                            chapter_id="ch1",
+                            text=f"text for {axis.axis_id}",
+                            score=0.1,
+                            metadata={"chapter_id": "ch1"},
+                        )
+                    ]
+                }
+
+        orch.retrieval = FakeRetrieval()
+        lock = threading.Lock()
+        state = {"in_flight": 0, "max_in_flight": 0}
+
+        def _slow_scores(payload):
+            with lock:
+                state["in_flight"] += 1
+                state["max_in_flight"] = max(state["max_in_flight"], state["in_flight"])
+            try:
+                time.sleep(0.05)
+                return PassageExtractionResponse(
+                    passages=[
+                        PassageExtractionScore(
+                            passage_id=c["passage_id"],
+                            relevance_score=0.9,
+                            quotability_score=0.7,
+                            synthesis_tags=[SynthesisTag.INDEPENDENT],
+                        )
+                        for c in payload["candidate_passages"]
+                    ],
+                    cross_book_pairs=[],
+                )
+            finally:
+                with lock:
+                    state["in_flight"] -= 1
+
+        orch.passage_extraction_agent.run = MagicMock(side_effect=_slow_scores)
+
+        project = ThematicProject(
+            project_id="proj-passages-parallel-cap",
+            theme="T",
+            episode_count=1,
+            config=PipelineConfig(
+                pre_axis_total_budget=3,
+                pre_axis_floor=0,
+                post_axis_total_budget=3,
+                post_axis_floor=1,
+                post_axis_cap=3,
+                passage_retrieval_min_per_book=1,
+                passage_retrieval_max_per_book=1,
+                passage_extraction_concurrency=2,
+                rerank_top_k=1,
+                mmr_enabled=False,
+            ),
+            status=ProjectStatus.ANALYZING,
+            books=[
+                BookRecord(
+                    book_id="book-a",
+                    title="Book A",
+                    author="A",
+                    source_path="/a.txt",
+                    source_type="txt",
+                    chunk_count=1,
+                )
+            ],
+        )
+        axes = [
+            ThematicAxis(
+                axis_id=f"axis_{idx:02d}",
+                name=f"Axis {idx}",
+                description="Desc",
+                relevance_by_book={"book-a": 1.0},
+            )
+            for idx in range(1, 4)
+        ]
+
+        project_dir = tmp_path / project.project_id
+        asyncio.run(orch._extract_passages(project, axes, project_dir))
+
+        assert orch.passage_extraction_agent.run.call_count == 3
+        assert state["max_in_flight"] <= 2
+        assert state["max_in_flight"] >= 2
 
     def test_passage_extraction_rehydrates_scores(self, tmp_path):
         settings = Settings(
@@ -1211,7 +1627,7 @@ class TestBookIngestion:
 
         bad_response = PassageExtractionResponse(passages=[], cross_book_pairs=[])
         orch.passage_extraction_agent.run = MagicMock(
-            side_effect=[bad_response, bad_response, bad_response]
+            side_effect=[bad_response, bad_response, bad_response, bad_response]
         )
 
         project = ThematicProject(
@@ -1230,7 +1646,7 @@ class TestBookIngestion:
 
         with pytest.raises(RuntimeError, match="fewer than 60%"):
             asyncio.run(orch._extract_passages(project, [axis], project_dir))
-        assert orch.passage_extraction_agent.run.call_count == 3
+        assert orch.passage_extraction_agent.run.call_count == 4
 
     def test_passage_extraction_ignores_duplicates(self, tmp_path):
         settings = Settings(
@@ -1812,6 +2228,118 @@ class TestPostRerankSelection:
         with pytest.raises(TypeError):
             _select_top_passages_for_post_rerank(passages)
 
+    def test_select_top_passages_for_post_rerank_source_aware_mmr_increases_book_diversity(self):
+        passages = [
+            ExtractedPassage(
+                passage_id="a1",
+                book_id="book-a",
+                chunk_ids=["a1"],
+                text="alpha workers strike solidarity",
+                trimmed_text="alpha workers strike solidarity",
+                full_text="alpha workers strike solidarity",
+                chapter_ref="ch1",
+                axis_id="axis_01",
+                relevance_score=0.95,
+                quotability_score=0.95,
+                synthesis_tags=[],
+            ),
+            ExtractedPassage(
+                passage_id="a2",
+                book_id="book-a",
+                chunk_ids=["a2"],
+                text="alpha workers strike solidarity and boycott",
+                trimmed_text="alpha workers strike solidarity and boycott",
+                full_text="alpha workers strike solidarity and boycott",
+                chapter_ref="ch2",
+                axis_id="axis_01",
+                relevance_score=0.94,
+                quotability_score=0.94,
+                synthesis_tags=[],
+            ),
+            ExtractedPassage(
+                passage_id="b1",
+                book_id="book-b",
+                chunk_ids=["b1"],
+                text="british cabinet debates partition and trusteeship",
+                trimmed_text="british cabinet debates partition and trusteeship",
+                full_text="british cabinet debates partition and trusteeship",
+                chapter_ref="ch1",
+                axis_id="axis_01",
+                relevance_score=0.90,
+                quotability_score=0.90,
+                synthesis_tags=[],
+            ),
+        ]
+
+        selected = _select_top_passages_for_post_rerank(
+            passages,
+            top_k=2,
+            use_mmr=True,
+            mmr_lambda=0.6,
+            source_penalty_weight=1.0,
+        )
+
+        assert [p.passage_id for p in selected] == ["a1", "b1"]
+
+    def test_select_top_passages_for_post_rerank_source_penalty_can_be_disabled(self):
+        passages = [
+            ExtractedPassage(
+                passage_id="a1",
+                book_id="book-a",
+                chunk_ids=["a1"],
+                text="same repeated phrase alpha beta",
+                trimmed_text="same repeated phrase alpha beta",
+                full_text="same repeated phrase alpha beta",
+                chapter_ref="ch1",
+                axis_id="axis_01",
+                relevance_score=0.95,
+                quotability_score=0.95,
+                synthesis_tags=[],
+            ),
+            ExtractedPassage(
+                passage_id="a2",
+                book_id="book-a",
+                chunk_ids=["a2"],
+                text="related repeated phrase alpha beta gamma",
+                trimmed_text="related repeated phrase alpha beta gamma",
+                full_text="related repeated phrase alpha beta gamma",
+                chapter_ref="ch2",
+                axis_id="axis_01",
+                relevance_score=0.94,
+                quotability_score=0.94,
+                synthesis_tags=[],
+            ),
+            ExtractedPassage(
+                passage_id="b1",
+                book_id="book-b",
+                chunk_ids=["b1"],
+                text="distantly related diplomatic language",
+                trimmed_text="distantly related diplomatic language",
+                full_text="distantly related diplomatic language",
+                chapter_ref="ch1",
+                axis_id="axis_01",
+                relevance_score=0.70,
+                quotability_score=0.70,
+                synthesis_tags=[],
+            ),
+        ]
+
+        selected = _select_top_passages_for_post_rerank(
+            passages,
+            top_k=2,
+            use_mmr=True,
+            mmr_lambda=0.6,
+            source_penalty_weight=0.0,
+        )
+        baseline = _select_top_passages_for_post_rerank(
+            passages,
+            top_k=2,
+            use_mmr=True,
+            mmr_lambda=0.6,
+        )
+
+        assert [p.passage_id for p in selected] == [p.passage_id for p in baseline]
+
 
 class TestPassageUtilization:
     def test_compute_passage_utilization(self):
@@ -2289,7 +2817,7 @@ class TestWriteEpisodeSourceMode:
         assert payload["passages"][0]["text"] == "cross axis full text"
         assert payload["passages"][0]["chapter_context"] is None
 
-    def test_write_episode_splits_into_three_windowed_requests(self, tmp_path):
+    def test_write_episode_splits_into_two_windowed_requests(self, tmp_path):
         orch, _, project, _, ep_dir, project_dir = self._build_context(
             tmp_path,
             full_text="",
@@ -2383,19 +2911,47 @@ class TestWriteEpisodeSourceMode:
 
         script = asyncio.run(orch._write_episode(plan, project, corpus, ep_dir, project_dir))
 
-        assert orch.writing_agent.run.call_count == 3
+        assert orch.writing_agent.run.call_count == 2
         payloads = [call.args[0] for call in orch.writing_agent.run.call_args_list]
-        assert [len(payload["plan"]["beats"]) for payload in payloads] == [2, 2, 2]
-        assert [len(payload["passages"]) for payload in payloads] == [2, 2, 2]
+        assert [len(payload["plan"]["beats"]) for payload in payloads] == [3, 3]
+        assert [len(payload["passages"]) for payload in payloads] == [3, 3]
         assert [
             [item["insight_id"] for item in payload["plan"]["synthesis_context"]["insights"]]
             for payload in payloads
-        ] == [["ins_01"], ["ins_02"], []]
+        ] == [["ins_01", "ins_02"], ["ins_02"]]
         assert all(
             len(payload["plan"]["synthesis_context"]["narrative_threads"]) == 2
             for payload in payloads
         )
         assert len(script.segments) == 6
+
+    def test_apply_passage_total_cap_by_axis_soft_overrun_keeps_only_priority(self):
+        p1 = ExtractedPassage(passage_id="p1", book_id="b1", chunk_ids=["c1"], text="x", axis_id="a", relevance_score=0.9, quotability_score=0.8)
+        p2 = ExtractedPassage(passage_id="p2", book_id="b1", chunk_ids=["c2"], text="x", axis_id="a", relevance_score=0.8, quotability_score=0.7)
+        p3 = ExtractedPassage(passage_id="p3", book_id="b2", chunk_ids=["c3"], text="x", axis_id="b", relevance_score=0.7, quotability_score=0.6)
+        capped, stats = _apply_passage_total_cap_by_axis(
+            passages_by_axis={"a": [p1, p2], "b": [p3]},
+            total_cap=1,
+            priority_passage_ids={"p1", "p3"},
+        )
+        assert [p.passage_id for p in capped["a"]] == ["p1"]
+        assert [p.passage_id for p in capped["b"]] == ["p3"]
+        assert stats["soft_overrun"] is True
+        assert stats["output_total"] == 2
+
+    def test_apply_passage_total_cap_by_axis_trims_non_priority_first(self):
+        p1 = ExtractedPassage(passage_id="p1", book_id="b1", chunk_ids=["c1"], text="x", axis_id="a", relevance_score=0.9, quotability_score=0.8)
+        p2 = ExtractedPassage(passage_id="p2", book_id="b1", chunk_ids=["c2"], text="x", axis_id="a", relevance_score=0.8, quotability_score=0.7)
+        p3 = ExtractedPassage(passage_id="p3", book_id="b2", chunk_ids=["c3"], text="x", axis_id="b", relevance_score=0.7, quotability_score=0.6)
+        capped, stats = _apply_passage_total_cap_by_axis(
+            passages_by_axis={"a": [p1, p2], "b": [p3]},
+            total_cap=2,
+            priority_passage_ids={"p1"},
+        )
+        assert [p.passage_id for p in capped["a"]] == ["p1", "p2"]
+        assert capped["b"] == []
+        assert stats["soft_overrun"] is False
+        assert stats["output_total"] == 2
 
     def test_write_episode_logs_duration_shortfall_warning(self, tmp_path):
         orch, _, project, corpus, ep_dir, project_dir = self._build_context(
@@ -3268,6 +3824,67 @@ class TestEpisodePlanningPayload:
         assert "synthesis_feedback" in captured_payloads[1]
         assert captured_payloads[1]["synthesis_feedback"]["issue"] == "merged_narrative_count_out_of_range"
 
+    def test_map_synthesis_passes_full_retained_text(self, tmp_path):
+        settings = Settings(
+            llm=Settings().llm.model_copy(update={"llm_provider": "heuristic"}),
+            database=Settings().database.model_copy(update={"dsn": None}),
+            pipeline=Settings().pipeline.model_copy(update={"artifact_root": tmp_path}),
+        )
+        orch = PipelineOrchestrator(settings)
+        captured_payloads: list[dict] = []
+
+        def fake_synthesis(payload):
+            captured_payloads.append(payload)
+            return SynthesisMappingResponse(
+                insights=[],
+                narrative_threads=[],
+                book_relationship_matrix={},
+                unresolved_tensions=[],
+                quality_score=0.7,
+                merged_narratives=[
+                    MergedNarrative(topic=f"T{i}", narrative=f"N{i}", source_passage_ids=["p1"])
+                    for i in range(1, 8)
+                ],
+            )
+
+        orch.synthesis_mapping_agent.run = MagicMock(side_effect=fake_synthesis)
+        long_text = "alpha beta. " * 60
+        project = ThematicProject(
+            project_id="proj_syn_full_text",
+            theme="Theme",
+            books=[
+                BookRecord(
+                    book_id="book-a",
+                    title="Book A",
+                    author="A",
+                    source_path="/a.txt",
+                    source_type="txt",
+                )
+            ],
+        )
+        corpus = ThematicCorpus(
+            project_id="proj_syn_full_text",
+            axes=[ThematicAxis(axis_id="axis_1", name="Axis 1", description="Desc")],
+            passages_by_axis={
+                "axis_1": [
+                    ExtractedPassage(
+                        passage_id="p1",
+                        book_id="book-a",
+                        chunk_ids=["c1"],
+                        text=long_text,
+                        axis_id="axis_1",
+                    )
+                ]
+            },
+        )
+
+        asyncio.run(
+            orch._map_synthesis(project, corpus, tmp_path / "proj_syn_full_text")
+        )
+
+        assert captured_payloads[0]["passages_by_axis"]["axis_1"][0]["text"] == long_text
+        assert len(captured_payloads[0]["passages_by_axis"]["axis_1"][0]["text"]) > 500
+
     def test_choose_narrative_strategy_fails_after_retry_on_duplicate_or_missing_merged_assignments(self, tmp_path):
         settings = Settings(
             llm=Settings().llm.model_copy(update={"llm_provider": "heuristic"}),
@@ -3488,6 +4105,7 @@ class TestEpisodePlanningPayload:
                         book_id="book-a",
                         chunk_ids=["chunk_shared"],
                         text="Axis 1 summary",
+                        trimmed_text="Axis 1 trimmed summary",
                         full_text="Axis 1 shared full text",
                         chapter_ref="ch1",
                         axis_id="axis_1",
@@ -3566,26 +4184,11 @@ class TestEpisodePlanningPayload:
         assert synthesis_payload["merged_narratives"][0]["merged_narrative_id"] == "merged_narrative_001"
         assert synthesis_payload["unresolved_tensions"][0]["tension_id"] == "tension_001"
         available = captured_payloads[0]["available_passages"]
-        insight_passages = captured_payloads[0]["insight_passages"]
-        assert "axis_1" in available and "axis_2" in available
-        assert any(p["passage_id"] == "p_a1_shared" for p in available["axis_1"])
-        assert any(p["passage_id"] == "p_a2_shared" for p in available["axis_2"])
-        assert {entry["passage_id"] for entry in insight_passages} == {"p_a1_unique", "p_a2_shared"}
-        assert "chapter_context" not in available["axis_1"][0]
-        assert all("full_text" in entry for entry in insight_passages)
-        assert captured_payloads[0]["chapter_context_by_ref"] == {
-            "book-a": {
-                "ch1": {
-                    "chapter_id": "ch1",
-                    "chapter_title": "Chapter 1",
-                    "chapter_summary": "Chapter summary",
-                    "themes_touched": [],
-                    "major_tensions": ["tension-1"],
-                    "causal_shifts": ["shift-1"],
-                    "narrative_hooks": ["hook-1"],
-                }
-            }
-        }
+        assert "insight_passages" not in captured_payloads[0]
+        assert any(p["passage_id"] == "p_a1_shared" for p in available)
+        assert any(p["passage_id"] == "p_a2_shared" for p in available)
+        assert "chapter_context" not in available[0]
+        assert "chapter_context_by_ref" not in captured_payloads[0]
         assert captured_payloads[0]["narrative_strategy"]["episode_arc_detail"]["episode_number"] == 1
         assert len(captured_payloads[0]["narrative_strategy"]["episode_arc_detail"]["episode_inquiries"]) == 4
         assignment_payload = captured_payloads[0]["episode_assignment"]
@@ -3596,27 +4199,25 @@ class TestEpisodePlanningPayload:
         ]
         insight_entries = {
             entry["passage_id"]: entry
-            for axis_entries in available.values()
-            for entry in axis_entries
+            for entry in available
             if entry["passage_id"] in {"p_a1_unique", "p_a2_shared"}
         }
-        assert "summary_text" in insight_entries["p_a1_unique"]
-        assert "full_text" not in insight_entries["p_a1_unique"]
-        assert "summary_text" in insight_entries["p_a2_shared"]
-        assert "full_text" not in insight_entries["p_a2_shared"]
+        assert "full_text" in insight_entries["p_a1_unique"]
+        assert "summary_text" not in insight_entries["p_a1_unique"]
+        assert "full_text" in insight_entries["p_a2_shared"]
+        assert "summary_text" not in insight_entries["p_a2_shared"]
         non_insight_entry = next(
             entry
-            for axis_entries in available.values()
-            for entry in axis_entries
+            for entry in available
             if entry["passage_id"] == "p_a1_shared"
         )
         assert "summary_text" in non_insight_entry
+        assert non_insight_entry["summary_text"] == "Axis 1 trimmed summary"
         assert "full_text" not in non_insight_entry
-        for axis_entries in available.values():
-            for entry in axis_entries:
-                assert "chunk_key" not in entry
-                assert "cross_axis_passage_ids" not in entry
-                assert "cross_axis_summaries" not in entry
+        for entry in available:
+            assert "chunk_key" not in entry
+            assert "cross_axis_passage_ids" not in entry
+            assert "cross_axis_summaries" not in entry
         assert plans[0].synthesis_context is not None
         assert plans[0].synthesis_context.insights[0].axis_ids == ["axis_1", "axis_2"]
         assert plans[0].driving_question == "Episode 1 driving question?"
@@ -3717,28 +4318,22 @@ class TestEpisodePlanningPayload:
         asyncio.run(orch._plan_series(project, synthesis_map, strategy, corpus, tmp_path / "proj2"))
 
         available = captured_payloads[0]["available_passages"]
-        total_passages = sum(len(v) for v in available.values())
-        assert total_passages == 37
-        assert len(available["axis_1"]) == 36
-        assert len(available["axis_2"]) == 1
-        all_ids = {entry["passage_id"] for axis_entries in available.values() for entry in axis_entries}
+        assert len(available) == 27
+        all_ids = {entry["passage_id"] for entry in available}
         assert "p39" in all_ids
         assert "p_shared_axis_2" in all_ids
         insight_by_id = {
             entry["passage_id"]: entry
-            for axis_entries in available.values()
-            for entry in axis_entries
+            for entry in available
             if entry["passage_id"] in {"p39", "p_shared_axis_2"}
         }
-        assert "summary_text" in insight_by_id["p39"]
-        assert "full_text" not in insight_by_id["p39"]
-        assert "summary_text" in insight_by_id["p_shared_axis_2"]
-        assert "full_text" not in insight_by_id["p_shared_axis_2"]
-        assert {entry["passage_id"] for entry in captured_payloads[0]["insight_passages"]} == {
-            "p39", "p_shared_axis_2"
-        }
+        assert "full_text" in insight_by_id["p39"]
+        assert "summary_text" not in insight_by_id["p39"]
+        assert "full_text" in insight_by_id["p_shared_axis_2"]
+        assert "summary_text" not in insight_by_id["p_shared_axis_2"]
+        assert "insight_passages" not in captured_payloads[0]
 
-    def test_planning_payload_includes_cross_axis_insight_passages_separately(self, tmp_path):
+    def test_planning_payload_flattens_cross_axis_insight_passages(self, tmp_path):
         settings = Settings(
             llm=Settings().llm.model_copy(update={"llm_provider": "heuristic"}),
             database=Settings().database.model_copy(update={"dsn": None}),
@@ -3835,17 +4430,18 @@ class TestEpisodePlanningPayload:
         )
 
         payload = captured_payloads[0]
-        assert payload["available_passages"]["axis_1"][0]["passage_id"] == "p_support"
-        assert "chapter_context" not in payload["available_passages"]["axis_1"][0]
-        assert {entry["passage_id"] for entry in payload["insight_passages"]} == {
-            "p_insight_a", "p_insight_b"
+        assert payload["available_passages"][0]["passage_id"] == "p_support"
+        assert "chapter_context" not in payload["available_passages"][0]
+        assert {entry["passage_id"] for entry in payload["available_passages"]} == {
+            "p_support", "p_insight_a", "p_insight_b"
         }
-        assert payload["insight_passages"][0]["source_axis_ids"] == ["axis_6"]
-        assert payload["chapter_context_by_ref"] == {}
-        assert not any(
-            entry["passage_id"] in {"p_insight_a", "p_insight_b"}
-            for entry in payload["available_passages"]["axis_1"]
+        assert all(
+            "full_text" in entry
+            for entry in payload["available_passages"]
+            if entry["passage_id"] in {"p_insight_a", "p_insight_b"}
         )
+        assert "chapter_context_by_ref" not in payload
+        assert "insight_passages" not in payload
 
     def test_plan_series_retries_once_when_assigned_insight_has_zero_realization(self, tmp_path):
         settings = Settings(
@@ -3948,9 +4544,12 @@ class TestEpisodePlanningPayload:
 
         assert len(captured_payloads) == 2
         assert captured_payloads[1]["planning_feedback"]["issue"] == "assigned_insight_realization"
-        assert {entry["passage_id"] for entry in captured_payloads[1]["insight_passages"]} == {
-            "p_target"
+        retry_passages = {
+            entry["passage_id"]: entry
+            for entry in captured_payloads[1]["available_passages"]
         }
+        assert "p_target" in retry_passages
+        assert "full_text" in retry_passages["p_target"]
         assert plans[0].beats[0].passage_ids == ["p_target", "p_missing"]
         realization = json.loads((tmp_path / "proj_retry" / "episode_plan_realization.json").read_text())
         assert realization["episodes"][0]["has_issues"] is False

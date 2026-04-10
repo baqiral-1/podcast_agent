@@ -61,22 +61,6 @@ class HeuristicLLMClient(LLMClient):
         """Produce a minimal valid response for unknown schemas."""
         raise ValueError(f"No heuristic generator for schema '{schema_name}'.")
 
-    def _generate_structuring(self, payload: PromptPayload) -> dict[str, Any]:
-        text_window = payload.get("text_window", "")
-        word_count = len(text_window.split())
-        return {
-            "chapters": [
-                {
-                    "chapter_id": uuid4().hex,
-                    "title": "Chapter 1",
-                    "start_index": 0,
-                    "end_index": len(text_window),
-                    "word_count": word_count,
-                    "summary": "Heuristic chapter summary.",
-                }
-            ]
-        }
-
     def _generate_chapter_summary(self, payload: PromptPayload) -> dict[str, Any]:
         chapter_title = str(payload.get("chapter_title", "")).strip() or "This chapter"
         chapter_text = str(payload.get("chapter_text", "")).strip()
@@ -238,9 +222,9 @@ class HeuristicLLMClient(LLMClient):
             base = max(7, (insight_count // 5) + (thread_count // 2))
             if quality_score >= 0.75:
                 base += 1
-            recommended_episode_count = max(7, min(8, base))
+            recommended_episode_count = max(7, min(9, base))
         else:
-            recommended_episode_count = max(7, min(8, int(requested_episode_count)))
+            recommended_episode_count = max(7, min(9, int(requested_episode_count)))
         episode_assignments = []
         episode_arc_details = []
         axis_pool = [
@@ -263,7 +247,7 @@ class HeuristicLLMClient(LLMClient):
         ]
         for i in range(recommended_episode_count):
             if len(axis_pool) >= 4:
-                target_axis_count = 3 + (i % 2)
+                target_axis_count = 2 + (i % 3)
             else:
                 target_axis_count = min(len(axis_pool), max(1, len(axis_pool)))
             selected_axes = [
@@ -362,10 +346,9 @@ class HeuristicLLMClient(LLMClient):
         if not axis_ids:
             axis_ids = assignment.get("axis_ids", [])
         insight_ids = assignment.get("insight_ids", [])
-        available_passages = payload.get("available_passages", {})
+        available_passages = payload.get("available_passages", [])
         synthesis_map = payload.get("synthesis_map", {})
-        first_axis = axis_ids[0] if axis_ids else ""
-        passage_pool = available_passages.get(first_axis, []) if first_axis else []
+        passage_pool = available_passages if isinstance(available_passages, list) else []
         selected_passage_ids = [
             passage.get("passage_id", uuid4().hex)
             for passage in passage_pool[:3]
@@ -424,11 +407,6 @@ class HeuristicLLMClient(LLMClient):
                 }
             ],
             "citations": [],
-        }
-
-    def _generate_source_weaving(self, payload: PromptPayload) -> dict[str, Any]:
-        return {
-            "text": "Here the story splits, and the answer depends on which evidence you trust.",
         }
 
     def _generate_grounding_validation(self, payload: PromptPayload) -> dict[str, Any]:

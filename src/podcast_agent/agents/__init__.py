@@ -6,9 +6,7 @@ from podcast_agent.agents.narrative_strategy import NarrativeStrategyAgent
 from podcast_agent.agents.passage_extraction import PassageExtractionAgent
 from podcast_agent.agents.planning import EpisodePlanningAgent
 from podcast_agent.agents.repair import RepairAgent
-from podcast_agent.agents.source_weaving import SourceWeavingAgent
 from podcast_agent.agents.spoken_delivery_agent import SpokenDeliveryAgent
-from podcast_agent.agents.structuring import StructuringAgent
 from podcast_agent.agents.chapter_summary import ChapterSummaryAgent
 from podcast_agent.agents.synthesis_mapping import SynthesisMappingAgent
 from podcast_agent.agents.theme_decomposition import ThemeDecompositionAgent
@@ -23,9 +21,7 @@ __all__ = [
     "PassageExtractionAgent",
     "RepairAgent",
     "EpisodePlanningAgent",
-    "SourceWeavingAgent",
     "SpokenDeliveryAgent",
-    "StructuringAgent",
     "ChapterSummaryAgent",
     "SynthesisMappingAgent",
     "ThemeDecompositionAgent",

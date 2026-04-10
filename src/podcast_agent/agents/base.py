@@ -26,6 +26,27 @@ class Agent(ABC):
         self.llm = llm
         self.max_retry_attempts = max_retry_attempts
 
+    def _log_retry_scheduled(
+        self,
+        *,
+        attempt: int,
+        backoff: float,
+        exc: Exception,
+    ) -> None:
+        run_logger = getattr(self.llm, "run_logger", None)
+        if run_logger is None:
+            return
+        run_logger.log(
+            "llm_retry_scheduled",
+            schema_name=self.schema_name,
+            attempt=attempt,
+            max_attempts=self.max_retry_attempts,
+            next_attempt=attempt + 1,
+            backoff_seconds=backoff,
+            error_type=type(exc).__name__,
+            error_message=str(exc),
+        )
+
     def run(self, payload: dict) -> BaseModel:
         """Execute the agent with retry and concurrency gating."""
         last_exc: Exception | None = None
@@ -44,6 +65,11 @@ class Agent(ABC):
                     last_exc = exc
                     if attempt < self.max_retry_attempts:
                         backoff = min(2 ** (attempt - 1), 16) + (time.monotonic() % 1)
+                        self._log_retry_scheduled(
+                            attempt=attempt,
+                            backoff=backoff,
+                            exc=exc,
+                        )
                         logger.warning(
                             "Agent %s attempt %d/%d failed (%s: %s), retrying in %.1fs",
                             self.schema_name, attempt, self.max_retry_attempts,

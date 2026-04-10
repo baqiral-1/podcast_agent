@@ -21,7 +21,7 @@ class ChapterSummaryAgent(Agent):
     instructions = (
         "You are a thematic analyst preparing a cross-book podcast. Given the project theme, "
         "optional sub-themes and theme elaboration, and a chapter of a book, produce a concise "
-        "4-6 sentence summary focused on thematic analysis. Capture key events or arguments, "
+        "2-3 sentence summary focused on thematic analysis. Capture key events or arguments, "
         "the central actors or institutions, major tensions/disagreements, and any meaningful "
         "causal shifts.\n\n"
         "Use the theme context to prioritize what matters for downstream synthesis, but keep "

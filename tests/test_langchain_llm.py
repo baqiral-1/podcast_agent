@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import pytest
 from pydantic import BaseModel, Field
 
 from podcast_agent.agents.chapter_summary import ChapterSummaryResponse
-from podcast_agent.langchain.llm import _apply_schema_caps
+from podcast_agent.langchain.runnables import RetryableGenerationError
+from podcast_agent.langchain.llm import _apply_schema_caps, _summarize_retryable_error
 
 
 def test_apply_schema_caps_truncates_chapter_summary_analysis_lists() -> None:
@@ -46,3 +48,19 @@ def test_apply_schema_caps_is_noop_for_non_chapter_summary() -> None:
 
     assert capped == payload
     assert truncations == []
+
+
+def test_summarize_retryable_error_compacts_retry_payload() -> None:
+    exc = RetryableGenerationError(
+        "JSON parsing failed",
+        data={"raw_content": "x" * 20, "raw_payload": {"a": [1, 2, 3]}},
+    )
+    summary = _summarize_retryable_error(exc)
+    assert summary["data_keys"] == ["raw_content", "raw_payload"]
+    assert summary["raw_content_chars"] == 20
+    assert summary["raw_payload_chars"] > 0
+
+
+def test_summarize_retryable_error_ignores_non_retryable_error() -> None:
+    summary = _summarize_retryable_error(ValueError("boom"))
+    assert summary == {}

@@ -48,6 +48,8 @@ def is_connection_error(exc: Exception) -> bool:
     error_name = type(exc).__name__.lower()
     if "connection" in error_name:
         return True
+    if "remoteprotocolerror" in error_name:
+        return True
     message = str(exc).lower()
     if "connection error" in message:
         return True
@@ -58,6 +60,12 @@ def is_connection_error(exc: Exception) -> bool:
     if "connection refused" in message:
         return True
     if "broken pipe" in message:
+        return True
+    if "peer closed connection" in message:
+        return True
+    if "incomplete chunked read" in message:
+        return True
+    if "server disconnected without sending a response" in message:
         return True
     return False
 

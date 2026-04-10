@@ -18,7 +18,6 @@ src/podcast_agent/agents/framing.py
 src/podcast_agent/agents/planning.py
 src/podcast_agent/agents/repair.py
 src/podcast_agent/agents/spoken_delivery_agent.py
-src/podcast_agent/agents/structuring.py
 src/podcast_agent/agents/validation.py
 src/podcast_agent/agents/writing.py
 src/podcast_agent/cli/__init__.py

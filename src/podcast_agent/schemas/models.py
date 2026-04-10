@@ -95,15 +95,16 @@ class BookRecord(StrictModel):
 
 
 class PipelineConfig(StrictModel):
-    max_axes: int = Field(default=25, ge=1)
-    min_axes: int = Field(default=20, ge=1)
+    max_axes: int = Field(default=30, ge=1)
+    min_axes: int = Field(default=25, ge=1)
     passage_retrieval_percentage: float = Field(default=0.25, gt=0.0, le=1.0)
     passage_retrieval_min_per_book: int = Field(default=20, ge=1)
     passage_retrieval_max_per_book: int = Field(default=50, ge=1)
-    axis_candidate_target_total: int = Field(default=200, ge=1)
-    pre_axis_total_budget: int = Field(default=6000, ge=1)
-    pre_axis_floor: int = Field(default=120, ge=0)
+    axis_candidate_target_total: int = Field(default=120, ge=1)
+    pre_axis_total_budget: int = Field(default=3600, ge=1)
+    pre_axis_floor: int = Field(default=60, ge=0)
     pre_axis_relevance_power: float = Field(default=1.3, ge=0.0)
+    pre_axis_cross_axis_reuse_penalty: float = Field(default=0.25, ge=0.0, le=1.0)
     admission_floor_per_book: int = Field(default=2, ge=0)
     retrieval_relevance_power: float = Field(default=1.3, ge=0.0)
     retrieval_soft_threshold: float = Field(default=0.35, ge=0.0, le=1.0)
@@ -114,15 +115,18 @@ class PipelineConfig(StrictModel):
     post_axis_cap: int = Field(default=240, ge=1)
     post_axis_signal_power: float = Field(default=2.5, ge=0.0)
     mmr_enabled: bool = True
-    mmr_post_lambda: float = Field(default=0.8, ge=0.0, le=1.0)
+    mmr_post_lambda: float = Field(default=0.6, ge=0.0, le=1.0)
+    mmr_post_source_penalty_weight: float = Field(default=1.0, ge=0.0, le=1.0)
     mmr_synthesis_lambda: float = Field(default=0.75, ge=0.0, le=1.0)
-    mmr_planning_lambda: float = Field(default=0.65, ge=0.0, le=1.0)
-    synthesis_axis_pct: float = Field(default=0.35, ge=0.0, le=1.0)
-    synthesis_axis_min: int = Field(default=30, ge=0)
-    synthesis_axis_max: int = Field(default=110, ge=1)
-    planning_axis_pct: float = Field(default=0.45, ge=0.0, le=1.0)
-    planning_axis_min: int = Field(default=35, ge=0)
-    planning_axis_max: int = Field(default=110, ge=1)
+    mmr_planning_lambda: float = Field(default=0.75, ge=0.0, le=1.0)
+    synthesis_axis_pct: float = Field(default=0.25, ge=0.0, le=1.0)
+    synthesis_axis_min: int = Field(default=19, ge=0)
+    synthesis_axis_max: int = Field(default=100, ge=1)
+    synthesis_total_passage_cap: int = Field(default=800, ge=1)
+    planning_axis_pct: float = Field(default=0.35, ge=0.0, le=1.0)
+    planning_axis_min: int = Field(default=25, ge=0)
+    planning_axis_max: int = Field(default=100, ge=1)
+    planning_total_passage_cap: int = Field(default=300, ge=1)
     synthesis_quality_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
     max_repair_attempts: int = Field(default=3, ge=0)
     tts_provider: str = "openai"
@@ -164,7 +168,7 @@ class ThematicProject(StrictModel):
     sub_themes: list[str] = Field(default_factory=list, max_length=15)
     books: list[BookRecord] = Field(default_factory=list)
     requested_episode_count: int | None = Field(default=None, ge=1)
-    recommended_episode_count: int | None = Field(default=None, ge=7, le=8)
+    recommended_episode_count: int | None = Field(default=None, ge=7, le=9)
     episode_count: int = Field(default=3, ge=1)
     config: PipelineConfig = Field(default_factory=PipelineConfig)
     created_at: datetime = Field(default_factory=utc_now)
@@ -363,7 +367,7 @@ class NarrativeStrategy(StrictModel):
     series_arc: str
     episode_arc_outline: list[str] = Field(default_factory=list)
     episode_arc_details: list["EpisodeArcDetail"]
-    recommended_episode_count: int | None = Field(default=None, ge=7, le=8)
+    recommended_episode_count: int | None = Field(default=None, ge=7, le=9)
     episode_assignments: list["EpisodeAssignment"] = Field(default_factory=list)
 
 

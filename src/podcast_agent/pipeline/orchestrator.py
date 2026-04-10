@@ -30,9 +30,7 @@ from podcast_agent.agents.narrative_strategy import NarrativeStrategyAgent
 from podcast_agent.agents.passage_extraction import PassageExtractionAgent
 from podcast_agent.agents.planning import EpisodePlanningAgent
 from podcast_agent.agents.repair import RepairAgent
-from podcast_agent.agents.source_weaving import SourceWeavingAgent
 from podcast_agent.agents.spoken_delivery_agent import SpokenDeliveryAgent
-from podcast_agent.agents.structuring import StructuringAgent
 from podcast_agent.agents.synthesis_mapping import SynthesisMappingAgent
 from podcast_agent.agents.theme_decomposition import ThemeDecompositionAgent
 from podcast_agent.agents.chapter_summary import ChapterSummaryAgent
@@ -87,16 +85,6 @@ from podcast_agent.tts.openai_compatible import build_tts_client
 logger = logging.getLogger(__name__)
 
 
-class StructuringStageError(RuntimeError):
-    """Raised when chapter structuring fails for a book during ingestion."""
-
-    def __init__(self, message: str, *, book_id: str, title: str, source_path: str) -> None:
-        super().__init__(message)
-        self.book_id = book_id
-        self.title = title
-        self.source_path = source_path
-
-
 # ---------------------------------------------------------------------------
 # Artifact persistence helpers
 # ---------------------------------------------------------------------------
@@ -135,7 +123,7 @@ _SPOKEN_TAG_RE = re.compile(r"<[^>]+>")
 _RUNTIME_UNDERSHOOT_WARNING_RATIO = 0.10
 _WHITESPACE_RE = re.compile(r"\s+")
 _WRITING_SOURCE_MODE_FULL_CHUNK = "full_chunk"
-_WRITING_WINDOW_COUNT = 3
+_WRITING_WINDOW_COUNT = 2
 _INSIGHT_REF_RE = re.compile(r"\bins_\d+\b")
 _CROSS_REFERENCE_MIN_COVERAGE = 0.5
 _BOOK_BALANCE_MAX_ABS_DRIFT = 0.15
@@ -146,7 +134,7 @@ _SPOKEN_RATE_MULTIPLIER = {
 }
 _MERGED_EPISODE_FILENAME = "episode.mp3"
 _SYNTHESIS_MERGED_NARRATIVE_MIN = 7
-_SYNTHESIS_MERGED_NARRATIVE_MAX = 8
+_SYNTHESIS_MERGED_NARRATIVE_MAX = 9
 
 
 def _split_sentences(text: str) -> list[str]:
@@ -325,7 +313,7 @@ def _trim_candidate_texts_by_bm25(axis: ThematicAxis, candidates: list[dict]) ->
             score = _bm25_score(tokens, query_terms, idf, avg_len)
             scored.append((score, idx, sentence))
         scored.sort(key=lambda item: (-item[0], item[1]))
-        top_n = max(1, math.ceil(len(sentences) / 3))
+        top_n = max(1, math.ceil(len(sentences) / 5))
         selected = sorted(scored[:top_n], key=lambda item: item[1])
         trimmed = " ".join(sentence for _, _, sentence in selected).strip()
         if trimmed:
@@ -551,6 +539,8 @@ def _select_mmr_passages(
     top_k: int,
     base_score_fn: Callable[[ExtractedPassage], float],
     lambda_weight: float,
+    source_group_fn: Callable[[ExtractedPassage], str | None] | None = None,
+    source_penalty_weight: float = 0.0,
 ) -> list[ExtractedPassage]:
     if not passages:
         return []
@@ -562,8 +552,15 @@ def _select_mmr_passages(
         )
 
     lambda_weight = _clamp(lambda_weight, 0.0, 1.0)
+    source_penalty_weight = _clamp(source_penalty_weight, 0.0, 1.0)
     token_sets = [_passage_similarity_tokens(passage) for passage in passages]
     base_scores = [base_score_fn(passage) for passage in passages]
+    source_groups = [
+        source_group_fn(passage)
+        if source_group_fn is not None
+        else None
+        for passage in passages
+    ]
     similarity_matrix: list[list[float]] = [[0.0] * len(passages) for _ in passages]
     for idx, left in enumerate(token_sets):
         for jdx in range(idx + 1, len(passages)):
@@ -573,12 +570,23 @@ def _select_mmr_passages(
 
     candidates = list(range(len(passages)))
     max_similarity_to_selected = [0.0] * len(passages)
+    selected_source_groups: set[str] = set()
     selected_indices: list[int] = []
     for _ in range(top_n):
         best_idx = max(
             candidates,
             key=lambda idx: (
-                (lambda_weight * base_scores[idx]) - ((1.0 - lambda_weight) * max_similarity_to_selected[idx]),
+                (
+                    lambda_weight * base_scores[idx]
+                ) - (
+                    (1.0 - lambda_weight)
+                    * max(
+                        max_similarity_to_selected[idx],
+                        source_penalty_weight
+                        if source_groups[idx] is not None and source_groups[idx] in selected_source_groups
+                        else 0.0,
+                    )
+                ),
                 base_scores[idx],
                 passages[idx].relevance_score,
                 passages[idx].quotability_score,
@@ -587,6 +595,8 @@ def _select_mmr_passages(
         )
         selected_indices.append(best_idx)
         candidates.remove(best_idx)
+        if source_groups[best_idx] is not None:
+            selected_source_groups.add(source_groups[best_idx])
         row = similarity_matrix[best_idx]
         for idx in candidates:
             if row[idx] > max_similarity_to_selected[idx]:
@@ -648,36 +658,54 @@ def _build_chapter_lookup(books: list[BookRecord]) -> dict[tuple[str, str], Chap
     return lookup
 
 
-def _build_chapter_context_by_ref(
+def _build_flat_planning_passage_payload(
     *,
-    chapter_lookup: dict[tuple[str, str], ChapterInfo],
+    assigned_axis_ids: list[str],
     passages_by_axis: dict[str, list[ExtractedPassage]],
-    insight_passages: list[dict[str, Any]],
-) -> dict[str, dict[str, dict[str, Any]]]:
-    chapter_refs_by_book: dict[str, set[str]] = {}
-    for passages in passages_by_axis.values():
-        for passage in passages:
-            if not passage.chapter_ref:
+    selected_insight_passage_ids: set[str],
+    extra_insight_passages: list[ExtractedPassage] | None = None,
+) -> list[dict[str, Any]]:
+    by_id: dict[str, dict[str, Any]] = {}
+    ordered_ids: list[str] = []
+    for axis_id in assigned_axis_ids:
+        for passage in passages_by_axis.get(axis_id, []):
+            if passage.passage_id not in by_id:
+                payload: dict[str, Any] = {
+                    "passage_id": passage.passage_id,
+                    "book_id": passage.book_id,
+                    "chapter_ref": passage.chapter_ref,
+                    "relevance_score": passage.relevance_score,
+                    "quotability_score": passage.quotability_score,
+                }
+                if passage.passage_id in selected_insight_passage_ids:
+                    payload["full_text"] = _resolve_writing_passage_text(passage)
+                else:
+                    payload["summary_text"] = passage.trimmed_text.strip() or passage.text
+                by_id[passage.passage_id] = payload
+                ordered_ids.append(passage.passage_id)
                 continue
-            chapter_refs_by_book.setdefault(passage.book_id, set()).add(passage.chapter_ref)
-    for passage in insight_passages:
-        chapter_ref = passage.get("chapter_ref")
-        book_id = passage.get("book_id")
-        if not chapter_ref or not book_id:
+            existing = by_id[passage.passage_id]
+            existing["relevance_score"] = max(
+                float(existing["relevance_score"]),
+                passage.relevance_score,
+            )
+            existing["quotability_score"] = max(
+                float(existing["quotability_score"]),
+                passage.quotability_score,
+            )
+    for passage in extra_insight_passages or []:
+        if passage.passage_id in by_id:
             continue
-        chapter_refs_by_book.setdefault(book_id, set()).add(chapter_ref)
-
-    chapter_context_by_ref: dict[str, dict[str, dict[str, Any]]] = {}
-    for book_id, chapter_refs in sorted(chapter_refs_by_book.items()):
-        per_book: dict[str, dict[str, Any]] = {}
-        for chapter_ref in sorted(chapter_refs):
-            chapter_context = _build_chapter_context(chapter_lookup.get((book_id, chapter_ref)))
-            if chapter_context is None:
-                continue
-            per_book[chapter_ref] = chapter_context
-        if per_book:
-            chapter_context_by_ref[book_id] = per_book
-    return chapter_context_by_ref
+        by_id[passage.passage_id] = {
+            "passage_id": passage.passage_id,
+            "book_id": passage.book_id,
+            "chapter_ref": passage.chapter_ref,
+            "relevance_score": passage.relevance_score,
+            "quotability_score": passage.quotability_score,
+            "full_text": _resolve_writing_passage_text(passage),
+        }
+        ordered_ids.append(passage.passage_id)
+    return [by_id[passage_id] for passage_id in ordered_ids]
 
 
 def _select_top_passages_for_synthesis(
@@ -714,6 +742,7 @@ def _select_top_passages_for_post_rerank(
     top_k: int,
     use_mmr: bool = False,
     mmr_lambda: float = 0.8,
+    source_penalty_weight: float = 0.0,
 ) -> list[ExtractedPassage]:
     if not passages:
         return []
@@ -724,6 +753,8 @@ def _select_top_passages_for_post_rerank(
             top_k=top_n,
             base_score_fn=_score_post_rerank_passage,
             lambda_weight=mmr_lambda,
+            source_group_fn=lambda p: p.book_id,
+            source_penalty_weight=source_penalty_weight,
         )
     ranked = sorted(
         passages,
@@ -836,42 +867,66 @@ def _select_episode_planning_passages(
     return selected_by_axis
 
 
-def _collect_episode_insight_passages(
+def _apply_passage_total_cap_by_axis(
     *,
     passages_by_axis: dict[str, list[ExtractedPassage]],
-    selected_insight_passage_ids: set[str],
-    chapter_lookup: dict[tuple[str, str], ChapterInfo] | None = None,
-) -> list[dict[str, Any]]:
-    if not selected_insight_passage_ids:
-        return []
+    total_cap: int,
+    priority_passage_ids: set[str] | None = None,
+) -> tuple[dict[str, list[ExtractedPassage]], dict[str, Any]]:
+    input_total = sum(len(passages) for passages in passages_by_axis.values())
+    priority_ids = priority_passage_ids or set()
+    if input_total <= total_cap:
+        return passages_by_axis, {
+            "input_total": input_total,
+            "output_total": input_total,
+            "priority_total": 0,
+            "trimmed_non_priority": 0,
+            "soft_overrun": False,
+        }
 
-    by_id: dict[str, dict[str, Any]] = {}
+    priority_total = sum(
+        1
+        for passages in passages_by_axis.values()
+        for passage in passages
+        if passage.passage_id in priority_ids
+    )
+    if priority_total >= total_cap:
+        capped: dict[str, list[ExtractedPassage]] = {}
+        output_total = 0
+        for axis_id, passages in passages_by_axis.items():
+            kept = [passage for passage in passages if passage.passage_id in priority_ids]
+            capped[axis_id] = kept
+            output_total += len(kept)
+        return capped, {
+            "input_total": input_total,
+            "output_total": output_total,
+            "priority_total": priority_total,
+            "trimmed_non_priority": input_total - output_total,
+            "soft_overrun": True,
+        }
+
+    non_priority_budget = max(0, total_cap - priority_total)
+    capped: dict[str, list[ExtractedPassage]] = {}
+    output_total = 0
     for axis_id, passages in passages_by_axis.items():
+        kept: list[ExtractedPassage] = []
         for passage in passages:
-            if passage.passage_id not in selected_insight_passage_ids:
+            if passage.passage_id in priority_ids:
+                kept.append(passage)
                 continue
-            existing = by_id.get(passage.passage_id)
-            if existing is None:
-                by_id[passage.passage_id] = {
-                    "passage_id": passage.passage_id,
-                    "book_id": passage.book_id,
-                    "full_text": _resolve_writing_passage_text(passage),
-                    "chapter_ref": passage.chapter_ref,
-                    "synthesis_tags": [tag.value for tag in passage.synthesis_tags],
-                    "source_axis_ids": [axis_id],
-                    "relevance_score": passage.relevance_score,
-                    "quotability_score": passage.quotability_score,
-                }
+            if non_priority_budget <= 0:
                 continue
-            if axis_id not in existing["source_axis_ids"]:
-                existing["source_axis_ids"].append(axis_id)
-
-    for payload in by_id.values():
-        payload["source_axis_ids"].sort()
-    return [
-        by_id[passage_id]
-        for passage_id in sorted(by_id)
-    ]
+            kept.append(passage)
+            non_priority_budget -= 1
+        capped[axis_id] = kept
+        output_total += len(kept)
+    return capped, {
+        "input_total": input_total,
+        "output_total": output_total,
+        "priority_total": priority_total,
+        "trimmed_non_priority": input_total - output_total,
+        "soft_overrun": False,
+    }
 
 
 def _build_merged_narrative_catalog(synthesis_map: SynthesisMap) -> list[dict[str, Any]]:
@@ -1967,7 +2022,6 @@ class PipelineOrchestrator:
         def _retries(name: str) -> int:
             return self.settings.llm.resolve_max_retry_attempts(name)
 
-        self.structuring_agent = StructuringAgent(self.llm, max_retry_attempts=_retries("structuring"))
         self.chapter_summary_agent = ChapterSummaryAgent(self.llm, max_retry_attempts=_retries("chapter_summary"))
         self.book_summary_agent = BookSummaryAgent(self.llm, max_retry_attempts=_retries("book_summary"))
         self.theme_decomposition_agent = ThemeDecompositionAgent(self.llm, max_retry_attempts=_retries("theme_decomposition"))
@@ -1976,7 +2030,6 @@ class PipelineOrchestrator:
         self.narrative_strategy_agent = NarrativeStrategyAgent(self.llm, max_retry_attempts=_retries("narrative_strategy"))
         self.episode_planning_agent = EpisodePlanningAgent(self.llm, max_retry_attempts=_retries("episode_planning"))
         self.writing_agent = WritingAgent(self.llm, max_retry_attempts=_retries("episode_writing"))
-        self.source_weaving_agent = SourceWeavingAgent(self.llm, max_retry_attempts=_retries("source_weaving"))
         self.grounding_agent = GroundingValidationAgent(self.llm, max_retry_attempts=_retries("grounding_validation"))
         self.repair_agent = RepairAgent(self.llm, max_retry_attempts=_retries("repair"))
         self.spoken_delivery_agent = SpokenDeliveryAgent(self.llm, max_retry_attempts=_retries("spoken_delivery"))
@@ -2066,36 +2119,12 @@ class PipelineOrchestrator:
         book_results = await asyncio.gather(*book_tasks, return_exceptions=True)
 
         successful_books: list[BookRecord] = []
-        structuring_failures: list[StructuringStageError] = []
         for i, result in enumerate(book_results):
             if isinstance(result, Exception):
                 logger.error("Book %d failed: %s", i, result)
                 self.run_logger.log("book_ingest_failed", index=i, error=str(result))
-                if isinstance(result, StructuringStageError):
-                    structuring_failures.append(result)
             else:
                 successful_books.append(result)
-
-        if structuring_failures:
-            project = project.model_copy(update={"status": ProjectStatus.FAILED})
-            _save_json(project_dir / "thematic_project.json", project)
-            self.run_logger.log(
-                "structuring_failure_barrier",
-                failure_count=len(structuring_failures),
-                failed_books=[
-                    {
-                        "book_id": failure.book_id,
-                        "title": failure.title,
-                        "source_path": failure.source_path,
-                        "error": str(failure),
-                    }
-                    for failure in structuring_failures
-                ],
-            )
-            raise RuntimeError(
-                f"Structuring failed for {len(structuring_failures)} book(s). "
-                "Aborting before Phase 2."
-            )
 
         if len(successful_books) < 2:
             project = project.model_copy(update={"status": ProjectStatus.FAILED})
@@ -2313,22 +2342,14 @@ class PipelineOrchestrator:
             (book_dir / "raw_text.txt").write_text(raw_text, encoding="utf-8")
 
             # Stage 2: Structure chapters
-            try:
-                chapters = await self._structure_chapters(
-                    book_record,
-                    raw_text,
-                    project_dir,
-                    theme=theme,
-                    sub_themes=sub_themes,
-                    theme_elaboration=theme_elaboration,
-                )
-            except Exception as exc:
-                raise StructuringStageError(
-                    f"Structuring failed for book '{title}' ({source_path}): {exc}",
-                    book_id=book_id,
-                    title=title,
-                    source_path=source_path,
-                ) from exc
+            chapters = await self._structure_chapters(
+                book_record,
+                raw_text,
+                project_dir,
+                theme=theme,
+                sub_themes=sub_themes,
+                theme_elaboration=theme_elaboration,
+            )
             book_record = book_record.model_copy(update={"chapters": chapters})
             _save_json(book_dir / "book_record.json", book_record)
 
@@ -2578,11 +2599,224 @@ class PipelineOrchestrator:
             candidate_counts_by_axis: dict[str, int] = {}
             axis_policy_by_axis: dict[str, dict[str, Any]] = {}
 
-            sem = asyncio.Semaphore(project.config.passage_extraction_concurrency)
+            axis_priority_order = sorted(
+                axes,
+                key=lambda axis: (
+                    -int(post_axis_target_by_axis.get(axis.axis_id, project.config.post_axis_floor)),
+                    axis.axis_id,
+                ),
+            )
+            axis_priority_rank_by_id = {
+                axis.axis_id: rank
+                for rank, axis in enumerate(axis_priority_order, start=1)
+            }
+            cross_axis_reuse_counts: dict[tuple[str, str], int] = {}
+            cross_axis_distinct_floor_ratio = 0.8
+            cross_axis_distinct_boost = 2.0
+            AxisExtractionResult = tuple[
+                str,
+                list[ExtractedPassage],
+                list[PassagePair],
+                int,
+                dict[str, Any],
+                dict[str, Any],
+            ]
+            DeferredAxisWork = tuple[
+                str,
+                Callable[[], AxisExtractionResult] | None,
+                AxisExtractionResult | None,
+            ]
+
+            def _score_axis_candidates(
+                *,
+                axis: ThematicAxis,
+                payload: dict[str, Any],
+                candidates: list[dict[str, Any]],
+                prompt_candidates: list[dict[str, Any]],
+                candidate_full_text_by_id: dict[str, str],
+                retrieval_log: dict[str, Any],
+                admitted_by_book: dict[str, int],
+                axis_candidate_budget_effective: int,
+            ) -> AxisExtractionResult:
+                candidate_by_id = {c["passage_id"]: c for c in candidates}
+                candidate_ids = list(candidate_by_id.keys())
+                candidate_count = len(candidate_ids)
+                max_attempts = self.passage_extraction_agent.max_retry_attempts
+                result = None
+                for attempt in range(1, max_attempts + 1):
+                    result = self.passage_extraction_agent.run(payload)
+                    result_ids = [p.passage_id for p in result.passages]
+                    id_counts: dict[str, int] = {}
+                    for pid in result_ids:
+                        id_counts[pid] = id_counts.get(pid, 0) + 1
+                    duplicate_ids = [pid for pid, count in id_counts.items() if count > 1]
+                    extra_ids = [pid for pid in id_counts if pid not in candidate_by_id]
+                    unique_ids = [pid for pid in candidate_ids if pid in id_counts]
+                    unique_count = len(unique_ids)
+                    coverage_ratio = unique_count / max(1, candidate_count)
+                    missing_ids = [pid for pid in candidate_ids if pid not in id_counts]
+                    if duplicate_ids or extra_ids or missing_ids:
+                        self.run_logger.log(
+                            "passage_extraction_id_mismatch",
+                            axis_id=axis.axis_id,
+                            attempt=attempt,
+                            max_attempts=max_attempts,
+                            missing_ids=missing_ids,
+                            extra_ids=extra_ids,
+                            duplicate_ids=duplicate_ids,
+                        )
+                    if coverage_ratio >= 0.60:
+                        break
+                    self.run_logger.log(
+                        "passage_extraction_low_coverage",
+                        axis_id=axis.axis_id,
+                        attempt=attempt,
+                        max_attempts=max_attempts,
+                        unique_count=unique_count,
+                        candidate_count=candidate_count,
+                        coverage_ratio=round(coverage_ratio, 3),
+                    )
+                    if attempt < max_attempts:
+                        backoff = min(2 ** (attempt - 1), 16) + (time.monotonic() % 1)
+                        time.sleep(backoff)
+                        continue
+                    raise RuntimeError(
+                        "Passage extraction returned fewer than 60% of candidate passages for axis "
+                        f"{axis.axis_id} after {max_attempts} attempts."
+                    )
+                assert result is not None
+
+                scores_by_id = {}
+                for score in result.passages:
+                    if score.passage_id in candidate_by_id and score.passage_id not in scores_by_id:
+                        scores_by_id[score.passage_id] = score
+                trimmed_text_by_id = {
+                    candidate["passage_id"]: candidate["text"]
+                    for candidate in prompt_candidates
+                }
+                rehydrated_passages = []
+                for candidate in candidates:
+                    score = scores_by_id.get(candidate["passage_id"])
+                    if score is None:
+                        continue
+                    trimmed_text = trimmed_text_by_id.get(candidate["passage_id"], candidate["text"])
+                    rehydrated_passages.append(
+                        ExtractedPassage(
+                            passage_id=score.passage_id,
+                            book_id=candidate["book_id"],
+                            chunk_ids=candidate["chunk_ids"],
+                            text=trimmed_text,
+                            trimmed_text=trimmed_text,
+                            full_text=candidate_full_text_by_id.get(candidate["passage_id"], ""),
+                            chapter_ref=candidate.get("chapter_ref", ""),
+                            axis_id=candidate.get("axis_id", axis.axis_id),
+                            secondary_axes=candidate.get("secondary_axes", []),
+                            relevance_score=score.relevance_score,
+                            quotability_score=score.quotability_score,
+                            synthesis_tags=score.synthesis_tags,
+                        )
+                    )
+
+                relationship_filtered_pairs = [
+                    pair
+                    for pair in result.cross_book_pairs
+                    if pair.axis_id == axis.axis_id
+                    and pair.relationship
+                    not in {SynthesisTag.AGREES_WITH, SynthesisTag.EXTENDS}
+                ]
+                passage_book_by_id = {p.passage_id: p.book_id for p in rehydrated_passages}
+                validated_pairs: list[PassagePair] = []
+                dropped_missing_id_pairs: list[dict[str, str]] = []
+                dropped_same_book_pairs: list[dict[str, str]] = []
+                for pair in relationship_filtered_pairs:
+                    book_a = passage_book_by_id.get(pair.passage_a_id)
+                    book_b = passage_book_by_id.get(pair.passage_b_id)
+                    if book_a is None or book_b is None:
+                        dropped_missing_id_pairs.append(
+                            {
+                                "passage_a_id": pair.passage_a_id,
+                                "passage_b_id": pair.passage_b_id,
+                            }
+                        )
+                        continue
+                    if book_a == book_b:
+                        dropped_same_book_pairs.append(
+                            {
+                                "passage_a_id": pair.passage_a_id,
+                                "passage_b_id": pair.passage_b_id,
+                                "book_id": book_a,
+                            }
+                        )
+                        continue
+                    validated_pairs.append(pair)
+
+                if dropped_missing_id_pairs or dropped_same_book_pairs:
+                    self.run_logger.log(
+                        "passage_extraction_invalid_cross_book_pairs",
+                        axis_id=axis.axis_id,
+                        candidate_pair_count=len(relationship_filtered_pairs),
+                        dropped_missing_id_count=len(dropped_missing_id_pairs),
+                        dropped_same_book_count=len(dropped_same_book_pairs),
+                        dropped_missing_id_pairs=dropped_missing_id_pairs,
+                        dropped_same_book_pairs=dropped_same_book_pairs,
+                    )
+
+                validated_pairs.sort(key=lambda p: p.strength, reverse=True)
+                retained_pairs = validated_pairs[:5]
+                cross_pair_validation = {
+                    "candidate_pair_count": len(relationship_filtered_pairs),
+                    "valid_pair_count": len(validated_pairs),
+                    "retained_pair_count": len(retained_pairs),
+                    "dropped_missing_id_count": len(dropped_missing_id_pairs),
+                    "dropped_same_book_count": len(dropped_same_book_pairs),
+                }
+                rerank_policy = _compute_adaptive_rerank_target(
+                    candidate_count=candidate_count,
+                    rehydrated_count=len(rehydrated_passages),
+                    valid_cross_pair_count=len(validated_pairs),
+                    book_count=len(book_ids),
+                    rerank_top_k=project.config.rerank_top_k,
+                )
+                target_total_before_limit = rerank_policy["target_total"]
+                post_axis_target = post_axis_target_by_axis.get(
+                    axis.axis_id,
+                    project.config.post_axis_floor,
+                )
+                target_total = max(1, min(post_axis_target, len(rehydrated_passages)))
+                top_passages = _select_top_passages_for_post_rerank(
+                    rehydrated_passages,
+                    top_k=target_total,
+                    use_mmr=project.config.mmr_enabled,
+                    mmr_lambda=project.config.mmr_post_lambda,
+                    source_penalty_weight=project.config.mmr_post_source_penalty_weight,
+                )
+                rerank_policy.update({
+                    "post_rerank_score_weights": {
+                        "relevance": 0.8,
+                        "quotability": 0.2,
+                    },
+                    "post_rerank_passage_limit": project.config.post_axis_cap,
+                    "target_total_before_limit": target_total_before_limit,
+                    "allocation_policy": retrieval_log["allocation_policy"],
+                    "retrieval_relevance_power": retrieval_log["retrieval_relevance_power"],
+                    "axis_candidate_budget": axis_candidate_budget_effective,
+                    "pre_axis_budget": retrieval_log["pre_axis_budget"],
+                    "post_axis_target": post_axis_target,
+                    "mmr_enabled": project.config.mmr_enabled,
+                    "mmr_lambda": project.config.mmr_post_lambda,
+                    "source_aware_mmr_enabled": project.config.mmr_enabled,
+                    "source_penalty_weight": project.config.mmr_post_source_penalty_weight,
+                    "per_book_budget": retrieval_log["per_book_budget"],
+                    "admitted_by_book": admitted_by_book,
+                    "target_total": target_total,
+                })
+                return axis.axis_id, top_passages, retained_pairs, candidate_count, cross_pair_validation, rerank_policy
 
             def _process_axis(
                 axis: ThematicAxis,
-            ) -> tuple[str, list[ExtractedPassage], list[PassagePair], int, dict[str, Any], dict[str, Any]]:
+                *,
+                axis_priority_rank: int,
+            ) -> DeferredAxisWork:
                 hits_by_book = self.retrieval.retrieve_for_axis(
                     axis=axis, project_id=project.project_id,
                     book_ids=book_ids,
@@ -2596,6 +2830,13 @@ class PipelineOrchestrator:
                 soft_threshold = project.config.retrieval_soft_threshold
                 chapter_penalty_weight = project.config.chapter_penalty_weight
                 floor_per_book = project.config.admission_floor_per_book
+                cross_axis_reuse_penalty = project.config.pre_axis_cross_axis_reuse_penalty
+                cross_axis_distinct_floor_target = 0
+                if cross_axis_reuse_penalty > 0.0:
+                    cross_axis_distinct_floor_target = min(
+                        axis_candidate_budget_effective,
+                        int(math.ceil(project.config.pre_axis_floor * cross_axis_distinct_floor_ratio)),
+                    )
                 adaptive_relevance_powers = {
                     "default": project.config.retrieval_relevance_power,
                     "risky": max(0.0, project.config.retrieval_relevance_power - 0.2),
@@ -2612,7 +2853,7 @@ class PipelineOrchestrator:
                     "post_axis_target": post_axis_target_by_axis.get(axis.axis_id, project.config.post_axis_floor),
                     "pre_axis_total_budget": project.config.pre_axis_total_budget,
                     "post_axis_total_budget": project.config.post_axis_total_budget,
-                    "budget_strategy": "fixed_target_soft_threshold_spillover_backfill",
+                    "budget_strategy": "fixed_target_soft_threshold_spillover_backfill_cross_axis_reuse",
                     "passage_retrieval_percentage": project.config.passage_retrieval_percentage,
                     "passage_retrieval_min_per_book": project.config.passage_retrieval_min_per_book,
                     "passage_retrieval_max_per_book": project.config.passage_retrieval_max_per_book,
@@ -2621,6 +2862,11 @@ class PipelineOrchestrator:
                     "retrieval_relevance_power": adaptive_relevance_powers["default"],
                     "soft_threshold": soft_threshold,
                     "chapter_penalty_weight": chapter_penalty_weight,
+                    "axis_priority_rank": axis_priority_rank,
+                    "axis_priority_basis": "post_axis_target_desc",
+                    "pre_axis_cross_axis_reuse_penalty": cross_axis_reuse_penalty,
+                    "cross_axis_distinct_floor_ratio": cross_axis_distinct_floor_ratio,
+                    "cross_axis_distinct_floor_target": cross_axis_distinct_floor_target,
                     "book_size_share_by_book": book_size_share_by_book,
                     "books": [],
                 }
@@ -2818,27 +3064,79 @@ class PipelineOrchestrator:
                     backfill_pool_by_book[bid] = backfill_pool
                     book_entry["eligible_above_threshold_count"] = len(high_pool)
 
-                def _pop_best_row(pool: list[dict[str, Any]], *, bid: str) -> dict[str, Any]:
-                    best_idx = 0
-                    best_key: tuple[float, float, int, str] | None = None
-                    best_penalty = 0.0
+                unseen_selected_count = 0
+                use_cross_axis_reuse_penalty = cross_axis_reuse_penalty > 0.0
+
+                def _chunk_reuse_key(row: dict[str, Any]) -> tuple[str, str]:
+                    return (str(row["book_id"]), str(row["hit"].chunk_id))
+
+                def _is_unseen_chunk(row: dict[str, Any]) -> bool:
+                    key = _chunk_reuse_key(row)
+                    return cross_axis_reuse_counts.get(key, 0) == 0
+
+                def _score_row(
+                    row: dict[str, Any],
+                    *,
+                    bid: str,
+                    prefer_unseen: bool = False,
+                    unseen_exists: bool = False,
+                ) -> tuple[tuple[float, float, float, int, str], float]:
                     chapter_targets = chapter_targets_by_book.get(bid, {})
                     selected_by_chapter = selected_by_chapter_by_book.get(bid, {})
-                    for idx, row in enumerate(pool):
-                        chapter_id = str(row["hit"].chapter_id or "")
-                        chapter_target = chapter_targets.get(chapter_id, 0.0)
-                        denom = max(1.0, chapter_target)
-                        over_target = max(
-                            0.0,
-                            ((selected_by_chapter.get(chapter_id, 0) + 1) - chapter_target) / denom,
-                        )
-                        chapter_penalty = chapter_penalty_weight * over_target
-                        selection_score = row["retrieval_confidence"] - chapter_penalty
+                    chapter_id = str(row["hit"].chapter_id or "")
+                    chapter_target = chapter_targets.get(chapter_id, 0.0)
+                    denom = max(1.0, chapter_target)
+                    over_target = max(
+                        0.0,
+                        ((selected_by_chapter.get(chapter_id, 0) + 1) - chapter_target) / denom,
+                    )
+                    chapter_penalty = chapter_penalty_weight * over_target
+                    base_selection_score = row["retrieval_confidence"] - chapter_penalty
+
+                    if not use_cross_axis_reuse_penalty:
                         key = (
-                            selection_score,
+                            base_selection_score,
+                            base_selection_score,
                             row["retrieval_confidence"],
                             -int(row["rank"]),
                             str(row["hit"].chunk_id),
+                        )
+                        return key, chapter_penalty
+
+                    reuse_key = _chunk_reuse_key(row)
+                    reuse_count = cross_axis_reuse_counts.get(reuse_key, 0)
+                    penalty_weight = cross_axis_reuse_penalty
+                    if prefer_unseen and unseen_exists:
+                        penalty_weight *= cross_axis_distinct_boost
+                    adjusted_score = base_selection_score - (penalty_weight * math.log1p(reuse_count))
+                    if prefer_unseen and unseen_exists and reuse_count > 0:
+                        adjusted_score -= 1.0
+                    key = (
+                        adjusted_score,
+                        base_selection_score,
+                        row["retrieval_confidence"],
+                        -int(row["rank"]),
+                        str(row["hit"].chunk_id),
+                    )
+                    return key, chapter_penalty
+
+                def _pop_best_row(
+                    pool: list[dict[str, Any]],
+                    *,
+                    bid: str,
+                    prefer_unseen: bool = False,
+                ) -> dict[str, Any]:
+                    nonlocal unseen_selected_count
+                    best_idx = 0
+                    best_key: tuple[float, float, float, int, str] | None = None
+                    best_penalty = 0.0
+                    unseen_exists = bool(prefer_unseen and any(_is_unseen_chunk(row) for row in pool))
+                    for idx, row in enumerate(pool):
+                        key, chapter_penalty = _score_row(
+                            row,
+                            bid=bid,
+                            prefer_unseen=prefer_unseen,
+                            unseen_exists=unseen_exists,
                         )
                         if best_key is None or key > best_key:
                             best_idx = idx
@@ -2846,6 +3144,7 @@ class PipelineOrchestrator:
                             best_penalty = chapter_penalty
                     best_row = pool.pop(best_idx)
                     chapter_id = str(best_row["hit"].chapter_id or "")
+                    selected_by_chapter = selected_by_chapter_by_book.get(bid, {})
                     selected_by_chapter[chapter_id] = selected_by_chapter.get(chapter_id, 0) + 1
                     best_row["chapter_penalty"] = best_penalty
                     best_row["selection_score"] = (
@@ -2853,7 +3152,33 @@ class PipelineOrchestrator:
                         if best_key is not None
                         else best_row["retrieval_confidence"]
                     )
+                    if use_cross_axis_reuse_penalty:
+                        reuse_key = _chunk_reuse_key(best_row)
+                        if cross_axis_reuse_counts.get(reuse_key, 0) == 0:
+                            unseen_selected_count += 1
+                        cross_axis_reuse_counts[reuse_key] = cross_axis_reuse_counts.get(reuse_key, 0) + 1
                     return best_row
+
+                def _peek_best_row_key(
+                    pool: list[dict[str, Any]],
+                    *,
+                    bid: str,
+                    prefer_unseen: bool = False,
+                ) -> tuple[float, float, float, int, str] | None:
+                    if not pool:
+                        return None
+                    best_key: tuple[float, float, float, int, str] | None = None
+                    unseen_exists = bool(prefer_unseen and any(_is_unseen_chunk(row) for row in pool))
+                    for row in pool:
+                        key, _ = _score_row(
+                            row,
+                            bid=bid,
+                            prefer_unseen=prefer_unseen,
+                            unseen_exists=unseen_exists,
+                        )
+                        if best_key is None or key > best_key:
+                            best_key = key
+                    return best_key
 
                 # Phase 1: per-book above-threshold selection up to quota.
                 for bid in book_ids:
@@ -2862,7 +3187,12 @@ class PipelineOrchestrator:
                         continue
                     high_pool = high_pool_by_book.get(bid, [])
                     while admitted_by_book.get(bid, 0) < quota and high_pool:
-                        row = _pop_best_row(high_pool, bid=bid)
+                        require_unseen = unseen_selected_count < cross_axis_distinct_floor_target
+                        row = _pop_best_row(
+                            high_pool,
+                            bid=bid,
+                            prefer_unseen=require_unseen,
+                        )
                         row["selection_phase"] = "above_threshold"
                         selected_rows.append(row)
                         admitted_by_book[bid] = admitted_by_book.get(bid, 0) + 1
@@ -2875,49 +3205,92 @@ class PipelineOrchestrator:
                     max(0, admitted_quota_by_book.get(bid, 0) - admitted_by_book.get(bid, 0))
                     for bid in book_ids
                 )
-                if total_deficit > 0:
-                    spillover_pool: list[dict[str, Any]] = []
+                remaining_spillover = total_deficit
+                while remaining_spillover > 0:
+                    spillover_frontier: list[tuple[tuple[float, float, float, int, str], str]] = []
+                    require_unseen = unseen_selected_count < cross_axis_distinct_floor_target
                     for bid in book_ids:
-                        spillover_pool.extend(high_pool_by_book.get(bid, []))
-                    spillover_pool.sort(
-                        key=lambda row: (
-                            float(row["retrieval_confidence"]),
-                            -int(row["rank"]),
-                            str(row["hit"].chunk_id),
-                        ),
+                        best_key = _peek_best_row_key(
+                            high_pool_by_book.get(bid, []),
+                            bid=bid,
+                            prefer_unseen=require_unseen,
+                        )
+                        if best_key is None:
+                            continue
+                        spillover_frontier.append((best_key, bid))
+                    if not spillover_frontier:
+                        break
+                    spillover_frontier.sort(
+                        key=lambda item: (item[0], item[1]),
                         reverse=True,
                     )
-                    for row in spillover_pool[:total_deficit]:
+                    took_any = False
+                    for _, bid in spillover_frontier:
+                        if remaining_spillover <= 0:
+                            break
+                        high_pool = high_pool_by_book.get(bid, [])
+                        if not high_pool:
+                            continue
+                        require_unseen = unseen_selected_count < cross_axis_distinct_floor_target
+                        row = _pop_best_row(
+                            high_pool,
+                            bid=bid,
+                            prefer_unseen=require_unseen,
+                        )
                         row["selection_phase"] = "spillover"
-                        row["chapter_penalty"] = 0.0
-                        row["selection_score"] = row["retrieval_confidence"]
                         selected_rows.append(row)
-                        bid = str(row["book_id"])
                         admitted_by_book[bid] = admitted_by_book.get(bid, 0) + 1
                         selected_spillover_by_book[bid] = selected_spillover_by_book.get(bid, 0) + 1
+                        remaining_spillover -= 1
+                        took_any = True
+                    if not took_any:
+                        break
 
                 # Phase 3: global backfill only if deficits remain after spillover.
                 remaining_deficit = max(0, axis_candidate_budget_effective - len(selected_rows))
                 if remaining_deficit > 0:
-                    global_backfill_pool: list[dict[str, Any]] = []
+                    global_backfill_pool: list[tuple[str, dict[str, Any]]] = []
                     for bid in book_ids:
-                        global_backfill_pool.extend(backfill_pool_by_book.get(bid, []))
-                    global_backfill_pool.sort(
-                        key=lambda row: (
-                            float(row["retrieval_confidence"]),
-                            -int(row["rank"]),
-                            str(row["hit"].chunk_id),
-                        ),
-                        reverse=True,
-                    )
-                    for row in global_backfill_pool[:remaining_deficit]:
+                        global_backfill_pool.extend((bid, row) for row in backfill_pool_by_book.get(bid, []))
+                    for _ in range(remaining_deficit):
+                        if not global_backfill_pool:
+                            break
+                        require_unseen = unseen_selected_count < cross_axis_distinct_floor_target
+                        unseen_exists = bool(
+                            require_unseen and any(_is_unseen_chunk(row) for _, row in global_backfill_pool)
+                        )
+                        best_index = 0
+                        best_key: tuple[float, float, float, int, str] | None = None
+                        best_penalty = 0.0
+                        for idx, (bid, row) in enumerate(global_backfill_pool):
+                            key, chapter_penalty = _score_row(
+                                row,
+                                bid=bid,
+                                prefer_unseen=require_unseen,
+                                unseen_exists=unseen_exists,
+                            )
+                            if best_key is None or key > best_key:
+                                best_index = idx
+                                best_key = key
+                                best_penalty = chapter_penalty
+                        bid, row = global_backfill_pool.pop(best_index)
                         row["selection_phase"] = "backfill"
-                        row["chapter_penalty"] = 0.0
-                        row["selection_score"] = row["retrieval_confidence"]
+                        row["chapter_penalty"] = best_penalty
+                        row["selection_score"] = (
+                            best_key[0]
+                            if best_key is not None
+                            else row["retrieval_confidence"]
+                        )
                         selected_rows.append(row)
-                        bid = str(row["book_id"])
+                        if use_cross_axis_reuse_penalty:
+                            reuse_key = _chunk_reuse_key(row)
+                            if cross_axis_reuse_counts.get(reuse_key, 0) == 0:
+                                unseen_selected_count += 1
+                            cross_axis_reuse_counts[reuse_key] = cross_axis_reuse_counts.get(reuse_key, 0) + 1
                         admitted_by_book[bid] = admitted_by_book.get(bid, 0) + 1
                         selected_backfill_by_book[bid] = selected_backfill_by_book.get(bid, 0) + 1
+
+                retrieval_log["cross_axis_distinct_selected_count"] = unseen_selected_count
 
                 for bid in book_ids:
                     book_entry = book_entry_by_id.get(bid)
@@ -3000,197 +3373,99 @@ class PipelineOrchestrator:
                         "per_book_budget": retrieval_log["per_book_budget"],
                         "admitted_by_book": admitted_by_book,
                     })
-                    return axis.axis_id, [], [], candidate_count, {
-                        "candidate_pair_count": 0,
-                        "valid_pair_count": 0,
-                        "retained_pair_count": 0,
-                        "dropped_missing_id_count": 0,
-                        "dropped_same_book_count": 0,
-                    }, empty_policy
+                    empty_result: AxisExtractionResult = (
+                        axis.axis_id,
+                        [],
+                        [],
+                        candidate_count,
+                        {
+                            "candidate_pair_count": 0,
+                            "valid_pair_count": 0,
+                            "retained_pair_count": 0,
+                            "dropped_missing_id_count": 0,
+                            "dropped_same_book_count": 0,
+                        },
+                        empty_policy,
+                    )
+                    return axis.axis_id, None, empty_result
 
                 candidate_full_text_by_id = {
                     candidate["passage_id"]: candidate["text"]
                     for candidate in candidates
                 }
-                _trim_candidate_texts_by_bm25(axis, candidates)
+                prompt_candidates = [
+                    {
+                        "passage_id": candidate["passage_id"],
+                        "book_id": candidate["book_id"],
+                        "text": candidate["text"],
+                    }
+                    for candidate in candidates
+                ]
+                _trim_candidate_texts_by_bm25(axis, prompt_candidates)
 
                 payload = self.passage_extraction_agent.build_payload(
                     axis_id=axis.axis_id, axis_name=axis.name,
                     axis_description=axis.description,
-                    candidate_passages=candidates,
+                    candidate_passages=prompt_candidates,
                 )
-                candidate_by_id = {c["passage_id"]: c for c in candidates}
-                candidate_ids = list(candidate_by_id.keys())
-                candidate_count = len(candidate_ids)
-                max_attempts = self.passage_extraction_agent.max_retry_attempts
-                result = None
-                for attempt in range(1, max_attempts + 1):
-                    result = self.passage_extraction_agent.run(payload)
-                    result_ids = [p.passage_id for p in result.passages]
-                    id_counts: dict[str, int] = {}
-                    for pid in result_ids:
-                        id_counts[pid] = id_counts.get(pid, 0) + 1
-                    duplicate_ids = [pid for pid, count in id_counts.items() if count > 1]
-                    extra_ids = [pid for pid in id_counts if pid not in candidate_by_id]
-                    unique_ids = [pid for pid in candidate_ids if pid in id_counts]
-                    unique_count = len(unique_ids)
-                    coverage_ratio = unique_count / max(1, candidate_count)
-                    missing_ids = [pid for pid in candidate_ids if pid not in id_counts]
-                    if duplicate_ids or extra_ids or missing_ids:
-                        self.run_logger.log(
-                            "passage_extraction_id_mismatch",
-                            axis_id=axis.axis_id,
-                            attempt=attempt,
-                            max_attempts=max_attempts,
-                            missing_ids=missing_ids,
-                            extra_ids=extra_ids,
-                            duplicate_ids=duplicate_ids,
-                        )
-                    if coverage_ratio >= 0.60:
-                        break
-                    self.run_logger.log(
-                        "passage_extraction_low_coverage",
-                        axis_id=axis.axis_id,
-                        attempt=attempt,
-                        max_attempts=max_attempts,
-                        unique_count=unique_count,
-                        candidate_count=candidate_count,
-                        coverage_ratio=round(coverage_ratio, 3),
-                    )
-                    if attempt < max_attempts:
-                        backoff = min(2 ** (attempt - 1), 16) + (time.monotonic() % 1)
-                        time.sleep(backoff)
-                        continue
-                    raise RuntimeError(
-                        "Passage extraction returned fewer than 60% of candidate passages for axis "
-                        f"{axis.axis_id} after {max_attempts} attempts."
-                    )
-                assert result is not None
 
-                scores_by_id = {}
-                for score in result.passages:
-                    if score.passage_id in candidate_by_id and score.passage_id not in scores_by_id:
-                        scores_by_id[score.passage_id] = score
-                rehydrated_passages = []
-                for candidate in candidates:
-                    score = scores_by_id.get(candidate["passage_id"])
-                    if score is None:
-                        continue
-                    trimmed_text = candidate["text"]
-                    rehydrated_passages.append(
-                        ExtractedPassage(
-                            passage_id=score.passage_id,
-                            book_id=candidate["book_id"],
-                            chunk_ids=candidate["chunk_ids"],
-                            text=trimmed_text,
-                            trimmed_text=trimmed_text,
-                            full_text=candidate_full_text_by_id.get(candidate["passage_id"], ""),
-                            chapter_ref=candidate.get("chapter_ref", ""),
-                            axis_id=candidate.get("axis_id", axis.axis_id),
-                            secondary_axes=candidate.get("secondary_axes", []),
-                            relevance_score=score.relevance_score,
-                            quotability_score=score.quotability_score,
-                            synthesis_tags=score.synthesis_tags,
-                        )
+                def _deferred_score() -> AxisExtractionResult:
+                    return _score_axis_candidates(
+                        axis=axis,
+                        payload=payload,
+                        candidates=candidates,
+                        prompt_candidates=prompt_candidates,
+                        candidate_full_text_by_id=candidate_full_text_by_id,
+                        retrieval_log=retrieval_log,
+                        admitted_by_book=admitted_by_book,
+                        axis_candidate_budget_effective=axis_candidate_budget_effective,
                     )
 
-                relationship_filtered_pairs = [
-                    pair
-                    for pair in result.cross_book_pairs
-                    if pair.axis_id == axis.axis_id
-                    and pair.relationship
-                    not in {SynthesisTag.AGREES_WITH, SynthesisTag.EXTENDS}
-                ]
-                passage_book_by_id = {p.passage_id: p.book_id for p in rehydrated_passages}
-                validated_pairs: list[PassagePair] = []
-                dropped_missing_id_pairs: list[dict[str, str]] = []
-                dropped_same_book_pairs: list[dict[str, str]] = []
-                for pair in relationship_filtered_pairs:
-                    book_a = passage_book_by_id.get(pair.passage_a_id)
-                    book_b = passage_book_by_id.get(pair.passage_b_id)
-                    if book_a is None or book_b is None:
-                        dropped_missing_id_pairs.append(
-                            {
-                                "passage_a_id": pair.passage_a_id,
-                                "passage_b_id": pair.passage_b_id,
-                            }
-                        )
-                        continue
-                    if book_a == book_b:
-                        dropped_same_book_pairs.append(
-                            {
-                                "passage_a_id": pair.passage_a_id,
-                                "passage_b_id": pair.passage_b_id,
-                                "book_id": book_a,
-                            }
-                        )
-                        continue
-                    validated_pairs.append(pair)
+                return axis.axis_id, _deferred_score, None
 
-                if dropped_missing_id_pairs or dropped_same_book_pairs:
-                    self.run_logger.log(
-                        "passage_extraction_invalid_cross_book_pairs",
-                        axis_id=axis.axis_id,
-                        candidate_pair_count=len(relationship_filtered_pairs),
-                        dropped_missing_id_count=len(dropped_missing_id_pairs),
-                        dropped_same_book_count=len(dropped_same_book_pairs),
-                        dropped_missing_id_pairs=dropped_missing_id_pairs,
-                        dropped_same_book_pairs=dropped_same_book_pairs,
-                    )
-
-                validated_pairs.sort(key=lambda p: p.strength, reverse=True)
-                retained_pairs = validated_pairs[:5]
-                cross_pair_validation = {
-                    "candidate_pair_count": len(relationship_filtered_pairs),
-                    "valid_pair_count": len(validated_pairs),
-                    "retained_pair_count": len(retained_pairs),
-                    "dropped_missing_id_count": len(dropped_missing_id_pairs),
-                    "dropped_same_book_count": len(dropped_same_book_pairs),
-                }
-                rerank_policy = _compute_adaptive_rerank_target(
-                    candidate_count=candidate_count,
-                    rehydrated_count=len(rehydrated_passages),
-                    valid_cross_pair_count=len(validated_pairs),
-                    book_count=len(book_ids),
-                    rerank_top_k=project.config.rerank_top_k,
+            prepared_work = [
+                await asyncio.to_thread(
+                    _process_axis,
+                    axis,
+                    axis_priority_rank=axis_priority_rank_by_id[axis.axis_id],
                 )
-                target_total_before_limit = rerank_policy["target_total"]
-                post_axis_target = post_axis_target_by_axis.get(
-                    axis.axis_id,
-                    project.config.post_axis_floor,
-                )
-                target_total = max(1, min(post_axis_target, len(rehydrated_passages)))
-                top_passages = _select_top_passages_for_post_rerank(
-                    rehydrated_passages,
-                    top_k=target_total,
-                    use_mmr=project.config.mmr_enabled,
-                    mmr_lambda=project.config.mmr_post_lambda,
-                )
-                rerank_policy.update({
-                    "post_rerank_score_weights": {
-                        "relevance": 0.8,
-                        "quotability": 0.2,
-                    },
-                    "post_rerank_passage_limit": project.config.post_axis_cap,
-                    "target_total_before_limit": target_total_before_limit,
-                    "allocation_policy": retrieval_log["allocation_policy"],
-                    "retrieval_relevance_power": retrieval_log["retrieval_relevance_power"],
-                    "axis_candidate_budget": axis_candidate_budget_effective,
-                    "pre_axis_budget": retrieval_log["pre_axis_budget"],
-                    "post_axis_target": post_axis_target,
-                    "mmr_enabled": project.config.mmr_enabled,
-                    "mmr_lambda": project.config.mmr_post_lambda,
-                    "per_book_budget": retrieval_log["per_book_budget"],
-                    "admitted_by_book": admitted_by_book,
-                    "target_total": target_total,
-                })
-                return axis.axis_id, top_passages, retained_pairs, candidate_count, cross_pair_validation, rerank_policy
+                for axis in axis_priority_order
+            ]
 
-            async def _process_axis_async(axis: ThematicAxis):
-                async with sem:
-                    return await asyncio.to_thread(_process_axis, axis)
+            results_by_axis: dict[str, AxisExtractionResult] = {}
+            deferred_work: list[tuple[str, Callable[[], AxisExtractionResult]]] = []
+            for axis_id, deferred_fn, ready_result in prepared_work:
+                if ready_result is not None:
+                    results_by_axis[axis_id] = ready_result
+                    continue
+                if deferred_fn is not None:
+                    deferred_work.append((axis_id, deferred_fn))
 
-            results = await asyncio.gather(*[_process_axis_async(axis) for axis in axes])
+            if deferred_work:
+                extraction_sem = asyncio.Semaphore(max(1, project.config.passage_extraction_concurrency))
+
+                async def _run_deferred(
+                    axis_id: str,
+                    worker: Callable[[], AxisExtractionResult],
+                ) -> tuple[str, AxisExtractionResult]:
+                    async with extraction_sem:
+                        result = await asyncio.to_thread(worker)
+                        return axis_id, result
+
+                deferred_results = await asyncio.gather(
+                    *[
+                        _run_deferred(axis_id, worker)
+                        for axis_id, worker in deferred_work
+                    ]
+                )
+                for axis_id, result in deferred_results:
+                    results_by_axis[axis_id] = result
+
+            results = [
+                results_by_axis[axis.axis_id]
+                for axis in axis_priority_order
+                if axis.axis_id in results_by_axis
+            ]
 
             cross_pair_validation_by_axis: dict[str, dict[str, Any]] = {}
             for axis_id, top_passages, cross_pairs, candidate_count, cross_pair_validation, axis_policy in results:
@@ -3336,7 +3611,7 @@ class PipelineOrchestrator:
                 for a in corpus.axes
             ]
             passages_summary: dict[str, list[dict]] = {}
-            synthesis_passage_total = 0
+            synthesis_selected_by_axis: dict[str, list[ExtractedPassage]] = {}
             for axis_id, passages in corpus.passages_by_axis.items():
                 synthesis_top_k = _compute_stage_axis_target_count(
                     axis_total=len(passages),
@@ -3351,11 +3626,29 @@ class PipelineOrchestrator:
                     use_mmr=project.config.mmr_enabled,
                     mmr_lambda=project.config.mmr_synthesis_lambda,
                 )
-                synthesis_passage_total += len(selected_passages)
+                synthesis_selected_by_axis[axis_id] = selected_passages
+
+            capped_synthesis_by_axis, synthesis_cap_stats = _apply_passage_total_cap_by_axis(
+                passages_by_axis=synthesis_selected_by_axis,
+                total_cap=project.config.synthesis_total_passage_cap,
+                priority_passage_ids=cross_pair_ids,
+            )
+            synthesis_passage_total = int(synthesis_cap_stats["output_total"])
+            self.run_logger.log(
+                "synthesis_passage_cap_applied",
+                total_cap=project.config.synthesis_total_passage_cap,
+                input_total=synthesis_cap_stats["input_total"],
+                output_total=synthesis_cap_stats["output_total"],
+                priority_total=synthesis_cap_stats["priority_total"],
+                trimmed_non_priority=synthesis_cap_stats["trimmed_non_priority"],
+                soft_overrun=synthesis_cap_stats["soft_overrun"],
+            )
+
+            for axis_id, selected_passages in capped_synthesis_by_axis.items():
                 passages_summary[axis_id] = [
                     {
                         "passage_id": p.passage_id, "book_id": p.book_id,
-                        "text": p.text[:500],
+                        "text": p.text,
                         "relevance_score": p.relevance_score,
                         "synthesis_tags": [t.value for t in p.synthesis_tags],
                     }
@@ -3647,7 +3940,11 @@ class PipelineOrchestrator:
             insights_by_id = {insight.insight_id: insight for insight in synthesis_map.insights}
             merged_catalog = _build_merged_narrative_catalog(synthesis_map)
             tension_catalog = _build_tension_catalog(synthesis_map)
-            chapter_lookup = _build_chapter_lookup(project.books)
+            cross_pair_ids = {
+                pid
+                for pair in corpus.cross_book_pairs
+                for pid in (pair.passage_a_id, pair.passage_b_id)
+            }
             adjusted_episodes: list[EpisodePlan] = []
             realization_reports: list[dict[str, Any]] = []
             ordered_assignments = [
@@ -3670,6 +3967,24 @@ class PipelineOrchestrator:
                     for insight in selected_insights
                     for passage_id in insight.passage_ids
                 }
+                insight_passages_by_id: dict[str, ExtractedPassage] = {}
+                for axis_passages in corpus.passages_by_axis.values():
+                    for passage in axis_passages:
+                        if passage.passage_id not in selected_insight_passage_ids:
+                            continue
+                        existing = insight_passages_by_id.get(passage.passage_id)
+                        if existing is None or (
+                            passage.relevance_score,
+                            passage.quotability_score,
+                        ) > (
+                            existing.relevance_score,
+                            existing.quotability_score,
+                        ):
+                            insight_passages_by_id[passage.passage_id] = passage
+                extra_insight_passages = [
+                    insight_passages_by_id[passage_id]
+                    for passage_id in sorted(insight_passages_by_id)
+                ]
                 synthesis_context = _build_episode_synthesis_context(
                     assignment=assignment,
                     selected_insights=selected_insights,
@@ -3678,11 +3993,6 @@ class PipelineOrchestrator:
                     tension_catalog=tension_catalog,
                 )
                 synthesis_subset = synthesis_context.model_dump(mode="json")
-                insight_passages = _collect_episode_insight_passages(
-                    passages_by_axis=corpus.passages_by_axis,
-                    selected_insight_passage_ids=selected_insight_passage_ids,
-                    chapter_lookup=chapter_lookup,
-                )
                 supporting_by_axis = {
                     axis_id: _compute_stage_axis_target_count(
                         axis_total=len(corpus.passages_by_axis.get(axis_id, [])),
@@ -3700,25 +4010,28 @@ class PipelineOrchestrator:
                     use_mmr=project.config.mmr_enabled,
                     mmr_lambda=project.config.mmr_planning_lambda,
                 )
-                chapter_context_by_ref = _build_chapter_context_by_ref(
-                    chapter_lookup=chapter_lookup,
+                planning_priority_ids = selected_insight_passage_ids | cross_pair_ids
+                capped_passages_by_axis, planning_cap_stats = _apply_passage_total_cap_by_axis(
                     passages_by_axis=selected_passages_by_axis,
-                    insight_passages=insight_passages,
+                    total_cap=project.config.planning_total_passage_cap,
+                    priority_passage_ids=planning_priority_ids,
                 )
-                passages_summary = {
-                    axis_id: [
-                        {
-                            "passage_id": p.passage_id,
-                            "book_id": p.book_id,
-                            "chapter_ref": p.chapter_ref,
-                            "relevance_score": p.relevance_score,
-                            "quotability_score": p.quotability_score,
-                            "summary_text": p.text,
-                        }
-                        for p in selected_passages_by_axis.get(axis_id, [])
-                    ]
-                    for axis_id in assignment.axis_ids
-                }
+                self.run_logger.log(
+                    "planning_passage_cap_applied",
+                    episode=assignment.episode_number,
+                    total_cap=project.config.planning_total_passage_cap,
+                    input_total=planning_cap_stats["input_total"],
+                    output_total=planning_cap_stats["output_total"],
+                    priority_total=planning_cap_stats["priority_total"],
+                    trimmed_non_priority=planning_cap_stats["trimmed_non_priority"],
+                    soft_overrun=planning_cap_stats["soft_overrun"],
+                )
+                available_passages = _build_flat_planning_passage_payload(
+                    assigned_axis_ids=assignment.axis_ids,
+                    passages_by_axis=capped_passages_by_axis,
+                    selected_insight_passage_ids=selected_insight_passage_ids,
+                    extra_insight_passages=extra_insight_passages,
+                )
                 episode_arc_detail = episode_arc_detail_by_number.get(assignment.episode_number)
                 narrative_strategy_payload: dict[str, Any] = {
                     "strategy_type": strategy.strategy_type,
@@ -3751,9 +4064,7 @@ class PipelineOrchestrator:
                     narrative_strategy=narrative_strategy_payload,
                     synthesis_map=synthesis_subset,
                     project_metadata=project_metadata,
-                    available_passages=passages_summary,
-                    insight_passages=insight_passages,
-                    chapter_context_by_ref=chapter_context_by_ref,
+                    available_passages=available_passages,
                     previous_episode=previous_episode,
                     next_episode=next_episode,
                 )
@@ -3783,8 +4094,6 @@ class PipelineOrchestrator:
                             synthesis_map=synthesis_context.model_dump(mode="json"),
                             project_metadata=project_metadata,
                             available_passages=payload["available_passages"],
-                            insight_passages=payload["insight_passages"],
-                            chapter_context_by_ref=payload["chapter_context_by_ref"],
                             previous_episode=payload["previous_episode"],
                             next_episode=payload["next_episode"],
                             planning_feedback=_build_planning_feedback(realization),

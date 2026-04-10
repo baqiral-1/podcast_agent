@@ -13,12 +13,30 @@ class APIConnectionError(Exception):
     pass
 
 
+class RemoteProtocolError(Exception):
+    pass
+
+
 def test_connection_error_detects_builtin_connection_error() -> None:
     assert is_connection_error(ConnectionError("socket disconnected"))
 
 
 def test_connection_error_detects_provider_error_name() -> None:
     assert is_connection_error(APIConnectionError("Connection error."))
+
+
+def test_connection_error_detects_remote_protocol_error_type() -> None:
+    assert is_connection_error(RemoteProtocolError("peer closed connection unexpectedly"))
+
+
+def test_connection_error_detects_incomplete_chunked_read_message() -> None:
+    assert is_connection_error(
+        RuntimeError("peer closed connection without sending complete message body (incomplete chunked read)")
+    )
+
+
+def test_connection_error_detects_server_disconnected_message() -> None:
+    assert is_connection_error(RuntimeError("Server disconnected without sending a response."))
 
 
 def test_transient_error_false_for_non_transient_value_error() -> None:

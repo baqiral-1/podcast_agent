@@ -27,11 +27,11 @@ class TestLLMConfig:
     def test_resolve_temperature_with_agent_config(self):
         config = LLMConfig(
             agent_configs={
-                "structuring": AgentConfig(temperature=0.3),
+                "chapter_summary": AgentConfig(temperature=0.3),
                 "synthesis_mapping": AgentConfig(temperature=0.8),
             }
         )
-        assert config.resolve_temperature("structuring") == 0.3
+        assert config.resolve_temperature("chapter_summary") == 0.3
         assert config.resolve_temperature("synthesis_mapping") == 0.8
         assert config.resolve_temperature("unknown_agent") == 1.0
 
@@ -48,10 +48,10 @@ class TestLLMConfig:
         config = LLMConfig(
             model_name="claude-opus-4-6",
             agent_configs={
-                "structuring": AgentConfig(model_name="claude-haiku-4-5"),
+                "chapter_summary": AgentConfig(model_name="claude-haiku-4-5"),
             },
         )
-        assert config.resolve_model("structuring") == "claude-haiku-4-5"
+        assert config.resolve_model("chapter_summary") == "claude-haiku-4-5"
         assert config.resolve_model("unknown") == "claude-opus-4-6"
 
     def test_resolve_model_with_legacy_overrides(self):
@@ -64,16 +64,16 @@ class TestLLMConfig:
     def test_agent_config_takes_precedence(self):
         config = LLMConfig(
             model_name="claude-opus-4-6",
-            model_overrides={"structuring": "claude-sonnet-4-6"},
+            model_overrides={"chapter_summary": "claude-sonnet-4-6"},
             agent_configs={
-                "structuring": AgentConfig(model_name="claude-haiku-4-5"),
+                "chapter_summary": AgentConfig(model_name="claude-haiku-4-5"),
             },
         )
-        assert config.resolve_model("structuring") == "claude-haiku-4-5"
+        assert config.resolve_model("chapter_summary") == "claude-haiku-4-5"
 
     def test_default_agent_temperatures(self):
         config = LLMConfig()
-        assert config.resolve_temperature("structuring") == 0.3
+        assert config.resolve_temperature("chapter_summary") == 0.3
         assert config.resolve_temperature("synthesis_mapping") == 0.8
         assert config.resolve_temperature("grounding_validation") == 0.2
         assert config.resolve_temperature("spoken_delivery") == 0.7
@@ -102,15 +102,16 @@ class TestPipelineRuntimeConfig:
 
     def test_thematic_defaults(self):
         config = PipelineRuntimeConfig()
-        assert config.max_axes == 25
-        assert config.min_axes == 20
+        assert config.max_axes == 30
+        assert config.min_axes == 25
         assert config.passage_retrieval_percentage == 0.25
         assert config.passage_retrieval_min_per_book == 20
         assert config.passage_retrieval_max_per_book == 50
-        assert config.axis_candidate_target_total == 200
-        assert config.pre_axis_total_budget == 6000
-        assert config.pre_axis_floor == 120
+        assert config.axis_candidate_target_total == 120
+        assert config.pre_axis_total_budget == 3600
+        assert config.pre_axis_floor == 60
         assert config.pre_axis_relevance_power == 1.3
+        assert config.pre_axis_cross_axis_reuse_penalty == 0.25
         assert config.admission_floor_per_book == 2
         assert config.retrieval_relevance_power == 1.3
         assert config.retrieval_soft_threshold == 0.35
@@ -121,12 +122,16 @@ class TestPipelineRuntimeConfig:
         assert config.post_axis_cap == 240
         assert config.post_axis_signal_power == 2.5
         assert config.mmr_enabled is True
-        assert config.synthesis_axis_pct == 0.35
-        assert config.synthesis_axis_min == 30
-        assert config.synthesis_axis_max == 110
-        assert config.planning_axis_pct == 0.45
-        assert config.planning_axis_min == 35
-        assert config.planning_axis_max == 110
+        assert config.mmr_post_lambda == 0.6
+        assert config.mmr_post_source_penalty_weight == 1.0
+        assert config.synthesis_axis_pct == 0.25
+        assert config.synthesis_axis_min == 19
+        assert config.synthesis_axis_max == 100
+        assert config.synthesis_total_passage_cap == 800
+        assert config.planning_axis_pct == 0.35
+        assert config.planning_axis_min == 25
+        assert config.planning_axis_max == 100
+        assert config.planning_total_passage_cap == 300
         assert config.synthesis_quality_threshold == 0.5
         assert config.passage_extraction_concurrency == 13
         assert config.llm_global_max_concurrency == 30
@@ -154,10 +159,10 @@ class TestPipelineRuntimeConfig:
 class TestLLMConfigResolvers:
     def test_resolve_max_retry_attempts_from_agent_config(self):
         config = LLMConfig()
-        assert config.resolve_max_retry_attempts("structuring") == 3
+        assert config.resolve_max_retry_attempts("chapter_summary") == 3
         assert config.resolve_max_retry_attempts("chapter_summary") == 3
         assert config.resolve_max_retry_attempts("book_summary") == 3
-        assert config.resolve_max_retry_attempts("passage_extraction") == 3
+        assert config.resolve_max_retry_attempts("passage_extraction") == 4
         assert config.resolve_max_retry_attempts("synthesis_mapping") == 2
 
     def test_resolve_max_retry_attempts_default_for_unknown(self):
@@ -166,20 +171,51 @@ class TestLLMConfigResolvers:
 
     def test_resolve_timeout_seconds_uses_schema_override(self):
         config = LLMConfig()
-        assert config.resolve_timeout_seconds("passage_extraction") == 900.0
+        assert config.resolve_timeout_seconds("passage_extraction") == 480.0
         assert config.resolve_timeout_seconds("synthesis_mapping") == 1200.0
         assert config.resolve_timeout_seconds("unknown_agent") == 600.0
 
     def test_resolve_concurrency_limit_from_agent_config(self):
         config = LLMConfig()
-        assert config.resolve_concurrency_limit("structuring") == 10
-        assert config.resolve_concurrency_limit("chapter_summary") == 15
+        assert config.resolve_concurrency_limit("chapter_summary") == 25
         assert config.resolve_concurrency_limit("book_summary") == 10
         assert config.resolve_concurrency_limit("passage_extraction") == 13
         assert config.resolve_concurrency_limit("synthesis_mapping") == 3
         assert config.resolve_concurrency_limit("episode_planning") == 8
         assert config.resolve_concurrency_limit("episode_writing") == 8
         assert config.resolve_concurrency_limit("spoken_delivery") == 8
+
+    def test_resolve_thinking_budget_defaults(self):
+        config = LLMConfig()
+        assert config.resolve_thinking_budget("narrative_strategy") == 15_000
+        assert config.resolve_thinking_budget("episode_planning") == 25_000
+        assert config.resolve_thinking_budget("episode_writing") == 12_000
+        assert config.resolve_thinking_budget("spoken_delivery") == 20_000
+        assert config.resolve_thinking_budget("synthesis_mapping") == 18_000
+        assert config.resolve_thinking_budget("theme_decomposition") == 10_000
+
+    def test_resolve_thinking_budget_none_for_non_thinking_stages(self):
+        config = LLMConfig()
+        assert config.resolve_thinking_budget("chapter_summary") is None
+        assert config.resolve_thinking_budget("grounding_validation") is None
+        assert config.resolve_thinking_budget("unknown_agent") is None
+
+    def test_resolve_thinking_budget_disabled_with_empty_dict(self):
+        config = LLMConfig(thinking_budget_tokens={})
+        assert config.resolve_thinking_budget("narrative_strategy") is None
+        assert config.resolve_thinking_budget("episode_writing") is None
+
+    def test_resolve_thinking_budget_custom_override(self):
+        config = LLMConfig(thinking_budget_tokens={"narrative_strategy": 50_000})
+        assert config.resolve_thinking_budget("narrative_strategy") == 50_000
+        assert config.resolve_thinking_budget("episode_writing") is None
+
+    def test_thinking_timeout_bumps(self):
+        config = LLMConfig()
+        assert config.resolve_timeout_seconds("narrative_strategy") == 900.0
+        assert config.resolve_timeout_seconds("episode_planning") == 1200.0
+        assert config.resolve_timeout_seconds("episode_writing") == 1500.0
+        assert config.resolve_timeout_seconds("spoken_delivery") == 1200.0
 
     def test_runtime_caps_cover_bumped_stage_defaults(self):
         llm = LLMConfig()
@@ -207,18 +243,18 @@ class TestLLMConfigResolvers:
 
     def test_resolve_model_from_agent_config(self):
         config = LLMConfig()
-        assert config.resolve_model("structuring") == "claude-haiku-4-5"
-        assert config.resolve_model("book_summary") == "claude-opus-4-6"
-        assert config.resolve_model("passage_extraction") == "claude-opus-4-6"
+        assert config.resolve_model("chapter_summary") == "claude-haiku-4-5"
+        assert config.resolve_model("book_summary") == "claude-sonnet-4-6"
+        assert config.resolve_model("passage_extraction") == "claude-sonnet-4-6"
         assert config.resolve_model("synthesis_mapping") == "claude-opus-4-6"
         assert config.resolve_model("narrative_strategy") == "claude-opus-4-6"
         assert config.resolve_model("episode_planning") == "claude-opus-4-6"
         assert config.resolve_model("grounding_validation") == "claude-sonnet-4-6"
-        assert config.resolve_model("episode_framing") == "claude-haiku-4-5"
+        assert config.resolve_model("episode_framing") == "claude-sonnet-4-6"
 
     def test_resolve_temperature_from_agent_config(self):
         config = LLMConfig()
-        assert config.resolve_temperature("structuring") == 0.3
+        assert config.resolve_temperature("chapter_summary") == 0.3
         assert config.resolve_temperature("synthesis_mapping") == 0.8
         assert config.resolve_temperature("grounding_validation") == 0.2
 
@@ -249,9 +285,9 @@ class TestLLMConfigResolvers:
     def test_all_agents_have_model_assigned(self):
         config = LLMConfig()
         expected_agents = [
-            "structuring", "book_summary", "theme_decomposition", "passage_extraction",
+            "chapter_summary", "book_summary", "theme_decomposition", "passage_extraction",
             "synthesis_mapping", "narrative_strategy", "episode_planning",
-            "episode_writing", "source_weaving", "grounding_validation",
+            "episode_writing", "grounding_validation",
             "repair", "spoken_delivery", "episode_framing",
         ]
         for agent_name in expected_agents:
