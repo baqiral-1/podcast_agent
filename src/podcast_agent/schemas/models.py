@@ -77,9 +77,6 @@ class ChapterAnalysis(StrictModel):
     timeframe: str = ""
     key_events_or_arguments: list[str] = Field(default_factory=list)
     major_tensions: list[str] = Field(default_factory=list, max_length=6)
-    causal_shifts: list[str] = Field(default_factory=list, max_length=6)
-    narrative_hooks: list[str] = Field(default_factory=list, max_length=5)
-    retrieval_keywords: list[str] = Field(default_factory=list, max_length=12)
 
 
 class BookRecord(StrictModel):
@@ -98,31 +95,24 @@ class PipelineConfig(StrictModel):
     max_axes: int = Field(default=15, ge=1)
     min_axes: int = Field(default=10, ge=1)
     passage_retrieval_percentage: float = Field(default=0.25, gt=0.0, le=1.0)
-    passage_retrieval_min_per_book: int = Field(default=20, ge=1)
-    passage_retrieval_max_per_book: int = Field(default=50, ge=1)
-    axis_candidate_target_total: int = Field(default=120, ge=1)
-    pre_axis_total_budget: int = Field(default=1800, ge=1)
-    pre_axis_floor: int = Field(default=60, ge=0)
+    passage_retrieval_min_per_book: int = Field(default=10, ge=1)
+    passage_retrieval_max_per_book: int = Field(default=25, ge=1)
+    axis_candidate_target_total: int = Field(default=60, ge=1)
+    pre_axis_total_budget: int = Field(default=1200, ge=1)
+    pre_axis_floor: int = Field(default=30, ge=0)
     pre_axis_relevance_power: float = Field(default=1.3, ge=0.0)
     pre_axis_cross_axis_reuse_penalty: float = Field(default=0.25, ge=0.0, le=1.0)
-    admission_floor_per_book: int = Field(default=2, ge=0)
-    retrieval_relevance_power: float = Field(default=1.3, ge=0.0)
+    admission_floor_per_book: int = Field(default=0, ge=0)
+    retrieval_relevance_power: float = Field(default=2.5, ge=0.0)
     retrieval_soft_threshold: float = Field(default=0.35, ge=0.0, le=1.0)
     chapter_penalty_weight: float = Field(default=0.05, ge=0.0, le=1.0)
-    rerank_top_k: int = Field(default=30, ge=1)
-    post_axis_total_budget: int = Field(default=1200, ge=1)
-    post_axis_floor: int = Field(default=20, ge=0)
-    post_axis_cap: int = Field(default=120, ge=1)
-    post_axis_signal_power: float = Field(default=2.5, ge=0.0)
     mmr_enabled: bool = True
-    mmr_post_lambda: float = Field(default=0.6, ge=0.0, le=1.0)
-    mmr_post_source_penalty_weight: float = Field(default=1.0, ge=0.0, le=1.0)
     mmr_synthesis_lambda: float = Field(default=0.75, ge=0.0, le=1.0)
     mmr_planning_lambda: float = Field(default=0.75, ge=0.0, le=1.0)
     synthesis_axis_pct: float = Field(default=1.0, ge=0.0, le=1.0)
     synthesis_axis_min: int = Field(default=10, ge=0)
     synthesis_axis_max: int = Field(default=15, ge=1)
-    synthesis_total_passage_cap: int = Field(default=750, ge=1)
+    synthesis_total_passage_cap: int = Field(default=720, ge=1)
     planning_axis_pct: float = Field(default=1.0, ge=0.0, le=1.0)
     planning_axis_min: int = Field(default=10, ge=0)
     planning_axis_max: int = Field(default=15, ge=1)
@@ -130,14 +120,21 @@ class PipelineConfig(StrictModel):
     synthesis_quality_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
     max_repair_attempts: int = Field(default=3, ge=0)
     tts_provider: str = "openai"
-    tts_concurrency: int = Field(default=4, ge=1)
-    episode_write_concurrency: int = Field(default=8, ge=1)
+    tts_concurrency: int = Field(default=12, ge=1)
+    episode_planning_concurrency: int = Field(default=9, ge=1)
+    episode_write_concurrency: int = Field(default=9, ge=1)
     target_episode_minutes: float = Field(default=140.0, gt=0.0)
     min_episode_minutes: float = Field(default=125.0, gt=0.0)
     duration_shortfall_policy: Literal["warn"] = "warn"
+    scene_card_target_min: int = Field(default=25, ge=1)
+    scene_card_target_max: int = Field(default=40, ge=1)
+    scene_card_target_policy: Literal["warn"] = "warn"
+    scene_card_primitives_min: int = Field(default=1, ge=0)
+    scene_card_primitives_max: int = Field(default=2, ge=1)
+    scene_card_primitive_policy: Literal["warn"] = "warn"
     passage_extraction_concurrency: int = Field(default=8, ge=1)
-    chunk_max_words: int = Field(default=400, ge=50)
-    chunk_overlap_words: int = Field(default=50, ge=0)
+    chunk_max_words: int = Field(default=1000, ge=50)
+    chunk_overlap_words: int = Field(default=75, ge=0)
     spoken_chunk_max_words: int = Field(default=250, ge=50)
     max_author_names_per_episode: int = Field(default=3, ge=0)
     attribution_budget: float = Field(default=0.2, ge=0.0, le=1.0)
@@ -152,12 +149,14 @@ class PipelineConfig(StrictModel):
             raise ValueError(
                 "passage_retrieval_max_per_book must be >= passage_retrieval_min_per_book"
             )
-        if self.post_axis_cap < self.post_axis_floor:
-            raise ValueError("post_axis_cap must be >= post_axis_floor")
         if self.synthesis_axis_max < self.synthesis_axis_min:
             raise ValueError("synthesis_axis_max must be >= synthesis_axis_min")
         if self.planning_axis_max < self.planning_axis_min:
             raise ValueError("planning_axis_max must be >= planning_axis_min")
+        if self.scene_card_target_max < self.scene_card_target_min:
+            raise ValueError("scene_card_target_max must be >= scene_card_target_min")
+        if self.scene_card_primitives_max < self.scene_card_primitives_min:
+            raise ValueError("scene_card_primitives_max must be >= scene_card_primitives_min")
         return self
 
 
@@ -204,8 +203,8 @@ class ThematicProject(StrictModel):
 
 
 class ChunkingConfig(StrictModel):
-    max_chunk_words: int = Field(default=400, ge=50)
-    overlap_words: int = Field(default=50, ge=0)
+    max_chunk_words: int = Field(default=1000, ge=50)
+    overlap_words: int = Field(default=75, ge=0)
     min_chunk_words: int = Field(default=80, ge=10)
     split_on: list[str] = Field(default_factory=lambda: ["\n\n", ". "])
 
@@ -230,6 +229,7 @@ class ThematicAxis(StrictModel):
     axis_id: str = Field(default_factory=new_id)
     name: str
     description: str
+    theme_importance_score: float = Field(ge=0.0, le=1.0)
     guiding_questions: list[str] = Field(default_factory=list)
     relevance_by_book: dict[str, float] = Field(default_factory=dict)
     keywords: list[str] = Field(default_factory=list)
@@ -353,6 +353,37 @@ class SynthesisPrimitivesArtifact(StrictModel):
     quality_notes: list[str] = Field(default_factory=list)
 
 
+class SynthesisConsolidationResult(StrictModel):
+    project_id: str
+    episode_candidate_clusters: list[EpisodeCandidateCluster] = Field(default_factory=list)
+    turning_point_ids: list[str] = Field(default_factory=list)
+    scene_worthy_consequence_ids: list[str] = Field(default_factory=list)
+    causal_mechanism_ids: list[str] = Field(default_factory=list)
+    live_question_ids: list[str] = Field(default_factory=list)
+    quality_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    quality_notes: list[str] = Field(default_factory=list)
+
+    def primitive_ids(self) -> set[str]:
+        return {
+            *self.turning_point_ids,
+            *self.scene_worthy_consequence_ids,
+            *self.causal_mechanism_ids,
+            *self.live_question_ids,
+        }
+
+    @model_validator(mode="after")
+    def validate_cluster_members(self) -> "SynthesisConsolidationResult":
+        primitive_ids = self.primitive_ids()
+        for cluster in self.episode_candidate_clusters:
+            missing = [member_id for member_id in cluster.member_ids if member_id not in primitive_ids]
+            if missing:
+                raise ValueError(
+                    "episode_candidate_clusters contains unknown member_ids "
+                    f"for {cluster.cluster_id}: {missing}"
+                )
+        return self
+
+
 class SynthesisMap(StrictModel):
     project_id: str
     episode_candidate_clusters: list[EpisodeCandidateCluster] = Field(default_factory=list)
@@ -415,10 +446,6 @@ class StrategyEpisode(StrictModel):
 
     @model_validator(mode="after")
     def validate_cluster_path(self) -> "StrategyEpisode":
-        if self.cluster_path[0].usage != "primary":
-            raise ValueError("the first cluster_path occurrence must be primary")
-        if self.cluster_path[-1].usage != "primary":
-            raise ValueError("the last cluster_path occurrence must be primary")
         for idx, occurrence in enumerate(self.cluster_path[1:], start=1):
             if not occurrence.transition_note.strip():
                 raise ValueError(
@@ -485,9 +512,7 @@ class SceneCard(StrictModel):
     scene_id: str = Field(default_factory=lambda: f"scene_{new_id()[:8]}")
     title: str = Field(min_length=1)
     card_kind: Literal["normal", "bridge"] = "normal"
-    scene_role: Literal[
-        "setup", "shock", "consequence", "reaction", "contestation", "process", "synthesis"
-    ]
+    scene_role: str = Field(min_length=1)
     dominant_cluster_occurrence_id: str | None = None
     bridge_from_occurrence_id: str | None = None
     bridge_to_occurrence_id: str | None = None
@@ -506,6 +531,8 @@ class SceneCard(StrictModel):
 
     @model_validator(mode="after")
     def validate_card_shape(self) -> "SceneCard":
+        if not self.scene_role.strip():
+            raise ValueError("scene_role must not be blank")
         if self.card_kind == "normal":
             if not self.dominant_cluster_occurrence_id:
                 raise ValueError("normal scene cards require dominant_cluster_occurrence_id")
@@ -540,14 +567,6 @@ class EpisodePlanDraft(StrictModel):
         bridge_count = sum(1 for scene in self.scene_cards if scene.card_kind == "bridge")
         if bridge_count > 1:
             raise ValueError("at most one bridge scene card is allowed per episode")
-        withhold_ids = {
-            scene.withhold_until
-            for scene in self.scene_cards
-            if scene.withhold_until is not None
-        }
-        unknown = sorted(scene_id for scene_id in withhold_ids if scene_id not in set(scene_ids))
-        if unknown:
-            raise ValueError(f"withhold_until must reference existing scene_ids: {unknown}")
         return self
 
 
@@ -572,8 +591,8 @@ class Citation(StrictModel):
 class ProseSection(StrictModel):
     section_id: str = Field(default_factory=lambda: f"section_{new_id()[:8]}")
     scene_card_ids: list[str] = Field(default_factory=list, min_length=1)
-    movement_goal: Literal["pose", "discover", "complicate", "connect", "judge", "land"]
-    text: str = Field(min_length=1)
+    movement_goal: str = Field(min_length=1)
+    text: str = ""
     citations: list[Citation] = Field(default_factory=list)
     source_book_ids: list[str] = Field(default_factory=list)
 
@@ -582,7 +601,7 @@ class ScriptTransition(StrictModel):
     transition_id: str = Field(default_factory=lambda: f"transition_{new_id()[:8]}")
     after_section_id: str = Field(min_length=1)
     before_section_id: str | None = None
-    text: str = Field(min_length=1)
+    text: str = ""
     citations: list[Citation] = Field(default_factory=list)
     source_book_ids: list[str] = Field(default_factory=list)
 
@@ -700,24 +719,6 @@ class SpokenScript(StrictModel):
     sections: list[SpokenSection] = Field(default_factory=list)
     transitions: list[SpokenTransition] = Field(default_factory=list)
     tts_provider: str = "openai"
-
-
-class StyleWarning(StrictModel):
-    warning_type: Literal[
-        "early_thesis_reveal",
-        "abstract_noun_cluster_repeat",
-        "governing_metaphor_repeat",
-        "author_hand_language",
-        "recap_style_framing",
-    ]
-    text_unit_id: str | None = None
-    message: str = Field(min_length=1)
-
-
-class StyleAuditReport(StrictModel):
-    episode_number: int = Field(ge=1)
-    warnings: list[StyleWarning] = Field(default_factory=list)
-    counts_by_type: dict[str, int] = Field(default_factory=dict)
 
 
 class RenderSegment(StrictModel):

@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agentic Podcasts | The Iranian Revolution — Parallax</title>
+<meta name="description" content="A 7-episode cinematic series tracing Iran's modern upheaval from the Safavid era through the 1979 Revolution and its aftermath.">
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html {
+    scroll-snap-type: y mandatory;
+    scroll-behavior: smooth;
+    overflow-x: hidden;
+  }
+
+  body {
+    background: #060708;
+    color: #e8dcc8;
+    font-family: "Avenir Next", "SF Pro Text", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+    line-height: 1.6;
+  }
+
+  a { color: inherit; text-decoration: none; }
+
+  /* ─── FILM GRAIN OVERLAY ────────────────────────────────── */
+
+  .grain {
+    position: fixed;
+    top: -50%; left: -50%;
+    width: 200%; height: 200%;
+    z-index: 900;
+    pointer-events: none;
+    opacity: 0.035;
+  }
+
+  /* ─── SITE NAV ──────────────────────────────────────────── */
+
+  .site-nav {
+    position: fixed;
+    top: 1.5rem;
+    left: 2rem;
+    z-index: 1100;
+    font-variant: small-caps;
+    font-weight: 600;
+    font-size: 0.92rem;
+    letter-spacing: 0.1em;
+    color: #e8dcc8;
+    transition: opacity 0.3s;
+  }
+
+  .site-nav:hover { opacity: 0.7; }
+
+  /* ─── CHAPTER (shared) ──────────────────────────────────── */
+
+  .chapter {
+    position: relative;
+    min-height: 100vh;
+    scroll-snap-align: start;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+  }
+
+  /* Parallax background image */
+  .chapter-bg {
+    position: absolute;
+    inset: 0;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+    z-index: 1;
+  }
+
+  /* Duotone overlay */
+  .chapter-bg::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(160,64,64,0.3), rgba(6,7,8,0.7));
+    mix-blend-mode: multiply;
+    z-index: 2;
+  }
+
+  /* Soft glow accent per chapter */
+  .chapter-glow {
+    position: absolute;
+    width: 500px;
+    height: 500px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(160,64,64,0.18) 0%, transparent 70%);
+    filter: blur(80px);
+    z-index: 3;
+    pointer-events: none;
+  }
+
+  /* Gigantic episode number */
+  .chapter-number {
+    position: absolute;
+    z-index: 4;
+    font-size: clamp(8rem, 20vw, 16rem);
+    font-weight: 100;
+    color: rgba(232,220,200,0.06);
+    line-height: 1;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    user-select: none;
+  }
+
+  /* Content layer */
+  .chapter-content {
+    position: relative;
+    z-index: 10;
+    padding: 0 clamp(2rem, 5vw, 6rem) clamp(4rem, 8vh, 7rem);
+    max-width: 800px;
+  }
+
+  .chapter-title {
+    font-size: clamp(1.6rem, 4vw, 3rem);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    line-height: 1.15;
+    margin-bottom: 0.8rem;
+  }
+
+  .chapter-desc {
+    font-size: clamp(0.88rem, 1.4vw, 1.05rem);
+    font-weight: 300;
+    line-height: 1.7;
+    opacity: 0.72;
+    max-width: 580px;
+  }
+
+  .chapter-meta {
+    margin-top: 0.6rem;
+    font-size: 0.78rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    opacity: 0.35;
+  }
+
+  /* ─── PLAY TRIGGER ──────────────────────────────────────── */
+
+  .play-trigger {
+    position: absolute;
+    z-index: 15;
+    bottom: clamp(3rem, 6vh, 5rem);
+    right: clamp(2rem, 5vw, 6rem);
+    width: 5rem;
+    height: 5rem;
+    border-radius: 50%;
+    border: 2px solid rgba(232,220,200,0.25);
+    background: rgba(6,7,8,0.2);
+    backdrop-filter: blur(6px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: border-color 0.3s, transform 0.3s, background 0.3s;
+  }
+
+  .play-trigger:hover {
+    border-color: rgba(232,220,200,0.6);
+    transform: scale(1.08);
+    background: rgba(6,7,8,0.35);
+  }
+
+  .play-trigger svg {
+    width: 1.8rem;
+    height: 1.8rem;
+    fill: #e8dcc8;
+    margin-left: 3px; /* optical center for play triangle */
+  }
+
+  /* ─── OPENING SCENE ─────────────────────────────────────── */
+
+  .opening {
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+  }
+
+  .opening .chapter-bg {
+    background-image: url('./images/iran-2.jpg');
+  }
+
+  .opening-titles {
+    position: relative;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    line-height: 1;
+  }
+
+  .opening-word {
+    font-size: clamp(4rem, 12vw, 10rem);
+    font-weight: 100;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    line-height: 0.95;
+  }
+
+  .opening-word--accent {
+    color: #a04040;
+    font-weight: 100;
+  }
+
+  .opening-meta {
+    position: absolute;
+    z-index: 10;
+    bottom: clamp(2.5rem, 5vh, 4rem);
+    font-size: 0.82rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    opacity: 0.4;
+    font-weight: 400;
+  }
+
+  /* ─── FLOATING PILL PLAYER ──────────────────────────────── */
+
+  .pill-player {
+    position: fixed;
+    bottom: 2rem;
+    right: 2rem;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 0.6rem 1.2rem;
+    border-radius: 999px;
+    background: rgba(6,7,8,0.8);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255,255,255,0.08);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(12px);
+    transition: opacity 0.4s, transform 0.4s;
+    user-select: none;
+  }
+
+  .pill-player.visible {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+  }
+
+  .pill-btn {
+    width: 1.8rem;
+    height: 1.8rem;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .pill-btn svg {
+    width: 1.4rem;
+    height: 1.4rem;
+    fill: #e8dcc8;
+  }
+
+  .pill-title {
+    font-size: 0.78rem;
+    font-weight: 500;
+    letter-spacing: 0.03em;
+    color: #e8dcc8;
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .pill-time {
+    font-size: 0.7rem;
+    font-weight: 400;
+    color: rgba(232,220,200,0.45);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .pill-progress {
+    flex-shrink: 0;
+  }
+
+  .pill-progress circle.track {
+    stroke: rgba(232,220,200,0.1);
+    fill: none;
+    stroke-width: 2;
+  }
+
+  .pill-progress circle.arc {
+    stroke: #a04040;
+    fill: none;
+    stroke-width: 2;
+    stroke-linecap: round;
+    transform: rotate(-90deg);
+    transform-origin: center;
+    transition: stroke-dashoffset 0.3s linear;
+  }
+
+  .pill-speed {
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: rgba(232,220,200,0.5);
+    cursor: pointer;
+    border: 1px solid rgba(232,220,200,0.15);
+    background: transparent;
+    border-radius: 4px;
+    padding: 0.15rem 0.35rem;
+    white-space: nowrap;
+    transition: border-color 0.2s, color 0.2s;
+    flex-shrink: 0;
+  }
+
+  .pill-speed:hover {
+    border-color: rgba(232,220,200,0.35);
+    color: rgba(232,220,200,0.8);
+  }
+
+  /* ─── FOOTER ────────────────────────────────────────────── */
+
+  .footer-chapter {
+    min-height: 30vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    scroll-snap-align: end;
+    position: relative;
+    z-index: 10;
+  }
+
+  .footer-link {
+    font-size: 0.82rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    opacity: 0.3;
+    transition: opacity 0.3s;
+  }
+
+  .footer-link:hover { opacity: 0.7; }
+
+  /* ─── GLOW POSITIONS (per chapter variety) ──────────────── */
+
+  .chapter:nth-child(2) .chapter-glow  { top: 20%; left: -10%; }
+  .chapter:nth-child(3) .chapter-glow  { top: 60%; right: -8%; left: auto; }
+  .chapter:nth-child(4) .chapter-glow  { top: 10%; right: 5%; left: auto; }
+  .chapter:nth-child(5) .chapter-glow  { bottom: 15%; left: 10%; top: auto; }
+  .chapter:nth-child(6) .chapter-glow  { top: 40%; left: 50%; transform: translateX(-50%); }
+  .chapter:nth-child(7) .chapter-glow  { top: 25%; right: -5%; left: auto; }
+  .chapter:nth-child(8) .chapter-glow  { bottom: 20%; left: -5%; top: auto; }
+  .chapter:nth-child(9) .chapter-glow  { top: 50%; right: 10%; left: auto; }
+
+  /* ─── MOBILE ────────────────────────────────────────────── */
+
+  @media (max-width: 640px) {
+    html {
+      scroll-snap-type: none;
+    }
+
+    .chapter-bg {
+      background-attachment: scroll;
+    }
+
+    .chapter-number {
+      font-size: clamp(4rem, 12vw, 8rem);
+    }
+
+    .play-trigger {
+      width: 4rem;
+      height: 4rem;
+      right: 50%;
+      transform: translateX(50%);
+    }
+
+    .play-trigger:hover {
+      transform: translateX(50%) scale(1.08);
+    }
+
+    .pill-player {
+      right: auto;
+      left: 50%;
+      transform: translateX(-50%) translateY(12px);
+    }
+
+    .pill-player.visible {
+      transform: translateX(-50%) translateY(0);
+    }
+
+    .opening-word {
+      font-size: clamp(2.5rem, 12vw, 6rem);
+    }
+
+    .chapter-content {
+      padding-left: 1.5rem;
+      padding-right: 1.5rem;
+    }
+
+    .site-nav {
+      left: 1.5rem;
+      top: 1rem;
+    }
+  }
+</style>
+</head>
+<body>
+
+<!-- Film grain SVG overlay -->
+<svg class="grain" aria-hidden="true">
+  <filter id="grain-filter">
+    <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch"/>
+    <feColorMatrix type="saturate" values="0"/>
+  </filter>
+  <rect width="100%" height="100%" filter="url(#grain-filter)"/>
+</svg>
+
+<!-- Site navigation -->
+<a href="./index.html" class="site-nav">Agentic Podcasts</a>
+
+<!-- ═══════════════════════════════════════════════════════════
+     OPENING SCENE
+     ═══════════════════════════════════════════════════════════ -->
+
+<section class="chapter opening">
+  <div class="chapter-bg"></div>
+  <div class="chapter-bg" style="background:none;">
+    <!-- extra darkening veil for readability -->
+    <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(6,7,8,0.4) 0%,rgba(6,7,8,0.15) 40%,rgba(6,7,8,0.6) 100%);z-index:2;"></div>
+  </div>
+  <div class="chapter-glow" style="top:30%;left:50%;transform:translateX(-50%);"></div>
+
+  <div class="opening-titles">
+    <span class="opening-word">The</span>
+    <span class="opening-word">Iranian</span>
+    <span class="opening-word opening-word--accent">Revolution</span>
+  </div>
+
+  <span class="opening-meta">Seven episodes &middot; Ten books</span>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════
+     EPISODE CHAPTERS
+     ═══════════════════════════════════════════════════════════ -->
+
+<section class="chapter" data-ep="1" data-audio="https://github.com/baqiral-1/podcast_agent/releases/download/iranian-revolution-episodes-1-7-20260407T1830/episode-1.mp3" data-title="The Thousand-Year Duel" data-dur="1:38:29">
+  <div class="chapter-bg" style="background-image:url('./images/iran-2.jpg');"></div>
+  <div class="chapter-glow"></div>
+  <span class="chapter-number">01</span>
+  <div class="chapter-content">
+    <h2 class="chapter-title">The Thousand-Year Duel</h2>
+    <p class="chapter-desc">Establishes the deep structural foundations of clerical autonomy&thinsp;&mdash;&thinsp;the Safavid settlement, the Usuli triumph&thinsp;&mdash;&thinsp;revealing how centuries of institutional development created the preconditions for revolution.</p>
+    <p class="chapter-meta">Episode 1 &middot; 1:38:29</p>
+  </div>
+  <button class="play-trigger" aria-label="Play Episode 1">
+    <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+  </button>
+</section>
+
+<section class="chapter" data-ep="2" data-audio="https://github.com/baqiral-1/podcast_agent/releases/download/iranian-revolution-episodes-1-7-20260407T1830/episode-2.mp3" data-title="The Modernizer's Trap" data-dur="1:56:00">
+  <div class="chapter-bg" style="background-image:url('./images/iran-3.jpg');"></div>
+  <div class="chapter-glow"></div>
+  <span class="chapter-number">02</span>
+  <div class="chapter-content">
+    <h2 class="chapter-title">The Modernizer&rsquo;s Trap</h2>
+    <p class="chapter-desc">Traces the Pahlavi paradox: how father and son pursued authoritarian modernization that simultaneously transformed Iran and generated every constituency that would destroy them.</p>
+    <p class="chapter-meta">Episode 2 &middot; 1:56:00</p>
+  </div>
+  <button class="play-trigger" aria-label="Play Episode 2">
+    <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+  </button>
+</section>
+
+<section class="chapter" data-ep="3" data-audio="https://github.com/baqiral-1/podcast_agent/releases/download/iranian-revolution-episodes-1-7-20260407T1830/episode-3.mp3" data-title="The Foundational Trauma" data-dur="1:52:30">
+  <div class="chapter-bg" style="background-image:url('./images/iran-4.jpg');"></div>
+  <div class="chapter-glow"></div>
+  <span class="chapter-number">03</span>
+  <div class="chapter-content">
+    <h2 class="chapter-title">The Foundational Trauma</h2>
+    <p class="chapter-desc">The 1953 coup as the hinge event that delegitimized secular nationalism, branded the Shah as a foreign puppet, and channeled opposition toward Islamic frameworks.</p>
+    <p class="chapter-meta">Episode 3 &middot; 1:52:30</p>
+  </div>
+  <button class="play-trigger" aria-label="Play Episode 3">
+    <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+  </button>
+</section>
+
+<section class="chapter" data-ep="4" data-audio="https://github.com/baqiral-1/podcast_agent/releases/download/iranian-revolution-episodes-1-7-20260407T1830/episode-4.mp3" data-title="The Invisible Revolution" data-dur="1:43:18">
+  <div class="chapter-bg" style="background-image:url('./images/iran-5.jpg');"></div>
+  <div class="chapter-glow"></div>
+  <span class="chapter-number">04</span>
+  <div class="chapter-content">
+    <h2 class="chapter-title">The Invisible Revolution</h2>
+    <p class="chapter-desc">The intellectual and organizational infrastructure that made 1979 possible: gharbzadegi, Shariati&rsquo;s Islamic Marxism, Khomeini&rsquo;s erfan, and the invisible mosque-bazaar networks.</p>
+    <p class="chapter-meta">Episode 4 &middot; 1:43:18</p>
+  </div>
+  <button class="play-trigger" aria-label="Play Episode 4">
+    <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+  </button>
+</section>
+
+<section class="chapter" data-ep="5" data-audio="https://github.com/baqiral-1/podcast_agent/releases/download/iranian-revolution-episodes-1-7-20260407T1830/episode-5.mp3" data-title="The Year of Living Dangerously" data-dur="1:54:01">
+  <div class="chapter-bg" style="background-image:url('./images/iran-shah.jpg');"></div>
+  <div class="chapter-glow"></div>
+  <span class="chapter-number">05</span>
+  <div class="chapter-content">
+    <h2 class="chapter-title">The Year of Living Dangerously</h2>
+    <p class="chapter-desc">The revolutionary year 1978: the forty-day mourning cycle, Black Friday, the Shah&rsquo;s paralysis, the military&rsquo;s fracture, and Khomeini&rsquo;s strategic ambiguity from Paris.</p>
+    <p class="chapter-meta">Episode 5 &middot; 1:54:01</p>
+  </div>
+  <button class="play-trigger" aria-label="Play Episode 5">
+    <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+  </button>
+</section>
+
+<section class="chapter" data-ep="6" data-audio="https://github.com/baqiral-1/podcast_agent/releases/download/iranian-revolution-episodes-1-7-20260407T1830/episode-6.mp3" data-title="The Revolution Devours Its Children" data-dur="1:48:48">
+  <div class="chapter-bg" style="background-image:url('./images/iran-hostage.jpg');"></div>
+  <div class="chapter-glow"></div>
+  <span class="chapter-number">06</span>
+  <div class="chapter-content">
+    <h2 class="chapter-title">The Revolution Devours Its Children</h2>
+    <p class="chapter-desc">The coalition&rsquo;s fracture, the hostage crisis as constitutional coup, and the systematic elimination of moderates as theocratic power consolidated.</p>
+    <p class="chapter-meta">Episode 6 &middot; 1:48:48</p>
+  </div>
+  <button class="play-trigger" aria-label="Play Episode 6">
+    <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+  </button>
+</section>
+
+<section class="chapter" data-ep="7" data-audio="https://github.com/baqiral-1/podcast_agent/releases/download/iranian-revolution-episodes-1-7-20260407T1830/episode-7.mp3" data-title="The Crucible" data-dur="1:47:41">
+  <div class="chapter-bg" style="background-image:url('./images/iran-revolution.jpg');"></div>
+  <div class="chapter-glow"></div>
+  <span class="chapter-number">07</span>
+  <div class="chapter-content">
+    <h2 class="chapter-title">The Crucible</h2>
+    <p class="chapter-desc">The Iran-Iraq War as crucible, the 1988 executions, Montazeri&rsquo;s dissent&thinsp;&mdash;&thinsp;arriving at the unresolvable question: was this inevitable, or could it have been otherwise?</p>
+    <p class="chapter-meta">Episode 7 &middot; 1:47:41</p>
+  </div>
+  <button class="play-trigger" aria-label="Play Episode 7">
+    <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+  </button>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════
+     FOOTER
+     ═══════════════════════════════════════════════════════════ -->
+
+<div class="footer-chapter">
+  <a href="https://github.com/baqiral-1/podcast_agent" class="footer-link" target="_blank" rel="noopener">GitHub</a>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     FLOATING PILL PLAYER
+     ═══════════════════════════════════════════════════════════ -->
+
+<div class="pill-player" id="pill">
+  <button class="pill-btn" id="pillToggle" aria-label="Play / Pause">
+    <svg viewBox="0 0 24 24" id="pillIcon"><path d="M8 5v14l11-7z"/></svg>
+  </button>
+  <span class="pill-title" id="pillTitle"></span>
+  <span class="pill-time" id="pillTime">0:00:00</span>
+  <svg class="pill-progress" width="24" height="24" viewBox="0 0 28 28">
+    <circle class="track" cx="14" cy="14" r="12"/>
+    <circle class="arc" id="pillArc" cx="14" cy="14" r="12" stroke-dasharray="75.4" stroke-dashoffset="75.4"/>
+  </svg>
+  <button class="pill-speed" id="pillSpeed" aria-label="Playback speed">1&times;</button>
+</div>
+
+<!-- Shared audio element -->
+<audio id="audio" preload="none"></audio>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ── References ────────────────────────────────────────── */
+  const audio      = document.getElementById('audio');
+  const pill       = document.getElementById('pill');
+  const pillToggle = document.getElementById('pillToggle');
+  const pillIcon   = document.getElementById('pillIcon');
+  const pillTitle  = document.getElementById('pillTitle');
+  const pillTime   = document.getElementById('pillTime');
+  const pillArc    = document.getElementById('pillArc');
+  const pillSpeed  = document.getElementById('pillSpeed');
+
+  const CIRC       = 75.4;          // 2 * PI * 12
+  const SPEEDS     = [1, 1.25, 1.5, 2];
+  let   speedIdx   = 0;
+  let   currentEp  = null;          // currently loaded data-ep string
+
+  const PLAY_PATH  = 'M8 5v14l11-7z';
+  const PAUSE_PATH = 'M6 19h4V5H6v14zm8-14v14h4V5h-4z';
+
+  /* ── Helpers ───────────────────────────────────────────── */
+  function fmt(s) {
+    if (!isFinite(s)) return '0:00:00';
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = Math.floor(s % 60);
+    return h + ':' + String(m).padStart(2, '0') + ':' + String(sec).padStart(2, '0');
+  }
+
+  function setIcon(playing) {
+    pillIcon.innerHTML = '<path d="' + (playing ? PAUSE_PATH : PLAY_PATH) + '"/>';
+  }
+
+  /* ── Load & play an episode ────────────────────────────── */
+  function loadEpisode(chapter) {
+    const ep    = chapter.dataset.ep;
+    const url   = chapter.dataset.audio;
+    const title = chapter.dataset.title;
+
+    if (currentEp !== ep) {
+      audio.src   = url;
+      currentEp   = ep;
+      pillTitle.textContent = title;
+      pillArc.style.strokeDashoffset = CIRC;
+    }
+
+    audio.play();
+    pill.classList.add('visible');
+  }
+
+  /* ── Play triggers ─────────────────────────────────────── */
+  document.querySelectorAll('.play-trigger').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      loadEpisode(btn.closest('.chapter'));
+    });
+  });
+
+  /* ── Pill: toggle play/pause ───────────────────────────── */
+  pillToggle.addEventListener('click', function () {
+    if (!audio.src) return;
+    if (audio.paused) { audio.play(); } else { audio.pause(); }
+  });
+
+  /* ── Pill: speed cycling ───────────────────────────────── */
+  pillSpeed.addEventListener('click', function () {
+    speedIdx = (speedIdx + 1) % SPEEDS.length;
+    audio.playbackRate = SPEEDS[speedIdx];
+    pillSpeed.textContent = SPEEDS[speedIdx] + '\u00d7';
+  });
+
+  /* ── Audio events ──────────────────────────────────────── */
+  audio.addEventListener('play',  function () { setIcon(true); });
+  audio.addEventListener('pause', function () { setIcon(false); });
+
+  audio.addEventListener('timeupdate', function () {
+    if (!audio.duration) return;
+    const pct = audio.currentTime / audio.duration;
+    pillArc.style.strokeDashoffset = CIRC * (1 - pct);
+    pillTime.textContent = fmt(audio.currentTime);
+  });
+
+  audio.addEventListener('ended', function () {
+    setIcon(false);
+    pillArc.style.strokeDashoffset = 0; // full ring when done
+  });
+
+})();
+</script>
+
+</body>
+</html>

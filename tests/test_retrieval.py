@@ -26,6 +26,7 @@ class TestRetrievalService:
             axis_id="ax1",
             name="Cognitive Biases",
             description="How cognitive biases affect decisions.",
+            theme_importance_score=0.8,
             guiding_questions=["What biases exist?", "How do they manifest?"],
             keywords=["bias", "heuristic", "judgment"],
         )
@@ -40,6 +41,7 @@ class TestRetrievalService:
         axis = ThematicAxis(
             axis_id="ax1", name="Test",
             description="Test axis",
+            theme_importance_score=0.5,
         )
         result = service.retrieve_for_axis(
             axis=axis, project_id="proj1",

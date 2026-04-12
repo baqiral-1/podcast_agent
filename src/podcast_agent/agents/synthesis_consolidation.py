@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from podcast_agent.agents.base import Agent
 from podcast_agent.prompts import synthesis_consolidation_instructions
-from podcast_agent.schemas.models import SynthesisMap
+from podcast_agent.schemas.models import SynthesisConsolidationResult
 
 
 class SynthesisConsolidationAgent(Agent):
     """Consolidates primitives into the cluster-first synthesis artifact."""
 
     schema_name = "synthesis_consolidation"
-    response_model = SynthesisMap
+    response_model = SynthesisConsolidationResult
     instructions = synthesis_consolidation_instructions()
 
     def build_payload(

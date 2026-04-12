@@ -762,21 +762,17 @@ function loadEpisode(index, autoplay) {
   waveformBars = generateBars(ep.num, barCount);
   drawWaveform(0);
 
-  // Load audio — use <source type="audio/mpeg"> so the browser
-  // knows the content type (GitHub serves application/octet-stream)
-  audioEl.innerHTML = "";
-  var source = document.createElement("source");
-  source.src = ep.audio;
-  source.type = "audio/mpeg";
-  audioEl.appendChild(source);
-  audioEl.load();
+  // Load audio
+  audioEl.src = ep.audio;
   audioEl.playbackRate = speedOptions[speedIndex];
 
   // Update playlist
   updatePlaylistActive();
 
   if (autoplay) {
-    audioEl.play().then(() => setPlaying(true)).catch(e => console.warn("Play failed:", e));
+    audioEl.play().then(() => {
+      setPlaying(true);
+    }).catch(() => {});
   } else {
     setPlaying(false);
   }
@@ -883,7 +879,7 @@ btnPlay.addEventListener("click", () => {
     if (!audioEl.src || audioEl.src === "") {
       loadEpisode(0, true);
     } else {
-      audioEl.play().then(() => setPlaying(true)).catch(e => console.warn("Play failed:", e));
+      audioEl.play().then(() => setPlaying(true)).catch(() => {});
     }
   }
 });

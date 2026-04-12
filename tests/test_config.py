@@ -14,6 +14,8 @@ class TestLLMConfig:
         assert config.temperature == 1.0
         assert config.timeout_seconds == 600.0
         assert config.base_url == "https://api.openai.com/v1"
+        assert config.reasoning_effort == "xhigh"
+        assert config.provider_overrides["synthesis_primitives"] == "anthropic"
 
     def test_resolve_temperature_with_agent_config(self):
         config = LLMConfig(
@@ -32,29 +34,26 @@ class TestLLMConfig:
         assert config.resolve_temperature("synthesis_primitives") == 0.8
         assert config.resolve_temperature("synthesis_consolidation") == 0.6
         assert config.resolve_temperature("grounding_validation") == 0.2
-        assert config.resolve_temperature("style_audit") == 0.2
 
     def test_resolve_model_defaults(self):
         config = LLMConfig()
         assert config.resolve_model("chapter_summary") == "claude-haiku-4-5"
         assert config.resolve_model("synthesis_primitives") == "claude-opus-4-6"
         assert config.resolve_model("synthesis_consolidation") == "claude-opus-4-6"
-        assert config.resolve_model("style_audit") == "claude-sonnet-4-6"
 
     def test_resolve_max_retry_attempts_defaults(self):
         config = LLMConfig()
         assert config.resolve_max_retry_attempts("chapter_summary") == 3
         assert config.resolve_max_retry_attempts("passage_extraction") == 4
         assert config.resolve_max_retry_attempts("synthesis_primitives") == 2
-        assert config.resolve_max_retry_attempts("style_audit") == 2
+        assert config.resolve_max_retry_attempts("episode_planning") == 3
         assert config.resolve_max_retry_attempts("unknown_agent") == 2
 
     def test_resolve_timeout_seconds_defaults(self):
         config = LLMConfig()
         assert config.resolve_timeout_seconds("passage_extraction") == 480.0
-        assert config.resolve_timeout_seconds("synthesis_primitives") == 1200.0
-        assert config.resolve_timeout_seconds("synthesis_consolidation") == 900.0
-        assert config.resolve_timeout_seconds("style_audit") == 600.0
+        assert config.resolve_timeout_seconds("synthesis_primitives") == 2400.0
+        assert config.resolve_timeout_seconds("synthesis_consolidation") == 1800.0
         assert config.resolve_timeout_seconds("unknown_agent") == 600.0
 
     def test_resolve_concurrency_limit_defaults(self):
@@ -62,22 +61,18 @@ class TestLLMConfig:
         assert config.resolve_concurrency_limit("chapter_summary") == 25
         assert config.resolve_concurrency_limit("synthesis_primitives") == 3
         assert config.resolve_concurrency_limit("synthesis_consolidation") == 4
-        assert config.resolve_concurrency_limit("episode_planning") == 8
-        assert config.resolve_concurrency_limit("style_audit") == 8
+        assert config.resolve_concurrency_limit("episode_planning") == 9
+        assert config.resolve_concurrency_limit("episode_writing") == 9
+        assert config.resolve_concurrency_limit("spoken_delivery") == 9
         assert config.resolve_concurrency_limit("unknown_agent") is None
 
     def test_resolve_thinking_budget_defaults(self):
         config = LLMConfig()
         assert config.resolve_thinking_budget("theme_decomposition") == 20_000
-        assert config.resolve_thinking_budget("synthesis_primitives") == 20_000
-        assert config.resolve_thinking_budget("synthesis_consolidation") == 15_000
-        assert config.resolve_thinking_budget("episode_planning") == 30_000
-        assert config.resolve_thinking_budget("style_audit") == 8_000
+        assert config.resolve_thinking_budget("synthesis_primitives") == 35_000
+        assert config.resolve_thinking_budget("synthesis_consolidation") == 20_000
+        assert config.resolve_thinking_budget("episode_planning") == 15_000
         assert config.resolve_thinking_budget("chapter_summary") is None
-
-    def test_anthropic_max_tokens_uses_override_for_style_audit(self):
-        config = LLMConfig()
-        assert config.resolve_anthropic_max_tokens("style_audit") == 64000
 
     def test_normalizes_openai_base_url(self):
         config = LLMConfig(base_url="https://api.openai.com")
@@ -98,28 +93,33 @@ class TestTTSConfig:
 class TestPipelineRuntimeConfig:
     def test_defaults(self):
         config = PipelineRuntimeConfig()
-        assert config.max_chunk_words == 400
-        assert config.chunk_overlap_words == 50
+        assert config.max_chunk_words == 1000
+        assert config.chunk_overlap_words == 75
         assert config.max_repair_attempts == 3
-        assert config.episode_write_concurrency == 8
-        assert config.tts_concurrency == 4
-        assert config.spoken_words_per_minute == 120
+        assert config.episode_planning_concurrency == 9
+        assert config.episode_write_concurrency == 9
+        assert config.tts_concurrency == 12
+        assert config.spoken_words_per_minute == 140
 
     def test_thematic_defaults(self):
         config = PipelineRuntimeConfig()
         assert config.max_axes == 15
         assert config.min_axes == 10
         assert config.passage_retrieval_percentage == 0.25
-        assert config.pre_axis_total_budget == 1800
-        assert config.post_axis_total_budget == 1200
-        assert config.post_axis_cap == 120
+        assert config.pre_axis_total_budget == 1200
+        assert config.passage_retrieval_min_per_book == 10
+        assert config.passage_retrieval_max_per_book == 25
+        assert config.axis_candidate_target_total == 60
+        assert config.pre_axis_floor == 30
+        assert config.admission_floor_per_book == 0
+        assert config.retrieval_relevance_power == 2.5
         assert config.synthesis_axis_pct == 1.0
         assert config.synthesis_axis_min == 10
         assert config.synthesis_axis_max == 15
         assert config.planning_axis_pct == 1.0
         assert config.planning_axis_min == 10
         assert config.planning_axis_max == 15
-        assert config.synthesis_total_passage_cap == 750
+        assert config.synthesis_total_passage_cap == 720
         assert config.planning_total_passage_cap == 300
         assert config.passage_extraction_concurrency == 8
         assert config.llm_global_max_concurrency == 30
@@ -127,6 +127,16 @@ class TestPipelineRuntimeConfig:
     def test_rejects_removed_retrieval_weighting_fields(self):
         with pytest.raises(ValidationError):
             PipelineRuntimeConfig(retrieval_conf_weight=0.2)
+        with pytest.raises(ValidationError):
+            PipelineRuntimeConfig(rerank_top_k=30)
+        with pytest.raises(ValidationError):
+            PipelineRuntimeConfig(post_axis_total_budget=1200)
+        with pytest.raises(ValidationError):
+            PipelineRuntimeConfig(post_axis_floor=20)
+        with pytest.raises(ValidationError):
+            PipelineRuntimeConfig(post_axis_cap=125)
+        with pytest.raises(ValidationError):
+            PipelineRuntimeConfig(post_axis_signal_power=2.5)
 
     def test_retrieval_budget_bounds_validation(self):
         with pytest.raises(ValueError, match="passage_retrieval_max_per_book"):
@@ -136,8 +146,6 @@ class TestPipelineRuntimeConfig:
             )
 
     def test_axis_budget_bounds_validation(self):
-        with pytest.raises(ValueError, match="post_axis_cap"):
-            PipelineRuntimeConfig(post_axis_floor=50, post_axis_cap=20)
         with pytest.raises(ValueError, match="synthesis_axis_max"):
             PipelineRuntimeConfig(synthesis_axis_min=40, synthesis_axis_max=20)
         with pytest.raises(ValueError, match="planning_axis_max"):

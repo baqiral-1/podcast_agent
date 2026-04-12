@@ -151,14 +151,6 @@ def _build_run(tmp_path: Path) -> Path:
             "transitions": [],
         },
     )
-    _write_json(
-        episode_dir / "style_audit.json",
-        {
-            "episode_number": 1,
-            "warnings": [{"warning_type": "author_hand_language", "text_unit_id": "section_1", "message": "Warning"}],
-            "counts_by_type": {"author_hand_language": 1},
-        },
-    )
 
     return run_dir
 
@@ -173,7 +165,6 @@ def test_generate_run_stats_html(tmp_path: Path):
     assert "War on Terror" in html
     assert "Turning points: 1" in html
     assert "Clusters: 1" in html
-    assert "Style warnings:</strong> 1" in html
     assert "Driving question:" in html
 
 

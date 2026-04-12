@@ -16,6 +16,8 @@ from podcast_agent.schemas.models import (
     FramingBlock,
     LiveQuestion,
     NarrativeStrategy,
+    ProseSection,
+    ScriptTransition,
     SceneActor,
     SceneCard,
     SpeechHints,
@@ -23,11 +25,11 @@ from podcast_agent.schemas.models import (
     SpokenSection,
     SpokenTransition,
     StrategyEpisode,
-    StyleAuditReport,
-    StyleWarning,
+    SynthesisConsolidationResult,
     SynthesisMap,
     ThematicProject,
     TurningPoint,
+    PipelineConfig,
 )
 
 
@@ -78,6 +80,17 @@ class TestThematicProject:
     def test_recommended_episode_count_rejects_old_lower_bound(self):
         with pytest.raises(ValidationError):
             ThematicProject(theme="War on terror", recommended_episode_count=5)
+
+    def test_pipeline_config_rejects_scene_card_bound_inversion(self):
+        with pytest.raises(ValidationError, match="scene_card_target_max"):
+            PipelineConfig(scene_card_target_min=40, scene_card_target_max=25)
+
+    def test_pipeline_config_rejects_removed_scene_batch_fields(self):
+        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+            PipelineConfig(scene_batch_min_cards=1)
+
+    def test_pipeline_config_defaults_synthesis_cap_to_720(self):
+        assert PipelineConfig().synthesis_total_passage_cap == 720
 
 
 class TestSynthesisModels:
@@ -167,24 +180,61 @@ class TestSynthesisModels:
         assert restored.episode_candidate_clusters[0].primary_member_id == "tp_1"
         assert restored.live_questions[0].candidate_readings[1].label == "reading_b"
 
-
-class TestNarrativeStrategy:
-    def test_strategy_episode_requires_primary_on_first_and_last_occurrence(self):
-        with pytest.raises(ValidationError, match="first cluster_path occurrence must be primary"):
-            StrategyEpisode(
-                episode_number=1,
-                title="Episode 1",
-                driving_question="What changed?",
-                arc_summary="Arc",
-                cluster_path=[
-                    ClusterPathOccurrence(
-                        occurrence_id="occ_1",
+    def test_synthesis_consolidation_result_rejects_unknown_cluster_member_ids(self):
+        with pytest.raises(ValidationError, match="unknown member_ids"):
+            SynthesisConsolidationResult(
+                project_id="proj",
+                turning_point_ids=["tp_1"],
+                episode_candidate_clusters=[
+                    EpisodeCandidateCluster(
                         cluster_id="cluster_1",
-                        usage="echo",
-                        transition_note="",
+                        title="Cluster",
+                        summary="Summary",
+                        primary_member_id="tp_1",
+                        member_ids=["tp_1", "tp_999"],
+                        local_question="What changes?",
+                        local_payoff_shape="reveal",
                     )
                 ],
             )
+
+    def test_synthesis_consolidation_result_accepts_family_id_universe(self):
+        result = SynthesisConsolidationResult(
+            project_id="proj",
+            turning_point_ids=["tp_1"],
+            live_question_ids=["lq_1"],
+            episode_candidate_clusters=[
+                EpisodeCandidateCluster(
+                    cluster_id="cluster_1",
+                    title="Cluster",
+                    summary="Summary",
+                    primary_member_id="tp_1",
+                    member_ids=["tp_1", "lq_1"],
+                    local_question="What changes?",
+                    local_payoff_shape="reveal",
+                )
+            ],
+        )
+        assert result.episode_candidate_clusters[0].member_ids == ["tp_1", "lq_1"]
+
+
+class TestNarrativeStrategy:
+    def test_strategy_episode_allows_echo_on_first_and_last_occurrence(self):
+        episode = StrategyEpisode(
+            episode_number=1,
+            title="Episode 1",
+            driving_question="What changed?",
+            arc_summary="Arc",
+            cluster_path=[
+                ClusterPathOccurrence(
+                    occurrence_id="occ_1",
+                    cluster_id="cluster_1",
+                    usage="echo",
+                    transition_note="",
+                )
+            ],
+        )
+        assert episode.cluster_path[0].usage == "echo"
 
     def test_strategy_episode_requires_transition_notes_after_first_occurrence(self):
         with pytest.raises(ValidationError, match="transition_note"):
@@ -248,8 +298,61 @@ class TestNarrativeStrategy:
                 ],
             )
 
+    def test_narrative_strategy_requires_at_least_one_primary_cluster_per_episode(self):
+        with pytest.raises(ValidationError, match="must contain at least one primary cluster"):
+            NarrativeStrategy(
+                strategy_type="convergence",
+                justification="Use converging local causal chains.",
+                series_arc="Each episode carries one cluster home.",
+                episode_arc_outline=["Ep 1"],
+                episodes=[
+                    StrategyEpisode(
+                        episode_number=1,
+                        title="Episode 1",
+                        driving_question="Why begin here?",
+                        arc_summary="Arc 1",
+                        cluster_path=[
+                            ClusterPathOccurrence(
+                                occurrence_id="occ_1",
+                                cluster_id="cluster_1",
+                                usage="echo",
+                                transition_note="",
+                            )
+                        ],
+                    ),
+                ],
+            )
+
 
 class TestPlanningModels:
+    def test_scene_card_allows_noncanonical_scene_role(self):
+        card = SceneCard(
+            scene_id="scene_reveal",
+            title="A hidden mechanism surfaces",
+            scene_role="reveal",
+            dominant_cluster_occurrence_id="ep1_occ1",
+            entry_image="The ledger opens.",
+            local_question="What finally becomes visible?",
+            observable_detail="A missing column is now clear.",
+            intended_move="Expose the mechanism.",
+            passage_ids=["p1"],
+        )
+        assert card.scene_role == "reveal"
+
+    def test_scene_card_rejects_blank_scene_role(self):
+        with pytest.raises(ValidationError, match="scene_role must not be blank"):
+            SceneCard(
+                scene_id="scene_blank",
+                title="Invalid role",
+                scene_role="   ",
+                dominant_cluster_occurrence_id="ep1_occ1",
+                entry_image="Image",
+                local_question="Question",
+                observable_detail="Detail",
+                intended_move="Move",
+                passage_ids=["p1"],
+            )
+
     def test_normal_scene_card_requires_dominant_occurrence(self):
         with pytest.raises(ValidationError, match="normal scene cards require"):
             SceneCard(
@@ -292,6 +395,18 @@ class TestPlanningModels:
                 scene_cards=[_normal_scene()],
             )
 
+    def test_episode_plan_draft_allows_non_scene_withhold_until_reference(self):
+        scene = _normal_scene()
+        scene.withhold_until = "Full consequences are developed in Episode 5."
+        draft = EpisodePlanDraft(
+            episode_number=1,
+            title="Episode 1",
+            driving_question="Why begin here?",
+            framing=_framing(),
+            scene_cards=[scene],
+        )
+        assert draft.scene_cards[0].withhold_until == "Full consequences are developed in Episode 5."
+
     def test_episode_plan_roundtrip(self):
         draft = EpisodePlan(
             episode_number=1,
@@ -311,6 +426,38 @@ class TestPlanningModels:
 
 
 class TestSpeechAndStyleModels:
+    def test_prose_section_accepts_non_enum_movement_goal(self):
+        section = ProseSection.model_validate(
+            {
+                "section_id": "section_1",
+                "scene_card_ids": ["scene_1"],
+                "movement_goal": "setup",
+                "text": "The first image lands before the thesis.",
+            }
+        )
+        assert section.movement_goal == "setup"
+
+    def test_prose_section_allows_empty_text(self):
+        section = ProseSection.model_validate(
+            {
+                "section_id": "section_1",
+                "scene_card_ids": ["scene_1"],
+                "movement_goal": "setup",
+                "text": "",
+            }
+        )
+        assert section.text == ""
+
+    def test_script_transition_allows_empty_text(self):
+        transition = ScriptTransition.model_validate(
+            {
+                "transition_id": "transition_1",
+                "after_section_id": "section_1",
+                "text": "",
+            }
+        )
+        assert transition.text == ""
+
     def test_spoken_script_roundtrip_preserves_sections_and_transitions(self):
         spoken = SpokenScript(
             episode_number=1,
@@ -333,18 +480,3 @@ class TestSpeechAndStyleModels:
         restored = SpokenScript.model_validate(json.loads(spoken.model_dump_json()))
         assert restored.sections[0].speech_hints.style == "measured"
         assert restored.transitions[0].transition_id == "transition_1"
-
-    def test_style_audit_report_counts_roundtrip(self):
-        report = StyleAuditReport(
-            episode_number=1,
-            warnings=[
-                StyleWarning(
-                    warning_type="author_hand_language",
-                    text_unit_id="section_1",
-                    message="Avoid telling the listener what the author means.",
-                )
-            ],
-            counts_by_type={"author_hand_language": 1},
-        )
-        restored = StyleAuditReport.model_validate(json.loads(report.model_dump_json()))
-        assert restored.counts_by_type["author_hand_language"] == 1

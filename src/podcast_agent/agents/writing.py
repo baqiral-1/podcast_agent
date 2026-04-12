@@ -57,8 +57,8 @@ class WritingAgent(Agent):
         active_scene_card_ids: list[str],
         passages: list[dict],
         book_metadata: list[dict],
-        previous_sections: list[dict] | None = None,
-        previous_transitions: list[dict] | None = None,
+        batch_target_word_count_lower: int | None = None,
+        batch_target_word_count_higher: int | None = None,
         skip_grounding: bool = False,
     ) -> dict:
         payload = {
@@ -70,10 +70,10 @@ class WritingAgent(Agent):
             "books": book_metadata,
             "skip_grounding": skip_grounding,
         }
-        if previous_sections:
-            payload["previous_sections"] = previous_sections
-        if previous_transitions:
-            payload["previous_transitions"] = previous_transitions
+        if batch_target_word_count_lower is not None:
+            payload["batch_target_word_count_lower"] = int(batch_target_word_count_lower)
+        if batch_target_word_count_higher is not None:
+            payload["batch_target_word_count_higher"] = int(batch_target_word_count_higher)
         return payload
 
 

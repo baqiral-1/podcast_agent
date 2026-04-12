@@ -1,0 +1,1237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agentic Podcasts | The Iranian Revolution — Timeline</title>
+<meta name="description" content="Navigate five centuries of Iranian upheaval on an interactive historical timeline. Seven episodes, ten books.">
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html {
+    overflow-x: hidden;
+  }
+
+  body {
+    background: #060708;
+    color: #e8dcc8;
+    font-family: "Avenir Next", "SF Pro Text", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+    line-height: 1.6;
+  }
+
+  a { color: inherit; text-decoration: none; }
+
+  /* ─── FILM GRAIN ────────────────────────────────────────── */
+
+  .grain {
+    position: fixed;
+    top: -50%; left: -50%;
+    width: 200%; height: 200%;
+    z-index: 9000;
+    pointer-events: none;
+    opacity: 0.035;
+  }
+
+  /* ─── PROGRESS BAR (top of viewport) ────────────────────── */
+
+  .scroll-progress {
+    position: fixed;
+    top: 0; left: 0;
+    height: 2px;
+    width: 0%;
+    background: #a04040;
+    z-index: 9500;
+    transition: width 0.05s linear;
+  }
+
+  /* ─── OPENING SECTION ───────────────────────────────────── */
+
+  .opening {
+    position: relative;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    overflow: hidden;
+  }
+
+  .opening::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 60% 50% at 50% 60%, rgba(160,64,64,0.08) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .opening-title {
+    font-size: clamp(3rem, 8vw, 6rem);
+    font-weight: 200;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    line-height: 1.1;
+    position: relative;
+    z-index: 1;
+  }
+
+  .opening-subtitle {
+    margin-top: 1.2rem;
+    font-size: clamp(0.85rem, 1.8vw, 1.1rem);
+    font-weight: 300;
+    color: rgba(232,220,200,0.45);
+    letter-spacing: 0.08em;
+    position: relative;
+    z-index: 1;
+  }
+
+  .scroll-hint {
+    position: absolute;
+    bottom: 2.5rem;
+    font-size: 0.8rem;
+    font-weight: 400;
+    color: rgba(232,220,200,0.3);
+    letter-spacing: 0.06em;
+    animation: pulseHint 2.5s ease-in-out infinite;
+    z-index: 1;
+  }
+
+  @keyframes pulseHint {
+    0%, 100% { opacity: 0.3; transform: translateY(0); }
+    50% { opacity: 0.6; transform: translateY(-4px); }
+  }
+
+  /* ─── TIMELINE EXPERIENCE ───────────────────────────────── */
+
+  .timeline-experience {
+    position: relative;
+    height: 700vh;
+  }
+
+  /* ─── STICKY FRAME (holds everything visible) ───────────── */
+
+  .sticky-frame {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ─── EPISODE CONTENT ABOVE TIMELINE ────────────────────── */
+
+  .content-above {
+    flex: 1 1 0;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding-bottom: 2rem;
+    position: relative;
+    min-height: 0;
+  }
+
+  .episode-image-wrap {
+    position: relative;
+    width: 60vw;
+    max-width: 800px;
+    max-height: 35vh;
+    overflow: hidden;
+    border-radius: 4px;
+  }
+
+  .episode-image-wrap img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    filter: grayscale(0.7) contrast(1.1);
+    mix-blend-mode: luminosity;
+  }
+
+  /* Duotone crimson overlay */
+  .episode-image-wrap::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      to bottom,
+      rgba(160,64,64,0.15) 0%,
+      rgba(160,64,64,0.25) 60%,
+      rgba(6,7,8,0.85) 100%
+    );
+    pointer-events: none;
+  }
+
+  .episode-image-title {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    padding: 1.5rem 1.5rem 1rem;
+    z-index: 2;
+    font-size: clamp(1rem, 2.5vw, 1.5rem);
+    font-weight: 300;
+    letter-spacing: 0.04em;
+  }
+
+  .episode-image-era {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: #a04040;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 0.3rem;
+  }
+
+  /* Cross-fade wrapper */
+  .fade-panel {
+    opacity: 0;
+    transition: opacity 0.6s ease;
+    pointer-events: none;
+  }
+
+  .fade-panel.active {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* All image panels stack in one spot */
+  .image-panel {
+    position: absolute;
+    bottom: 2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 60vw;
+    max-width: 800px;
+  }
+
+  .image-panel .episode-image-wrap {
+    width: 100%;
+  }
+
+  /* ─── TIMELINE BAR AREA ─────────────────────────────────── */
+
+  .timeline-bar-area {
+    flex: 0 0 auto;
+    height: 60px;
+    position: relative;
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+  }
+
+  /* ambient glow behind active node */
+  .timeline-glow {
+    position: absolute;
+    width: 200px;
+    height: 80px;
+    background: radial-gradient(ellipse, rgba(160,64,64,0.2) 0%, transparent 70%);
+    top: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    transition: left 0.5s ease;
+    z-index: 0;
+  }
+
+  .timeline-track {
+    position: relative;
+    width: 3000px;
+    height: 100%;
+    transition: transform 0.15s ease-out;
+  }
+
+  /* The line itself */
+  .timeline-track::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 40px;
+    right: 40px;
+    height: 2px;
+    background: rgba(160,64,64,0.3);
+    transform: translateY(-50%);
+    box-shadow: 0 0 12px rgba(160,64,64,0.08);
+  }
+
+  /* ─── YEAR MARKERS ──────────────────────────────────────── */
+
+  .year-marker {
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, 12px);
+    font-size: 0.65rem;
+    font-weight: 400;
+    color: rgba(232,220,200,0.25);
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+    user-select: none;
+  }
+
+  .year-marker::before {
+    content: '';
+    position: absolute;
+    top: -10px;
+    left: 50%;
+    width: 1px;
+    height: 6px;
+    background: rgba(160,64,64,0.2);
+    transform: translateX(-50%);
+  }
+
+  /* ─── EPISODE NODES ─────────────────────────────────────── */
+
+  .ep-node {
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%) scale(1);
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 2px solid rgba(160,64,64,0.3);
+    background: #060708;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 5;
+    transition: all 0.35s ease;
+  }
+
+  .ep-node span {
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: rgba(232,220,200,0.5);
+    transition: color 0.35s ease;
+    line-height: 1;
+  }
+
+  .ep-node.active {
+    background: #a04040;
+    border-color: #a04040;
+    box-shadow: 0 0 20px rgba(160,64,64,0.5), 0 0 40px rgba(160,64,64,0.15);
+    transform: translate(-50%, -50%) scale(1.3);
+  }
+
+  .ep-node.active span {
+    color: #e8dcc8;
+  }
+
+  .ep-node:not(.active):hover {
+    border-color: rgba(160,64,64,0.6);
+    transform: translate(-50%, -50%) scale(1.15);
+  }
+
+  /* Tooltip */
+  .ep-node .node-tooltip {
+    position: absolute;
+    bottom: calc(100% + 10px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(6,7,8,0.92);
+    border: 1px solid rgba(160,64,64,0.25);
+    padding: 0.35rem 0.65rem;
+    border-radius: 3px;
+    font-size: 0.7rem;
+    font-weight: 400;
+    white-space: nowrap;
+    color: rgba(232,220,200,0.7);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+  }
+
+  .ep-node:hover .node-tooltip,
+  .ep-node.active .node-tooltip {
+    opacity: 1;
+  }
+
+  /* connector lines from active node */
+  .connector-above, .connector-below {
+    position: absolute;
+    left: 50%;
+    width: 1px;
+    background: rgba(160,64,64,0.15);
+    transform: translateX(-50%);
+    pointer-events: none;
+    transition: opacity 0.5s ease;
+    opacity: 0;
+  }
+
+  .ep-node.active .connector-above {
+    bottom: 100%;
+    height: 60px;
+    opacity: 1;
+  }
+
+  .ep-node.active .connector-below {
+    top: 100%;
+    height: 60px;
+    opacity: 1;
+  }
+
+  /* ─── CONTENT BELOW TIMELINE ────────────────────────────── */
+
+  .content-below {
+    flex: 1 1 0;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 2rem;
+    position: relative;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .text-panel {
+    position: absolute;
+    top: 2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 100%;
+    max-width: 600px;
+    padding: 0 1.5rem;
+    text-align: center;
+  }
+
+  .ep-description {
+    font-size: 0.92rem;
+    font-weight: 300;
+    line-height: 1.75;
+    color: rgba(232,220,200,0.65);
+    margin-bottom: 1.5rem;
+  }
+
+  /* ─── AUDIO PLAYER ──────────────────────────────────────── */
+
+  .audio-player {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    max-width: 480px;
+    margin: 0 auto;
+  }
+
+  .play-btn {
+    width: 3rem;
+    height: 3rem;
+    flex-shrink: 0;
+    border-radius: 50%;
+    border: 1.5px solid rgba(160,64,64,0.5);
+    background: transparent;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.25s ease;
+    padding: 0;
+  }
+
+  .play-btn:hover {
+    border-color: #a04040;
+    background: rgba(160,64,64,0.08);
+  }
+
+  .play-btn svg {
+    width: 18px;
+    height: 18px;
+    fill: #e8dcc8;
+  }
+
+  .player-track {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    min-width: 0;
+  }
+
+  .progress-wrap {
+    position: relative;
+    width: 100%;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+  }
+
+  .progress-bg {
+    position: absolute;
+    top: 50%; left: 0; right: 0;
+    height: 2px;
+    background: rgba(160,64,64,0.2);
+    transform: translateY(-50%);
+    border-radius: 1px;
+  }
+
+  .progress-fill {
+    position: absolute;
+    top: 50%; left: 0;
+    height: 2px;
+    width: 0%;
+    background: #a04040;
+    transform: translateY(-50%);
+    border-radius: 1px;
+    pointer-events: none;
+  }
+
+  .progress-thumb {
+    position: absolute;
+    top: 50%;
+    left: 0%;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #a04040;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+  }
+
+  .audio-player:hover .progress-thumb {
+    opacity: 1;
+  }
+
+  .player-info {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.7rem;
+    color: rgba(232,220,200,0.35);
+  }
+
+  .speed-btn {
+    background: none;
+    border: 1px solid rgba(160,64,64,0.3);
+    color: rgba(232,220,200,0.45);
+    font-size: 0.65rem;
+    font-family: inherit;
+    padding: 0.15rem 0.4rem;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .speed-btn:hover {
+    border-color: #a04040;
+    color: #e8dcc8;
+  }
+
+  /* ─── FOOTER ────────────────────────────────────────────── */
+
+  .timeline-footer {
+    padding: 4rem 2rem;
+    text-align: center;
+  }
+
+  .timeline-footer a {
+    font-size: 0.8rem;
+    color: rgba(232,220,200,0.3);
+    letter-spacing: 0.06em;
+    transition: color 0.2s ease;
+  }
+
+  .timeline-footer a:hover {
+    color: rgba(232,220,200,0.6);
+  }
+
+  /* ─── MOBILE: VERTICAL TIMELINE ─────────────────────────── */
+
+  @media (max-width: 768px) {
+
+    .opening-title {
+      font-size: clamp(2rem, 10vw, 3.5rem);
+      padding: 0 1rem;
+    }
+
+    .scroll-hint { display: none; }
+
+    .timeline-experience {
+      height: auto;
+    }
+
+    .sticky-frame {
+      position: relative;
+      height: auto;
+      flex-direction: column;
+    }
+
+    .content-above,
+    .timeline-bar-area,
+    .content-below {
+      display: none;
+    }
+
+    /* Mobile vertical layout */
+    .mobile-timeline {
+      display: block;
+      position: relative;
+      padding: 2rem 0 4rem;
+    }
+
+    /* Vertical line */
+    .mobile-timeline::before {
+      content: '';
+      position: absolute;
+      left: 40px;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: rgba(160,64,64,0.2);
+    }
+
+    .mobile-episode {
+      position: relative;
+      min-height: 100vh;
+      padding: 3rem 1.5rem 3rem 72px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .mobile-node {
+      position: absolute;
+      left: 40px;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      border: 2px solid rgba(160,64,64,0.4);
+      background: #060708;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 2;
+    }
+
+    .mobile-node span {
+      font-size: 0.6rem;
+      font-weight: 600;
+      color: rgba(232,220,200,0.5);
+    }
+
+    .mobile-era {
+      position: absolute;
+      left: 62px;
+      top: 50%;
+      transform: translateY(calc(-50% - 22px));
+      font-size: 0.65rem;
+      color: #a04040;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-weight: 500;
+    }
+
+    .mobile-img {
+      width: 100%;
+      max-height: 200px;
+      object-fit: cover;
+      border-radius: 4px;
+      filter: grayscale(0.6) contrast(1.1);
+      margin-bottom: 1rem;
+    }
+
+    .mobile-title {
+      font-size: 1.3rem;
+      font-weight: 300;
+      letter-spacing: 0.03em;
+      margin-bottom: 0.8rem;
+    }
+
+    .mobile-desc {
+      font-size: 0.88rem;
+      font-weight: 300;
+      line-height: 1.7;
+      color: rgba(232,220,200,0.6);
+      margin-bottom: 1.2rem;
+    }
+
+    .mobile-player {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    .mobile-player .play-btn {
+      width: 2.5rem;
+      height: 2.5rem;
+    }
+
+    .mobile-player .play-btn svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    .mobile-player .player-track {
+      flex: 1;
+    }
+
+    /* desktop panels hidden */
+    .desktop-only { display: none !important; }
+  }
+
+  @media (min-width: 769px) {
+    .mobile-timeline { display: none !important; }
+  }
+
+</style>
+</head>
+<body>
+
+<!-- Film grain overlay -->
+<svg class="grain" xmlns="http://www.w3.org/2000/svg">
+  <filter id="grain-filter">
+    <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch"/>
+    <feColorMatrix type="saturate" values="0"/>
+  </filter>
+  <rect width="100%" height="100%" filter="url(#grain-filter)"/>
+</svg>
+
+<!-- Scroll progress bar -->
+<div class="scroll-progress" id="scrollProgress"></div>
+
+<!-- ────────────────────────────────────────────────────────
+     OPENING SECTION
+     ──────────────────────────────────────────────────────── -->
+
+<section class="opening">
+  <h1 class="opening-title">The Iranian<br>Revolution</h1>
+  <p class="opening-subtitle">Seven episodes. Ten books. Five centuries of upheaval.</p>
+  <div class="scroll-hint">Scroll to explore the timeline &rarr;</div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────
+     TIMELINE EXPERIENCE (Desktop)
+     ──────────────────────────────────────────────────────── -->
+
+<div class="timeline-experience desktop-only" id="timelineExperience">
+  <div class="sticky-frame" id="stickyFrame">
+
+    <!-- CONTENT ABOVE: Episode images (stacked, cross-faded) -->
+    <div class="content-above" id="contentAbove"></div>
+
+    <!-- TIMELINE BAR -->
+    <div class="timeline-bar-area" id="timelineBarArea">
+      <div class="timeline-glow" id="timelineGlow"></div>
+      <div class="timeline-track" id="timelineTrack">
+        <!-- Year markers and episode nodes injected by JS -->
+      </div>
+    </div>
+
+    <!-- CONTENT BELOW: Episode text + player (stacked, cross-faded) -->
+    <div class="content-below" id="contentBelow"></div>
+
+  </div>
+</div>
+
+<!-- ────────────────────────────────────────────────────────
+     MOBILE VERTICAL TIMELINE
+     ──────────────────────────────────────────────────────── -->
+
+<div class="mobile-timeline" id="mobileTimeline"></div>
+
+<!-- ────────────────────────────────────────────────────────
+     FOOTER
+     ──────────────────────────────────────────────────────── -->
+
+<footer class="timeline-footer">
+  <a href="https://github.com/baqiral-1/podcast_agent" target="_blank" rel="noopener">github</a>
+</footer>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ── Episode data ─────────────────────────────────────── */
+
+  const BASE = 'https://github.com/baqiral-1/podcast_agent/releases/download/iranian-revolution-episodes-1-7-20260407T1830/';
+
+  const episodes = [
+    {
+      num: 1,
+      title: 'The Thousand-Year Duel',
+      era: '1501\u20131906',
+      duration: '1:38:29',
+      durationSec: 5909,
+      img: 'images/iran-2.jpg',
+      audio: BASE + 'episode-1.mp3',
+      pos: 15,
+      desc: 'Establishes the deep structural foundations of Shi\u2019ite clerical autonomy. From the Safavid imposition of Shi\u2019ism in 1501 through the Usuli triumph, the Qajar dualism, and the Constitutional Revolution of 1906. Culminates with the paradox: Reza Shah\u2019s stripping of clerical prerogatives paradoxically strengthened the ulama\u2019s revolutionary capacity.'
+    },
+    {
+      num: 2,
+      title: 'The Modernizer\u2019s Trap',
+      era: '1925\u20131963',
+      duration: '1:56:00',
+      durationSec: 6960,
+      img: 'images/iran-3.jpg',
+      audio: BASE + 'episode-2.mp3',
+      pos: 30,
+      desc: 'Traces the self-defeating logic of Pahlavi modernization \u2014 military centralization, secular reform, clerical marginalization \u2014 through the AIOC\u2019s extraction, Mosaddeq\u2019s nationalization, the White Revolution\u2019s unintended consequences, and the oil boom\u2019s corrosive effects.'
+    },
+    {
+      num: 3,
+      title: 'The Foundational Trauma',
+      era: '1953',
+      duration: '1:52:30',
+      durationSec: 6750,
+      img: 'images/iran-4.jpg',
+      audio: BASE + 'episode-3.mp3',
+      pos: 40,
+      desc: 'The 1953 coup as foundational trauma connecting democratic aspirations to revolutionary radicalism. The coup\u2019s psychological legacy \u2014 branding the Shah as a foreign puppet \u2014 was more consequential than its operational details.'
+    },
+    {
+      num: 4,
+      title: 'The Invisible Revolution',
+      era: '1960s\u20131977',
+      duration: '1:43:18',
+      durationSec: 6198,
+      img: 'images/iran-5.jpg',
+      audio: BASE + 'episode-4.mp3',
+      pos: 55,
+      desc: 'The invisible revolution: three converging streams of intellectual preparation, organizational infrastructure, and Khomeini\u2019s rise from obscurity. A revolution that appeared spontaneous was built on deep preparation invisible to both SAVAK and the CIA.'
+    },
+    {
+      num: 5,
+      title: 'The Year of Living Dangerously',
+      era: '1978',
+      duration: '1:54:01',
+      durationSec: 6841,
+      img: 'images/iran-shah.jpg',
+      audio: BASE + 'episode-5.mp3',
+      pos: 65,
+      desc: 'The revolutionary year 1978: the forty-day mourning cycle from Qom through Black Friday to Muharram, the Shah\u2019s psychological collapse, the military\u2019s fracture, and Khomeini\u2019s strategic ambiguity from Paris.'
+    },
+    {
+      num: 6,
+      title: 'The Revolution Devours Its Children',
+      era: '1979\u20131981',
+      duration: '1:48:48',
+      durationSec: 6528,
+      img: 'images/iran-hostage.jpg',
+      audio: BASE + 'episode-6.mp3',
+      pos: 78,
+      desc: 'The revolution\u2019s aftermath: coalition fracture, hostage crisis as constitutional coup, elimination of moderates, and construction of a theocratic state that expanded the bureaucratic apparatus it inherited.'
+    },
+    {
+      num: 7,
+      title: 'The Crucible',
+      era: '1980\u20131988',
+      duration: '1:47:41',
+      durationSec: 6461,
+      img: 'images/iran-revolution.jpg',
+      audio: BASE + 'episode-7.mp3',
+      pos: 90,
+      desc: 'The revolution\u2019s crucible: Iran-Iraq War, 1988 mass executions, Montazeri\u2019s dissent, the Sunni-Shia geopolitical fault line. Was this inevitable or contingent? Both simultaneously.'
+    }
+  ];
+
+  const yearMarkers = [
+    { label: '1501 Safavids', pos: 8 },
+    { label: '1906 Constitution', pos: 20 },
+    { label: '1925 Pahlavis', pos: 26 },
+    { label: '1941 Allied Occupation', pos: 34 },
+    { label: '1953 Coup', pos: 41 },
+    { label: '1963 White Revolution', pos: 50 },
+    { label: '1977 Protests', pos: 60 },
+    { label: '1978 Revolution Year', pos: 66 },
+    { label: '1979 Islamic Republic', pos: 73 },
+    { label: '1980 Iran-Iraq War', pos: 83 },
+    { label: '1988 Ceasefire', pos: 95 }
+  ];
+
+  /* ── Shared audio element ─────────────────────────────── */
+
+  const audio = new Audio();
+  audio.preload = 'none';
+  let currentEpisode = -1;
+  let isPlaying = false;
+  const speeds = [1, 1.25, 1.5, 2];
+  let speedIdx = 0;
+
+  /* ── Build desktop timeline ───────────────────────────── */
+
+  const track = document.getElementById('timelineTrack');
+  const contentAbove = document.getElementById('contentAbove');
+  const contentBelow = document.getElementById('contentBelow');
+
+  // Year markers
+  yearMarkers.forEach(function (ym) {
+    var el = document.createElement('div');
+    el.className = 'year-marker';
+    el.style.left = ym.pos + '%';
+    el.textContent = ym.label;
+    track.appendChild(el);
+  });
+
+  // Episode nodes
+  episodes.forEach(function (ep, i) {
+    var node = document.createElement('div');
+    node.className = 'ep-node';
+    node.dataset.index = i;
+    node.style.left = ep.pos + '%';
+    node.innerHTML =
+      '<span>' + ep.num + '</span>' +
+      '<div class="node-tooltip">' + ep.title + '</div>' +
+      '<div class="connector-above"></div>' +
+      '<div class="connector-below"></div>';
+    node.addEventListener('click', function () {
+      scrollToEpisode(i);
+    });
+    track.appendChild(node);
+  });
+
+  // Image panels (above)
+  episodes.forEach(function (ep, i) {
+    var panel = document.createElement('div');
+    panel.className = 'image-panel fade-panel';
+    panel.id = 'imgPanel' + i;
+    panel.innerHTML =
+      '<div class="episode-image-wrap">' +
+        '<img src="' + ep.img + '" alt="' + ep.title + '" loading="lazy">' +
+        '<div class="episode-image-title">' +
+          '<span class="episode-image-era">' + ep.era + '</span>' +
+          ep.title +
+        '</div>' +
+      '</div>';
+    contentAbove.appendChild(panel);
+  });
+
+  // Text + player panels (below)
+  episodes.forEach(function (ep, i) {
+    var panel = document.createElement('div');
+    panel.className = 'text-panel fade-panel';
+    panel.id = 'txtPanel' + i;
+    panel.innerHTML =
+      '<p class="ep-description">' + ep.desc + '</p>' +
+      '<div class="audio-player" data-index="' + i + '">' +
+        '<button class="play-btn" aria-label="Play episode ' + ep.num + '">' +
+          '<svg viewBox="0 0 24 24"><path class="play-icon" d="M8 5v14l11-7z"/></svg>' +
+        '</button>' +
+        '<div class="player-track">' +
+          '<div class="progress-wrap">' +
+            '<div class="progress-bg"></div>' +
+            '<div class="progress-fill"></div>' +
+            '<div class="progress-thumb"></div>' +
+          '</div>' +
+          '<div class="player-info">' +
+            '<span class="time-display">0:00:00 / ' + ep.duration + '</span>' +
+            '<button class="speed-btn">1x</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    contentBelow.appendChild(panel);
+  });
+
+  /* ── Build mobile timeline ────────────────────────────── */
+
+  var mobileContainer = document.getElementById('mobileTimeline');
+  episodes.forEach(function (ep, i) {
+    var section = document.createElement('div');
+    section.className = 'mobile-episode';
+    section.innerHTML =
+      '<div class="mobile-node"><span>' + ep.num + '</span></div>' +
+      '<div class="mobile-era">' + ep.era + '</div>' +
+      '<img class="mobile-img" src="' + ep.img + '" alt="' + ep.title + '" loading="lazy">' +
+      '<div class="mobile-title">' + ep.title + '</div>' +
+      '<p class="mobile-desc">' + ep.desc + '</p>' +
+      '<div class="mobile-player audio-player" data-index="' + i + '">' +
+        '<button class="play-btn" aria-label="Play episode ' + ep.num + '">' +
+          '<svg viewBox="0 0 24 24"><path class="play-icon" d="M8 5v14l11-7z"/></svg>' +
+        '</button>' +
+        '<div class="player-track">' +
+          '<div class="progress-wrap">' +
+            '<div class="progress-bg"></div>' +
+            '<div class="progress-fill"></div>' +
+            '<div class="progress-thumb"></div>' +
+          '</div>' +
+          '<div class="player-info">' +
+            '<span class="time-display">0:00:00 / ' + ep.duration + '</span>' +
+            '<button class="speed-btn">1x</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    mobileContainer.appendChild(section);
+  });
+
+  /* ── Scroll-driven timeline logic ─────────────────────── */
+
+  var experience = document.getElementById('timelineExperience');
+  var glow = document.getElementById('timelineGlow');
+  var barArea = document.getElementById('timelineBarArea');
+  var activeIdx = -1;
+
+  function updateTimeline() {
+    var rect = experience.getBoundingClientRect();
+    var totalScroll = experience.offsetHeight - window.innerHeight;
+    var scrolled = -rect.top;
+    var progress = Math.max(0, Math.min(1, scrolled / totalScroll));
+
+    // Translate the 3000px track so the relevant portion is visible
+    var barWidth = barArea.offsetWidth;
+    var trackWidth = 3000;
+    var maxTranslate = trackWidth - barWidth;
+    var tx = -progress * maxTranslate;
+    track.style.transform = 'translateX(' + tx + 'px)';
+
+    // Determine which episode node is closest to viewport center
+    var centerScreen = barWidth / 2;
+    var bestDist = Infinity;
+    var bestIdx = 0;
+
+    episodes.forEach(function (ep, i) {
+      var nodeScreenX = (ep.pos / 100) * trackWidth + tx;
+      var dist = Math.abs(nodeScreenX - centerScreen);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestIdx = i;
+      }
+    });
+
+    // Update glow position
+    var activeNodeScreenX = (episodes[bestIdx].pos / 100) * trackWidth + tx;
+    glow.style.left = activeNodeScreenX + 'px';
+
+    // Switch active episode
+    if (bestIdx !== activeIdx) {
+      activateEpisode(bestIdx);
+    }
+  }
+
+  function activateEpisode(idx) {
+    activeIdx = idx;
+
+    // Nodes
+    var nodes = track.querySelectorAll('.ep-node');
+    nodes.forEach(function (n, i) {
+      n.classList.toggle('active', i === idx);
+    });
+
+    // Image panels
+    episodes.forEach(function (_, i) {
+      var ip = document.getElementById('imgPanel' + i);
+      var tp = document.getElementById('txtPanel' + i);
+      if (ip) ip.classList.toggle('active', i === idx);
+      if (tp) tp.classList.toggle('active', i === idx);
+    });
+  }
+
+  function scrollToEpisode(idx) {
+    var totalScroll = experience.offsetHeight - window.innerHeight;
+    var targetProgress = episodes[idx].pos / 100;
+    // Adjust: map the episode's position in track-space back to scroll position
+    // We need the episode node to be at center when scroll = targetScroll
+    var barWidth = barArea.offsetWidth;
+    var trackWidth = 3000;
+    var centerScreen = barWidth / 2;
+    // nodeScreenX = (pos/100)*trackWidth + tx = centerScreen
+    // tx = centerScreen - (pos/100)*trackWidth
+    // tx = -progress * maxTranslate => progress = -(tx) / maxTranslate
+    var maxTranslate = trackWidth - barWidth;
+    var desiredTx = centerScreen - (episodes[idx].pos / 100) * trackWidth;
+    var desiredProgress = Math.max(0, Math.min(1, -desiredTx / maxTranslate));
+    var targetScroll = desiredProgress * totalScroll;
+    var experienceTop = experience.offsetTop;
+    window.scrollTo({ top: experienceTop + targetScroll, behavior: 'smooth' });
+  }
+
+  /* ── Scroll progress bar ──────────────────────────────── */
+
+  var progressBar = document.getElementById('scrollProgress');
+
+  function updateProgress() {
+    var scrollTop = window.pageYOffset;
+    var docHeight = document.documentElement.scrollHeight - window.innerHeight;
+    var pct = docHeight > 0 ? (scrollTop / docHeight) * 100 : 0;
+    progressBar.style.width = pct + '%';
+  }
+
+  /* ── Audio player wiring ──────────────────────────────── */
+
+  function formatTime(sec) {
+    if (isNaN(sec) || sec < 0) sec = 0;
+    var h = Math.floor(sec / 3600);
+    var m = Math.floor((sec % 3600) / 60);
+    var s = Math.floor(sec % 60);
+    return h + ':' + (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
+  }
+
+  function getPlayerElements(playerEl) {
+    return {
+      playBtn: playerEl.querySelector('.play-btn'),
+      playIcon: playerEl.querySelector('.play-icon'),
+      fill: playerEl.querySelector('.progress-fill'),
+      thumb: playerEl.querySelector('.progress-thumb'),
+      time: playerEl.querySelector('.time-display'),
+      speed: playerEl.querySelector('.speed-btn'),
+      wrap: playerEl.querySelector('.progress-wrap')
+    };
+  }
+
+  function resetAllPlayers() {
+    document.querySelectorAll('.audio-player').forEach(function (p) {
+      var els = getPlayerElements(p);
+      els.playIcon.setAttribute('d', 'M8 5v14l11-7z');
+      els.fill.style.width = '0%';
+      els.thumb.style.left = '0%';
+      var idx = parseInt(p.dataset.index);
+      els.time.textContent = '0:00:00 / ' + episodes[idx].duration;
+    });
+  }
+
+  function getPlayersForEpisode(idx) {
+    return document.querySelectorAll('.audio-player[data-index="' + idx + '"]');
+  }
+
+  function updatePlayerUI() {
+    if (currentEpisode < 0) return;
+    var players = getPlayersForEpisode(currentEpisode);
+    var dur = audio.duration || episodes[currentEpisode].durationSec;
+    var pct = dur > 0 ? (audio.currentTime / dur) * 100 : 0;
+    players.forEach(function (p) {
+      var els = getPlayerElements(p);
+      els.fill.style.width = pct + '%';
+      els.thumb.style.left = pct + '%';
+      els.time.textContent = formatTime(audio.currentTime) + ' / ' + episodes[currentEpisode].duration;
+      if (isPlaying) {
+        els.playIcon.setAttribute('d', 'M6 19h4V5H6v14zm8-14v14h4V5h-4z');
+      } else {
+        els.playIcon.setAttribute('d', 'M8 5v14l11-7z');
+      }
+    });
+  }
+
+  audio.addEventListener('timeupdate', updatePlayerUI);
+  audio.addEventListener('ended', function () {
+    isPlaying = false;
+    updatePlayerUI();
+  });
+
+  // Delegate clicks for play buttons
+  document.addEventListener('click', function (e) {
+    var playBtn = e.target.closest('.play-btn');
+    if (!playBtn) return;
+    var player = playBtn.closest('.audio-player');
+    if (!player) return;
+    var idx = parseInt(player.dataset.index);
+
+    if (idx === currentEpisode && audio.src) {
+      // Toggle play/pause
+      if (isPlaying) {
+        audio.pause();
+        isPlaying = false;
+      } else {
+        audio.play();
+        isPlaying = true;
+      }
+    } else {
+      // Switch episode
+      resetAllPlayers();
+      currentEpisode = idx;
+      audio.src = episodes[idx].audio;
+      audio.playbackRate = speeds[speedIdx];
+      audio.play();
+      isPlaying = true;
+    }
+    updatePlayerUI();
+  });
+
+  // Speed button
+  document.addEventListener('click', function (e) {
+    if (!e.target.classList.contains('speed-btn')) return;
+    speedIdx = (speedIdx + 1) % speeds.length;
+    audio.playbackRate = speeds[speedIdx];
+    document.querySelectorAll('.speed-btn').forEach(function (b) {
+      b.textContent = speeds[speedIdx] + 'x';
+    });
+  });
+
+  // Progress bar seeking
+  document.addEventListener('mousedown', function (e) {
+    var wrap = e.target.closest('.progress-wrap');
+    if (!wrap) return;
+    var player = wrap.closest('.audio-player');
+    if (!player) return;
+    var idx = parseInt(player.dataset.index);
+
+    function seek(ev) {
+      var rect = wrap.getBoundingClientRect();
+      var pct = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width));
+      if (idx === currentEpisode && audio.src) {
+        var dur = audio.duration || episodes[idx].durationSec;
+        audio.currentTime = pct * dur;
+      }
+      updatePlayerUI();
+    }
+
+    seek(e);
+
+    function onMove(ev) { seek(ev); }
+    function onUp() {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+
+  // Touch seeking
+  document.addEventListener('touchstart', function (e) {
+    var wrap = e.target.closest('.progress-wrap');
+    if (!wrap) return;
+    var player = wrap.closest('.audio-player');
+    if (!player) return;
+    var idx = parseInt(player.dataset.index);
+
+    function seek(ev) {
+      var touch = ev.touches[0];
+      var rect = wrap.getBoundingClientRect();
+      var pct = Math.max(0, Math.min(1, (touch.clientX - rect.left) / rect.width));
+      if (idx === currentEpisode && audio.src) {
+        var dur = audio.duration || episodes[idx].durationSec;
+        audio.currentTime = pct * dur;
+      }
+      updatePlayerUI();
+    }
+
+    seek(e);
+
+    function onMove(ev) { ev.preventDefault(); seek(ev); }
+    function onEnd() {
+      document.removeEventListener('touchmove', onMove);
+      document.removeEventListener('touchend', onEnd);
+    }
+    document.addEventListener('touchmove', onMove, { passive: false });
+    document.addEventListener('touchend', onEnd);
+  }, { passive: false });
+
+  /* ── RAF loop ─────────────────────────────────────────── */
+
+  var ticking = false;
+
+  function onScroll() {
+    if (!ticking) {
+      requestAnimationFrame(function () {
+        updateTimeline();
+        updateProgress();
+        ticking = false;
+      });
+      ticking = true;
+    }
+  }
+
+  window.addEventListener('scroll', onScroll, { passive: true });
+
+  // Initialize
+  activateEpisode(0);
+  updateTimeline();
+  updateProgress();
+
+})();
+</script>
+</body>
+</html>

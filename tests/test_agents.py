@@ -11,13 +11,13 @@ from podcast_agent.agents.passage_extraction import PassageExtractionAgent
 from podcast_agent.agents.planning import EpisodePlanningAgent
 from podcast_agent.agents.repair import RepairAgent
 from podcast_agent.agents.spoken_delivery_agent import SpokenDeliveryAgent
-from podcast_agent.agents.style_audit import StyleAuditAgent
 from podcast_agent.agents.synthesis_consolidation import SynthesisConsolidationAgent
 from podcast_agent.agents.synthesis_primitives import SynthesisPrimitivesAgent
 from podcast_agent.agents.theme_decomposition import ThemeDecompositionAgent
 from podcast_agent.agents.validation import GroundingValidationAgent
 from podcast_agent.agents.writing import WritingAgent, WritingAgentNoCitations
 from podcast_agent.llm.heuristic import HeuristicLLMClient
+from podcast_agent.schemas.models import BookRecord, ChapterAnalysis, ChapterInfo
 
 
 def _mock_llm() -> MagicMock:
@@ -77,6 +77,43 @@ class TestCoreAgents:
         assert payload["sub_themes"] == ["state failure"]
         assert "10-15 strong thematic axes" in agent.instructions
         assert "`books`" in agent.instructions
+
+    def test_theme_decomposition_payload_omits_removed_chapter_analysis_fields(self):
+        agent = ThemeDecompositionAgent(_mock_llm())
+        book = BookRecord(
+            book_id="b1",
+            title="Book 1",
+            author="Author A",
+            source_path="/tmp/book.txt",
+            source_type="txt",
+            chapters=[
+                ChapterInfo(
+                    chapter_id="ch1",
+                    title="Chapter 1",
+                    start_index=0,
+                    end_index=100,
+                    word_count=100,
+                    summary="Summary",
+                    analysis=ChapterAnalysis(
+                        themes_touched=["theme"],
+                        major_tensions=["tension"],
+                    ),
+                )
+            ],
+        )
+        payload = agent.build_payload(
+            theme="War on terror",
+            sub_themes=["state failure"],
+            theme_elaboration="Trace the escalation.",
+            books=[book],
+            book_summaries={"b1": "Book summary"},
+        )
+        chapter = payload["books"][0]["chapters"][0]
+        assert "themes_touched" in chapter
+        assert "major_tensions" in chapter
+        assert "causal_shifts" not in chapter
+        assert "narrative_hooks" not in chapter
+        assert "retrieval_keywords" not in chapter
 
     def test_passage_extraction_agent_payload(self):
         agent = PassageExtractionAgent(_mock_llm())
@@ -147,7 +184,7 @@ class TestRedesignedAgents:
         assert payload["planning_feedback"]["issue"] == "uncovered_primary_occurrences"
         assert "`available_passages`" in agent.instructions
 
-    def test_writing_agent_payload_includes_previous_batches_only_when_present(self):
+    def test_writing_agent_payload(self):
         agent = WritingAgent(_mock_llm())
         payload = agent.build_payload(
             episode_number=1,
@@ -156,16 +193,23 @@ class TestRedesignedAgents:
             active_scene_card_ids=["scene_2"],
             passages=[{"passage_id": "p1"}],
             book_metadata=[{"book_id": "b1"}],
-            previous_sections=[{"section_id": "section_1"}],
-            previous_transitions=[{"transition_id": "transition_1"}],
+            batch_target_word_count_lower=120,
+            batch_target_word_count_higher=180,
             skip_grounding=True,
         )
         assert agent.schema_name == "episode_writing"
-        assert payload["previous_sections"][0]["section_id"] == "section_1"
         assert payload["skip_grounding"] is True
+        assert payload["batch_target_word_count_lower"] == 120
+        assert payload["batch_target_word_count_higher"] == 180
+        assert "scene_word_count_targets" not in payload
+        assert "previous_sections" not in payload
+        assert "previous_transitions" not in payload
         assert "`active_scene_card_ids`" in agent.instructions
+        assert "`target_word_count_lower`" in agent.instructions
+        assert "`target_word_count_higher`" in agent.instructions
+        assert "`batch_target_word_count_lower`" in agent.instructions
+        assert "`batch_target_word_count_higher`" in agent.instructions
         assert "`passages[].text`" in agent.instructions
-        assert "`previous_sections`" in agent.instructions
 
     def test_writing_agent_no_citations_instructions_and_schema(self):
         agent = WritingAgentNoCitations(_mock_llm())
@@ -176,10 +220,21 @@ class TestRedesignedAgents:
             active_scene_card_ids=["scene_1"],
             passages=[{"passage_id": "p1", "text": "Evidence"}],
             book_metadata=[{"book_id": "b1"}],
+            batch_target_word_count_lower=140,
+            batch_target_word_count_higher=220,
             skip_grounding=True,
         )
         assert agent.schema_name == "episode_writing"
         assert payload["skip_grounding"] is True
+        assert payload["batch_target_word_count_lower"] == 140
+        assert payload["batch_target_word_count_higher"] == 220
+        assert "scene_word_count_targets" not in payload
+        assert "previous_sections" not in payload
+        assert "previous_transitions" not in payload
+        assert "`target_word_count_lower`" in agent.instructions
+        assert "`target_word_count_higher`" in agent.instructions
+        assert "`batch_target_word_count_lower`" in agent.instructions
+        assert "`batch_target_word_count_higher`" in agent.instructions
         assert "Do not include a `citations` field" in agent.instructions
 
     def test_grounding_validation_agent_payload(self):
@@ -214,12 +269,10 @@ class TestRedesignedAgents:
         )
         assert agent.schema_name == "spoken_delivery"
         assert payload["max_words_per_segment"] == 250
-
-    def test_style_audit_agent_payload(self):
-        agent = StyleAuditAgent(_mock_llm())
-        payload = agent.build_payload(episode_number=1, script={"sections": []})
-        assert agent.schema_name == "style_audit"
-        assert payload == {"episode_number": 1, "script": {"sections": []}}
+        assert "You are the `narrative_historian` stage" in agent.instructions
+        assert "Output Format:" not in agent.instructions
+        assert "`section_id`" in agent.instructions
+        assert "`transition_id`" in agent.instructions
 
 
 class TestHeuristicClient:

@@ -48,9 +48,6 @@ class ThemeDecompositionAgent(Agent):
                     entry.update({
                         "themes_touched": list(ch.analysis.themes_touched),
                         "major_tensions": list(ch.analysis.major_tensions),
-                        "causal_shifts": list(ch.analysis.causal_shifts),
-                        "narrative_hooks": list(ch.analysis.narrative_hooks),
-                        "retrieval_keywords": list(ch.analysis.retrieval_keywords),
                     })
                 chapter_info.append(entry)
             book_summaries.append({

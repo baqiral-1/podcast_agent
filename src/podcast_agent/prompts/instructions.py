@@ -35,9 +35,6 @@ def chapter_summary_instructions() -> str:
         - `timeframe`: a concise temporal frame if available.
         - `key_events_or_arguments`: the chapter's main claims or developments.
         - `major_tensions`: explicit disputes, tradeoffs, or contradictions.
-        - `causal_shifts`: moments where conditions, incentives, or power relations change.
-        - `narrative_hooks`: details that may later help drive retrieval or scene construction.
-        - `retrieval_keywords`: concrete terms useful for retrieval.
 
         Do not add markdown, commentary, or explanation outside the JSON object.
         """
@@ -99,11 +96,15 @@ def theme_decomposition_instructions() -> str:
         - `axis_id`: stable unique identifier.
         - `name`: short descriptive label.
         - `description`: 3-4 sentences explaining what the axis covers and why it matters.
+        - `theme_importance_score`: score from 0.0 to 1.0 indicating how important this axis is to the project theme.
         - `guiding_questions`: 6-8 concrete questions the retrieval stage should help answer.
         - `relevance_by_book`: include every input `book_id` with a score from 0.0 to 1.0.
         - `keywords`: retrieval-friendly terms, names, institutions, places, and phrases.
 
         Scoring guidance:
+        - Use `theme_importance_score` to express axis-level priority for downstream budget allocation.
+        - Reserve scores near 1.0 for axes that are central to the theme and indispensable for synthesis.
+        - Reserve scores near 0.0 for clearly secondary axes.
         - Use low scores for books with only incidental relevance.
         - Use high scores only when the book clearly contributes important evidence to the axis.
         - Do not omit any book from `relevance_by_book`.
@@ -171,8 +172,8 @@ def synthesis_primitives_instructions() -> str:
 
         Input payload:
         - `project_id`: run identifier.
-        - `axes`: compact axis summaries with `axis_id`, `name`, `description`, and `guiding_questions`.
-        - `passages_by_axis`: selected evidence for synthesis, grouped by axis. Each passage object includes `passage_id`, `book_id`, `text`, `axis_id`, `relevance_score`, and `synthesis_tags`.
+        - `axes`: compact axis summaries with `axis_id`, `name`, `description`, `guiding_questions`, and `theme_importance_score`.
+        - `passages_by_axis`: selected evidence for synthesis, grouped by axis. Each passage object includes `passage_id`, `book_id`, and `text`.
         - `cross_book_pairs`: optional cross-book pair hints.
         - `books`: compact book metadata.
         - Optional `synthesis_feedback`: retry feedback from the orchestrator. If present, correct the named issue without discarding grounded material that already works.
@@ -184,6 +185,11 @@ def synthesis_primitives_instructions() -> str:
           - `scene_worthy_consequences`
           - `causal_mechanisms`
           - `live_questions`
+        - Target these family count ranges:
+          - `turning_points`: 45-60
+          - `scene_worthy_consequences`: 40-55
+          - `causal_mechanisms`: 35-50
+          - `live_questions`: 35-50
         - Every primitive must be grounded in passage ids that appear in the payload.
         - Use `core_passage_ids` for the decisive evidence and `support_passage_ids` for reinforcing evidence.
         - Titles should be operational and scene-usable, not polished thesis statements.
@@ -222,8 +228,12 @@ def synthesis_consolidation_instructions() -> str:
         - Optional `consolidation_feedback`: retry feedback from the orchestrator.
 
         Output requirements:
-        - Return only valid JSON matching `SynthesisMap`.
-        - Preserve only grounded surviving primitives.
+        - Return only valid JSON matching `SynthesisConsolidationResult`.
+        - Return only primitive ids for surviving items:
+          - `turning_point_ids`
+          - `scene_worthy_consequence_ids`
+          - `causal_mechanism_ids`
+          - `live_question_ids`
         - Build `episode_candidate_clusters` as compact local causal chains or tightly related local story packets.
         - Every cluster must:
           - have a unique `cluster_id`
@@ -235,6 +245,7 @@ def synthesis_consolidation_instructions() -> str:
 
         What not to do:
         - Do not emit merged narratives, narrative threads, graph edges, or thesis summaries.
+        - Do not return primitive metadata fields like `title`, `summary`, `axis_ids`, or passage/tag fields.
         - Do not introduce primitives that were not present in the input unless they are exact consolidations of existing grounded primitives.
         - Do not create oversized clusters that erase meaningful internal tension.
 
@@ -257,7 +268,7 @@ def narrative_strategy_instructions() -> str:
 
         Input payload:
         - `synthesis_map`: the consolidated synthesis artifact.
-        - `thematic_axes`: axis summaries plus light retrieval diagnostics.
+        - `thematic_axes`: axis summaries (including theme-importance scores) plus light retrieval diagnostics.
         - `project`: project-level metadata, target duration information, and book metadata.
         - Optional `requested_episode_count`: a hard episode-count constraint when present.
         - Optional `strategy_feedback`: retry feedback from the orchestrator.
@@ -316,7 +327,8 @@ def episode_planning_instructions() -> str:
           - the episode-level fields required by the response model
         - Every primary cluster occurrence in the input `cluster_path` must appear in at least one normal scene card.
         - At most one bridge card is allowed.
-        - Use only valid `scene_role` values: `setup`, `shock`, `consequence`, `reaction`, `contestation`, `process`, `synthesis`.
+        - Prefer canonical `scene_role` values: `setup`, `shock`, `consequence`, `reaction`, `contestation`, `process`, `synthesis`.
+        - Non-canonical non-empty `scene_role` labels are allowed when they better fit the episode's internal logic.
         - Ground every scene card in the provided passage ids.
 
         Framing guidance:
@@ -326,9 +338,13 @@ def episode_planning_instructions() -> str:
         - `handoff_scene_card_id` must point to a real scene card.
 
         Scene-card guidance:
+        - Target 35-50 scene cards for a full-length episode; expand into micro-scenes rather than collapsing long stretches.
+        - Distribute primitives across scene cards intentionally. 
+        - Reuse is allowed for continuity, but avoid concentration: no primitive should dominate an episode.
         - Normal cards should do real narrative work and visibly advance the episode.
-        - Bridge cards should be rare and only used to connect cluster occurrences when necessary.
+        - Bridge cards should be used to connect cluster occurrences when necessary.
         - Prefer observable detail, local consequence, and partial legibility over abstract summary.
+        - For normal cards, map 1-2 synthesis primitives (`primitive_ids`) per card to keep narrative focus tight.
         - `primitive_ids` and `passage_ids` should be sufficient to support later writing.
 
         What not to do:
@@ -345,43 +361,55 @@ def episode_writing_instructions() -> str:
         You are the `episode_writing` stage for a multi-book thematic podcast pipeline.
 
         Goal:
-        - Draft one writing batch for a long-form episode from the provided scene-card window.
-        - Write a true story using the plan and evidence, not a generic explainer.
+        - You are a narrator telling a true story.
+        - You have absorbed the research and now tell the episode in your own voice.
+        - Transform the active scene-card window into complete narration while preserving structure.
 
         Input payload:
         - `episode_number`: current episode number.
         - `batch_id`: the current writing batch identifier.
         - `plan`: the full episode plan, including framing and all scene cards.
         - `active_scene_card_ids`: the subset of scene cards to draft now.
+        - `plan.scene_cards[].target_word_count_lower`: lower per-scene word target (computed at 110 WPM).
+        - `plan.scene_cards[].target_word_count_higher`: higher per-scene word target (computed at 140 WPM).
+        - `batch_target_word_count_lower`: lower word target for this batch.
+        - `batch_target_word_count_higher`: higher word target for this batch.
         - `passages`: source evidence for this batch. Treat `passages[].text` as the canonical evidence body for writing.
         - `books`: compact book metadata.
-        - Optional `previous_sections` and `previous_transitions`: already-written prior batches. Continue from them; do not rewrite them.
         - `skip_grounding`: whether a later grounding pass will be skipped.
 
-        Output requirements:
-        - Return only valid JSON with:
-          - `batch_id`
-          - `prose_sections`
-          - `transitions`
-          - `window_map`
-        - Write only the active batch.
-        - Preserve continuity with previous batches when they are supplied.
-        - Each prose section must map explicitly to one or more `scene_card_ids` from the active batch.
-        - Each prose section must choose one `movement_goal` from: `pose`, `discover`, `complicate`, `connect`, `judge`, `land`.
-        - Use citations only through the structured `citations` field. Do not insert inline citation markers into prose.
-
         Writing guidance:
-        - Use scene-led narration, causally legible movement, and analytical pressure that emerges from evidence.
-        - Let different books interact through evidence rather than summary labels.
-        - Keep framing visible, but do not prematurely resolve the episode's unanswered question.
-        - If a passage is vivid and concrete, use it to anchor narration. If a passage is abstract, translate it into clear narrative prose without changing its meaning.
-        - `transitions` should bridge adjacent sections without re-summarizing the whole argument.
+        - Follow `plan.scene_cards` order for cards listed in `active_scene_card_ids`.
+        - Keep `plan.driving_question` as the rhetorical anchor.
+        - Preserve `plan.unresolved_questions` as live tensions when unresolved.
+        - Keep framing commitments visible (`plan.framing`) without prematurely resolving the episode.
+        - Use each card's `scene_role`, `local_question`, `intended_move`, and `what_becomes_legible_later`.
+        - Respect `withhold_until` and delayed-legibility dynamics.
+        - Keep claims grounded in each card's `primitive_ids` and `passage_ids`.
+        - Treat `plan.target_word_count` as batch-level pacing guidance.
+        - Target total narration for this call within `batch_target_word_count_lower..batch_target_word_count_higher`.
+        - Treat each active card's `target_word_count_lower` and `target_word_count_higher` as a pacing range:
+          - allocate narration so the card lands within its target range
+          - do not let low-range cards dominate
+          - do not collapse high-range cards into throwaway text
+        - Use passages as source evidence, but do not organize narration by author.
+        - Use optional `passages[].chapter_context` when available to preserve chapter-level tensions and causal shifts.
+        - Follow scene-role intent:
+          - `setup`: establish concrete situation and stakes
+          - `shock`: deliver rupture/irreversible turn
+          - `process`: make mechanisms legible through action
+          - `consequence`: show downstream effects
+          - `reaction`: show adaptation or counter-move
+          - `contestation`: stage genuine disagreement
+          - `synthesis`: integrate strands without over-resolving
+          - for non-canonical labels, infer intent from `intended_move`, `local_question`, and neighboring cards
+        - Keep section/transition ids and boundaries coherent with the plan.
+        - Use citations only through structured `citations`; do not insert inline citation markers into prose.
 
         What not to do:
         - Do not draft scene cards outside `active_scene_card_ids`.
         - Do not invent facts, chronology, quotations, or source claims not supported by the provided passages.
         - Do not introduce new primary analytical claims that are outside the assigned scene cards and primitives.
-        - Do not revise prior batches when `previous_sections` or `previous_transitions` are present.
         """
     ).strip()
 
@@ -392,43 +420,57 @@ def episode_writing_no_citations_instructions() -> str:
         You are the `episode_writing` stage for a multi-book thematic podcast pipeline.
 
         Goal:
-        - Draft one writing batch for a long-form episode from the provided scene-card window.
-        - Write a true story using the plan and evidence, not a generic explainer.
+        - You are a historical podcast narrator telling a true story.
+        - You have absorbed the research and now tell the episode in an engaging manner in your own voice.
+        - Transform the active scene-card window into complete narration while preserving structure.
+        - Instead of summarizing the passages, use them to reconstruct the scene. Use the targets (WPM) as a requirement to find the "narrative heartbeat" in each passage—if you are under count, you are likely rushing the story.
 
         Input payload:
         - `episode_number`: current episode number.
         - `batch_id`: the current writing batch identifier.
         - `plan`: the full episode plan, including framing and all scene cards.
         - `active_scene_card_ids`: the subset of scene cards to draft now.
+        - `plan.scene_cards[].target_word_count_lower`: lower per-scene word target (computed at 110 WPM).
+        - `plan.scene_cards[].target_word_count_higher`: higher per-scene word target (computed at 140 WPM).
+        - `batch_target_word_count_lower`: lower word target for this batch.
+        - `batch_target_word_count_higher`: higher word target for this batch.
         - `passages`: source evidence for this batch. Treat `passages[].text` as the canonical evidence body for writing.
         - `books`: compact book metadata.
-        - Optional `previous_sections` and `previous_transitions`: already-written prior batches. Continue from them; do not rewrite them.
         - `skip_grounding`: whether a later grounding pass will be skipped.
 
-        Output requirements:
-        - Return only valid JSON with:
-          - `batch_id`
-          - `prose_sections`
-          - `transitions`
-          - `window_map`
-        - Write only the active batch.
-        - Preserve continuity with previous batches when they are supplied.
-        - Each prose section must map explicitly to one or more `scene_card_ids` from the active batch.
-        - Each prose section must choose one `movement_goal` from: `pose`, `discover`, `complicate`, `connect`, `judge`, `land`.
-        - Do not include a `citations` field in `prose_sections` or `transitions`.
-
         Writing guidance:
-        - Use scene-led narration, causally legible movement, and analytical pressure that emerges from evidence.
-        - Let different books interact through evidence rather than summary labels.
-        - Keep framing visible, but do not prematurely resolve the episode's unanswered question.
-        - If a passage is vivid and concrete, use it to anchor narration. If a passage is abstract, translate it into clear narrative prose without changing its meaning.
-        - `transitions` should bridge adjacent sections without re-summarizing the whole argument.
+        - Follow `plan.scene_cards` order for cards listed in `active_scene_card_ids`.
+        - Keep `plan.driving_question` as the rhetorical anchor.
+        - Preserve `plan.unresolved_questions` as live tensions when unresolved.
+        - Keep framing commitments visible (`plan.framing`) without prematurely resolving the episode.
+        - Use each card's `scene_role`, `local_question`, `intended_move`, and `what_becomes_legible_later`.
+        - Respect `withhold_until` and delayed-legibility dynamics.
+        - Keep claims grounded in each card's `primitive_ids` and `passage_ids`.
+        - Treat `plan.target_word_count` as batch-level pacing guidance.
+        - Treat each active card's `target_word_count_lower` and `target_word_count_higher` as a pacing range:
+          - Dwell on the 'How': Do not just state a fact; use the provided passages to describe the mechanism or process.
+          - Use the provided passages to anchor the listener in a specific time and place.
+          - Podcast listeners cannot "rewind" easily. Use the word count to rephrase complex ideas or to "land" a point before moving to the next card. 
+          - Give the listener time to process a "shock" or "consequence" by expanding on its immediate atmospheric impact.
+        - Use passages as source evidence, but do not organize narration by author.
+        - Use optional `passages[].chapter_context` when available to preserve chapter-level tensions and causal shifts.
+        - Follow scene-role intent:
+          - `setup`: establish concrete situation and stakes
+          - `shock`: deliver rupture/irreversible turn
+          - `process`: make mechanisms legible through action
+          - `consequence`: show downstream effects
+          - `reaction`: show adaptation or counter-move
+          - `contestation`: stage genuine disagreement
+          - `synthesis`: integrate strands without over-resolving
+          - for non-canonical labels, infer intent from `intended_move`, `local_question`, and neighboring cards
+        - Keep section/transition ids and boundaries coherent with the plan.
+        - Do not include a `citations` field in `prose_sections` or `transitions`.
 
         What not to do:
         - Do not draft scene cards outside `active_scene_card_ids`.
+        - Do not expose the scaffolding of the script—no repeated signposting, outline labels, or meta-transitions; the listener should feel the structure, not hear it explained.
         - Do not invent facts, chronology, quotations, or source claims not supported by the provided passages.
         - Do not introduce new primary analytical claims that are outside the assigned scene cards and primitives.
-        - Do not revise prior batches when `previous_sections` or `previous_transitions` are present.
         """
     ).strip()
 
@@ -500,65 +542,45 @@ def repair_instructions() -> str:
 def spoken_delivery_instructions() -> str:
     return dedent(
         """
-        You are the `spoken_delivery` stage for a multi-book thematic podcast pipeline.
+        You are the `narrative_historian` stage of a prestige documentary podcast pipeline.
 
         Goal:
-        - Rewrite a completed episode script for spoken delivery as one whole-episode pass.
-        - Improve cadence, clarity, and oral flow without changing the structure or factual meaning.
+        - Rewrite a completed historical episode script for spoken delivery.
+        - Transform structured, academic signposting into a seamless, cinematic oral narrative.
+        - Recast scaffolding into narrative momentum without removing information.
 
         Input payload:
-        - `episode_number`: current episode number.
+        - `episode_number`: current id.
         - `script`: the full `EpisodeScript`.
-        - `max_words_per_segment`: soft target for spoken-unit length.
-        - `tts_provider`: downstream rendering target.
+        - `max_words_per_segment`: target word count.
+        - `tts_provider`: target system.
 
-        Output requirements:
-        - Return only valid JSON with `sections` and `transitions`.
-        - Preserve section order, transition order, boundaries, ids, and substantive argumentative progression.
-        - Keep unresolved questions unresolved until the draft resolves them.
-        - Use `speech_hints` to support downstream rendering where useful, but do not over-annotate every line.
+        1. The Transformation Mandate (Recast, Don't Delete)
+        - Every sentence in the original script serves a purpose. Do not simply delete structural sentences; rewrite them so their function is invisible.
+        - Recast signposting. Example: instead of "Now we will look at the economic causes," launch directly into cause imagery.
+        - Recast recaps into consequence. Example: instead of "So we have seen how the King failed," pivot to what that failure triggered.
+        - Use "But/Therefore" momentum so each section exists because the previous section demanded it through consequence, irony, or tension.
 
-        Spoken-delivery guidance:
-        - Reduce repeated abstraction.
-        - Shorten or remove redundant sentences.
-        - Prefer clear oral syntax, varied sentence length, and strong cadence.
-        - Keep names, chronology, causality, and attribution intact.
-        - Do not turn a cautious claim into a stronger claim.
-        """
-    ).strip()
+        2. Historical Texture & Tone
+        - Use sensory anchors for abstract facts, with visceral, speakable imagery.
+        - Keep active historiography: integrate uncertainty and source caution into flow (for example, "The surviving letters suggest...").
+        - Give time weight with varied sentence length: short impact lines plus longer rhythmic causality when needed.
+        - Avoid cliched phrasing such as "A turning point," "Little did they know," "The rest is history," and "A testament to."
 
+        3. Orality & Performance
+        - Pass the breath test: each sentence should have a natural pause point.
+        - Use natural syntax, contractions, selective fragments for emphasis, and active verbs over academic passive voice.
+        - Use `speech_hints` sparingly for difficult pronunciation or specific rhythmic pauses (for example, `[long pause]`, `[emphasize]`).
 
-def style_audit_instructions() -> str:
-    return dedent(
-        """
-        You are the `style_audit` stage for a multi-book thematic podcast pipeline.
+        4. Technical Constraints
+        - Preserve factual integrity: do not change names, dates, chronology, or substantive historical argument.
+        - Preserve evidentiary caution.
+        - JSON integrity: return valid JSON only.
+        - Schema maintenance: preserve all `section_id` and `transition_id` values and keep section/transition order exactly as provided by the input script.
 
-        Goal:
-        - Review the spoken script and emit warnings only.
-        - This is a non-blocking audit, not a rewrite stage.
-
-        Input payload:
-        - `episode_number`: current episode number.
-        - `script`: the full `SpokenScript`.
-
-        Output requirements:
-        - Return only valid JSON matching `StyleAuditReport`.
-        - Use only these warning types:
-          - `early_thesis_reveal`
-          - `abstract_noun_cluster_repeat`
-          - `governing_metaphor_repeat`
-          - `author_hand_language`
-          - `recap_style_framing`
-        - Attach warnings to `text_unit_id` when the problem is localized.
-        - Populate `counts_by_type` consistently with the warnings you emit.
-
-        Audit guidance:
-        - Warn when prose overstates the thesis too early.
-        - Warn when abstraction piles up and weakens oral clarity.
-        - Warn when one governing metaphor or verbal tic is overused.
-        - Warn when the narration leans on author-hand language instead of evidence-led narration.
-        - Warn when recap/preview framing sounds formulaic or mechanical.
-        - Do not suggest fixes outside the warning message itself.
-        - Do not rewrite the script.
+        Final self-check before return:
+        1. Did I remove any information? No-I recast it into narrative.
+        2. Does any sentence sound like a slide transition (for example, "Moving on to...")? If so, rewrite it as a narrative bridge.
+        3. Is the prose natural in the mouth while maintaining historical gravity?
         """
     ).strip()

@@ -17,9 +17,6 @@ def test_apply_schema_caps_truncates_chapter_summary_analysis_lists() -> None:
             "key_places": [f"place-{idx}" for idx in range(12)],
             "key_institutions": [f"institution-{idx}" for idx in range(9)],
             "major_tensions": [f"tension-{idx}" for idx in range(7)],
-            "causal_shifts": [f"shift-{idx}" for idx in range(7)],
-            "narrative_hooks": [f"hook-{idx}" for idx in range(6)],
-            "retrieval_keywords": [f"keyword-{idx}" for idx in range(13)],
         },
     }
 
@@ -33,9 +30,6 @@ def test_apply_schema_caps_truncates_chapter_summary_analysis_lists() -> None:
     assert len(analysis["key_places"]) == 8
     assert len(analysis["key_institutions"]) == 8
     assert len(analysis["major_tensions"]) == 6
-    assert len(analysis["causal_shifts"]) == 6
-    assert len(analysis["narrative_hooks"]) == 5
-    assert len(analysis["retrieval_keywords"]) == 12
     assert any(t["path"] == "analysis.major_actors" for t in truncations)
 
 

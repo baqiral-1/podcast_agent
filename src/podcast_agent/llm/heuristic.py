@@ -76,9 +76,6 @@ class HeuristicLLMClient(LLMClient):
                     f"{chapter_title} contributes material relevant to the project theme."
                 ],
                 "major_tensions": [],
-                "causal_shifts": [],
-                "narrative_hooks": [f"Return to {chapter_title} for episode construction."],
-                "retrieval_keywords": [chapter_title.lower().replace(" ", "_")],
             },
         }
 
@@ -96,11 +93,13 @@ class HeuristicLLMClient(LLMClient):
         axis_label = str(payload.get("theme", "unknown"))
         axes = []
         for idx in range(1, 11):
+            importance = max(0.0, 1.0 - ((idx - 1) * 0.06))
             axes.append(
                 {
                     "axis_id": f"axis_{idx:02d}",
                     "name": f"{axis_label} axis {idx}",
                     "description": f"Heuristic thematic axis {idx} for {axis_label}.",
+                    "theme_importance_score": round(importance, 3),
                     "guiding_questions": [
                         f"How does axis {idx} appear across the books?",
                         f"What changes become legible through axis {idx}?",
@@ -240,10 +239,10 @@ class HeuristicLLMClient(LLMClient):
                     "local_payoff_shape": "reveal",
                 }
             ],
-            "turning_points": turning_points,
-            "scene_worthy_consequences": consequences,
-            "causal_mechanisms": mechanisms,
-            "live_questions": live_questions,
+            "turning_point_ids": [str(item.get("id", uuid4().hex)) for item in turning_points],
+            "scene_worthy_consequence_ids": [str(item.get("id", uuid4().hex)) for item in consequences],
+            "causal_mechanism_ids": [str(item.get("id", uuid4().hex)) for item in mechanisms],
+            "live_question_ids": [str(item.get("id", uuid4().hex)) for item in live_questions],
             "quality_score": float(primitives.get("quality_score", 0.5)),
             "quality_notes": ["Heuristic consolidated synthesis map."],
         }
@@ -425,11 +424,4 @@ class HeuristicLLMClient(LLMClient):
                 }
                 for transition in script.get("transitions", [])
             ],
-        }
-
-    def _generate_style_audit(self, payload: PromptPayload) -> dict[str, Any]:
-        return {
-            "episode_number": payload.get("episode_number", 1),
-            "warnings": [],
-            "counts_by_type": {},
         }

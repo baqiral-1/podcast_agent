@@ -60,7 +60,6 @@ def _render_episode_cards(run_dir: Path, strategy: dict[str, Any]) -> str:
         ep_dir = run_dir / "episodes" / str(episode.get("episode_number"))
         script = _load_optional_json(ep_dir / "episode_script.json") or {}
         spoken = _load_optional_json(ep_dir / "spoken_script.json") or {}
-        style_audit = _load_optional_json(ep_dir / "style_audit.json") or {}
         cards.append(
             """
             <section class='card'>
@@ -69,7 +68,6 @@ def _render_episode_cards(run_dir: Path, strategy: dict[str, Any]) -> str:
               <p><strong>Cluster path:</strong> {cluster_count} occurrence(s)</p>
               <p><strong>Script sections:</strong> {section_count}</p>
               <p><strong>Spoken sections:</strong> {spoken_count}</p>
-              <p><strong>Style warnings:</strong> {warning_count}</p>
             </section>
             """.format(
                 title=_escape(episode.get("title", f"Episode {episode.get('episode_number', '?')}")),
@@ -77,7 +75,6 @@ def _render_episode_cards(run_dir: Path, strategy: dict[str, Any]) -> str:
                 cluster_count=len(episode.get("cluster_path", [])),
                 section_count=len(script.get("prose_sections", [])),
                 spoken_count=len(spoken.get("sections", [])),
-                warning_count=len(style_audit.get("warnings", [])),
             )
         )
     return "\n".join(cards)

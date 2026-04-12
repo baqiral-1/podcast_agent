@@ -6,7 +6,7 @@
 
 - Library-first Python package with a Typer CLI.
 - Four-phase pipeline: Ingest & Index, Thematic Intelligence, Episode Production, Audio Rendering.
-- 12 LLM-backed agents with per-agent model selection, temperature, retry, and concurrency.
+- 13 LLM-backed agents with per-agent model selection, temperature, retry, and concurrency.
 - Cross-book synthesis: finds agreements, disagreements, extensions, tensions, and surprising connections.
 - Grounding validation with citation-level fact-checking and fairness flags.
 - Spoken-delivery rewrite for natural narration without changing facts.
@@ -50,15 +50,15 @@ Each agent uses a default Claude model chosen for its task complexity:
 | Structuring | Haiku 4.5 | 15 | 5 |
 | Theme Decomposition | Opus 4.6 | 6 | 3 |
 | Passage Extraction | Haiku 4.5 | 15 | 5 |
-| Synthesis Mapping | Opus 4.6 | 3 | 3 |
+| Synthesis Primitives | Opus 4.6 | 3 | 3 |
+| Synthesis Consolidation | Opus 4.6 | 4 | 3 |
 | Narrative Strategy | Sonnet 4.6 | 6 | 3 |
 | Series Planning | Sonnet 4.6 | 6 | 3 |
-| Episode Writing | Opus 4.6 | 3 | 3 |
-| Source Weaving | Sonnet 4.6 | 6 | 3 |
+| Episode Writing | Opus 4.6 | 6 | 3 |
 | Grounding Validation | Sonnet 4.6 | 6 | 3 |
 | Repair | Sonnet 4.6 | 6 | 3 |
 | Spoken Delivery | Sonnet 4.6 | 6 | 3 |
-| Episode Framing | Haiku 4.5 | 15 | 5 |
+| Style Audit | Sonnet 4.6 | 8 | 3 |
 
 Override any agent's model, temperature, retry count, or concurrency limit via `LLMConfig.agent_configs` in code or environment variables.
 
@@ -87,6 +87,7 @@ podcast-agent run book1.pdf book2.txt book3.md \
 | `--titles` | | | Comma-separated book titles |
 | `--authors` | | | Comma-separated author names |
 | `--output-dir` | `-o` | `runs/` | Custom output directory |
+| `--passage-extraction-concurrency` | | `8` | Max concurrent passage extraction axis jobs |
 | `--skip-grounding` | | `False` | Skip grounding validation and repair |
 | `--skip-spoken-delivery` | | `False` | Skip spoken delivery rewrite |
 | `--skip-audio` | | `False` | Skip audio synthesis (still writes render manifest) |
@@ -132,19 +133,19 @@ This command:
 4. **Embed & store** — Index chunks in PGVector with book/project metadata
 
 ### Phase 2: Thematic Intelligence (sequential)
-5. **Decompose theme** — Break theme into 25-30 strong thematic axes using chapter summaries plus synthesized per-book summaries
+5. **Decompose theme** — Break theme into 10-15 strong thematic axes using chapter summaries plus synthesized per-book summaries
 6. **Extract passages** — Vector retrieval + LLM reranking per axis per book
-7. **Map synthesis** — Discover cross-book insights (agreements, disagreements, tensions, extensions)
-8. **Choose narrative strategy** — Select series structure (thesis-driven, debate, convergence, etc.)
-9. **Assign episodes** — Narrative strategy assigns axes and insights per episode
-10. **Plan episodes** — Per-episode structure planning with beats and passage assignments
+7. **Synthesis primitives** — Extract grounded turning points, consequences, mechanisms, and live questions
+8. **Synthesis consolidation** — Consolidate primitives into cluster-first synthesis artifacts
+9. **Choose narrative strategy** — Select series structure and assign discovery-ordered cluster paths
+10. **Plan episodes** — Per-episode framing and scene-card planning from cluster paths
 
 ### Phase 3: Episode Production (parallel per episode)
-11. **Write episode** — Script with citations and cross-book transitions
+11. **Write episode** — Single-batch section-based script drafting with citations
 12. **Validate grounding** — Fact-check claims against cited passages (skippable)
 13. **Repair loop** — Fix grounding failures up to N attempts (skippable)
-14. **Spoken delivery** — Rewrite for natural speech without changing facts (skippable)
-15. **Frame episode** — Recaps, previews, and cold opens (sequential)
+14. **Spoken delivery** — Whole-episode spoken cleanup without structural reordering (skippable)
+15. **Style audit** — Warnings-only post-delivery audit
 
 ### Phase 4: Audio Rendering (parallel per episode)
 16. **Build render manifest** — TTS-ready segment specification
@@ -158,12 +159,15 @@ chapter summaries.
 Passage extraction now budgets retrieval candidates per book with a hybrid rule:
 `min(max_cap, max(min_floor, round(book_chunk_count * percentage)))`.
 The default knobs are `passage_retrieval_percentage=0.25`,
-`passage_retrieval_min_per_book=20`, and `passage_retrieval_max_per_book=50`.
+`passage_retrieval_min_per_book=10`, and `passage_retrieval_max_per_book=25`.
 The global pre-axis candidate budget defaults to
-`pre_axis_total_budget=3600` with `pre_axis_floor=60`
-(about `120` candidates per axis on average across 30 axes).
-`rerank_top_k` still applies after passage-extraction scoring; it does not control
-how many passages are sent into the passage-extraction prompt.
+`pre_axis_total_budget=1200` with `pre_axis_floor=30`, allocated by normalized
+axis theme-importance scores.
+Passage extraction no longer applies a post-rerank per-axis trim; it retains all
+scored passages for later stage-specific selection.
+For synthesis, the active pipeline now restores a hard
+`synthesis_total_passage_cap=720` across the whole run, allocated by
+axis theme-importance with round-robin fill of remaining slots.
 
 ## Outputs
 
@@ -175,9 +179,10 @@ runs/<project-id>/
   thematic_axes.json           # Decomposed theme axes
   thematic_corpus.json         # Extracted and reranked passages
   retrieval_metrics.json       # Per-axis/per-book retrieval accuracy
-  synthesis_map.json           # Cross-book insights and narrative threads
-  narrative_strategy.json      # Chosen series structure
-  series_plan.json             # Episode plans with beats
+  synthesis_primitives.json    # Grounded synthesis primitives
+  synthesis_map.json           # Consolidated cluster-first synthesis artifact
+  narrative_strategy.json      # Chosen series structure and episode cluster paths
+  series_plan.json             # Episode plans with framing and scene cards
   run.log                      # Structured JSON event log
   stage_artifacts/             # Per-stage input/output snapshots
   books/<book-id>/
@@ -188,7 +193,6 @@ runs/<project-id>/
     grounding_report.json
     repair_attempt_*.json
     spoken_script.json
-    episode_framing.json
     render_manifest.json
     audio_manifest.json         # only when audio synthesis runs
     episode.mp3                 # merged episode audio when synthesis runs

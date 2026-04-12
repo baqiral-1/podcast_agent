@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Literal
-
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
@@ -51,12 +49,12 @@ class LLMConfig(BaseModel):
         description="Per-schema model overrides keyed by schema_name.",
     )
     provider_overrides: dict[str, str] = Field(
-        default_factory=dict,
+        default_factory=lambda: {"synthesis_primitives": "anthropic"},
         description="Per-schema LLM provider overrides keyed by schema_name.",
     )
     temperature: float = Field(default=1.0, ge=0.0, le=2.0)
     reasoning_effort: str | None = Field(
-        default_factory=lambda: os.getenv("LLM_REASONING_EFFORT"),
+        default_factory=lambda: os.getenv("LLM_REASONING_EFFORT") or "xhigh",
     )
     api_key: str | None = Field(default_factory=lambda: os.getenv("OPENAI_API_KEY"))
     base_url: str = Field(
@@ -72,7 +70,6 @@ class LLMConfig(BaseModel):
     anthropic_max_tokens_overrides: dict[str, int] = Field(
         default_factory=lambda: {
             "passage_extraction": 64000,
-            "style_audit": 64000,
         },
         description="Per-schema max_tokens overrides for Anthropic models.",
     )
@@ -86,26 +83,24 @@ class LLMConfig(BaseModel):
     timeout_seconds_overrides: dict[str, float] = Field(
         default_factory=lambda: {
             "passage_extraction": 480.0,
-            "synthesis_primitives": 1200.0,
-            "synthesis_consolidation": 900.0,
+            "synthesis_primitives": 2400.0,
+            "synthesis_consolidation": 1800.0,
             "narrative_strategy": 900.0,
             "theme_decomposition": 900.0,
             "episode_planning": 1500.0,
             "episode_writing": 1500.0,
             "spoken_delivery": 1200.0,
-            "style_audit": 600.0,
         },
         description="Per-schema timeout overrides in seconds.",
     )
     thinking_budget_tokens: dict[str, int] = Field(
         default_factory=lambda: {
             "narrative_strategy": 15_000,
-            "episode_planning": 30_000,
+            "episode_planning": 15_000,
             "episode_writing": 15_000,
             "spoken_delivery": 20_000,
-            "synthesis_primitives": 20_000,
-            "synthesis_consolidation": 15_000,
-            "style_audit": 8_000,
+            "synthesis_primitives": 35_000,
+            "synthesis_consolidation": 20_000,
             "theme_decomposition": 20_000,
         },
         description=(
@@ -130,12 +125,11 @@ class LLMConfig(BaseModel):
             "synthesis_primitives": AgentConfig(model_name="claude-opus-4-6", temperature=0.8, max_retry_attempts=2, concurrency_limit=3),
             "synthesis_consolidation": AgentConfig(model_name="claude-opus-4-6", temperature=0.6, max_retry_attempts=2, concurrency_limit=4),
             "narrative_strategy": AgentConfig(model_name="claude-opus-4-6", temperature=0.5, max_retry_attempts=2, concurrency_limit=6),
-            "episode_planning": AgentConfig(model_name="claude-opus-4-6", temperature=0.5, max_retry_attempts=2, concurrency_limit=8),
-            "episode_writing": AgentConfig(model_name="claude-opus-4-6", temperature=0.6, max_retry_attempts=2, concurrency_limit=8),
+            "episode_planning": AgentConfig(model_name="claude-opus-4-6", temperature=0.5, max_retry_attempts=3, concurrency_limit=9),
+            "episode_writing": AgentConfig(model_name="claude-opus-4-6", temperature=0.6, max_retry_attempts=2, concurrency_limit=9),
             "grounding_validation": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.2, max_retry_attempts=2, concurrency_limit=6),
             "repair": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.3, max_retry_attempts=2, concurrency_limit=6),
-            "spoken_delivery": AgentConfig(model_name="claude-opus-4-6", temperature=0.7, max_retry_attempts=2, concurrency_limit=8),
-            "style_audit": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.2, max_retry_attempts=2, concurrency_limit=8),
+            "spoken_delivery": AgentConfig(model_name="claude-opus-4-6", temperature=0.7, max_retry_attempts=2, concurrency_limit=9),
         },
         description="Per-agent LLM config overrides keyed by schema_name.",
     )
@@ -238,44 +232,38 @@ class PipelineRuntimeConfig(BaseModel):
 
     artifact_root: Path = Field(default=Path("runs"))
     embedding_dimensions: int = Field(default=8, ge=4)
-    max_chunk_words: int = Field(default=400, ge=50)
-    chunk_overlap_words: int = Field(default=50, ge=0)
+    max_chunk_words: int = Field(default=1000, ge=50)
+    chunk_overlap_words: int = Field(default=75, ge=0)
     min_chunk_words: int = Field(default=80, ge=10)
     max_repair_attempts: int = Field(default=3, ge=0)
-    episode_write_concurrency: int = Field(default=8, ge=1)
-    tts_concurrency: int = Field(default=4, ge=1)
+    episode_planning_concurrency: int = Field(default=9, ge=1)
+    episode_write_concurrency: int = Field(default=9, ge=1)
+    tts_concurrency: int = Field(default=12, ge=1)
     llm_global_max_concurrency: int = Field(default=30, ge=1)
     audio_retry_attempts: int = Field(default=3, ge=0)
-    spoken_words_per_minute: int = Field(default=120, ge=80)
+    spoken_words_per_minute: int = Field(default=140, ge=80)
     # Thematic intelligence
     max_axes: int = Field(default=15, ge=1)
     min_axes: int = Field(default=10, ge=1)
     passage_retrieval_percentage: float = Field(default=0.25, gt=0.0, le=1.0)
-    passage_retrieval_min_per_book: int = Field(default=20, ge=1)
-    passage_retrieval_max_per_book: int = Field(default=50, ge=1)
-    axis_candidate_target_total: int = Field(default=120, ge=1)
-    pre_axis_total_budget: int = Field(default=1800, ge=1)
-    pre_axis_floor: int = Field(default=60, ge=0)
+    passage_retrieval_min_per_book: int = Field(default=10, ge=1)
+    passage_retrieval_max_per_book: int = Field(default=25, ge=1)
+    axis_candidate_target_total: int = Field(default=60, ge=1)
+    pre_axis_total_budget: int = Field(default=1200, ge=1)
+    pre_axis_floor: int = Field(default=30, ge=0)
     pre_axis_relevance_power: float = Field(default=1.3, ge=0.0)
     pre_axis_cross_axis_reuse_penalty: float = Field(default=0.25, ge=0.0, le=1.0)
-    admission_floor_per_book: int = Field(default=2, ge=0)
-    retrieval_relevance_power: float = Field(default=1.3, ge=0.0)
+    admission_floor_per_book: int = Field(default=0, ge=0)
+    retrieval_relevance_power: float = Field(default=2.5, ge=0.0)
     retrieval_soft_threshold: float = Field(default=0.35, ge=0.0, le=1.0)
     chapter_penalty_weight: float = Field(default=0.05, ge=0.0, le=1.0)
-    rerank_top_k: int = Field(default=30, ge=1)
-    post_axis_total_budget: int = Field(default=1200, ge=1)
-    post_axis_floor: int = Field(default=20, ge=0)
-    post_axis_cap: int = Field(default=120, ge=1)
-    post_axis_signal_power: float = Field(default=2.5, ge=0.0)
     mmr_enabled: bool = True
-    mmr_post_lambda: float = Field(default=0.6, ge=0.0, le=1.0)
-    mmr_post_source_penalty_weight: float = Field(default=1.0, ge=0.0, le=1.0)
     mmr_synthesis_lambda: float = Field(default=0.75, ge=0.0, le=1.0)
     mmr_planning_lambda: float = Field(default=0.75, ge=0.0, le=1.0)
     synthesis_axis_pct: float = Field(default=1.0, ge=0.0, le=1.0)
     synthesis_axis_min: int = Field(default=10, ge=0)
     synthesis_axis_max: int = Field(default=15, ge=1)
-    synthesis_total_passage_cap: int = Field(default=750, ge=1)
+    synthesis_total_passage_cap: int = Field(default=720, ge=1)
     planning_axis_pct: float = Field(default=1.0, ge=0.0, le=1.0)
     planning_axis_min: int = Field(default=10, ge=0)
     planning_axis_max: int = Field(default=15, ge=1)
@@ -290,8 +278,6 @@ class PipelineRuntimeConfig(BaseModel):
             raise ValueError(
                 "passage_retrieval_max_per_book must be >= passage_retrieval_min_per_book"
             )
-        if self.post_axis_cap < self.post_axis_floor:
-            raise ValueError("post_axis_cap must be >= post_axis_floor")
         if self.synthesis_axis_max < self.synthesis_axis_min:
             raise ValueError("synthesis_axis_max must be >= synthesis_axis_min")
         if self.planning_axis_max < self.planning_axis_min:

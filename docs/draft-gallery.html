@@ -1,0 +1,947 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Iranian Revolution — Gallery</title>
+<style>
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  background: #060708;
+  color: #e8dcc8;
+  font-family: "Avenir Next", "SF Pro Text", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Ken Burns ── */
+@keyframes kenburns {
+  from { transform: scale(1) translate(0, 0); }
+  to   { transform: scale(1.08) translate(-2%, -1%); }
+}
+
+/* ── Gallery Container ── */
+.gallery {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ── Layer 1 — Images ── */
+.gallery__images {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.gallery__images::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom right, rgba(160,64,64,0.2), rgba(6,7,8,0.3));
+  pointer-events: none;
+  z-index: 1;
+}
+
+.gallery__img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: grayscale(0.85) contrast(1.1) brightness(0.7);
+  opacity: 0;
+  transition: opacity 0.8s ease;
+  will-change: opacity, transform;
+}
+
+.gallery__img.active {
+  opacity: 1;
+}
+
+.gallery__img.active.playing {
+  animation: kenburns 60s ease-in-out infinite alternate;
+}
+
+/* ── Layer 2 — Film Grain ── */
+.grain {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  opacity: 0.04;
+  pointer-events: none;
+}
+
+/* ── Layer 3 — Ambient Glow ── */
+.ambient-glow {
+  position: absolute;
+  bottom: -200px;
+  left: -200px;
+  width: 600px;
+  height: 600px;
+  border-radius: 50%;
+  background: #a04040;
+  opacity: 0.1;
+  filter: blur(200px);
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* ── Layer 4 — Content Overlay ── */
+.content-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  background: linear-gradient(to bottom, transparent, rgba(6,7,8,0.6) 20%, rgba(6,7,8,0.92) 50%, #060708 100%);
+  padding: 0 3rem 5.5rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: 35vh;
+  pointer-events: none;
+}
+
+.content-overlay > * {
+  pointer-events: auto;
+}
+
+.content-overlay__inner {
+  transition: opacity 0.5s ease;
+}
+
+.content-overlay__inner.switching {
+  opacity: 0;
+}
+
+.episode-number {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: #a04040;
+  text-transform: uppercase;
+  margin-bottom: 0.4rem;
+}
+
+.episode-title {
+  font-size: clamp(1.8rem, 4vw, 3rem);
+  font-weight: 300;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  line-height: 1.15;
+  margin-bottom: 0.7rem;
+  color: #e8dcc8;
+}
+
+.episode-description {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  opacity: 0.65;
+  max-width: 640px;
+  margin-bottom: 0.5rem;
+}
+
+.read-more {
+  display: inline-block;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: #a04040;
+  text-decoration: none;
+  cursor: pointer;
+  margin-bottom: 1.2rem;
+  transition: opacity 0.25s;
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+}
+
+.read-more:hover {
+  opacity: 0.7;
+}
+
+/* ── Audio Controls ── */
+.audio-controls {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  max-width: 560px;
+}
+
+.play-btn {
+  flex-shrink: 0;
+  width: 4.5rem;
+  height: 4.5rem;
+  border-radius: 50%;
+  border: 2px solid #a04040;
+  background: rgba(160,64,64,0.08);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.3s, transform 0.15s;
+}
+
+.play-btn:hover {
+  background: rgba(160,64,64,0.18);
+}
+
+.play-btn:active {
+  transform: scale(0.95);
+}
+
+.play-btn svg {
+  fill: #e8dcc8;
+  width: 26px;
+  height: 26px;
+}
+
+.progress-group {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.progress-bar {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  background: rgba(232,220,200,0.15);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+.progress-bar::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(to right, #a04040 var(--progress, 0%), rgba(232,220,200,0.15) var(--progress, 0%));
+}
+
+.progress-bar::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #a04040;
+  border: 2px solid #e8dcc8;
+  margin-top: -5px;
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+
+.progress-bar::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+.progress-bar::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(232,220,200,0.15);
+}
+
+.progress-bar::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #a04040;
+  border: 2px solid #e8dcc8;
+  cursor: pointer;
+}
+
+.progress-bar::-moz-range-progress {
+  height: 4px;
+  border-radius: 2px;
+  background: #a04040;
+}
+
+.time-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.time-display {
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.5;
+  letter-spacing: 0.03em;
+}
+
+.speed-btn {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #e8dcc8;
+  opacity: 0.5;
+  background: rgba(232,220,200,0.08);
+  border: 1px solid rgba(232,220,200,0.12);
+  border-radius: 3px;
+  padding: 0.15rem 0.45rem;
+  cursor: pointer;
+  font-family: inherit;
+  transition: opacity 0.2s;
+}
+
+.speed-btn:hover {
+  opacity: 0.8;
+}
+
+/* ── Layer 5 — Header ── */
+.header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  padding: 1.5rem 2rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  opacity: 0.5;
+  transition: opacity 0.3s;
+}
+
+.header:hover {
+  opacity: 0.85;
+}
+
+.header__home {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-variant: small-caps;
+  color: #e8dcc8;
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.header__home:hover {
+  color: #a04040;
+}
+
+.header__series {
+  font-size: 0.78rem;
+  font-weight: 300;
+  letter-spacing: 0.06em;
+  font-variant: small-caps;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+
+/* ── Layer 6 — Thumbnail Strip ── */
+.thumb-strip {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  padding: 1rem 2rem;
+  background: rgba(6,7,8,0.5);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.thumb-strip__item {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  border-radius: 4px;
+  overflow: hidden;
+  cursor: pointer;
+  border: 2px solid transparent;
+  filter: grayscale(1) brightness(0.5);
+  opacity: 0.5;
+  transition: all 0.3s ease;
+  flex-shrink: 0;
+}
+
+.thumb-strip__item:hover {
+  opacity: 0.8;
+}
+
+.thumb-strip__item.active {
+  filter: grayscale(0.3) brightness(0.8);
+  opacity: 1;
+  border-color: #a04040;
+}
+
+.thumb-strip__item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Tooltip */
+.thumb-strip__item::after {
+  content: attr(data-title);
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(6,7,8,0.9);
+  color: #e8dcc8;
+  font-size: 0.65rem;
+  letter-spacing: 0.03em;
+  padding: 0.35rem 0.6rem;
+  border-radius: 3px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+
+.thumb-strip__item:hover::after {
+  opacity: 1;
+}
+
+/* ── Full-screen Description Modal ── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  background: rgba(6,7,8,0.95);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-overlay.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.modal-content {
+  max-width: 600px;
+  width: 90%;
+  padding: 3rem;
+}
+
+.modal-close {
+  position: absolute;
+  top: 1.5rem;
+  right: 2rem;
+  font-size: 2rem;
+  font-weight: 200;
+  color: #e8dcc8;
+  opacity: 0.5;
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.2s;
+  line-height: 1;
+  font-family: inherit;
+}
+
+.modal-close:hover {
+  opacity: 1;
+}
+
+.modal__episode-number {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: #a04040;
+  text-transform: uppercase;
+  margin-bottom: 0.6rem;
+}
+
+.modal__title {
+  font-size: clamp(1.6rem, 3.5vw, 2.4rem);
+  font-weight: 300;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  line-height: 1.15;
+  margin-bottom: 1.5rem;
+  color: #e8dcc8;
+}
+
+.modal__description {
+  font-size: 0.92rem;
+  line-height: 1.7;
+  opacity: 0.75;
+  margin-bottom: 1.5rem;
+}
+
+.modal__duration {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  opacity: 0.4;
+  text-transform: uppercase;
+}
+
+/* ── Mobile ── */
+@media (max-width: 680px) {
+  .content-overlay {
+    padding: 0 1.5rem 5rem;
+  }
+
+  .episode-title {
+    font-size: clamp(1.3rem, 5vw, 2rem);
+  }
+
+  .audio-controls {
+    gap: 0.7rem;
+  }
+
+  .play-btn {
+    width: 3.5rem;
+    height: 3.5rem;
+  }
+
+  .play-btn svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .thumb-strip__item {
+    width: 42px;
+    height: 42px;
+  }
+
+  .thumb-strip {
+    gap: 6px;
+    padding: 0.75rem 1rem;
+  }
+
+  .header {
+    padding: 1rem 1.2rem;
+  }
+
+  .modal-content {
+    padding: 2rem 1.5rem;
+  }
+}
+</style>
+</head>
+<body>
+
+<!-- ════════════ Gallery Container ════════════ -->
+<div class="gallery" id="gallery">
+
+  <!-- Layer 1 — Images -->
+  <div class="gallery__images">
+    <img class="gallery__img active" src="images/iran-2.jpg" alt="The Thousand-Year Duel" data-index="0">
+    <img class="gallery__img" src="images/iran-3.jpg" alt="The Modernizer's Trap" data-index="1">
+    <img class="gallery__img" src="images/iran-4.jpg" alt="The Foundational Trauma" data-index="2">
+    <img class="gallery__img" src="images/iran-5.jpg" alt="The Invisible Revolution" data-index="3">
+    <img class="gallery__img" src="images/iran-shah.jpg" alt="The Year of Living Dangerously" data-index="4">
+    <img class="gallery__img" src="images/iran-hostage.jpg" alt="The Revolution Devours Its Children" data-index="5">
+    <img class="gallery__img" src="images/iran-revolution.jpg" alt="The Crucible" data-index="6">
+  </div>
+
+  <!-- Layer 2 — Film Grain -->
+  <svg class="grain" width="100%" height="100%">
+    <filter id="grain-filter">
+      <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch"/>
+    </filter>
+    <rect width="100%" height="100%" filter="url(#grain-filter)"/>
+  </svg>
+
+  <!-- Layer 3 — Ambient Glow -->
+  <div class="ambient-glow"></div>
+
+  <!-- Layer 4 — Content Overlay -->
+  <div class="content-overlay">
+    <div class="content-overlay__inner" id="contentInner">
+      <div class="episode-number" id="epNumber">EPISODE 01</div>
+      <h1 class="episode-title" id="epTitle">The Thousand-Year Duel</h1>
+      <p class="episode-description" id="epDesc">Establishes the deep structural foundations of clerical autonomy — the Safavid settlement, the Usuli triumph — revealing how centuries of institutional development created the preconditions for revolution.</p>
+      <button class="read-more" id="readMoreBtn">Read more</button>
+      <div class="audio-controls">
+        <button class="play-btn" id="playBtn" aria-label="Play">
+          <svg viewBox="0 0 24 24" id="playIcon"><path d="M8 5v14l11-7z"/></svg>
+        </button>
+        <div class="progress-group">
+          <input type="range" class="progress-bar" id="progressBar" min="0" max="1000" value="0" step="1" style="--progress: 0%;">
+          <div class="time-row">
+            <span class="time-display" id="timeDisplay">0:00:00 / 1:38:29</span>
+            <button class="speed-btn" id="speedBtn">1x</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Layer 5 — Header -->
+  <div class="header">
+    <a href="./index.html" class="header__home">Agentic Podcasts</a>
+    <span class="header__series">The Iranian Revolution</span>
+  </div>
+
+  <!-- Layer 6 — Thumbnail Strip -->
+  <div class="thumb-strip" id="thumbStrip">
+    <div class="thumb-strip__item active" data-index="0" data-title="Ep 1 — The Thousand-Year Duel">
+      <img src="images/iran-2.jpg" alt="Episode 1">
+    </div>
+    <div class="thumb-strip__item" data-index="1" data-title="Ep 2 — The Modernizer's Trap">
+      <img src="images/iran-3.jpg" alt="Episode 2">
+    </div>
+    <div class="thumb-strip__item" data-index="2" data-title="Ep 3 — The Foundational Trauma">
+      <img src="images/iran-4.jpg" alt="Episode 3">
+    </div>
+    <div class="thumb-strip__item" data-index="3" data-title="Ep 4 — The Invisible Revolution">
+      <img src="images/iran-5.jpg" alt="Episode 4">
+    </div>
+    <div class="thumb-strip__item" data-index="4" data-title="Ep 5 — The Year of Living Dangerously">
+      <img src="images/iran-shah.jpg" alt="Episode 5">
+    </div>
+    <div class="thumb-strip__item" data-index="5" data-title="Ep 6 — The Revolution Devours Its Children">
+      <img src="images/iran-hostage.jpg" alt="Episode 6">
+    </div>
+    <div class="thumb-strip__item" data-index="6" data-title="Ep 7 — The Crucible">
+      <img src="images/iran-revolution.jpg" alt="Episode 7">
+    </div>
+  </div>
+
+</div><!-- /gallery -->
+
+<!-- ════════════ Full-screen Description Modal ════════════ -->
+<div class="modal-overlay" id="modal">
+  <button class="modal-close" id="modalClose" aria-label="Close">&times;</button>
+  <div class="modal-content">
+    <div class="modal__episode-number" id="modalEpNumber">EPISODE 01</div>
+    <h2 class="modal__title" id="modalTitle">The Thousand-Year Duel</h2>
+    <p class="modal__description" id="modalDesc"></p>
+    <span class="modal__duration" id="modalDuration">Duration: 1:38:29</span>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ── Episode Data ── */
+  const AUDIO_BASE = "https://github.com/baqiral-1/podcast_agent/releases/download/iranian-revolution-episodes-1-7-20260407T1830/";
+
+  const episodes = [
+    {
+      num: 1,
+      title: "The Thousand-Year Duel",
+      duration: "1:38:29",
+      durationSec: 5909,
+      shortDesc: "Establishes the deep structural foundations of clerical autonomy \u2014 the Safavid settlement, the Usuli triumph \u2014 revealing how centuries of institutional development created the preconditions for revolution.",
+      fullDesc: "The episode establishes the series\u2019 global question by tracing the deep structural foundations of Shi\u2019ite clerical autonomy. Beginning with the Safavid imposition of Shi\u2019ism in 1501, through the Usuli triumph, the Qajar dualism, and the Constitutional Revolution of 1906. Culminates with the paradox of dispossession: Reza Shah\u2019s stripping of clerical prerogatives paradoxically strengthened the ulama\u2019s revolutionary capacity.",
+      audio: AUDIO_BASE + "episode-1.mp3"
+    },
+    {
+      num: 2,
+      title: "The Modernizer\u2019s Trap",
+      duration: "1:56:00",
+      durationSec: 6960,
+      shortDesc: "Traces the Pahlavi paradox: authoritarian modernization that simultaneously transformed Iran and generated every constituency that would destroy them.",
+      fullDesc: "Traces the self-defeating logic of Pahlavi modernization \u2014 military centralization, secular reform, clerical marginalization \u2014 through Reza Shah\u2019s state-building, the AIOC\u2019s colonial extraction, Mosaddeq\u2019s nationalization, the White Revolution\u2019s unintended consequences, and the oil boom\u2019s corrosive effects on legitimacy.",
+      audio: AUDIO_BASE + "episode-2.mp3"
+    },
+    {
+      num: 3,
+      title: "The Foundational Trauma",
+      duration: "1:52:30",
+      durationSec: 6750,
+      shortDesc: "The 1953 coup as the hinge event that delegitimized secular nationalism, branded the Shah as a foreign puppet, and channeled all opposition toward Islamic frameworks.",
+      fullDesc: "Examines the 1953 coup as the foundational trauma connecting democratic aspirations to revolutionary radicalism. Stages a debate between those emphasizing CIA-British machination and those stressing domestic dynamics, establishing that the coup\u2019s psychological legacy was more consequential than its operational details.",
+      audio: AUDIO_BASE + "episode-3.mp3"
+    },
+    {
+      num: 4,
+      title: "The Invisible Revolution",
+      duration: "1:43:18",
+      durationSec: 6198,
+      shortDesc: "The intellectual and organizational infrastructure that made 1979 possible: gharbzadegi, Shariati\u2019s Islamic Marxism, Khomeini\u2019s erfan, and the invisible mosque-bazaar networks.",
+      fullDesc: "Reveals the invisible revolution \u2014 three converging streams: intellectual preparation (gharbzadegi, Shariati, Khomeini\u2019s erfan), organizational infrastructure (mosque-bazaar alliance, hay\u2019at networks, cassette distribution), and Khomeini\u2019s path from obscurity to supreme authority.",
+      audio: AUDIO_BASE + "episode-4.mp3"
+    },
+    {
+      num: 5,
+      title: "The Year of Living Dangerously",
+      duration: "1:54:01",
+      durationSec: 6841,
+      shortDesc: "The revolutionary year 1978: the forty-day mourning cycle, Black Friday, the Shah\u2019s paralysis, the military\u2019s fracture, and Khomeini\u2019s strategic ambiguity from Paris.",
+      fullDesc: "Traces the revolutionary year 1978 as escalation, paralysis, and strategic ambiguity. The forty-day mourning cycle, Black Friday, the Shah\u2019s psychological collapse, the military\u2019s fracture, and Khomeini\u2019s strategic ambiguity from Paris: democrat to Western audiences, theocrat to Iranian followers.",
+      audio: AUDIO_BASE + "episode-5.mp3"
+    },
+    {
+      num: 6,
+      title: "The Revolution Devours Its Children",
+      duration: "1:48:48",
+      durationSec: 6528,
+      shortDesc: "The coalition\u2019s fracture, the hostage crisis as constitutional coup, and the systematic consolidation of theocratic power through parallel institutions.",
+      fullDesc: "The revolution\u2019s aftermath: coalition fracture, hostage crisis as constitutional coup, systematic elimination of moderates, and construction of a theocratic state that paradoxically expanded the bureaucratic apparatus it inherited.",
+      audio: AUDIO_BASE + "episode-6.mp3"
+    },
+    {
+      num: 7,
+      title: "The Crucible",
+      duration: "1:47:41",
+      durationSec: 6461,
+      shortDesc: "The Iran-Iraq War as crucible, the 1988 executions, Montazeri\u2019s dissent \u2014 was this tragedy inevitable, or could it have been otherwise?",
+      fullDesc: "The revolution\u2019s crucible: Iran-Iraq War as forge, 1988 mass executions as moral limit, Montazeri\u2019s dissent as foreclosure of reform, the Sunni-Shia divide as geopolitical fault line. Was this inevitable or contingent? Both are true simultaneously.",
+      audio: AUDIO_BASE + "episode-7.mp3"
+    }
+  ];
+
+  /* ── DOM Refs ── */
+  const images      = document.querySelectorAll(".gallery__img");
+  const thumbs      = document.querySelectorAll(".thumb-strip__item");
+  const contentInner = document.getElementById("contentInner");
+  const epNumber    = document.getElementById("epNumber");
+  const epTitle     = document.getElementById("epTitle");
+  const epDesc      = document.getElementById("epDesc");
+  const playBtn     = document.getElementById("playBtn");
+  const playIcon    = document.getElementById("playIcon");
+  const progressBar = document.getElementById("progressBar");
+  const timeDisplay = document.getElementById("timeDisplay");
+  const speedBtn    = document.getElementById("speedBtn");
+  const readMoreBtn = document.getElementById("readMoreBtn");
+  const modal       = document.getElementById("modal");
+  const modalClose  = document.getElementById("modalClose");
+  const modalEpNum  = document.getElementById("modalEpNumber");
+  const modalTitle  = document.getElementById("modalTitle");
+  const modalDesc   = document.getElementById("modalDesc");
+  const modalDur    = document.getElementById("modalDuration");
+
+  /* ── State ── */
+  let current   = 0;
+  let isPlaying = false;
+  let isSeeking = false;
+  const speeds  = [1, 1.25, 1.5, 2];
+  let speedIdx  = 0;
+
+  /* ── Audio ── */
+  const audio = new Audio();
+  audio.preload = "metadata";
+  audio.src = episodes[0].audio;
+
+  /* ── Helpers ── */
+  function pad(n) { return String(n).padStart(2, "0"); }
+
+  function fmtTime(s) {
+    if (!isFinite(s) || s < 0) s = 0;
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = Math.floor(s % 60);
+    return h + ":" + pad(m) + ":" + pad(sec);
+  }
+
+  function updateTimeDisplay() {
+    const cur = fmtTime(audio.currentTime);
+    const dur = episodes[current].duration;
+    timeDisplay.textContent = cur + " / " + dur;
+  }
+
+  function updateProgress() {
+    if (isSeeking) return;
+    const total = audio.duration || episodes[current].durationSec;
+    const pct = total > 0 ? (audio.currentTime / total) * 100 : 0;
+    progressBar.value = (pct / 100) * 1000;
+    progressBar.style.setProperty("--progress", pct + "%");
+    updateTimeDisplay();
+  }
+
+  /* ── Switch Episode ── */
+  function switchTo(index) {
+    if (index < 0 || index >= episodes.length) return;
+    const wasPlaying = isPlaying;
+
+    /* Pause current */
+    audio.pause();
+    isPlaying = false;
+    images[current].classList.remove("playing");
+
+    /* Content fade-out */
+    contentInner.classList.add("switching");
+
+    current = index;
+    const ep = episodes[current];
+
+    /* Images */
+    images.forEach(function (img, i) {
+      img.classList.toggle("active", i === current);
+    });
+
+    /* Thumbnails */
+    thumbs.forEach(function (th, i) {
+      th.classList.toggle("active", i === current);
+    });
+
+    /* After fade-out, update text */
+    setTimeout(function () {
+      epNumber.textContent = "EPISODE " + pad(ep.num);
+      epTitle.textContent = ep.title;
+      epDesc.textContent = ep.shortDesc;
+      contentInner.classList.remove("switching");
+    }, 250);
+
+    /* Audio */
+    audio.src = ep.audio;
+    audio.playbackRate = speeds[speedIdx];
+    progressBar.value = 0;
+    progressBar.style.setProperty("--progress", "0%");
+    updateTimeDisplay();
+
+    if (wasPlaying) {
+      audio.play().then(function () {
+        isPlaying = true;
+        setPlayIcon(true);
+        images[current].classList.add("playing");
+      }).catch(function () {});
+    } else {
+      setPlayIcon(false);
+    }
+  }
+
+  /* ── Play / Pause ── */
+  function setPlayIcon(playing) {
+    if (playing) {
+      playIcon.innerHTML = '<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>';
+    } else {
+      playIcon.innerHTML = '<path d="M8 5v14l11-7z"/>';
+    }
+  }
+
+  function togglePlay() {
+    if (isPlaying) {
+      audio.pause();
+      isPlaying = false;
+      setPlayIcon(false);
+      images[current].classList.remove("playing");
+    } else {
+      audio.play().then(function () {
+        isPlaying = true;
+        setPlayIcon(true);
+        images[current].classList.add("playing");
+      }).catch(function () {});
+    }
+  }
+
+  /* ── Event Listeners ── */
+  playBtn.addEventListener("click", togglePlay);
+
+  audio.addEventListener("timeupdate", updateProgress);
+  audio.addEventListener("ended", function () {
+    isPlaying = false;
+    setPlayIcon(false);
+    images[current].classList.remove("playing");
+    /* Auto-advance */
+    if (current < episodes.length - 1) {
+      switchTo(current + 1);
+      audio.play().then(function () {
+        isPlaying = true;
+        setPlayIcon(true);
+        images[current].classList.add("playing");
+      }).catch(function () {});
+    }
+  });
+
+  /* Progress bar seeking */
+  progressBar.addEventListener("input", function () {
+    isSeeking = true;
+    var pct = this.value / 1000;
+    this.style.setProperty("--progress", (pct * 100) + "%");
+    var total = audio.duration || episodes[current].durationSec;
+    timeDisplay.textContent = fmtTime(pct * total) + " / " + episodes[current].duration;
+  });
+
+  progressBar.addEventListener("change", function () {
+    var pct = this.value / 1000;
+    var total = audio.duration || episodes[current].durationSec;
+    audio.currentTime = pct * total;
+    isSeeking = false;
+  });
+
+  /* Speed */
+  speedBtn.addEventListener("click", function () {
+    speedIdx = (speedIdx + 1) % speeds.length;
+    audio.playbackRate = speeds[speedIdx];
+    speedBtn.textContent = speeds[speedIdx] + "x";
+  });
+
+  /* Thumbnails */
+  thumbs.forEach(function (th) {
+    th.addEventListener("click", function () {
+      switchTo(parseInt(this.getAttribute("data-index"), 10));
+    });
+  });
+
+  /* Read More / Modal */
+  readMoreBtn.addEventListener("click", function () {
+    var ep = episodes[current];
+    modalEpNum.textContent = "EPISODE " + pad(ep.num);
+    modalTitle.textContent = ep.title;
+    modalDesc.textContent = ep.fullDesc;
+    modalDur.textContent = "Duration: " + ep.duration;
+    modal.classList.add("open");
+  });
+
+  modalClose.addEventListener("click", function () {
+    modal.classList.remove("open");
+  });
+
+  modal.addEventListener("click", function (e) {
+    if (e.target === modal) modal.classList.remove("open");
+  });
+
+  /* Keyboard */
+  document.addEventListener("keydown", function (e) {
+    /* Ignore if typing in an input */
+    if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+
+    switch (e.key) {
+      case "ArrowRight":
+        e.preventDefault();
+        switchTo(current + 1);
+        break;
+      case "ArrowLeft":
+        e.preventDefault();
+        switchTo(current - 1);
+        break;
+      case " ":
+        e.preventDefault();
+        if (modal.classList.contains("open")) return;
+        togglePlay();
+        break;
+      case "Escape":
+        if (modal.classList.contains("open")) {
+          modal.classList.remove("open");
+        }
+        break;
+    }
+  });
+
+  /* Initial time display */
+  updateTimeDisplay();
+
+})();
+</script>
+
+</body>
+</html>

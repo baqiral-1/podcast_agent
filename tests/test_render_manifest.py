@@ -18,7 +18,7 @@ def _framing() -> FramingBlock:
 
 
 class TestBuildRenderManifest:
-    def test_manifest_uses_framing_sections_transitions_and_preview(self):
+    def test_manifest_interleaves_sections_and_transitions_with_framing(self):
         spoken = SpokenScript(
             episode_number=1,
             title="Episode 1",
@@ -28,6 +28,11 @@ class TestBuildRenderManifest:
                     section_id="section_1",
                     text="The convoy moves through the dark.",
                     speech_hints=SpeechHints(pause_before_ms=350, pause_after_ms=450),
+                ),
+                SpokenSection(
+                    section_id="section_2",
+                    text="The first checkpoint falls silent.",
+                    speech_hints=SpeechHints(pause_before_ms=300, pause_after_ms=400),
                 )
             ],
             transitions=[
@@ -40,7 +45,7 @@ class TestBuildRenderManifest:
         )
         manifest = build_render_manifest(spoken)
         assert manifest.episode_number == 1
-        assert manifest.total_segments == 7
+        assert manifest.total_segments == 8
         assert [segment.segment_id for segment in manifest.segments] == [
             "framing_recap",
             "framing_opening_image",
@@ -49,6 +54,7 @@ class TestBuildRenderManifest:
             "framing_preview",
             "section_1",
             "transition_1",
+            "section_2",
         ]
 
     def test_voice_speed_and_pause_values_propagate(self):
@@ -91,3 +97,237 @@ class TestBuildRenderManifest:
         )
         manifest = build_render_manifest(spoken, words_per_minute=130)
         assert manifest.estimated_duration_seconds > 0
+
+    def test_builds_manifest_when_transition_count_does_not_match_sections_minus_one(self):
+        spoken = SpokenScript(
+            episode_number=1,
+            title="Episode 1",
+            framing=FramingBlock(
+                opening_image="Image",
+                threat_or_unresolved_action="Threat",
+                opening_question="Question",
+                handoff_scene_card_id="scene_1",
+            ),
+            sections=[
+                SpokenSection(section_id="section_1", text="One."),
+                SpokenSection(section_id="section_2", text="Two."),
+            ],
+            transitions=[],
+        )
+        manifest = build_render_manifest(spoken)
+        assert [segment.segment_id for segment in manifest.segments] == [
+            "framing_opening_image",
+            "framing_threat",
+            "framing_question",
+            "section_1",
+            "section_2",
+        ]
+
+    def test_emphasis_targets_are_retained_via_segment_instructions(self):
+        spoken = SpokenScript(
+            episode_number=1,
+            title="Episode 1",
+            framing=FramingBlock(
+                opening_image="Image",
+                threat_or_unresolved_action="Threat",
+                opening_question="Question",
+                handoff_scene_card_id="scene_1",
+            ),
+            sections=[
+                SpokenSection(
+                    section_id="section_1",
+                    text="The fragile truce did not hold.",
+                    speech_hints=SpeechHints(
+                        intensity="light",
+                        emphasis_targets=["fragile truce"],
+                    ),
+                ),
+            ],
+        )
+        manifest = build_render_manifest(
+            spoken,
+            base_instructions="Keep narration steady.",
+        )
+        section = next(segment for segment in manifest.segments if segment.segment_id == "section_1")
+        assert section.instructions is not None
+        assert "fragile truce" in section.instructions
+        assert section.hint_degradations == []
+
+    def test_long_segment_instructions_are_not_truncated(self):
+        long_base = " ".join(["steady narration profile"] * 80)
+        spoken = SpokenScript(
+            episode_number=1,
+            title="Episode 1",
+            framing=FramingBlock(
+                opening_image="Image",
+                threat_or_unresolved_action="Threat",
+                opening_question="Question",
+                handoff_scene_card_id="scene_1",
+            ),
+            sections=[
+                SpokenSection(
+                    section_id="section_1",
+                    text="The fragile truce did not hold.",
+                    speech_hints=SpeechHints(
+                        intensity="light",
+                        emphasis_targets=["fragile truce"],
+                    ),
+                ),
+            ],
+        )
+        manifest = build_render_manifest(
+            spoken,
+            base_instructions=long_base,
+        )
+        section = next(segment for segment in manifest.segments if segment.segment_id == "section_1")
+        assert section.instructions is not None
+        assert len(section.instructions) > 500
+        assert not section.instructions.endswith("...")
+        assert "steady narration profile" in section.instructions
+        assert "fragile truce" in section.instructions
+
+    def test_unsupported_provider_records_hint_degradations(self):
+        spoken = SpokenScript(
+            episode_number=1,
+            title="Episode 1",
+            framing=FramingBlock(
+                opening_image="Image",
+                threat_or_unresolved_action="Threat",
+                opening_question="Question",
+                handoff_scene_card_id="scene_1",
+            ),
+            sections=[
+                SpokenSection(
+                    section_id="section_1",
+                    text="The fragile truce did not hold.",
+                    speech_hints=SpeechHints(
+                        style="measured",
+                        intensity="medium",
+                        emphasis_targets=["fragile truce"],
+                        pronunciation_hints=[{"text": "truce", "spoken_as": "trooss"}],
+                    ),
+                ),
+            ],
+            tts_provider="kokoro",
+        )
+        manifest = build_render_manifest(spoken)
+        section = next(segment for segment in manifest.segments if segment.segment_id == "section_1")
+        assert section.instructions is None
+        assert "segment_instructions_not_supported" in section.hint_degradations
+        assert "pronunciation_hints_not_supported" in section.hint_degradations
+        assert "phrase_emphasis_requires_prompt_steering" in section.hint_degradations
+
+    def test_render_strategy_split_sentences_creates_multiple_segments(self):
+        spoken = SpokenScript(
+            episode_number=1,
+            title="Episode 1",
+            framing=FramingBlock(
+                opening_image="Image",
+                threat_or_unresolved_action="Threat",
+                opening_question="Question",
+                handoff_scene_card_id="scene_1",
+            ),
+            sections=[
+                SpokenSection(
+                    section_id="section_1",
+                    text="First sentence. Second sentence.",
+                    speech_hints=SpeechHints(render_strategy="split_sentences"),
+                ),
+            ],
+        )
+        manifest = build_render_manifest(spoken)
+        segment_ids = [segment.segment_id for segment in manifest.segments]
+        assert "section_1_1" in segment_ids
+        assert "section_1_2" in segment_ids
+
+    def test_split_sentences_filters_pronunciation_hints_per_chunk(self):
+        spoken = SpokenScript(
+            episode_number=1,
+            title="Episode 1",
+            framing=FramingBlock(
+                opening_image="Image",
+                threat_or_unresolved_action="Threat",
+                opening_question="Question",
+                handoff_scene_card_id="scene_1",
+            ),
+            sections=[
+                SpokenSection(
+                    section_id="section_1",
+                    text="The battle hardened at Panipat. The embassy regrouped in Shiraz.",
+                    speech_hints=SpeechHints(
+                        render_strategy="split_sentences",
+                        pronunciation_hints=[
+                            {"text": "Panipat", "spoken_as": "PAH-nee-puht"},
+                            {"text": "Shiraz", "spoken_as": "shee-RAHZ"},
+                            {"text": "Delhi", "spoken_as": "DEL-hee"},
+                        ],
+                    ),
+                ),
+            ],
+        )
+        manifest = build_render_manifest(spoken)
+        first = next(segment for segment in manifest.segments if segment.segment_id == "section_1_1")
+        second = next(segment for segment in manifest.segments if segment.segment_id == "section_1_2")
+        assert first.instructions is not None
+        assert "Panipat as PAH-nee-puht" in first.instructions
+        assert "Shiraz as shee-RAHZ" not in first.instructions
+        assert second.instructions is not None
+        assert "Shiraz as shee-RAHZ" in second.instructions
+        assert "Panipat as PAH-nee-puht" not in second.instructions
+        assert "Delhi as DEL-hee" not in first.instructions
+        assert "Delhi as DEL-hee" not in second.instructions
+
+    def test_pronunciation_matching_tolerates_diacritics_and_punctuation(self):
+        spoken = SpokenScript(
+            episode_number=1,
+            title="Episode 1",
+            framing=FramingBlock(
+                opening_image="Image",
+                threat_or_unresolved_action="Threat",
+                opening_question="Question",
+                handoff_scene_card_id="scene_1",
+            ),
+            sections=[
+                SpokenSection(
+                    section_id="section_1",
+                    text="From Isfahan to al-Mansur, envoys carried the warning.",
+                    speech_hints=SpeechHints(
+                        pronunciation_hints=[
+                            {"text": "Isfahán", "spoken_as": "ISS-fuh-hahn"},
+                            {"text": "al mansur", "spoken_as": "ahl man-SOOR"},
+                        ],
+                    ),
+                ),
+            ],
+        )
+        manifest = build_render_manifest(spoken)
+        section = next(segment for segment in manifest.segments if segment.segment_id == "section_1")
+        assert section.instructions is not None
+        assert "Isfahán as ISS-fuh-hahn" in section.instructions
+        assert "al mansur as ahl man-SOOR" in section.instructions
+
+    def test_pronunciation_clause_omitted_when_no_terms_match_chunk(self):
+        spoken = SpokenScript(
+            episode_number=1,
+            title="Episode 1",
+            framing=FramingBlock(
+                opening_image="Image",
+                threat_or_unresolved_action="Threat",
+                opening_question="Question",
+                handoff_scene_card_id="scene_1",
+            ),
+            sections=[
+                SpokenSection(
+                    section_id="section_1",
+                    text="The envoy crossed the river at dawn.",
+                    speech_hints=SpeechHints(
+                        pronunciation_hints=[{"text": "Shiraz", "spoken_as": "shee-RAHZ"}],
+                    ),
+                ),
+            ],
+        )
+        manifest = build_render_manifest(spoken, base_instructions="Keep narration steady.")
+        section = next(segment for segment in manifest.segments if segment.segment_id == "section_1")
+        assert section.instructions is not None
+        assert "Keep narration steady." in section.instructions
+        assert "Use these pronunciations:" not in section.instructions
