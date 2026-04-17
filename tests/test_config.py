@@ -38,8 +38,8 @@ class TestLLMConfig:
     def test_resolve_model_defaults(self):
         config = LLMConfig()
         assert config.resolve_model("chapter_summary") == "claude-haiku-4-5"
-        assert config.resolve_model("synthesis_primitives") == "claude-opus-4-6"
-        assert config.resolve_model("synthesis_consolidation") == "claude-opus-4-6"
+        assert config.resolve_model("synthesis_primitives") == "claude-opus-4-7"
+        assert config.resolve_model("synthesis_consolidation") == "claude-opus-4-7"
 
     def test_resolve_max_retry_attempts_defaults(self):
         config = LLMConfig()
@@ -52,8 +52,8 @@ class TestLLMConfig:
     def test_resolve_timeout_seconds_defaults(self):
         config = LLMConfig()
         assert config.resolve_timeout_seconds("passage_extraction") == 480.0
-        assert config.resolve_timeout_seconds("synthesis_primitives") == 2400.0
-        assert config.resolve_timeout_seconds("synthesis_consolidation") == 1800.0
+        assert config.resolve_timeout_seconds("synthesis_primitives") == 3360.0
+        assert config.resolve_timeout_seconds("synthesis_consolidation") == 2520.0
         assert config.resolve_timeout_seconds("unknown_agent") == 600.0
 
     def test_resolve_concurrency_limit_defaults(self):
@@ -73,6 +73,24 @@ class TestLLMConfig:
         assert config.resolve_thinking_budget("synthesis_consolidation") == 20_000
         assert config.resolve_thinking_budget("episode_planning") == 15_000
         assert config.resolve_thinking_budget("chapter_summary") is None
+
+    def test_resolve_anthropic_thinking_effort_defaults_from_legacy_budgets(self):
+        config = LLMConfig()
+        assert config.resolve_anthropic_thinking_effort("episode_writing") == "medium"
+        assert config.resolve_anthropic_thinking_effort("theme_decomposition") == "high"
+        assert config.resolve_anthropic_thinking_effort("synthesis_primitives") == "xhigh"
+        assert config.resolve_anthropic_thinking_effort("chapter_summary") is None
+
+    def test_resolve_anthropic_thinking_effort_prefers_explicit_override(self):
+        config = LLMConfig(
+            thinking_budget_tokens={"custom_schema": 35_000},
+            anthropic_thinking_effort_overrides={"custom_schema": "LOW"},
+        )
+        assert config.resolve_anthropic_thinking_effort("custom_schema") == "low"
+
+    def test_rejects_invalid_anthropic_thinking_effort_override(self):
+        with pytest.raises(ValidationError, match="Invalid anthropic thinking effort"):
+            LLMConfig(anthropic_thinking_effort_overrides={"custom_schema": "turbo"})
 
     def test_normalizes_openai_base_url(self):
         config = LLMConfig(base_url="https://api.openai.com")
@@ -97,7 +115,7 @@ class TestPipelineRuntimeConfig:
         assert config.chunk_overlap_words == 75
         assert config.max_repair_attempts == 3
         assert config.episode_planning_concurrency == 9
-        assert config.episode_write_concurrency == 9
+        assert config.episode_write_concurrency == 7
         assert config.tts_concurrency == 12
         assert config.spoken_words_per_minute == 140
 
@@ -119,7 +137,7 @@ class TestPipelineRuntimeConfig:
         assert config.planning_axis_pct == 1.0
         assert config.planning_axis_min == 10
         assert config.planning_axis_max == 15
-        assert config.synthesis_total_passage_cap == 720
+        assert config.synthesis_total_passage_cap == 800
         assert config.planning_total_passage_cap == 300
         assert config.passage_extraction_concurrency == 8
         assert config.llm_global_max_concurrency == 30

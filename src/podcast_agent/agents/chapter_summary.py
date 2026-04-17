@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from podcast_agent.agents.base import Agent
 from podcast_agent.prompts import chapter_summary_instructions
@@ -10,7 +10,6 @@ from podcast_agent.schemas.models import ChapterAnalysis
 
 
 class ChapterSummaryResponse(BaseModel):
-    summary: str = Field(default="")
     analysis: ChapterAnalysis | None = None
 
 

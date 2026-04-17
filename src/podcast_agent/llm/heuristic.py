@@ -8,6 +8,7 @@ from uuid import uuid4
 from pydantic import BaseModel
 
 from podcast_agent.llm.base import LLMClient, PromptPayload, prompt_log_metadata
+from podcast_agent.schemas.models import SYNTHESIS_PRIMITIVE_FAMILIES
 
 
 class HeuristicLLMClient(LLMClient):
@@ -65,7 +66,6 @@ class HeuristicLLMClient(LLMClient):
     def _generate_chapter_summary(self, payload: PromptPayload) -> dict[str, Any]:
         chapter_title = str(payload.get("chapter_title", "")).strip() or "This chapter"
         return {
-            "summary": f"{chapter_title} is summarized heuristically from the source text.",
             "analysis": {
                 "themes_touched": [chapter_title],
                 "major_actors": [],
@@ -159,71 +159,99 @@ class HeuristicLLMClient(LLMClient):
         passages_by_axis = payload.get("passages_by_axis", {})
         axis_ids = list(passages_by_axis.keys()) or ["axis_01"]
         passage_ids = self._collect_passage_ids(passages_by_axis) or [uuid4().hex, uuid4().hex]
+        family_templates: dict[str, tuple[str, str, str]] = {
+            "turning_points": (
+                "tp_001",
+                "Heuristic turning point",
+                "A threshold crossing changes what becomes possible next.",
+            ),
+            "scene_worthy_consequences": (
+                "sc_001",
+                "Heuristic consequence",
+                "A visible consequence follows from the turn.",
+            ),
+            "causal_mechanisms": (
+                "cm_001",
+                "Heuristic mechanism",
+                "A process explains how local change propagates.",
+            ),
+            "live_questions": (
+                "lq_001",
+                "Heuristic live question",
+                "The evidence supports more than one plausible reading.",
+            ),
+            "reversals": (
+                "rv_001",
+                "Heuristic reversal",
+                "A development flips expectations or stated intent.",
+            ),
+            "motivations_dilemmas": (
+                "md_001",
+                "Heuristic motivation dilemma",
+                "Actors face pressure between competing goals and constraints.",
+            ),
+            "perspective_shifts": (
+                "ps_001",
+                "Heuristic perspective shift",
+                "Interpretation changes when viewed through a different actor lens.",
+            ),
+            "moral_ambiguities": (
+                "ma_001",
+                "Heuristic moral ambiguity",
+                "The evidence supports conflicting judgments about responsibility.",
+            ),
+            "personal_stakes": (
+                "st_001",
+                "Heuristic personal stake",
+                "Individual risk and cost become decisive for later outcomes.",
+            ),
+            "trauma_legacies": (
+                "tl_001",
+                "Heuristic trauma legacy",
+                "Past violence continues shaping present choices and fears.",
+            ),
+        }
+        primitives_by_family: dict[str, list[dict[str, Any]]] = {}
+        for family in SYNTHESIS_PRIMITIVE_FAMILIES:
+            primitive_id, title, summary = family_templates[family]
+            primitive = self._build_primitive(
+                primitive_id=primitive_id,
+                title=title,
+                summary=summary,
+                axis_ids=axis_ids[:1],
+                passage_ids=passage_ids[:3],
+            )
+            if family == "live_questions":
+                primitive["candidate_readings"] = [
+                    {
+                        "label": "reading_a",
+                        "summary": "A cautious interpretation of the evidence.",
+                        "support_passage_ids": passage_ids[:1],
+                    },
+                    {
+                        "label": "reading_b",
+                        "summary": "A competing interpretation that remains plausible.",
+                        "support_passage_ids": passage_ids[1:2] or passage_ids[:1],
+                    },
+                ]
+            primitives_by_family[family] = [primitive]
         return {
             "project_id": payload.get("project_id", "project"),
-            "turning_points": [
-                self._build_primitive(
-                    primitive_id="tp_001",
-                    title="Heuristic turning point",
-                    summary="A threshold crossing changes what becomes possible next.",
-                    axis_ids=axis_ids[:1],
-                    passage_ids=passage_ids[:3],
-                )
-            ],
-            "scene_worthy_consequences": [
-                self._build_primitive(
-                    primitive_id="sc_001",
-                    title="Heuristic consequence",
-                    summary="A visible consequence follows from the turn.",
-                    axis_ids=axis_ids[:1],
-                    passage_ids=passage_ids[1:4] or passage_ids[:2],
-                )
-            ],
-            "causal_mechanisms": [
-                self._build_primitive(
-                    primitive_id="cm_001",
-                    title="Heuristic mechanism",
-                    summary="A process explains how local change propagates.",
-                    axis_ids=axis_ids[:1],
-                    passage_ids=passage_ids[2:5] or passage_ids[:2],
-                )
-            ],
-            "live_questions": [
-                {
-                    **self._build_primitive(
-                        primitive_id="lq_001",
-                        title="Heuristic live question",
-                        summary="The evidence supports more than one plausible reading.",
-                        axis_ids=axis_ids[:1],
-                        passage_ids=passage_ids[:3],
-                    ),
-                    "candidate_readings": [
-                        {
-                            "label": "reading_a",
-                            "summary": "A cautious interpretation of the evidence.",
-                            "support_passage_ids": passage_ids[:1],
-                        },
-                        {
-                            "label": "reading_b",
-                            "summary": "A competing interpretation that remains plausible.",
-                            "support_passage_ids": passage_ids[1:2] or passage_ids[:1],
-                        },
-                    ],
-                }
-            ],
+            "primitives_by_family": primitives_by_family,
             "quality_score": 0.5,
             "quality_notes": ["Heuristic primitives artifact."],
         }
 
     def _generate_synthesis_consolidation(self, payload: PromptPayload) -> dict[str, Any]:
         primitives = payload.get("primitives", {})
-        turning_points = primitives.get("turning_points", [])
-        consequences = primitives.get("scene_worthy_consequences", [])
-        mechanisms = primitives.get("causal_mechanisms", [])
-        live_questions = primitives.get("live_questions", [])
+        primitives_by_family = primitives.get("primitives_by_family", {})
         member_ids: list[str] = []
-        for family in (turning_points, consequences, mechanisms, live_questions):
-            for item in family[:1]:
+        primitive_ids_by_family: dict[str, list[str]] = {}
+        for family in SYNTHESIS_PRIMITIVE_FAMILIES:
+            family_items = primitives_by_family.get(family, [])
+            family_ids = [str(item.get("id", uuid4().hex)) for item in family_items]
+            primitive_ids_by_family[family] = family_ids
+            for item in family_items[:1]:
                 member_ids.append(str(item.get("id", uuid4().hex)))
         primary_member_id = member_ids[0] if member_ids else "tp_001"
         return {
@@ -239,10 +267,7 @@ class HeuristicLLMClient(LLMClient):
                     "local_payoff_shape": "reveal",
                 }
             ],
-            "turning_point_ids": [str(item.get("id", uuid4().hex)) for item in turning_points],
-            "scene_worthy_consequence_ids": [str(item.get("id", uuid4().hex)) for item in consequences],
-            "causal_mechanism_ids": [str(item.get("id", uuid4().hex)) for item in mechanisms],
-            "live_question_ids": [str(item.get("id", uuid4().hex)) for item in live_questions],
+            "primitive_ids_by_family": primitive_ids_by_family,
             "quality_score": float(primitives.get("quality_score", 0.5)),
             "quality_notes": ["Heuristic consolidated synthesis map."],
         }
@@ -349,7 +374,7 @@ class HeuristicLLMClient(LLMClient):
                 "preview": None,
             },
             "scene_cards": scene_cards,
-            "target_duration_minutes": 140.0,
+            "target_duration_minutes": 100.0,
         }
 
     def _generate_episode_writing(self, payload: PromptPayload) -> dict[str, Any]:

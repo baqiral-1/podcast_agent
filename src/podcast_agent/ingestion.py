@@ -116,7 +116,6 @@ def extract_chapters_from_source(raw_text: str) -> list[ChapterInfo]:
                 start_index=0,
                 end_index=headings[0][0],
                 word_count=len(preface_text.split()),
-                summary="",
             )
         )
         start_idx = 1
@@ -136,7 +135,6 @@ def extract_chapters_from_source(raw_text: str) -> list[ChapterInfo]:
                 start_index=heading_start,
                 end_index=end_index,
                 word_count=word_count,
-                summary="",
             )
         )
     return chapters

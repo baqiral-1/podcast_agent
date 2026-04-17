@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 from podcast_agent.agents.base import Agent
@@ -28,7 +30,7 @@ class BookSummaryAgent(Agent):
         book_id: str,
         title: str,
         author: str,
-        chapters: list[dict[str, str]],
+        chapters: list[dict[str, Any]],
     ) -> dict:
         return {
             "theme": theme,

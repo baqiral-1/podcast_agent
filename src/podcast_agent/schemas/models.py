@@ -65,7 +65,6 @@ class ChapterInfo(StrictModel):
     start_index: int = Field(ge=0)
     end_index: int = Field(ge=0)
     word_count: int = Field(ge=0)
-    summary: str = ""
     analysis: "ChapterAnalysis | None" = None
 
 
@@ -112,7 +111,7 @@ class PipelineConfig(StrictModel):
     synthesis_axis_pct: float = Field(default=1.0, ge=0.0, le=1.0)
     synthesis_axis_min: int = Field(default=10, ge=0)
     synthesis_axis_max: int = Field(default=15, ge=1)
-    synthesis_total_passage_cap: int = Field(default=720, ge=1)
+    synthesis_total_passage_cap: int = Field(default=800, ge=1)
     planning_axis_pct: float = Field(default=1.0, ge=0.0, le=1.0)
     planning_axis_min: int = Field(default=10, ge=0)
     planning_axis_max: int = Field(default=15, ge=1)
@@ -122,9 +121,9 @@ class PipelineConfig(StrictModel):
     tts_provider: str = "openai"
     tts_concurrency: int = Field(default=12, ge=1)
     episode_planning_concurrency: int = Field(default=9, ge=1)
-    episode_write_concurrency: int = Field(default=9, ge=1)
-    target_episode_minutes: float = Field(default=140.0, gt=0.0)
-    min_episode_minutes: float = Field(default=125.0, gt=0.0)
+    episode_write_concurrency: int = Field(default=7, ge=1)
+    target_episode_minutes: float = Field(default=110.0, gt=0.0)
+    min_episode_minutes: float = Field(default=85.0, gt=0.0)
     duration_shortfall_policy: Literal["warn"] = "warn"
     scene_card_target_min: int = Field(default=25, ge=1)
     scene_card_target_max: int = Field(default=40, ge=1)
@@ -309,20 +308,57 @@ class CandidateReading(StrictModel):
     support_passage_ids: list[str] = Field(default_factory=list)
 
 
-class TurningPoint(SynthesisPrimitiveBase):
+class SynthesisPrimitive(SynthesisPrimitiveBase):
+    """Family-agnostic synthesis primitive."""
+
+    candidate_readings: list[CandidateReading] = Field(default_factory=list)
+
+
+class TurningPoint(SynthesisPrimitive):
     pass
 
 
-class SceneWorthyConsequence(SynthesisPrimitiveBase):
+class SceneWorthyConsequence(SynthesisPrimitive):
     pass
 
 
-class CausalMechanism(SynthesisPrimitiveBase):
+class CausalMechanism(SynthesisPrimitive):
     pass
 
 
-class LiveQuestion(SynthesisPrimitiveBase):
-    candidate_readings: list[CandidateReading] = Field(default_factory=list, min_length=2)
+class LiveQuestion(SynthesisPrimitive):
+    pass
+
+
+SYNTHESIS_PRIMITIVE_FAMILIES: tuple[str, ...] = (
+    "turning_points",
+    "scene_worthy_consequences",
+    "causal_mechanisms",
+    "live_questions",
+    "reversals",
+    "motivations_dilemmas",
+    "perspective_shifts",
+    "moral_ambiguities",
+    "personal_stakes",
+    "trauma_legacies",
+)
+SYNTHESIS_PRIMITIVE_FAMILY_SET = set(SYNTHESIS_PRIMITIVE_FAMILIES)
+
+
+def _normalize_family_mapping(
+    mapping: dict[str, list[Any]],
+    *,
+    mapping_name: str,
+) -> dict[str, list[Any]]:
+    unknown_families = sorted(set(mapping) - SYNTHESIS_PRIMITIVE_FAMILY_SET)
+    if unknown_families:
+        raise ValueError(
+            f"{mapping_name} contains unknown families: {unknown_families}"
+        )
+    normalized: dict[str, list[Any]] = {}
+    for family in SYNTHESIS_PRIMITIVE_FAMILIES:
+        normalized[family] = list(mapping.get(family, []))
+    return normalized
 
 
 class EpisodeCandidateCluster(StrictModel):
@@ -345,34 +381,46 @@ class EpisodeCandidateCluster(StrictModel):
 
 class SynthesisPrimitivesArtifact(StrictModel):
     project_id: str
-    turning_points: list[TurningPoint] = Field(default_factory=list)
-    scene_worthy_consequences: list[SceneWorthyConsequence] = Field(default_factory=list)
-    causal_mechanisms: list[CausalMechanism] = Field(default_factory=list)
-    live_questions: list[LiveQuestion] = Field(default_factory=list)
+    primitives_by_family: dict[str, list[SynthesisPrimitive]] = Field(default_factory=dict)
     quality_score: float = Field(default=0.0, ge=0.0, le=1.0)
     quality_notes: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_primitives(self) -> "SynthesisPrimitivesArtifact":
+        normalized = _normalize_family_mapping(
+            self.primitives_by_family,
+            mapping_name="primitives_by_family",
+        )
+        live_questions = normalized.get("live_questions", [])
+        for idx, item in enumerate(live_questions):
+            if len(item.candidate_readings) < 2:
+                raise ValueError(
+                    "live_questions entries require at least two candidate_readings "
+                    f"(index {idx})"
+                )
+        self.primitives_by_family = normalized
+        return self
 
 
 class SynthesisConsolidationResult(StrictModel):
     project_id: str
     episode_candidate_clusters: list[EpisodeCandidateCluster] = Field(default_factory=list)
-    turning_point_ids: list[str] = Field(default_factory=list)
-    scene_worthy_consequence_ids: list[str] = Field(default_factory=list)
-    causal_mechanism_ids: list[str] = Field(default_factory=list)
-    live_question_ids: list[str] = Field(default_factory=list)
+    primitive_ids_by_family: dict[str, list[str]] = Field(default_factory=dict)
     quality_score: float = Field(default=0.0, ge=0.0, le=1.0)
     quality_notes: list[str] = Field(default_factory=list)
 
     def primitive_ids(self) -> set[str]:
-        return {
-            *self.turning_point_ids,
-            *self.scene_worthy_consequence_ids,
-            *self.causal_mechanism_ids,
-            *self.live_question_ids,
-        }
+        ids: set[str] = set()
+        for family_ids in self.primitive_ids_by_family.values():
+            ids.update(family_ids)
+        return ids
 
     @model_validator(mode="after")
     def validate_cluster_members(self) -> "SynthesisConsolidationResult":
+        self.primitive_ids_by_family = _normalize_family_mapping(
+            self.primitive_ids_by_family,
+            mapping_name="primitive_ids_by_family",
+        )
         primitive_ids = self.primitive_ids()
         for cluster in self.episode_candidate_clusters:
             missing = [member_id for member_id in cluster.member_ids if member_id not in primitive_ids]
@@ -387,26 +435,30 @@ class SynthesisConsolidationResult(StrictModel):
 class SynthesisMap(StrictModel):
     project_id: str
     episode_candidate_clusters: list[EpisodeCandidateCluster] = Field(default_factory=list)
-    turning_points: list[TurningPoint] = Field(default_factory=list)
-    scene_worthy_consequences: list[SceneWorthyConsequence] = Field(default_factory=list)
-    causal_mechanisms: list[CausalMechanism] = Field(default_factory=list)
-    live_questions: list[LiveQuestion] = Field(default_factory=list)
+    primitives_by_family: dict[str, list[SynthesisPrimitive]] = Field(default_factory=dict)
     quality_score: float = Field(default=0.0, ge=0.0, le=1.0)
     quality_notes: list[str] = Field(default_factory=list)
 
-    def primitive_by_id(self) -> dict[str, SynthesisPrimitiveBase]:
-        mapping: dict[str, SynthesisPrimitiveBase] = {}
-        for item in [
-            *self.turning_points,
-            *self.scene_worthy_consequences,
-            *self.causal_mechanisms,
-            *self.live_questions,
-        ]:
-            mapping[item.id] = item
+    def primitive_by_id(self) -> dict[str, SynthesisPrimitive]:
+        mapping: dict[str, SynthesisPrimitive] = {}
+        for family in SYNTHESIS_PRIMITIVE_FAMILIES:
+            for item in self.primitives_by_family.get(family, []):
+                mapping[item.id] = item
         return mapping
 
     @model_validator(mode="after")
     def validate_cluster_members(self) -> "SynthesisMap":
+        normalized = _normalize_family_mapping(
+            self.primitives_by_family,
+            mapping_name="primitives_by_family",
+        )
+        for idx, item in enumerate(normalized.get("live_questions", [])):
+            if len(item.candidate_readings) < 2:
+                raise ValueError(
+                    "live_questions entries require at least two candidate_readings "
+                    f"(index {idx})"
+                )
+        self.primitives_by_family = normalized
         primitive_ids = set(self.primitive_by_id())
         for cluster in self.episode_candidate_clusters:
             missing = [member_id for member_id in cluster.member_ids if member_id not in primitive_ids]
@@ -555,7 +607,7 @@ class EpisodePlanDraft(StrictModel):
     unresolved_questions: list[str] = Field(default_factory=list)
     framing: FramingBlock
     scene_cards: list[SceneCard] = Field(default_factory=list, min_length=1)
-    target_duration_minutes: float = Field(default=140.0, gt=0.0)
+    target_duration_minutes: float = Field(default=110.0, gt=0.0)
 
     @model_validator(mode="after")
     def validate_scene_cards(self) -> "EpisodePlanDraft":

@@ -14,7 +14,6 @@ from podcast_agent.schemas.models import (
     EpisodePlan,
     EpisodePlanDraft,
     FramingBlock,
-    LiveQuestion,
     NarrativeStrategy,
     ProseSection,
     ScriptTransition,
@@ -25,16 +24,17 @@ from podcast_agent.schemas.models import (
     SpokenSection,
     SpokenTransition,
     StrategyEpisode,
+    SYNTHESIS_PRIMITIVE_FAMILIES,
     SynthesisConsolidationResult,
     SynthesisMap,
+    SynthesisPrimitive,
     ThematicProject,
-    TurningPoint,
     PipelineConfig,
 )
 
 
-def _turning_point(primitive_id: str = "tp_1") -> TurningPoint:
-    return TurningPoint(
+def _turning_point(primitive_id: str = "tp_1") -> SynthesisPrimitive:
+    return SynthesisPrimitive(
         id=primitive_id,
         title="Threshold breaks",
         summary="A decision changes the field.",
@@ -42,6 +42,33 @@ def _turning_point(primitive_id: str = "tp_1") -> TurningPoint:
         core_passage_ids=["p1"],
         support_passage_ids=["p2"],
     )
+
+
+def _live_question(primitive_id: str = "lq_1") -> SynthesisPrimitive:
+    return SynthesisPrimitive(
+        id=primitive_id,
+        title="Competing readings",
+        summary="The evidence supports multiple paths.",
+        core_passage_ids=["p1"],
+        candidate_readings=[
+            CandidateReading(
+                label="reading_a",
+                summary="One reading.",
+                support_passage_ids=["p1"],
+            ),
+            CandidateReading(
+                label="reading_b",
+                summary="Another reading.",
+                support_passage_ids=["p2"],
+            ),
+        ],
+    )
+
+
+def _family_map(**overrides: list[SynthesisPrimitive]) -> dict[str, list[SynthesisPrimitive]]:
+    payload = {family: [] for family in SYNTHESIS_PRIMITIVE_FAMILIES}
+    payload.update(overrides)
+    return payload
 
 
 def _framing() -> FramingBlock:
@@ -89,8 +116,11 @@ class TestThematicProject:
         with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
             PipelineConfig(scene_batch_min_cards=1)
 
-    def test_pipeline_config_defaults_synthesis_cap_to_720(self):
-        assert PipelineConfig().synthesis_total_passage_cap == 720
+    def test_pipeline_config_defaults_synthesis_cap_to_800(self):
+        config = PipelineConfig()
+        assert config.synthesis_total_passage_cap == 800
+        assert config.min_episode_minutes == 85.0
+        assert config.target_episode_minutes == 110.0
 
 
 class TestSynthesisModels:
@@ -109,7 +139,7 @@ class TestSynthesisModels:
         with pytest.raises(ValidationError, match="unknown member_ids"):
             SynthesisMap(
                 project_id="proj",
-                turning_points=[_turning_point("tp_1")],
+                primitives_by_family=_family_map(turning_points=[_turning_point("tp_1")]),
                 episode_candidate_clusters=[
                     EpisodeCandidateCluster(
                         cluster_id="cluster_1",
@@ -125,44 +155,34 @@ class TestSynthesisModels:
 
     def test_live_question_requires_at_least_two_candidate_readings(self):
         with pytest.raises(ValidationError):
-            LiveQuestion(
-                id="lq_1",
-                title="Competing readings",
-                summary="The evidence supports multiple paths.",
-                core_passage_ids=["p1"],
-                candidate_readings=[
-                    CandidateReading(
-                        label="reading_a",
-                        summary="Only one reading present.",
-                        support_passage_ids=["p1"],
-                    )
-                ],
+            SynthesisMap(
+                project_id="proj",
+                primitives_by_family=_family_map(
+                    live_questions=[
+                        SynthesisPrimitive(
+                            id="lq_1",
+                            title="Competing readings",
+                            summary="The evidence supports multiple paths.",
+                            core_passage_ids=["p1"],
+                            candidate_readings=[
+                                CandidateReading(
+                                    label="reading_a",
+                                    summary="Only one reading present.",
+                                    support_passage_ids=["p1"],
+                                )
+                            ],
+                        )
+                    ]
+                ),
             )
 
     def test_synthesis_map_roundtrip_preserves_cluster_first_shape(self):
         synthesis_map = SynthesisMap(
             project_id="proj",
-            turning_points=[_turning_point("tp_1")],
-            live_questions=[
-                LiveQuestion(
-                    id="lq_1",
-                    title="Competing readings",
-                    summary="The evidence supports multiple paths.",
-                    core_passage_ids=["p1"],
-                    candidate_readings=[
-                        CandidateReading(
-                            label="reading_a",
-                            summary="One reading.",
-                            support_passage_ids=["p1"],
-                        ),
-                        CandidateReading(
-                            label="reading_b",
-                            summary="Another reading.",
-                            support_passage_ids=["p2"],
-                        ),
-                    ],
-                )
-            ],
+            primitives_by_family=_family_map(
+                turning_points=[_turning_point("tp_1")],
+                live_questions=[_live_question("lq_1")],
+            ),
             episode_candidate_clusters=[
                 EpisodeCandidateCluster(
                     cluster_id="cluster_1",
@@ -178,13 +198,16 @@ class TestSynthesisModels:
         )
         restored = SynthesisMap.model_validate(json.loads(synthesis_map.model_dump_json()))
         assert restored.episode_candidate_clusters[0].primary_member_id == "tp_1"
-        assert restored.live_questions[0].candidate_readings[1].label == "reading_b"
+        assert (
+            restored.primitives_by_family["live_questions"][0].candidate_readings[1].label
+            == "reading_b"
+        )
 
     def test_synthesis_consolidation_result_rejects_unknown_cluster_member_ids(self):
         with pytest.raises(ValidationError, match="unknown member_ids"):
             SynthesisConsolidationResult(
                 project_id="proj",
-                turning_point_ids=["tp_1"],
+                primitive_ids_by_family={"turning_points": ["tp_1"]},
                 episode_candidate_clusters=[
                     EpisodeCandidateCluster(
                         cluster_id="cluster_1",
@@ -201,8 +224,10 @@ class TestSynthesisModels:
     def test_synthesis_consolidation_result_accepts_family_id_universe(self):
         result = SynthesisConsolidationResult(
             project_id="proj",
-            turning_point_ids=["tp_1"],
-            live_question_ids=["lq_1"],
+            primitive_ids_by_family={
+                "turning_points": ["tp_1"],
+                "live_questions": ["lq_1"],
+            },
             episode_candidate_clusters=[
                 EpisodeCandidateCluster(
                     cluster_id="cluster_1",
@@ -406,6 +431,16 @@ class TestPlanningModels:
             scene_cards=[scene],
         )
         assert draft.scene_cards[0].withhold_until == "Full consequences are developed in Episode 5."
+
+    def test_episode_plan_draft_defaults_target_duration_minutes_to_110(self):
+        draft = EpisodePlanDraft(
+            episode_number=1,
+            title="Episode 1",
+            driving_question="Why begin here?",
+            framing=_framing(),
+            scene_cards=[_normal_scene()],
+        )
+        assert draft.target_duration_minutes == 110.0
 
     def test_episode_plan_roundtrip(self):
         draft = EpisodePlan(

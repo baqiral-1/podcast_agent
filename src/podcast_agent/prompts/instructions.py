@@ -11,7 +11,7 @@ def chapter_summary_instructions() -> str:
         You are the `chapter_summary` stage for a multi-book thematic podcast pipeline.
 
         Goal:
-        - Read one chapter and produce a theme-conditioned summary plus structured chapter analysis that will later be used for theme decomposition.
+        - Read one chapter and produce structured chapter analysis.
         - Stay faithful to the chapter text. Do not infer details not supported by the chapter.
 
         Input payload:
@@ -23,8 +23,7 @@ def chapter_summary_instructions() -> str:
         - `chapter_text`: the source evidence. Ground all claims in this field.
 
         Output requirements:
-        - Return only valid JSON matching the response model with keys `summary` and optional `analysis`.
-        - `summary` should be 2-3 dense sentences oriented toward the project theme, not a full recap.
+        - Return only valid JSON matching the response model with key `analysis` (or `null` when the chapter has no usable signal).
         - `analysis` should capture only what is clearly present in the chapter.
         - Prefer concrete actors, institutions, places, events, arguments, and tensions over abstract academic language.
         - Do not force lexical overlap with the theme if the chapter does not support it.
@@ -47,19 +46,19 @@ def book_summary_instructions() -> str:
         You are the `book_summary` stage for a multi-book thematic podcast pipeline.
 
         Goal:
-        - Synthesize one theme-conditioned book summary from chapter-level summaries.
+        - Synthesize one theme-conditioned book summary from chapter-level structured analysis.
         - The output is used for axis discovery, not for final narration.
 
         Input payload:
         - `theme`, `sub_themes`, `theme_elaboration`: the project framing.
         - `book_id`, `title`, `author`: book identity.
-        - `chapters`: chapter-level summaries and compact chapter analysis.
+        - `chapters`: chapter-level structured analysis objects.
 
         Output requirements:
         - Return only valid JSON with a single key: `summary`.
         - Write one concise but information-dense synthesis of what this book contributes to the project theme.
         - Highlight recurring patterns, major tensions, important actors or institutions, and the book's distinctive angle.
-        - Use the chapter summaries as evidence. Do not invent arguments or chronology missing from the input.
+        - Use the chapter analysis objects as evidence. Do not invent arguments or chronology missing from the input.
         - Optimize for downstream axis discovery: emphasize reusable analytical lenses rather than prose flourish.
 
         Do not add markdown, bullet lists, or explanation outside the JSON object.
@@ -83,7 +82,7 @@ def theme_decomposition_instructions() -> str:
         - `books`: one object per book, each containing:
           - `book_id`, `title`, `author`
           - `book_summary`
-          - `chapters`: compact chapter summaries and chapter-analysis projections
+          - `chapters`: chapter-analysis objects
 
         Output requirements:
         - Return only valid JSON with key `axes`.
@@ -180,17 +179,31 @@ def synthesis_primitives_instructions() -> str:
 
         Output requirements:
         - Return only valid JSON matching `SynthesisPrimitivesArtifact`.
-        - Emit only these families:
+        - Emit primitives only under `primitives_by_family`.
+        - Emit only these family keys:
           - `turning_points`
           - `scene_worthy_consequences`
           - `causal_mechanisms`
           - `live_questions`
+          - `reversals`
+          - `motivations_dilemmas`
+          - `perspective_shifts`
+          - `moral_ambiguities`
+          - `personal_stakes`
+          - `trauma_legacies`
         - Target these family count ranges:
-          - `turning_points`: 45-60
-          - `scene_worthy_consequences`: 40-55
-          - `causal_mechanisms`: 35-50
-          - `live_questions`: 35-50
+          - `turning_points`: 25-40
+          - `scene_worthy_consequences`: 30-45
+          - `causal_mechanisms`: 20-35
+          - `live_questions`: 20-30
+          - `reversals`: 20-30
+          - `motivations_dilemmas`: 20-30
+          - `perspective_shifts`: 15-30
+          - `moral_ambiguities`: 15-30
+          - `personal_stakes`: 15-25
+          - `trauma_legacies`: 10-20
         - Every primitive must be grounded in passage ids that appear in the payload.
+        - Do not reuse the same passage across primitives unless it is uniquely decisive.
         - Use `core_passage_ids` for the decisive evidence and `support_passage_ids` for reinforcing evidence.
         - Titles should be operational and scene-usable, not polished thesis statements.
         - `summary` should explain what the primitive captures and why it matters.
@@ -229,11 +242,8 @@ def synthesis_consolidation_instructions() -> str:
 
         Output requirements:
         - Return only valid JSON matching `SynthesisConsolidationResult`.
-        - Return only primitive ids for surviving items:
-          - `turning_point_ids`
-          - `scene_worthy_consequence_ids`
-          - `causal_mechanism_ids`
-          - `live_question_ids`
+        - Return only primitive ids for surviving items under `primitive_ids_by_family`.
+        - `primitive_ids_by_family` must use the same family keys as `primitives_by_family`.
         - Build `episode_candidate_clusters` as compact local causal chains or tightly related local story packets.
         - Every cluster must:
           - have a unique `cluster_id`
@@ -241,7 +251,8 @@ def synthesis_consolidation_instructions() -> str:
           - list valid `member_ids`
           - articulate a `local_question`
           - choose one `local_payoff_shape`
-        - Clusters should be small, episode-usable units rather than whole-series theses.
+        - Aim for 3-8 members per cluster.
+        - Clusters should be small and focused episode-usable units rather than whole-series theses.
 
         What not to do:
         - Do not emit merged narratives, narrative threads, graph edges, or thesis summaries.
@@ -338,7 +349,7 @@ def episode_planning_instructions() -> str:
         - `handoff_scene_card_id` must point to a real scene card.
 
         Scene-card guidance:
-        - Target 35-50 scene cards for a full-length episode; expand into micro-scenes rather than collapsing long stretches.
+        - Target 30-45 scene cards for a full-length episode; expand into micro-scenes rather than collapsing long stretches.
         - Distribute primitives across scene cards intentionally. 
         - Reuse is allowed for continuity, but avoid concentration: no primitive should dominate an episode.
         - Normal cards should do real narrative work and visibly advance the episode.
@@ -370,7 +381,7 @@ def episode_writing_instructions() -> str:
         - `batch_id`: the current writing batch identifier.
         - `plan`: the full episode plan, including framing and all scene cards.
         - `active_scene_card_ids`: the subset of scene cards to draft now.
-        - `plan.scene_cards[].target_word_count_lower`: lower per-scene word target (computed at 110 WPM).
+        - `plan.scene_cards[].target_word_count_lower`: lower per-scene word target (computed at 120 WPM).
         - `plan.scene_cards[].target_word_count_higher`: higher per-scene word target (computed at 140 WPM).
         - `batch_target_word_count_lower`: lower word target for this batch.
         - `batch_target_word_count_higher`: higher word target for this batch.
@@ -423,14 +434,14 @@ def episode_writing_no_citations_instructions() -> str:
         - You are a historical podcast narrator telling a true story.
         - You have absorbed the research and now tell the episode in an engaging manner in your own voice.
         - Transform the active scene-card window into complete narration while preserving structure.
-        - Instead of summarizing the passages, use them to reconstruct the scene. Use the targets (WPM) as a requirement to find the "narrative heartbeat" in each passage—if you are under count, you are likely rushing the story.
+        - Instead of summarizing the passages, use them to reconstruct the scene.
 
         Input payload:
         - `episode_number`: current episode number.
         - `batch_id`: the current writing batch identifier.
         - `plan`: the full episode plan, including framing and all scene cards.
         - `active_scene_card_ids`: the subset of scene cards to draft now.
-        - `plan.scene_cards[].target_word_count_lower`: lower per-scene word target (computed at 110 WPM).
+        - `plan.scene_cards[].target_word_count_lower`: lower per-scene word target (computed at 120 WPM).
         - `plan.scene_cards[].target_word_count_higher`: higher per-scene word target (computed at 140 WPM).
         - `batch_target_word_count_lower`: lower word target for this batch.
         - `batch_target_word_count_higher`: higher word target for this batch.
@@ -452,6 +463,7 @@ def episode_writing_no_citations_instructions() -> str:
           - Use the provided passages to anchor the listener in a specific time and place.
           - Podcast listeners cannot "rewind" easily. Use the word count to rephrase complex ideas or to "land" a point before moving to the next card. 
           - Give the listener time to process a "shock" or "consequence" by expanding on its immediate atmospheric impact.
+          - Do not exceed the target_word_count_higher for the scene unless absolutely necessary.
         - Use passages as source evidence, but do not organize narration by author.
         - Use optional `passages[].chapter_context` when available to preserve chapter-level tensions and causal shifts.
         - Follow scene-role intent:
@@ -542,45 +554,86 @@ def repair_instructions() -> str:
 def spoken_delivery_instructions() -> str:
     return dedent(
         """
-        You are the `narrative_historian` stage of a prestige documentary podcast pipeline.
+        You are the `spoken_delivery` stage for a multi-book thematic podcast pipeline.
 
         Goal:
-        - Rewrite a completed historical episode script for spoken delivery.
-        - Transform structured, academic signposting into a seamless, cinematic oral narrative.
-        - Recast scaffolding into narrative momentum without removing information.
+        - Rewrite a completed historical episode script for spoken delivery as one whole-episode pass.
+        - Improve cadence, clarity, and oral flow without changing the structure, chronology, or factual meaning.
+        - Make the episode sound stronger by deleting redundancy, not by preserving every sentence.
+
+        Use the following narration style (this is an excerpt from a altogether different script):
+        Two other quick points worth making about the Doolittle raid. The first is that there is another way of looking at this and people who score more aggressively on the willing to take risk military commanders spectrum that I do, will say that in addition to the, you know, everyone agrees upon morale and psychology boosts and effects that there was a real world goal in this whole thing and that it was achieved in the real world goal was the equivalent of what a boxer does when he faints an opponent in the ring. 
+        The Japanese flinched, they reacted to the blow by changing their strategy, moving their assets around, doing things differently and perhaps deciding different places to strike and maneuver in order to prevent anything like this from happening again. 
+        So in other words, a real world military affect something that's hard to measure in terms of how much of an effect and how much that helps. But something different from the psychological or morale side of things.
+        I tend to think it's a little bit more like, you know, you spin the wheel of what happens when we bombed Japan and something good came up. But everybody's got a different opinion.
+        Now, something that is not a question of opinion is the real world effects of the Doolittle raid on our Allies. If you're in an allied country, the Chinese because they were so obviously in on this plan, they were to provide the basis that the, the pilots and the plane crews landed at.
+        But there's a harrowing personal experiences thing on the Chinese side that's a little known in  the United States.
+        The Japanese took their anger out on the only allied people that they could get their hands on and take their anger out on, they punished the Chinese and the numbers are incredible. Most people think that Chiang kai shek was exaggerating but cut him in half if you want Chang says 250,000 Chinese civilians paid with their lives in reprisals for the Doolittle raid.
+        In his book Hirohito's war author Frances, pike puts it this way, Chang would later notify Roosevelt that in southern China the Japanese Army slaughtered 250,000 Chinese civilians in a campaign of vengeance.
+        Even allowing for some exaggeration on Chang's part, the Doolittle raid thus caused the death of more than twice the number of Chinese than the United States military suffered during the entire Pacific war End, I'm fascinated by human experiences
+        It's part of the reason we focus so much of it in these conversations and in the same way I can't help but think About those B- 25 crews that have just bombed Japan and whose planes are running out of fuel and now they're you know, going to bail out. I can't help but wonder, oh my God, what is that like?
+        And you think about that human experience and that is one kind of human experience, but at the very opposite End of the scale with Franklin Roosevelt experiences when his ally Chiang kai shek tells him that resulting from decisions that he made, 250,000 civilians are brutally killed. That's a different kind of human experience.
+        How'd you like to be in Franklin Roosevelt shoes right then.
+        Now disclaimer, there are well known leaders of countries on both the Axis and allied side who seem to have not a ton of sympathy for human suffering. One of them is alleged to have said that one death is a tragedy, a millionaire statistic another sets up human extermination camps that run like a factory Operation.
+        So let's not attribute the same sense of gut punch when you find out what results downstream sometimes from your decision making to all of them. But I do not believe many people would think franklin. Delano Roosevelt was one of those people.
+        And yes, war results and terrible things happen. But in this case Roosevelt is on record as saying what he was trying to do here with a raid that would not have killed tons of people anyway, was bring the war home to the Japanese and show them what this was like. You know, here's what you bargained for.
+        This is what's going to happen because you start, you know, in other words, in his way, this was a measured sort of a response to that sent a message. And yet as a result of that decision, 250,000 civilians are killed. I cannot imagine that Roosevelt could have reacted to that.
+        Well, I wonder what that night's attempt to sleep was like. That's not a human experience many people ever have to have either knowing that any decision you make could in many cases un foreseeably result in the deaths of huge numbers of human beings, would paralyze most of us.
 
         Input payload:
-        - `episode_number`: current id.
+        - `episode_number`: current episode number.
         - `script`: the full `EpisodeScript`.
-        - `max_words_per_segment`: target word count.
-        - `tts_provider`: target system.
+        - `max_words_per_segment`: soft target for spoken-unit length.
+        - `tts_provider`: downstream rendering target.
 
-        1. The Transformation Mandate (Recast, Don't Delete)
-        - Every sentence in the original script serves a purpose. Do not simply delete structural sentences; rewrite them so their function is invisible.
-        - Recast signposting. Example: instead of "Now we will look at the economic causes," launch directly into cause imagery.
-        - Recast recaps into consequence. Example: instead of "So we have seen how the King failed," pivot to what that failure triggered.
-        - Use "But/Therefore" momentum so each section exists because the previous section demanded it through consequence, irony, or tension.
+        Output requirements:
+        - Return only valid JSON with `sections` and `transitions`.
+        - Preserve section order, transition order, section boundaries, transition boundaries, all `section_id` and `transition_id` values, and substantive argumentative progression.
+        - Keep unresolved questions unresolved until the draft itself resolves them.
+        - Use `speech_hints` only where they materially help delivery; do not annotate every unit.
 
-        2. Historical Texture & Tone
-        - Use sensory anchors for abstract facts, with visceral, speakable imagery.
-        - Keep active historiography: integrate uncertainty and source caution into flow (for example, "The surviving letters suggest...").
-        - Give time weight with varied sentence length: short impact lines plus longer rhythmic causality when needed.
-        - Avoid cliched phrasing such as "A turning point," "Little did they know," "The rest is history," and "A testament to."
+        Core rewrite rules:
+        - You may delete redundant structural language when its function is already achieved elsewhere.
+        - Do not preserve repeated thesis statements, repeated recaps, or repeated rhetorical framing just because they appeared in the draft.
+        - If a sentence only restates what the surrounding scene already made clear, cut it.
+        - Prefer subtraction over paraphrased duplication.
 
-        3. Orality & Performance
-        - Pass the breath test: each sentence should have a natural pause point.
-        - Use natural syntax, contractions, selective fragments for emphasis, and active verbs over academic passive voice.
-        - Use `speech_hints` sparingly for difficult pronunciation or specific rhythmic pauses (for example, `[long pause]`, `[emphasize]`).
+        Listener-first guidance:
+        - Podcast listeners experience this linearly. They cannot skim. Trust them.
+        - Say important things once, cleanly.
+        - Let vivid facts and scenes carry weight without telling the listener that they are important.
+        - Avoid narrator tics such as: "Pause on that," "Read that again," "Let that sink in," and "Think about what this means."
+        - Avoid repeated rhetorical questions unless a later question materially changes the frame.
 
-        4. Technical Constraints
-        - Preserve factual integrity: do not change names, dates, chronology, or substantive historical argument.
-        - Preserve evidentiary caution.
-        - JSON integrity: return valid JSON only.
-        - Schema maintenance: preserve all `section_id` and `transition_id` values and keep section/transition order exactly as provided by the input script.
+        Tone guidance:
+        - Use plain reportorial tone as the default register.
+        - Reserve heightened diction for genuine irreversible turns.
+        - Reduce repeated abstraction, repeated emphasis, and prestige-documentary inflation.
+        - Avoid overusing words like "devastating," "extraordinary," "staggering," "remarkable," "breathtaking," and "fateful."
+        - Do not turn every paragraph into a climax.
+
+        Historical discipline:
+        - Keep names, dates, chronology, causality, and attribution intact.
+        - Do not turn a cautious or interpretive claim into a stronger claim.
+        - When the draft presents a hot historical claim, preserve or sharpen the caution rather than smoothing it into certainty.
+        - Do not overstate single-cause explanations for partition or Pakistan's emergence.
+
+        Spoken-delivery guidance:
+        - Prefer clear oral syntax, varied sentence length, and strong cadence.
+        - Use short sentences for turns and longer sentences for causality only when they remain speakable.
+        - Make transitions feel inevitable, not announced.
+        - Convert analytical scaffolding into narrative flow where possible.
+        - If a transition or section is empty or functionally redundant, keep the id and return the leanest viable text.
+
+        Pronunciation guidance:
+        - For names, places, and non-English terms that may be misread, add `speech_hints.pronunciation_hints`.
+        - Keep pronunciation hints sparse; add them only when they materially improve delivery.
+        - In each hint, keep `text` exactly as it appears in the segment text.
+        - Use concise, speakable `spoken_as` values.
 
         Final self-check before return:
-        1. Did I remove any information? No-I recast it into narrative.
-        2. Does any sentence sound like a slide transition (for example, "Moving on to...")? If so, rewrite it as a narrative bridge.
-        3. Is the prose natural in the mouth while maintaining historical gravity?
+        1. Did I preserve the structure and factual meaning? If not, fix it.
+        2. Did I cut duplicated framing where the scene already did the work? If not, cut it.
+        3. Did I keep the prose speakable without flattening the history? If not, rewrite it.
         """
     ).strip()

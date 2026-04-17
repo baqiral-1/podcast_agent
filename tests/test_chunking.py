@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from podcast_agent.pipeline.orchestrator import chunk_text, _split_into_chunks
 from podcast_agent.schemas.models import ChapterInfo, ChunkingConfig
 
@@ -58,7 +56,7 @@ class TestChunkText:
         raw_text = " ".join(f"word{i}" for i in range(500))
         chapters = [ChapterInfo(
             title="Chapter 1", start_index=0, end_index=len(raw_text),
-            word_count=500, summary="Test chapter.",
+            word_count=500,
         )]
         config = ChunkingConfig(max_chunk_words=200, overlap_words=50, min_chunk_words=50)
         chunks = chunk_text(raw_text, "book1", chapters, config)
@@ -74,12 +72,12 @@ class TestChunkText:
             ChapterInfo(
                 chapter_id="ch1", title="Ch 1",
                 start_index=0, end_index=midpoint,
-                word_count=200, summary="First.",
+                word_count=200,
             ),
             ChapterInfo(
                 chapter_id="ch2", title="Ch 2",
                 start_index=midpoint, end_index=len(raw_text),
-                word_count=200, summary="Second.",
+                word_count=200,
             ),
         ]
         config = ChunkingConfig(max_chunk_words=100, overlap_words=20)
@@ -94,7 +92,7 @@ class TestChunkText:
         chapters = [ChapterInfo(
             chapter_id="ch1", title="Ch 1",
             start_index=0, end_index=len(raw_text),
-            word_count=100, summary="Test.",
+            word_count=100,
         )]
         config = ChunkingConfig(max_chunk_words=50)
         chunks1 = chunk_text(raw_text, "book1", chapters, config)
@@ -106,7 +104,7 @@ class TestChunkText:
         chapters = [ChapterInfo(
             chapter_id="ch1", title="Ch 1",
             start_index=0, end_index=len(raw_text),
-            word_count=1000, summary="Test.",
+            word_count=1000,
         )]
         config = ChunkingConfig(max_chunk_words=200, overlap_words=50)
         chunks = chunk_text(raw_text, "book1", chapters, config)
@@ -117,7 +115,7 @@ class TestChunkText:
         raw_text = "   "
         chapters = [ChapterInfo(
             title="Empty", start_index=0, end_index=3,
-            word_count=0, summary="Empty.",
+            word_count=0,
         )]
         config = ChunkingConfig()
         chunks = chunk_text(raw_text, "book1", chapters, config)
@@ -130,12 +128,12 @@ class TestChunkText:
             ChapterInfo(
                 chapter_id="ch1", title="Ch 1",
                 start_index=0, end_index=midpoint,
-                word_count=200, summary="First.",
+                word_count=200,
             ),
             ChapterInfo(
                 chapter_id="ch1", title="Ch 1 Again",
                 start_index=midpoint, end_index=len(raw_text),
-                word_count=200, summary="Second.",
+                word_count=200,
             ),
         ]
         config = ChunkingConfig(max_chunk_words=100, overlap_words=20)

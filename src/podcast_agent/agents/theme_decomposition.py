@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 from podcast_agent.agents.base import Agent
@@ -16,9 +18,9 @@ class ThemeDecompositionResponse(BaseModel):
 class ThemeDecompositionAgent(Agent):
     """Decomposes a user theme into 10-15 strong thematic axes spanning all books.
 
-    This stage is the intentional consumer of chapter summaries and synthesized
-    per-book summaries. Later stages use retrieved passage evidence instead of
-    chapter-summary context.
+    This stage is the intentional consumer of chapter-level analysis and
+    synthesized per-book summaries. Later stages use retrieved passage evidence
+    instead of chapter-level context.
     """
 
     schema_name = "theme_decomposition"
@@ -36,19 +38,17 @@ class ThemeDecompositionAgent(Agent):
         summary_by_book = book_summaries or {}
         book_summaries = []
         for book in books:
-            # Chapter summaries are provided here for thematic axis discovery only.
-            chapter_info = []
+            chapter_info: list[dict[str, Any]] = []
             for ch in book.chapters:
                 entry = {
                     "chapter_id": ch.chapter_id,
                     "title": ch.title,
-                    "summary": ch.summary,
+                    "analysis": (
+                        ch.analysis.model_dump(mode="json")
+                        if ch.analysis is not None
+                        else None
+                    ),
                 }
-                if ch.analysis is not None:
-                    entry.update({
-                        "themes_touched": list(ch.analysis.themes_touched),
-                        "major_tensions": list(ch.analysis.major_tensions),
-                    })
                 chapter_info.append(entry)
             book_summaries.append({
                 "book_id": book.book_id,

@@ -88,6 +88,17 @@ def _render_html(run_dir: Path) -> str:
     series_plan = _load_json(run_dir / "series_plan.json")
     episodes = strategy.get("episodes", [])
     planned_episodes = series_plan.get("episodes", []) if isinstance(series_plan, dict) else []
+    primitives_by_family = (
+        primitives.get("primitives_by_family", {})
+        if isinstance(primitives, dict)
+        else {}
+    )
+    primitive_count_rows = "".join(
+        f"<p>{_escape(family)}: {len(items)}</p>"
+        for family, items in primitives_by_family.items()
+    )
+    if not primitive_count_rows:
+        primitive_count_rows = "<p>No family primitives found.</p>"
 
     return f"""
 <!doctype html>
@@ -107,7 +118,7 @@ def _render_html(run_dir: Path) -> str:
   <p><strong>Project:</strong> <code>{_escape(project.get('project_id'))}</code></p>
   <p><strong>Status:</strong> {_escape(project.get('status'))}</p>
   <div class='grid'>
-    <section class='card'><h2>Primitives</h2><p>Turning points: {len(primitives.get('turning_points', []))}</p><p>Consequences: {len(primitives.get('scene_worthy_consequences', []))}</p><p>Mechanisms: {len(primitives.get('causal_mechanisms', []))}</p><p>Live questions: {len(primitives.get('live_questions', []))}</p></section>
+    <section class='card'><h2>Primitives</h2>{primitive_count_rows}</section>
     <section class='card'><h2>Consolidated</h2><p>Clusters: {len(synthesis_map.get('episode_candidate_clusters', []))}</p><p>Quality score: {_escape(synthesis_map.get('quality_score'))}</p></section>
     <section class='card'><h2>Strategy</h2><p>Type: {_escape(strategy.get('strategy_type'))}</p><p>Episodes: {len(episodes)}</p></section>
     <section class='card'><h2>Planning</h2><p>Planned episodes: {len(planned_episodes)}</p></section>

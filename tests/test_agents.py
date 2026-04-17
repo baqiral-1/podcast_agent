@@ -44,7 +44,6 @@ class TestCoreAgents:
     def test_chapter_summary_response_allows_more_than_six_key_events(self):
         response = ChapterSummaryResponse.model_validate(
             {
-                "summary": "Summary.",
                 "analysis": {"key_events_or_arguments": [f"event-{idx}" for idx in range(7)]},
             }
         )
@@ -59,10 +58,10 @@ class TestCoreAgents:
             book_id="b1",
             title="Book 1",
             author="Author A",
-            chapters=[{"title": "Ch 1", "summary": "Summary."}],
+            chapters=[{"title": "Ch 1", "analysis": {"themes_touched": ["t1"]}}],
         )
         assert agent.schema_name == "book_summary"
-        assert payload["chapters"][0]["summary"] == "Summary."
+        assert payload["chapters"][0]["analysis"]["themes_touched"] == ["t1"]
 
     def test_theme_decomposition_agent_payload(self):
         agent = ThemeDecompositionAgent(_mock_llm())
@@ -78,7 +77,7 @@ class TestCoreAgents:
         assert "10-15 strong thematic axes" in agent.instructions
         assert "`books`" in agent.instructions
 
-    def test_theme_decomposition_payload_omits_removed_chapter_analysis_fields(self):
+    def test_theme_decomposition_payload_includes_analysis_object_only(self):
         agent = ThemeDecompositionAgent(_mock_llm())
         book = BookRecord(
             book_id="b1",
@@ -93,7 +92,6 @@ class TestCoreAgents:
                     start_index=0,
                     end_index=100,
                     word_count=100,
-                    summary="Summary",
                     analysis=ChapterAnalysis(
                         themes_touched=["theme"],
                         major_tensions=["tension"],
@@ -109,11 +107,9 @@ class TestCoreAgents:
             book_summaries={"b1": "Book summary"},
         )
         chapter = payload["books"][0]["chapters"][0]
-        assert "themes_touched" in chapter
-        assert "major_tensions" in chapter
-        assert "causal_shifts" not in chapter
-        assert "narrative_hooks" not in chapter
-        assert "retrieval_keywords" not in chapter
+        assert "summary" not in chapter
+        assert chapter["analysis"]["themes_touched"] == ["theme"]
+        assert chapter["analysis"]["major_tensions"] == ["tension"]
 
     def test_passage_extraction_agent_payload(self):
         agent = PassageExtractionAgent(_mock_llm())
@@ -148,7 +144,7 @@ class TestRedesignedAgents:
         agent = SynthesisConsolidationAgent(_mock_llm())
         payload = agent.build_payload(
             project_id="proj",
-            primitives={"turning_points": []},
+            primitives={"primitives_by_family": {"turning_points": []}},
             axes_summary=[{"axis_id": "axis_1"}],
             book_metadata=[{"book_id": "b1"}],
             series_size_hint=3,
@@ -157,6 +153,7 @@ class TestRedesignedAgents:
         assert agent.schema_name == "synthesis_consolidation"
         assert payload["series_size_hint"] == 3
         assert payload["consolidation_feedback"]["issue"] == "cluster_density"
+        assert "Aim for 2-5 members per cluster." in agent.instructions
 
     def test_narrative_strategy_agent_payload(self):
         agent = NarrativeStrategyAgent(_mock_llm())
@@ -269,8 +266,17 @@ class TestRedesignedAgents:
         )
         assert agent.schema_name == "spoken_delivery"
         assert payload["max_words_per_segment"] == 250
-        assert "You are the `narrative_historian` stage" in agent.instructions
+        assert "You are the `spoken_delivery` stage" in agent.instructions
+        assert "Return only valid JSON with `sections` and `transitions`." in agent.instructions
+        assert "You may delete redundant structural language" in agent.instructions
+        assert "Use plain reportorial tone as the default register." in agent.instructions
+        assert "Do not turn a cautious or interpretive claim into a stronger claim." in agent.instructions
+        assert "add `speech_hints.pronunciation_hints`." in agent.instructions
+        assert "keep `text` exactly as it appears in the segment text." in agent.instructions
         assert "Output Format:" not in agent.instructions
+        assert "You are the `narrative_historian` stage" not in agent.instructions
+        assert "Every sentence in the original script serves a purpose." not in agent.instructions
+        assert "Do not simply delete structural sentences" not in agent.instructions
         assert "`section_id`" in agent.instructions
         assert "`transition_id`" in agent.instructions
 
@@ -288,7 +294,7 @@ class TestHeuristicClient:
             )
         )
         assert result.project_id == "proj"
-        assert result.turning_points[0].id == "tp_001"
+        assert result.primitives_by_family["turning_points"][0].id == "tp_001"
 
     def test_narrative_strategy_agent_run_returns_cluster_path_episodes(self):
         agent = NarrativeStrategyAgent(HeuristicLLMClient())

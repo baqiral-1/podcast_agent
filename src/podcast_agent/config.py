@@ -14,6 +14,9 @@ def _env_bool(name: str, default: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+_ANTHROPIC_THINKING_EFFORTS = {"low", "medium", "high", "xhigh", "max"}
+
+
 class DatabaseConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -43,7 +46,7 @@ class LLMConfig(BaseModel):
         default_factory=lambda: os.getenv("LLM_PROVIDER") or os.getenv("LLM_TYPE") or "anthropic"
     )
     provider: str = Field(default_factory=lambda: os.getenv("LLM_PROVIDER", "anthropic"))
-    model_name: str = Field(default_factory=lambda: os.getenv("LLM_MODEL_NAME", "claude-opus-4-6"))
+    model_name: str = Field(default_factory=lambda: os.getenv("LLM_MODEL_NAME", "claude-opus-4-7"))
     model_overrides: dict[str, str] = Field(
         default_factory=dict,
         description="Per-schema model overrides keyed by schema_name.",
@@ -83,8 +86,8 @@ class LLMConfig(BaseModel):
     timeout_seconds_overrides: dict[str, float] = Field(
         default_factory=lambda: {
             "passage_extraction": 480.0,
-            "synthesis_primitives": 2400.0,
-            "synthesis_consolidation": 1800.0,
+            "synthesis_primitives": 3360.0,
+            "synthesis_consolidation": 2520.0,
             "narrative_strategy": 900.0,
             "theme_decomposition": 900.0,
             "episode_planning": 1500.0,
@@ -95,18 +98,32 @@ class LLMConfig(BaseModel):
     )
     thinking_budget_tokens: dict[str, int] = Field(
         default_factory=lambda: {
-            "narrative_strategy": 15_000,
-            "episode_planning": 15_000,
-            "episode_writing": 15_000,
-            "spoken_delivery": 20_000,
-            "synthesis_primitives": 35_000,
-            "synthesis_consolidation": 20_000,
-            "theme_decomposition": 20_000,
+            "narrative_strategy": 30000,
+            "episode_planning": 30000,
+            "episode_writing": 30000,
+            "spoken_delivery": 30000,
+            "synthesis_primitives": 30000,
+            "synthesis_consolidation": 30000,
+            "theme_decomposition": 30000,
         },
         description=(
-            "Per-schema extended thinking budget in tokens. "
-            "Set to empty dict to disable extended thinking. "
-            "Only applies to Anthropic provider."
+            "Legacy per-schema thinking budget in tokens. "
+            "When Anthropic adaptive thinking is used, these values are mapped "
+            "to effort tiers unless an explicit effort override is configured."
+        ),
+    )
+    log_thinking_content: bool = Field(
+        default_factory=lambda: _env_bool("LLM_LOG_THINKING_CONTENT", False),
+        description=(
+            "When true, capture extended-thinking block text into a separate "
+            "`llm_thinking_content` run.log event (truncated). Off by default."
+        ),
+    )
+    anthropic_thinking_effort_overrides: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Per-schema Anthropic adaptive thinking effort override. "
+            "Allowed values: low, medium, high, xhigh, max."
         ),
     )
     heartbeat_enabled: bool = Field(default=True)
@@ -120,16 +137,16 @@ class LLMConfig(BaseModel):
         default_factory=lambda: {
             "chapter_summary": AgentConfig(model_name="claude-haiku-4-5", temperature=0.3, max_retry_attempts=3, concurrency_limit=25),
             "book_summary": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.3, max_retry_attempts=3, concurrency_limit=10),
-            "theme_decomposition": AgentConfig(model_name="claude-opus-4-6", temperature=0.7, max_retry_attempts=2, concurrency_limit=6),
+            "theme_decomposition": AgentConfig(model_name="claude-opus-4-7", temperature=0.7, max_retry_attempts=2, concurrency_limit=6),
             "passage_extraction": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.1, max_retry_attempts=4, concurrency_limit=13),
-            "synthesis_primitives": AgentConfig(model_name="claude-opus-4-6", temperature=0.8, max_retry_attempts=2, concurrency_limit=3),
-            "synthesis_consolidation": AgentConfig(model_name="claude-opus-4-6", temperature=0.6, max_retry_attempts=2, concurrency_limit=4),
-            "narrative_strategy": AgentConfig(model_name="claude-opus-4-6", temperature=0.5, max_retry_attempts=2, concurrency_limit=6),
-            "episode_planning": AgentConfig(model_name="claude-opus-4-6", temperature=0.5, max_retry_attempts=3, concurrency_limit=9),
-            "episode_writing": AgentConfig(model_name="claude-opus-4-6", temperature=0.6, max_retry_attempts=2, concurrency_limit=9),
+            "synthesis_primitives": AgentConfig(model_name="claude-opus-4-7", temperature=0.8, max_retry_attempts=2, concurrency_limit=3),
+            "synthesis_consolidation": AgentConfig(model_name="claude-opus-4-7", temperature=0.6, max_retry_attempts=2, concurrency_limit=4),
+            "narrative_strategy": AgentConfig(model_name="claude-opus-4-7", temperature=0.5, max_retry_attempts=2, concurrency_limit=6),
+            "episode_planning": AgentConfig(model_name="claude-opus-4-7", temperature=0.5, max_retry_attempts=3, concurrency_limit=9),
+            "episode_writing": AgentConfig(model_name="claude-opus-4-7", temperature=0.6, max_retry_attempts=2, concurrency_limit=9),
             "grounding_validation": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.2, max_retry_attempts=2, concurrency_limit=6),
             "repair": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.3, max_retry_attempts=2, concurrency_limit=6),
-            "spoken_delivery": AgentConfig(model_name="claude-opus-4-6", temperature=0.7, max_retry_attempts=2, concurrency_limit=9),
+            "spoken_delivery": AgentConfig(model_name="claude-opus-4-7", temperature=0.7, max_retry_attempts=2, concurrency_limit=9),
         },
         description="Per-agent LLM config overrides keyed by schema_name.",
     )
@@ -186,6 +203,38 @@ class LLMConfig(BaseModel):
         """Return the extended-thinking token budget for *schema_name*, or None if disabled."""
         return self.thinking_budget_tokens.get(schema_name)
 
+    @field_validator("anthropic_thinking_effort_overrides", mode="before")
+    @classmethod
+    def _validate_anthropic_thinking_effort_overrides(
+        cls, value: dict[str, str] | None
+    ) -> dict[str, str]:
+        if value is None:
+            return {}
+        normalized: dict[str, str] = {}
+        for schema_name, effort_value in value.items():
+            effort = str(effort_value).strip().lower()
+            if effort not in _ANTHROPIC_THINKING_EFFORTS:
+                allowed = ", ".join(sorted(_ANTHROPIC_THINKING_EFFORTS))
+                raise ValueError(
+                    f"Invalid anthropic thinking effort '{effort_value}' for "
+                    f"schema '{schema_name}'. Allowed: {allowed}."
+                )
+            normalized[str(schema_name)] = effort
+        return normalized
+
+    def resolve_anthropic_thinking_effort(self, schema_name: str) -> str | None:
+        override = self.anthropic_thinking_effort_overrides.get(schema_name)
+        if override is not None:
+            return override
+        budget_tokens = self.resolve_thinking_budget(schema_name)
+        if budget_tokens is None:
+            return None
+        if budget_tokens <= 12_000:
+            return "medium"
+        if budget_tokens <= 25_000:
+            return "high"
+        return "xhigh"
+
 
 class TTSConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
@@ -237,7 +286,7 @@ class PipelineRuntimeConfig(BaseModel):
     min_chunk_words: int = Field(default=80, ge=10)
     max_repair_attempts: int = Field(default=3, ge=0)
     episode_planning_concurrency: int = Field(default=9, ge=1)
-    episode_write_concurrency: int = Field(default=9, ge=1)
+    episode_write_concurrency: int = Field(default=7, ge=1)
     tts_concurrency: int = Field(default=12, ge=1)
     llm_global_max_concurrency: int = Field(default=30, ge=1)
     audio_retry_attempts: int = Field(default=3, ge=0)
@@ -263,7 +312,7 @@ class PipelineRuntimeConfig(BaseModel):
     synthesis_axis_pct: float = Field(default=1.0, ge=0.0, le=1.0)
     synthesis_axis_min: int = Field(default=10, ge=0)
     synthesis_axis_max: int = Field(default=15, ge=1)
-    synthesis_total_passage_cap: int = Field(default=720, ge=1)
+    synthesis_total_passage_cap: int = Field(default=800, ge=1)
     planning_axis_pct: float = Field(default=1.0, ge=0.0, le=1.0)
     planning_axis_min: int = Field(default=10, ge=0)
     planning_axis_max: int = Field(default=15, ge=1)

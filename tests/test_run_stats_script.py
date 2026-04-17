@@ -45,10 +45,29 @@ def _build_run(tmp_path: Path) -> Path:
         run_dir / "synthesis_primitives.json",
         {
             "project_id": "demo-run",
-            "turning_points": [{"id": "tp_1", "title": "Turn", "summary": "Summary", "core_passage_ids": ["p1"]}],
-            "scene_worthy_consequences": [],
-            "causal_mechanisms": [],
-            "live_questions": [],
+            "primitives_by_family": {
+                "turning_points": [{"id": "tp_1", "title": "Turn", "summary": "Summary", "core_passage_ids": ["p1"]}],
+                "scene_worthy_consequences": [],
+                "causal_mechanisms": [],
+                "live_questions": [
+                    {
+                        "id": "lq_1",
+                        "title": "Question",
+                        "summary": "Summary",
+                        "core_passage_ids": ["p2"],
+                        "candidate_readings": [
+                            {"label": "a", "summary": "A", "support_passage_ids": ["p2"]},
+                            {"label": "b", "summary": "B", "support_passage_ids": ["p1"]},
+                        ],
+                    }
+                ],
+                "reversals": [],
+                "motivations_dilemmas": [],
+                "perspective_shifts": [],
+                "moral_ambiguities": [],
+                "personal_stakes": [],
+                "trauma_legacies": [],
+            },
             "quality_score": 0.6,
             "quality_notes": [],
         },
@@ -68,10 +87,29 @@ def _build_run(tmp_path: Path) -> Path:
                     "local_payoff_shape": "reveal",
                 }
             ],
-            "turning_points": [{"id": "tp_1", "title": "Turn", "summary": "Summary", "core_passage_ids": ["p1"]}],
-            "scene_worthy_consequences": [],
-            "causal_mechanisms": [],
-            "live_questions": [],
+            "primitives_by_family": {
+                "turning_points": [{"id": "tp_1", "title": "Turn", "summary": "Summary", "core_passage_ids": ["p1"]}],
+                "scene_worthy_consequences": [],
+                "causal_mechanisms": [],
+                "live_questions": [
+                    {
+                        "id": "lq_1",
+                        "title": "Question",
+                        "summary": "Summary",
+                        "core_passage_ids": ["p2"],
+                        "candidate_readings": [
+                            {"label": "a", "summary": "A", "support_passage_ids": ["p2"]},
+                            {"label": "b", "summary": "B", "support_passage_ids": ["p1"]},
+                        ],
+                    }
+                ],
+                "reversals": [],
+                "motivations_dilemmas": [],
+                "perspective_shifts": [],
+                "moral_ambiguities": [],
+                "personal_stakes": [],
+                "trauma_legacies": [],
+            },
             "quality_score": 0.7,
             "quality_notes": [],
         },
@@ -163,7 +201,7 @@ def test_generate_run_stats_html(tmp_path: Path):
 
     html = output_path.read_text(encoding="utf-8")
     assert "War on Terror" in html
-    assert "Turning points: 1" in html
+    assert "turning_points: 1" in html
     assert "Clusters: 1" in html
     assert "Driving question:" in html
 

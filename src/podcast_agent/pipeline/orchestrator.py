@@ -59,7 +59,6 @@ from podcast_agent.schemas.models import (
     ExtractedPassage,
     FramingBlock,
     GroundingReport,
-    LiveQuestion,
     NarrativeStrategy,
     PassagePair,
     PipelineConfig,
@@ -70,18 +69,16 @@ from podcast_agent.schemas.models import (
     RepairResult,
     ScriptTransition,
     SceneCard,
-    SceneWorthyConsequence,
     SegmentDiff,
     SpokenSection,
     SpokenScript,
     SpokenTransition,
+    SYNTHESIS_PRIMITIVE_FAMILIES,
     SynthesisConsolidationResult,
     SynthesisMap,
-    SynthesisPrimitiveBase,
+    SynthesisPrimitive,
     SynthesisPrimitivesArtifact,
     SynthesisTag,
-    TurningPoint,
-    CausalMechanism,
     TextChunk,
     ThematicAxis,
     ThematicCorpus,
@@ -434,8 +431,8 @@ def _bm25_score(
     return score
 
 
-def _trim_candidate_texts_by_bm25(
-    axis: ThematicAxis,
+def _trim_candidate_texts_by_bm25_query_text(
+    query_text: str,
     candidates: list[dict],
     *,
     keep_fraction: float = 1 / 3,
@@ -446,10 +443,7 @@ def _trim_candidate_texts_by_bm25(
     keep_fraction = _clamp(float(keep_fraction), 0.0, 1.0)
     if keep_fraction <= 0:
         return
-    query_parts = [axis.name, axis.description]
-    query_parts.extend(axis.guiding_questions)
-    query_parts.extend(axis.keywords)
-    query_text = " ".join(part for part in query_parts if part).strip()
+    query_text = query_text.strip()
     if not query_text:
         return
     query_terms: dict[str, int] = {}
@@ -505,11 +499,35 @@ def _trim_candidate_texts_by_bm25(
             cand["text"] = trimmed
 
 
+def _trim_candidate_texts_by_bm25(
+    axis: ThematicAxis,
+    candidates: list[dict],
+    *,
+    keep_fraction: float = 1 / 3,
+    keep_fraction_by_passage_id: dict[str, float] | None = None,
+) -> None:
+    query_parts = [axis.name, axis.description]
+    query_parts.extend(axis.guiding_questions)
+    query_parts.extend(axis.keywords)
+    query_text = " ".join(part for part in query_parts if part).strip()
+    _trim_candidate_texts_by_bm25_query_text(
+        query_text,
+        candidates,
+        keep_fraction=keep_fraction,
+        keep_fraction_by_passage_id=keep_fraction_by_passage_id,
+    )
+
+
 def _resolve_synthesis_bm25_keep_fraction_by_passage(
     passages: list[ExtractedPassage],
 ) -> tuple[dict[str, float], dict[str, int]]:
     if not passages:
-        return {}, {"top_half_passages": 0, "middle_third_passages": 0, "rest_quarter_passages": 0}
+        return {}, {
+            "top_10_passages": 0,
+            "next_20_passages": 0,
+            "next_30_passages": 0,
+            "rest_40_passages": 0,
+        }
 
     ranked_passages = sorted(
         passages,
@@ -520,24 +538,32 @@ def _resolve_synthesis_bm25_keep_fraction_by_passage(
         ),
     )
     passage_count = len(ranked_passages)
-    top_half_count = min(passage_count, max(0, math.ceil(passage_count * 0.10)))
-    middle_third_count = min(
-        max(0, passage_count - top_half_count),
+    top_10_count = min(passage_count, max(0, math.ceil(passage_count * 0.10)))
+    next_20_count = min(
+        max(0, passage_count - top_10_count),
         max(0, math.ceil(passage_count * 0.20)),
+    )
+    next_30_count = min(
+        max(0, passage_count - top_10_count - next_20_count),
+        max(0, math.ceil(passage_count * 0.30)),
     )
     keep_fraction_by_passage_id: dict[str, float] = {}
     for idx, passage in enumerate(ranked_passages):
-        if idx < top_half_count:
+        if idx < top_10_count:
             keep_fraction_by_passage_id[passage.passage_id] = 0.5
             continue
-        if idx < top_half_count + middle_third_count:
-            keep_fraction_by_passage_id[passage.passage_id] = 1 / 3
+        if idx < top_10_count + next_20_count:
+            keep_fraction_by_passage_id[passage.passage_id] = 0.4
+            continue
+        if idx < top_10_count + next_20_count + next_30_count:
+            keep_fraction_by_passage_id[passage.passage_id] = 0.3
             continue
         keep_fraction_by_passage_id[passage.passage_id] = 0.25
     return keep_fraction_by_passage_id, {
-        "top_half_passages": top_half_count,
-        "middle_third_passages": middle_third_count,
-        "rest_quarter_passages": max(0, passage_count - top_half_count - middle_third_count),
+        "top_10_passages": top_10_count,
+        "next_20_passages": next_20_count,
+        "next_30_passages": next_30_count,
+        "rest_40_passages": max(0, passage_count - top_10_count - next_20_count - next_30_count),
     }
 
 
@@ -848,15 +874,9 @@ def _build_compact_chapter_projection(chapter: ChapterInfo) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "chapter_id": chapter.chapter_id,
         "title": chapter.title,
-        "summary": chapter.summary,
     }
     analysis = chapter.analysis
-    if analysis is None:
-        return payload
-    payload.update({
-        "themes_touched": list(analysis.themes_touched),
-        "major_tensions": list(analysis.major_tensions),
-    })
+    payload["analysis"] = analysis.model_dump(mode="json") if analysis is not None else None
     return payload
 
 
@@ -866,15 +886,11 @@ def _build_chapter_context(chapter: ChapterInfo | None) -> dict[str, Any] | None
     context: dict[str, Any] = {
         "chapter_id": chapter.chapter_id,
         "chapter_title": chapter.title,
-        "chapter_summary": chapter.summary,
     }
     analysis = chapter.analysis
-    if analysis is None:
-        return context
-    context.update({
-        "themes_touched": list(analysis.themes_touched),
-        "major_tensions": list(analysis.major_tensions),
-    })
+    context["chapter_analysis"] = (
+        analysis.model_dump(mode="json") if analysis is not None else None
+    )
     return context
 
 
@@ -2329,11 +2345,13 @@ def _compute_scene_word_count_targets(
 def _cluster_batch_group_sizes(cluster_count: int) -> list[int]:
     if cluster_count <= 0:
         return []
-    if cluster_count == 1:
-        return [1]
-    first_batch_size = math.ceil(cluster_count / 2)
-    second_batch_size = cluster_count - first_batch_size
-    return [first_batch_size, second_batch_size]
+    if cluster_count <= 3:
+        return [1] * cluster_count
+
+    batch_count = min(4, cluster_count)
+    base = cluster_count // batch_count
+    remainder = cluster_count % batch_count
+    return [base + (1 if idx < remainder else 0) for idx in range(batch_count)]
 
 
 def _build_cluster_scene_batches(scene_cards: list[SceneCard]) -> list[list[SceneCard]]:
@@ -2392,7 +2410,7 @@ def _build_passage_lookup(corpus: ThematicCorpus) -> dict[str, ExtractedPassage]
     return passage_lookup
 
 
-def _primitive_passage_ids(primitive: SynthesisPrimitiveBase) -> list[str]:
+def _primitive_passage_ids(primitive: SynthesisPrimitive) -> list[str]:
     seen: set[str] = set()
     ordered: list[str] = []
     for passage_id in [*primitive.core_passage_ids, *primitive.support_passage_ids]:
@@ -2403,15 +2421,11 @@ def _primitive_passage_ids(primitive: SynthesisPrimitiveBase) -> list[str]:
     return ordered
 
 
-def _flatten_synthesis_primitives(synthesis_map: SynthesisMap) -> dict[str, SynthesisPrimitiveBase]:
-    flattened: dict[str, SynthesisPrimitiveBase] = {}
-    for item in [
-        *synthesis_map.turning_points,
-        *synthesis_map.scene_worthy_consequences,
-        *synthesis_map.causal_mechanisms,
-        *synthesis_map.live_questions,
-    ]:
-        flattened[item.id] = item
+def _flatten_synthesis_primitives(synthesis_map: SynthesisMap) -> dict[str, SynthesisPrimitive]:
+    flattened: dict[str, SynthesisPrimitive] = {}
+    for family in SYNTHESIS_PRIMITIVE_FAMILIES:
+        for item in synthesis_map.primitives_by_family.get(family, []):
+            flattened[item.id] = item
     return flattened
 
 
@@ -2440,31 +2454,19 @@ def _build_episode_synthesis_map_payload(
             primitive_ids.append(member_id)
 
     primitive_id_set = set(primitive_ids)
+    primitives_by_family: dict[str, list[dict[str, Any]]] = {}
+    for family in SYNTHESIS_PRIMITIVE_FAMILIES:
+        primitives_by_family[family] = [
+            item.model_dump(mode="json")
+            for item in synthesis_map.primitives_by_family.get(family, [])
+            if item.id in primitive_id_set
+        ]
     payload = {
         "project_id": synthesis_map.project_id,
         "episode_candidate_clusters": [
             cluster.model_dump(mode="json") for cluster in selected_clusters
         ],
-        "turning_points": [
-            item.model_dump(mode="json")
-            for item in synthesis_map.turning_points
-            if item.id in primitive_id_set
-        ],
-        "scene_worthy_consequences": [
-            item.model_dump(mode="json")
-            for item in synthesis_map.scene_worthy_consequences
-            if item.id in primitive_id_set
-        ],
-        "causal_mechanisms": [
-            item.model_dump(mode="json")
-            for item in synthesis_map.causal_mechanisms
-            if item.id in primitive_id_set
-        ],
-        "live_questions": [
-            item.model_dump(mode="json")
-            for item in synthesis_map.live_questions
-            if item.id in primitive_id_set
-        ],
+        "primitives_by_family": primitives_by_family,
         "quality_score": synthesis_map.quality_score,
         "quality_notes": list(synthesis_map.quality_notes),
     }
@@ -2477,13 +2479,8 @@ def _reconstruct_synthesis_map(
     primitives: SynthesisPrimitivesArtifact,
     consolidation: SynthesisConsolidationResult,
 ) -> SynthesisMap:
-    def _select_family_items(
-        *,
-        ids: list[str],
-        items_by_id: dict[str, Any],
-        family_name: str,
-    ) -> list[Any]:
-        selected: list[Any] = []
+    def _select_family_items(*, ids: list[str], items_by_id: dict[str, SynthesisPrimitive], family_name: str) -> list[SynthesisPrimitive]:
+        selected: list[SynthesisPrimitive] = []
         seen: set[str] = set()
         missing: list[str] = []
         for primitive_id in ids:
@@ -2501,34 +2498,21 @@ def _reconstruct_synthesis_map(
             )
         return selected
 
-    turning_points_by_id = {item.id: item for item in primitives.turning_points}
-    consequences_by_id = {item.id: item for item in primitives.scene_worthy_consequences}
-    mechanisms_by_id = {item.id: item for item in primitives.causal_mechanisms}
-    live_questions_by_id = {item.id: item for item in primitives.live_questions}
+    primitives_by_family: dict[str, list[SynthesisPrimitive]] = {}
+    primitive_ids_by_family = consolidation.primitive_ids_by_family
+    for family in SYNTHESIS_PRIMITIVE_FAMILIES:
+        items = primitives.primitives_by_family.get(family, [])
+        items_by_id = {item.id: item for item in items}
+        primitives_by_family[family] = _select_family_items(
+            ids=primitive_ids_by_family.get(family, []),
+            items_by_id=items_by_id,
+            family_name=f"{family}_ids",
+        )
 
     return SynthesisMap(
         project_id=project_id,
         episode_candidate_clusters=list(consolidation.episode_candidate_clusters),
-        turning_points=_select_family_items(
-            ids=consolidation.turning_point_ids,
-            items_by_id=turning_points_by_id,
-            family_name="turning_point_ids",
-        ),
-        scene_worthy_consequences=_select_family_items(
-            ids=consolidation.scene_worthy_consequence_ids,
-            items_by_id=consequences_by_id,
-            family_name="scene_worthy_consequence_ids",
-        ),
-        causal_mechanisms=_select_family_items(
-            ids=consolidation.causal_mechanism_ids,
-            items_by_id=mechanisms_by_id,
-            family_name="causal_mechanism_ids",
-        ),
-        live_questions=_select_family_items(
-            ids=consolidation.live_question_ids,
-            items_by_id=live_questions_by_id,
-            family_name="live_question_ids",
-        ),
+        primitives_by_family=primitives_by_family,
         quality_score=consolidation.quality_score,
         quality_notes=list(consolidation.quality_notes),
     )
@@ -3029,7 +3013,6 @@ class PipelineOrchestrator:
             updated: list[ChapterInfo] = []
             for chapter, summary in zip(chapters, summaries, strict=True):
                 updated.append(chapter.model_copy(update={
-                    "summary": summary.summary,
                     "analysis": summary.analysis,
                 }))
             chapters = updated
@@ -4214,9 +4197,10 @@ class PipelineOrchestrator:
             selected_axis_by_id = {axis.axis_id: axis for axis in selected_axes}
             selected_axis_ids = {axis.axis_id for axis in selected_axes}
             synthesis_trim_tiers = {
-                "top_half_passages": 0,
-                "middle_third_passages": 0,
-                "rest_quarter_passages": 0,
+                "top_10_passages": 0,
+                "next_20_passages": 0,
+                "next_30_passages": 0,
+                "rest_40_passages": 0,
             }
             synthesis_total_cap = max(1, project.config.synthesis_total_passage_cap)
             cross_pair_ids = {
@@ -4329,10 +4313,10 @@ class PipelineOrchestrator:
                 "synthesis_trim_tiers": synthesis_trim_tiers,
                 "cap_report": cap_report,
                 "clusters": len(synthesis_map.episode_candidate_clusters),
-                "turning_points": len(synthesis_map.turning_points),
-                "consequences": len(synthesis_map.scene_worthy_consequences),
-                "mechanisms": len(synthesis_map.causal_mechanisms),
-                "live_questions": len(synthesis_map.live_questions),
+                "primitive_counts_by_family": {
+                    family: len(synthesis_map.primitives_by_family.get(family, []))
+                    for family in SYNTHESIS_PRIMITIVE_FAMILIES
+                },
                 "quality_score": synthesis_map.quality_score,
             }
             return synthesis_map
@@ -4514,6 +4498,20 @@ class PipelineOrchestrator:
                         }
                         for passage_id in passage_ids
                     ]
+                    episode_query_parts = [
+                        episode.title,
+                        episode.driving_question,
+                        episode.thematic_focus,
+                    ]
+                    episode_query_parts.extend(episode.unresolved_questions)
+                    episode_query_text = " ".join(
+                        part for part in episode_query_parts if part
+                    ).strip()
+                    _trim_candidate_texts_by_bm25_query_text(
+                        episode_query_text,
+                        available_passages,
+                        keep_fraction=0.5,
+                    )
                     payload = self.episode_planning_agent.build_payload(
                         episode=episode.model_dump(mode="json"),
                         synthesis_map=episode_synthesis_map_payload,
@@ -4743,7 +4741,7 @@ class PipelineOrchestrator:
             scene_word_count_targets_lower = _compute_scene_word_count_targets(
                 plan.scene_cards,
                 plan.target_word_count,
-                110.0,
+                120.0,
             )
             scene_word_count_targets_higher = _compute_scene_word_count_targets(
                 plan.scene_cards,
