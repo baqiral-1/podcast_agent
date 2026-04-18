@@ -112,7 +112,7 @@ class PipelineConfig(StrictModel):
     synthesis_axis_pct: float = Field(default=1.0, ge=0.0, le=1.0)
     synthesis_axis_min: int = Field(default=10, ge=0)
     synthesis_axis_max: int = Field(default=15, ge=1)
-    synthesis_total_passage_cap: int = Field(default=750, ge=1)
+    synthesis_total_passage_cap: int = Field(default=600, ge=1)
     planning_axis_pct: float = Field(default=1.0, ge=0.0, le=1.0)
     planning_axis_min: int = Field(default=10, ge=0)
     planning_axis_max: int = Field(default=15, ge=1)
@@ -126,8 +126,8 @@ class PipelineConfig(StrictModel):
     target_episode_minutes: float = Field(default=90.0, gt=0.0)
     min_episode_minutes: float = Field(default=85.0, gt=0.0)
     duration_shortfall_policy: Literal["warn"] = "warn"
-    scene_card_target_min: int = Field(default=25, ge=1)
-    scene_card_target_max: int = Field(default=40, ge=1)
+    scene_card_target_min: int = Field(default=30, ge=1)
+    scene_card_target_max: int = Field(default=45, ge=1)
     scene_card_target_policy: Literal["warn"] = "warn"
     scene_card_primitives_min: int = Field(default=1, ge=0)
     scene_card_primitives_max: int = Field(default=2, ge=1)
@@ -477,6 +477,17 @@ def _normalize_family_mapping(
     return normalized
 
 
+def _drop_invalid_live_questions(
+    mapping: dict[str, list[SynthesisPrimitive]],
+) -> dict[str, list[SynthesisPrimitive]]:
+    mapping["live_questions"] = [
+        item
+        for item in mapping.get("live_questions", [])
+        if len(item.candidate_readings) >= 2
+    ]
+    return mapping
+
+
 class EpisodeCandidateCluster(StrictModel):
     cluster_id: str = Field(default_factory=lambda: f"cluster_{new_id()[:8]}")
     title: str = Field(min_length=1)
@@ -512,14 +523,7 @@ class SynthesisPrimitivesArtifact(StrictModel):
             self.primitives_by_family,
             mapping_name="primitives_by_family",
         )
-        live_questions = normalized.get("live_questions", [])
-        for idx, item in enumerate(live_questions):
-            if len(item.candidate_readings) < 2:
-                raise ValueError(
-                    "live_questions entries require at least two candidate_readings "
-                    f"(index {idx})"
-                )
-        self.primitives_by_family = normalized
+        self.primitives_by_family = _drop_invalid_live_questions(normalized)
         return self
 
 
@@ -573,13 +577,7 @@ class SynthesisMap(StrictModel):
             self.primitives_by_family,
             mapping_name="primitives_by_family",
         )
-        for idx, item in enumerate(normalized.get("live_questions", [])):
-            if len(item.candidate_readings) < 2:
-                raise ValueError(
-                    "live_questions entries require at least two candidate_readings "
-                    f"(index {idx})"
-                )
-        self.primitives_by_family = normalized
+        self.primitives_by_family = _drop_invalid_live_questions(normalized)
         primitive_ids = set(self.primitive_by_id())
         for cluster in self.episode_candidate_clusters:
             missing = [member_id for member_id in cluster.member_ids if member_id not in primitive_ids]
@@ -611,33 +609,21 @@ class ClusterPathOccurrence(StrictModel):
 
 class ActorArcRef(StrictModel):
     ref_id: str = Field(min_length=1)
+    arc_type: Literal["role", "tracking", "tension", "turn", "payoff", "guardrail"]
     label: str = Field(min_length=1)
-    text: str = Field(min_length=1)
+    premise: str = Field(min_length=1)
+    pressure: str = ""
+    movement: str = ""
+    payoff: str = ""
 
 
 class ActorArcDirective(StrictModel):
     actor_id: str = Field(min_length=1)
-    episode_roles: list[ActorArcRef] = Field(default_factory=list)
-    listener_tracking: list[ActorArcRef] = Field(default_factory=list)
-    tension_lines: list[ActorArcRef] = Field(default_factory=list)
-    arc_progression: list[ActorArcRef] = Field(default_factory=list)
-    scene_jobs: list[ActorArcRef] = Field(default_factory=list)
-    repetition_guardrails: list[ActorArcRef] = Field(default_factory=list)
+    arc_refs: list[ActorArcRef] = Field(default_factory=list, max_length=8)
 
     @model_validator(mode="after")
     def validate_unique_ref_ids(self) -> "ActorArcDirective":
-        ref_ids = [
-            ref.ref_id
-            for ref_list in (
-                self.episode_roles,
-                self.listener_tracking,
-                self.tension_lines,
-                self.arc_progression,
-                self.scene_jobs,
-                self.repetition_guardrails,
-            )
-            for ref in ref_list
-        ]
+        ref_ids = [ref.ref_id for ref in self.arc_refs]
         if len(ref_ids) != len(set(ref_ids)):
             raise ValueError("actor arc directive ref ids must be unique")
         return self
@@ -651,7 +637,7 @@ class StrategyEpisode(StrictModel):
     arc_summary: str = Field(min_length=1)
     unresolved_questions: list[str] = Field(default_factory=list)
     cluster_path: list[ClusterPathOccurrence] = Field(default_factory=list, min_length=1)
-    actor_arc_directives: list[ActorArcDirective] = Field(default_factory=list, max_length=3)
+    actor_arc_directives: list[ActorArcDirective] = Field(default_factory=list, max_length=4)
 
     @model_validator(mode="after")
     def validate_cluster_path(self) -> "StrategyEpisode":
@@ -711,13 +697,27 @@ class FramingBlock(StrictModel):
     preview: str | None = None
 
 
+class SceneActorArcBinding(StrictModel):
+    ref_id: str = Field(min_length=1)
+    scene_role: Literal["driver", "blocked", "counterforce", "subject"]
+    scene_use: Literal[
+        "introduce",
+        "develop",
+        "complicate",
+        "stage_choice",
+        "show_consequence",
+        "pay_off",
+        "avoid",
+    ]
+    weight: Literal["light", "standard", "strong"] = "standard"
+
+
 class SceneActor(StrictModel):
     name: str = Field(min_length=1)
-    role_in_scene: str = Field(min_length=1)
-    affiliation: str | None = None
     actor_id: str | None = None
-    arc_ref_ids: list[str] = Field(default_factory=list)
-    scene_actor_directives: list[str] = Field(default_factory=list)
+    affiliation: str | None = None
+    presence: Literal["primary", "secondary", "background"] = "secondary"
+    arc_bindings: list[SceneActorArcBinding] = Field(default_factory=list, max_length=2)
 
 
 class SceneCard(StrictModel):
@@ -766,7 +766,7 @@ class EpisodePlanDraft(StrictModel):
     thematic_focus: str = ""
     arc_summary: str = ""
     unresolved_questions: list[str] = Field(default_factory=list)
-    actor_arc_directives: list[ActorArcDirective] = Field(default_factory=list, max_length=3)
+    actor_arc_directives: list[ActorArcDirective] = Field(default_factory=list, max_length=4)
     framing: FramingBlock
     scene_cards: list[SceneCard] = Field(default_factory=list, min_length=1)
     target_duration_minutes: float = Field(default=90.0, gt=0.0)

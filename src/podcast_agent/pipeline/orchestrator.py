@@ -90,6 +90,7 @@ from podcast_agent.utils.actor_metadata import (
     clean_scene_actor_links,
     clean_strategy_actor_links,
     clean_synthesis_primitive_actor_links,
+    compact_actor_registry,
     compact_actor_metadata,
     sanitize_actor_metadata_payload,
     select_actor_metadata_subset,
@@ -533,8 +534,7 @@ def _resolve_synthesis_bm25_keep_fraction_by_passage(
         return {}, {
             "top_10_passages": 0,
             "next_20_passages": 0,
-            "next_30_passages": 0,
-            "rest_40_passages": 0,
+            "next_70_passages": 0,
         }
 
     ranked_passages = sorted(
@@ -551,27 +551,19 @@ def _resolve_synthesis_bm25_keep_fraction_by_passage(
         max(0, passage_count - top_10_count),
         max(0, math.ceil(passage_count * 0.20)),
     )
-    next_30_count = min(
-        max(0, passage_count - top_10_count - next_20_count),
-        max(0, math.ceil(passage_count * 0.30)),
-    )
     keep_fraction_by_passage_id: dict[str, float] = {}
     for idx, passage in enumerate(ranked_passages):
         if idx < top_10_count:
-            keep_fraction_by_passage_id[passage.passage_id] = 0.5
-            continue
-        if idx < top_10_count + next_20_count:
             keep_fraction_by_passage_id[passage.passage_id] = 0.4
             continue
-        if idx < top_10_count + next_20_count + next_30_count:
-            keep_fraction_by_passage_id[passage.passage_id] = 0.3
+        if idx < top_10_count + next_20_count:
+            keep_fraction_by_passage_id[passage.passage_id] = 0.33
             continue
         keep_fraction_by_passage_id[passage.passage_id] = 0.25
     return keep_fraction_by_passage_id, {
         "top_10_passages": top_10_count,
         "next_20_passages": next_20_count,
-        "next_30_passages": next_30_count,
-        "rest_40_passages": max(0, passage_count - top_10_count - next_20_count - next_30_count),
+        "next_70_passages": max(0, passage_count - top_10_count - next_20_count),
     }
 
 
@@ -4313,8 +4305,7 @@ class PipelineOrchestrator:
             synthesis_trim_tiers = {
                 "top_10_passages": 0,
                 "next_20_passages": 0,
-                "next_30_passages": 0,
-                "rest_40_passages": 0,
+                "next_70_passages": 0,
             }
             synthesis_total_cap = max(1, project.config.synthesis_total_passage_cap)
             cross_pair_ids = {
@@ -4340,8 +4331,6 @@ class PipelineOrchestrator:
                     "name": a.name,
                     "description": a.description,
                     "theme_importance_score": a.theme_importance_score,
-                    "guiding_questions": a.guiding_questions,
-                    "actor_ids": a.actor_ids,
                 }
                 for a in selected_axes
             ]
@@ -4372,13 +4361,17 @@ class PipelineOrchestrator:
                     item["passage_id"]: item["text"]
                     for item in prompt_passages
                 }
+                book_groups: dict[str, list[dict[str, Any]]] = {}
+                for passage in passages:
+                    book_groups.setdefault(passage.book_id, []).append(
+                        {
+                            "passage_id": passage.passage_id,
+                            "text": trimmed_text_by_id.get(passage.passage_id, passage.text),
+                        }
+                    )
                 passages_summary[axis_id] = [
-                    {
-                        "passage_id": passage.passage_id,
-                        "book_id": passage.book_id,
-                        "text": trimmed_text_by_id.get(passage.passage_id, passage.text),
-                    }
-                    for passage in passages
+                    {"book_id": book_id, "passages": grouped_passages}
+                    for book_id, grouped_passages in book_groups.items()
                 ]
             cross_pairs = [
                 {
@@ -4399,7 +4392,7 @@ class PipelineOrchestrator:
                 project_id=project.project_id, axes_summary=axes_summary,
                 passages_by_axis=passages_summary, cross_book_pairs=cross_pairs,
                 book_metadata=book_metadata,
-                actor_metadata=compact_actor_metadata(actor_metadata),
+                actor_metadata=compact_actor_registry(actor_metadata),
             )
             primitives = await asyncio.to_thread(self.synthesis_primitives_agent.run, primitives_payload)
             primitives, primitive_actor_metrics = clean_synthesis_primitive_actor_links(

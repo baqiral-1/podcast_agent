@@ -98,13 +98,13 @@ class LLMConfig(BaseModel):
     )
     thinking_budget_tokens: dict[str, int] = Field(
         default_factory=lambda: {
-            "narrative_strategy": 20000,
+            "narrative_strategy": 10000,
             "episode_planning": 20000,
-            "episode_writing": 20000,
-            "spoken_delivery": 30000,
+            "episode_writing": 10000,
+            "spoken_delivery": 20000,
             "synthesis_primitives": 30000,
-            "synthesis_consolidation": 30000,
-            "theme_decomposition": 20000,
+            "synthesis_consolidation": 10000,
+            "theme_decomposition": 10000,
         },
         description=(
             "Legacy per-schema thinking budget in tokens. "
@@ -312,7 +312,7 @@ class PipelineRuntimeConfig(BaseModel):
     synthesis_axis_pct: float = Field(default=1.0, ge=0.0, le=1.0)
     synthesis_axis_min: int = Field(default=10, ge=0)
     synthesis_axis_max: int = Field(default=15, ge=1)
-    synthesis_total_passage_cap: int = Field(default=750, ge=1)
+    synthesis_total_passage_cap: int = Field(default=600, ge=1)
     planning_axis_pct: float = Field(default=1.0, ge=0.0, le=1.0)
     planning_axis_min: int = Field(default=10, ge=0)
     planning_axis_max: int = Field(default=15, ge=1)

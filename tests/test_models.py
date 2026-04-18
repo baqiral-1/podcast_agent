@@ -23,6 +23,7 @@ from podcast_agent.schemas.models import (
     ProseSection,
     ScriptTransition,
     SceneActor,
+    SceneActorArcBinding,
     SceneCard,
     SpeechHints,
     SpokenScript,
@@ -105,7 +106,7 @@ def _normal_scene(scene_id: str = "scene_1", occurrence_id: str = "occ_1") -> Sc
         local_question="What changes first?",
         observable_detail="Hands freeze over the paper.",
         intended_move="Move from abstract policy to lived consequence.",
-        actors=[SceneActor(name="Clerk", role_in_scene="recipient")],
+        actors=[SceneActor(name="Clerk", presence="background")],
         primitive_ids=["tp_1"],
         passage_ids=["p1", "p2"],
         estimated_duration_seconds=600,
@@ -129,11 +130,13 @@ class TestThematicProject:
         with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
             PipelineConfig(scene_batch_min_cards=1)
 
-    def test_pipeline_config_defaults_synthesis_cap_to_750(self):
+    def test_pipeline_config_defaults_synthesis_cap_to_600(self):
         config = PipelineConfig()
-        assert config.synthesis_total_passage_cap == 750
+        assert config.synthesis_total_passage_cap == 600
         assert config.min_episode_minutes == 85.0
         assert config.target_episode_minutes == 90.0
+        assert config.scene_card_target_min == 30
+        assert config.scene_card_target_max == 45
 
 
 class TestSynthesisModels:
@@ -396,16 +399,55 @@ class TestSynthesisModels:
                 ],
             )
 
-    def test_live_question_requires_at_least_two_candidate_readings(self):
-        with pytest.raises(ValidationError):
+    def test_live_questions_with_fewer_than_two_candidate_readings_are_dropped(self):
+        invalid_live_question = SynthesisPrimitive(
+            id="lq_invalid",
+            title="Single reading",
+            summary="The evidence supports only one explicit reading.",
+            core_passage_ids=["p1"],
+            candidate_readings=[
+                CandidateReading(
+                    label="reading_a",
+                    summary="Only one reading present.",
+                    support_passage_ids=["p1"],
+                )
+            ],
+        )
+
+        artifact = SynthesisPrimitivesArtifact(
+            project_id="proj",
+            primitives_by_family=_family_map(
+                turning_points=[_turning_point("tp_1")],
+                live_questions=[invalid_live_question, _live_question("lq_valid")],
+            ),
+        )
+        synthesis_map = SynthesisMap(
+            project_id="proj",
+            primitives_by_family=_family_map(
+                turning_points=[_turning_point("tp_1")],
+                live_questions=[invalid_live_question, _live_question("lq_valid")],
+            ),
+        )
+
+        assert [item.id for item in artifact.primitives_by_family["live_questions"]] == [
+            "lq_valid"
+        ]
+        assert [item.id for item in synthesis_map.primitives_by_family["live_questions"]] == [
+            "lq_valid"
+        ]
+        assert [item.id for item in artifact.primitives_by_family["turning_points"]] == ["tp_1"]
+
+    def test_synthesis_map_rejects_cluster_references_to_dropped_live_questions(self):
+        with pytest.raises(ValidationError, match="unknown member_ids"):
             SynthesisMap(
                 project_id="proj",
                 primitives_by_family=_family_map(
+                    turning_points=[_turning_point("tp_1")],
                     live_questions=[
                         SynthesisPrimitive(
-                            id="lq_1",
-                            title="Competing readings",
-                            summary="The evidence supports multiple paths.",
+                            id="lq_invalid",
+                            title="Single reading",
+                            summary="The evidence supports only one explicit reading.",
                             core_passage_ids=["p1"],
                             candidate_readings=[
                                 CandidateReading(
@@ -415,8 +457,19 @@ class TestSynthesisModels:
                                 )
                             ],
                         )
-                    ]
+                    ],
                 ),
+                episode_candidate_clusters=[
+                    EpisodeCandidateCluster(
+                        cluster_id="cluster_1",
+                        title="Opening cluster",
+                        summary="A compact causal chain.",
+                        primary_member_id="tp_1",
+                        member_ids=["tp_1", "lq_invalid"],
+                        local_question="Why does the order matter?",
+                        local_payoff_shape="reveal",
+                    )
+                ],
             )
 
     def test_synthesis_map_roundtrip_preserves_cluster_first_shape(self):
@@ -487,68 +540,92 @@ class TestSynthesisModels:
 
 
 class TestNarrativeStrategy:
-    def test_actor_arc_directive_roundtrip_uses_ref_lists(self):
+    def test_actor_arc_directive_roundtrip_uses_arc_refs(self):
         directive = ActorArcDirective(
             actor_id="mahatma_gandhi",
-            episode_roles=[
+            arc_refs=[
                 ActorArcRef(
                     ref_id="gandhi_role_1",
+                    arc_type="role",
                     label="episode role",
-                    text="His restraint frames the episode's character function.",
-                )
-            ],
-            listener_tracking=[
+                    premise="His restraint frames the episode's character function.",
+                    pressure="Escalating violence narrows his choices.",
+                    movement="Restraint becomes harder to sustain across scenes.",
+                    payoff="The listener sees restraint as a contested strategy.",
+                ),
                 ActorArcRef(
                     ref_id="gandhi_tracking_1",
+                    arc_type="tracking",
                     label="listener tracking",
-                    text="Track how restraint becomes harder to sustain.",
-                )
-            ],
-            tension_lines=[
+                    premise="Track how restraint becomes harder to sustain.",
+                    pressure="Public discipline collides with escalating violence.",
+                    movement="Each appearance should add pressure.",
+                    payoff="The episode clarifies what restraint costs.",
+                ),
                 ActorArcRef(
                     ref_id="gandhi_tension_1",
+                    arc_type="tension",
                     label="tension line",
-                    text="Public discipline collides with escalating violence.",
-                )
-            ],
-            arc_progression=[
+                    premise="Public discipline collides with escalating violence.",
+                    pressure="Followers and opponents both test discipline.",
+                    movement="Pressure accumulates until restraint changes meaning.",
+                    payoff="The tension remains visible at the episode close.",
+                ),
                 ActorArcRef(
                     ref_id="gandhi_progression_1",
+                    arc_type="turn",
                     label="arc progression",
-                    text="The episode changes what restraint can plausibly mean.",
-                )
-            ],
-            scene_jobs=[
+                    premise="The episode changes what restraint can plausibly mean.",
+                    pressure="A decision changes the arc.",
+                    movement="Move from principle to tested practice.",
+                    payoff="Restraint lands as a consequential choice.",
+                ),
                 ActorArcRef(
                     ref_id="gandhi_scene_job_1",
+                    arc_type="payoff",
                     label="scene job",
-                    text="Use where restraint meets consequence.",
-                )
-            ],
-            repetition_guardrails=[
+                    premise="Use where restraint meets consequence.",
+                    pressure="The scene must do more than repeat the actor function.",
+                    movement="Bind actor presence to scene consequence.",
+                    payoff="The scene makes the actor arc legible.",
+                ),
                 ActorArcRef(
                     ref_id="gandhi_guardrail_1",
+                    arc_type="guardrail",
                     label="repetition guardrail",
-                    text="Do not re-explain restraint unless the scene changes its meaning.",
-                )
+                    premise="Do not re-explain restraint unless the scene changes its meaning.",
+                    pressure="Repeated appearances can flatten the actor.",
+                    movement="Vary actor function across scenes.",
+                    payoff="The actor remains continuous without becoming repetitive.",
+                ),
             ],
         )
 
         restored = ActorArcDirective.model_validate(json.loads(directive.model_dump_json()))
 
         assert restored.actor_id == "mahatma_gandhi"
-        assert restored.listener_tracking[0].ref_id == "gandhi_tracking_1"
-        assert restored.listener_tracking[0].label == "listener tracking"
+        assert restored.arc_refs[1].ref_id == "gandhi_tracking_1"
+        assert restored.arc_refs[1].arc_type == "tracking"
+        assert restored.arc_refs[1].label == "listener tracking"
+        assert restored.arc_refs[1].pressure == "Public discipline collides with escalating violence."
 
     def test_actor_arc_directive_rejects_duplicate_ref_ids(self):
         with pytest.raises(ValidationError, match="ref ids must be unique"):
             ActorArcDirective(
                 actor_id="mahatma_gandhi",
-                episode_roles=[
-                    ActorArcRef(ref_id="gandhi_1", label="role", text="Role")
-                ],
-                scene_jobs=[
-                    ActorArcRef(ref_id="gandhi_1", label="scene job", text="Scene job")
+                arc_refs=[
+                    ActorArcRef(
+                        ref_id="gandhi_1",
+                        arc_type="role",
+                        label="role",
+                        premise="Role",
+                    ),
+                    ActorArcRef(
+                        ref_id="gandhi_1",
+                        arc_type="payoff",
+                        label="scene job",
+                        premise="Scene job",
+                    ),
                 ],
             )
 
@@ -689,17 +766,25 @@ class TestNarrativeStrategy:
 
 
 class TestPlanningModels:
-    def test_scene_actor_uses_arc_ref_ids_and_directives(self):
+    def test_scene_actor_uses_arc_bindings(self):
         actor = SceneActor(
             name="Mahatma Gandhi",
-            role_in_scene="tests the movement's discipline",
             actor_id="mahatma_gandhi",
-            arc_ref_ids=["gandhi_tension_1"],
-            scene_actor_directives=["Show the tension narrowing the actor's choices."],
+            presence="primary",
+            arc_bindings=[
+                SceneActorArcBinding(
+                    ref_id="gandhi_tension_1",
+                    scene_role="blocked",
+                    scene_use="complicate",
+                    weight="strong",
+                )
+            ],
         )
 
-        assert actor.arc_ref_ids == ["gandhi_tension_1"]
-        assert actor.scene_actor_directives == ["Show the tension narrowing the actor's choices."]
+        assert actor.presence == "primary"
+        assert actor.arc_bindings[0].ref_id == "gandhi_tension_1"
+        assert actor.arc_bindings[0].scene_role == "blocked"
+        assert actor.arc_bindings[0].scene_use == "complicate"
 
     def test_scene_actor_rejects_old_actor_aspect_fields(self):
         with pytest.raises(ValidationError):
@@ -707,22 +792,25 @@ class TestPlanningModels:
                 {
                     "name": "Mahatma Gandhi",
                     "role_in_scene": "tests restraint",
+                    "arc_ref_ids": ["gandhi_tension_1"],
                     "motivation_aspect_ids": ["gandhi_motivation_1"],
                     "stake_aspect_ids": ["gandhi_stake_1"],
                     "pressure_aspect_ids": ["gandhi_pressure_1"],
                     "turning_point_aspect_ids": ["gandhi_turn_1"],
+                    "scene_actor_directives": ["Old directive."],
                     "scene_actor_work": ["Old directive."],
                 }
             )
 
-    def test_clean_scene_actor_links_filters_unknown_arc_ref_ids(self):
+    def test_clean_scene_actor_links_filters_unknown_arc_bindings(self):
         actor_directive = ActorArcDirective(
             actor_id="mahatma_gandhi",
-            tension_lines=[
+            arc_refs=[
                 ActorArcRef(
                     ref_id="gandhi_tension_1",
+                    arc_type="tension",
                     label="tension line",
-                    text="Public discipline collides with escalating violence.",
+                    premise="Public discipline collides with escalating violence.",
                 )
             ],
         )
@@ -730,9 +818,19 @@ class TestPlanningModels:
         scene.actors = [
             SceneActor(
                 name="Mahatma Gandhi",
-                role_in_scene="tests restraint",
                 actor_id="mahatma_gandhi",
-                arc_ref_ids=["gandhi_tension_1", "missing_ref"],
+                arc_bindings=[
+                    SceneActorArcBinding(
+                        ref_id="gandhi_tension_1",
+                        scene_role="blocked",
+                        scene_use="complicate",
+                    ),
+                    SceneActorArcBinding(
+                        ref_id="missing_ref",
+                        scene_role="blocked",
+                        scene_use="complicate",
+                    ),
+                ],
             )
         ]
         plan = EpisodePlanDraft(
@@ -756,7 +854,7 @@ class TestPlanningModels:
         cleaned, metrics = clean_scene_actor_links(plan, metadata)
 
         cleaned_actor = cleaned.scene_cards[0].actors[0]
-        assert cleaned_actor.arc_ref_ids == ["gandhi_tension_1"]
+        assert [binding.ref_id for binding in cleaned_actor.arc_bindings] == ["gandhi_tension_1"]
         assert metrics["unknown_actor_arc_ref_ids"] == 1
 
     def test_scene_card_allows_noncanonical_scene_role(self):

@@ -419,16 +419,18 @@ def clean_scene_actor_links(
             update = {"actor_id": actor_id}
             if actor_id:
                 valid_ref_ids = ref_ids_by_actor.get(actor_id, set())
-                filtered_ids = []
-                for ref_id in actor.arc_ref_ids:
-                    if valid_ref_ids and ref_id not in valid_ref_ids:
+                filtered_bindings = []
+                seen_ref_ids: set[str] = set()
+                for binding in actor.arc_bindings:
+                    if valid_ref_ids and binding.ref_id not in valid_ref_ids:
                         metrics["unknown_actor_arc_ref_ids"] += 1
                         continue
-                    if ref_id not in filtered_ids:
-                        filtered_ids.append(ref_id)
-                update["arc_ref_ids"] = filtered_ids
+                    if binding.ref_id not in seen_ref_ids:
+                        filtered_bindings.append(binding)
+                        seen_ref_ids.add(binding.ref_id)
+                update["arc_bindings"] = filtered_bindings
             else:
-                update["arc_ref_ids"] = []
+                update["arc_bindings"] = []
             cleaned_actors.append(actor.model_copy(update=update))
         cleaned_scenes.append(scene.model_copy(update={"actors": cleaned_actors}))
 
@@ -453,18 +455,7 @@ def clean_scene_actor_links(
 def _episode_actor_arc_ref_ids(plan: EpisodePlanDraft | EpisodePlan) -> dict[str, set[str]]:
     ref_ids_by_actor: dict[str, set[str]] = {}
     for actor in plan.actor_arc_directives:
-        ref_ids_by_actor[actor.actor_id] = {
-            ref.ref_id
-            for ref_list in (
-                actor.episode_roles,
-                actor.listener_tracking,
-                actor.tension_lines,
-                actor.arc_progression,
-                actor.scene_jobs,
-                actor.repetition_guardrails,
-            )
-            for ref in ref_list
-        }
+        ref_ids_by_actor[actor.actor_id] = {ref.ref_id for ref in actor.arc_refs}
     return ref_ids_by_actor
 
 
@@ -494,6 +485,20 @@ def compact_actor_metadata(actor_metadata: ActorMetadata) -> dict[str, Any]:
             for relationship in actor_metadata.relationships
         ],
         "quality_notes": actor_metadata.quality_notes,
+    }
+
+
+def compact_actor_registry(actor_metadata: ActorMetadata) -> dict[str, Any]:
+    return {
+        "actors": [
+            {
+                "actor_id": actor.actor_id,
+                "display_name": actor.display_name,
+                "aliases": actor.aliases,
+                "actor_type": actor.actor_type,
+            }
+            for actor in actor_metadata.actors
+        ],
     }
 
 

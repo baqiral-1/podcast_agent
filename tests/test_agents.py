@@ -141,20 +141,21 @@ class TestRedesignedAgents:
         payload = agent.build_payload(
             project_id="proj",
             axes_summary=[{"axis_id": "axis_1"}],
-            passages_by_axis={"axis_1": [{"passage_id": "p1"}]},
-            cross_book_pairs=[],
+            passages_by_axis={"axis_1": [{"book_id": "b1", "passages": [{"passage_id": "p1"}]}]},
+            cross_book_pairs=[{"passage_a_id": "p1", "passage_b_id": "p2"}],
             book_metadata=[{"book_id": "b1"}],
             actor_metadata={"actors": [{"actor_id": "actor_1"}]},
             synthesis_feedback={"issue": "thin_grounding"},
         )
         assert agent.schema_name == "synthesis_primitives"
         assert payload["actor_metadata"]["actors"][0]["actor_id"] == "actor_1"
+        assert payload["cross_book_pairs"][0]["passage_a_id"] == "p1"
+        assert payload["passages_by_axis"]["axis_1"][0]["book_id"] == "b1"
         assert payload["synthesis_feedback"]["issue"] == "thin_grounding"
-        assert "Do not emit episode architecture" in agent.instructions
-        assert "`passages_by_axis`" in agent.instructions
-        assert "`misperceptions`" in agent.instructions
-        assert "`misperceptions`: 5-25" in agent.instructions
-        assert "`narrative_importance_score`" in agent.instructions
+        assert "PRIORITY RULES (govern everything below)" in agent.instructions
+        assert "passages_by_axis: evidence grouped by axis" in agent.instructions
+        assert "misperceptions (10–25)" in agent.instructions
+        assert "Score every primitive on 0.0–1.0" in agent.instructions
         assert "Scores must be meaningfully non-flat" in agent.instructions
 
     def test_synthesis_consolidation_agent_payload(self):
@@ -192,7 +193,9 @@ class TestRedesignedAgents:
         assert payload["strategy_feedback"]["issue"] == "cluster_home_collision"
         assert "must also set `emphasis`" in agent.instructions
         assert "Multiple `anchor` occurrences may appear in one episode" in agent.instructions
-        assert "`actor_arc_directives` must contain only the 1-3 actors" in agent.instructions
+        assert "`actor_arc_directives` must contain only the 1-4 actors" in agent.instructions
+        assert "`arc_refs`" in agent.instructions
+        assert "`arc_type`" in agent.instructions
         assert "`actor_arc_summary`" not in agent.instructions
 
     def test_episode_planning_agent_payload(self):
@@ -210,9 +213,20 @@ class TestRedesignedAgents:
         assert payload["planning_feedback"]["issue"] == "uncovered_primary_occurrences"
         assert "`available_passages`" in agent.instructions
         assert "`estimated_duration_seconds`" in agent.instructions
+        assert "PRIORITY RULES" in agent.instructions
+        assert "No scene without passage support" in agent.instructions
+        assert "Target 30-45 scene cards" in agent.instructions
         assert "Allocate primitives intentionally" in agent.instructions
-        assert "Preserve the episode's `actor_arc_directives`" in agent.instructions
-        assert "`arc_ref_ids`" in agent.instructions
+        assert "Preserve `episode.actor_arc_directives`" in agent.instructions
+        assert "`arc_bindings`" in agent.instructions
+        assert "Set scene actor `presence` as `primary`, `secondary`, or `background`" in agent.instructions
+        assert "Scene-card `scene_role` describes the whole scene's narrative job." in agent.instructions
+        assert "`arc_bindings[].scene_role` is the actor's role inside the scene" in agent.instructions
+        assert "`scene_role`: `driver`, `blocked`, `counterforce`, or `subject`" in agent.instructions
+        assert "`scene_use`: `introduce`, `develop`, `complicate`, `stage_choice`, `show_consequence`, `pay_off`, or `avoid`" in agent.instructions
+        assert "`weight`: optional; `light`, `standard`, or `strong`" in agent.instructions
+        assert "Do not bind an actor just because they are named in the evidence." in agent.instructions
+        assert "Do not mix them." in agent.instructions
         assert "`actor_throughline`" not in agent.instructions
 
     def test_writing_agent_payload(self):
@@ -247,7 +261,12 @@ class TestRedesignedAgents:
         assert agent.instructions.count("Do not cite actor metadata.") == 1
         assert "Passage evidence wins if actor metadata and passages conflict." in agent.instructions
         assert "target ranges already encode narrative importance" in agent.instructions
-        assert "scene-card `arc_ref_ids`" in agent.instructions
+        assert "Resolve each scene actor `arc_bindings[].ref_id` against `plan.actor_arc_directives[].arc_refs[]`" in agent.instructions
+        assert "Use arc ref `premise`, `pressure`, `movement`, and `payoff` as narrative guidance" in agent.instructions
+        assert "Use `arc_bindings[].scene_use` as the actor arc operation for the scene" in agent.instructions
+        assert "`introduce`: establish the actor's episode function" in agent.instructions
+        assert "`avoid`: keep the actor present without foregrounding the arc" in agent.instructions
+        assert "Use `arc_bindings[].weight` to scale narrative attention" in agent.instructions
         assert "Do not restate the same actor function" in agent.instructions
 
     def test_writing_agent_no_citations_instructions_and_schema(self):
@@ -283,7 +302,12 @@ class TestRedesignedAgents:
         assert "Do not include a `citations` field" in agent.instructions
         assert "Populate `source_book_ids`" in agent.instructions
         assert "target ranges already encode narrative importance" in agent.instructions
-        assert "scene-card `arc_ref_ids`" in agent.instructions
+        assert "Resolve each scene actor `arc_bindings[].ref_id` against `plan.actor_arc_directives[].arc_refs[]`" in agent.instructions
+        assert "Use arc ref `premise`, `pressure`, `movement`, and `payoff` as narrative guidance" in agent.instructions
+        assert "Use `arc_bindings[].scene_use` as the actor arc operation for the scene" in agent.instructions
+        assert "`introduce`: establish the actor's episode function" in agent.instructions
+        assert "`avoid`: keep the actor present without foregrounding the arc" in agent.instructions
+        assert "Use `arc_bindings[].weight` to scale narrative attention" in agent.instructions
         assert "Do not restate the same actor function" in agent.instructions
 
     def test_grounding_validation_agent_payload(self):
@@ -318,22 +342,30 @@ class TestRedesignedAgents:
         )
         assert agent.schema_name == "spoken_delivery"
         assert payload["max_words_per_segment"] == 250
-        assert "You are the `spoken_delivery` stage" in agent.instructions
-        assert "Return only valid JSON with `sections` and `transitions`." in agent.instructions
-        assert "must match `expected_schema` exactly" in agent.instructions
-        assert "Do not include wrapper keys like `schema_name`, `payload`, or `expected_schema`." in agent.instructions
-        assert "You may delete redundant structural language" in agent.instructions
-        assert "Use plain reportorial tone as the default register." in agent.instructions
-        assert "Do not turn a cautious or interpretive claim into a stronger claim." in agent.instructions
-        assert "add `speech_hints.pronunciation_hints`." in agent.instructions
-        assert "keep `text` exactly as it appears in the segment text." in agent.instructions
-        assert "Does the final JSON match `expected_schema` exactly?" in agent.instructions
+        assert "You are the spoken_delivery stage" in agent.instructions
+        assert "historically literate storyteller" in agent.instructions
+        assert "The narrator thinks out loud, has opinions" in agent.instructions
+        assert "Avoid abstract narrator crutches" in agent.instructions
+        assert "Avoid stock podcast phrasing" in agent.instructions
+        assert "Default to subtraction." in agent.instructions
+        assert "Return only valid JSON matching expected_schema exactly." in agent.instructions
+        assert "Return exactly two top-level keys: sections and transitions." in agent.instructions
+        assert "No wrapper keys. No extra fields." in agent.instructions
+        assert "Output exactly one section for each input script.prose_sections[]" in agent.instructions
+        assert "Do not merge, split, omit, duplicate, reorder, or rename sections or" in agent.instructions
+        assert "transitions." in agent.instructions
+        assert "Never strengthen a cautious claim." in agent.instructions
+        assert "Add speech_hints.pronunciation_hints only" in agent.instructions
+        assert "Keep `text` exactly as it appears in the segment." in agent.instructions
+        assert "JSON matches expected_schema exactly?" in agent.instructions
         assert "Output Format:" not in agent.instructions
         assert "You are the `narrative_historian` stage" not in agent.instructions
+        assert "Use the following narration style" not in agent.instructions
+        assert "Do not overstate single-cause explanations for partition" not in agent.instructions
         assert "Every sentence in the original script serves a purpose." not in agent.instructions
         assert "Do not simply delete structural sentences" not in agent.instructions
-        assert "`section_id`" in agent.instructions
-        assert "`transition_id`" in agent.instructions
+        assert "section_id" in agent.instructions
+        assert "transition_id" in agent.instructions
 
 
 class TestHeuristicClient:
@@ -343,7 +375,9 @@ class TestHeuristicClient:
             agent.build_payload(
                 project_id="proj",
                 axes_summary=[{"axis_id": "axis_1"}],
-                passages_by_axis={"axis_1": [{"passage_id": "p1"}, {"passage_id": "p2"}]},
+                passages_by_axis={
+                    "axis_1": [{"book_id": "b1", "passages": [{"passage_id": "p1"}, {"passage_id": "p2"}]}]
+                },
                 cross_book_pairs=[],
                 book_metadata=[{"book_id": "b1"}],
             )

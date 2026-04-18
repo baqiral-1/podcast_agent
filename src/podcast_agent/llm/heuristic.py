@@ -217,10 +217,16 @@ class HeuristicLLMClient(LLMClient):
     def _collect_passage_ids(self, passages_by_axis: dict[str, Any]) -> list[str]:
         passage_ids: list[str] = []
         for axis_passages in passages_by_axis.values():
-            for passage in axis_passages:
-                if not isinstance(passage, dict):
+            for item in axis_passages:
+                if not isinstance(item, dict):
                     continue
-                passage_ids.append(str(passage.get("passage_id", uuid4().hex)))
+                if "passages" not in item:
+                    passage_ids.append(str(item.get("passage_id", uuid4().hex)))
+                    continue
+                for passage in item.get("passages", []):
+                    if not isinstance(passage, dict):
+                        continue
+                    passage_ids.append(str(passage.get("passage_id", uuid4().hex)))
         return passage_ids
 
     def _build_primitive(
@@ -417,47 +423,61 @@ class HeuristicLLMClient(LLMClient):
             actor_arc_directives = [
                 {
                     "actor_id": actor_id,
-                    "episode_roles": [
+                    "arc_refs": [
                         {
                             "ref_id": f"{actor_id}_role_1",
+                            "arc_type": "role",
                             "label": "episode role",
-                            "text": "This actor provides the heuristic character spine for the episode.",
-                        }
-                    ],
-                    "listener_tracking": [
+                            "premise": "This actor provides the heuristic character spine for the episode.",
+                            "pressure": "Episode events constrain the actor's available choices.",
+                            "movement": "The actor's position becomes clearer as the cluster path develops.",
+                            "payoff": "The episode lands the actor's function as part of the local turn.",
+                        },
                         {
                             "ref_id": f"{actor_id}_tracking_1",
+                            "arc_type": "tracking",
                             "label": "listener tracking",
-                            "text": "Track how the actor's position becomes clearer across the episode.",
-                        }
-                    ],
-                    "tension_lines": [
+                            "premise": "Track how the actor's position becomes clearer across the episode.",
+                            "pressure": "New evidence or consequences should sharpen what is at stake.",
+                            "movement": "Each relevant scene should add pressure rather than repeat the same role.",
+                            "payoff": "The listener should understand why this actor mattered to the episode.",
+                        },
                         {
                             "ref_id": f"{actor_id}_tension_1",
+                            "arc_type": "tension",
                             "label": "tension line",
-                            "text": "External pressure constrains the actor's available choices.",
-                        }
-                    ],
-                    "arc_progression": [
+                            "premise": "External pressure constrains the actor's available choices.",
+                            "pressure": "The cluster path narrows the actor's options.",
+                            "movement": "Pressure should become more concrete across scenes.",
+                            "payoff": "The tension should clarify the episode's local consequence.",
+                        },
                         {
                             "ref_id": f"{actor_id}_progression_1",
+                            "arc_type": "turn",
                             "label": "arc progression",
-                            "text": "The actor's position changes as the cluster path develops.",
-                        }
-                    ],
-                    "scene_jobs": [
+                            "premise": "The actor's position changes as the cluster path develops.",
+                            "pressure": "A decision or consequence should alter what the actor can do.",
+                            "movement": "Move from setup toward consequence.",
+                            "payoff": "The actor's changed position should make the episode turn legible.",
+                        },
                         {
                             "ref_id": f"{actor_id}_scene_job_1",
+                            "arc_type": "payoff",
                             "label": "scene job",
-                            "text": "Use this actor where pressure turns into consequence.",
-                        }
-                    ],
-                    "repetition_guardrails": [
+                            "premise": "Use this actor where pressure turns into consequence.",
+                            "pressure": "The scene should not merely name the actor.",
+                            "movement": "Bind actor presence to visible consequence.",
+                            "payoff": "The payoff should connect actor pressure to episode meaning.",
+                        },
                         {
                             "ref_id": f"{actor_id}_guardrail_1",
+                            "arc_type": "guardrail",
                             "label": "repetition guardrail",
-                            "text": "Do not restate the same actor function unless the scene changes or pays it off.",
-                        }
+                            "premise": "Do not restate the same actor function unless the scene changes or pays it off.",
+                            "pressure": "Repeated appearances can flatten the actor into a label.",
+                            "movement": "Vary actor use by scene.",
+                            "payoff": "The episode should preserve actor continuity without repetition.",
+                        },
                     ],
                 }
                 for actor_id in cluster_actor_ids[:1]

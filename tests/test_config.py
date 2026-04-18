@@ -138,7 +138,7 @@ class TestPipelineRuntimeConfig:
         assert config.planning_axis_pct == 1.0
         assert config.planning_axis_min == 10
         assert config.planning_axis_max == 15
-        assert config.synthesis_total_passage_cap == 750
+        assert config.synthesis_total_passage_cap == 600
         assert config.planning_total_passage_cap == 300
         assert config.passage_extraction_concurrency == 8
         assert config.llm_global_max_concurrency == 30

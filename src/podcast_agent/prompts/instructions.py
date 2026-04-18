@@ -187,75 +187,128 @@ def passage_extraction_instructions() -> str:
 def synthesis_primitives_instructions() -> str:
     return dedent(
         """
-        You are the `synthesis_primitives` stage for a multi-book thematic podcast pipeline.
+        You are the synthesis_primitives stage for a historical podcast pipeline.
+        Read the selected synthesis evidence and extract grounded primitives.
+        These are the raw building blocks for later cluster-first series design
+        — not episode architecture, not narrative threads, not verdicts.
 
-        Goal:
-        - Read the selected synthesis evidence and extract grounded primitives only.
-        - Produce the raw building blocks for later cluster-first series design.
+        INPUT PAYLOAD
+        - project_id
+        - axes: compact axis summaries (axis_id, name, description,
+          theme_importance_score)
+        - passages_by_axis: evidence grouped by axis, then by book
+          (book_id, passages with passage_id and text)
+        - cross_book_pairs (optional): cross-book pair hints
+        - books: compact book metadata
+        - actor_metadata (optional): compact canonical actor registry
+        - synthesis_feedback (optional): retry feedback; correct the named
+          issue without discarding grounded material that already works
 
-        Input payload:
-        - `project_id`: run identifier.
-        - `axes`: compact axis summaries with `axis_id`, `name`, `description`, `guiding_questions`, and `theme_importance_score`.
-        - `passages_by_axis`: selected evidence for synthesis, grouped by axis. Each passage object includes `passage_id`, `book_id`, and `text`.
-        - `cross_book_pairs`: optional cross-book pair hints.
-        - `books`: compact book metadata.
-        - Optional `actor_metadata`: compact canonical actor context from theme decomposition.
-        - Optional `synthesis_feedback`: retry feedback from the orchestrator. If present, correct the named issue without discarding grounded material that already works.
-
-        Output requirements:
-        - Return only valid JSON matching `SynthesisPrimitivesArtifact`.
-        - Emit primitives only under `primitives_by_family`.
-        - Emit only these family keys:
-          - `turning_points` Moments when the direction of events decisively changes and the story begins moving onto a new track
-          - `scene_worthy_consequences` Outcomes whose human, political, or emotional effects are vivid enough to justify dramatizing as a scene
-          - `causal_mechanisms` The concrete processes, pressures, or chains of action that explain how one development produced another
-          - `live_questions` Unresolved uncertainties that are still active inside the narrative and keep the listener leaning forward
-          - `misperceptions` What people got wrong in real time, including false assumptions, misread signals, and confident but flawed interpretations
-          - `reversals` Moments when the apparent meaning or direction of events flips, often turning strength into weakness or advantage into danger
-          - `motivations_dilemmas` The desires, fears, and competing pressures that drive people to act under conditions where every option carries a cost
-          - `perspective_shifts` Points where changing whose eyes we see through materially deepens, complicates, or reframes the story
-          - `moral_ambiguities` Situations where the right course is unclear and easy judgment would flatten the human reality of the moment
-          - `personal_stakes` What a development stands to cost or protect for a specific person in terms of safety, status, identity, love, or legacy
-          - `trauma_legacies` The enduring psychological, social, or political aftereffects of past violence or rupture that continue shaping later choices
-        - Target these family count ranges:
-          - `turning_points`: 10-40
-          - `scene_worthy_consequences`: 10-40
-          - `causal_mechanisms`: 10-30
-          - `live_questions`: 10-35
-          - `misperceptions`: 5-25
-          - `reversals`: 10-40
-          - `motivations_dilemmas`: 20-50
-          - `perspective_shifts`: 10-30
-          - `moral_ambiguities`: 10-40
-          - `personal_stakes`: 10-30
-          - `trauma_legacies`: 10-25
-        - Every primitive must be grounded in passage ids that appear in the payload.
-        - Use `core_passage_ids` for the decisive evidence and `support_passage_ids` for reinforcing evidence.
-        - Titles should be operational and scene-usable, not polished thesis statements.
-        - `summary` should explain what the primitive captures and why it matters.
-        - Set `narrative_importance_score` for every primitive on a 0.0-1.0 scale.
-        - Scores must be meaningfully non-flat: most primitives should not receive the same score.
-        - Score historical and narrative indispensability: consequence, causal leverage, thematic centrality, actor stakes, evidence strength, and whether later events become unintelligible without it.
-        - `axis_ids` should reference the relevant analytical lenses.
-        - Use `primary_actor_ids`, `affected_actor_ids`, and `actor_ids` when canonical actors are central to the primitive.
-        - Use `actor_tags` only for legacy/freeform actor names when you cannot safely use a canonical actor id.
-        - Use `unresolved_actor_tags` for actor names that matter but cannot be mapped to `actor_metadata`.
-        - `candidate_readings` for `live_questions` must present genuinely competing or unresolved readings.
-
-        What not to do:
-        - Do not emit episode architecture, cluster seeds, merged narratives, narrative threads, verdict lists, or omniscient takeaways.
-        - Do not convert uncertainty into certainty if the evidence is contested.
-        - Do not cite passage ids that are not present in the input.
+        PRIORITY RULES (govern everything below)
+        - Ground every primitive in passage_ids present in the input.
+          core_passage_ids for decisive evidence, support_passage_ids for
+          reinforcing evidence. Never cite a passage_id not in the payload.
+        - Do not convert contested or uncertain evidence into certainty.
+        - Do not emit episode architecture, cluster seeds, merged narratives,
+          narrative threads, verdict lists, or omniscient takeaways.
+          Primitives only.
         - Do not force actor ids onto structural primitives.
         - Do not turn institutional dynamics into fake personal motivation.
 
-        Quality guidance:
-        - Favor primitives that help later episode construction: threshold changes, visible consequences, operating mechanisms, and unresolved interpretive pressure.
-        - Prefer actor-linked primitives where evidence supports pressure, decision, conflict, misreading, consequence, or stakes.
-        - Deduplicate obvious repeats, but do not collapse genuinely different mechanisms or consequences into one vague object.
-        - Use `quality_notes` to describe notable gaps or caution areas if necessary.
-        - Do not relabel the same claim across families unless the new primitive adds a distinct actor-level insight.
+        PRIMITIVE FAMILIES
+        Emit only these family keys under primitives_by_family, with the
+        target count range for each:
+
+        turning_points (20-40)
+          Moments when the direction of events decisively changes and the
+          story begins moving onto a new track.
+
+        scene_worthy_consequences (15–35)
+          Outcomes whose human, political, or emotional effects are vivid
+          enough to justify dramatizing as a scene.
+
+        causal_mechanisms (15–30)
+          The concrete processes, pressures, or chains of action that
+          explain how one development produced another.
+
+        live_questions (15–30)
+          Unresolved uncertainties still active inside the narrative that
+          keep the listener leaning forward.
+          candidate_readings must present genuinely competing readings.
+
+        misperceptions (10–25)
+          What people got wrong in real time — false assumptions, misread
+          signals, confident but flawed interpretations.
+
+        reversals (10–30)
+          Moments when the apparent meaning or direction of events flips —
+          strength becomes weakness, advantage becomes danger.
+
+        motivations_dilemmas (20–40)
+          Desires, fears, and competing pressures that drive people to act
+          under conditions where every option carries a cost.
+
+        perspective_shifts (10–25)
+          Points where changing whose eyes we see through materially
+          deepens, complicates, or reframes the story.
+
+        moral_ambiguities (10–25)
+          Situations where the right course is unclear and easy judgment
+          would flatten the human reality.
+
+        personal_stakes (10–25)
+          What a development stands to cost or protect for a specific
+          person — safety, status, identity, love, legacy.
+
+        trauma_legacies (10–25)
+          Enduring psychological, social, or political aftereffects of past
+          violence or rupture that continue shaping later choices.
+
+        TITLES AND SUMMARIES
+        - Titles are operational and scene-usable, not polished thesis
+          statements. Think: what would a scene card say this primitive is?
+          Good: "Nehru learns of partition plan from the radio"
+          Bad: "The tragic disconnection between leadership and reality"
+        - summary explains what the primitive captures and why it matters.
+
+        NARRATIVE IMPORTANCE SCORING
+        Score every primitive on 0.0–1.0. Score on: consequence, causal
+        leverage, thematic centrality, actor stakes, evidence strength, and
+        whether later events become unintelligible without it.
+
+        - Scores must be meaningfully non-flat. Most primitives should not
+          cluster at the same value.
+        - Use the full range. A healthy distribution has primitives across
+          0.2–0.9, not all bunched in 0.6–0.8.
+        - Reserve 0.85+ for primitives that genuinely anchor the episode —
+          without them the history breaks. Reserve 0.3 and below for
+          primitives that add texture but could be cut without damage.
+
+        ACTOR FIELDS
+        - primary_actor_ids, affected_actor_ids, actor_ids: use when
+          canonical actors from actor_metadata are central to the primitive.
+        - actor_tags: only for legacy or freeform actor names when no
+          canonical id applies safely.
+        - unresolved_actor_tags: for actor names that matter but cannot be
+          mapped to actor_metadata.
+        - Structural primitives (causal_mechanisms, trauma_legacies when
+          institutional, etc.) do not need actor ids forced onto them.
+
+        AXIS LINKING
+        - axis_ids references the relevant analytical lenses.
+
+        QUALITY
+        - Favor primitives that help later episode construction: threshold
+          changes, visible consequences, operating mechanisms, unresolved
+          interpretive pressure.
+        - Prefer actor-linked primitives where evidence supports pressure,
+          decision, conflict, misreading, consequence, or stakes.
+        - Deduplicate obvious repeats. Do not collapse genuinely different
+          mechanisms or consequences into one vague object.
+        - Do not relabel the same claim across families unless the new
+          primitive adds a distinct actor-level insight.
         - Limit passage reuse across primitives unless necessary.
+        - Use quality_notes to describe notable gaps or caution areas.
         """
     ).strip()
 
@@ -318,68 +371,132 @@ def synthesis_consolidation_instructions() -> str:
 def narrative_strategy_instructions() -> str:
     return dedent(
         """
-        You are the `narrative_strategy` stage for a multi-book thematic podcast pipeline.
+        You are the `narrative_strategy` stage for a historical podcast pipeline.
+        Turn the consolidated cluster-first synthesis map into a series-level
+        structure. The assignment unit is the cluster, not the individual
+        primitive. You are deciding which clusters live in which episodes,
+        in what order, and with what weight - not drafting scenes.
 
-        Goal:
-        - Turn the consolidated cluster-first synthesis map into a series-level structure.
-        - The assignment unit is the cluster, not the individual primitive.
+        INPUT PAYLOAD
+        - `synthesis_map`: consolidated synthesis artifact
+        - `thematic_axes`: axis summaries with theme-importance scores and
+          light retrieval diagnostics
+        - `project`: project metadata, target duration, book metadata
+        - `actor_metadata` (optional): canonical actor context
+        - `requested_episode_count` (optional): hard episode-count constraint
+        - `strategy_feedback` (optional): retry feedback from the orchestrator
 
-        Input payload:
-        - `synthesis_map`: the consolidated synthesis artifact.
-        - `thematic_axes`: axis summaries (including theme-importance scores) plus light retrieval diagnostics.
-        - `project`: project-level metadata, target duration information, and book metadata.
-        - Optional `actor_metadata`: compact canonical actor context.
-        - Optional `requested_episode_count`: a hard episode-count constraint when present.
-        - Optional `strategy_feedback`: retry feedback from the orchestrator.
+        PRIORITY RULES
+        - Every cluster should have exactly one primary home episode across
+          the series. Never assign the same cluster as primary in two episodes.
+        - Every episode must have at least one genuine primary cluster anchor.
+        - Strategy assigns clusters, not scenes. Do not produce scene-level
+          detail, pacing, or beat structure; that is the planning stage.
 
-        Output requirements:
-        - Return only valid JSON matching `NarrativeStrategy`.
-        - Choose `strategy_type` as a descriptive macro-shape, not as a rigid template.
-        - Provide `justification` and `series_arc` that explain why the chosen structure fits the material.
-        - Build `episodes` as discovery-ordered cluster paths.
-        - Each episode must include:
-          - `episode_number`
-          - `title`
-          - `driving_question`
-          - `thematic_focus`
-          - `arc_summary`
-          - `actor_arc_directives`
-          - optional `unresolved_questions`
-          - ordered `cluster_path`
-        - Each `cluster_path` occurrence must mark a cluster as `primary` or `echo`.
-        - Each `cluster_path` occurrence must also set `emphasis` as `anchor`, `major`, `supporting`, or `compressed`.
-        - Every cluster must have exactly one primary home episode across the series.
-        - Use `chronology_break` only when narrative order intentionally diverges from chronological order.
-        - `actor_arc_directives` must contain only the 1-3 actors whose episode function needs explicit planning and writing guidance.
-        - Each `actor_arc_directives[]` item must include:
-          - `actor_id`
-          - `episode_roles`
-          - `listener_tracking`
-          - `tension_lines`
-          - `arc_progression`
-          - `scene_jobs`
-          - `repetition_guardrails`
-        - Every item inside those actor directive lists must be an object with `ref_id`, `label`, and `text`.
-        - `ref_id` values must be stable, concise, unique within that actor, and specific enough for scene cards to reference later.
+        SERIES SHAPE
+        - `strategy_type`: choose one schema value:
+          `thesis_driven`, `debate`, `chronological`, `convergence`, or `mosaic`.
+        - Use `justification` to describe the actual macro-shape, e.g.
+          "escalation to partition," "parallel tracks converging at a verdict,"
+          or "one central collision with antecedents and aftermath."
+        - `series_arc`: the through-line across episodes.
 
-        Strategy guidance:
-        - Build episodes around escalation, consequence, contestation, discovery, and payoff, not around equal partitioning.
-        - Use cluster `narrative_importance_score` and `coverage_policy` to decide which occurrences deserve `anchor` or `major` treatment.
-        - Multiple `anchor` occurrences may appear in one episode when the story has more than one central load-bearing cluster.
-        - Aim for 1-3 anchors per episode as a soft target; if more are necessary, keep them but note the reason in episode-level language.
-        - Supporting and compressed clusters can remain in the path when they clarify context, causality, or payoff.
-        - Use actor continuity to clarify pressure, choice, collision, consequence, and payoff.
-        - Do not organize episodes as biographies unless the cluster path warrants it.
-        - Do not choose actors merely because they appear in clusters or primitives; choose only actors who give this episode a usable character spine.
-        - Actor arc directives are not synthesis primitives or evidence summaries. They are episode-specific instructions for how a selected actor should function across scenes.
-        - Do not copy generic registry metadata unless it is rewritten as episode-level role, tracking, tension, progression, scene-job, or repetition guidance.
-        - Use echoes sparingly and only when they meaningfully enrich a later episode.
-        - Keep the listener-facing question of each episode narrow and concrete enough to sustain a long-form argument.
+        Build episodes around escalation, consequence, contestation,
+        discovery, and payoff. Do not partition material evenly. Do not
+        organize episodes as biographies unless the cluster path genuinely
+        warrants it.
 
-        What not to do:
-        - Do not revert to beat-era assignment logic.
-        - Do not assign the same cluster as primary in multiple episodes.
-        - Do not leave episodes without a genuine primary cluster anchor.
+        EPISODES
+        Each episode includes:
+        - `episode_number`
+        - `title`
+        - `driving_question`: listener-facing, narrow and concrete enough to
+          sustain a long-form argument
+        - `thematic_focus`
+        - `arc_summary`
+        - `cluster_path`
+        - `actor_arc_directives`
+        - `unresolved_questions` optional
+
+        CLUSTER PATHS
+        Each `cluster_path[]` occurrence has:
+        - `occurrence_id`
+        - `cluster_id`
+        - `usage`: `primary` or `echo`
+        - `emphasis`: `anchor`, `major`, `supporting`, or `compressed`
+        - `transition_note`: required after the first occurrence
+        - `chronology_break` optional, only when narrative order intentionally
+          diverges from chronology
+
+        Usage:
+        - `primary`: this episode is the cluster's home. Exactly one per
+          cluster across the series.
+        - `echo`: the cluster has already had its primary home; this occurrence
+          enriches or recalls it. Use echoes sparingly and only when they
+          meaningfully enrich the episode.
+
+        Emphasis:
+        - `anchor`: load-bearing. The episode's structure depends on it.
+        - `major`: substantial treatment, not load-bearing alone.
+        - `supporting`: clarifies context, causality, or payoff.
+        - `compressed`: present for intelligibility; receives light coverage.
+
+        Weighting:
+        - Use cluster `narrative_importance_score` and `coverage_policy` to
+          decide anchor/major assignments.
+        - Each `cluster_path` occurrence must also set `emphasis` as `anchor`,
+          `major`, `supporting`, or `compressed`.
+        - Multiple `anchor` occurrences may appear in one episode when the
+          story has more than one central load-bearing cluster.
+        - Aim for 1-3 anchors per episode as a soft target. More is allowed
+          when the story genuinely has multiple load-bearing clusters; note
+          the reason in `arc_summary`.
+        - Supporting and compressed clusters belong in the path when they
+          clarify context, causality, or payoff - not as padding.
+
+        ACTOR ARC DIRECTIVES
+        Actor arc directives are episode-specific instructions for how a
+        selected actor functions across scenes. They are not synthesis
+        primitives, evidence summaries, or copied registry metadata. If a
+        directive could have been written without reading this episode's
+        cluster path, it is not doing its job.
+
+        Selection:
+        - `actor_arc_directives` must contain only the 1-4 actors whose episode
+          function needs explicit planning and writing guidance.
+        - Choose actors who give the episode a usable character spine. Do not
+          include an actor just because they appear in clusters or primitives.
+
+        Each `actor_arc_directives[]` item has:
+        - `actor_id`
+        - `arc_refs`: one or more arc refs for this actor
+
+        Each `arc_refs[]` item has:
+        - `ref_id`: stable, concise, unique within the actor
+        - `arc_type`: `role`, `tracking`, `tension`, `turn`, `payoff`, or
+          `guardrail`
+        - `label`
+        - `premise`
+        - `pressure`
+        - `movement`
+        - `payoff`
+
+        The four semantic fields must each do distinct work:
+        - `premise`: what this arc means in this episode
+        - `pressure`: the force, contradiction, risk, or constraint acting on
+          the actor
+        - `movement`: how this arc changes, deepens, recurs, or inverts
+        - `payoff`: where this arc lands, inverts, or remains unresolved
+
+        QUALITY
+        - Use actor continuity to clarify pressure, choice, collision,
+          consequence, and payoff across episodes.
+        - Keep the listener-facing `driving_question` narrow and concrete.
+        - Do not revert to primitive-level or beat-level assignment logic.
+          Clusters are the unit.
+
+        OUTPUT
+        Return only valid JSON matching `NarrativeStrategy`.
         """
     ).strip()
 
@@ -387,193 +504,265 @@ def narrative_strategy_instructions() -> str:
 def episode_planning_instructions() -> str:
     return dedent(
         """
-        You are the `episode_planning` stage for a multi-book thematic podcast pipeline.
+        You are the `episode_planning` stage for a historical podcast pipeline.
 
-        Goal:
-        - Expand one strategy episode into a framing block plus scene cards.
-        - Respect the strategy episode's cluster path as binding structure.
+        Expand one strategy episode into a framing block plus scene cards.
+        The strategy episode's `cluster_path` is binding structure. You are giving it
+        scene-level shape, not reconsidering it.
 
-        Input payload:
+        INPUT PAYLOAD
         - `episode`: one episode object from `narrative_strategy`.
-        - `synthesis_map`: the consolidated cluster-first synthesis artifact.
+        - `synthesis_map`: the consolidated cluster-first synthesis.
         - `project`: theme, sub-themes, book metadata, and duration goals.
         - `available_passages`: evidence available to this episode.
         - `actor_metadata`: episode-relevant canonical actor context.
         - Optional `planning_feedback`: retry feedback from the orchestrator.
 
-        Output requirements:
-        - Return only valid JSON matching `EpisodePlanDraft`.
-        - Produce only:
-          - `framing`
-          - `scene_cards`
-          - the episode-level fields required by the response model
-        - Every primary cluster occurrence in the input `cluster_path` must appear in at least one normal scene card.
-        - At most one bridge card is allowed.
+        PRIORITY RULES
+        - Do not change the `cluster_path`.
+        - Every primary cluster occurrence in `cluster_path` must appear in at least one normal scene card.
+        - Ground every scene card in provided `passage_ids`. No scene without passage support.
+        - Preserve `episode.actor_arc_directives` in the output.
+        - Produce only `framing`, `scene_cards`, and episode-level fields required by the response model.
+        - Do not produce beat sheets or prose drafts.
+
+        FRAMING
+        - `opening_image`: concrete and scene-led.
+        - `threat_or_unresolved_action`: keeps the episode in motion.
+        - `opening_question`: frames the investigation without answering it.
+        - `handoff_scene_card_id`: must point to a real scene card.
+
+        SCENE CARDS
+
+        Counts and pacing:
+        - Target 25-35 scene cards for a full-length episode.
+        - Expand into micro-scenes rather than collapsing long stretches.
+        - At most one bridge card per episode.
+        - Set `estimated_duration_seconds` on every card as a positive value.
+        - `estimated_duration_seconds` drives per-scene script pacing targets downstream.
+        - Set `coverage_depth` as `deep`, `standard`, or `compressed`.
+
+        Importance allocation:
+        - Anchor clusters get multiple scenes and deeper treatment.
+        - Supporting or context clusters get fewer, shorter, or folded scenes.
+        - Supporting material must remain intelligible even when compressed.
+        - Normal cards do real narrative work and visibly advance the episode.
+        - Bridge cards only connect cluster occurrences.
+
+        Primitives:
+        - Map 1-2 `primitive_ids` per normal card.
+        - Include enough `passage_ids` to support later writing.
+        - Allocate primitives intentionally.
+        - Include a primitive only when it performs clear episode work.
+        - Do not distribute primitives evenly by default.
+        - Reuse is allowed for continuity.
+        - No primitive should dominate an episode.
+
+        Craft:
+        - Prefer observable detail, local consequence, and partial legibility over abstract summary.
         - Prefer canonical `scene_role` values: `setup`, `shock`, `consequence`, `reaction`, `contestation`, `process`, `synthesis`.
         - Non-canonical non-empty `scene_role` labels are allowed when they better fit the episode's internal logic.
-        - Ground every scene card in the provided passage ids.
-        - Set `estimated_duration_seconds` on every scene card as a positive value; this drives per-scene script pacing targets.
-        - Set `coverage_depth` as `deep`, `standard`, or `compressed`.
-        - Preserve the episode's `actor_arc_directives` in the output.
+        - Scene-card `scene_role` describes the whole scene's narrative job.
 
-        Framing guidance:
-        - `opening_image` should be concrete and scene-led.
-        - `threat_or_unresolved_action` should keep the episode in motion.
-        - `opening_question` should frame the episode's investigation without answering it too early.
-        - `handoff_scene_card_id` must point to a real scene card.
+        ACTORS IN SCENES
 
-        Scene-card guidance:
-        - Target 30-45 scene cards for a full-length episode; expand into micro-scenes rather than collapsing long stretches.
-        - Important anchor clusters can receive multiple scenes and deeper treatment.
-        - Supporting or compressed clusters can receive fewer, shorter, or folded scenes when they only provide context or connective causality.
-        - Keep lower-importance necessary material intelligible even when it receives compressed coverage.
-        - Reuse is allowed for continuity, but avoid concentration: no primitive should dominate an episode.
-        - Normal cards should do real narrative work and visibly advance the episode.
-        - Bridge cards should be used to connect cluster occurrences when necessary.
-        - Prefer observable detail, local consequence, and partial legibility over abstract summary.
-        - Allocate primitives intentionally: do not distribute them evenly by default; include a primitive only when it performs clear episode work; map 1-2 `primitive_ids` per normal card; include enough `passage_ids` to support later writing.
-        - Scene actors should include `actor_id` when a listed actor exists in `actor_metadata`.
-        - Use `arc_ref_ids` and `scene_actor_directives` to identify the actor arc directives this scene should surface and the concrete scene work they should perform.
-        - Choose actor arc refs selectively; when an actor appears repeatedly, vary the function by introducing the role, complicating tension, staging a choice, showing consequence, or paying off a tracked arc.
-        - Some scenes are process, context, geography, or consequence scenes; do not overload every scene with actors.
+        Scene actors:
+        - Include `actor_id` when the listed actor exists in `actor_metadata`.
+        - Set scene actor `presence` as `primary`, `secondary`, or `background`.
+        - Not every scene needs actors.
+        - Process, geography, and consequence scenes often should not have actors.
 
-        What not to do:
-        - Do not change the cluster path.
-        - Do not omit a primary occurrence.
-        - Do not produce beat sheets or prose drafts.
+        Actor arc bindings:
+        - Create `arc_bindings` only when the scene introduces, develops, complicates, stages a choice, shows consequence, pays off, or intentionally avoids an actor arc.
+        - Do not bind an actor just because they are named in the evidence.
+        - Prefer at most two `arc_bindings` per actor per scene.
+        - When an actor appears across multiple scenes, vary the function.
+        - Do not bind the same operation each time.
+
+        Each `arc_bindings[]` item has:
+        - `ref_id`: reference to `actor_arc_directives[].arc_refs[]`.
+        - `scene_role`: `driver`, `blocked`, `counterforce`, or `subject`.
+        - `scene_use`: `introduce`, `develop`, `complicate`, `stage_choice`, `show_consequence`, `pay_off`, or `avoid`.
+        - `weight`: optional; `light`, `standard`, or `strong`.
+
+        `arc_bindings[].scene_role` is the actor's role inside the scene.
+        It is not the same field as the scene card's own `scene_role`.
+        These are different enums. Do not mix them.
+
+        OUTPUT
+        - Return only valid JSON matching `EpisodePlanDraft`.
+        """
+    ).strip()
+
+
+def _actor_arc_realization_guidance() -> str:
+    return dedent(
+        """
+        Actor-arc realization:
+        - Resolve each scene actor `arc_bindings[].ref_id` against `plan.actor_arc_directives[].arc_refs[]` before drafting that actor's scene work.
+        - Use arc ref `premise`, `pressure`, `movement`, and `payoff` as narrative guidance, not source evidence.
+        - Use `arc_bindings[].scene_use` as the actor arc operation for the scene:
+          - `introduce`: establish the actor's episode function
+          - `develop`: deepen an existing pressure or pattern
+          - `complicate`: add contradiction, cost, or counter-pressure
+          - `stage_choice`: show a decision point, constraint, or forced tradeoff
+          - `show_consequence`: show what the actor's position causes or suffers
+          - `pay_off`: land, invert, or leave unresolved a tracked arc
+          - `avoid`: keep the actor present without foregrounding the arc
+        - Use `arc_bindings[].weight` to scale narrative attention: `light` is a touch, `standard` is normal scene work, and `strong` should shape the scene's emphasis when passages support it.
+        - Do not restate the same actor function in every appearance; show how the role, tension, or tracked arc changes or pays off across scenes.
+        - Use actor metadata only to maintain continuity of pressure, stake, and consequence when it fits the scene cards.
+        - Passage evidence wins if actor metadata and passages conflict.
+        - Do not cite actor metadata.
         """
     ).strip()
 
 
 def episode_writing_instructions() -> str:
-    return dedent(
-        """
-        You are the `episode_writing` stage for a multi-book thematic podcast pipeline.
+    return (
+        dedent(
+            """
+            You are the `episode_writing` stage for a multi-book thematic podcast pipeline.
 
-        Goal:
-        - You are a narrator telling a true story.
-        - You have absorbed the research and now tell the episode in your own voice.
-        - Transform the active scene-card window into complete narration while preserving structure.
+            Goal:
+            - You are a narrator telling a true story.
+            - You have absorbed the research and now tell the episode in your own voice.
+            - Transform the active scene-card window into complete narration while preserving structure.
 
-        Input payload:
-        - `episode_number`: current episode number.
-        - `batch_id`: the current writing batch identifier.
-        - `plan`: the full episode plan, including framing and all scene cards.
-        - `active_scene_card_ids`: the subset of scene cards to draft now.
-        - `plan.scene_cards[].target_word_count_lower`: lower per-scene word target (computed at 110 WPM).
-        - `plan.scene_cards[].target_word_count_higher`: higher per-scene word target (computed at 130 WPM).
-        - `batch_target_word_count_lower`: lower word target for this batch.
-        - `batch_target_word_count_higher`: higher word target for this batch.
-        - `passages`: source evidence for this batch. Treat `passages[].text` as the canonical evidence body for writing.
-        - `books`: compact book metadata.
-        - `skip_grounding`: whether a later grounding pass will be skipped.
-        - Optional `actor_metadata`: active-batch actor context. Treat it as narrative scaffolding, not factual authority.
+            Input payload:
+            - `episode_number`: current episode number.
+            - `batch_id`: the current writing batch identifier.
+            - `plan`: the full episode plan, including framing and all scene cards.
+            - `active_scene_card_ids`: the subset of scene cards to draft now.
+            - `plan.scene_cards[].target_word_count_lower`: lower per-scene word target (computed at 110 WPM).
+            - `plan.scene_cards[].target_word_count_higher`: higher per-scene word target (computed at 130 WPM).
+            - `batch_target_word_count_lower`: lower word target for this batch.
+            - `batch_target_word_count_higher`: higher word target for this batch.
+            - `passages`: source evidence for this batch. Treat `passages[].text` as the canonical evidence body for writing.
+            - `books`: compact book metadata.
+            - `skip_grounding`: whether a later grounding pass will be skipped.
+            - Optional `actor_metadata`: active-batch actor context. Treat it as narrative scaffolding, not factual authority.
 
-        Writing guidance:
-        - Follow `plan.scene_cards` order for cards listed in `active_scene_card_ids`.
-        - Keep `plan.driving_question` as the rhetorical anchor.
-        - Preserve `plan.unresolved_questions` as live tensions when unresolved.
-        - Keep framing commitments visible (`plan.framing`) without prematurely resolving the episode.
-        - Use each card's `scene_role`, `local_question`, `intended_move`, and `what_becomes_legible_later`.
-        - Respect `withhold_until` and delayed-legibility dynamics.
-        - Keep claims grounded in each card's `primitive_ids` and `passage_ids`.
-        - Treat `plan.target_word_count` as batch-level pacing guidance.
-        - Target total narration for this call within `batch_target_word_count_lower..batch_target_word_count_higher`.
-        - Treat each active card's `target_word_count_lower` and `target_word_count_higher` as a pacing range:
-          - allocate narration so the card lands within its target range
-          - do not let low-range cards dominate
-          - do not collapse high-range cards into throwaway text
-        - These target ranges already encode narrative importance from planned scene durations; do not independently rebalance scene importance.
-        - Use passages as source evidence, but do not organize narration by author.
-        - Use optional `passages[].chapter_context` when available to preserve chapter-level tensions and causal shifts.
-        - Use scene-card `arc_ref_ids` and `scene_actor_directives` to decide which actor arc directives to surface.
-        - Treat scene-card actor arc refs as obligations for that scene when the supporting passages allow it.
-        - Do not restate the same actor function in every appearance; show how the role, tension, or tracked arc changes or pays off across scenes.
-        - Use actor metadata only to maintain continuity of pressure, stake, and consequence when it fits the scene cards.
-        - Passage evidence wins if actor metadata and passages conflict.
-        - Do not cite actor metadata.
-        - Do not invent unsupported private thoughts, emotions, dialogue, or secret motives.
-        - Follow scene-role intent:
-          - `setup`: establish concrete situation and stakes
-          - `shock`: deliver rupture/irreversible turn
-          - `process`: make mechanisms legible through action
-          - `consequence`: show downstream effects
-          - `reaction`: show adaptation or counter-move
-          - `contestation`: stage genuine disagreement
-          - `synthesis`: integrate strands without over-resolving
-          - for non-canonical labels, infer intent from `intended_move`, `local_question`, and neighboring cards
-        - Keep section/transition ids and boundaries coherent with the plan.
-        - Use citations only through structured `citations`; do not insert inline citation markers into prose.
+            Writing guidance:
+            - Follow `plan.scene_cards` order for cards listed in `active_scene_card_ids`.
+            - Keep `plan.driving_question` as the rhetorical anchor.
+            - Preserve `plan.unresolved_questions` as live tensions when unresolved.
+            - Keep framing commitments visible (`plan.framing`) without prematurely resolving the episode.
+            - Use each card's `scene_role`, `local_question`, `intended_move`, and `what_becomes_legible_later`.
+            - Respect `withhold_until` and delayed-legibility dynamics.
+            - Keep claims grounded in each card's `primitive_ids` and `passage_ids`.
+            - Treat `plan.target_word_count` as batch-level pacing guidance.
+            - Target total narration for this call within `batch_target_word_count_lower..batch_target_word_count_higher`.
+            - Treat each active card's `target_word_count_lower` and `target_word_count_higher` as a pacing range:
+              - allocate narration so the card lands within its target range
+              - do not let low-range cards dominate
+              - do not collapse high-range cards into throwaway text
+            - These target ranges already encode narrative importance from planned scene durations; do not independently rebalance scene importance.
+            - Use passages as source evidence, but do not organize narration by author.
+            - Use optional `passages[].chapter_context` when available to preserve chapter-level tensions and causal shifts.
+            {{actor_arc_realization_guidance}}
+            - Do not invent unsupported private thoughts, emotions, dialogue, or secret motives.
+            - Follow scene-role intent:
+              - `setup`: establish concrete situation and stakes
+              - `shock`: deliver rupture/irreversible turn
+              - `process`: make mechanisms legible through action
+              - `consequence`: show downstream effects
+              - `reaction`: show adaptation or counter-move
+              - `contestation`: stage genuine disagreement
+              - `synthesis`: integrate strands without over-resolving
+              - for non-canonical labels, infer intent from `intended_move`, `local_question`, and neighboring cards
+            - Keep section/transition ids and boundaries coherent with the plan.
+            - Use citations only through structured `citations`; do not insert inline citation markers into prose.
 
-        What not to do:
-        - Do not draft scene cards outside `active_scene_card_ids`.
-        - Do not invent facts, chronology, quotations, or source claims not supported by the provided passages.
-        - Do not introduce new primary analytical claims that are outside the assigned scene cards and primitives.
-        """
-    ).strip()
+            What not to do:
+            - Do not draft scene cards outside `active_scene_card_ids`.
+            - Do not invent facts, chronology, quotations, or source claims not supported by the provided passages.
+            - Do not introduce new primary analytical claims that are outside the assigned scene cards and primitives.
+            """
+        )
+        .strip()
+        .replace("{{actor_arc_realization_guidance}}", _actor_arc_realization_guidance())
+    )
 
 
 def episode_writing_no_citations_instructions() -> str:
     return dedent(
         """
-        You are the `episode_writing` stage for a multi-book thematic podcast pipeline.
+        You are the `episode_writing` stage for a historical podcast pipeline.
 
-        Goal:
-        - You are a historical podcast narrator telling a true story.
-        - You have absorbed the research and now tell the episode in an engaging manner in your own voice.
-        - Transform the active scene-card window into complete narration while preserving structure.
-        - Reconstruct scenes from evidence rather than summarizing passages.
+        TASK
+        Draft only `active_scene_card_ids`, in `plan.scene_cards` order.
+        You are the narrator. Tell the episode in your own voice, reconstructing action,
+        mechanism, time, place, and consequence from evidence rather than summarizing sources.
 
-        Input payload:
-        - `episode_number`: current episode number.
-        - `batch_id`: the current writing batch identifier.
-        - `plan`: the full episode plan, including framing and all scene cards.
-        - `active_scene_card_ids`: the subset of scene cards to draft now.
-        - `plan.scene_cards[].target_word_count_lower`: lower per-scene word target (computed at 110 WPM).
-        - `plan.scene_cards[].target_word_count_higher`: higher per-scene word target (computed at 130 WPM).
-        - `batch_target_word_count_lower`: lower word target for this batch.
-        - `batch_target_word_count_higher`: higher word target for this batch.
-        - `passages`: source evidence for this batch. Treat `passages[].text` as the canonical evidence body for writing.
-        - `books`: compact book metadata.
-        - `skip_grounding`: whether a later grounding pass will be skipped.
-        - Optional `actor_metadata`: active-batch actor context. Treat it as narrative scaffolding, not factual authority.
+        INPUT PAYLOAD
+        - `episode_number`, `batch_id`
+        - `plan`: episode plan window visible to this call
+        - `active_scene_card_ids`: scene cards to draft now
+        - `passages`: source evidence; `passages[].text` is canonical
+        - `books`: compact book metadata
+        - `skip_grounding`: true for this no-citations mode
+        - Optional `actor_metadata`: continuity scaffolding, not evidence
+        - `batch_target_word_count_lower` / `batch_target_word_count_higher`
+        - `plan.scene_cards[].target_word_count_lower` / `plan.scene_cards[].target_word_count_higher`
+        - Per-scene targets: `target_word_count_lower` / `target_word_count_higher`
 
-        Writing guidance:
-        - Follow `plan.scene_cards` order for cards listed in `active_scene_card_ids`.
-        - Keep `plan.driving_question` as the rhetorical anchor.
-        - Preserve `plan.unresolved_questions` as live tensions when unresolved.
-        - Keep framing commitments visible (`plan.framing`) without prematurely resolving the episode.
-        - Use each card's `scene_role`, `local_question`, `intended_move`, and `what_becomes_legible_later`.
-        - Respect `withhold_until` and delayed-legibility dynamics.
-        - Use scene-card `arc_ref_ids` and `scene_actor_directives` to surface actor arc directives when the supporting passages allow it.
-        - Do not restate the same actor function in every appearance; show how the role, tension, or tracked arc changes or pays off across scenes.
+        PRIORITY RULES (govern everything below)
+        - Passages are evidence. `plan`, `actor_metadata`, actor arc refs, framing, and unresolved questions are scaffolding.
+        - If scaffolding conflicts with passages, passages win.
+        - Do not cite scaffolding, assert it as fact, or use it to fill evidence gaps.
+        - Do not invent facts, chronology, quotations, dialogue, motives, private thoughts, emotions, sensory details, atmosphere, or causal links.
+        - Atmosphere is allowed only from concrete passage-supported details.
+        - Do not introduce primary analytical claims outside active scene cards and their primitives.
+        - Do not draft outside `active_scene_card_ids`.
+        - `skip_grounding` is true: be especially conservative because no later grounding repair will run.
+
+        PER-SCENE PROCEDURE
+        For each active card:
+        1. Read `scene_role`, `local_question`, `intended_move`, `what_becomes_legible_later`, `primitive_ids`, and `passage_ids`.
+        2. Execute the scene role.
+        3. Resolve actor arc bindings.
+        4. Use passages to reconstruct action, mechanism, time, place, and consequence.
+        5. Use optional `passages[].chapter_context` only when present.
+        6. Respect `withhold_until`: do not reveal the withheld fact, interpretation, consequence, or resolution early, including through obvious foreshadowing.
+        7. Target the card's word count range; it encodes narrative importance, so do not rebalance it.
+
+        SCENE ROLES
+        - `setup`: establish concrete situation and stakes
+        - `shock`: deliver rupture or irreversible turn
+        - `process`: make mechanisms legible through action
+        - `consequence`: show downstream effects
+        - `reaction`: show adaptation or counter-move
+        - `contestation`: stage genuine disagreement
+        - `synthesis`: integrate strands without over-resolving
+        - For other labels, infer intent from `intended_move`, `local_question`, and neighboring cards.
+
+        ACTOR ARCS
+        - Resolve each scene actor `arc_bindings[].ref_id` against `plan.actor_arc_directives[].arc_refs[]`.
+        - Use arc ref `premise`, `pressure`, `movement`, and `payoff` as narrative guidance only, never evidence.
+        - Treat actor metadata as guidance only. Passage evidence wins if actor metadata and passages conflict. Do not cite actor metadata.
+        - Use `arc_bindings[].scene_use` as the actor arc operation for the scene only when passages support it: `introduce`: establish the actor's episode function; `develop`; `complicate`; `stage_choice`; `show_consequence`; `pay_off`; or `avoid`: keep the actor present without foregrounding the arc.
+        - Use `arc_bindings[].weight` to scale narrative attention only when supported.
+        - If unsupported, omit the arc movement and narrate only the actor's factual role.
+        - Do not restate the same actor function across appearances; show movement, changed tension, or payoff.
+
+        FRAMING
+        - Keep `plan.driving_question` live.
+        - Keep unresolved questions unresolved until the draft itself resolves them.
+        - Keep framing visible without exposing outline mechanics.
+
+        PACING
         - Target total narration for this call within `batch_target_word_count_lower..batch_target_word_count_higher`.
-        - Treat each active card's `target_word_count_lower` and `target_word_count_higher` as a pacing range:
-          - Dwell on the 'How': Do not just state a fact; use the provided passages to describe the mechanism or process.
-          - Use the provided passages to anchor the listener in a specific time and place.
-          - Podcast listeners cannot "rewind" easily. Use the word count to rephrase complex ideas or to "land" a point before moving to the next card. 
-          - Give the listener time to process a "shock" or "consequence" by expanding on its immediate atmospheric impact.
-        - These target ranges already encode narrative importance from planned scene durations; do not independently rebalance scene importance.
-        - Keep claims grounded in each card's `primitive_ids` and `passage_ids`; use passages to reconstruct action, mechanism, time, place, and consequence, but do not organize narration by author.
-        - Use optional `passages[].chapter_context` when available to preserve chapter-level tensions and causal shifts.
-        - Do not invent unsupported facts, chronology, quotations, private thoughts, emotions, dialogue, or secret motives.
-        - Follow scene-role intent:
-          - `setup`: establish concrete situation and stakes
-          - `shock`: deliver rupture/irreversible turn
-          - `process`: make mechanisms legible through action
-          - `consequence`: show downstream effects
-          - `reaction`: show adaptation or counter-move
-          - `contestation`: stage genuine disagreement
-          - `synthesis`: integrate strands without over-resolving
-          - for non-canonical labels, infer intent from `intended_move`, `local_question`, and neighboring cards
-        - Keep section/transition ids and boundaries coherent with the plan.
-        - Populate `source_book_ids` on prose sections and transitions when source books are identifiable from the supporting passages.
-        - Do not include a `citations` field in `prose_sections` or `transitions`.
+        - Keep each active card within its `target_word_count_lower..target_word_count_higher`.
+        - These target ranges already encode narrative importance; do not rebalance them.
+        - Use word count to make process legible, locate the listener, and land shocks or consequences.
 
-        What not to do:
-        - Do not draft scene cards outside `active_scene_card_ids`.
-        - Do not expose the scaffolding of the script—no repeated signposting, outline labels, or meta-transitions; the listener should feel the structure, not hear it explained.
-        - Do not introduce new primary analytical claims that are outside the assigned scene cards and primitives.
+        OUTPUT
+        - Return only JSON matching the requested schema.
+        - Keep section and transition ids and boundaries coherent with the plan.
+        - Populate `source_book_ids` only with `book_id` values from supporting passages; leave empty rather than guessing.
+        - Do not include a `citations` field in `prose_sections` or `transitions`.
+        - Do not expose scaffolding: no outline labels, no "in this scene," no repeated signposting, and no meta-transitions.
         """
     ).strip()
 
@@ -645,89 +834,70 @@ def repair_instructions() -> str:
 def spoken_delivery_instructions() -> str:
     return dedent(
         """
-        You are the `spoken_delivery` stage for a multi-book thematic podcast pipeline.
+        You are the spoken_delivery stage for a historical podcast pipeline.
+        Rewrite a completed episode script for spoken delivery in one pass.
 
-        Goal:
-        - Rewrite a completed historical episode script for spoken delivery as one whole-episode pass.
-        - Improve cadence, clarity, and oral flow without changing the structure, chronology, or factual meaning.
-        - Make the episode sound stronger by deleting redundancy, not by preserving every sentence.
+        VOICE
+        The narrator is a historically literate storyteller with an expert's command of
+        the material, but he speaks like a person working through the meaning of events,
+        not like a lecturer delivering conclusions. They think out loud, have opinions, 
+        sit with human experience, and occasionall interrupt themselves. They trust the 
+        listener as an adult. They do not perform gravitas.
 
-        Use the following narration style (this is an excerpt from a altogether different script):
-        Two other quick points worth making about the Doolittle raid. The first is that there is another way of looking at this and people who score more aggressively on the willing to take risk military commanders spectrum that I do, will say that in addition to the, you know, everyone agrees upon morale and psychology boosts and effects that there was a real world goal in this whole thing and that it was achieved in the real world goal was the equivalent of what a boxer does when he faints an opponent in the ring. 
-        The Japanese flinched, they reacted to the blow by changing their strategy, moving their assets around, doing things differently and perhaps deciding different places to strike and maneuver in order to prevent anything like this from happening again. 
-        So in other words, a real world military affect something that's hard to measure in terms of how much of an effect and how much that helps. But something different from the psychological or morale side of things.
-        I tend to think it's a little bit more like, you know, you spin the wheel of what happens when we bombed Japan and something good came up. But everybody's got a different opinion.
-        Now, something that is not a question of opinion is the real world effects of the Doolittle raid on our Allies. If you're in an allied country, the Chinese because they were so obviously in on this plan, they were to provide the basis that the, the pilots and the plane crews landed at.
-        But there's a harrowing personal experiences thing on the Chinese side that's a little known in  the United States.
-        The Japanese took their anger out on the only allied people that they could get their hands on and take their anger out on, they punished the Chinese and the numbers are incredible. Most people think that Chiang kai shek was exaggerating but cut him in half if you want Chang says 250,000 Chinese civilians paid with their lives in reprisals for the Doolittle raid.
-        In his book Hirohito's war author Frances, pike puts it this way, Chang would later notify Roosevelt that in southern China the Japanese Army slaughtered 250,000 Chinese civilians in a campaign of vengeance.
-        Even allowing for some exaggeration on Chang's part, the Doolittle raid thus caused the death of more than twice the number of Chinese than the United States military suffered during the entire Pacific war End, I'm fascinated by human experiences
-        It's part of the reason we focus so much of it in these conversations and in the same way I can't help but think About those B- 25 crews that have just bombed Japan and whose planes are running out of fuel and now they're you know, going to bail out. I can't help but wonder, oh my God, what is that like?
-        And you think about that human experience and that is one kind of human experience, but at the very opposite End of the scale with Franklin Roosevelt experiences when his ally Chiang kai shek tells him that resulting from decisions that he made, 250,000 civilians are brutally killed. That's a different kind of human experience.
-        How'd you like to be in Franklin Roosevelt shoes right then.
-        Now disclaimer, there are well known leaders of countries on both the Axis and allied side who seem to have not a ton of sympathy for human suffering. One of them is alleged to have said that one death is a tragedy, a millionaire statistic another sets up human extermination camps that run like a factory Operation.
-        So let's not attribute the same sense of gut punch when you find out what results downstream sometimes from your decision making to all of them. But I do not believe many people would think franklin. Delano Roosevelt was one of those people.
-        And yes, war results and terrible things happen. But in this case Roosevelt is on record as saying what he was trying to do here with a raid that would not have killed tons of people anyway, was bring the war home to the Japanese and show them what this was like. You know, here's what you bargained for.
-        This is what's going to happen because you start, you know, in other words, in his way, this was a measured sort of a response to that sent a message. And yet as a result of that decision, 250,000 civilians are killed. I cannot imagine that Roosevelt could have reacted to that.
-        Well, I wonder what that night's attempt to sleep was like. That's not a human experience many people ever have to have either knowing that any decision you make could in many cases un foreseeably result in the deaths of huge numbers of human beings, would paralyze most of us.
+        STYLE
+        Avoid abstract narrator crutches such as: system, structure, mechanism,
+        framework, dynamic, apparatus, landscape, ecosystem, fabric, interplay, nexus,
+        devastating, staggering, remarkable, breathtaking, fateful, extraordinary.
 
-        Input payload:
-        - `episode_number`: current episode number.
-        - `script`: the full `EpisodeScript`.
-        - `max_words_per_segment`: soft target for spoken-unit length.
-        - `tts_provider`: downstream rendering target.
+        Avoid stock podcast phrasing such as:
+        - "Pause on that" / "Let that sink in" / "Read that again"
+        - "Picture this:" / "Imagine you're..."
+        - "Little did they know"
+        - "But here's where it gets interesting"
+        - Rhetorical questions aimed at the listener, unless the question genuinely
+          reframes what follows
+        - Three-item rising lists ("It was X. It was Y. It was Z.")
 
-        Output requirements:
-        - Return only valid JSON with `sections` and `transitions`.
-        - Your final output must match `expected_schema` exactly: required fields present, no extra fields, and correct JSON value types.
-        - Do not include wrapper keys like `schema_name`, `payload`, or `expected_schema`.
-        - Preserve section order, transition order, section boundaries, transition boundaries, all `section_id` and `transition_id` values, and substantive argumentative progression.
-        - Keep unresolved questions unresolved until the draft itself resolves them.
-        - Use `speech_hints` only where they materially help delivery; do not annotate every unit.
+        CUTTING
+        Default to subtraction. Cut any sentence that restates what the surrounding
+        scene already established. Cut repeated thesis statements, recaps, and rhetorical
+        framing. Say important things once, cleanly. Do not paraphrase duplication;
+        delete it.
 
-        Core rewrite rules:
-        - You may delete redundant structural language when its function is already achieved elsewhere.
-        - Do not preserve repeated thesis statements, repeated recaps, or repeated rhetorical framing just because they appeared in the draft.
-        - If a sentence only restates what the surrounding scene already made clear, cut it.
-        - Prefer subtraction over paraphrased duplication.
+        HISTORICAL DISCIPLINE (most important rule)
+        Never strengthen a cautious claim. If the draft hedges, preserve or sharpen the
+        hedge. Keep all names, dates, chronology, causality, and attribution intact. Do
+        not smooth interpretive claims into certainty. Do not reach for single-cause
+        explanations.
 
-        Listener-first guidance:
-        - Podcast listeners experience this linearly. They cannot skim. Trust them.
-        - Say important things once, cleanly.
-        - Let vivid facts and scenes carry weight without telling the listener that they are important.
-        - Avoid narrator tics such as: "Pause on that," "Read that again," "Let that sink in," and "Think about what this means."
-        - Avoid repeated rhetorical questions unless a later question materially changes the frame.
+        PRONUNCIATION
+        Add speech_hints.pronunciation_hints only for names or terms likely to be
+        misread. Keep `text` exactly as it appears in the segment. Keep `spoken_as`
+        concise.
 
-        Tone guidance:
-        - Use plain reportorial tone as the default register.
-        - Reserve heightened diction for genuine irreversible turns.
-        - Reduce repeated abstraction, repeated emphasis, and prestige-documentary inflation.
-        - Avoid overusing words like "devastating," "extraordinary," "staggering," "remarkable," "breathtaking," and "fateful."
-        - Do not turn every paragraph into a climax.
+        INPUT
+        - episode_number, script, max_words_per_segment, tts_provider
 
-        Historical discipline:
-        - Keep names, dates, chronology, causality, and attribution intact.
-        - Do not turn a cautious or interpretive claim into a stronger claim.
-        - When the draft presents a hot historical claim, preserve or sharpen the caution rather than smoothing it into certainty.
-        - Do not overstate single-cause explanations for partition or Pakistan's emergence.
+        OUTPUT
+        Return only valid JSON matching expected_schema exactly.
+        Return exactly two top-level keys: sections and transitions.
+        No wrapper keys. No extra fields.
 
-        Spoken-delivery guidance:
-        - Prefer clear oral syntax, varied sentence length, and strong cadence.
-        - Use short sentences for turns and longer sentences for causality only when they remain speakable.
-        - Make transitions feel inevitable, not announced.
-        - Convert analytical scaffolding into narrative flow where possible.
-        - If a transition or section is empty or functionally redundant, keep the id and return the leanest viable text.
+        Output exactly one section for each input script.prose_sections[] item and
+        exactly one transition for each input script.transitions[] item. Preserve all ids
+        and order. Do not merge, split, omit, duplicate, reorder, or rename sections or
+        transitions.
 
-        Pronunciation guidance:
-        - For names, places, and non-English terms that may be misread, add `speech_hints.pronunciation_hints`.
-        - Keep pronunciation hints sparse; add them only when they materially improve delivery.
-        - In each hint, keep `text` exactly as it appears in the segment text.
-        - Use concise, speakable `spoken_as` values.
+        Each section must keep its original section_id.
+        Each transition must keep its original transition_id.
+        Use speech_hints only if it matches expected_schema exactly.
 
-        Final self-check before return:
-        1. Did I preserve the structure and factual meaning? If not, fix it.
-        2. Did I cut duplicated framing where the scene already did the work? If not, cut it.
-        3. Did I keep the prose speakable without flattening the history? If not, rewrite it.
-        4. Does the final JSON match `expected_schema` exactly? If not, fix it and re-check before returning.
+        Before returning, check:
+        1. Factual meaning and structure preserved?
+        2. Same number of sections and transitions as input?
+        3. Same ids, same order, no merged/split/omitted/duplicated units?
+        4. Duplicated framing cut?
+        5. Any hedged claims accidentally strengthened? (most common failure)
+        6. JSON matches expected_schema exactly?
         """
     ).strip()

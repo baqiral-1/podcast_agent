@@ -86,23 +86,25 @@ def _primitive(primitive_id: str, title: str = "Title") -> SynthesisPrimitive:
 def _actor_arc_directive(actor_id: str = "actor_primary") -> ActorArcDirective:
     return ActorArcDirective(
         actor_id=actor_id,
-        episode_roles=[
-            ActorArcRef(ref_id=f"{actor_id}_role_1", label="episode role", text="Central to this episode.")
-        ],
-        listener_tracking=[
-            ActorArcRef(ref_id=f"{actor_id}_tracking_1", label="listener tracking", text="Track a fragile goal.")
-        ],
-        tension_lines=[
-            ActorArcRef(ref_id=f"{actor_id}_tension_1", label="tension line", text="Pressure narrows choices.")
-        ],
-        arc_progression=[
-            ActorArcRef(ref_id=f"{actor_id}_progression_1", label="arc progression", text="A decision changes the arc.")
-        ],
-        scene_jobs=[
-            ActorArcRef(ref_id=f"{actor_id}_scene_job_1", label="scene job", text="Use where pressure becomes consequence.")
-        ],
-        repetition_guardrails=[
-            ActorArcRef(ref_id=f"{actor_id}_guardrail_1", label="repetition guardrail", text="Do not repeat without change.")
+        arc_refs=[
+            ActorArcRef(
+                ref_id=f"{actor_id}_role_1",
+                arc_type="role",
+                label="episode role",
+                premise="Central to this episode.",
+                pressure="Pressure narrows choices.",
+                movement="Track a fragile goal.",
+                payoff="Use where pressure becomes consequence.",
+            ),
+            ActorArcRef(
+                ref_id=f"{actor_id}_guardrail_1",
+                arc_type="guardrail",
+                label="repetition guardrail",
+                premise="Do not repeat without change.",
+                pressure="Repetition can flatten the actor.",
+                movement="Vary the actor function by scene.",
+                payoff="Continuity remains legible without repetition.",
+            ),
         ],
     )
 
@@ -362,15 +364,14 @@ def test_resolve_synthesis_bm25_keep_fraction_by_passage_uses_relevance_tiers():
     assert tier_counts == {
         "top_10_passages": 1,
         "next_20_passages": 2,
-        "next_30_passages": 3,
-        "rest_40_passages": 4,
+        "next_70_passages": 7,
     }
-    assert keep_fraction_by_passage_id["p1"] == 0.5
-    assert keep_fraction_by_passage_id["p2"] == 0.4
-    assert keep_fraction_by_passage_id["p3"] == 0.4
-    assert keep_fraction_by_passage_id["p4"] == 0.3
-    assert keep_fraction_by_passage_id["p5"] == 0.3
-    assert keep_fraction_by_passage_id["p6"] == 0.3
+    assert keep_fraction_by_passage_id["p1"] == 0.4
+    assert keep_fraction_by_passage_id["p2"] == 0.33
+    assert keep_fraction_by_passage_id["p3"] == 0.33
+    assert keep_fraction_by_passage_id["p4"] == 0.25
+    assert keep_fraction_by_passage_id["p5"] == 0.25
+    assert keep_fraction_by_passage_id["p6"] == 0.25
     assert keep_fraction_by_passage_id["p7"] == 0.25
     assert keep_fraction_by_passage_id["p8"] == 0.25
     assert keep_fraction_by_passage_id["p9"] == 0.25
@@ -557,14 +558,29 @@ def test_map_synthesis_caps_total_passages_and_keeps_cross_pair_priority(monkeyp
 
     payload = captured["payload"]
     passages = payload["passages_by_axis"]
-    for axis_passages in passages.values():
-        for item in axis_passages:
-            assert set(item.keys()) == {"passage_id", "book_id", "text"}
-    all_ids = [item["passage_id"] for axis_passages in passages.values() for item in axis_passages]
+    for axis_books in passages.values():
+        for book_group in axis_books:
+            assert set(book_group.keys()) == {"book_id", "passages"}
+            for item in book_group["passages"]:
+                assert set(item.keys()) == {"passage_id", "text"}
+    all_ids = [
+        item["passage_id"]
+        for axis_books in passages.values()
+        for book_group in axis_books
+        for item in book_group["passages"]
+    ]
     assert len(all_ids) == 4
     assert "p1" in all_ids
     assert "p6" in all_ids
     assert "p7" not in all_ids
+    assert payload["cross_book_pairs"] == [
+        {
+            "passage_a_id": "p1",
+            "passage_b_id": "p6",
+            "relationship": "contradicts",
+            "strength": 0.9,
+        }
+    ]
 
 
 def test_write_episode_passes_full_text_to_writing_agent(monkeypatch, tmp_path):
