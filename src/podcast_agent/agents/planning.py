@@ -20,6 +20,7 @@ class EpisodePlanningAgent(Agent):
         synthesis_map: dict,
         project_metadata: dict,
         available_passages: list[dict],
+        actor_metadata: dict | None = None,
         planning_feedback: dict | None = None,
     ) -> dict:
         payload = {
@@ -28,6 +29,8 @@ class EpisodePlanningAgent(Agent):
             "project": project_metadata,
             "available_passages": available_passages,
         }
+        if actor_metadata is not None:
+            payload["actor_metadata"] = actor_metadata
         if planning_feedback is not None:
             payload["planning_feedback"] = planning_feedback
         return payload

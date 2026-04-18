@@ -49,6 +49,7 @@ from podcast_agent.run_logging import RunLogger
 from podcast_agent.schemas.models import (
     AudioManifest,
     AudioSegmentResult,
+    ActorMetadata,
     BookRecord,
     ChapterInfo,
     ChunkingConfig,
@@ -57,7 +58,6 @@ from podcast_agent.schemas.models import (
     EpisodePlan,
     EpisodeScript,
     ExtractedPassage,
-    FramingBlock,
     GroundingReport,
     NarrativeStrategy,
     PassagePair,
@@ -85,9 +85,17 @@ from podcast_agent.schemas.models import (
     ThematicProject,
 )
 from podcast_agent.tts.openai_compatible import build_tts_client
+from podcast_agent.utils.actor_metadata import (
+    clean_axis_actor_ids,
+    clean_scene_actor_links,
+    clean_strategy_actor_links,
+    clean_synthesis_primitive_actor_links,
+    compact_actor_metadata,
+    sanitize_actor_metadata_payload,
+    select_actor_metadata_subset,
+)
 
 logger = logging.getLogger(__name__)
-
 
 # ---------------------------------------------------------------------------
 # Artifact persistence helpers
@@ -1009,8 +1017,14 @@ def _allocate_synthesis_passages_by_axis(
         )
         for axis_id in axis_ids
     }
+
+    def _source_key(passage: ExtractedPassage) -> tuple[str, tuple[str, ...]] | tuple[str, str]:
+        if passage.chunk_ids:
+            return (passage.book_id, tuple(passage.chunk_ids))
+        return ("passage", passage.passage_id)
+
     selected_by_axis: dict[str, list[ExtractedPassage]] = {axis_id: [] for axis_id in axis_ids}
-    used_ids: set[str] = set()
+    used_source_keys: set[tuple[str, tuple[str, ...]] | tuple[str, str]] = set()
     for axis_id in axis_ids:
         quota = max(0, int(quotas.get(axis_id, 0)))
         if quota <= 0:
@@ -1018,12 +1032,13 @@ def _allocate_synthesis_passages_by_axis(
         for passage in ranked_by_axis.get(axis_id, []):
             if len(selected_by_axis[axis_id]) >= quota:
                 break
-            if passage.passage_id in used_ids:
+            source_key = _source_key(passage)
+            if source_key in used_source_keys:
                 continue
             selected_by_axis[axis_id].append(passage)
-            used_ids.add(passage.passage_id)
+            used_source_keys.add(source_key)
 
-    remaining_slots = max(0, cap - len(used_ids))
+    remaining_slots = max(0, cap - len(used_source_keys))
     round_robin_fill_count = 0
     next_index_by_axis = {
         axis_id: len(selected_by_axis[axis_id])
@@ -1034,14 +1049,14 @@ def _allocate_synthesis_passages_by_axis(
         for axis_id in axis_ids:
             ranked = ranked_by_axis.get(axis_id, [])
             idx = next_index_by_axis.get(axis_id, 0)
-            while idx < len(ranked) and ranked[idx].passage_id in used_ids:
+            while idx < len(ranked) and _source_key(ranked[idx]) in used_source_keys:
                 idx += 1
             next_index_by_axis[axis_id] = idx
             if idx >= len(ranked):
                 continue
             passage = ranked[idx]
             selected_by_axis[axis_id].append(passage)
-            used_ids.add(passage.passage_id)
+            used_source_keys.add(_source_key(passage))
             next_index_by_axis[axis_id] = idx + 1
             round_robin_fill_count += 1
             remaining_slots -= 1
@@ -2310,34 +2325,38 @@ def _compute_scene_word_count_targets(
 ) -> dict[str, int]:
     if not scene_cards:
         return {}
+    if words_per_minute <= 0:
+        raise ValueError("words_per_minute must be positive")
 
-    total_duration_seconds = sum(max(0, scene.estimated_duration_seconds) for scene in scene_cards)
-    if words_per_minute > 0 and total_duration_seconds > 0:
-        raw_targets = [
-            (max(0, scene.estimated_duration_seconds) * float(words_per_minute)) / 60.0
-            for scene in scene_cards
-        ]
-        floor_targets = [int(math.floor(target)) for target in raw_targets]
-        target_total = int(round(sum(raw_targets)))
-        remainder = max(0, target_total - sum(floor_targets))
-
-        ranked_indices = sorted(
-            range(len(raw_targets)),
-            key=lambda idx: (raw_targets[idx] - floor_targets[idx], -idx),
-            reverse=True,
+    invalid_scene_ids = [
+        scene.scene_id
+        for scene in scene_cards
+        if int(scene.estimated_duration_seconds) <= 0
+    ]
+    if invalid_scene_ids:
+        raise ValueError(
+            "scene cards must define positive estimated_duration_seconds: "
+            + ", ".join(invalid_scene_ids)
         )
-        for idx in ranked_indices[:remainder]:
-            floor_targets[idx] += 1
 
-        return {
-            scene.scene_id: floor_targets[idx]
-            for idx, scene in enumerate(scene_cards)
-        }
+    raw_targets = [
+        (float(scene.estimated_duration_seconds) * float(words_per_minute)) / 60.0
+        for scene in scene_cards
+    ]
+    floor_targets = [int(math.floor(target)) for target in raw_targets]
+    target_total = int(round(sum(raw_targets)))
+    remainder = max(0, target_total - sum(floor_targets))
 
-    base = episode_target_word_count // len(scene_cards)
-    remainder = episode_target_word_count % len(scene_cards)
+    ranked_indices = sorted(
+        range(len(raw_targets)),
+        key=lambda idx: (raw_targets[idx] - floor_targets[idx], -idx),
+        reverse=True,
+    )
+    for idx in ranked_indices[:remainder]:
+        floor_targets[idx] += 1
+
     return {
-        scene.scene_id: base + (1 if idx < remainder else 0)
+        scene.scene_id: floor_targets[idx]
         for idx, scene in enumerate(scene_cards)
     }
 
@@ -2345,10 +2364,10 @@ def _compute_scene_word_count_targets(
 def _cluster_batch_group_sizes(cluster_count: int) -> list[int]:
     if cluster_count <= 0:
         return []
-    if cluster_count <= 3:
+    if cluster_count <= 2:
         return [1] * cluster_count
 
-    batch_count = min(4, cluster_count)
+    batch_count = min(2, cluster_count)
     base = cluster_count // batch_count
     remainder = cluster_count % batch_count
     return [base + (1 if idx < remainder else 0) for idx in range(batch_count)]
@@ -2516,6 +2535,55 @@ def _reconstruct_synthesis_map(
         quality_score=consolidation.quality_score,
         quality_notes=list(consolidation.quality_notes),
     )
+
+
+def _merge_actor_metric_dicts(metrics_items: Any) -> dict[str, Any]:
+    merged: dict[str, Any] = {}
+    for metrics in metrics_items:
+        if not isinstance(metrics, dict):
+            continue
+        for key, value in metrics.items():
+            if isinstance(value, bool):
+                value = int(value)
+            if isinstance(value, int | float):
+                merged[key] = merged.get(key, 0) + value
+    return merged
+
+
+def _confidence_counts(actor_metadata: ActorMetadata) -> dict[str, int]:
+    counts = {"high": 0, "medium": 0, "low": 0}
+    for actor in actor_metadata.actors:
+        counts[actor.evidence_confidence] = counts.get(actor.evidence_confidence, 0) + 1
+    return counts
+
+
+def _actor_linkage_counts(
+    *,
+    synthesis_map: SynthesisMap,
+    strategy: NarrativeStrategy,
+    episode_plans: list[EpisodePlan],
+) -> dict[str, int]:
+    primitives = [
+        primitive
+        for family in SYNTHESIS_PRIMITIVE_FAMILIES
+        for primitive in synthesis_map.primitives_by_family.get(family, [])
+    ]
+    clusters = synthesis_map.episode_candidate_clusters
+    scenes = [scene for plan in episode_plans for scene in plan.scene_cards]
+    return {
+        "primitive_count": len(primitives),
+        "actor_linked_primitive_count": sum(1 for primitive in primitives if primitive.actor_ids),
+        "cluster_count": len(clusters),
+        "actor_linked_cluster_count": sum(1 for cluster in clusters if cluster.actor_ids),
+        "episode_count": len(strategy.episodes),
+        "actor_linked_episode_count": sum(1 for episode in strategy.episodes if episode.actor_arc_directives),
+        "scene_count": len(scenes),
+        "actor_linked_scene_count": sum(
+            1
+            for scene in scenes
+            if any(actor.actor_id for actor in scene.actors)
+        ),
+    }
 
 
 def _preview_ids(ids: list[str], *, limit: int = 8) -> str:
@@ -2768,9 +2836,13 @@ class PipelineOrchestrator:
         # Phase 2: Thematic Intelligence (sequential)
         logger.info("Phase 2: Thematic Intelligence")
 
-        axes = await self._decompose_theme(project, project_dir)
+        axes, actor_metadata, actor_metrics = await self._decompose_theme(project, project_dir)
         corpus = await self._extract_passages(project, axes, project_dir)
-        synthesis_map = await self._map_synthesis(project, corpus, project_dir)
+        synthesis_map, synthesis_actor_metrics = await self._map_synthesis(
+            project, corpus, project_dir, actor_metadata,
+        )
+        actor_metrics["synthesis_primitives"] = synthesis_actor_metrics.get("primitives", {})
+        actor_metrics["synthesis_consolidation"] = synthesis_actor_metrics.get("consolidation", {})
 
         if synthesis_map.quality_score < pipeline_config.synthesis_quality_threshold:
             logger.warning(
@@ -2784,14 +2856,18 @@ class PipelineOrchestrator:
                 threshold=pipeline_config.synthesis_quality_threshold,
             )
 
-        strategy = await self._choose_narrative_strategy(project, synthesis_map, corpus, project_dir)
+        strategy, strategy_actor_metrics = await self._choose_narrative_strategy(
+            project, synthesis_map, corpus, project_dir, actor_metadata,
+        )
+        actor_metrics["narrative_strategy"] = strategy_actor_metrics
         project = self._resolve_episode_count_from_strategy(project, strategy)
         _save_json(project_dir / "thematic_project.json", project)
 
         project = project.model_copy(update={"status": ProjectStatus.PLANNING})
-        episode_plans = await self._plan_series(
-            project, synthesis_map, strategy, corpus, project_dir,
+        episode_plans, planning_actor_metrics = await self._plan_series(
+            project, synthesis_map, strategy, corpus, project_dir, actor_metadata,
         )
+        actor_metrics["episode_planning"] = planning_actor_metrics
 
         # Phase 3: Episode Production (parallel per episode)
         logger.info("Phase 3: Episode Production (%d episodes)", len(episode_plans))
@@ -2799,7 +2875,7 @@ class PipelineOrchestrator:
 
         sem = asyncio.Semaphore(pipeline_config.episode_write_concurrency)
         ep_tasks = [
-            self._produce_episode(plan, project, corpus, project_dir, sem)
+            self._produce_episode(plan, project, corpus, actor_metadata, project_dir, sem)
             for plan in episode_plans
         ]
         ep_results = await asyncio.gather(*ep_tasks, return_exceptions=True)
@@ -2817,6 +2893,15 @@ class PipelineOrchestrator:
             episode_plans=episode_plans,
             project_dir=project_dir,
             episode_numbers=[episode_number for episode_number, _ in spoken_scripts],
+        )
+        actor_metrics["writing"] = self._build_writing_actor_metrics(project_dir, spoken_scripts)
+        self._write_actor_metadata_metrics(
+            project_dir=project_dir,
+            actor_metadata=actor_metadata,
+            synthesis_map=synthesis_map,
+            strategy=strategy,
+            episode_plans=episode_plans,
+            metrics=actor_metrics,
         )
 
         # Phase 4: Audio Rendering (parallel per episode)
@@ -3028,7 +3113,7 @@ class PipelineOrchestrator:
 
     async def _decompose_theme(
         self, project: ThematicProject, project_dir: Path,
-    ) -> list[ThematicAxis]:
+    ) -> tuple[list[ThematicAxis], ActorMetadata, dict[str, Any]]:
         async with _stage_log(
             self.run_logger, "theme_decomposition", project_dir,
             theme=project.theme, sub_themes=project.sub_themes, book_count=len(project.books),
@@ -3071,9 +3156,15 @@ class PipelineOrchestrator:
             expected_book_ids = [book.book_id for book in project.books]
             max_attempts = self.theme_decomposition_agent.max_retry_attempts
             axes: list[ThematicAxis] = []
+            actor_metadata = ActorMetadata(project_id=project.project_id)
+            actor_metrics: dict[str, Any] = {}
             for attempt in range(1, max_attempts + 1):
                 result = await asyncio.to_thread(self.theme_decomposition_agent.run, payload)
                 axes = result.axes
+                actor_metadata, actor_metrics = sanitize_actor_metadata_payload(
+                    result.actor_metadata,
+                    project_id=project.project_id,
+                )
 
                 missing_by_axis = []
                 for axis in axes:
@@ -3089,24 +3180,37 @@ class PipelineOrchestrator:
                             "missing_book_ids": missing_book_ids,
                         })
 
-                if not missing_by_axis:
+                if not missing_by_axis and actor_metadata.actors:
                     break
 
+                validation_issues = []
+                if missing_by_axis:
+                    validation_issues.append("missing_relevance_by_book")
+                if not actor_metadata.actors:
+                    validation_issues.append("missing_valid_actor_metadata")
                 self.run_logger.log(
-                    "theme_decomposition_missing_relevance_by_book",
+                    "theme_decomposition_semantic_validation_failed",
                     attempt=attempt,
                     max_attempts=max_attempts,
                     axis_count=len(axes),
                     missing_axis_count=len(missing_by_axis),
                     missing_by_axis=missing_by_axis,
+                    actor_count=len(actor_metadata.actors),
+                    actor_metrics=actor_metrics,
+                    validation_issues=validation_issues,
                 )
                 if attempt < max_attempts:
                     backoff = min(2 ** (attempt - 1), 16) + (time.monotonic() % 1)
                     time.sleep(backoff)
                     continue
+                if missing_by_axis:
+                    raise RuntimeError(
+                        "Theme decomposition omitted input books in relevance_by_book for one or "
+                        f"more axes after {max_attempts} attempts."
+                    )
                 raise RuntimeError(
-                    "Theme decomposition omitted input books in relevance_by_book for one or "
-                    f"more axes after {max_attempts} attempts."
+                    "Theme decomposition did not produce any valid actor_metadata actors "
+                    f"after {max_attempts} attempts."
                 )
 
             valid_axes = [
@@ -3128,16 +3232,21 @@ class PipelineOrchestrator:
                 valid_axes = padded_axes
 
             valid_axes = valid_axes[:project.config.max_axes]
+            valid_axes, axis_actor_metrics = clean_axis_actor_ids(valid_axes, actor_metadata)
+            actor_metrics.update(axis_actor_metrics)
             _save_json(project_dir / "thematic_axes.json",
                         {"axes": [a.model_dump(mode="json") for a in valid_axes]})
+            _save_json(project_dir / "actor_metadata.json", actor_metadata)
 
             ctx["output_summary"] = {
                 "book_summary_count": len(book_summaries),
                 "total_axes_generated": len(axes),
                 "valid_axes": len(valid_axes),
                 "axis_names": [a.name for a in valid_axes],
+                "actor_count": len(actor_metadata.actors),
+                "relationship_count": len(actor_metadata.relationships),
             }
-            return valid_axes
+            return valid_axes, actor_metadata, actor_metrics
 
     async def _extract_passages(
         self, project: ThematicProject, axes: list[ThematicAxis], project_dir: Path,
@@ -4177,8 +4286,13 @@ class PipelineOrchestrator:
             return corpus
 
     async def _map_synthesis(
-        self, project: ThematicProject, corpus: ThematicCorpus, project_dir: Path,
-    ) -> SynthesisMap:
+        self,
+        project: ThematicProject,
+        corpus: ThematicCorpus,
+        project_dir: Path,
+        actor_metadata: ActorMetadata | None = None,
+    ) -> tuple[SynthesisMap, dict[str, Any]]:
+        actor_metadata = actor_metadata or ActorMetadata(project_id=project.project_id)
         async with _stage_log(
             self.run_logger, "synthesis_mapping", project_dir,
             axis_count=len(corpus.axes), total_passages=corpus.total_passages,
@@ -4227,6 +4341,7 @@ class PipelineOrchestrator:
                     "description": a.description,
                     "theme_importance_score": a.theme_importance_score,
                     "guiding_questions": a.guiding_questions,
+                    "actor_ids": a.actor_ids,
                 }
                 for a in selected_axes
             ]
@@ -4284,8 +4399,13 @@ class PipelineOrchestrator:
                 project_id=project.project_id, axes_summary=axes_summary,
                 passages_by_axis=passages_summary, cross_book_pairs=cross_pairs,
                 book_metadata=book_metadata,
+                actor_metadata=compact_actor_metadata(actor_metadata),
             )
             primitives = await asyncio.to_thread(self.synthesis_primitives_agent.run, primitives_payload)
+            primitives, primitive_actor_metrics = clean_synthesis_primitive_actor_links(
+                primitives,
+                actor_metadata,
+            )
             _save_json(project_dir / "synthesis_primitives.json", primitives)
 
             consolidation_payload = self.synthesis_consolidation_agent.build_payload(
@@ -4294,10 +4414,15 @@ class PipelineOrchestrator:
                 axes_summary=axes_summary,
                 book_metadata=book_metadata,
                 series_size_hint=project.requested_episode_count,
+                actor_metadata=compact_actor_metadata(actor_metadata),
             )
             consolidation = await asyncio.to_thread(
                 self.synthesis_consolidation_agent.run,
                 consolidation_payload,
+            )
+            consolidation, consolidation_actor_metrics = self._clean_consolidation_actor_links(
+                consolidation,
+                actor_metadata,
             )
             synthesis_map = _reconstruct_synthesis_map(
                 project_id=project.project_id,
@@ -4319,7 +4444,10 @@ class PipelineOrchestrator:
                 },
                 "quality_score": synthesis_map.quality_score,
             }
-            return synthesis_map
+            return synthesis_map, {
+                "primitives": primitive_actor_metrics,
+                "consolidation": consolidation_actor_metrics,
+            }
 
     async def _choose_narrative_strategy(
         self,
@@ -4327,7 +4455,9 @@ class PipelineOrchestrator:
         synthesis_map: SynthesisMap,
         corpus: ThematicCorpus,
         project_dir: Path,
-    ) -> NarrativeStrategy:
+        actor_metadata: ActorMetadata | None = None,
+    ) -> tuple[NarrativeStrategy, dict[str, Any]]:
+        actor_metadata = actor_metadata or ActorMetadata(project_id=project.project_id)
         async with _stage_log(
             self.run_logger, "narrative_strategy", project_dir,
             cluster_count=len(synthesis_map.episode_candidate_clusters),
@@ -4363,8 +4493,14 @@ class PipelineOrchestrator:
                 thematic_axes=thematic_axes,
                 project_metadata=project_metadata,
                 episode_count=project.requested_episode_count,
+                actor_metadata=compact_actor_metadata(actor_metadata),
             )
             strategy = await asyncio.to_thread(self.narrative_strategy_agent.run, payload)
+            cleaned_episodes, strategy_actor_metrics = clean_strategy_actor_links(
+                strategy.episodes,
+                actor_metadata,
+            )
+            strategy = strategy.model_copy(update={"episodes": cleaned_episodes})
             _save_json(project_dir / "narrative_strategy.json", strategy)
 
             ctx["output_summary"] = {
@@ -4372,7 +4508,7 @@ class PipelineOrchestrator:
                 "recommended_episode_count": strategy.recommended_episode_count,
                 "episodes": len(strategy.episodes),
             }
-            return strategy
+            return strategy, strategy_actor_metrics
 
     def _resolve_episode_count_from_strategy(
         self,
@@ -4414,6 +4550,43 @@ class PipelineOrchestrator:
             }
         )
 
+    def _clean_consolidation_actor_links(
+        self,
+        consolidation: SynthesisConsolidationResult,
+        actor_metadata: ActorMetadata,
+    ) -> tuple[SynthesisConsolidationResult, dict[str, Any]]:
+        valid_actor_ids = {actor.actor_id for actor in actor_metadata.actors}
+        unknown_actor_ids = 0
+        cleaned_clusters: list[EpisodeCandidateCluster] = []
+        for cluster in consolidation.episode_candidate_clusters:
+            actor_ids: list[str] = []
+            seen: set[str] = set()
+            for actor_id in cluster.actor_ids:
+                if actor_id not in valid_actor_ids:
+                    unknown_actor_ids += 1
+                    continue
+                if actor_id in seen:
+                    continue
+                seen.add(actor_id)
+                actor_ids.append(actor_id)
+            primary_actor_id = cluster.primary_actor_id
+            if primary_actor_id and primary_actor_id not in valid_actor_ids:
+                unknown_actor_ids += 1
+                primary_actor_id = None
+            if primary_actor_id and primary_actor_id not in actor_ids:
+                actor_ids.insert(0, primary_actor_id)
+            cleaned_clusters.append(
+                cluster.model_copy(
+                    update={
+                        "actor_ids": actor_ids,
+                        "primary_actor_id": primary_actor_id,
+                    }
+                )
+            )
+        return consolidation.model_copy(
+            update={"episode_candidate_clusters": cleaned_clusters}
+        ), {"unknown_actor_ids": unknown_actor_ids}
+
     async def _plan_series(
         self,
         project: ThematicProject,
@@ -4421,7 +4594,9 @@ class PipelineOrchestrator:
         strategy: NarrativeStrategy,
         corpus: ThematicCorpus,
         project_dir: Path,
-    ) -> list[EpisodePlan]:
+        actor_metadata: ActorMetadata | None = None,
+    ) -> tuple[list[EpisodePlan], dict[str, Any]]:
+        actor_metadata = actor_metadata or ActorMetadata(project_id=project.project_id)
         async with _stage_log(
             self.run_logger, "episode_planning", project_dir,
             episode_count=project.episode_count, strategy=strategy.strategy_type,
@@ -4473,6 +4648,15 @@ class PipelineOrchestrator:
                         cluster_ids,
                         cluster_lookup,
                     )
+                    episode_actor_ids = {
+                        actor.actor_id
+                        for actor in episode.actor_arc_directives
+                        if actor.actor_id
+                    }
+                    episode_actor_metadata = select_actor_metadata_subset(
+                        actor_metadata,
+                        episode_actor_ids,
+                    )
                     primary_occurrence_ids = {
                         occurrence.occurrence_id
                         for occurrence in episode.cluster_path
@@ -4517,8 +4701,16 @@ class PipelineOrchestrator:
                         synthesis_map=episode_synthesis_map_payload,
                         project_metadata=project_metadata,
                         available_passages=available_passages,
+                        actor_metadata=compact_actor_metadata(episode_actor_metadata),
                     )
                     plan_draft = await asyncio.to_thread(self.episode_planning_agent.run, payload)
+                    plan_draft = plan_draft.model_copy(
+                        update={"actor_arc_directives": episode.actor_arc_directives}
+                    )
+                    plan_draft, actor_link_metrics = clean_scene_actor_links(
+                        plan_draft,
+                        episode_actor_metadata,
+                    )
                     covered_primary_occurrence_ids = {
                         scene.dominant_cluster_occurrence_id
                         for scene in plan_draft.scene_cards
@@ -4533,6 +4725,7 @@ class PipelineOrchestrator:
                             synthesis_map=episode_synthesis_map_payload,
                             project_metadata=project_metadata,
                             available_passages=available_passages,
+                            actor_metadata=compact_actor_metadata(episode_actor_metadata),
                             planning_feedback={
                                 "issue": "missing_primary_occurrence_coverage",
                                 "missing_primary_occurrence_ids": missing_primary_occurrence_ids,
@@ -4541,6 +4734,13 @@ class PipelineOrchestrator:
                         plan_draft = await asyncio.to_thread(
                             self.episode_planning_agent.run,
                             retry_payload,
+                        )
+                        plan_draft = plan_draft.model_copy(
+                            update={"actor_arc_directives": episode.actor_arc_directives}
+                        )
+                        plan_draft, actor_link_metrics = clean_scene_actor_links(
+                            plan_draft,
+                            episode_actor_metadata,
                         )
                         covered_primary_occurrence_ids = {
                             scene.dominant_cluster_occurrence_id
@@ -4600,6 +4800,7 @@ class PipelineOrchestrator:
                         "primary_occurrence_count": len(primary_occurrence_ids),
                         "covered_primary_occurrence_count": len(covered_primary_occurrence_ids),
                         "missing_primary_occurrence_ids": missing_primary_occurrence_ids,
+                        "actor_link_metrics": actor_link_metrics,
                     }
                     return episode.episode_number, plan, report
 
@@ -4609,6 +4810,10 @@ class PipelineOrchestrator:
             planning_results.sort(key=lambda item: item[0])
             planned_episodes = [plan for _, plan, _ in planning_results]
             planning_reports = [report for _, _, report in planning_results]
+            planning_actor_metrics = _merge_actor_metric_dicts(
+                report.get("actor_link_metrics", {})
+                for report in planning_reports
+            )
 
             _save_json(
                 project_dir / "series_plan.json",
@@ -4623,7 +4828,7 @@ class PipelineOrchestrator:
                 "episode_count": len(planned_episodes),
                 "titles": [episode.title for episode in planned_episodes],
             }
-            return planned_episodes
+            return planned_episodes, planning_actor_metrics
 
     def _write_passage_utilization(
         self,
@@ -4668,6 +4873,48 @@ class PipelineOrchestrator:
         _save_json(project_dir / "passage_utilization.json", utilization)
         self.run_logger.log("passage_utilization", **utilization["summary"])
 
+    def _build_writing_actor_metrics(
+        self,
+        project_dir: Path,
+        spoken_scripts: list[tuple[int, SpokenScript]],
+    ) -> dict[str, Any]:
+        return {
+            "completed_episode_count": len(spoken_scripts),
+            "unknown_actor_ids": 0,
+            "project_dir": str(project_dir),
+        }
+
+    def _write_actor_metadata_metrics(
+        self,
+        *,
+        project_dir: Path,
+        actor_metadata: ActorMetadata,
+        synthesis_map: SynthesisMap,
+        strategy: NarrativeStrategy,
+        episode_plans: list[EpisodePlan],
+        metrics: dict[str, Any],
+    ) -> None:
+        payload = {
+            "actor_count": len(actor_metadata.actors),
+            "relationship_count": len(actor_metadata.relationships),
+            "unresolved_mentions": len(actor_metadata.unresolved_mentions),
+            "confidence_counts": _confidence_counts(actor_metadata),
+            "actor_linkage": _actor_linkage_counts(
+                synthesis_map=synthesis_map,
+                strategy=strategy,
+                episode_plans=episode_plans,
+            ),
+            "stage_metrics": metrics,
+        }
+        _save_json(project_dir / "actor_metadata_metrics.json", payload)
+        self.run_logger.log(
+            "actor_metadata_metrics",
+            actor_count=payload["actor_count"],
+            relationship_count=payload["relationship_count"],
+            unresolved_mentions=payload["unresolved_mentions"],
+            actor_linkage=payload["actor_linkage"],
+        )
+
     # -----------------------------------------------------------------------
     # Phase 3: Episode Production
     # -----------------------------------------------------------------------
@@ -4677,6 +4924,7 @@ class PipelineOrchestrator:
         plan: EpisodePlan,
         project: ThematicProject,
         corpus: ThematicCorpus,
+        actor_metadata: ActorMetadata,
         project_dir: Path,
         semaphore: asyncio.Semaphore,
     ) -> tuple[int, SpokenScript]:
@@ -4684,7 +4932,9 @@ class PipelineOrchestrator:
             ep_dir = project_dir / "episodes" / str(plan.episode_number)
             ep_dir.mkdir(parents=True, exist_ok=True)
 
-            script = await self._write_episode(plan, project, corpus, ep_dir, project_dir)
+            script = await self._write_episode(
+                plan, project, corpus, ep_dir, project_dir, actor_metadata,
+            )
 
             if not project.config.skip_grounding:
                 report = await self._validate_grounding(
@@ -4725,7 +4975,9 @@ class PipelineOrchestrator:
     async def _write_episode(
         self, plan: EpisodePlan, project: ThematicProject,
         corpus: ThematicCorpus, ep_dir: Path, project_dir: Path,
+        actor_metadata: ActorMetadata | None = None,
     ) -> EpisodeScript:
+        actor_metadata = actor_metadata or ActorMetadata(project_id=project.project_id)
         async with _stage_log(
             self.run_logger, f"write_episode_{plan.episode_number}", project_dir,
             episode=plan.episode_number,
@@ -4741,12 +4993,12 @@ class PipelineOrchestrator:
             scene_word_count_targets_lower = _compute_scene_word_count_targets(
                 plan.scene_cards,
                 plan.target_word_count,
-                120.0,
+                110.0,
             )
             scene_word_count_targets_higher = _compute_scene_word_count_targets(
                 plan.scene_cards,
                 plan.target_word_count,
-                140.0,
+                130.0,
             )
             full_episode_plan_payload = plan.model_dump(mode="json")
             scene_payload_by_id: dict[str, dict[str, Any]] = {}
@@ -4813,6 +5065,22 @@ class PipelineOrchestrator:
                     }
                     for passage_id in batch_passage_ids
                 ]
+                batch_actor_ids = {
+                    actor.actor_id
+                    for scene in batch_scene_cards
+                    for actor in scene.actors
+                    if actor.actor_id
+                }
+                if not batch_actor_ids:
+                    batch_actor_ids.update(
+                        actor.actor_id
+                        for actor in plan.actor_arc_directives
+                        if actor.actor_id
+                    )
+                batch_actor_metadata = select_actor_metadata_subset(
+                    actor_metadata,
+                    batch_actor_ids,
+                )
                 payload = writing_agent.build_payload(
                     episode_number=plan.episode_number,
                     batch_id=f"batch_{batch_index}",
@@ -4823,6 +5091,7 @@ class PipelineOrchestrator:
                     batch_target_word_count_lower=batch_target_word_count_lower,
                     batch_target_word_count_higher=batch_target_word_count_higher,
                     skip_grounding=project.config.skip_grounding,
+                    actor_metadata=compact_actor_metadata(batch_actor_metadata),
                 )
                 result = await asyncio.to_thread(writing_agent.run, payload)
                 if project.config.skip_grounding:

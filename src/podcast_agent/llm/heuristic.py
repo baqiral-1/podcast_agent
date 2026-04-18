@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 from uuid import uuid4
 
@@ -91,6 +92,8 @@ class HeuristicLLMClient(LLMClient):
         book_ids = [b.get("book_id", f"b{i}") for i, b in enumerate(books)]
         relevance = {bid: 0.7 for bid in book_ids}
         axis_label = str(payload.get("theme", "unknown"))
+        actors = self._generate_actor_metadata_actors(books)
+        actor_ids = [actor["actor_id"] for actor in actors]
         axes = []
         for idx in range(1, 11):
             importance = max(0.0, 1.0 - ((idx - 1) * 0.06))
@@ -106,9 +109,96 @@ class HeuristicLLMClient(LLMClient):
                     ],
                     "relevance_by_book": relevance,
                     "keywords": ["theme", f"axis_{idx}"],
+                    "actor_ids": actor_ids[:3],
                 }
             )
-        return {"axes": axes}
+        return {
+            "axes": axes,
+            "actor_metadata": {
+                "actors": actors,
+                "relationships": [],
+                "unresolved_mentions": [],
+                "quality_notes": ["Heuristic actor metadata."],
+            },
+        }
+
+    def _generate_actor_metadata_actors(self, books: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        actors: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for book in books:
+            book_id = str(book.get("book_id", ""))
+            for chapter in book.get("chapters", []) or []:
+                analysis = chapter.get("analysis") or {}
+                candidates = [
+                    *(analysis.get("major_actors", []) or []),
+                    *(analysis.get("key_institutions", []) or []),
+                ]
+                for raw_name in candidates:
+                    name = str(raw_name or "").strip()
+                    if not name:
+                        continue
+                    actor_id = self._slug_actor_id(name)
+                    if not actor_id or actor_id in seen:
+                        continue
+                    seen.add(actor_id)
+                    actors.append(
+                        {
+                            "actor_id": actor_id,
+                            "display_name": name,
+                            "aliases": [],
+                            "actor_type": "institution"
+                            if name in (analysis.get("key_institutions", []) or [])
+                            else "person",
+                            "description": f"Heuristic actor derived from {chapter.get('title', 'chapter analysis')}.",
+                            "book_ids": [book_id] if book_id else [],
+                            "chapter_refs": [
+                                {
+                                    "book_id": book_id,
+                                    "chapter_id": str(chapter.get("chapter_id", "")),
+                                    "chapter_title": str(chapter.get("title", "")),
+                                }
+                            ],
+                            "narrative_functions": ["other"],
+                            "goals_or_motivational_pressures": [],
+                            "constraints": [],
+                            "stakes": [],
+                            "transformations": [],
+                            "uncertainty_notes": "",
+                            "evidence_confidence": "medium",
+                            "narrative_importance_score": max(0.1, 1.0 - (len(actors) * 0.03)),
+                        }
+                    )
+                    if len(actors) >= 20:
+                        return actors
+        if not actors:
+            actors.append(
+                {
+                    "actor_id": "project_actor",
+                    "display_name": "Project actor",
+                    "aliases": [],
+                    "actor_type": "other",
+                    "description": "Heuristic fallback actor for local runs.",
+                    "book_ids": book_ids if (book_ids := [str(book.get("book_id", "")) for book in books if book.get("book_id")]) else [],
+                    "chapter_refs": [],
+                    "narrative_functions": ["other"],
+                    "goals_or_motivational_pressures": [],
+                    "constraints": [],
+                    "stakes": [],
+                    "transformations": [],
+                    "uncertainty_notes": "No chapter actor candidates were available.",
+                    "evidence_confidence": "low",
+                    "narrative_importance_score": 0.1,
+                }
+            )
+        return actors
+
+    def _slug_actor_id(self, value: str) -> str:
+        slug = re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
+        if not slug:
+            return ""
+        if slug[0].isdigit():
+            slug = f"actor_{slug}"
+        return slug[:64]
 
     def _generate_passage_extraction(self, payload: PromptPayload) -> dict[str, Any]:
         candidates = payload.get("candidate_passages", [])
@@ -141,7 +231,9 @@ class HeuristicLLMClient(LLMClient):
         summary: str,
         axis_ids: list[str],
         passage_ids: list[str],
+        actor_ids: list[str] | None = None,
     ) -> dict[str, Any]:
+        actor_ids = actor_ids or []
         return {
             "id": primitive_id,
             "title": title,
@@ -151,14 +243,25 @@ class HeuristicLLMClient(LLMClient):
             "support_passage_ids": passage_ids[1:3],
             "timeframe": None,
             "geography": None,
+            "primary_actor_ids": actor_ids[:1],
+            "affected_actor_ids": [],
+            "actor_ids": actor_ids[:1],
             "actor_tags": [],
             "institution_tags": [],
+            "unresolved_actor_tags": [],
+            "narrative_importance_score": 0.5,
         }
 
     def _generate_synthesis_primitives(self, payload: PromptPayload) -> dict[str, Any]:
         passages_by_axis = payload.get("passages_by_axis", {})
         axis_ids = list(passages_by_axis.keys()) or ["axis_01"]
         passage_ids = self._collect_passage_ids(passages_by_axis) or [uuid4().hex, uuid4().hex]
+        actor_metadata = payload.get("actor_metadata", {}) or {}
+        actor_ids = [
+            str(actor.get("actor_id", ""))
+            for actor in actor_metadata.get("actors", [])
+            if actor.get("actor_id")
+        ]
         family_templates: dict[str, tuple[str, str, str]] = {
             "turning_points": (
                 "tp_001",
@@ -179,6 +282,11 @@ class HeuristicLLMClient(LLMClient):
                 "lq_001",
                 "Heuristic live question",
                 "The evidence supports more than one plausible reading.",
+            ),
+            "misperceptions": (
+                "mp_001",
+                "Heuristic misperception",
+                "Actors misread the situation in ways that shape later choices and outcomes.",
             ),
             "reversals": (
                 "rv_001",
@@ -220,6 +328,7 @@ class HeuristicLLMClient(LLMClient):
                 summary=summary,
                 axis_ids=axis_ids[:1],
                 passage_ids=passage_ids[:3],
+                actor_ids=actor_ids[:1],
             )
             if family == "live_questions":
                 primitive["candidate_readings"] = [
@@ -245,6 +354,12 @@ class HeuristicLLMClient(LLMClient):
     def _generate_synthesis_consolidation(self, payload: PromptPayload) -> dict[str, Any]:
         primitives = payload.get("primitives", {})
         primitives_by_family = primitives.get("primitives_by_family", {})
+        actor_metadata = payload.get("actor_metadata", {}) or {}
+        actor_ids = [
+            str(actor.get("actor_id", ""))
+            for actor in actor_metadata.get("actors", [])
+            if actor.get("actor_id")
+        ]
         member_ids: list[str] = []
         primitive_ids_by_family: dict[str, list[str]] = {}
         for family in SYNTHESIS_PRIMITIVE_FAMILIES:
@@ -263,6 +378,11 @@ class HeuristicLLMClient(LLMClient):
                     "summary": "A compact local causal chain.",
                     "primary_member_id": primary_member_id,
                     "member_ids": member_ids or [primary_member_id],
+                    "actor_ids": actor_ids[:1],
+                    "primary_actor_id": actor_ids[0] if actor_ids else None,
+                    "actor_tension": "A heuristic actor pressure shapes the local chain." if actor_ids else "",
+                    "narrative_importance_score": 0.5,
+                    "coverage_policy": "anchor",
                     "local_question": "What changes the stakes locally?",
                     "local_payoff_shape": "reveal",
                 }
@@ -293,6 +413,55 @@ class HeuristicLLMClient(LLMClient):
         episodes = []
         for idx in range(recommended_episode_count):
             cluster = clusters[idx % len(clusters)]
+            cluster_actor_ids = list(cluster.get("actor_ids", []))
+            actor_arc_directives = [
+                {
+                    "actor_id": actor_id,
+                    "episode_roles": [
+                        {
+                            "ref_id": f"{actor_id}_role_1",
+                            "label": "episode role",
+                            "text": "This actor provides the heuristic character spine for the episode.",
+                        }
+                    ],
+                    "listener_tracking": [
+                        {
+                            "ref_id": f"{actor_id}_tracking_1",
+                            "label": "listener tracking",
+                            "text": "Track how the actor's position becomes clearer across the episode.",
+                        }
+                    ],
+                    "tension_lines": [
+                        {
+                            "ref_id": f"{actor_id}_tension_1",
+                            "label": "tension line",
+                            "text": "External pressure constrains the actor's available choices.",
+                        }
+                    ],
+                    "arc_progression": [
+                        {
+                            "ref_id": f"{actor_id}_progression_1",
+                            "label": "arc progression",
+                            "text": "The actor's position changes as the cluster path develops.",
+                        }
+                    ],
+                    "scene_jobs": [
+                        {
+                            "ref_id": f"{actor_id}_scene_job_1",
+                            "label": "scene job",
+                            "text": "Use this actor where pressure turns into consequence.",
+                        }
+                    ],
+                    "repetition_guardrails": [
+                        {
+                            "ref_id": f"{actor_id}_guardrail_1",
+                            "label": "repetition guardrail",
+                            "text": "Do not restate the same actor function unless the scene changes or pays it off.",
+                        }
+                    ],
+                }
+                for actor_id in cluster_actor_ids[:1]
+            ]
             episodes.append(
                 {
                     "episode_number": idx + 1,
@@ -305,11 +474,13 @@ class HeuristicLLMClient(LLMClient):
                     "thematic_focus": cluster.get("title", "Heuristic focus"),
                     "arc_summary": f"Episode {idx + 1} follows a discovery-ordered cluster path.",
                     "unresolved_questions": [],
+                    "actor_arc_directives": actor_arc_directives,
                     "cluster_path": [
                         {
                             "occurrence_id": f"occ_{idx + 1:03d}",
                             "cluster_id": cluster.get("cluster_id", "cluster_001"),
                             "usage": "primary",
+                            "emphasis": cluster.get("coverage_policy", "anchor"),
                             "transition_note": "",
                             "chronology_break": None,
                         }
@@ -356,6 +527,7 @@ class HeuristicLLMClient(LLMClient):
                 "primitive_ids": [],
                 "passage_ids": passage_ids,
                 "estimated_duration_seconds": 4200,
+                "coverage_depth": "deep",
             }
         ]
         return {
@@ -365,6 +537,7 @@ class HeuristicLLMClient(LLMClient):
             "thematic_focus": episode.get("thematic_focus", "Heuristic focus"),
             "arc_summary": episode.get("arc_summary", "A heuristic episode arc."),
             "unresolved_questions": episode.get("unresolved_questions", []),
+            "actor_arc_directives": episode.get("actor_arc_directives", []),
             "framing": {
                 "opening_image": "A listener-facing opening image.",
                 "threat_or_unresolved_action": "A threat remains active as the episode starts.",
@@ -374,7 +547,7 @@ class HeuristicLLMClient(LLMClient):
                 "preview": None,
             },
             "scene_cards": scene_cards,
-            "target_duration_minutes": 100.0,
+            "target_duration_minutes": 90.0,
         }
 
     def _generate_episode_writing(self, payload: PromptPayload) -> dict[str, Any]:

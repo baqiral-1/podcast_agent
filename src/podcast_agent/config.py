@@ -98,13 +98,13 @@ class LLMConfig(BaseModel):
     )
     thinking_budget_tokens: dict[str, int] = Field(
         default_factory=lambda: {
-            "narrative_strategy": 30000,
-            "episode_planning": 30000,
-            "episode_writing": 30000,
+            "narrative_strategy": 20000,
+            "episode_planning": 20000,
+            "episode_writing": 20000,
             "spoken_delivery": 30000,
             "synthesis_primitives": 30000,
             "synthesis_consolidation": 30000,
-            "theme_decomposition": 30000,
+            "theme_decomposition": 20000,
         },
         description=(
             "Legacy per-schema thinking budget in tokens. "
@@ -135,8 +135,8 @@ class LLMConfig(BaseModel):
     # Per-agent configuration keyed by agent schema_name
     agent_configs: dict[str, AgentConfig] = Field(
         default_factory=lambda: {
-            "chapter_summary": AgentConfig(model_name="claude-haiku-4-5", temperature=0.3, max_retry_attempts=3, concurrency_limit=25),
-            "book_summary": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.3, max_retry_attempts=3, concurrency_limit=10),
+            "chapter_summary": AgentConfig(model_name="claude-haiku-4-5", temperature=0.3, max_retry_attempts=3, concurrency_limit=40),
+            "book_summary": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.3, max_retry_attempts=3, concurrency_limit=15),
             "theme_decomposition": AgentConfig(model_name="claude-opus-4-7", temperature=0.7, max_retry_attempts=2, concurrency_limit=6),
             "passage_extraction": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.1, max_retry_attempts=4, concurrency_limit=13),
             "synthesis_primitives": AgentConfig(model_name="claude-opus-4-7", temperature=0.8, max_retry_attempts=2, concurrency_limit=3),
@@ -290,7 +290,7 @@ class PipelineRuntimeConfig(BaseModel):
     tts_concurrency: int = Field(default=12, ge=1)
     llm_global_max_concurrency: int = Field(default=30, ge=1)
     audio_retry_attempts: int = Field(default=3, ge=0)
-    spoken_words_per_minute: int = Field(default=140, ge=80)
+    spoken_words_per_minute: int = Field(default=130, ge=80)
     # Thematic intelligence
     max_axes: int = Field(default=15, ge=1)
     min_axes: int = Field(default=10, ge=1)
@@ -298,7 +298,7 @@ class PipelineRuntimeConfig(BaseModel):
     passage_retrieval_min_per_book: int = Field(default=10, ge=1)
     passage_retrieval_max_per_book: int = Field(default=25, ge=1)
     axis_candidate_target_total: int = Field(default=60, ge=1)
-    pre_axis_total_budget: int = Field(default=1200, ge=1)
+    pre_axis_total_budget: int = Field(default=1500, ge=1)
     pre_axis_floor: int = Field(default=30, ge=0)
     pre_axis_relevance_power: float = Field(default=1.3, ge=0.0)
     pre_axis_cross_axis_reuse_penalty: float = Field(default=0.25, ge=0.0, le=1.0)
@@ -312,7 +312,7 @@ class PipelineRuntimeConfig(BaseModel):
     synthesis_axis_pct: float = Field(default=1.0, ge=0.0, le=1.0)
     synthesis_axis_min: int = Field(default=10, ge=0)
     synthesis_axis_max: int = Field(default=15, ge=1)
-    synthesis_total_passage_cap: int = Field(default=800, ge=1)
+    synthesis_total_passage_cap: int = Field(default=750, ge=1)
     planning_axis_pct: float = Field(default=1.0, ge=0.0, le=1.0)
     planning_axis_min: int = Field(default=10, ge=0)
     planning_axis_max: int = Field(default=15, ge=1)

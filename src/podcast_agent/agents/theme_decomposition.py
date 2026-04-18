@@ -13,6 +13,7 @@ from podcast_agent.schemas.models import BookRecord, ThematicAxis
 
 class ThemeDecompositionResponse(BaseModel):
     axes: list[ThematicAxis] = Field(default_factory=list)
+    actor_metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ThemeDecompositionAgent(Agent):

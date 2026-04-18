@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from enum import Enum
 from typing import Any, Literal
@@ -97,7 +98,7 @@ class PipelineConfig(StrictModel):
     passage_retrieval_min_per_book: int = Field(default=10, ge=1)
     passage_retrieval_max_per_book: int = Field(default=25, ge=1)
     axis_candidate_target_total: int = Field(default=60, ge=1)
-    pre_axis_total_budget: int = Field(default=1200, ge=1)
+    pre_axis_total_budget: int = Field(default=1500, ge=1)
     pre_axis_floor: int = Field(default=30, ge=0)
     pre_axis_relevance_power: float = Field(default=1.3, ge=0.0)
     pre_axis_cross_axis_reuse_penalty: float = Field(default=0.25, ge=0.0, le=1.0)
@@ -111,7 +112,7 @@ class PipelineConfig(StrictModel):
     synthesis_axis_pct: float = Field(default=1.0, ge=0.0, le=1.0)
     synthesis_axis_min: int = Field(default=10, ge=0)
     synthesis_axis_max: int = Field(default=15, ge=1)
-    synthesis_total_passage_cap: int = Field(default=800, ge=1)
+    synthesis_total_passage_cap: int = Field(default=750, ge=1)
     planning_axis_pct: float = Field(default=1.0, ge=0.0, le=1.0)
     planning_axis_min: int = Field(default=10, ge=0)
     planning_axis_max: int = Field(default=15, ge=1)
@@ -122,7 +123,7 @@ class PipelineConfig(StrictModel):
     tts_concurrency: int = Field(default=12, ge=1)
     episode_planning_concurrency: int = Field(default=9, ge=1)
     episode_write_concurrency: int = Field(default=7, ge=1)
-    target_episode_minutes: float = Field(default=110.0, gt=0.0)
+    target_episode_minutes: float = Field(default=90.0, gt=0.0)
     min_episode_minutes: float = Field(default=85.0, gt=0.0)
     duration_shortfall_policy: Literal["warn"] = "warn"
     scene_card_target_min: int = Field(default=25, ge=1)
@@ -233,6 +234,115 @@ class ThematicAxis(StrictModel):
     relevance_by_book: dict[str, float] = Field(default_factory=dict)
     keywords: list[str] = Field(default_factory=list)
     parent_axis_id: str | None = None
+    actor_ids: list[str] = Field(default_factory=list)
+
+
+class ActorChapterRef(StrictModel):
+    book_id: str
+    chapter_id: str
+    chapter_title: str = ""
+
+
+class ActorProfile(StrictModel):
+    actor_id: str = Field(min_length=1)
+    display_name: str = Field(min_length=1)
+    aliases: list[str] = Field(default_factory=list)
+    actor_type: Literal[
+        "person",
+        "institution",
+        "faction",
+        "military",
+        "party",
+        "movement",
+        "other",
+    ]
+    description: str = ""
+    book_ids: list[str] = Field(default_factory=list)
+    chapter_refs: list[ActorChapterRef] = Field(default_factory=list)
+    narrative_functions: list[
+        Literal[
+            "decision_maker",
+            "broker",
+            "victim",
+            "witness",
+            "ideologue",
+            "commander",
+            "administrator",
+            "opposition",
+            "beneficiary",
+            "constraint",
+            "catalyst",
+            "symbol",
+            "other",
+        ]
+    ] = Field(default_factory=list)
+    goals_or_motivational_pressures: list[str] = Field(default_factory=list)
+    constraints: list[str] = Field(default_factory=list)
+    stakes: list[str] = Field(default_factory=list)
+    transformations: list[str] = Field(default_factory=list)
+    uncertainty_notes: str = ""
+    evidence_confidence: Literal["high", "medium", "low"] = "medium"
+    narrative_importance_score: float = Field(default=0.0, ge=0.0, le=1.0)
+
+    @field_validator("actor_id")
+    @classmethod
+    def validate_actor_id(cls, value: str) -> str:
+        if not re.fullmatch(r"[a-z][a-z0-9_]*", value):
+            raise ValueError("actor_id must be snake_case and start with a letter")
+        return value
+
+
+class ActorRelationship(StrictModel):
+    source_actor_id: str
+    target_actor_id: str
+    relationship_type: Literal[
+        "enables",
+        "blocks",
+        "pressures",
+        "protects",
+        "legitimizes",
+        "delegitimizes",
+        "replaces",
+        "absorbs",
+        "betrays",
+        "other",
+    ]
+    description: str = ""
+    confidence: Literal["high", "medium", "low"] = "medium"
+
+
+class ActorMention(StrictModel):
+    raw_name: str
+    source: str = ""
+    book_id: str | None = None
+    chapter_id: str | None = None
+    matched_actor_id: str | None = None
+    confidence: Literal["high", "medium", "low"] = "low"
+
+
+class ActorMetadata(StrictModel):
+    project_id: str = ""
+    actors: list[ActorProfile] = Field(default_factory=list)
+    relationships: list[ActorRelationship] = Field(default_factory=list)
+    unresolved_mentions: list[ActorMention] = Field(default_factory=list)
+    quality_notes: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_actor_links(self) -> "ActorMetadata":
+        actor_ids = [actor.actor_id for actor in self.actors]
+        if len(actor_ids) != len(set(actor_ids)):
+            raise ValueError("actor_id values must be unique")
+        actor_id_set = set(actor_ids)
+        for relationship in self.relationships:
+            if relationship.source_actor_id not in actor_id_set:
+                raise ValueError(
+                    f"relationship source_actor_id is unknown: {relationship.source_actor_id}"
+                )
+            if relationship.target_actor_id not in actor_id_set:
+                raise ValueError(
+                    f"relationship target_actor_id is unknown: {relationship.target_actor_id}"
+                )
+        return self
 
 
 class ExtractedPassage(StrictModel):
@@ -287,8 +397,13 @@ class SynthesisPrimitiveBase(StrictModel):
     support_passage_ids: list[str] = Field(default_factory=list)
     timeframe: str | None = None
     geography: str | None = None
+    primary_actor_ids: list[str] = Field(default_factory=list)
+    affected_actor_ids: list[str] = Field(default_factory=list)
+    actor_ids: list[str] = Field(default_factory=list)
     actor_tags: list[str] = Field(default_factory=list)
     institution_tags: list[str] = Field(default_factory=list)
+    unresolved_actor_tags: list[str] = Field(default_factory=list)
+    narrative_importance_score: float = Field(default=0.5, ge=0.0, le=1.0)
 
     @property
     def passage_ids(self) -> list[str]:
@@ -335,6 +450,7 @@ SYNTHESIS_PRIMITIVE_FAMILIES: tuple[str, ...] = (
     "scene_worthy_consequences",
     "causal_mechanisms",
     "live_questions",
+    "misperceptions",
     "reversals",
     "motivations_dilemmas",
     "perspective_shifts",
@@ -367,6 +483,11 @@ class EpisodeCandidateCluster(StrictModel):
     summary: str = Field(min_length=1)
     primary_member_id: str = Field(min_length=1)
     member_ids: list[str] = Field(min_length=1)
+    actor_ids: list[str] = Field(default_factory=list)
+    primary_actor_id: str | None = None
+    actor_tension: str = ""
+    narrative_importance_score: float = Field(default=0.5, ge=0.0, le=1.0)
+    coverage_policy: Literal["anchor", "major", "supporting", "compressed"] = "supporting"
     local_question: str = Field(min_length=1)
     local_payoff_shape: Literal[
         "reveal", "reversal", "escalation", "fallout", "unresolved"
@@ -483,8 +604,43 @@ class ClusterPathOccurrence(StrictModel):
     occurrence_id: str = Field(default_factory=lambda: f"occ_{new_id()[:8]}")
     cluster_id: str = Field(min_length=1)
     usage: Literal["primary", "echo"]
+    emphasis: Literal["anchor", "major", "supporting", "compressed"] = "supporting"
     transition_note: str = ""
     chronology_break: ChronologyBreak | None = None
+
+
+class ActorArcRef(StrictModel):
+    ref_id: str = Field(min_length=1)
+    label: str = Field(min_length=1)
+    text: str = Field(min_length=1)
+
+
+class ActorArcDirective(StrictModel):
+    actor_id: str = Field(min_length=1)
+    episode_roles: list[ActorArcRef] = Field(default_factory=list)
+    listener_tracking: list[ActorArcRef] = Field(default_factory=list)
+    tension_lines: list[ActorArcRef] = Field(default_factory=list)
+    arc_progression: list[ActorArcRef] = Field(default_factory=list)
+    scene_jobs: list[ActorArcRef] = Field(default_factory=list)
+    repetition_guardrails: list[ActorArcRef] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_unique_ref_ids(self) -> "ActorArcDirective":
+        ref_ids = [
+            ref.ref_id
+            for ref_list in (
+                self.episode_roles,
+                self.listener_tracking,
+                self.tension_lines,
+                self.arc_progression,
+                self.scene_jobs,
+                self.repetition_guardrails,
+            )
+            for ref in ref_list
+        ]
+        if len(ref_ids) != len(set(ref_ids)):
+            raise ValueError("actor arc directive ref ids must be unique")
+        return self
 
 
 class StrategyEpisode(StrictModel):
@@ -495,6 +651,7 @@ class StrategyEpisode(StrictModel):
     arc_summary: str = Field(min_length=1)
     unresolved_questions: list[str] = Field(default_factory=list)
     cluster_path: list[ClusterPathOccurrence] = Field(default_factory=list, min_length=1)
+    actor_arc_directives: list[ActorArcDirective] = Field(default_factory=list, max_length=3)
 
     @model_validator(mode="after")
     def validate_cluster_path(self) -> "StrategyEpisode":
@@ -558,6 +715,9 @@ class SceneActor(StrictModel):
     name: str = Field(min_length=1)
     role_in_scene: str = Field(min_length=1)
     affiliation: str | None = None
+    actor_id: str | None = None
+    arc_ref_ids: list[str] = Field(default_factory=list)
+    scene_actor_directives: list[str] = Field(default_factory=list)
 
 
 class SceneCard(StrictModel):
@@ -579,7 +739,8 @@ class SceneCard(StrictModel):
     actors: list[SceneActor] = Field(default_factory=list, max_length=4)
     primitive_ids: list[str] = Field(default_factory=list)
     passage_ids: list[str] = Field(default_factory=list)
-    estimated_duration_seconds: int = Field(default=0, ge=0)
+    estimated_duration_seconds: int = Field(gt=0)
+    coverage_depth: Literal["deep", "standard", "compressed"] = "standard"
 
     @model_validator(mode="after")
     def validate_card_shape(self) -> "SceneCard":
@@ -605,9 +766,10 @@ class EpisodePlanDraft(StrictModel):
     thematic_focus: str = ""
     arc_summary: str = ""
     unresolved_questions: list[str] = Field(default_factory=list)
+    actor_arc_directives: list[ActorArcDirective] = Field(default_factory=list, max_length=3)
     framing: FramingBlock
     scene_cards: list[SceneCard] = Field(default_factory=list, min_length=1)
-    target_duration_minutes: float = Field(default=110.0, gt=0.0)
+    target_duration_minutes: float = Field(default=90.0, gt=0.0)
 
     @model_validator(mode="after")
     def validate_scene_cards(self) -> "EpisodePlanDraft":

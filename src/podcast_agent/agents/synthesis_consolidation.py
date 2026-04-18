@@ -21,6 +21,7 @@ class SynthesisConsolidationAgent(Agent):
         axes_summary: list[dict],
         book_metadata: list[dict],
         series_size_hint: int | None,
+        actor_metadata: dict | None = None,
         consolidation_feedback: dict | None = None,
     ) -> dict:
         payload = {
@@ -29,6 +30,8 @@ class SynthesisConsolidationAgent(Agent):
             "axes": axes_summary,
             "books": book_metadata,
         }
+        if actor_metadata is not None:
+            payload["actor_metadata"] = actor_metadata
         if series_size_hint is not None:
             payload["series_size_hint"] = series_size_hint
         if consolidation_feedback is not None:

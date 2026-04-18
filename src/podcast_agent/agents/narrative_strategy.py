@@ -20,6 +20,7 @@ class NarrativeStrategyAgent(Agent):
         thematic_axes: list[dict],
         project_metadata: dict,
         episode_count: int | None,
+        actor_metadata: dict | None = None,
         strategy_feedback: dict | None = None,
     ) -> dict:
         payload = {
@@ -27,6 +28,8 @@ class NarrativeStrategyAgent(Agent):
             "thematic_axes": thematic_axes,
             "project": project_metadata,
         }
+        if actor_metadata is not None:
+            payload["actor_metadata"] = actor_metadata
         if episode_count is not None:
             payload["requested_episode_count"] = episode_count
         if strategy_feedback is not None:

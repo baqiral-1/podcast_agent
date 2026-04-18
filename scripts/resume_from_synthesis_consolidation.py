@@ -15,6 +15,7 @@ from podcast_agent.pipeline.orchestrator import (
     _save_json,
 )
 from podcast_agent.schemas.models import (
+    ActorMetadata,
     ProjectStatus,
     SpokenScript,
     SynthesisPrimitivesArtifact,
@@ -22,12 +23,14 @@ from podcast_agent.schemas.models import (
     ThematicCorpus,
     ThematicProject,
 )
+from podcast_agent.utils.actor_metadata import compact_actor_metadata
 
 
 STRICT_TRACKED_FILES = (
     "thematic_axes.json",
     "thematic_corpus.json",
     "synthesis_primitives.json",
+    "actor_metadata.json",
 )
 
 
@@ -106,6 +109,7 @@ async def _resume_from_synthesis_consolidation(
     corpus = ThematicCorpus.model_validate(_load_json(project_dir / "thematic_corpus.json"))
     axes_from_file = _load_axes_from_file(project_dir)
     primitives = SynthesisPrimitivesArtifact.model_validate(_load_json(project_dir / "synthesis_primitives.json"))
+    actor_metadata = ActorMetadata.model_validate(_load_json(project_dir / "actor_metadata.json"))
 
     if _axis_digest(axes_from_file) != _axis_digest(corpus.axes):
         raise RuntimeError(
@@ -165,10 +169,15 @@ async def _resume_from_synthesis_consolidation(
             axes_summary=axes_summary,
             book_metadata=book_metadata,
             series_size_hint=project.requested_episode_count,
+            actor_metadata=compact_actor_metadata(actor_metadata),
         )
         consolidation = await asyncio.to_thread(
             orchestrator.synthesis_consolidation_agent.run,
             consolidation_payload,
+        )
+        consolidation, _ = orchestrator._clean_consolidation_actor_links(
+            consolidation,
+            actor_metadata,
         )
         synthesis_map = _reconstruct_synthesis_map(
             project_id=project.project_id,
@@ -177,11 +186,12 @@ async def _resume_from_synthesis_consolidation(
         )
         _save_json(project_dir / "synthesis_map.json", synthesis_map)
 
-        strategy = await orchestrator._choose_narrative_strategy(
+        strategy, _ = await orchestrator._choose_narrative_strategy(
             project=project,
             synthesis_map=synthesis_map,
             corpus=corpus,
             project_dir=project_dir,
+            actor_metadata=actor_metadata,
         )
         project = orchestrator._resolve_episode_count_from_strategy(project, strategy)
         _save_json(project_dir / "thematic_project.json", project)
@@ -189,12 +199,13 @@ async def _resume_from_synthesis_consolidation(
         project = project.model_copy(update={"status": ProjectStatus.PLANNING})
         _save_json(project_dir / "thematic_project.json", project)
 
-        episode_plans = await orchestrator._plan_series(
+        episode_plans, _ = await orchestrator._plan_series(
             project=project,
             synthesis_map=synthesis_map,
             strategy=strategy,
             corpus=corpus,
             project_dir=project_dir,
+            actor_metadata=actor_metadata,
         )
 
         project = project.model_copy(update={"status": ProjectStatus.PRODUCING})
@@ -202,7 +213,14 @@ async def _resume_from_synthesis_consolidation(
 
         sem = asyncio.Semaphore(max(1, project.config.episode_write_concurrency))
         ep_tasks = [
-            orchestrator._produce_episode(plan, project, corpus, project_dir, sem)
+            orchestrator._produce_episode(
+                plan,
+                project,
+                corpus,
+                actor_metadata,
+                project_dir,
+                sem,
+            )
             for plan in episode_plans
         ]
         ep_results = await asyncio.gather(*ep_tasks, return_exceptions=True)

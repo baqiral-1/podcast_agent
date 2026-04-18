@@ -26,6 +26,10 @@ from podcast_agent.pipeline.orchestrator import (
     _trim_candidate_texts_by_bm25_query_text,
 )
 from podcast_agent.schemas.models import (
+    ActorArcDirective,
+    ActorArcRef,
+    ActorMetadata,
+    ActorProfile,
     BookRecord,
     ClusterPathOccurrence,
     EpisodeCandidateCluster,
@@ -79,6 +83,30 @@ def _primitive(primitive_id: str, title: str = "Title") -> SynthesisPrimitive:
     )
 
 
+def _actor_arc_directive(actor_id: str = "actor_primary") -> ActorArcDirective:
+    return ActorArcDirective(
+        actor_id=actor_id,
+        episode_roles=[
+            ActorArcRef(ref_id=f"{actor_id}_role_1", label="episode role", text="Central to this episode.")
+        ],
+        listener_tracking=[
+            ActorArcRef(ref_id=f"{actor_id}_tracking_1", label="listener tracking", text="Track a fragile goal.")
+        ],
+        tension_lines=[
+            ActorArcRef(ref_id=f"{actor_id}_tension_1", label="tension line", text="Pressure narrows choices.")
+        ],
+        arc_progression=[
+            ActorArcRef(ref_id=f"{actor_id}_progression_1", label="arc progression", text="A decision changes the arc.")
+        ],
+        scene_jobs=[
+            ActorArcRef(ref_id=f"{actor_id}_scene_job_1", label="scene job", text="Use where pressure becomes consequence.")
+        ],
+        repetition_guardrails=[
+            ActorArcRef(ref_id=f"{actor_id}_guardrail_1", label="repetition guardrail", text="Do not repeat without change.")
+        ],
+    )
+
+
 def _primitives_by_family(
     **overrides: list[SynthesisPrimitive],
 ) -> dict[str, list[SynthesisPrimitive]]:
@@ -110,6 +138,7 @@ def test_build_scene_card_primitive_warnings_reports_density_and_unknown_ids():
             intended_move="Move",
             primitive_ids=[],
             passage_ids=["p1"],
+            estimated_duration_seconds=60,
         ),
         SceneCard(
             scene_id="scene_2",
@@ -122,6 +151,7 @@ def test_build_scene_card_primitive_warnings_reports_density_and_unknown_ids():
             intended_move="Move",
             primitive_ids=["tp_1", "tp_2", "tp_3"],
             passage_ids=["p2"],
+            estimated_duration_seconds=90,
         ),
     ]
     warnings = _build_scene_card_primitive_warnings(
@@ -196,50 +226,72 @@ def test_compute_scene_word_count_targets_uses_scene_durations():
     assert targets == {"scene_1": 60, "scene_2": 180}
 
 
-def test_compute_scene_word_count_targets_falls_back_to_even_split_when_no_durations():
+def test_compute_scene_word_count_targets_scales_with_words_per_minute():
     scenes = [
         SceneCard(
-            scene_id="scene_1",
-            title="Scene 1",
+            scene_id="scene_anchor",
+            title="Anchor",
             scene_role="setup",
             dominant_cluster_occurrence_id="occ_1",
             entry_image="Image",
             local_question="Question",
             observable_detail="Detail",
             intended_move="Move",
-            primitive_ids=[],
             passage_ids=["p1"],
-            estimated_duration_seconds=0,
+            estimated_duration_seconds=30,
+            coverage_depth="deep",
         ),
         SceneCard(
-            scene_id="scene_2",
-            title="Scene 2",
+            scene_id="scene_compressed",
+            title="Compressed",
             scene_role="reaction",
             dominant_cluster_occurrence_id="occ_2",
             entry_image="Image",
             local_question="Question",
             observable_detail="Detail",
             intended_move="Move",
-            primitive_ids=[],
             passage_ids=["p2"],
-            estimated_duration_seconds=0,
-        ),
-        SceneCard(
-            scene_id="scene_3",
-            title="Scene 3",
-            scene_role="consequence",
-            dominant_cluster_occurrence_id="occ_3",
-            entry_image="Image",
-            local_question="Question",
-            observable_detail="Detail",
-            intended_move="Move",
-            primitive_ids=[],
-            passage_ids=["p3"],
-            estimated_duration_seconds=0,
+            estimated_duration_seconds=90,
+            coverage_depth="compressed",
         ),
     ]
-    targets = _compute_scene_word_count_targets(scenes, episode_target_word_count=10, words_per_minute=120.0)
-    assert targets == {"scene_1": 4, "scene_2": 3, "scene_3": 3}
+    targets = _compute_scene_word_count_targets(scenes, episode_target_word_count=1200, words_per_minute=140.0)
+    assert targets == {"scene_anchor": 70, "scene_compressed": 210}
+
+
+def test_compute_scene_word_count_targets_requires_positive_scene_durations():
+    valid_scene = SceneCard(
+        scene_id="scene_1",
+        title="Scene 1",
+        scene_role="setup",
+        dominant_cluster_occurrence_id="occ_1",
+        entry_image="Image",
+        local_question="Question",
+        observable_detail="Detail",
+        intended_move="Move",
+        passage_ids=["p1"],
+        estimated_duration_seconds=60,
+    )
+    scenes = [
+        valid_scene,
+        valid_scene.model_copy(
+            update={
+                "scene_id": "scene_2",
+                "title": "Scene 2",
+                "scene_role": "reaction",
+                "dominant_cluster_occurrence_id": "occ_2",
+                "passage_ids": ["p2"],
+                "estimated_duration_seconds": 0,
+            }
+        ),
+    ]
+
+    with pytest.raises(ValueError, match="scene_2"):
+        _compute_scene_word_count_targets(
+            scenes,
+            episode_target_word_count=1200,
+            words_per_minute=120.0,
+        )
 
 
 @pytest.mark.parametrize(
@@ -248,14 +300,14 @@ def test_compute_scene_word_count_targets_falls_back_to_even_split_when_no_durat
         (0, []),
         (1, [1]),
         (2, [1, 1]),
-        (3, [1, 1, 1]),
-        (4, [1, 1, 1, 1]),
-        (5, [2, 1, 1, 1]),
-        (6, [2, 2, 1, 1]),
-        (7, [2, 2, 2, 1]),
-        (8, [2, 2, 2, 2]),
-        (9, [3, 2, 2, 2]),
-        (10, [3, 3, 2, 2]),
+        (3, [2, 1]),
+        (4, [2, 2]),
+        (5, [3, 2]),
+        (6, [3, 3]),
+        (7, [4, 3]),
+        (8, [4, 4]),
+        (9, [5, 4]),
+        (10, [5, 5]),
     ],
 )
 def test_cluster_batch_group_sizes(cluster_count: int, expected: list[int]):
@@ -487,6 +539,7 @@ def test_map_synthesis_caps_total_passages_and_keeps_cross_pair_priority(monkeyp
                 ExtractedPassage(passage_id="p4", book_id="b1", chunk_ids=["c4"], text="P4", axis_id="axis_2", relevance_score=0.95, quotability_score=0.9),
                 ExtractedPassage(passage_id="p5", book_id="b1", chunk_ids=["c5"], text="P5", axis_id="axis_2", relevance_score=0.85, quotability_score=0.8),
                 ExtractedPassage(passage_id="p6", book_id="b1", chunk_ids=["c6"], text="P6", axis_id="axis_2", relevance_score=0.1, quotability_score=0.1),
+                ExtractedPassage(passage_id="p7", book_id="b1", chunk_ids=["c1"], text="P7 duplicate chunk", axis_id="axis_2", relevance_score=0.99, quotability_score=0.95),
             ],
         },
         cross_book_pairs=[
@@ -511,6 +564,7 @@ def test_map_synthesis_caps_total_passages_and_keeps_cross_pair_priority(monkeyp
     assert len(all_ids) == 4
     assert "p1" in all_ids
     assert "p6" in all_ids
+    assert "p7" not in all_ids
 
 
 def test_write_episode_passes_full_text_to_writing_agent(monkeypatch, tmp_path):
@@ -703,12 +757,12 @@ def test_write_episode_uses_multiple_batches_for_many_scene_cards(monkeypatch, t
     ep_dir = tmp_path / "episodes" / "1"
     asyncio.run(orchestrator._write_episode(plan, project, corpus, ep_dir, tmp_path))
 
-    assert len(captured_payloads) == 4
-    assert [payload["batch_id"] for payload in captured_payloads] == ["batch_1", "batch_2", "batch_3", "batch_4"]
-    assert [len(payload["active_scene_card_ids"]) for payload in captured_payloads] == [7, 7, 6, 6]
-    assert [len(payload["passages"]) for payload in captured_payloads] == [7, 7, 6, 6]
-    assert [payload["batch_target_word_count_lower"] for payload in captured_payloads] == [4200, 4200, 3600, 3600]
-    assert [payload["batch_target_word_count_higher"] for payload in captured_payloads] == [4900, 4900, 4200, 4200]
+    assert len(captured_payloads) == 2
+    assert [payload["batch_id"] for payload in captured_payloads] == ["batch_1", "batch_2"]
+    assert [len(payload["active_scene_card_ids"]) for payload in captured_payloads] == [13, 13]
+    assert [len(payload["passages"]) for payload in captured_payloads] == [13, 13]
+    assert [payload["batch_target_word_count_lower"] for payload in captured_payloads] == [7150, 7150]
+    assert [payload["batch_target_word_count_higher"] for payload in captured_payloads] == [8450, 8450]
 
     for payload in captured_payloads:
         assert "previous_sections" not in payload
@@ -717,8 +771,140 @@ def test_write_episode_uses_multiple_batches_for_many_scene_cards(monkeypatch, t
         assert [scene["scene_id"] for scene in payload_scene_cards] == payload["active_scene_card_ids"]
         assert payload["plan"]["framing"]["handoff_scene_card_id"] == payload["active_scene_card_ids"][0]
         assert all("estimated_duration_seconds" not in scene for scene in payload_scene_cards)
-        assert all(scene["target_word_count_lower"] == 600 for scene in payload_scene_cards)
-        assert all(scene["target_word_count_higher"] == 700 for scene in payload_scene_cards)
+        assert all(scene["target_word_count_lower"] == 550 for scene in payload_scene_cards)
+        assert all(scene["target_word_count_higher"] == 650 for scene in payload_scene_cards)
+
+
+def test_write_episode_payload_uses_unequal_scene_duration_targets(monkeypatch, tmp_path):
+    heuristic = HeuristicLLMClient()
+    monkeypatch.setattr("podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic)
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.PGVectorRetrieval",
+        lambda settings, run_logger=None: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.RetrievalService",
+        lambda settings, vector_store: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.build_tts_client",
+        lambda settings: DummyTTSClient(),
+    )
+
+    orchestrator = PipelineOrchestrator()
+    captured: dict[str, dict] = {}
+
+    def fake_writing_run(payload: dict):
+        captured["payload"] = payload
+        return orchestrator.writing_agent.response_model.model_validate(
+            {
+                "batch_id": payload["batch_id"],
+                "prose_sections": [
+                    {
+                        "section_id": "section_1",
+                        "scene_card_ids": payload["active_scene_card_ids"],
+                        "movement_goal": "discover",
+                        "text": "Draft text.",
+                    }
+                ],
+                "transitions": [],
+                "window_map": [{"batch_id": payload["batch_id"], "section_ids": ["section_1"], "transition_ids": []}],
+            }
+        )
+
+    orchestrator.writing_agent.run = fake_writing_run
+
+    project = ThematicProject(
+        project_id="proj",
+        theme="War on terror",
+        books=[BookRecord(book_id="b1", title="Book 1", author="Author", source_path="/tmp/book.txt", source_type="txt")],
+    )
+    plan = EpisodePlan.model_validate(
+        {
+            "episode_number": 1,
+            "title": "Episode 1",
+            "driving_question": "What changes?",
+            "thematic_focus": "Focus",
+            "arc_summary": "Arc",
+            "unresolved_questions": [],
+            "framing": {
+                **_framing().model_dump(mode="json"),
+                "handoff_scene_card_id": "scene_anchor",
+            },
+            "scene_cards": [
+                {
+                    "scene_id": "scene_anchor",
+                    "title": "Anchor scene",
+                    "scene_role": "setup",
+                    "dominant_cluster_occurrence_id": "occ_1",
+                    "entry_image": "Image",
+                    "local_question": "Question",
+                    "observable_detail": "Detail",
+                    "intended_move": "Move",
+                    "primitive_ids": [],
+                    "passage_ids": ["p1"],
+                    "estimated_duration_seconds": 6300,
+                    "coverage_depth": "deep",
+                },
+                {
+                    "scene_id": "scene_context",
+                    "title": "Context scene",
+                    "scene_role": "process",
+                    "dominant_cluster_occurrence_id": "occ_1",
+                    "entry_image": "Image",
+                    "local_question": "Question",
+                    "observable_detail": "Detail",
+                    "intended_move": "Move",
+                    "primitive_ids": [],
+                    "passage_ids": ["p2"],
+                    "estimated_duration_seconds": 2100,
+                    "coverage_depth": "compressed",
+                },
+            ],
+            "target_duration_minutes": 140.0,
+            "target_word_count": 16800,
+        }
+    )
+    corpus = ThematicCorpus(
+        project_id="proj",
+        passages_by_axis={
+            "axis_1": [
+                ExtractedPassage(
+                    passage_id="p1",
+                    book_id="b1",
+                    chunk_ids=["c1"],
+                    text="Trimmed text 1",
+                    full_text="Full text evidence 1.",
+                    axis_id="axis_1",
+                ),
+                ExtractedPassage(
+                    passage_id="p2",
+                    book_id="b1",
+                    chunk_ids=["c2"],
+                    text="Trimmed text 2",
+                    full_text="Full text evidence 2.",
+                    axis_id="axis_1",
+                ),
+            ]
+        },
+    )
+    ep_dir = tmp_path / "episodes" / "1"
+
+    asyncio.run(orchestrator._write_episode(plan, project, corpus, ep_dir, tmp_path))
+
+    scene_targets = {
+        scene["scene_id"]: (
+            scene["target_word_count_lower"],
+            scene["target_word_count_higher"],
+        )
+        for scene in captured["payload"]["plan"]["scene_cards"]
+    }
+    assert scene_targets == {
+        "scene_anchor": (11550, 13650),
+        "scene_context": (3850, 4550),
+    }
+    assert captured["payload"]["batch_target_word_count_lower"] == 15400
+    assert captured["payload"]["batch_target_word_count_higher"] == 18200
 
 
 def test_write_episode_uses_no_citation_agent_when_skip_grounding(monkeypatch, tmp_path):
@@ -822,13 +1008,13 @@ def test_write_episode_uses_no_citation_agent_when_skip_grounding(monkeypatch, t
     assert "scene_word_count_targets" not in payload
     assert "previous_sections" not in payload
     assert "previous_transitions" not in payload
-    assert payload["batch_target_word_count_lower"] == 600
-    assert payload["batch_target_word_count_higher"] == 700
+    assert payload["batch_target_word_count_lower"] == 550
+    assert payload["batch_target_word_count_higher"] == 650
     scene = payload["plan"]["scene_cards"][0]
     assert scene["scene_id"] == "scene_1"
     assert "estimated_duration_seconds" not in scene
-    assert scene["target_word_count_lower"] == 600
-    assert scene["target_word_count_higher"] == 700
+    assert scene["target_word_count_lower"] == 550
+    assert scene["target_word_count_higher"] == 650
     assert script.prose_sections[0].citations == []
 
 
@@ -1005,6 +1191,7 @@ def test_plan_series_parallelizes_episode_planning_with_configured_limit(monkeyp
                             "dominant_cluster_occurrence_id": primary_occurrence_id,
                             "passage_ids": [],
                             "primitive_ids": [],
+                            "estimated_duration_seconds": 4200,
                         }
                     ],
                     "target_duration_minutes": 140.0,
@@ -1151,7 +1338,7 @@ def test_plan_series_parallelizes_episode_planning_with_configured_limit(monkeyp
         },
     )
 
-    plans = asyncio.run(
+    plans, _actor_metrics = asyncio.run(
         orchestrator._plan_series(project, synthesis_map, strategy, corpus, tmp_path)
     )
 
@@ -1176,6 +1363,159 @@ def test_plan_series_parallelizes_episode_planning_with_configured_limit(monkeyp
         assert [passage["text"] for passage in available_passages] == [
             expected_passage_text_by_episode[episode_number]
         ]
+
+
+def test_plan_series_uses_actor_arc_directives_for_episode_metadata(monkeypatch, tmp_path):
+    heuristic = HeuristicLLMClient()
+    monkeypatch.setattr("podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic)
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.PGVectorRetrieval",
+        lambda settings, run_logger=None: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.RetrievalService",
+        lambda settings, vector_store: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.build_tts_client",
+        lambda settings: DummyTTSClient(),
+    )
+
+    orchestrator = PipelineOrchestrator()
+    captured_payload: dict[str, object] = {}
+
+    def fake_planning_run(payload: dict):
+        captured_payload.update(payload)
+        primary_occurrence_id = payload["episode"]["cluster_path"][0]["occurrence_id"]
+        return orchestrator.episode_planning_agent.response_model.model_validate(
+            {
+                "episode_number": payload["episode"]["episode_number"],
+                "title": payload["episode"]["title"],
+                "driving_question": payload["episode"]["driving_question"],
+                "thematic_focus": payload["episode"]["thematic_focus"],
+                "arc_summary": payload["episode"]["arc_summary"],
+                "unresolved_questions": payload["episode"]["unresolved_questions"],
+                "framing": {
+                    "opening_image": "Image",
+                    "threat_or_unresolved_action": "Threat",
+                    "opening_question": "Question",
+                    "handoff_scene_card_id": "scene_1",
+                },
+                "scene_cards": [
+                    {
+                        "scene_id": "scene_1",
+                        "title": "Scene 1",
+                        "scene_role": "setup",
+                        "dominant_cluster_occurrence_id": primary_occurrence_id,
+                        "passage_ids": ["p1"],
+                        "primitive_ids": ["tp_1"],
+                        "estimated_duration_seconds": 4200,
+                    }
+                ],
+                "target_duration_minutes": 140.0,
+            }
+        )
+
+    orchestrator.episode_planning_agent.run = fake_planning_run
+    strategy_actor = _actor_arc_directive("actor_primary")
+    strategy = NarrativeStrategy(
+        strategy_type="convergence",
+        justification="test",
+        series_arc="test arc",
+        episodes=[
+            StrategyEpisode(
+                episode_number=1,
+                title="Episode 1",
+                driving_question="Q1",
+                arc_summary="A1",
+                actor_arc_directives=[strategy_actor],
+                cluster_path=[
+                    ClusterPathOccurrence(
+                        occurrence_id="occ_1",
+                        cluster_id="ec_1",
+                        usage="primary",
+                    )
+                ],
+            )
+        ],
+    )
+    primitive = _primitive("tp_1", "T1").model_copy(
+        update={
+            "actor_ids": ["actor_primitive"],
+            "primary_actor_ids": ["actor_primitive"],
+        }
+    )
+    synthesis_map = SynthesisMap(
+        project_id="proj",
+        episode_candidate_clusters=[
+            EpisodeCandidateCluster(
+                cluster_id="ec_1",
+                title="C1",
+                summary="S1",
+                primary_member_id="tp_1",
+                member_ids=["tp_1"],
+                local_question="L1",
+                local_payoff_shape="reveal",
+                actor_ids=["actor_cluster"],
+                primary_actor_id="actor_cluster",
+            )
+        ],
+        primitives_by_family=_primitives_by_family(turning_points=[primitive]),
+    )
+    project = ThematicProject(
+        project_id="proj",
+        theme="War on terror",
+        books=[
+            BookRecord(
+                book_id="b1",
+                title="Book 1",
+                author="Author",
+                source_path="/tmp/book.txt",
+                source_type="txt",
+            )
+        ],
+        episode_count=1,
+    )
+    corpus = ThematicCorpus(
+        project_id="proj",
+        passages_by_axis={
+            "axis_1": [
+                ExtractedPassage(
+                    passage_id="p1",
+                    book_id="b1",
+                    chunk_ids=["c1"],
+                    text="Trimmed planning text 1",
+                    full_text="Full planning text 1",
+                    chapter_ref="Chapter 1",
+                    axis_id="axis_1",
+                )
+            ]
+        },
+    )
+    actor_metadata = ActorMetadata(
+        project_id="proj",
+        actors=[
+            ActorProfile(actor_id="actor_primary", display_name="Primary Actor", actor_type="person"),
+            ActorProfile(actor_id="actor_cluster", display_name="Cluster Actor", actor_type="person"),
+            ActorProfile(actor_id="actor_primitive", display_name="Primitive Actor", actor_type="person"),
+        ],
+    )
+
+    plans, _actor_metrics = asyncio.run(
+        orchestrator._plan_series(
+            project,
+            synthesis_map,
+            strategy,
+            corpus,
+            tmp_path,
+            actor_metadata=actor_metadata,
+        )
+    )
+
+    assert [actor["actor_id"] for actor in captured_payload["actor_metadata"]["actors"]] == [
+        "actor_primary"
+    ]
+    assert [actor.actor_id for actor in plans[0].actor_arc_directives] == ["actor_primary"]
 
 
 def test_plan_series_trims_available_passages_for_planning_with_episode_context(
@@ -1224,6 +1564,7 @@ def test_plan_series_trims_available_passages_for_planning_with_episode_context(
                         "dominant_cluster_occurrence_id": primary_occurrence_id,
                         "passage_ids": [],
                         "primitive_ids": [],
+                        "estimated_duration_seconds": 4200,
                     }
                 ],
                 "target_duration_minutes": 130.0,
@@ -1309,7 +1650,7 @@ def test_plan_series_trims_available_passages_for_planning_with_episode_context(
         },
     )
 
-    plans = asyncio.run(
+    plans, _actor_metrics = asyncio.run(
         orchestrator._plan_series(project, synthesis_map, strategy, corpus, tmp_path)
     )
 

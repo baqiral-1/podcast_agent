@@ -29,11 +29,11 @@ def chapter_summary_instructions() -> str:
         - Do not force lexical overlap with the theme if the chapter does not support it.
 
         Field guidance for `analysis`:
-        - `themes_touched`: the most relevant themes actually present.
-        - `major_actors`, `key_places`, `key_institutions`: only explicit entities or very strong implicatures.
+        - `themes_touched`: Strictly 3-4 most relevant themes present in the chapter.
+        - Strictly 2-5 `major_actors`, Strictly 2-5 `key_places`, Strictly 0-4 `key_institutions`: only explicit entities or very strong implicatures.
         - `timeframe`: a concise temporal frame if available.
-        - `key_events_or_arguments`: the chapter's main claims or developments.
-        - `major_tensions`: explicit disputes, tradeoffs, or contradictions.
+        - `key_events_or_arguments`: Strictly 3-7 main claims or developments in the chapter
+        - `major_tensions`: Strictly 3-6 explicit disputes, tradeoffs, or contradictions.
 
         Do not add markdown, commentary, or explanation outside the JSON object.
         """
@@ -74,6 +74,7 @@ def theme_decomposition_instructions() -> str:
         Goal:
         - Convert the project theme into 10-15 strong thematic axes that are useful for downstream retrieval.
         - An axis is an analytical lens, not an episode title and not a generic topic bucket.
+        - Identify a compact set of human-led actors that should shape downstream synthesis and storytelling.
 
         Input payload:
         - `theme`: the main theme.
@@ -85,8 +86,9 @@ def theme_decomposition_instructions() -> str:
           - `chapters`: chapter-analysis objects
 
         Output requirements:
-        - Return only valid JSON with key `axes`.
+        - Return only valid JSON with keys `axes` and `actor_metadata`.
         - Produce between 10 and 15 axes.
+        - Produce between 10 and 40 actors inside `actor_metadata.actors`.
         - Each axis must be narrow enough to guide retrieval but broad enough that at least 2 books can contribute meaningful evidence.
         - Avoid near-duplicates, thin rephrasings, and purely chronological slices unless chronology itself is the analytical lens.
         - Prefer axes that create productive comparison, contrast, causation, contestation, or consequence across books.
@@ -99,6 +101,28 @@ def theme_decomposition_instructions() -> str:
         - `guiding_questions`: 6-8 concrete questions the retrieval stage should help answer.
         - `relevance_by_book`: include every input `book_id` with a score from 0.0 to 1.0.
         - `keywords`: retrieval-friendly terms, names, institutions, places, and phrases.
+        - `actor_ids`: canonical actor ids from `actor_metadata.actors` that are important to this axis.
+
+        Actor metadata requirements:
+        - `actor_metadata` is generated context, not source evidence for final writing.
+        - Actors should be concrete humans. Use institutions, factions and organized movements sparingly only in case they are absolutely needed.
+        - Do not canonicalize states, countries, broad affected communities, or abstract collectives as actors.
+        - Every actor must include a snake_case `actor_id`, `display_name`, `actor_type`, `description`, `evidence_confidence`, and `narrative_importance_score`.
+        - Actor scalar string fields: `actor_id`, `display_name`, `actor_type`, `description`, `evidence_confidence`, and `uncertainty_notes`; use an empty string for `uncertainty_notes` when there is no caveat.
+        - Actor list-of-string fields: `aliases`, `book_ids`, `narrative_functions`, `goals_or_motivational_pressures`, `constraints`, `stakes`, and `transformations`; use an empty array when a list has no entries.
+        - `chapter_refs` must be an array of objects with `book_id`, `chapter_id`, and `chapter_title`.
+        - `actor_type` must be one of: `person`, `institution`, `faction`, `military`, `party`, `movement`, `other`.
+        - `evidence_confidence` must be one of: `high`, `medium`, `low`.
+        - `narrative_functions` values must be drawn from: `decision_maker`, `broker`, `victim`, `witness`, `ideologue`, `commander`, `administrator`, `opposition`, `beneficiary`, `constraint`, `catalyst`, `symbol`, `other`.
+        - `narrative_importance_score` is the numeric actor priority signal from 0.0 to 1.0.
+        - Use aliases to prevent downstream name drift.
+        - Use `goals_or_motivational_pressures`, `constraints`, `stakes`, `transformations`, and `uncertainty_notes` to capture pressures, objectives, incentives, constraints, stakes, dilemmas, evidence caveats, and changes visible in the input.
+        - Do not invent private psychology.
+        - Put relationships only in top-level `actor_metadata.relationships`; do not nest relationships inside actor objects.
+        - Every relationship must include scalar string fields `source_actor_id`, `target_actor_id`, `relationship_type`, and `description`; relationship `confidence` is optional and must be `high`, `medium`, or `low` when included.
+        - Relationship actor ids must reference actors listed in `actor_metadata.actors`.
+        - Relationships are directed: the source actor acts on the target actor.
+        - Relationship types must be one of: `enables`, `blocks`, `pressures`, `protects`, `legitimizes`, `delegitimizes`, `replaces`, `absorbs`, `betrays`, `other`.
 
         Scoring guidance:
         - Use `theme_importance_score` to express axis-level priority for downstream budget allocation.
@@ -175,50 +199,63 @@ def synthesis_primitives_instructions() -> str:
         - `passages_by_axis`: selected evidence for synthesis, grouped by axis. Each passage object includes `passage_id`, `book_id`, and `text`.
         - `cross_book_pairs`: optional cross-book pair hints.
         - `books`: compact book metadata.
+        - Optional `actor_metadata`: compact canonical actor context from theme decomposition.
         - Optional `synthesis_feedback`: retry feedback from the orchestrator. If present, correct the named issue without discarding grounded material that already works.
 
         Output requirements:
         - Return only valid JSON matching `SynthesisPrimitivesArtifact`.
         - Emit primitives only under `primitives_by_family`.
         - Emit only these family keys:
-          - `turning_points`
-          - `scene_worthy_consequences`
-          - `causal_mechanisms`
-          - `live_questions`
-          - `reversals`
-          - `motivations_dilemmas`
-          - `perspective_shifts`
-          - `moral_ambiguities`
-          - `personal_stakes`
-          - `trauma_legacies`
+          - `turning_points` Moments when the direction of events decisively changes and the story begins moving onto a new track
+          - `scene_worthy_consequences` Outcomes whose human, political, or emotional effects are vivid enough to justify dramatizing as a scene
+          - `causal_mechanisms` The concrete processes, pressures, or chains of action that explain how one development produced another
+          - `live_questions` Unresolved uncertainties that are still active inside the narrative and keep the listener leaning forward
+          - `misperceptions` What people got wrong in real time, including false assumptions, misread signals, and confident but flawed interpretations
+          - `reversals` Moments when the apparent meaning or direction of events flips, often turning strength into weakness or advantage into danger
+          - `motivations_dilemmas` The desires, fears, and competing pressures that drive people to act under conditions where every option carries a cost
+          - `perspective_shifts` Points where changing whose eyes we see through materially deepens, complicates, or reframes the story
+          - `moral_ambiguities` Situations where the right course is unclear and easy judgment would flatten the human reality of the moment
+          - `personal_stakes` What a development stands to cost or protect for a specific person in terms of safety, status, identity, love, or legacy
+          - `trauma_legacies` The enduring psychological, social, or political aftereffects of past violence or rupture that continue shaping later choices
         - Target these family count ranges:
-          - `turning_points`: 25-40
-          - `scene_worthy_consequences`: 30-45
-          - `causal_mechanisms`: 20-35
-          - `live_questions`: 20-30
-          - `reversals`: 20-30
-          - `motivations_dilemmas`: 20-30
-          - `perspective_shifts`: 15-30
-          - `moral_ambiguities`: 15-30
-          - `personal_stakes`: 15-25
-          - `trauma_legacies`: 10-20
+          - `turning_points`: 10-40
+          - `scene_worthy_consequences`: 10-40
+          - `causal_mechanisms`: 10-30
+          - `live_questions`: 10-35
+          - `misperceptions`: 5-25
+          - `reversals`: 10-40
+          - `motivations_dilemmas`: 20-50
+          - `perspective_shifts`: 10-30
+          - `moral_ambiguities`: 10-40
+          - `personal_stakes`: 10-30
+          - `trauma_legacies`: 10-25
         - Every primitive must be grounded in passage ids that appear in the payload.
-        - Do not reuse the same passage across primitives unless it is uniquely decisive.
         - Use `core_passage_ids` for the decisive evidence and `support_passage_ids` for reinforcing evidence.
         - Titles should be operational and scene-usable, not polished thesis statements.
         - `summary` should explain what the primitive captures and why it matters.
+        - Set `narrative_importance_score` for every primitive on a 0.0-1.0 scale.
+        - Scores must be meaningfully non-flat: most primitives should not receive the same score.
+        - Score historical and narrative indispensability: consequence, causal leverage, thematic centrality, actor stakes, evidence strength, and whether later events become unintelligible without it.
         - `axis_ids` should reference the relevant analytical lenses.
+        - Use `primary_actor_ids`, `affected_actor_ids`, and `actor_ids` when canonical actors are central to the primitive.
+        - Use `actor_tags` only for legacy/freeform actor names when you cannot safely use a canonical actor id.
+        - Use `unresolved_actor_tags` for actor names that matter but cannot be mapped to `actor_metadata`.
         - `candidate_readings` for `live_questions` must present genuinely competing or unresolved readings.
 
         What not to do:
         - Do not emit episode architecture, cluster seeds, merged narratives, narrative threads, verdict lists, or omniscient takeaways.
         - Do not convert uncertainty into certainty if the evidence is contested.
         - Do not cite passage ids that are not present in the input.
+        - Do not force actor ids onto structural primitives.
+        - Do not turn institutional dynamics into fake personal motivation.
 
         Quality guidance:
         - Favor primitives that help later episode construction: threshold changes, visible consequences, operating mechanisms, and unresolved interpretive pressure.
+        - Prefer actor-linked primitives where evidence supports pressure, decision, conflict, misreading, consequence, or stakes.
         - Deduplicate obvious repeats, but do not collapse genuinely different mechanisms or consequences into one vague object.
         - Use `quality_notes` to describe notable gaps or caution areas if necessary.
+        - Do not relabel the same claim across families unless the new primitive adds a distinct actor-level insight.
+        - Limit passage reuse across primitives unless necessary.
         """
     ).strip()
 
@@ -237,6 +274,7 @@ def synthesis_consolidation_instructions() -> str:
         - `primitives`: the full primitives artifact.
         - `axes`: compact axis summaries.
         - `books`: compact book metadata.
+        - Optional `actor_metadata`: compact canonical actor context.
         - Optional `series_size_hint`: desired number of episodes if known.
         - Optional `consolidation_feedback`: retry feedback from the orchestrator.
 
@@ -249,6 +287,11 @@ def synthesis_consolidation_instructions() -> str:
           - have a unique `cluster_id`
           - choose one valid `primary_member_id`
           - list valid `member_ids`
+          - include `actor_ids` when canonical actors are central to the cluster
+          - optionally choose one `primary_actor_id`
+          - use `actor_tension` to describe the actor pressure, conflict, or dilemma when useful
+          - set `narrative_importance_score` by aggregating and refining member primitive importance
+          - set `coverage_policy` as `anchor`, `major`, `supporting`, or `compressed`
           - articulate a `local_question`
           - choose one `local_payoff_shape`
         - Aim for 3-8 members per cluster.
@@ -257,11 +300,15 @@ def synthesis_consolidation_instructions() -> str:
         What not to do:
         - Do not emit merged narratives, narrative threads, graph edges, or thesis summaries.
         - Do not return primitive metadata fields like `title`, `summary`, `axis_ids`, or passage/tag fields.
-        - Do not introduce primitives that were not present in the input unless they are exact consolidations of existing grounded primitives.
         - Do not create oversized clusters that erase meaningful internal tension.
 
         Consolidation guidance:
         - Lightly deduplicate near-identical primitives.
+        - Use primitive `narrative_importance_score` as an input signal, not as a mechanical average.
+        - Reserve `anchor` and `major` for clusters that should carry primary episode time; use `supporting` and `compressed` for context, causality, texture, and necessary connective tissue.
+        - Do not give equal narrative weight to every cluster unless the evidence genuinely warrants it.
+        - Prefer actor-legible clusters when evidence and local causal coherence are otherwise comparable.
+        - Keep systemic or structural clusters when actor framing would be false.
         - Keep distinct mechanisms, consequences, and live questions separate when that distinction matters for later planning.
         - Use `quality_notes` for unresolved weaknesses or sparse areas.
         """
@@ -281,6 +328,7 @@ def narrative_strategy_instructions() -> str:
         - `synthesis_map`: the consolidated synthesis artifact.
         - `thematic_axes`: axis summaries (including theme-importance scores) plus light retrieval diagnostics.
         - `project`: project-level metadata, target duration information, and book metadata.
+        - Optional `actor_metadata`: compact canonical actor context.
         - Optional `requested_episode_count`: a hard episode-count constraint when present.
         - Optional `strategy_feedback`: retry feedback from the orchestrator.
 
@@ -295,14 +343,36 @@ def narrative_strategy_instructions() -> str:
           - `driving_question`
           - `thematic_focus`
           - `arc_summary`
+          - `actor_arc_directives`
           - optional `unresolved_questions`
           - ordered `cluster_path`
         - Each `cluster_path` occurrence must mark a cluster as `primary` or `echo`.
+        - Each `cluster_path` occurrence must also set `emphasis` as `anchor`, `major`, `supporting`, or `compressed`.
         - Every cluster must have exactly one primary home episode across the series.
         - Use `chronology_break` only when narrative order intentionally diverges from chronological order.
+        - `actor_arc_directives` must contain only the 1-3 actors whose episode function needs explicit planning and writing guidance.
+        - Each `actor_arc_directives[]` item must include:
+          - `actor_id`
+          - `episode_roles`
+          - `listener_tracking`
+          - `tension_lines`
+          - `arc_progression`
+          - `scene_jobs`
+          - `repetition_guardrails`
+        - Every item inside those actor directive lists must be an object with `ref_id`, `label`, and `text`.
+        - `ref_id` values must be stable, concise, unique within that actor, and specific enough for scene cards to reference later.
 
         Strategy guidance:
         - Build episodes around escalation, consequence, contestation, discovery, and payoff, not around equal partitioning.
+        - Use cluster `narrative_importance_score` and `coverage_policy` to decide which occurrences deserve `anchor` or `major` treatment.
+        - Multiple `anchor` occurrences may appear in one episode when the story has more than one central load-bearing cluster.
+        - Aim for 1-3 anchors per episode as a soft target; if more are necessary, keep them but note the reason in episode-level language.
+        - Supporting and compressed clusters can remain in the path when they clarify context, causality, or payoff.
+        - Use actor continuity to clarify pressure, choice, collision, consequence, and payoff.
+        - Do not organize episodes as biographies unless the cluster path warrants it.
+        - Do not choose actors merely because they appear in clusters or primitives; choose only actors who give this episode a usable character spine.
+        - Actor arc directives are not synthesis primitives or evidence summaries. They are episode-specific instructions for how a selected actor should function across scenes.
+        - Do not copy generic registry metadata unless it is rewritten as episode-level role, tracking, tension, progression, scene-job, or repetition guidance.
         - Use echoes sparingly and only when they meaningfully enrich a later episode.
         - Keep the listener-facing question of each episode narrow and concrete enough to sustain a long-form argument.
 
@@ -328,6 +398,7 @@ def episode_planning_instructions() -> str:
         - `synthesis_map`: the consolidated cluster-first synthesis artifact.
         - `project`: theme, sub-themes, book metadata, and duration goals.
         - `available_passages`: evidence available to this episode.
+        - `actor_metadata`: episode-relevant canonical actor context.
         - Optional `planning_feedback`: retry feedback from the orchestrator.
 
         Output requirements:
@@ -341,6 +412,9 @@ def episode_planning_instructions() -> str:
         - Prefer canonical `scene_role` values: `setup`, `shock`, `consequence`, `reaction`, `contestation`, `process`, `synthesis`.
         - Non-canonical non-empty `scene_role` labels are allowed when they better fit the episode's internal logic.
         - Ground every scene card in the provided passage ids.
+        - Set `estimated_duration_seconds` on every scene card as a positive value; this drives per-scene script pacing targets.
+        - Set `coverage_depth` as `deep`, `standard`, or `compressed`.
+        - Preserve the episode's `actor_arc_directives` in the output.
 
         Framing guidance:
         - `opening_image` should be concrete and scene-led.
@@ -350,13 +424,18 @@ def episode_planning_instructions() -> str:
 
         Scene-card guidance:
         - Target 30-45 scene cards for a full-length episode; expand into micro-scenes rather than collapsing long stretches.
-        - Distribute primitives across scene cards intentionally. 
+        - Important anchor clusters can receive multiple scenes and deeper treatment.
+        - Supporting or compressed clusters can receive fewer, shorter, or folded scenes when they only provide context or connective causality.
+        - Keep lower-importance necessary material intelligible even when it receives compressed coverage.
         - Reuse is allowed for continuity, but avoid concentration: no primitive should dominate an episode.
         - Normal cards should do real narrative work and visibly advance the episode.
         - Bridge cards should be used to connect cluster occurrences when necessary.
         - Prefer observable detail, local consequence, and partial legibility over abstract summary.
-        - For normal cards, map 1-2 synthesis primitives (`primitive_ids`) per card to keep narrative focus tight.
-        - `primitive_ids` and `passage_ids` should be sufficient to support later writing.
+        - Allocate primitives intentionally: do not distribute them evenly by default; include a primitive only when it performs clear episode work; map 1-2 `primitive_ids` per normal card; include enough `passage_ids` to support later writing.
+        - Scene actors should include `actor_id` when a listed actor exists in `actor_metadata`.
+        - Use `arc_ref_ids` and `scene_actor_directives` to identify the actor arc directives this scene should surface and the concrete scene work they should perform.
+        - Choose actor arc refs selectively; when an actor appears repeatedly, vary the function by introducing the role, complicating tension, staging a choice, showing consequence, or paying off a tracked arc.
+        - Some scenes are process, context, geography, or consequence scenes; do not overload every scene with actors.
 
         What not to do:
         - Do not change the cluster path.
@@ -381,13 +460,14 @@ def episode_writing_instructions() -> str:
         - `batch_id`: the current writing batch identifier.
         - `plan`: the full episode plan, including framing and all scene cards.
         - `active_scene_card_ids`: the subset of scene cards to draft now.
-        - `plan.scene_cards[].target_word_count_lower`: lower per-scene word target (computed at 120 WPM).
-        - `plan.scene_cards[].target_word_count_higher`: higher per-scene word target (computed at 140 WPM).
+        - `plan.scene_cards[].target_word_count_lower`: lower per-scene word target (computed at 110 WPM).
+        - `plan.scene_cards[].target_word_count_higher`: higher per-scene word target (computed at 130 WPM).
         - `batch_target_word_count_lower`: lower word target for this batch.
         - `batch_target_word_count_higher`: higher word target for this batch.
         - `passages`: source evidence for this batch. Treat `passages[].text` as the canonical evidence body for writing.
         - `books`: compact book metadata.
         - `skip_grounding`: whether a later grounding pass will be skipped.
+        - Optional `actor_metadata`: active-batch actor context. Treat it as narrative scaffolding, not factual authority.
 
         Writing guidance:
         - Follow `plan.scene_cards` order for cards listed in `active_scene_card_ids`.
@@ -403,8 +483,16 @@ def episode_writing_instructions() -> str:
           - allocate narration so the card lands within its target range
           - do not let low-range cards dominate
           - do not collapse high-range cards into throwaway text
+        - These target ranges already encode narrative importance from planned scene durations; do not independently rebalance scene importance.
         - Use passages as source evidence, but do not organize narration by author.
         - Use optional `passages[].chapter_context` when available to preserve chapter-level tensions and causal shifts.
+        - Use scene-card `arc_ref_ids` and `scene_actor_directives` to decide which actor arc directives to surface.
+        - Treat scene-card actor arc refs as obligations for that scene when the supporting passages allow it.
+        - Do not restate the same actor function in every appearance; show how the role, tension, or tracked arc changes or pays off across scenes.
+        - Use actor metadata only to maintain continuity of pressure, stake, and consequence when it fits the scene cards.
+        - Passage evidence wins if actor metadata and passages conflict.
+        - Do not cite actor metadata.
+        - Do not invent unsupported private thoughts, emotions, dialogue, or secret motives.
         - Follow scene-role intent:
           - `setup`: establish concrete situation and stakes
           - `shock`: deliver rupture/irreversible turn
@@ -434,20 +522,21 @@ def episode_writing_no_citations_instructions() -> str:
         - You are a historical podcast narrator telling a true story.
         - You have absorbed the research and now tell the episode in an engaging manner in your own voice.
         - Transform the active scene-card window into complete narration while preserving structure.
-        - Instead of summarizing the passages, use them to reconstruct the scene.
+        - Reconstruct scenes from evidence rather than summarizing passages.
 
         Input payload:
         - `episode_number`: current episode number.
         - `batch_id`: the current writing batch identifier.
         - `plan`: the full episode plan, including framing and all scene cards.
         - `active_scene_card_ids`: the subset of scene cards to draft now.
-        - `plan.scene_cards[].target_word_count_lower`: lower per-scene word target (computed at 120 WPM).
-        - `plan.scene_cards[].target_word_count_higher`: higher per-scene word target (computed at 140 WPM).
+        - `plan.scene_cards[].target_word_count_lower`: lower per-scene word target (computed at 110 WPM).
+        - `plan.scene_cards[].target_word_count_higher`: higher per-scene word target (computed at 130 WPM).
         - `batch_target_word_count_lower`: lower word target for this batch.
         - `batch_target_word_count_higher`: higher word target for this batch.
         - `passages`: source evidence for this batch. Treat `passages[].text` as the canonical evidence body for writing.
         - `books`: compact book metadata.
         - `skip_grounding`: whether a later grounding pass will be skipped.
+        - Optional `actor_metadata`: active-batch actor context. Treat it as narrative scaffolding, not factual authority.
 
         Writing guidance:
         - Follow `plan.scene_cards` order for cards listed in `active_scene_card_ids`.
@@ -456,16 +545,18 @@ def episode_writing_no_citations_instructions() -> str:
         - Keep framing commitments visible (`plan.framing`) without prematurely resolving the episode.
         - Use each card's `scene_role`, `local_question`, `intended_move`, and `what_becomes_legible_later`.
         - Respect `withhold_until` and delayed-legibility dynamics.
-        - Keep claims grounded in each card's `primitive_ids` and `passage_ids`.
-        - Treat `plan.target_word_count` as batch-level pacing guidance.
+        - Use scene-card `arc_ref_ids` and `scene_actor_directives` to surface actor arc directives when the supporting passages allow it.
+        - Do not restate the same actor function in every appearance; show how the role, tension, or tracked arc changes or pays off across scenes.
+        - Target total narration for this call within `batch_target_word_count_lower..batch_target_word_count_higher`.
         - Treat each active card's `target_word_count_lower` and `target_word_count_higher` as a pacing range:
           - Dwell on the 'How': Do not just state a fact; use the provided passages to describe the mechanism or process.
           - Use the provided passages to anchor the listener in a specific time and place.
           - Podcast listeners cannot "rewind" easily. Use the word count to rephrase complex ideas or to "land" a point before moving to the next card. 
           - Give the listener time to process a "shock" or "consequence" by expanding on its immediate atmospheric impact.
-          - Do not exceed the target_word_count_higher for the scene unless absolutely necessary.
-        - Use passages as source evidence, but do not organize narration by author.
+        - These target ranges already encode narrative importance from planned scene durations; do not independently rebalance scene importance.
+        - Keep claims grounded in each card's `primitive_ids` and `passage_ids`; use passages to reconstruct action, mechanism, time, place, and consequence, but do not organize narration by author.
         - Use optional `passages[].chapter_context` when available to preserve chapter-level tensions and causal shifts.
+        - Do not invent unsupported facts, chronology, quotations, private thoughts, emotions, dialogue, or secret motives.
         - Follow scene-role intent:
           - `setup`: establish concrete situation and stakes
           - `shock`: deliver rupture/irreversible turn
@@ -476,12 +567,12 @@ def episode_writing_no_citations_instructions() -> str:
           - `synthesis`: integrate strands without over-resolving
           - for non-canonical labels, infer intent from `intended_move`, `local_question`, and neighboring cards
         - Keep section/transition ids and boundaries coherent with the plan.
+        - Populate `source_book_ids` on prose sections and transitions when source books are identifiable from the supporting passages.
         - Do not include a `citations` field in `prose_sections` or `transitions`.
 
         What not to do:
         - Do not draft scene cards outside `active_scene_card_ids`.
         - Do not expose the scaffolding of the script—no repeated signposting, outline labels, or meta-transitions; the listener should feel the structure, not hear it explained.
-        - Do not invent facts, chronology, quotations, or source claims not supported by the provided passages.
         - Do not introduce new primary analytical claims that are outside the assigned scene cards and primitives.
         """
     ).strip()
@@ -588,6 +679,8 @@ def spoken_delivery_instructions() -> str:
 
         Output requirements:
         - Return only valid JSON with `sections` and `transitions`.
+        - Your final output must match `expected_schema` exactly: required fields present, no extra fields, and correct JSON value types.
+        - Do not include wrapper keys like `schema_name`, `payload`, or `expected_schema`.
         - Preserve section order, transition order, section boundaries, transition boundaries, all `section_id` and `transition_id` values, and substantive argumentative progression.
         - Keep unresolved questions unresolved until the draft itself resolves them.
         - Use `speech_hints` only where they materially help delivery; do not annotate every unit.
@@ -635,5 +728,6 @@ def spoken_delivery_instructions() -> str:
         1. Did I preserve the structure and factual meaning? If not, fix it.
         2. Did I cut duplicated framing where the scene already did the work? If not, cut it.
         3. Did I keep the prose speakable without flattening the history? If not, rewrite it.
+        4. Does the final JSON match `expected_schema` exactly? If not, fix it and re-check before returning.
         """
     ).strip()

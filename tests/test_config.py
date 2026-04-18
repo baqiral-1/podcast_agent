@@ -58,7 +58,8 @@ class TestLLMConfig:
 
     def test_resolve_concurrency_limit_defaults(self):
         config = LLMConfig()
-        assert config.resolve_concurrency_limit("chapter_summary") == 25
+        assert config.resolve_concurrency_limit("chapter_summary") == 40
+        assert config.resolve_concurrency_limit("book_summary") == 15
         assert config.resolve_concurrency_limit("synthesis_primitives") == 3
         assert config.resolve_concurrency_limit("synthesis_consolidation") == 4
         assert config.resolve_concurrency_limit("episode_planning") == 9
@@ -117,14 +118,14 @@ class TestPipelineRuntimeConfig:
         assert config.episode_planning_concurrency == 9
         assert config.episode_write_concurrency == 7
         assert config.tts_concurrency == 12
-        assert config.spoken_words_per_minute == 140
+        assert config.spoken_words_per_minute == 130
 
     def test_thematic_defaults(self):
         config = PipelineRuntimeConfig()
         assert config.max_axes == 15
         assert config.min_axes == 10
         assert config.passage_retrieval_percentage == 0.25
-        assert config.pre_axis_total_budget == 1200
+        assert config.pre_axis_total_budget == 1500
         assert config.passage_retrieval_min_per_book == 10
         assert config.passage_retrieval_max_per_book == 25
         assert config.axis_candidate_target_total == 60
@@ -137,7 +138,7 @@ class TestPipelineRuntimeConfig:
         assert config.planning_axis_pct == 1.0
         assert config.planning_axis_min == 10
         assert config.planning_axis_max == 15
-        assert config.synthesis_total_passage_cap == 800
+        assert config.synthesis_total_passage_cap == 750
         assert config.planning_total_passage_cap == 300
         assert config.passage_extraction_concurrency == 8
         assert config.llm_global_max_concurrency == 30

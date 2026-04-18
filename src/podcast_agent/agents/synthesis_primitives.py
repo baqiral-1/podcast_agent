@@ -21,6 +21,7 @@ class SynthesisPrimitivesAgent(Agent):
         passages_by_axis: dict[str, list[dict]],
         cross_book_pairs: list[dict],
         book_metadata: list[dict],
+        actor_metadata: dict | None = None,
         synthesis_feedback: dict | None = None,
     ) -> dict:
         payload = {
@@ -30,6 +31,8 @@ class SynthesisPrimitivesAgent(Agent):
             "cross_book_pairs": cross_book_pairs,
             "books": book_metadata,
         }
+        if actor_metadata is not None:
+            payload["actor_metadata"] = actor_metadata
         if synthesis_feedback is not None:
             payload["synthesis_feedback"] = synthesis_feedback
         return payload

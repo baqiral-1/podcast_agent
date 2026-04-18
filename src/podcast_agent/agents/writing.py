@@ -60,6 +60,7 @@ class WritingAgent(Agent):
         batch_target_word_count_lower: int | None = None,
         batch_target_word_count_higher: int | None = None,
         skip_grounding: bool = False,
+        actor_metadata: dict | None = None,
     ) -> dict:
         payload = {
             "episode_number": episode_number,
@@ -70,6 +71,8 @@ class WritingAgent(Agent):
             "books": book_metadata,
             "skip_grounding": skip_grounding,
         }
+        if actor_metadata is not None:
+            payload["actor_metadata"] = actor_metadata
         if batch_target_word_count_lower is not None:
             payload["batch_target_word_count_lower"] = int(batch_target_word_count_lower)
         if batch_target_word_count_higher is not None:

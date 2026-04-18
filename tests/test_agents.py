@@ -75,7 +75,18 @@ class TestCoreAgents:
         assert agent.schema_name == "theme_decomposition"
         assert payload["sub_themes"] == ["state failure"]
         assert "10-15 strong thematic axes" in agent.instructions
+        assert "Produce between 10 and 40 actors" in agent.instructions
+        assert "`actor_metadata`" in agent.instructions
         assert "`books`" in agent.instructions
+        assert "Actor scalar string fields" in agent.instructions
+        assert "`uncertainty_notes` when there is no caveat" in agent.instructions
+        assert "Actor list-of-string fields" in agent.instructions
+        assert "`chapter_refs` must be an array of objects" in agent.instructions
+        assert "`evidence_confidence` must be one of: `high`, `medium`, `low`" in agent.instructions
+        assert "`narrative_functions` values must be drawn from" in agent.instructions
+        assert "top-level `actor_metadata.relationships`" in agent.instructions
+        assert "relationship `confidence` is optional" in agent.instructions
+        assert "`motivations`" not in agent.instructions
 
     def test_theme_decomposition_payload_includes_analysis_object_only(self):
         agent = ThemeDecompositionAgent(_mock_llm())
@@ -133,12 +144,18 @@ class TestRedesignedAgents:
             passages_by_axis={"axis_1": [{"passage_id": "p1"}]},
             cross_book_pairs=[],
             book_metadata=[{"book_id": "b1"}],
+            actor_metadata={"actors": [{"actor_id": "actor_1"}]},
             synthesis_feedback={"issue": "thin_grounding"},
         )
         assert agent.schema_name == "synthesis_primitives"
+        assert payload["actor_metadata"]["actors"][0]["actor_id"] == "actor_1"
         assert payload["synthesis_feedback"]["issue"] == "thin_grounding"
         assert "Do not emit episode architecture" in agent.instructions
         assert "`passages_by_axis`" in agent.instructions
+        assert "`misperceptions`" in agent.instructions
+        assert "`misperceptions`: 5-25" in agent.instructions
+        assert "`narrative_importance_score`" in agent.instructions
+        assert "Scores must be meaningfully non-flat" in agent.instructions
 
     def test_synthesis_consolidation_agent_payload(self):
         agent = SynthesisConsolidationAgent(_mock_llm())
@@ -148,12 +165,16 @@ class TestRedesignedAgents:
             axes_summary=[{"axis_id": "axis_1"}],
             book_metadata=[{"book_id": "b1"}],
             series_size_hint=3,
+            actor_metadata={"actors": [{"actor_id": "actor_1"}]},
             consolidation_feedback={"issue": "cluster_density"},
         )
         assert agent.schema_name == "synthesis_consolidation"
+        assert payload["actor_metadata"]["actors"][0]["actor_id"] == "actor_1"
         assert payload["series_size_hint"] == 3
         assert payload["consolidation_feedback"]["issue"] == "cluster_density"
-        assert "Aim for 2-5 members per cluster." in agent.instructions
+        assert "actor_tension" in agent.instructions
+        assert "`coverage_policy`" in agent.instructions
+        assert "Do not give equal narrative weight to every cluster" in agent.instructions
 
     def test_narrative_strategy_agent_payload(self):
         agent = NarrativeStrategyAgent(_mock_llm())
@@ -162,11 +183,17 @@ class TestRedesignedAgents:
             thematic_axes=[{"axis_id": "axis_1"}],
             project_metadata={"theme": "War on terror"},
             episode_count=3,
+            actor_metadata={"actors": [{"actor_id": "actor_1"}]},
             strategy_feedback={"issue": "cluster_home_collision"},
         )
         assert agent.schema_name == "narrative_strategy"
+        assert payload["actor_metadata"]["actors"][0]["actor_id"] == "actor_1"
         assert payload["requested_episode_count"] == 3
         assert payload["strategy_feedback"]["issue"] == "cluster_home_collision"
+        assert "must also set `emphasis`" in agent.instructions
+        assert "Multiple `anchor` occurrences may appear in one episode" in agent.instructions
+        assert "`actor_arc_directives` must contain only the 1-3 actors" in agent.instructions
+        assert "`actor_arc_summary`" not in agent.instructions
 
     def test_episode_planning_agent_payload(self):
         agent = EpisodePlanningAgent(_mock_llm())
@@ -175,11 +202,18 @@ class TestRedesignedAgents:
             synthesis_map={"episode_candidate_clusters": []},
             project_metadata={"theme": "War on terror"},
             available_passages=[{"passage_id": "p1"}],
+            actor_metadata={"actors": [{"actor_id": "actor_1"}]},
             planning_feedback={"issue": "uncovered_primary_occurrences"},
         )
         assert agent.schema_name == "episode_planning"
+        assert payload["actor_metadata"]["actors"][0]["actor_id"] == "actor_1"
         assert payload["planning_feedback"]["issue"] == "uncovered_primary_occurrences"
         assert "`available_passages`" in agent.instructions
+        assert "`estimated_duration_seconds`" in agent.instructions
+        assert "Allocate primitives intentionally" in agent.instructions
+        assert "Preserve the episode's `actor_arc_directives`" in agent.instructions
+        assert "`arc_ref_ids`" in agent.instructions
+        assert "`actor_throughline`" not in agent.instructions
 
     def test_writing_agent_payload(self):
         agent = WritingAgent(_mock_llm())
@@ -193,8 +227,10 @@ class TestRedesignedAgents:
             batch_target_word_count_lower=120,
             batch_target_word_count_higher=180,
             skip_grounding=True,
+            actor_metadata={"actors": [{"actor_id": "actor_1"}]},
         )
         assert agent.schema_name == "episode_writing"
+        assert payload["actor_metadata"]["actors"][0]["actor_id"] == "actor_1"
         assert payload["skip_grounding"] is True
         assert payload["batch_target_word_count_lower"] == 120
         assert payload["batch_target_word_count_higher"] == 180
@@ -207,6 +243,12 @@ class TestRedesignedAgents:
         assert "`batch_target_word_count_lower`" in agent.instructions
         assert "`batch_target_word_count_higher`" in agent.instructions
         assert "`passages[].text`" in agent.instructions
+        assert agent.instructions.count("Optional `actor_metadata`") == 1
+        assert agent.instructions.count("Do not cite actor metadata.") == 1
+        assert "Passage evidence wins if actor metadata and passages conflict." in agent.instructions
+        assert "target ranges already encode narrative importance" in agent.instructions
+        assert "scene-card `arc_ref_ids`" in agent.instructions
+        assert "Do not restate the same actor function" in agent.instructions
 
     def test_writing_agent_no_citations_instructions_and_schema(self):
         agent = WritingAgentNoCitations(_mock_llm())
@@ -220,8 +262,10 @@ class TestRedesignedAgents:
             batch_target_word_count_lower=140,
             batch_target_word_count_higher=220,
             skip_grounding=True,
+            actor_metadata={"actors": [{"actor_id": "actor_1"}]},
         )
         assert agent.schema_name == "episode_writing"
+        assert payload["actor_metadata"]["actors"][0]["actor_id"] == "actor_1"
         assert payload["skip_grounding"] is True
         assert payload["batch_target_word_count_lower"] == 140
         assert payload["batch_target_word_count_higher"] == 220
@@ -232,7 +276,15 @@ class TestRedesignedAgents:
         assert "`target_word_count_higher`" in agent.instructions
         assert "`batch_target_word_count_lower`" in agent.instructions
         assert "`batch_target_word_count_higher`" in agent.instructions
+        assert "Target total narration for this call within" in agent.instructions
+        assert "Optional `actor_metadata`" in agent.instructions
+        assert "Passage evidence wins if actor metadata and passages conflict." in agent.instructions
+        assert "Do not cite actor metadata." in agent.instructions
         assert "Do not include a `citations` field" in agent.instructions
+        assert "Populate `source_book_ids`" in agent.instructions
+        assert "target ranges already encode narrative importance" in agent.instructions
+        assert "scene-card `arc_ref_ids`" in agent.instructions
+        assert "Do not restate the same actor function" in agent.instructions
 
     def test_grounding_validation_agent_payload(self):
         agent = GroundingValidationAgent(_mock_llm())
@@ -268,11 +320,14 @@ class TestRedesignedAgents:
         assert payload["max_words_per_segment"] == 250
         assert "You are the `spoken_delivery` stage" in agent.instructions
         assert "Return only valid JSON with `sections` and `transitions`." in agent.instructions
+        assert "must match `expected_schema` exactly" in agent.instructions
+        assert "Do not include wrapper keys like `schema_name`, `payload`, or `expected_schema`." in agent.instructions
         assert "You may delete redundant structural language" in agent.instructions
         assert "Use plain reportorial tone as the default register." in agent.instructions
         assert "Do not turn a cautious or interpretive claim into a stronger claim." in agent.instructions
         assert "add `speech_hints.pronunciation_hints`." in agent.instructions
         assert "keep `text` exactly as it appears in the segment text." in agent.instructions
+        assert "Does the final JSON match `expected_schema` exactly?" in agent.instructions
         assert "Output Format:" not in agent.instructions
         assert "You are the `narrative_historian` stage" not in agent.instructions
         assert "Every sentence in the original script serves a purpose." not in agent.instructions
@@ -295,6 +350,7 @@ class TestHeuristicClient:
         )
         assert result.project_id == "proj"
         assert result.primitives_by_family["turning_points"][0].id == "tp_001"
+        assert result.primitives_by_family["misperceptions"][0].id == "mp_001"
 
     def test_narrative_strategy_agent_run_returns_cluster_path_episodes(self):
         agent = NarrativeStrategyAgent(HeuristicLLMClient())
