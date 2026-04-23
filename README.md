@@ -30,7 +30,7 @@ export OPENAI_API_KEY=...
 
 # Optional overrides
 export LLM_PROVIDER=anthropic           # or openai-compatible, heuristic
-export LLM_MODEL_NAME=claude-opus-4-6   # global default (agents override per-stage)
+export LLM_MODEL_NAME=claude-opus-4-7   # global default (agents override per-stage)
 
 # PostgreSQL for vector retrieval (optional — pipeline works without it)
 export DATABASE_URL=postgresql://postgres:secret@localhost:5432/podcast_agent
@@ -48,13 +48,13 @@ Each agent uses a default Claude model chosen for its task complexity:
 | Agent | Model | Concurrency | Retries |
 |-------|-------|-------------|---------|
 | Structuring | Haiku 4.5 | 15 | 5 |
-| Theme Decomposition | Opus 4.6 | 6 | 3 |
+| Theme Decomposition | Opus 4.7 | 6 | 3 |
 | Passage Extraction | Haiku 4.5 | 15 | 5 |
-| Synthesis Primitives | Opus 4.6 | 3 | 3 |
-| Synthesis Consolidation | Opus 4.6 | 4 | 3 |
+| Synthesis Primitives | Opus 4.7 | 3 | 3 |
+| Synthesis Consolidation | Opus 4.7 | 4 | 3 |
 | Narrative Strategy | Sonnet 4.6 | 6 | 3 |
 | Series Planning | Sonnet 4.6 | 6 | 3 |
-| Episode Writing | Opus 4.6 | 6 | 3 |
+| Episode Writing | Opus 4.7 | 6 | 3 |
 | Grounding Validation | Sonnet 4.6 | 6 | 3 |
 | Repair | Sonnet 4.6 | 6 | 3 |
 | Spoken Delivery | Sonnet 4.6 | 6 | 3 |
@@ -165,8 +165,8 @@ The global pre-axis candidate budget defaults to
 axis theme-importance scores.
 Passage extraction no longer applies a post-rerank per-axis trim; it retains all
 scored passages for later stage-specific selection.
-For synthesis, the active pipeline now restores a hard
-`synthesis_total_passage_cap=720` across the whole run, allocated by
+For synthesis, the active pipeline uses a hard
+`synthesis_total_passage_cap=600` across the whole run, allocated by
 axis theme-importance with round-robin fill of remaining slots.
 
 ## Outputs

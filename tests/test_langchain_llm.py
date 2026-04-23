@@ -21,9 +21,6 @@ def test_apply_schema_caps_truncates_chapter_summary_analysis_lists() -> None:
         "analysis": {
             "themes_touched": [f"theme-{idx}" for idx in range(10)],
             "major_actors": [f"actor-{idx}" for idx in range(11)],
-            "key_places": [f"place-{idx}" for idx in range(12)],
-            "key_institutions": [f"institution-{idx}" for idx in range(9)],
-            "major_tensions": [f"tension-{idx}" for idx in range(7)],
         },
     }
 
@@ -34,9 +31,6 @@ def test_apply_schema_caps_truncates_chapter_summary_analysis_lists() -> None:
     analysis = capped["analysis"]
     assert len(analysis["themes_touched"]) == 8
     assert len(analysis["major_actors"]) == 8
-    assert len(analysis["key_places"]) == 8
-    assert len(analysis["key_institutions"]) == 8
-    assert len(analysis["major_tensions"]) == 6
     assert any(t["path"] == "analysis.major_actors" for t in truncations)
 
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from podcast_agent.pipeline.orchestrator import build_render_manifest
-from podcast_agent.schemas.models import FramingBlock, SpeechHints, SpokenScript, SpokenSection, SpokenTransition
+from podcast_agent.schemas.models import FramingBlock, SpeechHints, SpokenScript, SpokenSection
 
 
 def _framing() -> FramingBlock:
@@ -18,7 +18,7 @@ def _framing() -> FramingBlock:
 
 
 class TestBuildRenderManifest:
-    def test_manifest_interleaves_sections_and_transitions_with_framing(self):
+    def test_manifest_renders_sections_with_framing(self):
         spoken = SpokenScript(
             episode_number=1,
             title="Episode 1",
@@ -35,17 +35,10 @@ class TestBuildRenderManifest:
                     speech_hints=SpeechHints(pause_before_ms=300, pause_after_ms=400),
                 )
             ],
-            transitions=[
-                SpokenTransition(
-                    transition_id="transition_1",
-                    text="Then the order reaches the city.",
-                    speech_hints=SpeechHints(pause_before_ms=200, pause_after_ms=300),
-                )
-            ],
         )
         manifest = build_render_manifest(spoken)
         assert manifest.episode_number == 1
-        assert manifest.total_segments == 8
+        assert manifest.total_segments == 7
         assert [segment.segment_id for segment in manifest.segments] == [
             "framing_recap",
             "framing_opening_image",
@@ -53,7 +46,6 @@ class TestBuildRenderManifest:
             "framing_question",
             "framing_preview",
             "section_1",
-            "transition_1",
             "section_2",
         ]
 
@@ -98,7 +90,7 @@ class TestBuildRenderManifest:
         manifest = build_render_manifest(spoken, words_per_minute=130)
         assert manifest.estimated_duration_seconds > 0
 
-    def test_builds_manifest_when_transition_count_does_not_match_sections_minus_one(self):
+    def test_builds_manifest_from_sections_only(self):
         spoken = SpokenScript(
             episode_number=1,
             title="Episode 1",
@@ -112,7 +104,6 @@ class TestBuildRenderManifest:
                 SpokenSection(section_id="section_1", text="One."),
                 SpokenSection(section_id="section_2", text="Two."),
             ],
-            transitions=[],
         )
         manifest = build_render_manifest(spoken)
         assert [segment.segment_id for segment in manifest.segments] == [
@@ -147,6 +138,7 @@ class TestBuildRenderManifest:
         manifest = build_render_manifest(
             spoken,
             base_instructions="Keep narration steady.",
+            tts_model_name="gpt-4o-mini-tts",
         )
         section = next(segment for segment in manifest.segments if segment.segment_id == "section_1")
         assert section.instructions is not None
@@ -178,6 +170,7 @@ class TestBuildRenderManifest:
         manifest = build_render_manifest(
             spoken,
             base_instructions=long_base,
+            tts_model_name="gpt-4o-mini-tts",
         )
         section = next(segment for segment in manifest.segments if segment.segment_id == "section_1")
         assert section.instructions is not None
@@ -217,6 +210,37 @@ class TestBuildRenderManifest:
         assert "pronunciation_hints_not_supported" in section.hint_degradations
         assert "phrase_emphasis_requires_prompt_steering" in section.hint_degradations
 
+    def test_tts_1_hd_records_prompt_steering_degradations(self):
+        spoken = SpokenScript(
+            episode_number=1,
+            title="Episode 1",
+            framing=FramingBlock(
+                opening_image="Image",
+                threat_or_unresolved_action="Threat",
+                opening_question="Question",
+                handoff_scene_card_id="scene_1",
+            ),
+            sections=[
+                SpokenSection(
+                    section_id="section_1",
+                    text="The fragile truce did not hold.",
+                    speech_hints=SpeechHints(
+                        style="measured",
+                        intensity="medium",
+                        emphasis_targets=["fragile truce"],
+                        pronunciation_hints=[{"text": "truce", "spoken_as": "trooss"}],
+                    ),
+                ),
+            ],
+        )
+        manifest = build_render_manifest(spoken)
+        section = next(segment for segment in manifest.segments if segment.segment_id == "section_1")
+        assert section.voice_id == "fable"
+        assert section.instructions is None
+        assert "segment_instructions_not_supported" in section.hint_degradations
+        assert "pronunciation_hints_not_supported" in section.hint_degradations
+        assert "phrase_emphasis_requires_prompt_steering" in section.hint_degradations
+
     def test_render_strategy_split_sentences_creates_multiple_segments(self):
         spoken = SpokenScript(
             episode_number=1,
@@ -235,7 +259,7 @@ class TestBuildRenderManifest:
                 ),
             ],
         )
-        manifest = build_render_manifest(spoken)
+        manifest = build_render_manifest(spoken, tts_model_name="gpt-4o-mini-tts")
         segment_ids = [segment.segment_id for segment in manifest.segments]
         assert "section_1_1" in segment_ids
         assert "section_1_2" in segment_ids
@@ -265,7 +289,7 @@ class TestBuildRenderManifest:
                 ),
             ],
         )
-        manifest = build_render_manifest(spoken)
+        manifest = build_render_manifest(spoken, tts_model_name="gpt-4o-mini-tts")
         first = next(segment for segment in manifest.segments if segment.segment_id == "section_1_1")
         second = next(segment for segment in manifest.segments if segment.segment_id == "section_1_2")
         assert first.instructions is not None
@@ -300,7 +324,7 @@ class TestBuildRenderManifest:
                 ),
             ],
         )
-        manifest = build_render_manifest(spoken)
+        manifest = build_render_manifest(spoken, tts_model_name="gpt-4o-mini-tts")
         section = next(segment for segment in manifest.segments if segment.segment_id == "section_1")
         assert section.instructions is not None
         assert "Isfahán as ISS-fuh-hahn" in section.instructions
@@ -326,7 +350,11 @@ class TestBuildRenderManifest:
                 ),
             ],
         )
-        manifest = build_render_manifest(spoken, base_instructions="Keep narration steady.")
+        manifest = build_render_manifest(
+            spoken,
+            base_instructions="Keep narration steady.",
+            tts_model_name="gpt-4o-mini-tts",
+        )
         section = next(segment for segment in manifest.segments if segment.segment_id == "section_1")
         assert section.instructions is not None
         assert "Keep narration steady." in section.instructions

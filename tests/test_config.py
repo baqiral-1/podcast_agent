@@ -58,8 +58,9 @@ class TestLLMConfig:
 
     def test_resolve_concurrency_limit_defaults(self):
         config = LLMConfig()
-        assert config.resolve_concurrency_limit("chapter_summary") == 40
+        assert config.resolve_concurrency_limit("chapter_summary") == 48
         assert config.resolve_concurrency_limit("book_summary") == 15
+        assert config.resolve_concurrency_limit("passage_extraction") == 26
         assert config.resolve_concurrency_limit("synthesis_primitives") == 3
         assert config.resolve_concurrency_limit("synthesis_consolidation") == 4
         assert config.resolve_concurrency_limit("episode_planning") == 9
@@ -102,7 +103,9 @@ class TestTTSConfig:
     def test_defaults(self):
         config = TTSConfig()
         assert config.provider == "openai-compatible"
-        assert config.voice == "ballad"
+        assert config.model_name == "tts-1-hd"
+        assert config.voice == "fable"
+        assert config.speed == 0.9
 
     def test_kokoro_chunk_validation(self):
         with pytest.raises(ValueError, match="kokoro_chunk_max_words"):
@@ -116,8 +119,8 @@ class TestPipelineRuntimeConfig:
         assert config.chunk_overlap_words == 75
         assert config.max_repair_attempts == 3
         assert config.episode_planning_concurrency == 9
-        assert config.episode_write_concurrency == 7
-        assert config.tts_concurrency == 12
+        assert config.episode_write_concurrency == 10
+        assert config.tts_concurrency == 5
         assert config.spoken_words_per_minute == 130
 
     def test_thematic_defaults(self):
@@ -140,7 +143,7 @@ class TestPipelineRuntimeConfig:
         assert config.planning_axis_max == 15
         assert config.synthesis_total_passage_cap == 600
         assert config.planning_total_passage_cap == 300
-        assert config.passage_extraction_concurrency == 8
+        assert config.passage_extraction_concurrency == 16
         assert config.llm_global_max_concurrency == 30
 
     def test_rejects_removed_retrieval_weighting_fields(self):

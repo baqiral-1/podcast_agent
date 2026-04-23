@@ -31,6 +31,14 @@ class _FakeTransport:
         return b"audio"
 
 
+class _FakeRunLogger:
+    def __init__(self) -> None:
+        self.events: list[tuple[str, dict[str, object]]] = []
+
+    def log(self, event_type: str, **payload: object) -> None:
+        self.events.append((event_type, payload))
+
+
 class TestOpenAICompatibleTTSClient:
     def test_synthesize_uses_per_call_instructions_and_speed(self, monkeypatch):
         monkeypatch.setenv("OPENAI_API_KEY", "test-key")
@@ -39,6 +47,7 @@ class TestOpenAICompatibleTTSClient:
         transport = _FakeTransport()
         client = OpenAICompatibleTTSClient(
             TTSConfig(
+                model_name="gpt-4o-mini-tts",
                 instructions="base profile",
                 speed=1.0,
             ),
@@ -57,10 +66,63 @@ class TestOpenAICompatibleTTSClient:
         assert len(transport.calls) == 1
         payload = transport.calls[0]["payload"]
         assert transport.calls[0]["url"] == "https://api.openai.com/v1/audio/speech"
+        assert payload["model"] == "gpt-4o-mini-tts"
         assert payload["voice"] == "nova"
         assert payload["format"] == "wav"
         assert payload["instructions"] == "segment profile"
         assert payload["speed"] == 1.2
+
+    def test_tts_1_hd_omits_instructions_and_uses_default_model(self, monkeypatch):
+        monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+        monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+
+        transport = _FakeTransport()
+        client = OpenAICompatibleTTSClient(
+            TTSConfig(
+                instructions="base profile",
+                speed=1.0,
+            ),
+            transport=transport,
+        )
+
+        result = client.synthesize(
+            "Narration text.",
+            instructions="segment profile",
+        )
+
+        assert result == b"audio"
+        payload = transport.calls[0]["payload"]
+        assert payload["model"] == "tts-1-hd"
+        assert payload["voice"] == "fable"
+        assert "instructions" not in payload
+
+    def test_tts_1_hd_replaces_unsupported_legacy_voice(self, monkeypatch):
+        monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+        monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+
+        transport = _FakeTransport()
+        client = OpenAICompatibleTTSClient(
+            TTSConfig(
+                model_name="tts-1-hd",
+                voice="ballad",
+            ),
+            transport=transport,
+        )
+        run_logger = _FakeRunLogger()
+        client.set_run_logger(run_logger)
+
+        result = client.synthesize("Narration text.", voice="ballad")
+
+        assert result == b"audio"
+        payload = transport.calls[0]["payload"]
+        assert payload["voice"] == "fable"
+        substitution = next(
+            payload
+            for event_type, payload in run_logger.events
+            if event_type == "tts_voice_substitution"
+        )
+        assert substitution["requested_voice"] == "ballad"
+        assert substitution["resolved_voice"] == "fable"
 
 
 class TestBuildTTSClient:

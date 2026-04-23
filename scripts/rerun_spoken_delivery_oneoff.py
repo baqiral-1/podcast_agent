@@ -266,7 +266,6 @@ def _build_spoken_script(payload: dict[str, Any], result: Any) -> SpokenScript:
         title=script.title,
         framing=script.framing,
         sections=result.sections,
-        transitions=result.transitions,
         tts_provider=tts_provider,
     )
 

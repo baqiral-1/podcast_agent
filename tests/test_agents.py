@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
+from pydantic import ValidationError
+
 from podcast_agent.agents.book_summary import BookSummaryAgent
 from podcast_agent.agents.chapter_summary import ChapterSummaryAgent, ChapterSummaryResponse
 from podcast_agent.agents.narrative_strategy import NarrativeStrategyAgent
@@ -105,7 +108,8 @@ class TestCoreAgents:
                     word_count=100,
                     analysis=ChapterAnalysis(
                         themes_touched=["theme"],
-                        major_tensions=["tension"],
+                        major_actors=["actor"],
+                        key_events_or_arguments=["event"],
                     ),
                 )
             ],
@@ -120,7 +124,13 @@ class TestCoreAgents:
         chapter = payload["books"][0]["chapters"][0]
         assert "summary" not in chapter
         assert chapter["analysis"]["themes_touched"] == ["theme"]
-        assert chapter["analysis"]["major_tensions"] == ["tension"]
+        assert chapter["analysis"]["major_actors"] == ["actor"]
+        assert chapter["analysis"]["key_events_or_arguments"] == ["event"]
+        assert set(chapter["analysis"]) == {
+            "themes_touched",
+            "major_actors",
+            "key_events_or_arguments",
+        }
 
     def test_passage_extraction_agent_payload(self):
         agent = PassageExtractionAgent(_mock_llm())
@@ -175,6 +185,9 @@ class TestRedesignedAgents:
         assert payload["consolidation_feedback"]["issue"] == "cluster_density"
         assert "actor_tension" in agent.instructions
         assert "`coverage_policy`" in agent.instructions
+        assert "Aim for 25-40 episode candidate clusters" in agent.instructions
+        assert "create multiple clusters for the same or similar broad topic" in agent.instructions
+        assert "Prefer creating more clusters over creating oversized clusters" in agent.instructions
         assert "Do not give equal narrative weight to every cluster" in agent.instructions
 
     def test_narrative_strategy_agent_payload(self):
@@ -194,7 +207,7 @@ class TestRedesignedAgents:
         assert "must also set `emphasis`" in agent.instructions
         assert "Multiple `anchor` occurrences may appear in one episode" in agent.instructions
         assert "`actor_arc_directives` must contain only the 1-4 actors" in agent.instructions
-        assert "`arc_refs`" in agent.instructions
+        assert "`arc_threads`" in agent.instructions
         assert "`arc_type`" in agent.instructions
         assert "`actor_arc_summary`" not in agent.instructions
 
@@ -212,10 +225,11 @@ class TestRedesignedAgents:
         assert payload["actor_metadata"]["actors"][0]["actor_id"] == "actor_1"
         assert payload["planning_feedback"]["issue"] == "uncovered_primary_occurrences"
         assert "`available_passages`" in agent.instructions
-        assert "`estimated_duration_seconds`" in agent.instructions
+        assert "`estimated_duration_seconds`" not in agent.instructions
+        assert "final scene durations are computed" in agent.instructions
         assert "PRIORITY RULES" in agent.instructions
         assert "No scene without passage support" in agent.instructions
-        assert "Target 30-45 scene cards" in agent.instructions
+        assert "Target 35-45 scene cards" in agent.instructions
         assert "Allocate primitives intentionally" in agent.instructions
         assert "Preserve `episode.actor_arc_directives`" in agent.instructions
         assert "`arc_bindings`" in agent.instructions
@@ -242,16 +256,21 @@ class TestRedesignedAgents:
             batch_target_word_count_higher=180,
             skip_grounding=True,
             actor_metadata={"actors": [{"actor_id": "actor_1"}]},
+            is_final_batch=False,
         )
         assert agent.schema_name == "episode_writing"
         assert payload["actor_metadata"]["actors"][0]["actor_id"] == "actor_1"
+        assert payload["is_final_batch"] is False
         assert payload["skip_grounding"] is True
         assert payload["batch_target_word_count_lower"] == 120
         assert payload["batch_target_word_count_higher"] == 180
         assert "scene_word_count_targets" not in payload
         assert "previous_sections" not in payload
-        assert "previous_transitions" not in payload
         assert "`active_scene_card_ids`" in agent.instructions
+        assert "`is_final_batch`" in agent.instructions
+        assert "batch window" in agent.instructions
+        assert "next-episode teaser copy" in agent.instructions
+        assert "`plan.framing.preview` is rendered separately" in agent.instructions
         assert "`target_word_count_lower`" in agent.instructions
         assert "`target_word_count_higher`" in agent.instructions
         assert "`batch_target_word_count_lower`" in agent.instructions
@@ -261,13 +280,50 @@ class TestRedesignedAgents:
         assert agent.instructions.count("Do not cite actor metadata.") == 1
         assert "Passage evidence wins if actor metadata and passages conflict." in agent.instructions
         assert "target ranges already encode narrative importance" in agent.instructions
-        assert "Resolve each scene actor `arc_bindings[].ref_id` against `plan.actor_arc_directives[].arc_refs[]`" in agent.instructions
-        assert "Use arc ref `premise`, `pressure`, `movement`, and `payoff` as narrative guidance" in agent.instructions
+        assert "`entry_image`" in agent.instructions
+        assert "Do not write standalone transition paragraphs" in agent.instructions
+        assert "Resolve each scene actor `arc_bindings[].thread_id` against `plan.actor_arc_directives[].arc_threads[]`" in agent.instructions
+        assert "Use arc thread `premise`, `pressure`, `movement`, and `payoff` as narrative guidance" in agent.instructions
         assert "Use `arc_bindings[].scene_use` as the actor arc operation for the scene" in agent.instructions
         assert "`introduce`: establish the actor's episode function" in agent.instructions
         assert "`avoid`: keep the actor present without foregrounding the arc" in agent.instructions
         assert "Use `arc_bindings[].weight` to scale narrative attention" in agent.instructions
         assert "Do not restate the same actor function" in agent.instructions
+
+    def test_writing_response_rejects_teaser_line(self):
+        with pytest.raises(ValidationError, match="next-episode teaser copy"):
+            WritingAgent(_mock_llm()).response_model.model_validate(
+                {
+                    "batch_id": "batch_1",
+                    "prose_sections": [
+                        {
+                            "section_id": "section_1",
+                            "scene_card_ids": ["scene_1"],
+                            "movement_goal": "discover",
+                            "text": "The scene lands.\n\nNext time: another story begins.",
+                        }
+                    ],
+                    "window_map": [],
+                }
+            )
+
+    def test_writing_response_allows_ordinary_next_time_phrase(self):
+        response = WritingAgent(_mock_llm()).response_model.model_validate(
+            {
+                "batch_id": "batch_1",
+                "prose_sections": [
+                    {
+                        "section_id": "section_1",
+                        "scene_card_ids": ["scene_1"],
+                        "movement_goal": "discover",
+                        "text": "But the next time you hear the official story, remember the archive.",
+                    }
+                ],
+                "window_map": [],
+            }
+        )
+
+        assert response.prose_sections[0].section_id == "section_1"
 
     def test_writing_agent_no_citations_instructions_and_schema(self):
         agent = WritingAgentNoCitations(_mock_llm())
@@ -285,16 +341,20 @@ class TestRedesignedAgents:
         )
         assert agent.schema_name == "episode_writing"
         assert payload["actor_metadata"]["actors"][0]["actor_id"] == "actor_1"
+        assert payload["is_final_batch"] is True
         assert payload["skip_grounding"] is True
         assert payload["batch_target_word_count_lower"] == 140
         assert payload["batch_target_word_count_higher"] == 220
         assert "scene_word_count_targets" not in payload
         assert "previous_sections" not in payload
-        assert "previous_transitions" not in payload
         assert "`target_word_count_lower`" in agent.instructions
         assert "`target_word_count_higher`" in agent.instructions
         assert "`batch_target_word_count_lower`" in agent.instructions
         assert "`batch_target_word_count_higher`" in agent.instructions
+        assert "`is_final_batch`" in agent.instructions
+        assert "batch window" in agent.instructions
+        assert "next-episode teaser copy" in agent.instructions
+        assert "`plan.framing.preview` is rendered separately" in agent.instructions
         assert "Target total narration for this call within" in agent.instructions
         assert "Optional `actor_metadata`" in agent.instructions
         assert "Passage evidence wins if actor metadata and passages conflict." in agent.instructions
@@ -302,13 +362,33 @@ class TestRedesignedAgents:
         assert "Do not include a `citations` field" in agent.instructions
         assert "Populate `source_book_ids`" in agent.instructions
         assert "target ranges already encode narrative importance" in agent.instructions
-        assert "Resolve each scene actor `arc_bindings[].ref_id` against `plan.actor_arc_directives[].arc_refs[]`" in agent.instructions
-        assert "Use arc ref `premise`, `pressure`, `movement`, and `payoff` as narrative guidance" in agent.instructions
+        assert "`entry_image`" in agent.instructions
+        assert "Do not output standalone transitions." in agent.instructions
+        assert "Resolve each scene actor `arc_bindings[].thread_id` against `plan.actor_arc_directives[].arc_threads[]`" in agent.instructions
+        assert "Use arc thread `premise`, `pressure`, `movement`, and `payoff` as narrative guidance" in agent.instructions
         assert "Use `arc_bindings[].scene_use` as the actor arc operation for the scene" in agent.instructions
         assert "`introduce`: establish the actor's episode function" in agent.instructions
         assert "`avoid`: keep the actor present without foregrounding the arc" in agent.instructions
         assert "Use `arc_bindings[].weight` to scale narrative attention" in agent.instructions
         assert "Do not restate the same actor function" in agent.instructions
+
+    def test_writing_no_citations_response_rejects_teaser_line(self):
+        with pytest.raises(ValidationError, match="next-episode teaser copy"):
+            WritingAgentNoCitations(_mock_llm()).response_model.model_validate(
+                {
+                    "batch_id": "batch_1",
+                    "prose_sections": [
+                        {
+                            "section_id": "section_1",
+                            "scene_card_ids": ["scene_1"],
+                            "movement_goal": "discover",
+                            "text": "The scene lands.\n\nIn the next episode, another story begins.",
+                            "source_book_ids": ["b1"],
+                        }
+                    ],
+                    "window_map": [],
+                }
+            )
 
     def test_grounding_validation_agent_payload(self):
         agent = GroundingValidationAgent(_mock_llm())
@@ -325,7 +405,6 @@ class TestRedesignedAgents:
         agent = RepairAgent(_mock_llm())
         payload = agent.build_payload(
             failing_sections=[{"section_id": "section_1"}],
-            failing_transitions=[{"transition_id": "transition_1"}],
             failure_reasons=[{"text_unit_id": "section_1", "status": "UNSUPPORTED"}],
             passages={"p1": {"passage_id": "p1"}},
         )
@@ -344,16 +423,15 @@ class TestRedesignedAgents:
         assert payload["max_words_per_segment"] == 250
         assert "You are the spoken_delivery stage" in agent.instructions
         assert "historically literate storyteller" in agent.instructions
-        assert "The narrator thinks out loud, has opinions" in agent.instructions
+        assert "Have opinions and state them" in agent.instructions
         assert "Avoid abstract narrator crutches" in agent.instructions
-        assert "Avoid stock podcast phrasing" in agent.instructions
+        assert "Avoid stock podcast tics" in agent.instructions
         assert "Default to subtraction." in agent.instructions
         assert "Return only valid JSON matching expected_schema exactly." in agent.instructions
-        assert "Return exactly two top-level keys: sections and transitions." in agent.instructions
+        assert "Return exactly one top-level key: sections." in agent.instructions
         assert "No wrapper keys. No extra fields." in agent.instructions
         assert "Output exactly one section for each input script.prose_sections[]" in agent.instructions
-        assert "Do not merge, split, omit, duplicate, reorder, or rename sections or" in agent.instructions
-        assert "transitions." in agent.instructions
+        assert "Do not merge, split, omit, duplicate, reorder, or rename" in agent.instructions
         assert "Never strengthen a cautious claim." in agent.instructions
         assert "Add speech_hints.pronunciation_hints only" in agent.instructions
         assert "Keep `text` exactly as it appears in the segment." in agent.instructions
@@ -365,7 +443,7 @@ class TestRedesignedAgents:
         assert "Every sentence in the original script serves a purpose." not in agent.instructions
         assert "Do not simply delete structural sentences" not in agent.instructions
         assert "section_id" in agent.instructions
-        assert "transition_id" in agent.instructions
+        assert "transition_id" not in agent.instructions
 
 
 class TestHeuristicClient:

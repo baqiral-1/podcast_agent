@@ -3,16 +3,16 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>The Iranian Revolution — Agentic Podcasts</title>
+<title>The Modern Middle East — Agentic Podcasts</title>
 <style>
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
 :root {
   --bg: #060708;
   --text: #e8dcc8;
-  --accent: #a04040;
-  --accent-dim: rgba(160,64,64,0.3);
-  --accent-glow: rgba(160,64,64,0.15);
+  --accent: #8f9b58;
+  --accent-dim: rgba(143,155,88,0.3);
+  --accent-glow: rgba(143,155,88,0.15);
   --font: "Avenir Next", "SF Pro Text", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
 }
 
@@ -82,11 +82,11 @@ html, body {
   display: flex;
   flex-direction: column;
   scrollbar-width: thin;
-  scrollbar-color: rgba(160,64,64,0.25) transparent;
+  scrollbar-color: rgba(201,122,69,0.25) transparent;
 }
 .left-panel::-webkit-scrollbar { width: 6px; }
 .left-panel::-webkit-scrollbar-track { background: transparent; }
-.left-panel::-webkit-scrollbar-thumb { background: rgba(160,64,64,0.25); border-radius: 3px; }
+.left-panel::-webkit-scrollbar-thumb { background: rgba(201,122,69,0.25); border-radius: 3px; }
 
 /* Episode image block */
 .episode-image-block {
@@ -109,7 +109,7 @@ html, body {
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(to bottom, rgba(160,64,64,0.15), rgba(6,7,8,0.55));
+  background: linear-gradient(to bottom, rgba(201,122,69,0.15), rgba(6,7,8,0.55));
   pointer-events: none;
 }
 /* Film grain */
@@ -239,8 +239,8 @@ html, body {
   position: relative;
 }
 .btn-play svg { width: 1.8rem; height: 1.8rem; fill: var(--accent); }
-.btn-play:hover { border-color: #c45050 !important; background: rgba(160,64,64,0.08); }
-.btn-play:hover svg { fill: #c45050; }
+.btn-play:hover { border-color: #d99060 !important; background: rgba(201,122,69,0.08); }
+.btn-play:hover svg { fill: #d99060; }
 
 .btn-speed {
   padding: 0.35rem 0.75rem;
@@ -269,7 +269,7 @@ html, body {
   left: 10%;
   right: 10%;
   height: 60px;
-  background: radial-gradient(ellipse at center, rgba(160,64,64,0.06) 0%, transparent 70%);
+  background: radial-gradient(ellipse at center, rgba(201,122,69,0.06) 0%, transparent 70%);
   pointer-events: none;
 }
 .episode-desc p {
@@ -283,16 +283,16 @@ html, body {
 /* ── RIGHT PANEL — PLAYLIST ── */
 .right-panel {
   background: rgba(10,11,13,0.65);
-  border-left: 1px solid rgba(160,64,64,0.15);
+  border-left: 1px solid rgba(201,122,69,0.15);
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   scrollbar-width: thin;
-  scrollbar-color: rgba(160,64,64,0.2) transparent;
+  scrollbar-color: rgba(201,122,69,0.2) transparent;
 }
 .right-panel::-webkit-scrollbar { width: 6px; }
 .right-panel::-webkit-scrollbar-track { background: transparent; }
-.right-panel::-webkit-scrollbar-thumb { background: rgba(160,64,64,0.2); border-radius: 3px; }
+.right-panel::-webkit-scrollbar-thumb { background: rgba(201,122,69,0.2); border-radius: 3px; }
 
 .playlist-header {
   padding: 1.5rem 2rem 1rem;
@@ -328,13 +328,13 @@ html, body {
   border-left: 3px solid transparent;
 }
 .ep-row:hover {
-  background: rgba(160,64,64,0.05);
+  background: rgba(201,122,69,0.05);
 }
 .ep-row:hover .ep-text .ep-title { opacity: 0.9; }
 .ep-row:hover .ep-play-indicator { opacity: 1; }
 
 .ep-row.active {
-  background: rgba(160,64,64,0.08);
+  background: rgba(201,122,69,0.08);
   border-left-color: var(--accent);
 }
 .ep-row.active .ep-num { color: var(--accent); opacity: 1; }
@@ -427,7 +427,7 @@ html, body {
   display: none;
   width: 100%;
   padding: 0.9rem 2rem;
-  background: rgba(160,64,64,0.06);
+  background: rgba(201,122,69,0.06);
   border: none;
   border-top: 1px solid rgba(255,255,255,0.06);
   color: var(--text);
@@ -484,7 +484,7 @@ html, body {
 
   .right-panel {
     border-left: none;
-    border-top: 1px solid rgba(160,64,64,0.15);
+    border-top: 1px solid rgba(201,122,69,0.15);
     max-height: 0;
     overflow: hidden;
     transition: max-height 0.4s ease;
@@ -507,7 +507,7 @@ html, body {
 <!-- HEADER -->
 <header class="site-header">
   <a href="index.html" class="brand">Agentic Podcasts</a>
-  <span class="series-title">The Iranian Revolution</span>
+  <span class="series-title">The Modern Middle East</span>
   <span class="meta">Eight episodes</span>
 </header>
 
@@ -517,9 +517,9 @@ html, body {
   <!-- LEFT — NOW PLAYING -->
   <div class="left-panel" id="leftPanel">
     <div class="episode-image-block" id="episodeImageBlock">
-      <img id="episodeImage" src="images/iran-2.jpg" alt="Episode image">
+      <img id="episodeImage" src="images/middle-east-1.png" alt="Episode image">
       <span class="image-ep-number" id="imageEpNum">1</span>
-      <span class="image-ep-title" id="imageEpTitle">The Grievance File</span>
+      <span class="image-ep-title" id="imageEpTitle">Enver&#x27;s War: How the Ottoman Empire Walked Into Its Own End</span>
     </div>
 
     <div class="waveform-section">
@@ -529,7 +529,7 @@ html, body {
       </div>
       <div class="time-row">
         <span id="timeCurrent">0:00:00</span>
-        <span id="timeTotal">1:32:53</span>
+        <span id="timeTotal">Coming soon</span>
       </div>
     </div>
 
@@ -544,7 +544,7 @@ html, body {
     </div>
 
     <div class="episode-desc">
-      <p id="episodeDescription">Open in the British legation bast of 1906, where bazaar and clergy invent Iran&#x27;s parliamentary idiom; watch Nuri break with the constitutionalists and hang for it, planting the doctrinal seed Khomeini will later harvest. Stack the Anglo-Russian partition, capitulations, and the 1941 Allied invasion into a single cumulative indictment of violated sovereignty. Close with Reza Shah&#x27;s forced unveiling and the 1935 Mashhad shrine massacre - Pahlavi modernism inscribed on women&#x27;s bodies and shrine courtyards, a grievance stored for a generation.</p>
+      <p id="episodeDescription">Open on Churchill&#x27;s 1914 conversion of the Royal Navy to oil — the decision that already ties Britain&#x27;s future to this region. Pivot to the CUP&#x27;s choice of Berlin, then to Enver&#x27;s winter catastrophe at Sarıkamış, then to the counter-intuitive Ottoman victory at Gallipoli that preserves an empire already losing the economic war. Close on the structural development gap that frames why reform keeps failing.</p>
     </div>
   </div>
 
@@ -556,7 +556,7 @@ html, body {
   <div class="right-panel" id="rightPanel">
     <div class="playlist-header">
       <span class="label">Episodes</span>
-      <span class="total-runtime">12h 14m</span>
+      <span class="total-runtime">12h 07m</span>
     </div>
     <div id="playlistRows"></div>
   </div>
@@ -568,80 +568,80 @@ html, body {
 
 <script>
 // ── DATA ──
-const AUDIO_BASE = "https://github.com/baqiral-1/podcast_agent/releases/download/iranian-revolution-episodes-1-8-20260420T0000/";
+const AUDIO_BASE = "https://github.com/baqiral-1/podcast_agent/releases/download/modern-middle-east-episodes-1-8-20260420T0000/";
 
 const EPISODES = [
   {
     "num": 1,
-    "title": "The Grievance File",
-    "duration": "1:32:53",
-    "durationSec": 5573,
-    "image": "images/iran-2.jpg",
-    "audio": "https://github.com/baqiral-1/podcast_agent/releases/download/iranian-revolution-episodes-1-8-20260420T0000/episode-1.mp3",
-    "desc": "Open in the British legation bast of 1906, where bazaar and clergy invent Iran's parliamentary idiom; watch Nuri break with the constitutionalists and hang for it, planting the doctrinal seed Khomeini will later harvest. Stack the Anglo-Russian partition, capitulations, and the 1941 Allied invasion into a single cumulative indictment of violated sovereignty. Close with Reza Shah's forced unveiling and the 1935 Mashhad shrine massacre - Pahlavi modernism inscribed on women's bodies and shrine courtyards, a grievance stored for a generation."
+    "title": "Enver's War: How the Ottoman Empire Walked Into Its Own End",
+    "duration": "1:20:33",
+    "durationSec": 4833,
+    "image": "images/middle-east-1.png",
+    "audio": "https://github.com/baqiral-1/podcast_agent/releases/download/modern-middle-east-episodes-1-8-20260420T0000/episode-1.mp3",
+    "desc": "Open on Churchill's 1914 conversion of the Royal Navy to oil — the decision that already ties Britain's future to this region. Pivot to the CUP's choice of Berlin, then to Enver's winter catastrophe at Sarıkamış, then to the counter-intuitive Ottoman victory at Gallipoli that preserves an empire already losing the economic war. Close on the structural development gap that frames why reform keeps failing."
   },
   {
     "num": 2,
-    "title": "Ajax: The Door That Closed",
-    "duration": "1:29:20",
-    "durationSec": 5360,
-    "image": "images/iran-3.jpg",
-    "audio": "https://github.com/baqiral-1/podcast_agent/releases/download/iranian-revolution-episodes-1-8-20260420T0000/episode-2.mp3",
-    "desc": "Mossadeq nationalizes the Anglo-Iranian Oil Company and for a moment carries Iran with him. Then the coalition cracks: Kashani issues a fatwa against his former ally, the Tudeh hesitates to mobilize its urban base, and Kermit Roosevelt's paid mobs and forged firmans finish the work. The payoff is not just Mossadeq at Ahmad Abad; it is a sovereignty wound and a secular option removed from the board, leaving religious opposition as the only idiom for future dissent."
+    "title": "Three Promises and an Extermination",
+    "duration": "1:24:39",
+    "durationSec": 5079,
+    "image": "images/middle-east-2.jpg",
+    "audio": "https://github.com/baqiral-1/podcast_agent/releases/download/modern-middle-east-episodes-1-8-20260420T0000/episode-2.mp3",
+    "desc": "Braid two 1915-16 stories that historians usually separate. In Istanbul and Anatolia, Talat's deportation logic produces the Armenian and Assyrian catastrophes. In London, Cairo, and the Hejaz, the British simultaneously pledge independence to Hussein, partition to Picot, and mobilize the Arab Revolt. The episode's argument: both tracks share the same wartime improvisational logic, and both produce the legitimacy crises that drive the next century. Close on Sykes and Picot signing the map in January 1916."
   },
   {
     "num": 3,
-    "title": "Revolution from Above, Doctrine from Najaf",
-    "duration": "1:34:23",
-    "durationSec": 5663,
-    "image": "images/iran-4.jpg",
-    "audio": "https://github.com/baqiral-1/podcast_agent/releases/download/iranian-revolution-episodes-1-8-20260420T0000/episode-3.mp3",
-    "desc": "The Shah's 1963 referendum breaks the landlord class and empties villages into Tehran's southern shantytowns; Khomeini's June 1963 Ashura sermon makes him a national name. Oil rents finance a petrostate that cannot absorb the classes it creates. Then, in Najaf in 1970, Khomeini converts a marginal juristic doctrine into a theory of clerical sovereignty - an innovation sold as tradition that the moderate grand ayatollahs see clearly and decide not to publicly fight. Shariati, dying in 1977, leaves behind the ideological bridge that will let leftists, bazaaris, and seminarians hear one man as three different men."
+    "title": "Damascus 1918: Victory as Betrayal",
+    "duration": "1:29:02",
+    "durationSec": 5342,
+    "image": "images/middle-east-3.jpg",
+    "audio": "https://github.com/baqiral-1/podcast_agent/releases/download/modern-middle-east-episodes-1-8-20260420T0000/episode-3.mp3",
+    "desc": "Three scenes drive the episode: Lawrence tells Faisal the real Sykes-Picot at Wejh (1917); Weizmann hears 'it's a boy' outside the War Cabinet (October 1917); the Bolsheviks publish the agreement and Cemal reads it aloud in Beirut (December 1917). Culminate at Damascus, October 1918 — Faisal accepts the city's surrender and, with Lawrence translating, is told inside the hour that Lebanon belongs to France. Mudros closes the military empire. Two anchors (Balfour and Damascus) are required because they are the episode's twin hinge-points, with Damascus as emotional payoff."
   },
   {
     "num": 4,
-    "title": "The Editorial and the King Who Could Not Act",
-    "duration": "1:32:29",
-    "durationSec": 5549,
-    "image": "images/iran-5.jpg",
-    "audio": "https://github.com/baqiral-1/podcast_agent/releases/download/iranian-revolution-episodes-1-8-20260420T0000/episode-4.mp3",
-    "desc": "January 7, 1978: Etelaat prints an attack on Khomeini and lights a fuse. Qom, then Tabriz forty days later, then every city on the next arbaeen - grief becomes insurrection on a pre-built Shi'a calendar that removes all organizational questions. The mosque-bazaar network, financed by khoms and organized through hay'at associations, provides the infrastructure. The Rex Cinema fire and Black Friday's Jaleh Square massacre end any hope of reconciliation. Inside Niavaran, the Shah - lymphoma kept secret, sycophancy filtering his world, asking 'what did I do to them?' - cannot bring himself to order the mass violence his throne would require."
+    "title": "Maysalun and the Invention of the Modern Map",
+    "duration": "1:37:25",
+    "durationSec": 5845,
+    "image": "images/middle-east-4.png",
+    "audio": "https://github.com/baqiral-1/podcast_agent/releases/download/modern-middle-east-episodes-1-8-20260420T0000/episode-4.mp3",
+    "desc": "Wilson arrives promising self-determination and leaves endorsing the mandates. The Syrian Congress elects Faisal and drafts a constitution; San Remo awards the mandates; Gouraud issues his ultimatum; de Caix engineers the destruction at Maysalun and carves Syria into sectarian cantons. In parallel, Kemal — once sentenced to death by his own sultan — nullifies Sèvres at Lausanne by abandoning the Arab provinces. The map we have was chosen, not inherited; the Hashemites become British clients; Harding quietly ratifies it all."
   },
   {
     "num": 5,
-    "title": "Neauphle-le-Château and the Departure",
-    "duration": "1:35:47",
-    "durationSec": 5747,
-    "image": "images/iran-shah.jpg",
-    "audio": "https://github.com/baqiral-1/podcast_agent/releases/download/iranian-revolution-episodes-1-8-20260420T0000/episode-5.mp3",
-    "desc": "Expelled from Najaf in October 1978, Khomeini installs himself in a French village with a cassette network and a garden full of microphones. His Paris generalities - throw out the imperialists, protect the dispossessed, Islamic justice - let liberals, Marxists, and bazaaris each hear what they need. Muharram brings millions into Tehran's streets; the Shah refuses to drown them. Americans read the crisis through a 'red and black' lens, Metrinko's dismissed cables arriving from the provinces, Carter and Brzezinski offering incompatible signals. On January 16, 1979, the King of Kings weeps his way down an Air France staircase with a jar of Iranian soil."
+    "title": "Palestine, Proxy Wars, and the Nakba",
+    "duration": "1:31:50",
+    "durationSec": 5510,
+    "image": "images/middle-east-5.jpg",
+    "audio": "https://github.com/baqiral-1/podcast_agent/releases/download/modern-middle-east-episodes-1-8-20260420T0000/episode-5.mp3",
+    "desc": "Track two structural forces. First, land purchase and Jewish-only labor displace Arab tenants; British immigration policy oscillates; the 1936-39 Arab Revolt and the 1939 White Paper harden the conflict. Second, the Anglo-French proxy war — French agents funding the Stern Gang, British officers arming Syrian nationalists — eats at both empires from within. Meanwhile FDR's Lend-Lease to Ibn Saud quietly installs the American successor. Banna founds the Brotherhood in an Egyptian company town, a current whose payoff is deferred. Converge on May 1948: mandate ends, Truman recognizes, Dayr Yasin, Abdullah's revolver on Allenby Bridge, the refugees clumped along borders."
   },
   {
     "num": 6,
-    "title": "February 11",
-    "duration": "1:27:21",
-    "durationSec": 5241,
-    "image": "images/iran-hostage.jpg",
-    "audio": "https://github.com/baqiral-1/podcast_agent/releases/download/iranian-revolution-episodes-1-8-20260420T0000/episode-6.mp3",
-    "desc": "Huyser lands in Tehran to hold the military together for Bakhtiar and keep a coup option warm - an impossible pair of instructions in an army the Shah designed to be uncoordinated. On February 1, Khomeini descends the Air France stairs stone-faced and says he feels nothing. Four days later, at Refah School, he claims velayat-e-faqih in public and appoints Bazargan's provisional government, declaring any Shah-appointed premier a traitor to Islam. Doshan Tappeh mutinies; on February 11, twenty-seven senior officers vote to withdraw to barracks. Within days, generals are shot on the Refah rooftop and the first question of the new regime - who killed Hoveyda, the Shah who abandoned him or the revolution that tried him? - is being answered in a classroom basement."
+    "title": "The Free Officers, Mossadegh, and the Arab Century",
+    "duration": "1:34:21",
+    "durationSec": 5661,
+    "image": "images/middle-east-6.png",
+    "audio": "https://github.com/baqiral-1/podcast_agent/releases/download/modern-middle-east-episodes-1-8-20260420T0000/episode-6.mp3",
+    "desc": "Open in the Faluja pocket with Nasser insisting 'The army did not commit the crime of Palestine.' The Free Officers take Cairo; Nasser eclipses Naguib. Cut to Tehran: Mossadegh nationalizes, the British embargo, the CIA-MI6 coup restores the Shah — the 1953 template. Suez 1956: Eisenhower refuses to back his allies; Nasser becomes the Arab hero; the imperial era ends. The UAR briefly realizes pan-Arab unity before Syrian secession chastens it. Underneath all of this: asabiyya — Alawi, Tikriti, Saudi clan networks — is quietly building the regimes that will outlive every ideology. Two anchors (1953 and the republican consolidation centered on Suez) carry a dual hinge: what America did to one oil state, and what it enabled in the other."
   },
   {
     "num": 7,
-    "title": "The Second Revolution",
-    "duration": "1:24:55",
-    "durationSec": 5095,
-    "image": "images/iran-revolution.jpg",
-    "audio": "https://github.com/baqiral-1/podcast_agent/releases/download/iranian-revolution-episodes-1-8-20260420T0000/episode-7.mp3",
-    "desc": "Bazargan's provisional cabinet governs on paper while komitehs and Revolutionary Courts govern in fact; nine months of humiliation produce a prime minister no one obeys. The Assembly of Experts, led by Beheshti's IRP, rewrites the draft constitution to place a supreme jurist above president and parliament - Sahabi warning from outside the chamber that this will ruin Islam itself. On November 4, 1979, students seize the American embassy; Khomeini endorses, Bazargan resigns, and the hostage crisis becomes the instrument by which the clerical party eliminates its liberal partners. The revolution's anti-imperialism absorbs its anti-authoritarianism and keeps only the first."
+    "title": "1967, the Prison, and Sadat's Reversal",
+    "duration": "1:34:28",
+    "durationSec": 5668,
+    "image": "images/middle-east-7.png",
+    "audio": "https://github.com/baqiral-1/podcast_agent/releases/download/modern-middle-east-episodes-1-8-20260420T0000/episode-7.mp3",
+    "desc": "Three hinges braided to contest a familiar story. First, Qutb in Nasser's prisons: love-poet turned revolutionary theorist, hanged in 1966 — prison as incubator. Second, June 1967: the army shattered in six days, refugees along the borders, Nasserism broken. Third, Sadat after 1970: releases the Islamists, purges Nasserists, lets petrodollars re-enter, engineers the ideological balance that later kills him. The argument: Gerges's reading that 1967 is less the tipping point than Sadat's deliberate state policy. OPEC, founded in 1960 and dismissed, runs quietly underneath as a payoff for Ep8."
   },
   {
     "num": 8,
-    "title": "The Republic That Outlasted Its Maker",
-    "duration": "1:36:56",
-    "durationSec": 5816,
-    "image": "images/iran-8.jpg",
-    "audio": "https://github.com/baqiral-1/podcast_agent/releases/download/iranian-revolution-episodes-1-8-20260420T0000/episode-8.mp3",
-    "desc": "In June 1981 the Majles impeaches Bani-Sadr; Mojahedin allies smuggle him out, Beheshti is assassinated, and the last non-clerical coalition partners are eliminated from Iranian politics. Saddam's September 1980 invasion had already handed Khomeini the mobilization he needed - a war he would choose to continue past any strategic rationale because the regime needed the dead. The bazaar and the mostazafin each expect their revolution; Khomeini engineers Montazeri aside and the Rafsanjani-Khamenei succession into place. Beyond Iran's borders, the revolution reverberates as Shi'a assertion and Sunni counter-mobilization, a regional cold war Khomeini never controlled. The closing question: did velayat-e faqih corrupt Shi'ism or fulfill a strand of it, and can the Republic survive the doctrine it left behind?"
+    "title": "Oil, Revolution, and the Long American Commitment",
+    "duration": "1:34:49",
+    "durationSec": 5689,
+    "image": "images/middle-east-8.jpg",
+    "audio": "https://github.com/baqiral-1/podcast_agent/releases/download/modern-middle-east-episodes-1-8-20260420T0000/episode-8.mp3",
+    "desc": "Nixon in Tehran hands the Shah a blank check; the Shah pushes the 1973 price revolution while Kissinger accommodates; Saudi Arabia embargoes its own patron and is rewarded with a grand bargain. The oil boom becomes Iran's structural breakdown; Khomeini replaces the Guardian of the Gulf. Carter formalizes what losing the proxy means. Saddam's 1990 miscalculation entrenches U.S. forces on Saudi soil — a grievance Qutb's inheritors will metabolize. The 1986 price collapse quietly converts 'sovereignty' back into commodity. End on 2011: Mubarak booed on giant screens; the Brotherhood's hour and its collapse; the question of whether anything has actually changed since Maysalun."
   }
 ];
 
@@ -730,9 +730,9 @@ function drawWaveform(progress) {
     const y = midY - barH / 2;
 
     if (i < playedBars) {
-      ctx.fillStyle = "rgba(160,64,64,0.8)";
+      ctx.fillStyle = "rgba(201,122,69,0.8)";
     } else {
-      ctx.fillStyle = "rgba(160,64,64,0.25)";
+      ctx.fillStyle = "rgba(201,122,69,0.25)";
     }
     ctx.fillRect(x, y, barWidth, barH);
   }
@@ -740,7 +740,7 @@ function drawWaveform(progress) {
   // Playhead line
   if (progress > 0) {
     const px = progress * w;
-    ctx.strokeStyle = "#a04040";
+    ctx.strokeStyle = "#c97a45";
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(px, 8);
@@ -750,7 +750,7 @@ function drawWaveform(progress) {
     // Circle on top of playhead
     ctx.beginPath();
     ctx.arc(px, 8, 4, 0, Math.PI * 2);
-    ctx.fillStyle = "#a04040";
+    ctx.fillStyle = "#c97a45";
     ctx.fill();
   }
 }

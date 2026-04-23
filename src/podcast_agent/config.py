@@ -99,9 +99,9 @@ class LLMConfig(BaseModel):
     thinking_budget_tokens: dict[str, int] = Field(
         default_factory=lambda: {
             "narrative_strategy": 10000,
-            "episode_planning": 20000,
+            "episode_planning": 26000,
             "episode_writing": 10000,
-            "spoken_delivery": 20000,
+            "spoken_delivery": 26000,
             "synthesis_primitives": 30000,
             "synthesis_consolidation": 10000,
             "theme_decomposition": 10000,
@@ -135,10 +135,10 @@ class LLMConfig(BaseModel):
     # Per-agent configuration keyed by agent schema_name
     agent_configs: dict[str, AgentConfig] = Field(
         default_factory=lambda: {
-            "chapter_summary": AgentConfig(model_name="claude-haiku-4-5", temperature=0.3, max_retry_attempts=3, concurrency_limit=40),
+            "chapter_summary": AgentConfig(model_name="claude-haiku-4-5", temperature=0.3, max_retry_attempts=3, concurrency_limit=48),
             "book_summary": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.3, max_retry_attempts=3, concurrency_limit=15),
             "theme_decomposition": AgentConfig(model_name="claude-opus-4-7", temperature=0.7, max_retry_attempts=2, concurrency_limit=6),
-            "passage_extraction": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.1, max_retry_attempts=4, concurrency_limit=13),
+            "passage_extraction": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.1, max_retry_attempts=4, concurrency_limit=26),
             "synthesis_primitives": AgentConfig(model_name="claude-opus-4-7", temperature=0.8, max_retry_attempts=2, concurrency_limit=3),
             "synthesis_consolidation": AgentConfig(model_name="claude-opus-4-7", temperature=0.6, max_retry_attempts=2, concurrency_limit=4),
             "narrative_strategy": AgentConfig(model_name="claude-opus-4-7", temperature=0.5, max_retry_attempts=2, concurrency_limit=6),
@@ -240,8 +240,8 @@ class TTSConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     provider: str = Field(default="openai-compatible")
-    model_name: str = Field(default="gpt-4o-mini-tts")
-    voice: str = Field(default="ballad")
+    model_name: str = Field(default="tts-1-hd")
+    voice: str = Field(default="fable")
     audio_format: str = Field(default="mp3")
     instructions: str = Field(
         default=(
@@ -251,7 +251,7 @@ class TTSConfig(BaseModel):
             "Favor clean diction and steady pacing."
         )
     )
-    speed: float = Field(default=1, gt=0.0, le=4.0)
+    speed: float = Field(default=0.9, gt=0.0, le=4.0)
     timeout_seconds: float = Field(default=300.0, gt=0.0)
     kokoro_parallelism: int = Field(default=2, ge=1)
     kokoro_worker_threads: int = Field(default=2, ge=1)
@@ -286,8 +286,8 @@ class PipelineRuntimeConfig(BaseModel):
     min_chunk_words: int = Field(default=80, ge=10)
     max_repair_attempts: int = Field(default=3, ge=0)
     episode_planning_concurrency: int = Field(default=9, ge=1)
-    episode_write_concurrency: int = Field(default=7, ge=1)
-    tts_concurrency: int = Field(default=12, ge=1)
+    episode_write_concurrency: int = Field(default=10, ge=1)
+    tts_concurrency: int = Field(default=5, ge=1)
     llm_global_max_concurrency: int = Field(default=30, ge=1)
     audio_retry_attempts: int = Field(default=3, ge=0)
     spoken_words_per_minute: int = Field(default=130, ge=80)
@@ -318,7 +318,7 @@ class PipelineRuntimeConfig(BaseModel):
     planning_axis_max: int = Field(default=15, ge=1)
     planning_total_passage_cap: int = Field(default=300, ge=1)
     synthesis_quality_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
-    passage_extraction_concurrency: int = Field(default=8, ge=1)
+    passage_extraction_concurrency: int = Field(default=16, ge=1)
     spoken_chunk_max_words: int = Field(default=250, ge=50)
 
     @model_validator(mode="after")

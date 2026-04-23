@@ -1,35 +1,76 @@
 {
-  "version": 3,
+  "version": 4,
   "theme": {
-    "delimiter": " \u2022 ",
+    "delimiter": " • ",
     "exact_count": 3,
     "max_words_per_theme": 2,
     "max_two_word_themes_per_episode": 1,
     "require_geography_specificity": true
   },
   "layout": {
-    "max_width_px": 1537,
-    "desktop_tablet_page_padding_rem": 1.5,
-    "mobile_page_padding_rem": 1.1
-  },
-  "svg": {
-    "brand_transform": "translate(836,72) translate(74,0) scale(1.2) translate(-74,0)",
-    "two_line_title_y": [690, 772],
-    "two_line_title_font_size": 72,
-    "author_baseline_y": 842
+    "homepage": "full-screen vertical scenes",
+    "detail_page": "split-panel waveform player"
   },
   "collections": {
     "the-iranian-revolution": {
-      "themes": ["Iran", "Shi\u2019ism", "1979 Revolution"],
-      "accent_color": "#a04040"
+      "themes": [
+        "Iran",
+        "Shi’ism",
+        "1979 Revolution"
+      ],
+      "accent_color": "#a04040",
+      "episode_count": 8,
+      "runtime": "12h 14m"
     },
     "the-partition-of-india": {
-      "themes": ["India", "Pakistan", "1947 Partition"],
-      "accent_color": "#c97a45"
+      "themes": [
+        "India",
+        "Pakistan",
+        "1947 Partition"
+      ],
+      "accent_color": "#c97a45",
+      "episode_count": 8,
+      "runtime": "12h 30m"
     },
     "the-question-of-palestine": {
-      "themes": ["Palestine", "Israel", "1948 Nakba"],
-      "accent_color": "#6a8a5a"
+      "themes": [
+        "Palestine",
+        "Israel",
+        "1948 Nakba"
+      ],
+      "accent_color": "#6a8a5a",
+      "episode_count": 8,
+      "runtime": "13h 40m"
+    },
+    "the-war-on-terror": {
+      "themes": [
+        "Afghanistan",
+        "Iraq",
+        "Jihadism"
+      ],
+      "accent_color": "#3a8a7a",
+      "episode_count": 8,
+      "runtime": "12h 25m"
+    },
+    "the-mughal-throne": {
+      "themes": [
+        "Mughal India",
+        "Empire",
+        "Delhi"
+      ],
+      "accent_color": "#b76e3a",
+      "episode_count": 9,
+      "runtime": "13h 31m"
+    },
+    "the-modern-middle-east": {
+      "themes": [
+        "Ottomans",
+        "Arabia",
+        "Oil"
+      ],
+      "accent_color": "#8f9b58",
+      "episode_count": 8,
+      "runtime": "Audio coming soon"
     }
   }
 }

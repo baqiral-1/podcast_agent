@@ -11,6 +11,46 @@ from podcast_agent.config import Settings, TTSConfig
 from podcast_agent.tts.base import TTSClient
 from podcast_agent.tts.kokoro import KokoroTTSClient
 
+OPENAI_TTS_INSTRUCTION_MODELS = {"gpt-4o-mini-tts"}
+OPENAI_TTS_LIMITED_VOICE_MODELS = {"tts-1", "tts-1-hd"}
+OPENAI_TTS_LIMITED_VOICES = {
+    "alloy",
+    "ash",
+    "coral",
+    "echo",
+    "fable",
+    "onyx",
+    "nova",
+    "sage",
+    "shimmer",
+}
+OPENAI_TTS_DEFAULT_LEGACY_VOICE = "fable"
+
+
+def supports_openai_tts_instructions(model_name: str | None) -> bool:
+    if model_name is None:
+        return False
+    return model_name.strip().lower() in OPENAI_TTS_INSTRUCTION_MODELS
+
+
+def resolve_openai_tts_voice(
+    model_name: str,
+    voice: str | None,
+    fallback_voice: str,
+) -> tuple[str, str | None]:
+    requested_voice = (voice or fallback_voice).strip()
+    normalized_model = model_name.strip().lower()
+    normalized_voice = requested_voice.lower()
+    if normalized_model not in OPENAI_TTS_LIMITED_VOICE_MODELS:
+        return requested_voice, None
+    if normalized_voice in OPENAI_TTS_LIMITED_VOICES:
+        return normalized_voice, None
+
+    fallback = fallback_voice.strip().lower()
+    if fallback not in OPENAI_TTS_LIMITED_VOICES:
+        fallback = OPENAI_TTS_DEFAULT_LEGACY_VOICE
+    return fallback, requested_voice
+
 
 class BinaryHTTPTransport:
     """Minimal binary transport for speech endpoints."""
@@ -55,19 +95,33 @@ class OpenAICompatibleTTSClient(TTSClient):
         api_key = __import__("os").getenv("OPENAI_API_KEY")
         if not api_key:
             raise RuntimeError("OPENAI_API_KEY is required for OpenAI-compatible TTS synthesis.")
+        voice_value, replaced_voice = resolve_openai_tts_voice(
+            self.config.model_name,
+            voice,
+            self.config.voice,
+        )
         payload = {
             "model": self.config.model_name,
-            "voice": voice or self.config.voice,
+            "voice": voice_value,
             "input": text,
             "format": audio_format or self.config.audio_format,
-            "instructions": instructions or self.config.instructions,
             "speed": speed if speed is not None else self.config.speed,
         }
+        if supports_openai_tts_instructions(self.config.model_name):
+            payload["instructions"] = instructions or self.config.instructions
         endpoint = f"{(__import__('os').getenv('OPENAI_BASE_URL') or 'https://api.openai.com').rstrip('/')}/v1/audio/speech"
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
+        if replaced_voice is not None and self.run_logger is not None:
+            self.run_logger.log(
+                "tts_voice_substitution",
+                client="openai-compatible",
+                model=self.config.model_name,
+                requested_voice=replaced_voice,
+                resolved_voice=voice_value,
+            )
         if self.run_logger is not None:
             self.run_logger.log(
                 "tts_request",
@@ -75,7 +129,7 @@ class OpenAICompatibleTTSClient(TTSClient):
                 model=self.config.model_name,
                 voice=payload["voice"],
                 audio_format=payload["format"],
-                instructions=payload["instructions"],
+                instructions=payload.get("instructions"),
                 speed=payload["speed"],
                 text=text,
             )
@@ -92,7 +146,7 @@ class OpenAICompatibleTTSClient(TTSClient):
                 model=self.config.model_name,
                 voice=payload["voice"],
                 audio_format=payload["format"],
-                instructions=payload["instructions"],
+                instructions=payload.get("instructions"),
                 speed=payload["speed"],
                 byte_count=len(audio_bytes),
             )

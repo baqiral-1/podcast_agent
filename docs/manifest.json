@@ -1,66 +1,73 @@
 {
-  "version": 2,
+  "version": 3,
   "generatedFrom": "docs/index.html",
   "collections": [
     {
       "id": "the-iranian-revolution",
       "title": "The Iranian Revolution",
       "author": null,
-      "tagline": "Iran \u2022 Shi\u2019ism \u2022 1979 Revolution",
-      "runtime": "12h 40m",
-      "summary": "The series opens by establishing the deep structural foundations \u2014 the thousand-year duel between clergy and crown, the Safavid settlement, the Usuli triumph \u2014 that made clerical revolutionary leadership possible. It then traces how the Pahlavi modernization project systematically created every condition necessary for its own destruction.",
+      "tagline": "Iran • Shi’ism • 1979 Revolution",
+      "runtime": "12h 14m",
+      "summary": "A history of revolution as accumulated grievance: constitutional betrayal, foreign intervention, Pahlavi modernization, clerical doctrine, and the state that survived its founder.",
       "accentColor": "#a04040",
-      "episodeCount": 7,
+      "episodeCount": 8,
       "detailUrl": "https://baqiral-1.github.io/podcast_agent/the-iranian-revolution.html",
       "episodes": [
         {
           "number": 1,
-          "title": "The Thousand-Year Duel",
-          "summary": "On February 1st, 1979, Ayatollah Khomeini descended the stairs of an Air France Boeing 747 at Mehrabad Airport in Tehran. Behind him lay fifteen years of exile. Ahead lay the unmaking of a dynasty that had ruled for nearly 2,500 years. But to understand how a religious scholar in a black turban toppled the Peacock Throne, we have to go back much further \u2014 to 1501, when another revolution began, one that would shape Iran\u2019s soul for five centuries.",
-          "description": "The episode establishes the series\u2019 global question by tracing the deep structural foundations of Shi\u2019ite clerical autonomy. Beginning with the Safavid imposition of Shi\u2019ism in 1501 and the creation of a clerical class both dependent on and rival to royal power, the episode moves through the Usuli triumph over the Akhbaris (which established the doctrinal foundation for clerical independence), the Qajar dualism that represented a stable equilibrium, and the Constitutional Revolution of 1906 that first revealed the fault line between parliamentary sovereignty and Islamic law.",
-          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/iranian-revolution-episodes-1-7-20260407T1830/episode-1.mp3"
+          "title": "The Grievance File",
+          "summary": "Open in the British legation bast of 1906, where bazaar and clergy invent Iran's parliamentary idiom; watch Nuri break with the constitutionalists and hang for it, planting the doctrinal seed Khomeini will later harvest. Stack the Anglo-Russian partition, capitulations, and the 1941 Allied invasion into a single cumulative indictment of violated sovereignty. Close with Reza Shah's forced unveiling and the 1935 Mashhad shrine massacre - Pahlavi modernism inscribed on women's bodies and shrine courtyards, a grievance stored for a generation.",
+          "description": "Open in the British legation bast of 1906, where bazaar and clergy invent Iran's parliamentary idiom; watch Nuri break with the constitutionalists and hang for it, planting the doctrinal seed Khomeini will later harvest. Stack the Anglo-Russian partition, capitulations, and the 1941 Allied invasion into a single cumulative indictment of violated sovereignty. Close with Reza Shah's forced unveiling and the 1935 Mashhad shrine massacre - Pahlavi modernism inscribed on women's bodies and shrine courtyards, a grievance stored for a generation.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/iranian-revolution-episodes-1-8-20260420T0000/episode-1.mp3"
         },
         {
           "number": 2,
-          "title": "The Modernizer\u2019s Trap",
-          "summary": "The Shah left Iran on January 16th, 1979, bewildered and broken. But the trap that caught him didn\u2019t spring overnight \u2014 it was built, piece by piece, by his own father, then inherited and amplified by him. Today, we trace how modernization itself became the engine of revolution.",
-          "description": "The episode traces the self-defeating logic of Pahlavi modernization, showing how father and son pursued nearly identical paradigms that simultaneously transformed Iran and generated the resentments that fueled opposition.",
-          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/iranian-revolution-episodes-1-7-20260407T1830/episode-2.mp3"
+          "title": "Ajax: The Door That Closed",
+          "summary": "Mossadeq nationalizes the Anglo-Iranian Oil Company and for a moment carries Iran with him. Then the coalition cracks: Kashani issues a fatwa against his former ally, the Tudeh hesitates to mobilize its urban base, and Kermit Roosevelt's paid mobs and forged firmans finish the work. The payoff is not just Mossadeq at Ahmad Abad; it is a sovereignty wound and a secular option removed from the board, leaving religious opposition as the only idiom for future dissent.",
+          "description": "Mossadeq nationalizes the Anglo-Iranian Oil Company and for a moment carries Iran with him. Then the coalition cracks: Kashani issues a fatwa against his former ally, the Tudeh hesitates to mobilize its urban base, and Kermit Roosevelt's paid mobs and forged firmans finish the work. The payoff is not just Mossadeq at Ahmad Abad; it is a sovereignty wound and a secular option removed from the board, leaving religious opposition as the only idiom for future dissent.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/iranian-revolution-episodes-1-8-20260420T0000/episode-2.mp3"
         },
         {
           "number": 3,
-          "title": "The Foundational Trauma",
-          "summary": "A revolution is not made by revolutionaries \u2014 it is made by the ancien r\u00e9gime destroying itself. Today, we trace how external powers gave that trap its final, fatal mechanism.",
-          "description": "The episode examines the 1953 coup as the foundational trauma that connects Iran\u2019s democratic aspirations to revolutionary radicalism.",
-          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/iranian-revolution-episodes-1-7-20260407T1830/episode-3.mp3"
+          "title": "Revolution from Above, Doctrine from Najaf",
+          "summary": "The Shah's 1963 referendum breaks the landlord class and empties villages into Tehran's southern shantytowns; Khomeini's June 1963 Ashura sermon makes him a national name. Oil rents finance a petrostate that cannot absorb the classes it creates. Then, in Najaf in 1970, Khomeini converts a marginal juristic doctrine into a theory of clerical sovereignty - an innovation sold as tradition that the moderate grand ayatollahs see clearly and decide not to publicly fight. Shariati, dying in 1977, leaves behind the ideological bridge that will let leftists, bazaaris, and seminarians hear one man as three different men.",
+          "description": "The Shah's 1963 referendum breaks the landlord class and empties villages into Tehran's southern shantytowns; Khomeini's June 1963 Ashura sermon makes him a national name. Oil rents finance a petrostate that cannot absorb the classes it creates. Then, in Najaf in 1970, Khomeini converts a marginal juristic doctrine into a theory of clerical sovereignty - an innovation sold as tradition that the moderate grand ayatollahs see clearly and decide not to publicly fight. Shariati, dying in 1977, leaves behind the ideological bridge that will let leftists, bazaaris, and seminarians hear one man as three different men.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/iranian-revolution-episodes-1-8-20260420T0000/episode-3.mp3"
         },
         {
           "number": 4,
-          "title": "The Invisible Revolution",
-          "summary": "A revolution is not made by revolutionaries. It is made by the people. But how do ordinary people become revolutionary? Today, we trace the invisible networks that transformed seeds into an unstoppable force.",
-          "description": "The episode reveals the invisible revolution \u2014 the intellectual currents and organizational networks that were building beneath the surface while both the Shah and America remained blind.",
-          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/iranian-revolution-episodes-1-7-20260407T1830/episode-4.mp3"
+          "title": "The Editorial and the King Who Could Not Act",
+          "summary": "January 7, 1978: Etelaat prints an attack on Khomeini and lights a fuse. Qom, then Tabriz forty days later, then every city on the next arbaeen - grief becomes insurrection on a pre-built Shi'a calendar that removes all organizational questions. The mosque-bazaar network, financed by khoms and organized through hay'at associations, provides the infrastructure. The Rex Cinema fire and Black Friday's Jaleh Square massacre end any hope of reconciliation. Inside Niavaran, the Shah - lymphoma kept secret, sycophancy filtering his world, asking 'what did I do to them?' - cannot bring himself to order the mass violence his throne would require.",
+          "description": "January 7, 1978: Etelaat prints an attack on Khomeini and lights a fuse. Qom, then Tabriz forty days later, then every city on the next arbaeen - grief becomes insurrection on a pre-built Shi'a calendar that removes all organizational questions. The mosque-bazaar network, financed by khoms and organized through hay'at associations, provides the infrastructure. The Rex Cinema fire and Black Friday's Jaleh Square massacre end any hope of reconciliation. Inside Niavaran, the Shah - lymphoma kept secret, sycophancy filtering his world, asking 'what did I do to them?' - cannot bring himself to order the mass violence his throne would require.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/iranian-revolution-episodes-1-8-20260420T0000/episode-4.mp3"
         },
         {
           "number": 5,
-          "title": "The Year of Living Dangerously",
-          "summary": "On February 11, 1979, the Shah\u2019s generals stopped fighting. Not because they were defeated \u2014 but because they finally understood what Khomeini had understood all along: the revolution wasn\u2019t a military problem. It was a spiritual one.",
-          "description": "The episode traces the revolutionary year of 1978 as a cascade of escalation, paralysis, and strategic ambiguity.",
-          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/iranian-revolution-episodes-1-7-20260407T1830/episode-5.mp3"
+          "title": "Neauphle-le-Château and the Departure",
+          "summary": "Expelled from Najaf in October 1978, Khomeini installs himself in a French village with a cassette network and a garden full of microphones. His Paris generalities - throw out the imperialists, protect the dispossessed, Islamic justice - let liberals, Marxists, and bazaaris each hear what they need. Muharram brings millions into Tehran's streets; the Shah refuses to drown them. Americans read the crisis through a 'red and black' lens, Metrinko's dismissed cables arriving from the provinces, Carter and Brzezinski offering incompatible signals. On January 16, 1979, the King of Kings weeps his way down an Air France staircase with a jar of Iranian soil.",
+          "description": "Expelled from Najaf in October 1978, Khomeini installs himself in a French village with a cassette network and a garden full of microphones. His Paris generalities - throw out the imperialists, protect the dispossessed, Islamic justice - let liberals, Marxists, and bazaaris each hear what they need. Muharram brings millions into Tehran's streets; the Shah refuses to drown them. Americans read the crisis through a 'red and black' lens, Metrinko's dismissed cables arriving from the provinces, Carter and Brzezinski offering incompatible signals. On January 16, 1979, the King of Kings weeps his way down an Air France staircase with a jar of Iranian soil.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/iranian-revolution-episodes-1-8-20260420T0000/episode-5.mp3"
         },
         {
           "number": 6,
-          "title": "The Revolution Devours Its Children",
-          "summary": "The revolution devours its children. But does it? Or do the children devour themselves, and blame the revolution?",
-          "description": "The episode follows the revolution\u2019s aftermath: the fragile coalition\u2019s fracture, the hostage crisis as a constitutional coup, and the systematic elimination of moderates.",
-          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/iranian-revolution-episodes-1-7-20260407T1830/episode-6.mp3"
+          "title": "February 11",
+          "summary": "Huyser lands in Tehran to hold the military together for Bakhtiar and keep a coup option warm - an impossible pair of instructions in an army the Shah designed to be uncoordinated. On February 1, Khomeini descends the Air France stairs stone-faced and says he feels nothing. Four days later, at Refah School, he claims velayat-e-faqih in public and appoints Bazargan's provisional government, declaring any Shah-appointed premier a traitor to Islam. Doshan Tappeh mutinies; on February 11, twenty-seven senior officers vote to withdraw to barracks. Within days, generals are shot on the Refah rooftop and the first question of the new regime - who killed Hoveyda, the Shah who abandoned him or the revolution that tried him? - is being answered in a classroom basement.",
+          "description": "Huyser lands in Tehran to hold the military together for Bakhtiar and keep a coup option warm - an impossible pair of instructions in an army the Shah designed to be uncoordinated. On February 1, Khomeini descends the Air France stairs stone-faced and says he feels nothing. Four days later, at Refah School, he claims velayat-e-faqih in public and appoints Bazargan's provisional government, declaring any Shah-appointed premier a traitor to Islam. Doshan Tappeh mutinies; on February 11, twenty-seven senior officers vote to withdraw to barracks. Within days, generals are shot on the Refah rooftop and the first question of the new regime - who killed Hoveyda, the Shah who abandoned him or the revolution that tried him? - is being answered in a classroom basement.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/iranian-revolution-episodes-1-8-20260420T0000/episode-6.mp3"
         },
         {
           "number": 7,
-          "title": "The Crucible",
-          "summary": "The Iranian Revolution cannot be reduced to a single cause, a single actor, or a single framework. And that irreducibility is not a failure of analysis \u2014 it is the deepest truth about what happened.",
-          "description": "The final episode examines the revolution\u2019s crucible and legacy: the Iran-Iraq War, the 1988 mass executions, Montazeri\u2019s dissent, and the transformation of the Sunni-Shia divide into a geopolitical fault line.",
-          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/iranian-revolution-episodes-1-7-20260407T1830/episode-7.mp3"
+          "title": "The Second Revolution",
+          "summary": "Bazargan's provisional cabinet governs on paper while komitehs and Revolutionary Courts govern in fact; nine months of humiliation produce a prime minister no one obeys. The Assembly of Experts, led by Beheshti's IRP, rewrites the draft constitution to place a supreme jurist above president and parliament - Sahabi warning from outside the chamber that this will ruin Islam itself. On November 4, 1979, students seize the American embassy; Khomeini endorses, Bazargan resigns, and the hostage crisis becomes the instrument by which the clerical party eliminates its liberal partners. The revolution's anti-imperialism absorbs its anti-authoritarianism and keeps only the first.",
+          "description": "Bazargan's provisional cabinet governs on paper while komitehs and Revolutionary Courts govern in fact; nine months of humiliation produce a prime minister no one obeys. The Assembly of Experts, led by Beheshti's IRP, rewrites the draft constitution to place a supreme jurist above president and parliament - Sahabi warning from outside the chamber that this will ruin Islam itself. On November 4, 1979, students seize the American embassy; Khomeini endorses, Bazargan resigns, and the hostage crisis becomes the instrument by which the clerical party eliminates its liberal partners. The revolution's anti-imperialism absorbs its anti-authoritarianism and keeps only the first.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/iranian-revolution-episodes-1-8-20260420T0000/episode-7.mp3"
+        },
+        {
+          "number": 8,
+          "title": "The Republic That Outlasted Its Maker",
+          "summary": "In June 1981 the Majles impeaches Bani-Sadr; Mojahedin allies smuggle him out, Beheshti is assassinated, and the last non-clerical coalition partners are eliminated from Iranian politics. Saddam's September 1980 invasion had already handed Khomeini the mobilization he needed - a war he would choose to continue past any strategic rationale because the regime needed the dead. The bazaar and the mostazafin each expect their revolution; Khomeini engineers Montazeri aside and the Rafsanjani-Khamenei succession into place. Beyond Iran's borders, the revolution reverberates as Shi'a assertion and Sunni counter-mobilization, a regional cold war Khomeini never controlled. The closing question: did velayat-e faqih corrupt Shi'ism or fulfill a strand of it, and can the Republic survive the doctrine it left behind?",
+          "description": "In June 1981 the Majles impeaches Bani-Sadr; Mojahedin allies smuggle him out, Beheshti is assassinated, and the last non-clerical coalition partners are eliminated from Iranian politics. Saddam's September 1980 invasion had already handed Khomeini the mobilization he needed - a war he would choose to continue past any strategic rationale because the regime needed the dead. The bazaar and the mostazafin each expect their revolution; Khomeini engineers Montazeri aside and the Rafsanjani-Khamenei succession into place. Beyond Iran's borders, the revolution reverberates as Shi'a assertion and Sunni counter-mobilization, a regional cold war Khomeini never controlled. The closing question: did velayat-e faqih corrupt Shi'ism or fulfill a strand of it, and can the Republic survive the doctrine it left behind?",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/iranian-revolution-episodes-1-8-20260420T0000/episode-8.mp3"
         }
       ]
     },
@@ -68,60 +75,68 @@
       "id": "the-partition-of-india",
       "title": "The Partition of India",
       "author": null,
-      "tagline": "India \u2022 Pakistan \u2022 1947 Partition",
-      "runtime": "13h 41m",
-      "summary": "The series begins by asking whether partition was a failure of individuals or of structures, then moves through the specific mechanisms \u2014 colonial engineering, electoral mobilization, the politics of speed, the drawing of borders, the organization of violence \u2014 showing how each mechanism transformed contingency into catastrophe.",
+      "tagline": "India • Pakistan • 1947 Partition",
+      "runtime": "12h 30m",
+      "summary": "A structural history of independence and partition, from colonial machinery and satyagraha to the last federal plan, mass violence, state-building, and Gandhi’s final act.",
       "accentColor": "#c97a45",
       "episodeCount": 8,
       "detailUrl": "https://baqiral-1.github.io/podcast_agent/the-partition-of-india.html",
       "episodes": [
         {
           "number": 1,
-          "title": "The Seeds of Division",
-          "summary": "Establishes the structural foundations of partition: British divide-and-rule, separate electorates, and the long arc from Hindu-Muslim unity to its collapse.",
-          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/partition-of-india-episodes-1-8-20260408T0000/episode-1.mp3"
+          "title": "The Machinery and the Method",
+          "summary": "Open with the structural Raj - extraction, racial hierarchy, and separate electorates as the grammar Indians must speak to be heard. Then Gandhi's answer: Salt March as administrative trap, Chauri Chaura as the self-imposed limit, Poona Pact as the method's first real moral cost. This episode carries two load-bearing anchors (extractive structure; satyagraha method) because the rest of the series rests on both.",
+          "description": "Open with the structural Raj - extraction, racial hierarchy, and separate electorates as the grammar Indians must speak to be heard. Then Gandhi's answer: Salt March as administrative trap, Chauri Chaura as the self-imposed limit, Poona Pact as the method's first real moral cost. This episode carries two load-bearing anchors (extractive structure; satyagraha method) because the rest of the series rests on both.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/partition-of-india-episodes-1-8-20260420T0000/episode-1.mp3"
         },
         {
           "number": 2,
-          "title": "The Ambassador Becomes the Architect",
-          "summary": "Traces Jinnah\u2019s transformation and the shifting meaning of \u2018Pakistan,\u2019 staging the debate between Congress hubris and Jinnah\u2019s intransigence.",
-          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/partition-of-india-episodes-1-8-20260408T0000/episode-2.mp3"
+          "title": "Lahore, 1940: What Did Jinnah Actually Mean?",
+          "summary": "Anchor the episode on the Lahore Resolution itself - ambiguous text, a Bengali mover with his own dream, a Quaid who hides his cards. Use Ayesha Jalal's bargaining-counter reading against the sovereignty-from-the-outset reading, and let the peasant imaginary of Pakistan show how a tactical slogan became a mass demand. Echo the electoral machinery from Ep1 to remind listeners how the ground was prepared.",
+          "description": "Anchor the episode on the Lahore Resolution itself - ambiguous text, a Bengali mover with his own dream, a Quaid who hides his cards. Use Ayesha Jalal's bargaining-counter reading against the sovereignty-from-the-outset reading, and let the peasant imaginary of Pakistan show how a tactical slogan became a mass demand. Echo the electoral machinery from Ep1 to remind listeners how the ground was prepared.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/partition-of-india-episodes-1-8-20260420T0000/episode-2.mp3"
         },
         {
           "number": 3,
-          "title": "The Last Exit",
-          "summary": "Examines the Cabinet Mission as the final alternative to partition, Nehru\u2019s fatal press conference, and the question of inevitability.",
-          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/partition-of-india-episodes-1-8-20260408T0000/episode-3.mp3"
+          "title": "The War That Broke the Raj",
+          "summary": "Singapore falls and the protector-myth dies; Cripps comes with a sabotaged brief; Quit India decapitates Congress; Bengal starves while Churchill moves shipping; Bose walks into the POW camps and builds an army; the Red Fort trials and the RIN mutiny show the Raj that its sepoys will no longer fire. Sterling balances reverse the creditor-debtor relationship. By 1946 Britain must leave - the question is on what terms.",
+          "description": "Singapore falls and the protector-myth dies; Cripps comes with a sabotaged brief; Quit India decapitates Congress; Bengal starves while Churchill moves shipping; Bose walks into the POW camps and builds an army; the Red Fort trials and the RIN mutiny show the Raj that its sepoys will no longer fire. Sterling balances reverse the creditor-debtor relationship. By 1946 Britain must leave - the question is on what terms.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/partition-of-india-episodes-1-8-20260420T0000/episode-3.mp3"
         },
         {
           "number": 4,
-          "title": "The Roulette Wheel of August 15",
-          "summary": "Focuses on Mountbatten\u2019s acceleration, the Radcliffe Line, and the administrative absurdity of dividing the indivisible in 73 days.",
-          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/partition-of-india-episodes-1-8-20260408T0000/episode-4.mp3"
+          "title": "The Last Plan for a United India",
+          "summary": "Pethick-Lawrence, Cripps and Wavell propose a federal three-tier plan; both parties 'accept' it in incompatible senses. Nehru's July press conference gives Jinnah the opening to withdraw. The League calls Direct Action; Calcutta burns for three days with Suhrawardy's government standing back. Noakhali and Bihar follow in reciprocal massacres. Each riot retroactively validates the two-nation theory. By year's end partition is not decided but has become the default.",
+          "description": "Pethick-Lawrence, Cripps and Wavell propose a federal three-tier plan; both parties 'accept' it in incompatible senses. Nehru's July press conference gives Jinnah the opening to withdraw. The League calls Direct Action; Calcutta burns for three days with Suhrawardy's government standing back. Noakhali and Bihar follow in reciprocal massacres. Each riot retroactively validates the two-nation theory. By year's end partition is not decided but has become the default.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/partition-of-india-episodes-1-8-20260420T0000/episode-4.mp3"
         },
         {
           "number": 5,
-          "title": "The Violence Beneath",
-          "summary": "Investigates strategic violence, Sikh militancy as the unforeseen third force, and the mass migration that became an unplanned referendum.",
-          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/partition-of-india-episodes-1-8-20260408T0000/episode-5.mp3"
+          "title": "Ten Weeks",
+          "summary": "Mountbatten arrives in March 1947 with plenipotentiary powers and a deadline. Plan Balkan collapses in one Simla night; Menon rewrites it; on 3 June the leaders assent around a table and 15 August is chosen on a whim. Congress moves from 'never' to yes; Jinnah, dying, refuses joint governor-generalship; Radcliffe draws lines he knows will kill people and burns his notes. The Mountbatten-Nehru friendship is on the scale at every decision.",
+          "description": "Mountbatten arrives in March 1947 with plenipotentiary powers and a deadline. Plan Balkan collapses in one Simla night; Menon rewrites it; on 3 June the leaders assent around a table and 15 August is chosen on a whim. Congress moves from 'never' to yes; Jinnah, dying, refuses joint governor-generalship; Radcliffe draws lines he knows will kill people and burns his notes. The Mountbatten-Nehru friendship is on the scale at every decision.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/partition-of-india-episodes-1-8-20260420T0000/episode-5.mp3"
         },
         {
           "number": 6,
-          "title": "The Prophet and the Assassin",
-          "summary": "Follows Gandhi\u2019s marginalization and moral authority, his fasts, the Nehru-Patel rift, and his assassination as paradoxical stabilizer.",
-          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/partition-of-india-episodes-1-8-20260408T0000/episode-6.mp3"
+          "title": "The Killing Ground",
+          "summary": "Anchor on Punjab: jathas with veterans as cadre, leaked train timetables, a Boundary Force of 25,000 for 14 million people, disbanded at the peak. Move to women as the currency of partition and the recovery operations that become a second violence. Pull back to the impossible arithmetic of the dead and the displaced. Close at midnight on 14-15 August - Nehru's 'Tryst with Destiny' inside the chamber, Punjab burning outside - so the listener holds both at once.",
+          "description": "Anchor on Punjab: jathas with veterans as cadre, leaked train timetables, a Boundary Force of 25,000 for 14 million people, disbanded at the peak. Move to women as the currency of partition and the recovery operations that become a second violence. Pull back to the impossible arithmetic of the dead and the displaced. Close at midnight on 14-15 August - Nehru's 'Tryst with Destiny' inside the chamber, Punjab burning outside - so the listener holds both at once.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/partition-of-india-episodes-1-8-20260420T0000/episode-6.mp3"
         },
         {
           "number": 7,
-          "title": "Partition\u2019s Infinite Recursion",
-          "summary": "Traces how partition\u2019s logic reproduced itself in the princely states, Kashmir, and the hardening of borders into nuclear standoff.",
-          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/partition-of-india-episodes-1-8-20260408T0000/episode-7.mp3"
+          "title": "Two States Being Made",
+          "summary": "Paramountcy lapses and Menon, Patel, Mountbatten run the persuasion machine; Junagadh flips, Hyderabad is taken in a five-day 'police action' the government refuses to call a war. Kashmir is the mirror-case: Hindu maharaja, Muslim majority, a Pathan lashkar, Menon's flight to Jammu, the disputed sequence of accession and airlift. British commanders refuse Jinnah's order to invade; the ceasefire of 1 January 1949 freezes a rough front line into a permanent LoC. Close on the divergent trajectories of the two states: Ambedkar drafting a secular constitution in Delhi, Jinnah dead in Karachi, Urdu imposed on Bengal.",
+          "description": "Paramountcy lapses and Menon, Patel, Mountbatten run the persuasion machine; Junagadh flips, Hyderabad is taken in a five-day 'police action' the government refuses to call a war. Kashmir is the mirror-case: Hindu maharaja, Muslim majority, a Pathan lashkar, Menon's flight to Jammu, the disputed sequence of accession and airlift. British commanders refuse Jinnah's order to invade; the ceasefire of 1 January 1949 freezes a rough front line into a permanent LoC. Close on the divergent trajectories of the two states: Ambedkar drafting a secular constitution in Delhi, Jinnah dead in Karachi, Urdu imposed on Bengal.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/partition-of-india-episodes-1-8-20260420T0000/episode-7.mp3"
         },
         {
           "number": 8,
-          "title": "The Furies Unloosed",
-          "summary": "Weaves together the series\u2019 threads to reveal that partition did not resolve the communal question but relocated it.",
-          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/partition-of-india-episodes-1-8-20260408T0000/episode-8.mp3"
+          "title": "Gandhi's Last Act",
+          "summary": "From a burnt Calcutta mansion to a Delhi colonnade, one body does what fifty-five thousand troops cannot — and then breaks. The fast in Calcutta quiets Bengal; the fast in Delhi pries 55 crore out of a reluctant cabinet; ten days later Nathuram Godse fires three rounds on the Birla House colonnade. In the seventy-two hours after, Nehru and Patel — three days earlier at the point of rupture — write to each other that everything has changed, the RSS is banned, and Ambedkar's constitutional project moves forward on the tracks laid by the assassination. We close on Gandhi's private experiments so the listener leaves holding the Mahatma whole — not a clean saint, not a clean villain — and leaves the Hindutva resentment alive as the series' last open question.",
+          "description": "From a burnt Calcutta mansion to a Delhi colonnade, one body does what fifty-five thousand troops cannot — and then breaks. The fast in Calcutta quiets Bengal; the fast in Delhi pries 55 crore out of a reluctant cabinet; ten days later Nathuram Godse fires three rounds on the Birla House colonnade. In the seventy-two hours after, Nehru and Patel — three days earlier at the point of rupture — write to each other that everything has changed, the RSS is banned, and Ambedkar's constitutional project moves forward on the tracks laid by the assassination. We close on Gandhi's private experiments so the listener leaves holding the Mahatma whole — not a clean saint, not a clean villain — and leaves the Hindutva resentment alive as the series' last open question.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/partition-of-india-episodes-1-8-20260420T0000/episode-8.mp3"
         }
       ]
     },
@@ -129,21 +144,69 @@
       "id": "the-question-of-palestine",
       "title": "The Question of Palestine",
       "author": null,
-      "tagline": "Palestine \u2022 Israel \u2022 1948 Nakba",
-      "runtime": "13h 57m",
-      "summary": "The series opens by establishing the conflict\u2019s foundational paradox: how a movement born from persecution became an instrument of dispossession.",
+      "tagline": "Palestine • Israel • 1948 Nakba",
+      "runtime": "13h 40m",
+      "summary": "A history of erasure, state formation, catastrophe, occupation, diplomacy, resistance, and the security economy that made the conflict globally exportable.",
       "accentColor": "#6a8a5a",
       "episodeCount": 8,
       "detailUrl": "https://baqiral-1.github.io/podcast_agent/the-question-of-palestine.html",
       "episodes": [
-        { "number": 1, "title": "A Land Without a People", "summary": "Establishes the foundational erasure and colonial logic.", "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/palestine-episodes-1-8-20260408T0000/episode-1.mp3" },
-        { "number": 2, "title": "The Catastrophe", "summary": "Was 1948 premeditated ethnic cleansing or wartime chaos?", "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/palestine-episodes-1-8-20260408T0000/episode-2.mp3" },
-        { "number": 3, "title": "The Iron Wall", "summary": "How every supposed neutral broker was structurally aligned with one side.", "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/palestine-episodes-1-8-20260408T0000/episode-3.mp3" },
-        { "number": 4, "title": "The Myth of Existential Threat", "summary": "1967 and the gap between public rhetoric and private planning.", "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/palestine-episodes-1-8-20260408T0000/episode-4.mp3" },
-        { "number": 5, "title": "The Resistance Paradox", "summary": "The structural trap that made every strategy simultaneously necessary and counterproductive.", "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/palestine-episodes-1-8-20260408T0000/episode-5.mp3" },
-        { "number": 6, "title": "The Mirage of Peace", "summary": "Oslo from historic breakthrough to Palestinian Versailles.", "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/palestine-episodes-1-8-20260408T0000/episode-6.mp3" },
-        { "number": 7, "title": "The Laboratory", "summary": "How occupation became a globally exportable product.", "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/palestine-episodes-1-8-20260408T0000/episode-7.mp3" },
-        { "number": 8, "title": "The Moral Labyrinth", "summary": "Two peoples, one land, no clean exit.", "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/palestine-episodes-1-8-20260408T0000/episode-8.mp3" }
+        {
+          "number": 1,
+          "title": "The Art of Not Seeing",
+          "summary": "The episode opens with Bentwich's 1897 pilgrimage—a Victorian Zionist who sees ancient glory through train windows but cannot see the Palestinian villages surrounding him—establishing the cognitive mechanism that makes dispossession conceivable. It then follows Herzl's extraordinary exchange with Yusuf Diya, where a former mayor of Jerusalem writes an informed, respectful warning and receives a reply that either deliberately deceives or reveals genuine inability to register Palestinian political existence. The Balfour Declaration crystallizes this non-recognition into diplomatic architecture: 'national home' rather than 'state,' 'non-Jewish communities' rather than naming the 93% Arab majority. Britain's contradictory commitments—McMahon, Sykes-Picot, Balfour—create structurally irreconcilable claims. The episode then shifts to the institutional consequences: the Mandate recognizes the Jewish Agency as a quasi-governmental body while Palestinians are denied equivalent standing. The Yishuv builds a complete para-state—Histadrut labor union, Hebrew school system, Haganah military, intelligence networks, taxation—all under imperial protection. The 1936-39 Arab Revolt demonstrates the power and limits of Palestinian mobilization: Britain crushes it using massive military force, destroying leadership cadres and fragmenting social cohesion. The 1939 White Paper reverses course but comes too late; Palestinian institutional capacity is shattered. The episode ends with the decisive gap: by 1947, one side has a state-in-waiting; the other has been systematically unmade.",
+          "description": "The episode opens with Bentwich's 1897 pilgrimage—a Victorian Zionist who sees ancient glory through train windows but cannot see the Palestinian villages surrounding him—establishing the cognitive mechanism that makes dispossession conceivable. It then follows Herzl's extraordinary exchange with Yusuf Diya, where a former mayor of Jerusalem writes an informed, respectful warning and receives a reply that either deliberately deceives or reveals genuine inability to register Palestinian political existence. The Balfour Declaration crystallizes this non-recognition into diplomatic architecture: 'national home' rather than 'state,' 'non-Jewish communities' rather than naming the 93% Arab majority. Britain's contradictory commitments—McMahon, Sykes-Picot, Balfour—create structurally irreconcilable claims. The episode then shifts to the institutional consequences: the Mandate recognizes the Jewish Agency as a quasi-governmental body while Palestinians are denied equivalent standing. The Yishuv builds a complete para-state—Histadrut labor union, Hebrew school system, Haganah military, intelligence networks, taxation—all under imperial protection. The 1936-39 Arab Revolt demonstrates the power and limits of Palestinian mobilization: Britain crushes it using massive military force, destroying leadership cadres and fragmenting social cohesion. The 1939 White Paper reverses course but comes too late; Palestinian institutional capacity is shattered. The episode ends with the decisive gap: by 1947, one side has a state-in-waiting; the other has been systematically unmade.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/palestine-episodes-1-8-20260420T0000/episode-1.mp3"
+        },
+        {
+          "number": 2,
+          "title": "The War Before the War",
+          "summary": "The episode opens with the Peel Commission's 1937 endorsement of population transfer, tracing how it created near-unanimous consensus among Zionist leaders supporting Arab removal—a consensus suppressed to avoid diplomatic damage but operative in shaping how officials would act during 1948. Ben-Gurion's private letters to his son reveal that partition was understood as a tactical step. The Arab boycott of UNSCOP cedes the diplomatic field, and the November 1947 UN Partition vote allocates most of Palestine to a Jewish state. The episode then descends into the invisible war: Ben-Gurion's centralization of military command, the clandestine Czech arms pipeline, and intelligence penetration. The final act exposes the Arab side's catastrophic fragmentation: Abdullah's secret partition deal with Golda Meir, Egypt's puppet All-Palestine Government, armies that refused to cooperate. The episode closes with the bitter conclusion that the Palestinians' supposed allies were as responsible for the outcome as their adversary—and that the non-recognition established in episode 1 made this betrayal invisible to the world.",
+          "description": "The episode opens with the Peel Commission's 1937 endorsement of population transfer, tracing how it created near-unanimous consensus among Zionist leaders supporting Arab removal—a consensus suppressed to avoid diplomatic damage but operative in shaping how officials would act during 1948. Ben-Gurion's private letters to his son reveal that partition was understood as a tactical step. The Arab boycott of UNSCOP cedes the diplomatic field, and the November 1947 UN Partition vote allocates most of Palestine to a Jewish state. The episode then descends into the invisible war: Ben-Gurion's centralization of military command, the clandestine Czech arms pipeline, and intelligence penetration. The final act exposes the Arab side's catastrophic fragmentation: Abdullah's secret partition deal with Golda Meir, Egypt's puppet All-Palestine Government, armies that refused to cooperate. The episode closes with the bitter conclusion that the Palestinians' supposed allies were as responsible for the outcome as their adversary—and that the non-recognition established in episode 1 made this betrayal invisible to the world.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/palestine-episodes-1-8-20260420T0000/episode-2.mp3"
+        },
+        {
+          "number": 3,
+          "title": "The Catastrophe",
+          "summary": "The episode opens with Plan Dalet's March 1948 shift from defense to offensive conquest, following the operational evidence through Deir Yassin's cascading terror, Lydda's paradigmatic expulsion—where Shavit confronts the choice directly: either reject Zionism because of Lydda, or accept Zionism along with Lydda—and Operation Hiram's explicit directives that forced even Benny Morris to revise his position. The historiographic question is held open: the evidence sits between deliberate ethnic cleansing and chaotic multi-causation, with each historian weighting the factors differently. The cumulative flight dynamics created a self-reinforcing exodus of 780,000 people. The episode then traces the legal consolidation: the Absentee Property Law's Orwellian 'absent-present' category, JNF land transfer restrictions, and Resolution 194's twenty-eight unenforced passages. The JNF's afforestation buried destroyed villages under pine forests, converting catastrophe into leisure landscape. The final movement follows refugees into camps that became permanent cities of exile, exploring how statelessness constitutes identity and why the Right of Return remains non-negotiable.",
+          "description": "The episode opens with Plan Dalet's March 1948 shift from defense to offensive conquest, following the operational evidence through Deir Yassin's cascading terror, Lydda's paradigmatic expulsion—where Shavit confronts the choice directly: either reject Zionism because of Lydda, or accept Zionism along with Lydda—and Operation Hiram's explicit directives that forced even Benny Morris to revise his position. The historiographic question is held open: the evidence sits between deliberate ethnic cleansing and chaotic multi-causation, with each historian weighting the factors differently. The cumulative flight dynamics created a self-reinforcing exodus of 780,000 people. The episode then traces the legal consolidation: the Absentee Property Law's Orwellian 'absent-present' category, JNF land transfer restrictions, and Resolution 194's twenty-eight unenforced passages. The JNF's afforestation buried destroyed villages under pine forests, converting catastrophe into leisure landscape. The final movement follows refugees into camps that became permanent cities of exile, exploring how statelessness constitutes identity and why the Right of Return remains non-negotiable.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/palestine-episodes-1-8-20260420T0000/episode-3.mp3"
+        },
+        {
+          "number": 4,
+          "title": "Memory, Conquest, and the Unshareable City",
+          "summary": "The episode opens with the Yishuv's contempt for Holocaust survivors—the ideological gap between sabra self-image and perceived Diaspora passivity that created a society suppressing its own foundational trauma. The 1961 Eichmann trial is the catalytic event: deliberately staged as national education, it induced Israeli youth to identify with victims, rehabilitated survivors, and established the Holocaust as a central source of legitimacy. Begin then weaponizes this memory systematically—Arafat as Hitler in a bunker, Beirut as Berlin—marking the decisive shift from suppression to instrumentalization. The competing nationalist and humanist interpretations produce radically different political conclusions, while the 'existential threat' mythology persists despite generals' admissions of consistent Israeli superiority. The episode then detonates into the Six-Day War: Israel's clockwork victory that conquered the West Bank, Gaza, Sinai, and Golan Heights. Resolution 242 erased Palestinians from the international legal framework entirely. The US shifted to unconditional patronage. Dayan's occupation design deliberately blocked Palestinian economic and political development. The episode culminates in Jerusalem: the immediate post-1967 annexation, destruction of the Mughrabi Quarter, demographic engineering, and the Temple Mount/Haram al-Sharif as a structurally unshareable sacred space. Sharon's 2000 provocation triggered years of bloodshed. The episode ends by showing how religious nationalism and political Islam each import apocalyptic frameworks that make territorial compromise a religious betrayal.",
+          "description": "The episode opens with the Yishuv's contempt for Holocaust survivors—the ideological gap between sabra self-image and perceived Diaspora passivity that created a society suppressing its own foundational trauma. The 1961 Eichmann trial is the catalytic event: deliberately staged as national education, it induced Israeli youth to identify with victims, rehabilitated survivors, and established the Holocaust as a central source of legitimacy. Begin then weaponizes this memory systematically—Arafat as Hitler in a bunker, Beirut as Berlin—marking the decisive shift from suppression to instrumentalization. The competing nationalist and humanist interpretations produce radically different political conclusions, while the 'existential threat' mythology persists despite generals' admissions of consistent Israeli superiority. The episode then detonates into the Six-Day War: Israel's clockwork victory that conquered the West Bank, Gaza, Sinai, and Golan Heights. Resolution 242 erased Palestinians from the international legal framework entirely. The US shifted to unconditional patronage. Dayan's occupation design deliberately blocked Palestinian economic and political development. The episode culminates in Jerusalem: the immediate post-1967 annexation, destruction of the Mughrabi Quarter, demographic engineering, and the Temple Mount/Haram al-Sharif as a structurally unshareable sacred space. Sharon's 2000 provocation triggered years of bloodshed. The episode ends by showing how religious nationalism and political Islam each import apocalyptic frameworks that make territorial compromise a religious betrayal.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/palestine-episodes-1-8-20260420T0000/episode-4.mp3"
+        },
+        {
+          "number": 5,
+          "title": "The Futility of Force",
+          "summary": "The episode opens with the 1973 Yom Kippur War: the Egyptian crossing of the Suez Canal shatters Israeli invincibility, briefly surfaces the nuclear dimension, and demonstrates that Arab soldiers can fight effectively. The near-disaster forces reconsideration—but the resolution takes the form of bilateral peace with Egypt, not comprehensive settlement. Sadat's gamble removes the largest Arab military from the conflict while giving Israel a framework of 'autonomy' designed to preclude Palestinian sovereignty. The Baghdad Summit's sanctions isolate Egypt, and bilateralization becomes the template: each Arab state's specific territorial grievance is addressed separately while the comprehensive Palestinian question is sidelined. The early Arab peace overtures that Israel had already rejected haunt the story. The episode then shifts to the Palestinian side: the Karameh breakthrough that created the fedayeen mystique and transformed the PLO from a symbolic body into a mass movement. But the trajectory is tragic. PFLP hijackings bring global attention while destroying political credibility. The 1982 Lebanon invasion succeeds in expelling the PLO from Beirut but creates Hezbollah—a more dangerous adversary. Each Israeli military victory breeds the next political problem. The PLO's 1988 acceptance of the two-state solution and renunciation of terrorism represents a major strategic shift, treated by Israel as mere tactical maneuver. The structural tension between armed struggle and diplomatic recognition means advances in one domain consistently undermine the other. The episode closes by establishing the pattern: Israeli military superiority consistently wins wars but fails to produce political resolution, while Palestinian resistance generates both moral capital and political damage in an unbreakable cycle.",
+          "description": "The episode opens with the 1973 Yom Kippur War: the Egyptian crossing of the Suez Canal shatters Israeli invincibility, briefly surfaces the nuclear dimension, and demonstrates that Arab soldiers can fight effectively. The near-disaster forces reconsideration—but the resolution takes the form of bilateral peace with Egypt, not comprehensive settlement. Sadat's gamble removes the largest Arab military from the conflict while giving Israel a framework of 'autonomy' designed to preclude Palestinian sovereignty. The Baghdad Summit's sanctions isolate Egypt, and bilateralization becomes the template: each Arab state's specific territorial grievance is addressed separately while the comprehensive Palestinian question is sidelined. The early Arab peace overtures that Israel had already rejected haunt the story. The episode then shifts to the Palestinian side: the Karameh breakthrough that created the fedayeen mystique and transformed the PLO from a symbolic body into a mass movement. But the trajectory is tragic. PFLP hijackings bring global attention while destroying political credibility. The 1982 Lebanon invasion succeeds in expelling the PLO from Beirut but creates Hezbollah—a more dangerous adversary. Each Israeli military victory breeds the next political problem. The PLO's 1988 acceptance of the two-state solution and renunciation of terrorism represents a major strategic shift, treated by Israel as mere tactical maneuver. The structural tension between armed struggle and diplomatic recognition means advances in one domain consistently undermine the other. The episode closes by establishing the pattern: Israeli military superiority consistently wins wars but fails to produce political resolution, while Palestinian resistance generates both moral capital and political damage in an unbreakable cycle.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/palestine-episodes-1-8-20260420T0000/episode-5.mp3"
+        },
+        {
+          "number": 6,
+          "title": "Stones, Bombs, and Settlements",
+          "summary": "The episode opens with the First Intifada's December 1987 eruption: bottom-up, driven by accumulated humiliation, initially disconnected from PLO leadership. Stones against tanks generated unprecedented moral capital. The Mossad director later confirmed it caused more political damage to Israel than everything the PLO had done. The Gaza Beach detention camp forces Israeli soldiers to confront occupation's reality. Hamas's founding as a rival to the PLO—ironically, its predecessor movement tacitly assisted by Israeli military government as a counterweight—introduces the fragmentation that will prove fatal. The episode then cuts to the Israeli internal crisis: Gush Emunim's exploitation of post-1967 messianic fervor and post-1973 trauma to establish settlements that successive governments lacked the will to remove. Over a hundred settlements, settler-only bypass roads, and large urban blocs physically fragmented the West Bank into isolated cantons. Shavit's seven successive revolts eroded Ben-Gurion's unifying consensus without producing a replacement. The 2018 Nation-State Law codified Jewish supremacy, dropping the pretense of balance. The final movement returns to the Second Intifada: Sharon's deliberate provocation at the Temple Mount, the eruption of suicide bombings that destroyed every gain of the First Intifada, and the deepening of Israeli security consciousness that enabled crushing force. The episode closes on the double catastrophe: Palestinian moral capital destroyed from within, Israeli territorial compromise foreclosed from within, and both societies fractured beyond the capacity of their leaders to make the concessions peace would require.",
+          "description": "The episode opens with the First Intifada's December 1987 eruption: bottom-up, driven by accumulated humiliation, initially disconnected from PLO leadership. Stones against tanks generated unprecedented moral capital. The Mossad director later confirmed it caused more political damage to Israel than everything the PLO had done. The Gaza Beach detention camp forces Israeli soldiers to confront occupation's reality. Hamas's founding as a rival to the PLO—ironically, its predecessor movement tacitly assisted by Israeli military government as a counterweight—introduces the fragmentation that will prove fatal. The episode then cuts to the Israeli internal crisis: Gush Emunim's exploitation of post-1967 messianic fervor and post-1973 trauma to establish settlements that successive governments lacked the will to remove. Over a hundred settlements, settler-only bypass roads, and large urban blocs physically fragmented the West Bank into isolated cantons. Shavit's seven successive revolts eroded Ben-Gurion's unifying consensus without producing a replacement. The 2018 Nation-State Law codified Jewish supremacy, dropping the pretense of balance. The final movement returns to the Second Intifada: Sharon's deliberate provocation at the Temple Mount, the eruption of suicide bombings that destroyed every gain of the First Intifada, and the deepening of Israeli security consciousness that enabled crushing force. The episode closes on the double catastrophe: Palestinian moral capital destroyed from within, Israeli territorial compromise foreclosed from within, and both societies fractured beyond the capacity of their leaders to make the concessions peace would require.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/palestine-episodes-1-8-20260420T0000/episode-6.mp3"
+        },
+        {
+          "number": 7,
+          "title": "The Peace Machine",
+          "summary": "The episode opens with Oslo's secret channel: the structural defects built into the 1993 accords—deliberate ambiguity, systematic deferral of core issues, and the asymmetry in expertise where Israeli legal sophistication confronted Palestinian amateurism. The PA transformed from resistance movement into what critics called a subcontractor for Israeli security. Edward Said's prophetic judgment—'a Palestinian Versailles'—is weighed against the genuine hopes of participants. Every deferred issue—Jerusalem, refugees, borders, settlements—was consolidated in Israel's favor during the 'interim' period that became permanent. The episode then detonates at Camp David 2000: when Palestinians raised the refugee question, they broke the foundational taboo. Every prior framework had excluded 1948. The Israeli peace movement—which had confused the 1967 problem with the 1948 problem—was unprepared for what Pandora's box contained. Barak's offer of discontinuous cantons was rejected; even his own foreign minister later admitted he would have rejected it as a Palestinian. The Nakba's entry into the negotiating room destroyed the peace process because Israel's denial of the Nakba made the refugee question undiscussable within Israeli political culture. The episode then pulls back to examine the structural enabler: America's captured brokerage. From Truman's electorally motivated recognition through Kissinger's secret commitment giving Israel veto power over US proposals, to AIPAC's emergence as the most powerful foreign-policy lobby, the episode traces how domestic political dynamics—the lobby, Christian Zionist electoral weight, the career-ending risk of criticizing Israel, Arab ignorance of US politics—made the US structurally incapable of honest mediation. Aaron David Miller's confession that he served as 'Israel's lawyer' captures a systemic reality, not a personal failing.",
+          "description": "The episode opens with Oslo's secret channel: the structural defects built into the 1993 accords—deliberate ambiguity, systematic deferral of core issues, and the asymmetry in expertise where Israeli legal sophistication confronted Palestinian amateurism. The PA transformed from resistance movement into what critics called a subcontractor for Israeli security. Edward Said's prophetic judgment—'a Palestinian Versailles'—is weighed against the genuine hopes of participants. Every deferred issue—Jerusalem, refugees, borders, settlements—was consolidated in Israel's favor during the 'interim' period that became permanent. The episode then detonates at Camp David 2000: when Palestinians raised the refugee question, they broke the foundational taboo. Every prior framework had excluded 1948. The Israeli peace movement—which had confused the 1967 problem with the 1948 problem—was unprepared for what Pandora's box contained. Barak's offer of discontinuous cantons was rejected; even his own foreign minister later admitted he would have rejected it as a Palestinian. The Nakba's entry into the negotiating room destroyed the peace process because Israel's denial of the Nakba made the refugee question undiscussable within Israeli political culture. The episode then pulls back to examine the structural enabler: America's captured brokerage. From Truman's electorally motivated recognition through Kissinger's secret commitment giving Israel veto power over US proposals, to AIPAC's emergence as the most powerful foreign-policy lobby, the episode traces how domestic political dynamics—the lobby, Christian Zionist electoral weight, the career-ending risk of criticizing Israel, Arab ignorance of US politics—made the US structurally incapable of honest mediation. Aaron David Miller's confession that he served as 'Israel's lawyer' captures a systemic reality, not a personal failing.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/palestine-episodes-1-8-20260420T0000/episode-7.mp3"
+        },
+        {
+          "number": 8,
+          "title": "The Laboratory",
+          "summary": "The episode opens with the post-9/11 security boom that created massive global demand for the exact capabilities Israel had been developing through decades of occupation. The 'Palestine laboratory' concept is examined in full: weapons, surveillance systems, and control technologies tested on a captive population, then sold internationally as 'battle-tested.' Elbit's surveillance towers on the US-Mexico border replicate the West Bank control model—research shows they increased migrant deaths by forcing more dangerous routes. EU defense partnerships proceed despite settlement condemnation; Israeli drones tested over Gaza become Frontex tools. The privatization of checkpoints and surveillance creates vested interests in perpetuating occupation—a self-sustaining political economy of control. The economic exploitation of the territories as captive market and the 'Start-up Nation' narrative's concealment of occupation-tested origins complete the picture of occupation as business model. The episode then traces the digital extension: Unit 8200's pipeline from military intelligence to commercial sector, NSO Group's Pegasus spyware as diplomatic currency, facial recognition systems comparable to China's Uighur surveillance. Social media platforms' systematic suppression of Palestinian content during the 2021 escalation extends the century-old erasure pattern—from Bentwich's cognitive blindness through Balfour's linguistic erasure to algorithmic censorship. The final movement confronts the endgame directly. Khalidi identifies three settler-colonial outcomes: elimination of natives, expulsion of colonizers, or abandonment of colonial supremacy. With over 700,000 settlers, the security discourse justifying ongoing acquisition, and the defense industry's profitability, the question is which path Israel is choosing. The series closes not with resolution but with the honest acknowledgment that two fully developed national entities now exist regardless of how they came to be, that denial of either side's existence ensures permanent conflict, and that the foundational framing dispute determines which futures are even imaginable.",
+          "description": "The episode opens with the post-9/11 security boom that created massive global demand for the exact capabilities Israel had been developing through decades of occupation. The 'Palestine laboratory' concept is examined in full: weapons, surveillance systems, and control technologies tested on a captive population, then sold internationally as 'battle-tested.' Elbit's surveillance towers on the US-Mexico border replicate the West Bank control model—research shows they increased migrant deaths by forcing more dangerous routes. EU defense partnerships proceed despite settlement condemnation; Israeli drones tested over Gaza become Frontex tools. The privatization of checkpoints and surveillance creates vested interests in perpetuating occupation—a self-sustaining political economy of control. The economic exploitation of the territories as captive market and the 'Start-up Nation' narrative's concealment of occupation-tested origins complete the picture of occupation as business model. The episode then traces the digital extension: Unit 8200's pipeline from military intelligence to commercial sector, NSO Group's Pegasus spyware as diplomatic currency, facial recognition systems comparable to China's Uighur surveillance. Social media platforms' systematic suppression of Palestinian content during the 2021 escalation extends the century-old erasure pattern—from Bentwich's cognitive blindness through Balfour's linguistic erasure to algorithmic censorship. The final movement confronts the endgame directly. Khalidi identifies three settler-colonial outcomes: elimination of natives, expulsion of colonizers, or abandonment of colonial supremacy. With over 700,000 settlers, the security discourse justifying ongoing acquisition, and the defense industry's profitability, the question is which path Israel is choosing. The series closes not with resolution but with the honest acknowledgment that two fully developed national entities now exist regardless of how they came to be, that denial of either side's existence ensures permanent conflict, and that the foundational framing dispute determines which futures are even imaginable.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/palestine-episodes-1-8-20260420T0000/episode-8.mp3"
+        }
       ]
     },
     {
@@ -151,60 +214,212 @@
       "title": "The War on Terror",
       "author": null,
       "tagline": "Afghanistan • Iraq • Jihadism",
-      "runtime": "",
-      "summary": "The series builds a single causal argument: from 1979 to the rise of ISIS, decisions that seemed rational in isolation created feedback loops of radicalization, proxy warfare, occupation failure, and state collapse. Across Afghanistan, Pakistan, Iraq, and Syria, the same structures kept reproducing worse outcomes.",
-      "accentColor": "#5e8e74",
-      "episodeCount": 7,
+      "runtime": "12h 25m",
+      "summary": "A causal chain from 1979 through al-Qaeda, Afghanistan, Iraq, Syria, ISIS, proxy warfare, occupation failure, and the institutions that kept reproducing worse outcomes.",
+      "accentColor": "#3a8a7a",
+      "episodeCount": 8,
       "detailUrl": "https://baqiral-1.github.io/podcast_agent/the-war-on-terror.html",
       "episodes": [
         {
           "number": 1,
-          "title": "The Year That Broke Everything",
-          "summary": "Traces 1979 through the Iranian Revolution, the siege of Mecca, and the Soviet invasion of Afghanistan, showing how one year created the feedback loops that shaped everything after.",
-          "description": "The episode frames 1979 as the hinge year that launched the Saudi-Iranian rivalry, global jihad infrastructure, and Zia's Islamization of Pakistan, establishing the series thesis that later catastrophes were chained consequences rather than isolated surprises.",
-          "audioUrl": ""
+          "title": "1979: The Year That Broke the Muslim World",
+          "summary": "Open in the rupture year — Khomeini's return, Juhayman in the Grand Mosque, Soviet tanks across the Amu Darya — and trace the CIA-ISI-Saudi pipeline that manufactures camps, weapons networks, and trans-Islamic volunteer corps. The episode lands on the cohort effect: Generation 1979 and bin Laden's transit from Saudi hero to exiled dissident. The forty-year Afghan trauma cycle is held as the human ground beneath every later decision.",
+          "description": "Open in the rupture year — Khomeini's return, Juhayman in the Grand Mosque, Soviet tanks across the Amu Darya — and trace the CIA-ISI-Saudi pipeline that manufactures camps, weapons networks, and trans-Islamic volunteer corps. The episode lands on the cohort effect: Generation 1979 and bin Laden's transit from Saudi hero to exiled dissident. The forty-year Afghan trauma cycle is held as the human ground beneath every later decision.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/war-on-terror-episodes-1-8-20260420T0000/episode-1.mp3"
         },
         {
           "number": 2,
-          "title": "The Factory of Jihad",
-          "summary": "Follows the CIA-ISI covert war, Saudi funding, and the Peshawar nexus that built the physical and human infrastructure of the jihadist international.",
-          "description": "The episode examines Afghanistan's covert war as an institutional system with no off switch, asking whether transnational jihadism was merely enabled or actively constructed by the states that armed and organized it.",
-          "audioUrl": ""
+          "title": "Naming al-Qaeda: From Peshawar to Manhattan",
+          "summary": "Track the founding meetings, the 1998 fatwa that crystallizes Zawahiri's pivot to the far enemy, KSM's Tora Bora pitch, and the Hamburg cell. Run alongside it the parallel story of analysts — Bennett, Scheuer, O'Neill — whose warnings were marginalized by the FISA wall and an administration uninterested in al-Qaeda. The episode pays off on the day O'Neill dies in the towers he warned about.",
+          "description": "Track the founding meetings, the 1998 fatwa that crystallizes Zawahiri's pivot to the far enemy, KSM's Tora Bora pitch, and the Hamburg cell. Run alongside it the parallel story of analysts — Bennett, Scheuer, O'Neill — whose warnings were marginalized by the FISA wall and an administration uninterested in al-Qaeda. The episode pays off on the day O'Neill dies in the towers he warned about.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/war-on-terror-episodes-1-8-20260420T0000/episode-2.mp3"
         },
         {
           "number": 3,
-          "title": "The Idea That Ate the World",
-          "summary": "Maps the ideological chain from Sayyid Qutb through Azzam and Zawahiri to bin Laden, showing how jihad was transformed into operational doctrine.",
-          "description": "The episode traces how theological concepts became recruitment tools, military strategy, and a transnational worldview, tying Saudi Wahhabism and bin Laden's radicalization into the intellectual architecture of mass violence.",
-          "audioUrl": ""
+          "title": "Afghanistan's First Year: The War That Could Have Ended at Bonn",
+          "summary": "Four forks in roughly four months: Bonn excludes the Taliban; Tora Bora denies Berntsen his 800 Rangers; Pentagon cash hardens the warlords into the new state; Musharraf accepts Armitage's ultimatum while ISI quietly preserves strategic depth. Each fork closes a door the surge in Episode 7 cannot reopen.",
+          "description": "Four forks in roughly four months: Bonn excludes the Taliban; Tora Bora denies Berntsen his 800 Rangers; Pentagon cash hardens the warlords into the new state; Musharraf accepts Armitage's ultimatum while ISI quietly preserves strategic depth. Each fork closes a door the surge in Episode 7 cannot reopen.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/war-on-terror-episodes-1-8-20260420T0000/episode-3.mp3"
         },
         {
           "number": 4,
-          "title": "The Blind Watchmen",
-          "summary": "Reconstructs the intelligence failures, missed opportunities, and alliance compromises that allowed 9/11 despite repeated warnings.",
-          "description": "The episode follows the CIA-FBI wall, failed chances to stop bin Laden, Massoud's assassination, and the suppression of moderate alternatives to ask whether 9/11 was a failure of imagination or of institutions.",
-          "audioUrl": ""
+          "title": "How a Minority Position Became a War",
+          "summary": "Trace the OSP's parallel intelligence shop, Bush's emotional clock outrunning the strategic one, Shinseki's dismissal, and the anatomy of the WMD case from Curveball through Powell's UN speech. Bracket with the February 2002 Geneva decision that builds the legal architecture the next episodes inherit.",
+          "description": "Trace the OSP's parallel intelligence shop, Bush's emotional clock outrunning the strategic one, Shinseki's dismissal, and the anatomy of the WMD case from Curveball through Powell's UN speech. Bracket with the February 2002 Geneva decision that builds the legal architecture the next episodes inherit.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/war-on-terror-episodes-1-8-20260420T0000/episode-4.mp3"
         },
         {
           "number": 5,
-          "title": "The Unmaking of Iraq",
-          "summary": "Shows how sanctions, invasion, de-Baathification, army dissolution, and sectarian civil war destroyed Iraq in stages, each step preparing the next.",
-          "description": "The episode tracks Iraq's destruction from the sanctions era through Bremer's decrees and the Samarra bombing to examine whether sectarian collapse was structurally baked into the invasion or intensified by catastrophic postwar decisions.",
-          "audioUrl": ""
+          "title": "Bremer's Iraq: The Orders That Made an Insurgency",
+          "summary": "Open on Bremer in Baghdad with two pieces of paper. Cascade through the dissolved army at the Green Zone wall, the parallel-command dysfunction, civilian harm at Hajibirgit, checkpoint shootings, and the kidnap economy — landing on Abu Ghraib as the moment the strategic narrative dies. Hold the oil-pays-for-itself reversal as compressed framing.",
+          "description": "Open on Bremer in Baghdad with two pieces of paper. Cascade through the dissolved army at the Green Zone wall, the parallel-command dysfunction, civilian harm at Hajibirgit, checkpoint shootings, and the kidnap economy — landing on Abu Ghraib as the moment the strategic narrative dies. Hold the oil-pays-for-itself reversal as compressed framing.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/war-on-terror-episodes-1-8-20260420T0000/episode-5.mp3"
         },
         {
           "number": 6,
-          "title": "The Occupation Trap",
-          "summary": "Pulls back from individual theaters to reveal the repeating intervention pattern linking Afghanistan, Iraq, Libya, and Syria.",
-          "description": "The episode argues that foreign occupation, torture, proxy patronage, and media amnesia repeatedly generated the resistance they claimed to suppress, raising the question of whether the lesson is to intervene better or not at all.",
-          "audioUrl": ""
+          "title": "Samarra and the Architect of Civil War",
+          "summary": "Open at al-Jafr with Umm Qadama visiting her son. Trace the amnesty release, the intercepted civil-war letter, and the five men in uniform who destroy the Askari shrine. Run COIN and JSOC as the doctrinal counter-move that works tactically and fails strategically. End inside Camp Bucca, where the men who will run ISIS are already meeting. Hold Algeria as the cautionary ghost the movement refuses to learn from; Halabja as Kurdish memory entering the next decade.",
+          "description": "Open at al-Jafr with Umm Qadama visiting her son. Trace the amnesty release, the intercepted civil-war letter, and the five men in uniform who destroy the Askari shrine. Run COIN and JSOC as the doctrinal counter-move that works tactically and fails strategically. End inside Camp Bucca, where the men who will run ISIS are already meeting. Hold Algeria as the cautionary ghost the movement refuses to learn from; Halabja as Kurdish memory entering the next decade.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/war-on-terror-episodes-1-8-20260420T0000/episode-6.mp3"
         },
         {
           "number": 7,
-          "title": "The Caliphate and the Reckoning",
-          "summary": "Brings the whole chain to its endpoint in ISIS, showing the caliphate as the convergence of earlier wars, ideological shifts, and state failures.",
-          "description": "The final episode connects Zarqawi, Maliki, Assad, Gulf funding, and Wahhabist ideology to the collapse of coexistence and the rise of ISIS, ending on the unresolved question of whether the post-1979 system can still be broken.",
-          "audioUrl": ""
+          "title": "Obama's Wars: A Surge, a Raid, a Ceremony",
+          "summary": "Open on the West Point speech and the 30,000 troops; close on the 2014 ceremony where the flag comes down while combat continues. In between: the SEAL raid in Abbottabad and the question of who hid him; the cardboard box on the Kabul Bank minister's desk; the 41 NATO caveats; and Libya as the model intervention that became the model cautionary tale. The Afghanistan Papers are the documentary evidence that the gap between classified and public was systematic.",
+          "description": "Open on the West Point speech and the 30,000 troops; close on the 2014 ceremony where the flag comes down while combat continues. In between: the SEAL raid in Abbottabad and the question of who hid him; the cardboard box on the Kabul Bank minister's desk; the 41 NATO caveats; and Libya as the model intervention that became the model cautionary tale. The Afghanistan Papers are the documentary evidence that the gap between classified and public was systematic.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/war-on-terror-episodes-1-8-20260420T0000/episode-7.mp3"
+        },
+        {
+          "number": 8,
+          "title": "Mosul, Raqqa, and the Cold War Goes Hot",
+          "summary": "Open with Abdullah's warning call to Damascus and Assad's refusal. Trace Ghouta and the red line that wasn't, foreign-fighter inflows, and Baghdadi's scouting expedition. The episode pivots on June 2014: 1,300 fighters route 30,000 soldiers, and a bearded Caliph Ibrahim climbs the minbar of al-Nuri. Close on Nimr's execution and the ransacked Tehran embassy as the rivalry seeded in Ep1 finally going hot.",
+          "description": "Open with Abdullah's warning call to Damascus and Assad's refusal. Trace Ghouta and the red line that wasn't, foreign-fighter inflows, and Baghdadi's scouting expedition. The episode pivots on June 2014: 1,300 fighters route 30,000 soldiers, and a bearded Caliph Ibrahim climbs the minbar of al-Nuri. Close on Nimr's execution and the ransacked Tehran embassy as the rivalry seeded in Ep1 finally going hot.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/war-on-terror-episodes-1-8-20260420T0000/episode-8.mp3"
+        }
+      ]
+    },
+    {
+      "id": "the-mughal-throne",
+      "title": "The Mughal Throne",
+      "author": null,
+      "tagline": "Mughal India • Empire • Delhi",
+      "runtime": "13h 31m",
+      "summary": "A dynastic history of Mughal power, from Babur and Humayun through Akbar’s compacts, imperial households, Aurangzeb’s ruptures, Company rule, and the burning of the Red Fort.",
+      "accentColor": "#b76e3a",
+      "episodeCount": 9,
+      "detailUrl": "https://baqiral-1.github.io/podcast_agent/the-mughal-throne.html",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "The Prince Who Would Not Go Home",
+          "summary": "Babur's Panipat victory and refusal to return to Kabul set a founding paradox: a dynasty that almost wasn't. Humayun's catastrophic loss and Persian exile transplant Safavid aesthetics and a pluralist education into Akbar's infancy. Back in Agra, the regency of Maham Anaga and Bairam Khan shows that the throne is already held up by factions and foster mothers. Against this, Ghiyas Beg's arrival prefigures the Persianate elite that will supply wazirs and empresses.",
+          "description": "Babur's Panipat victory and refusal to return to Kabul set a founding paradox: a dynasty that almost wasn't. Humayun's catastrophic loss and Persian exile transplant Safavid aesthetics and a pluralist education into Akbar's infancy. Back in Agra, the regency of Maham Anaga and Bairam Khan shows that the throne is already held up by factions and foster mothers. Against this, Ghiyas Beg's arrival prefigures the Persianate elite that will supply wazirs and empresses.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/mughal-throne-episodes-1-9-20260420T0000/episode-1.mp3"
+        },
+        {
+          "number": 2,
+          "title": "Akbar's Compacts",
+          "summary": "Akbar's 1562 Kachhwaha marriage inaugurates the Rajput compact that will structure Mughal reach for a century. Chittor reveals the terms: join the compact or be annihilated; Haldighati shows the long afterlife of refusal. The Ibadat Khana, the 1579 mazhar, and jizya's abolition translate sulh-i kull from idea into governance. Underneath, Todar Mal's zabt and the mansab–dagh system convert personal charisma into a bureaucratic pump. Akbar builds what his successors will spend two centuries either defending or dismantling.",
+          "description": "Akbar's 1562 Kachhwaha marriage inaugurates the Rajput compact that will structure Mughal reach for a century. Chittor reveals the terms: join the compact or be annihilated; Haldighati shows the long afterlife of refusal. The Ibadat Khana, the 1579 mazhar, and jizya's abolition translate sulh-i kull from idea into governance. Underneath, Todar Mal's zabt and the mansab–dagh system convert personal charisma into a bureaucratic pump. Akbar builds what his successors will spend two centuries either defending or dismantling.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/mughal-throne-episodes-1-9-20260420T0000/episode-2.mp3"
+        },
+        {
+          "number": 3,
+          "title": "The Co-Sovereign and the Rebel Son",
+          "summary": "Salim's Allahabad rebellion and the murder of Abu'l Fazl show that even Akbar cannot design a succession. Once on the throne as Jahangir, he marries Mihr un-Nisa; within a decade Nur Jahan is issuing edicts, striking coins, and riding armed to his rescue. The episode reframes the harem as the primary political institution — intelligence, patronage, architecture, succession brokerage — of which Nur's reign is only the loudest example. Then Jahangir dies, Asaf Khan defects, and the network that built her dismantles her in days.",
+          "description": "Salim's Allahabad rebellion and the murder of Abu'l Fazl show that even Akbar cannot design a succession. Once on the throne as Jahangir, he marries Mihr un-Nisa; within a decade Nur Jahan is issuing edicts, striking coins, and riding armed to his rescue. The episode reframes the harem as the primary political institution — intelligence, patronage, architecture, succession brokerage — of which Nur's reign is only the loudest example. Then Jahangir dies, Asaf Khan defects, and the network that built her dismantles her in days.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/mughal-throne-episodes-1-9-20260420T0000/episode-3.mp3"
+        },
+        {
+          "number": 4,
+          "title": "A Coronation While the Emperor Lives",
+          "summary": "Shah Jahan's grief for Mumtaz becomes the Taj, while Fatehpur Sikri empties as a warning about monumental statecraft. His illness in 1657 detonates a four-way war; his attempt to rig the outcome toward Dara guarantees the bloodiest of the Mughal fraternal bloodbaths. Samugarh, Dara's parade, and the fratricide in legal dress produce Aurangzeb — crowned while his lawful sovereign breathes in the marble chambers of Agra Fort, jurists refusing to sign. Roshanara and Jahanara shadow every scene; the war of succession is also a war between sisters.",
+          "description": "Shah Jahan's grief for Mumtaz becomes the Taj, while Fatehpur Sikri empties as a warning about monumental statecraft. His illness in 1657 detonates a four-way war; his attempt to rig the outcome toward Dara guarantees the bloodiest of the Mughal fraternal bloodbaths. Samugarh, Dara's parade, and the fratricide in legal dress produce Aurangzeb — crowned while his lawful sovereign breathes in the marble chambers of Agra Fort, jurists refusing to sign. Roshanara and Jahanara shadow every scene; the war of succession is also a war between sisters.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/mughal-throne-episodes-1-9-20260420T0000/episode-4.mp3"
+        },
+        {
+          "number": 5,
+          "title": "Jizya, Shivaji, and the Rajput Rupture",
+          "summary": "A century after Akbar abolishes it, Aurangzeb reimposes jizya; targeted temple demolitions punish disloyalty while most temples stand. Meanwhile Shivaji walks out of Aurangzeb's court, escapes Agra in fruit baskets, and turns a potential vassal's role into a founder-king's. After Jaswant Singh's death the Marwar rupture shatters a century of Rajput partnership. The episode treats these three as one decision structure: Aurangzeb trying to run the empire by a narrower legitimacy and watching its load-bearing compacts give way. An open-ended Timurid succession keeps every dispute permanently armed.",
+          "description": "A century after Akbar abolishes it, Aurangzeb reimposes jizya; targeted temple demolitions punish disloyalty while most temples stand. Meanwhile Shivaji walks out of Aurangzeb's court, escapes Agra in fruit baskets, and turns a potential vassal's role into a founder-king's. After Jaswant Singh's death the Marwar rupture shatters a century of Rajput partnership. The episode treats these three as one decision structure: Aurangzeb trying to run the empire by a narrower legitimacy and watching its load-bearing compacts give way. An open-ended Timurid succession keeps every dispute permanently armed.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/mughal-throne-episodes-1-9-20260420T0000/episode-5.mp3"
+        },
+        {
+          "number": 6,
+          "title": "The Deccan Eats the Empire",
+          "summary": "Prince Akbar's rebellion drags Aurangzeb personally south; he relocates his court for twenty-six years. Sambhaji's execution multiplies the Maratha war instead of ending it; Tarabai turns a broken state into an offensive confederacy. The jagirdari squeeze — too many claimants, too little productive land, khalisa growing — hollows out the administrative skeleton. Remembering his own rebellion, Aurangzeb shackles his sons, confines his daughter, and breaks the very household-building that had produced capable emperors. When he dies in 1707, the governors who stayed neutral inherit the pieces.",
+          "description": "Prince Akbar's rebellion drags Aurangzeb personally south; he relocates his court for twenty-six years. Sambhaji's execution multiplies the Maratha war instead of ending it; Tarabai turns a broken state into an offensive confederacy. The jagirdari squeeze — too many claimants, too little productive land, khalisa growing — hollows out the administrative skeleton. Remembering his own rebellion, Aurangzeb shackles his sons, confines his daughter, and breaks the very household-building that had produced capable emperors. When he dies in 1707, the governors who stayed neutral inherit the pieces.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/mughal-throne-episodes-1-9-20260420T0000/episode-6.mp3"
+        },
+        {
+          "number": 7,
+          "title": "Four Emperors, a Peacock Throne, and a Tent at Allahabad",
+          "summary": "Farrukh Siyar is blinded in 1719 and four emperors pass in a year; Nader Shah sacks Delhi in 1739 and carries off the Peacock Throne while Muhammad Shah watches elephant fights. Panipat 1761 destroys the Maratha leadership generation. Then, in a Bengal drenched in silver, Jagat Seth–financed defections turn Plassey into a coup; after Buxar, Shah Alam II hands Clive the diwani of Bengal, Bihar and Orissa in a tent at Allahabad. Paramountcy has not collapsed — it has been looted, then legally delegated, to a London joint-stock company.",
+          "description": "Farrukh Siyar is blinded in 1719 and four emperors pass in a year; Nader Shah sacks Delhi in 1739 and carries off the Peacock Throne while Muhammad Shah watches elephant fights. Panipat 1761 destroys the Maratha leadership generation. Then, in a Bengal drenched in silver, Jagat Seth–financed defections turn Plassey into a coup; after Buxar, Shah Alam II hands Clive the diwani of Bengal, Bihar and Orissa in a tent at Allahabad. Paramountcy has not collapsed — it has been looted, then legally delegated, to a London joint-stock company.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/mughal-throne-episodes-1-9-20260420T0000/episode-7.mp3"
+        },
+        {
+          "number": 8,
+          "title": "The Company's New Kind of Rule",
+          "summary": "The 1770 Bengal famine kills a third of peasants in the worst-hit districts while Company servants continue to collect revenue. This is not Mughal rule with new masters. Silver that once flowed in flows out; a world textile exporter becomes a raw-material supplier. Company sepoy drill widens from advantage into structural gap. In 1788 Ghulam Qadir blinds Shah Alam II with a hot needle; fifteen years later Wellesley assumes protection over him. The Mughal emperor is now a figurehead of his own colonisers, a century exactly after Aurangzeb's death.",
+          "description": "The 1770 Bengal famine kills a third of peasants in the worst-hit districts while Company servants continue to collect revenue. This is not Mughal rule with new masters. Silver that once flowed in flows out; a world textile exporter becomes a raw-material supplier. Company sepoy drill widens from advantage into structural gap. In 1788 Ghulam Qadir blinds Shah Alam II with a hot needle; fifteen years later Wellesley assumes protection over him. The Mughal emperor is now a figurehead of his own colonisers, a century exactly after Aurangzeb's death.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/mughal-throne-episodes-1-9-20260420T0000/episode-8.mp3"
+        },
+        {
+          "number": 9,
+          "title": "The Red Fort Burns",
+          "summary": "Three hundred mutineers from Meerut ride into Delhi and present themselves to an eighty-year-old Zafar. He equivocates, then blesses; every answer guarantees catastrophe. Zinat Mahal organises everything around her son Jawan Bakht, eventually bargaining her fellow rebels to Hodson. A four-month siege ends with British and Sikh troops inside the Jama Masjid, ham served in the Diwan-i-Khas, and the systematic demolition of the Red Fort. Zafar slips out by the water gate, is tried, exiled to Rangoon, and denied a marked grave for decades. The rebellion meant to revive the Mughals destroys the capital they lived in; a whole civilisational memory passes into contested afterlife.",
+          "description": "Three hundred mutineers from Meerut ride into Delhi and present themselves to an eighty-year-old Zafar. He equivocates, then blesses; every answer guarantees catastrophe. Zinat Mahal organises everything around her son Jawan Bakht, eventually bargaining her fellow rebels to Hodson. A four-month siege ends with British and Sikh troops inside the Jama Masjid, ham served in the Diwan-i-Khas, and the systematic demolition of the Red Fort. Zafar slips out by the water gate, is tried, exiled to Rangoon, and denied a marked grave for decades. The rebellion meant to revive the Mughals destroys the capital they lived in; a whole civilisational memory passes into contested afterlife.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/mughal-throne-episodes-1-9-20260420T0000/episode-9.mp3"
+        }
+      ]
+    },
+    {
+      "id": "the-modern-middle-east",
+      "title": "The Modern Middle East",
+      "author": null,
+      "tagline": "Ottomans • Arabia • Oil",
+      "runtime": "12h 07m",
+      "summary": "A modern regional history from Ottoman collapse and wartime promises through mandates, Palestine, Arab republicanism, oil, revolution, and the long American commitment.",
+      "accentColor": "#8f9b58",
+      "episodeCount": 8,
+      "detailUrl": "https://baqiral-1.github.io/podcast_agent/the-modern-middle-east.html",
+      "episodes": [
+        {
+          "number": 1,
+          "title": "Enver's War: How the Ottoman Empire Walked Into Its Own End",
+          "summary": "Open on Churchill's 1914 conversion of the Royal Navy to oil — the decision that already ties Britain's future to this region. Pivot to the CUP's choice of Berlin, then to Enver's winter catastrophe at Sarıkamış, then to the counter-intuitive Ottoman victory at Gallipoli that preserves an empire already losing the economic war. Close on the structural development gap that frames why reform keeps failing.",
+          "description": "Open on Churchill's 1914 conversion of the Royal Navy to oil — the decision that already ties Britain's future to this region. Pivot to the CUP's choice of Berlin, then to Enver's winter catastrophe at Sarıkamış, then to the counter-intuitive Ottoman victory at Gallipoli that preserves an empire already losing the economic war. Close on the structural development gap that frames why reform keeps failing.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/modern-middle-east-episodes-1-8-20260420T0000/episode-1.mp3"
+        },
+        {
+          "number": 2,
+          "title": "Three Promises and an Extermination",
+          "summary": "Braid two 1915-16 stories that historians usually separate. In Istanbul and Anatolia, Talat's deportation logic produces the Armenian and Assyrian catastrophes. In London, Cairo, and the Hejaz, the British simultaneously pledge independence to Hussein, partition to Picot, and mobilize the Arab Revolt. The episode's argument: both tracks share the same wartime improvisational logic, and both produce the legitimacy crises that drive the next century. Close on Sykes and Picot signing the map in January 1916.",
+          "description": "Braid two 1915-16 stories that historians usually separate. In Istanbul and Anatolia, Talat's deportation logic produces the Armenian and Assyrian catastrophes. In London, Cairo, and the Hejaz, the British simultaneously pledge independence to Hussein, partition to Picot, and mobilize the Arab Revolt. The episode's argument: both tracks share the same wartime improvisational logic, and both produce the legitimacy crises that drive the next century. Close on Sykes and Picot signing the map in January 1916.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/modern-middle-east-episodes-1-8-20260420T0000/episode-2.mp3"
+        },
+        {
+          "number": 3,
+          "title": "Damascus 1918: Victory as Betrayal",
+          "summary": "Three scenes drive the episode: Lawrence tells Faisal the real Sykes-Picot at Wejh (1917); Weizmann hears 'it's a boy' outside the War Cabinet (October 1917); the Bolsheviks publish the agreement and Cemal reads it aloud in Beirut (December 1917). Culminate at Damascus, October 1918 — Faisal accepts the city's surrender and, with Lawrence translating, is told inside the hour that Lebanon belongs to France. Mudros closes the military empire. Two anchors (Balfour and Damascus) are required because they are the episode's twin hinge-points, with Damascus as emotional payoff.",
+          "description": "Three scenes drive the episode: Lawrence tells Faisal the real Sykes-Picot at Wejh (1917); Weizmann hears 'it's a boy' outside the War Cabinet (October 1917); the Bolsheviks publish the agreement and Cemal reads it aloud in Beirut (December 1917). Culminate at Damascus, October 1918 — Faisal accepts the city's surrender and, with Lawrence translating, is told inside the hour that Lebanon belongs to France. Mudros closes the military empire. Two anchors (Balfour and Damascus) are required because they are the episode's twin hinge-points, with Damascus as emotional payoff.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/modern-middle-east-episodes-1-8-20260420T0000/episode-3.mp3"
+        },
+        {
+          "number": 4,
+          "title": "Maysalun and the Invention of the Modern Map",
+          "summary": "Wilson arrives promising self-determination and leaves endorsing the mandates. The Syrian Congress elects Faisal and drafts a constitution; San Remo awards the mandates; Gouraud issues his ultimatum; de Caix engineers the destruction at Maysalun and carves Syria into sectarian cantons. In parallel, Kemal — once sentenced to death by his own sultan — nullifies Sèvres at Lausanne by abandoning the Arab provinces. The map we have was chosen, not inherited; the Hashemites become British clients; Harding quietly ratifies it all.",
+          "description": "Wilson arrives promising self-determination and leaves endorsing the mandates. The Syrian Congress elects Faisal and drafts a constitution; San Remo awards the mandates; Gouraud issues his ultimatum; de Caix engineers the destruction at Maysalun and carves Syria into sectarian cantons. In parallel, Kemal — once sentenced to death by his own sultan — nullifies Sèvres at Lausanne by abandoning the Arab provinces. The map we have was chosen, not inherited; the Hashemites become British clients; Harding quietly ratifies it all.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/modern-middle-east-episodes-1-8-20260420T0000/episode-4.mp3"
+        },
+        {
+          "number": 5,
+          "title": "Palestine, Proxy Wars, and the Nakba",
+          "summary": "Track two structural forces. First, land purchase and Jewish-only labor displace Arab tenants; British immigration policy oscillates; the 1936-39 Arab Revolt and the 1939 White Paper harden the conflict. Second, the Anglo-French proxy war — French agents funding the Stern Gang, British officers arming Syrian nationalists — eats at both empires from within. Meanwhile FDR's Lend-Lease to Ibn Saud quietly installs the American successor. Banna founds the Brotherhood in an Egyptian company town, a current whose payoff is deferred. Converge on May 1948: mandate ends, Truman recognizes, Dayr Yasin, Abdullah's revolver on Allenby Bridge, the refugees clumped along borders.",
+          "description": "Track two structural forces. First, land purchase and Jewish-only labor displace Arab tenants; British immigration policy oscillates; the 1936-39 Arab Revolt and the 1939 White Paper harden the conflict. Second, the Anglo-French proxy war — French agents funding the Stern Gang, British officers arming Syrian nationalists — eats at both empires from within. Meanwhile FDR's Lend-Lease to Ibn Saud quietly installs the American successor. Banna founds the Brotherhood in an Egyptian company town, a current whose payoff is deferred. Converge on May 1948: mandate ends, Truman recognizes, Dayr Yasin, Abdullah's revolver on Allenby Bridge, the refugees clumped along borders.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/modern-middle-east-episodes-1-8-20260420T0000/episode-5.mp3"
+        },
+        {
+          "number": 6,
+          "title": "The Free Officers, Mossadegh, and the Arab Century",
+          "summary": "Open in the Faluja pocket with Nasser insisting 'The army did not commit the crime of Palestine.' The Free Officers take Cairo; Nasser eclipses Naguib. Cut to Tehran: Mossadegh nationalizes, the British embargo, the CIA-MI6 coup restores the Shah — the 1953 template. Suez 1956: Eisenhower refuses to back his allies; Nasser becomes the Arab hero; the imperial era ends. The UAR briefly realizes pan-Arab unity before Syrian secession chastens it. Underneath all of this: asabiyya — Alawi, Tikriti, Saudi clan networks — is quietly building the regimes that will outlive every ideology. Two anchors (1953 and the republican consolidation centered on Suez) carry a dual hinge: what America did to one oil state, and what it enabled in the other.",
+          "description": "Open in the Faluja pocket with Nasser insisting 'The army did not commit the crime of Palestine.' The Free Officers take Cairo; Nasser eclipses Naguib. Cut to Tehran: Mossadegh nationalizes, the British embargo, the CIA-MI6 coup restores the Shah — the 1953 template. Suez 1956: Eisenhower refuses to back his allies; Nasser becomes the Arab hero; the imperial era ends. The UAR briefly realizes pan-Arab unity before Syrian secession chastens it. Underneath all of this: asabiyya — Alawi, Tikriti, Saudi clan networks — is quietly building the regimes that will outlive every ideology. Two anchors (1953 and the republican consolidation centered on Suez) carry a dual hinge: what America did to one oil state, and what it enabled in the other.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/modern-middle-east-episodes-1-8-20260420T0000/episode-6.mp3"
+        },
+        {
+          "number": 7,
+          "title": "1967, the Prison, and Sadat's Reversal",
+          "summary": "Three hinges braided to contest a familiar story. First, Qutb in Nasser's prisons: love-poet turned revolutionary theorist, hanged in 1966 — prison as incubator. Second, June 1967: the army shattered in six days, refugees along the borders, Nasserism broken. Third, Sadat after 1970: releases the Islamists, purges Nasserists, lets petrodollars re-enter, engineers the ideological balance that later kills him. The argument: Gerges's reading that 1967 is less the tipping point than Sadat's deliberate state policy. OPEC, founded in 1960 and dismissed, runs quietly underneath as a payoff for Ep8.",
+          "description": "Three hinges braided to contest a familiar story. First, Qutb in Nasser's prisons: love-poet turned revolutionary theorist, hanged in 1966 — prison as incubator. Second, June 1967: the army shattered in six days, refugees along the borders, Nasserism broken. Third, Sadat after 1970: releases the Islamists, purges Nasserists, lets petrodollars re-enter, engineers the ideological balance that later kills him. The argument: Gerges's reading that 1967 is less the tipping point than Sadat's deliberate state policy. OPEC, founded in 1960 and dismissed, runs quietly underneath as a payoff for Ep8.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/modern-middle-east-episodes-1-8-20260420T0000/episode-7.mp3"
+        },
+        {
+          "number": 8,
+          "title": "Oil, Revolution, and the Long American Commitment",
+          "summary": "Nixon in Tehran hands the Shah a blank check; the Shah pushes the 1973 price revolution while Kissinger accommodates; Saudi Arabia embargoes its own patron and is rewarded with a grand bargain. The oil boom becomes Iran's structural breakdown; Khomeini replaces the Guardian of the Gulf. Carter formalizes what losing the proxy means. Saddam's 1990 miscalculation entrenches U.S. forces on Saudi soil — a grievance Qutb's inheritors will metabolize. The 1986 price collapse quietly converts 'sovereignty' back into commodity. End on 2011: Mubarak booed on giant screens; the Brotherhood's hour and its collapse; the question of whether anything has actually changed since Maysalun.",
+          "description": "Nixon in Tehran hands the Shah a blank check; the Shah pushes the 1973 price revolution while Kissinger accommodates; Saudi Arabia embargoes its own patron and is rewarded with a grand bargain. The oil boom becomes Iran's structural breakdown; Khomeini replaces the Guardian of the Gulf. Carter formalizes what losing the proxy means. Saddam's 1990 miscalculation entrenches U.S. forces on Saudi soil — a grievance Qutb's inheritors will metabolize. The 1986 price collapse quietly converts 'sovereignty' back into commodity. End on 2011: Mubarak booed on giant screens; the Brotherhood's hour and its collapse; the question of whether anything has actually changed since Maysalun.",
+          "audioUrl": "https://github.com/baqiral-1/podcast_agent/releases/download/modern-middle-east-episodes-1-8-20260420T0000/episode-8.mp3"
         }
       ]
     }

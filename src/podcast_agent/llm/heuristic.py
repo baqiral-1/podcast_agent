@@ -70,13 +70,9 @@ class HeuristicLLMClient(LLMClient):
             "analysis": {
                 "themes_touched": [chapter_title],
                 "major_actors": [],
-                "key_places": [],
-                "key_institutions": [],
-                "timeframe": "",
                 "key_events_or_arguments": [
                     f"{chapter_title} contributes material relevant to the project theme."
                 ],
-                "major_tensions": [],
             },
         }
 
@@ -131,7 +127,6 @@ class HeuristicLLMClient(LLMClient):
                 analysis = chapter.get("analysis") or {}
                 candidates = [
                     *(analysis.get("major_actors", []) or []),
-                    *(analysis.get("key_institutions", []) or []),
                 ]
                 for raw_name in candidates:
                     name = str(raw_name or "").strip()
@@ -146,9 +141,7 @@ class HeuristicLLMClient(LLMClient):
                             "actor_id": actor_id,
                             "display_name": name,
                             "aliases": [],
-                            "actor_type": "institution"
-                            if name in (analysis.get("key_institutions", []) or [])
-                            else "person",
+                            "actor_type": "person",
                             "description": f"Heuristic actor derived from {chapter.get('title', 'chapter analysis')}.",
                             "book_ids": [book_id] if book_id else [],
                             "chapter_refs": [
@@ -423,9 +416,9 @@ class HeuristicLLMClient(LLMClient):
             actor_arc_directives = [
                 {
                     "actor_id": actor_id,
-                    "arc_refs": [
+                    "arc_threads": [
                         {
-                            "ref_id": f"{actor_id}_role_1",
+                            "thread_id": f"{actor_id}_role_1",
                             "arc_type": "role",
                             "label": "episode role",
                             "premise": "This actor provides the heuristic character spine for the episode.",
@@ -434,7 +427,7 @@ class HeuristicLLMClient(LLMClient):
                             "payoff": "The episode lands the actor's function as part of the local turn.",
                         },
                         {
-                            "ref_id": f"{actor_id}_tracking_1",
+                            "thread_id": f"{actor_id}_tracking_1",
                             "arc_type": "tracking",
                             "label": "listener tracking",
                             "premise": "Track how the actor's position becomes clearer across the episode.",
@@ -443,7 +436,7 @@ class HeuristicLLMClient(LLMClient):
                             "payoff": "The listener should understand why this actor mattered to the episode.",
                         },
                         {
-                            "ref_id": f"{actor_id}_tension_1",
+                            "thread_id": f"{actor_id}_tension_1",
                             "arc_type": "tension",
                             "label": "tension line",
                             "premise": "External pressure constrains the actor's available choices.",
@@ -452,7 +445,7 @@ class HeuristicLLMClient(LLMClient):
                             "payoff": "The tension should clarify the episode's local consequence.",
                         },
                         {
-                            "ref_id": f"{actor_id}_progression_1",
+                            "thread_id": f"{actor_id}_progression_1",
                             "arc_type": "turn",
                             "label": "arc progression",
                             "premise": "The actor's position changes as the cluster path develops.",
@@ -461,7 +454,7 @@ class HeuristicLLMClient(LLMClient):
                             "payoff": "The actor's changed position should make the episode turn legible.",
                         },
                         {
-                            "ref_id": f"{actor_id}_scene_job_1",
+                            "thread_id": f"{actor_id}_scene_job_1",
                             "arc_type": "payoff",
                             "label": "scene job",
                             "premise": "Use this actor where pressure turns into consequence.",
@@ -470,7 +463,7 @@ class HeuristicLLMClient(LLMClient):
                             "payoff": "The payoff should connect actor pressure to episode meaning.",
                         },
                         {
-                            "ref_id": f"{actor_id}_guardrail_1",
+                            "thread_id": f"{actor_id}_guardrail_1",
                             "arc_type": "guardrail",
                             "label": "repetition guardrail",
                             "premise": "Do not restate the same actor function unless the scene changes or pays it off.",
@@ -534,7 +527,6 @@ class HeuristicLLMClient(LLMClient):
             {
                 "scene_id": "scene_01",
                 "title": "Heuristic scene 1",
-                "card_kind": "normal",
                 "scene_role": "setup",
                 "dominant_cluster_occurrence_id": occurrence_id,
                 "entry_image": "A concrete opening image.",
@@ -546,7 +538,6 @@ class HeuristicLLMClient(LLMClient):
                 "actors": [],
                 "primitive_ids": [],
                 "passage_ids": passage_ids,
-                "estimated_duration_seconds": 4200,
                 "coverage_depth": "deep",
             }
         ]
@@ -567,7 +558,7 @@ class HeuristicLLMClient(LLMClient):
                 "preview": None,
             },
             "scene_cards": scene_cards,
-            "target_duration_minutes": 90.0,
+            "target_duration_minutes": 100.0,
         }
 
     def _generate_episode_writing(self, payload: PromptPayload) -> dict[str, Any]:
@@ -587,12 +578,10 @@ class HeuristicLLMClient(LLMClient):
                     "source_book_ids": [],
                 }
             ],
-            "transitions": [],
             "window_map": [
                 {
                     "batch_id": batch_id,
                     "section_ids": [f"section_{batch_id}"],
-                    "transition_ids": [],
                 }
             ],
         }
@@ -609,7 +598,7 @@ class HeuristicLLMClient(LLMClient):
         }
 
     def _generate_repair(self, payload: PromptPayload) -> dict[str, Any]:
-        return {"repaired_sections": [], "repaired_transitions": []}
+        return {"repaired_sections": []}
 
     def _generate_spoken_delivery(self, payload: PromptPayload) -> dict[str, Any]:
         script = payload.get("script", {})
@@ -627,19 +616,5 @@ class HeuristicLLMClient(LLMClient):
                     },
                 }
                 for section in script.get("prose_sections", [])
-            ],
-            "transitions": [
-                {
-                    "transition_id": str(transition.get("transition_id", uuid4().hex)),
-                    "text": str(transition.get("text", "Transition.")),
-                    "speech_hints": {
-                        "style": "neutral",
-                        "intensity": "none",
-                        "pause_before_ms": 300,
-                        "pause_after_ms": 300,
-                        "pace": "normal",
-                    },
-                }
-                for transition in script.get("transitions", [])
             ],
         }

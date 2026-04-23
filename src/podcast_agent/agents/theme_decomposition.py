@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 from podcast_agent.agents.base import Agent
 from podcast_agent.prompts import theme_decomposition_instructions
-from podcast_agent.schemas.models import BookRecord, ThematicAxis
+from podcast_agent.schemas.models import BookRecord, ChapterInfo, ThematicAxis
 
 
 class ThemeDecompositionResponse(BaseModel):
@@ -28,6 +28,17 @@ class ThemeDecompositionAgent(Agent):
     response_model = ThemeDecompositionResponse
     instructions = theme_decomposition_instructions()
 
+    @staticmethod
+    def _compact_chapter_analysis(chapter: ChapterInfo) -> dict[str, Any] | None:
+        analysis = chapter.analysis
+        if analysis is None:
+            return None
+        return {
+            "themes_touched": analysis.themes_touched,
+            "major_actors": analysis.major_actors,
+            "key_events_or_arguments": analysis.key_events_or_arguments,
+        }
+
     def build_payload(
         self,
         theme: str,
@@ -44,11 +55,7 @@ class ThemeDecompositionAgent(Agent):
                 entry = {
                     "chapter_id": ch.chapter_id,
                     "title": ch.title,
-                    "analysis": (
-                        ch.analysis.model_dump(mode="json")
-                        if ch.analysis is not None
-                        else None
-                    ),
+                    "analysis": self._compact_chapter_analysis(ch),
                 }
                 chapter_info.append(entry)
             book_summaries.append({

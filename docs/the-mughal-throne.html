@@ -3,16 +3,16 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>The Iranian Revolution — Agentic Podcasts</title>
+<title>The Mughal Throne — Agentic Podcasts</title>
 <style>
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
 :root {
   --bg: #060708;
   --text: #e8dcc8;
-  --accent: #a04040;
-  --accent-dim: rgba(160,64,64,0.3);
-  --accent-glow: rgba(160,64,64,0.15);
+  --accent: #b76e3a;
+  --accent-dim: rgba(183,110,58,0.3);
+  --accent-glow: rgba(183,110,58,0.15);
   --font: "Avenir Next", "SF Pro Text", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
 }
 
@@ -82,11 +82,11 @@ html, body {
   display: flex;
   flex-direction: column;
   scrollbar-width: thin;
-  scrollbar-color: rgba(160,64,64,0.25) transparent;
+  scrollbar-color: rgba(201,122,69,0.25) transparent;
 }
 .left-panel::-webkit-scrollbar { width: 6px; }
 .left-panel::-webkit-scrollbar-track { background: transparent; }
-.left-panel::-webkit-scrollbar-thumb { background: rgba(160,64,64,0.25); border-radius: 3px; }
+.left-panel::-webkit-scrollbar-thumb { background: rgba(201,122,69,0.25); border-radius: 3px; }
 
 /* Episode image block */
 .episode-image-block {
@@ -109,7 +109,7 @@ html, body {
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(to bottom, rgba(160,64,64,0.15), rgba(6,7,8,0.55));
+  background: linear-gradient(to bottom, rgba(201,122,69,0.15), rgba(6,7,8,0.55));
   pointer-events: none;
 }
 /* Film grain */
@@ -239,8 +239,8 @@ html, body {
   position: relative;
 }
 .btn-play svg { width: 1.8rem; height: 1.8rem; fill: var(--accent); }
-.btn-play:hover { border-color: #c45050 !important; background: rgba(160,64,64,0.08); }
-.btn-play:hover svg { fill: #c45050; }
+.btn-play:hover { border-color: #d99060 !important; background: rgba(201,122,69,0.08); }
+.btn-play:hover svg { fill: #d99060; }
 
 .btn-speed {
   padding: 0.35rem 0.75rem;
@@ -269,7 +269,7 @@ html, body {
   left: 10%;
   right: 10%;
   height: 60px;
-  background: radial-gradient(ellipse at center, rgba(160,64,64,0.06) 0%, transparent 70%);
+  background: radial-gradient(ellipse at center, rgba(201,122,69,0.06) 0%, transparent 70%);
   pointer-events: none;
 }
 .episode-desc p {
@@ -283,16 +283,16 @@ html, body {
 /* ── RIGHT PANEL — PLAYLIST ── */
 .right-panel {
   background: rgba(10,11,13,0.65);
-  border-left: 1px solid rgba(160,64,64,0.15);
+  border-left: 1px solid rgba(201,122,69,0.15);
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   scrollbar-width: thin;
-  scrollbar-color: rgba(160,64,64,0.2) transparent;
+  scrollbar-color: rgba(201,122,69,0.2) transparent;
 }
 .right-panel::-webkit-scrollbar { width: 6px; }
 .right-panel::-webkit-scrollbar-track { background: transparent; }
-.right-panel::-webkit-scrollbar-thumb { background: rgba(160,64,64,0.2); border-radius: 3px; }
+.right-panel::-webkit-scrollbar-thumb { background: rgba(201,122,69,0.2); border-radius: 3px; }
 
 .playlist-header {
   padding: 1.5rem 2rem 1rem;
@@ -328,13 +328,13 @@ html, body {
   border-left: 3px solid transparent;
 }
 .ep-row:hover {
-  background: rgba(160,64,64,0.05);
+  background: rgba(201,122,69,0.05);
 }
 .ep-row:hover .ep-text .ep-title { opacity: 0.9; }
 .ep-row:hover .ep-play-indicator { opacity: 1; }
 
 .ep-row.active {
-  background: rgba(160,64,64,0.08);
+  background: rgba(201,122,69,0.08);
   border-left-color: var(--accent);
 }
 .ep-row.active .ep-num { color: var(--accent); opacity: 1; }
@@ -427,7 +427,7 @@ html, body {
   display: none;
   width: 100%;
   padding: 0.9rem 2rem;
-  background: rgba(160,64,64,0.06);
+  background: rgba(201,122,69,0.06);
   border: none;
   border-top: 1px solid rgba(255,255,255,0.06);
   color: var(--text);
@@ -484,7 +484,7 @@ html, body {
 
   .right-panel {
     border-left: none;
-    border-top: 1px solid rgba(160,64,64,0.15);
+    border-top: 1px solid rgba(201,122,69,0.15);
     max-height: 0;
     overflow: hidden;
     transition: max-height 0.4s ease;
@@ -507,8 +507,8 @@ html, body {
 <!-- HEADER -->
 <header class="site-header">
   <a href="index.html" class="brand">Agentic Podcasts</a>
-  <span class="series-title">The Iranian Revolution</span>
-  <span class="meta">Eight episodes</span>
+  <span class="series-title">The Mughal Throne</span>
+  <span class="meta">Nine episodes</span>
 </header>
 
 <!-- SPLIT PANELS -->
@@ -517,9 +517,9 @@ html, body {
   <!-- LEFT — NOW PLAYING -->
   <div class="left-panel" id="leftPanel">
     <div class="episode-image-block" id="episodeImageBlock">
-      <img id="episodeImage" src="images/iran-2.jpg" alt="Episode image">
+      <img id="episodeImage" src="images/mughal-1.jpg" alt="Episode image">
       <span class="image-ep-number" id="imageEpNum">1</span>
-      <span class="image-ep-title" id="imageEpTitle">The Grievance File</span>
+      <span class="image-ep-title" id="imageEpTitle">The Prince Who Would Not Go Home</span>
     </div>
 
     <div class="waveform-section">
@@ -529,7 +529,7 @@ html, body {
       </div>
       <div class="time-row">
         <span id="timeCurrent">0:00:00</span>
-        <span id="timeTotal">1:32:53</span>
+        <span id="timeTotal">1:38:18</span>
       </div>
     </div>
 
@@ -544,7 +544,7 @@ html, body {
     </div>
 
     <div class="episode-desc">
-      <p id="episodeDescription">Open in the British legation bast of 1906, where bazaar and clergy invent Iran&#x27;s parliamentary idiom; watch Nuri break with the constitutionalists and hang for it, planting the doctrinal seed Khomeini will later harvest. Stack the Anglo-Russian partition, capitulations, and the 1941 Allied invasion into a single cumulative indictment of violated sovereignty. Close with Reza Shah&#x27;s forced unveiling and the 1935 Mashhad shrine massacre - Pahlavi modernism inscribed on women&#x27;s bodies and shrine courtyards, a grievance stored for a generation.</p>
+      <p id="episodeDescription">Babur&#x27;s Panipat victory and refusal to return to Kabul set a founding paradox: a dynasty that almost wasn&#x27;t. Humayun&#x27;s catastrophic loss and Persian exile transplant Safavid aesthetics and a pluralist education into Akbar&#x27;s infancy. Back in Agra, the regency of Maham Anaga and Bairam Khan shows that the throne is already held up by factions and foster mothers. Against this, Ghiyas Beg&#x27;s arrival prefigures the Persianate elite that will supply wazirs and empresses.</p>
     </div>
   </div>
 
@@ -556,7 +556,7 @@ html, body {
   <div class="right-panel" id="rightPanel">
     <div class="playlist-header">
       <span class="label">Episodes</span>
-      <span class="total-runtime">12h 14m</span>
+      <span class="total-runtime">13h 31m</span>
     </div>
     <div id="playlistRows"></div>
   </div>
@@ -568,80 +568,89 @@ html, body {
 
 <script>
 // ── DATA ──
-const AUDIO_BASE = "https://github.com/baqiral-1/podcast_agent/releases/download/iranian-revolution-episodes-1-8-20260420T0000/";
+const AUDIO_BASE = "https://github.com/baqiral-1/podcast_agent/releases/download/mughal-throne-episodes-1-9-20260420T0000/";
 
 const EPISODES = [
   {
     "num": 1,
-    "title": "The Grievance File",
-    "duration": "1:32:53",
-    "durationSec": 5573,
-    "image": "images/iran-2.jpg",
-    "audio": "https://github.com/baqiral-1/podcast_agent/releases/download/iranian-revolution-episodes-1-8-20260420T0000/episode-1.mp3",
-    "desc": "Open in the British legation bast of 1906, where bazaar and clergy invent Iran's parliamentary idiom; watch Nuri break with the constitutionalists and hang for it, planting the doctrinal seed Khomeini will later harvest. Stack the Anglo-Russian partition, capitulations, and the 1941 Allied invasion into a single cumulative indictment of violated sovereignty. Close with Reza Shah's forced unveiling and the 1935 Mashhad shrine massacre - Pahlavi modernism inscribed on women's bodies and shrine courtyards, a grievance stored for a generation."
+    "title": "The Prince Who Would Not Go Home",
+    "duration": "1:38:18",
+    "durationSec": 5898,
+    "image": "images/mughal-1.jpg",
+    "audio": "https://github.com/baqiral-1/podcast_agent/releases/download/mughal-throne-episodes-1-9-20260420T0000/episode-1.mp3",
+    "desc": "Babur's Panipat victory and refusal to return to Kabul set a founding paradox: a dynasty that almost wasn't. Humayun's catastrophic loss and Persian exile transplant Safavid aesthetics and a pluralist education into Akbar's infancy. Back in Agra, the regency of Maham Anaga and Bairam Khan shows that the throne is already held up by factions and foster mothers. Against this, Ghiyas Beg's arrival prefigures the Persianate elite that will supply wazirs and empresses."
   },
   {
     "num": 2,
-    "title": "Ajax: The Door That Closed",
-    "duration": "1:29:20",
-    "durationSec": 5360,
-    "image": "images/iran-3.jpg",
-    "audio": "https://github.com/baqiral-1/podcast_agent/releases/download/iranian-revolution-episodes-1-8-20260420T0000/episode-2.mp3",
-    "desc": "Mossadeq nationalizes the Anglo-Iranian Oil Company and for a moment carries Iran with him. Then the coalition cracks: Kashani issues a fatwa against his former ally, the Tudeh hesitates to mobilize its urban base, and Kermit Roosevelt's paid mobs and forged firmans finish the work. The payoff is not just Mossadeq at Ahmad Abad; it is a sovereignty wound and a secular option removed from the board, leaving religious opposition as the only idiom for future dissent."
+    "title": "Akbar's Compacts",
+    "duration": "1:36:46",
+    "durationSec": 5806,
+    "image": "images/mughal-2.jpg",
+    "audio": "https://github.com/baqiral-1/podcast_agent/releases/download/mughal-throne-episodes-1-9-20260420T0000/episode-2.mp3",
+    "desc": "Akbar's 1562 Kachhwaha marriage inaugurates the Rajput compact that will structure Mughal reach for a century. Chittor reveals the terms: join the compact or be annihilated; Haldighati shows the long afterlife of refusal. The Ibadat Khana, the 1579 mazhar, and jizya's abolition translate sulh-i kull from idea into governance. Underneath, Todar Mal's zabt and the mansab–dagh system convert personal charisma into a bureaucratic pump. Akbar builds what his successors will spend two centuries either defending or dismantling."
   },
   {
     "num": 3,
-    "title": "Revolution from Above, Doctrine from Najaf",
-    "duration": "1:34:23",
-    "durationSec": 5663,
-    "image": "images/iran-4.jpg",
-    "audio": "https://github.com/baqiral-1/podcast_agent/releases/download/iranian-revolution-episodes-1-8-20260420T0000/episode-3.mp3",
-    "desc": "The Shah's 1963 referendum breaks the landlord class and empties villages into Tehran's southern shantytowns; Khomeini's June 1963 Ashura sermon makes him a national name. Oil rents finance a petrostate that cannot absorb the classes it creates. Then, in Najaf in 1970, Khomeini converts a marginal juristic doctrine into a theory of clerical sovereignty - an innovation sold as tradition that the moderate grand ayatollahs see clearly and decide not to publicly fight. Shariati, dying in 1977, leaves behind the ideological bridge that will let leftists, bazaaris, and seminarians hear one man as three different men."
+    "title": "The Co-Sovereign and the Rebel Son",
+    "duration": "1:33:31",
+    "durationSec": 5611,
+    "image": "images/mughal-3.jpg",
+    "audio": "https://github.com/baqiral-1/podcast_agent/releases/download/mughal-throne-episodes-1-9-20260420T0000/episode-3.mp3",
+    "desc": "Salim's Allahabad rebellion and the murder of Abu'l Fazl show that even Akbar cannot design a succession. Once on the throne as Jahangir, he marries Mihr un-Nisa; within a decade Nur Jahan is issuing edicts, striking coins, and riding armed to his rescue. The episode reframes the harem as the primary political institution — intelligence, patronage, architecture, succession brokerage — of which Nur's reign is only the loudest example. Then Jahangir dies, Asaf Khan defects, and the network that built her dismantles her in days."
   },
   {
     "num": 4,
-    "title": "The Editorial and the King Who Could Not Act",
-    "duration": "1:32:29",
-    "durationSec": 5549,
-    "image": "images/iran-5.jpg",
-    "audio": "https://github.com/baqiral-1/podcast_agent/releases/download/iranian-revolution-episodes-1-8-20260420T0000/episode-4.mp3",
-    "desc": "January 7, 1978: Etelaat prints an attack on Khomeini and lights a fuse. Qom, then Tabriz forty days later, then every city on the next arbaeen - grief becomes insurrection on a pre-built Shi'a calendar that removes all organizational questions. The mosque-bazaar network, financed by khoms and organized through hay'at associations, provides the infrastructure. The Rex Cinema fire and Black Friday's Jaleh Square massacre end any hope of reconciliation. Inside Niavaran, the Shah - lymphoma kept secret, sycophancy filtering his world, asking 'what did I do to them?' - cannot bring himself to order the mass violence his throne would require."
+    "title": "A Coronation While the Emperor Lives",
+    "duration": "1:19:34",
+    "durationSec": 4774,
+    "image": "images/mughal-4.jpg",
+    "audio": "https://github.com/baqiral-1/podcast_agent/releases/download/mughal-throne-episodes-1-9-20260420T0000/episode-4.mp3",
+    "desc": "Shah Jahan's grief for Mumtaz becomes the Taj, while Fatehpur Sikri empties as a warning about monumental statecraft. His illness in 1657 detonates a four-way war; his attempt to rig the outcome toward Dara guarantees the bloodiest of the Mughal fraternal bloodbaths. Samugarh, Dara's parade, and the fratricide in legal dress produce Aurangzeb — crowned while his lawful sovereign breathes in the marble chambers of Agra Fort, jurists refusing to sign. Roshanara and Jahanara shadow every scene; the war of succession is also a war between sisters."
   },
   {
     "num": 5,
-    "title": "Neauphle-le-Château and the Departure",
-    "duration": "1:35:47",
-    "durationSec": 5747,
-    "image": "images/iran-shah.jpg",
-    "audio": "https://github.com/baqiral-1/podcast_agent/releases/download/iranian-revolution-episodes-1-8-20260420T0000/episode-5.mp3",
-    "desc": "Expelled from Najaf in October 1978, Khomeini installs himself in a French village with a cassette network and a garden full of microphones. His Paris generalities - throw out the imperialists, protect the dispossessed, Islamic justice - let liberals, Marxists, and bazaaris each hear what they need. Muharram brings millions into Tehran's streets; the Shah refuses to drown them. Americans read the crisis through a 'red and black' lens, Metrinko's dismissed cables arriving from the provinces, Carter and Brzezinski offering incompatible signals. On January 16, 1979, the King of Kings weeps his way down an Air France staircase with a jar of Iranian soil."
+    "title": "Jizya, Shivaji, and the Rajput Rupture",
+    "duration": "1:20:13",
+    "durationSec": 4813,
+    "image": "images/mughal-5.jpg",
+    "audio": "https://github.com/baqiral-1/podcast_agent/releases/download/mughal-throne-episodes-1-9-20260420T0000/episode-5.mp3",
+    "desc": "A century after Akbar abolishes it, Aurangzeb reimposes jizya; targeted temple demolitions punish disloyalty while most temples stand. Meanwhile Shivaji walks out of Aurangzeb's court, escapes Agra in fruit baskets, and turns a potential vassal's role into a founder-king's. After Jaswant Singh's death the Marwar rupture shatters a century of Rajput partnership. The episode treats these three as one decision structure: Aurangzeb trying to run the empire by a narrower legitimacy and watching its load-bearing compacts give way. An open-ended Timurid succession keeps every dispute permanently armed."
   },
   {
     "num": 6,
-    "title": "February 11",
-    "duration": "1:27:21",
-    "durationSec": 5241,
-    "image": "images/iran-hostage.jpg",
-    "audio": "https://github.com/baqiral-1/podcast_agent/releases/download/iranian-revolution-episodes-1-8-20260420T0000/episode-6.mp3",
-    "desc": "Huyser lands in Tehran to hold the military together for Bakhtiar and keep a coup option warm - an impossible pair of instructions in an army the Shah designed to be uncoordinated. On February 1, Khomeini descends the Air France stairs stone-faced and says he feels nothing. Four days later, at Refah School, he claims velayat-e-faqih in public and appoints Bazargan's provisional government, declaring any Shah-appointed premier a traitor to Islam. Doshan Tappeh mutinies; on February 11, twenty-seven senior officers vote to withdraw to barracks. Within days, generals are shot on the Refah rooftop and the first question of the new regime - who killed Hoveyda, the Shah who abandoned him or the revolution that tried him? - is being answered in a classroom basement."
+    "title": "The Deccan Eats the Empire",
+    "duration": "1:33:07",
+    "durationSec": 5587,
+    "image": "images/mughal-6.jpg",
+    "audio": "https://github.com/baqiral-1/podcast_agent/releases/download/mughal-throne-episodes-1-9-20260420T0000/episode-6.mp3",
+    "desc": "Prince Akbar's rebellion drags Aurangzeb personally south; he relocates his court for twenty-six years. Sambhaji's execution multiplies the Maratha war instead of ending it; Tarabai turns a broken state into an offensive confederacy. The jagirdari squeeze — too many claimants, too little productive land, khalisa growing — hollows out the administrative skeleton. Remembering his own rebellion, Aurangzeb shackles his sons, confines his daughter, and breaks the very household-building that had produced capable emperors. When he dies in 1707, the governors who stayed neutral inherit the pieces."
   },
   {
     "num": 7,
-    "title": "The Second Revolution",
-    "duration": "1:24:55",
-    "durationSec": 5095,
-    "image": "images/iran-revolution.jpg",
-    "audio": "https://github.com/baqiral-1/podcast_agent/releases/download/iranian-revolution-episodes-1-8-20260420T0000/episode-7.mp3",
-    "desc": "Bazargan's provisional cabinet governs on paper while komitehs and Revolutionary Courts govern in fact; nine months of humiliation produce a prime minister no one obeys. The Assembly of Experts, led by Beheshti's IRP, rewrites the draft constitution to place a supreme jurist above president and parliament - Sahabi warning from outside the chamber that this will ruin Islam itself. On November 4, 1979, students seize the American embassy; Khomeini endorses, Bazargan resigns, and the hostage crisis becomes the instrument by which the clerical party eliminates its liberal partners. The revolution's anti-imperialism absorbs its anti-authoritarianism and keeps only the first."
+    "title": "Four Emperors, a Peacock Throne, and a Tent at Allahabad",
+    "duration": "1:24:59",
+    "durationSec": 5099,
+    "image": "images/mughal-7.png",
+    "audio": "https://github.com/baqiral-1/podcast_agent/releases/download/mughal-throne-episodes-1-9-20260420T0000/episode-7.mp3",
+    "desc": "Farrukh Siyar is blinded in 1719 and four emperors pass in a year; Nader Shah sacks Delhi in 1739 and carries off the Peacock Throne while Muhammad Shah watches elephant fights. Panipat 1761 destroys the Maratha leadership generation. Then, in a Bengal drenched in silver, Jagat Seth–financed defections turn Plassey into a coup; after Buxar, Shah Alam II hands Clive the diwani of Bengal, Bihar and Orissa in a tent at Allahabad. Paramountcy has not collapsed — it has been looted, then legally delegated, to a London joint-stock company."
   },
   {
     "num": 8,
-    "title": "The Republic That Outlasted Its Maker",
-    "duration": "1:36:56",
-    "durationSec": 5816,
-    "image": "images/iran-8.jpg",
-    "audio": "https://github.com/baqiral-1/podcast_agent/releases/download/iranian-revolution-episodes-1-8-20260420T0000/episode-8.mp3",
-    "desc": "In June 1981 the Majles impeaches Bani-Sadr; Mojahedin allies smuggle him out, Beheshti is assassinated, and the last non-clerical coalition partners are eliminated from Iranian politics. Saddam's September 1980 invasion had already handed Khomeini the mobilization he needed - a war he would choose to continue past any strategic rationale because the regime needed the dead. The bazaar and the mostazafin each expect their revolution; Khomeini engineers Montazeri aside and the Rafsanjani-Khamenei succession into place. Beyond Iran's borders, the revolution reverberates as Shi'a assertion and Sunni counter-mobilization, a regional cold war Khomeini never controlled. The closing question: did velayat-e faqih corrupt Shi'ism or fulfill a strand of it, and can the Republic survive the doctrine it left behind?"
+    "title": "The Company's New Kind of Rule",
+    "duration": "1:27:51",
+    "durationSec": 5271,
+    "image": "images/mughal-8.jpg",
+    "audio": "https://github.com/baqiral-1/podcast_agent/releases/download/mughal-throne-episodes-1-9-20260420T0000/episode-8.mp3",
+    "desc": "The 1770 Bengal famine kills a third of peasants in the worst-hit districts while Company servants continue to collect revenue. This is not Mughal rule with new masters. Silver that once flowed in flows out; a world textile exporter becomes a raw-material supplier. Company sepoy drill widens from advantage into structural gap. In 1788 Ghulam Qadir blinds Shah Alam II with a hot needle; fifteen years later Wellesley assumes protection over him. The Mughal emperor is now a figurehead of his own colonisers, a century exactly after Aurangzeb's death."
+  },
+  {
+    "num": 9,
+    "title": "The Red Fort Burns",
+    "duration": "1:37:03",
+    "durationSec": 5823,
+    "image": "images/mughal-9.jpg",
+    "audio": "https://github.com/baqiral-1/podcast_agent/releases/download/mughal-throne-episodes-1-9-20260420T0000/episode-9.mp3",
+    "desc": "Three hundred mutineers from Meerut ride into Delhi and present themselves to an eighty-year-old Zafar. He equivocates, then blesses; every answer guarantees catastrophe. Zinat Mahal organises everything around her son Jawan Bakht, eventually bargaining her fellow rebels to Hodson. A four-month siege ends with British and Sikh troops inside the Jama Masjid, ham served in the Diwan-i-Khas, and the systematic demolition of the Red Fort. Zafar slips out by the water gate, is tried, exiled to Rangoon, and denied a marked grave for decades. The rebellion meant to revive the Mughals destroys the capital they lived in; a whole civilisational memory passes into contested afterlife."
   }
 ];
 
@@ -730,9 +739,9 @@ function drawWaveform(progress) {
     const y = midY - barH / 2;
 
     if (i < playedBars) {
-      ctx.fillStyle = "rgba(160,64,64,0.8)";
+      ctx.fillStyle = "rgba(201,122,69,0.8)";
     } else {
-      ctx.fillStyle = "rgba(160,64,64,0.25)";
+      ctx.fillStyle = "rgba(201,122,69,0.25)";
     }
     ctx.fillRect(x, y, barWidth, barH);
   }
@@ -740,7 +749,7 @@ function drawWaveform(progress) {
   // Playhead line
   if (progress > 0) {
     const px = progress * w;
-    ctx.strokeStyle = "#a04040";
+    ctx.strokeStyle = "#c97a45";
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(px, 8);
@@ -750,7 +759,7 @@ function drawWaveform(progress) {
     // Circle on top of playhead
     ctx.beginPath();
     ctx.arc(px, 8, 4, 0, Math.PI * 2);
-    ctx.fillStyle = "#a04040";
+    ctx.fillStyle = "#c97a45";
     ctx.fill();
   }
 }

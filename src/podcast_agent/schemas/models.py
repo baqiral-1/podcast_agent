@@ -72,11 +72,26 @@ class ChapterInfo(StrictModel):
 class ChapterAnalysis(StrictModel):
     themes_touched: list[str] = Field(default_factory=list, max_length=8)
     major_actors: list[str] = Field(default_factory=list, max_length=8)
-    key_places: list[str] = Field(default_factory=list, max_length=8)
-    key_institutions: list[str] = Field(default_factory=list, max_length=8)
-    timeframe: str = ""
     key_events_or_arguments: list[str] = Field(default_factory=list)
-    major_tensions: list[str] = Field(default_factory=list, max_length=6)
+
+    @model_validator(mode="before")
+    @classmethod
+    def discard_legacy_fields(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        legacy_fields = {
+            "key_places",
+            "key_institutions",
+            "timeframe",
+            "major_tensions",
+        }
+        if not legacy_fields.intersection(data):
+            return data
+        return {
+            key: value
+            for key, value in data.items()
+            if key not in legacy_fields
+        }
 
 
 class BookRecord(StrictModel):
@@ -122,17 +137,17 @@ class PipelineConfig(StrictModel):
     tts_provider: str = "openai"
     tts_concurrency: int = Field(default=12, ge=1)
     episode_planning_concurrency: int = Field(default=9, ge=1)
-    episode_write_concurrency: int = Field(default=7, ge=1)
-    target_episode_minutes: float = Field(default=90.0, gt=0.0)
-    min_episode_minutes: float = Field(default=85.0, gt=0.0)
+    episode_write_concurrency: int = Field(default=10, ge=1)
+    target_episode_minutes: float = Field(default=100.0, gt=0.0)
+    min_episode_minutes: float = Field(default=95.0, gt=0.0)
     duration_shortfall_policy: Literal["warn"] = "warn"
-    scene_card_target_min: int = Field(default=30, ge=1)
+    scene_card_target_min: int = Field(default=35, ge=1)
     scene_card_target_max: int = Field(default=45, ge=1)
     scene_card_target_policy: Literal["warn"] = "warn"
     scene_card_primitives_min: int = Field(default=1, ge=0)
     scene_card_primitives_max: int = Field(default=2, ge=1)
     scene_card_primitive_policy: Literal["warn"] = "warn"
-    passage_extraction_concurrency: int = Field(default=8, ge=1)
+    passage_extraction_concurrency: int = Field(default=16, ge=1)
     chunk_max_words: int = Field(default=1000, ge=50)
     chunk_overlap_words: int = Field(default=75, ge=0)
     spoken_chunk_max_words: int = Field(default=250, ge=50)
@@ -599,6 +614,8 @@ class ChronologyBreak(StrictModel):
 
 
 class ClusterPathOccurrence(StrictModel):
+    model_config = ConfigDict(extra="ignore")
+
     occurrence_id: str = Field(default_factory=lambda: f"occ_{new_id()[:8]}")
     cluster_id: str = Field(min_length=1)
     usage: Literal["primary", "echo"]
@@ -607,9 +624,11 @@ class ClusterPathOccurrence(StrictModel):
     chronology_break: ChronologyBreak | None = None
 
 
-class ActorArcRef(StrictModel):
-    ref_id: str = Field(min_length=1)
-    arc_type: Literal["role", "tracking", "tension", "turn", "payoff", "guardrail"]
+class ActorArcThread(StrictModel):
+    model_config = ConfigDict(extra="ignore")
+
+    thread_id: str = Field(min_length=1)
+    arc_type: str = Field(min_length=1)
     label: str = Field(min_length=1)
     premise: str = Field(min_length=1)
     pressure: str = ""
@@ -619,13 +638,13 @@ class ActorArcRef(StrictModel):
 
 class ActorArcDirective(StrictModel):
     actor_id: str = Field(min_length=1)
-    arc_refs: list[ActorArcRef] = Field(default_factory=list, max_length=8)
+    arc_threads: list[ActorArcThread] = Field(default_factory=list, min_length=1, max_length=8)
 
     @model_validator(mode="after")
-    def validate_unique_ref_ids(self) -> "ActorArcDirective":
-        ref_ids = [ref.ref_id for ref in self.arc_refs]
-        if len(ref_ids) != len(set(ref_ids)):
-            raise ValueError("actor arc directive ref ids must be unique")
+    def validate_unique_thread_ids(self) -> "ActorArcDirective":
+        thread_ids = [thread.thread_id for thread in self.arc_threads]
+        if len(thread_ids) != len(set(thread_ids)):
+            raise ValueError("actor arc directive thread ids must be unique")
         return self
 
 
@@ -698,7 +717,7 @@ class FramingBlock(StrictModel):
 
 
 class SceneActorArcBinding(StrictModel):
-    ref_id: str = Field(min_length=1)
+    thread_id: str = Field(min_length=1)
     scene_role: Literal["driver", "blocked", "counterforce", "subject"]
     scene_use: Literal[
         "introduce",
@@ -720,14 +739,11 @@ class SceneActor(StrictModel):
     arc_bindings: list[SceneActorArcBinding] = Field(default_factory=list, max_length=2)
 
 
-class SceneCard(StrictModel):
+class _SceneCardBase(StrictModel):
     scene_id: str = Field(default_factory=lambda: f"scene_{new_id()[:8]}")
     title: str = Field(min_length=1)
-    card_kind: Literal["normal", "bridge"] = "normal"
     scene_role: str = Field(min_length=1)
     dominant_cluster_occurrence_id: str | None = None
-    bridge_from_occurrence_id: str | None = None
-    bridge_to_occurrence_id: str | None = None
     entry_image: str = ""
     local_question: str = ""
     observable_detail: str = ""
@@ -739,24 +755,30 @@ class SceneCard(StrictModel):
     actors: list[SceneActor] = Field(default_factory=list, max_length=4)
     primitive_ids: list[str] = Field(default_factory=list)
     passage_ids: list[str] = Field(default_factory=list)
-    estimated_duration_seconds: int = Field(gt=0)
     coverage_depth: Literal["deep", "standard", "compressed"] = "standard"
 
     @model_validator(mode="after")
-    def validate_card_shape(self) -> "SceneCard":
+    def validate_card_shape(self) -> "_SceneCardBase":
         if not self.scene_role.strip():
             raise ValueError("scene_role must not be blank")
-        if self.card_kind == "normal":
-            if not self.dominant_cluster_occurrence_id:
-                raise ValueError("normal scene cards require dominant_cluster_occurrence_id")
-            if self.bridge_from_occurrence_id or self.bridge_to_occurrence_id:
-                raise ValueError("normal scene cards must not define bridge occurrence ids")
-        else:
-            if not self.bridge_from_occurrence_id or not self.bridge_to_occurrence_id:
-                raise ValueError("bridge scene cards require bridge_from_occurrence_id and bridge_to_occurrence_id")
-            if self.dominant_cluster_occurrence_id is not None:
-                raise ValueError("bridge scene cards must not define dominant_cluster_occurrence_id")
+        if not self.dominant_cluster_occurrence_id:
+            raise ValueError("scene cards require dominant_cluster_occurrence_id")
         return self
+
+
+class SceneCardDraft(_SceneCardBase):
+    @model_validator(mode="before")
+    @classmethod
+    def discard_legacy_duration(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            cleaned = dict(data)
+            cleaned.pop("estimated_duration_seconds", None)
+            return cleaned
+        return data
+
+
+class SceneCard(_SceneCardBase):
+    estimated_duration_seconds: int = Field(gt=0)
 
 
 class EpisodePlanDraft(StrictModel):
@@ -768,8 +790,8 @@ class EpisodePlanDraft(StrictModel):
     unresolved_questions: list[str] = Field(default_factory=list)
     actor_arc_directives: list[ActorArcDirective] = Field(default_factory=list, max_length=4)
     framing: FramingBlock
-    scene_cards: list[SceneCard] = Field(default_factory=list, min_length=1)
-    target_duration_minutes: float = Field(default=90.0, gt=0.0)
+    scene_cards: list[SceneCardDraft] = Field(default_factory=list, min_length=1)
+    target_duration_minutes: float = Field(default=100.0, gt=0.0)
 
     @model_validator(mode="after")
     def validate_scene_cards(self) -> "EpisodePlanDraft":
@@ -778,13 +800,11 @@ class EpisodePlanDraft(StrictModel):
             raise ValueError("scene_cards must use unique scene_id values")
         if self.framing.handoff_scene_card_id not in set(scene_ids):
             raise ValueError("framing.handoff_scene_card_id must reference an existing scene card")
-        bridge_count = sum(1 for scene in self.scene_cards if scene.card_kind == "bridge")
-        if bridge_count > 1:
-            raise ValueError("at most one bridge scene card is allowed per episode")
         return self
 
 
 class EpisodePlan(EpisodePlanDraft):
+    scene_cards: list[SceneCard] = Field(default_factory=list, min_length=1)
     target_word_count: int = Field(ge=1)
 
 
@@ -811,19 +831,9 @@ class ProseSection(StrictModel):
     source_book_ids: list[str] = Field(default_factory=list)
 
 
-class ScriptTransition(StrictModel):
-    transition_id: str = Field(default_factory=lambda: f"transition_{new_id()[:8]}")
-    after_section_id: str = Field(min_length=1)
-    before_section_id: str | None = None
-    text: str = ""
-    citations: list[Citation] = Field(default_factory=list)
-    source_book_ids: list[str] = Field(default_factory=list)
-
-
 class WindowMapEntry(StrictModel):
     batch_id: str = Field(min_length=1)
     section_ids: list[str] = Field(default_factory=list)
-    transition_ids: list[str] = Field(default_factory=list)
 
 
 class EpisodeScript(StrictModel):
@@ -831,7 +841,6 @@ class EpisodeScript(StrictModel):
     title: str
     framing: FramingBlock
     prose_sections: list[ProseSection] = Field(default_factory=list)
-    transitions: list[ScriptTransition] = Field(default_factory=list)
     window_map: list[WindowMapEntry] = Field(default_factory=list)
     total_word_count: int = Field(default=0, ge=0)
     estimated_duration_seconds: int = Field(default=0, ge=0)
@@ -920,25 +929,18 @@ class SpokenSection(StrictModel):
     speech_hints: SpeechHints = Field(default_factory=SpeechHints)
 
 
-class SpokenTransition(StrictModel):
-    transition_id: str
-    text: str
-    speech_hints: SpeechHints = Field(default_factory=SpeechHints)
-
-
 class SpokenScript(StrictModel):
     episode_number: int = Field(ge=1)
     title: str
     framing: FramingBlock
     sections: list[SpokenSection] = Field(default_factory=list)
-    transitions: list[SpokenTransition] = Field(default_factory=list)
     tts_provider: str = "openai"
 
 
 class RenderSegment(StrictModel):
     segment_id: str = Field(default_factory=new_id)
     text: str
-    voice_id: str = "ballad"
+    voice_id: str = "fable"
     speed: float = Field(default=1.0, gt=0.0, le=4.0)
     pause_before_ms: int = Field(default=0, ge=0)
     pause_after_ms: int = Field(default=0, ge=0)

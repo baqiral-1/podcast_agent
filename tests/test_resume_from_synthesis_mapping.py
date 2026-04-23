@@ -1,0 +1,351 @@
+from __future__ import annotations
+
+import asyncio
+import importlib.util
+import json
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
+
+import pytest
+
+from podcast_agent.schemas.models import (
+    ActorMetadata,
+    ActorProfile,
+    BookRecord,
+    NarrativeStrategy,
+    PipelineConfig,
+    ProjectStatus,
+    StrategyEpisode,
+    SynthesisMap,
+    SynthesisPrimitive,
+    ThematicAxis,
+    ThematicCorpus,
+    ThematicProject,
+)
+
+
+_SCRIPT_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "scripts"
+    / "resume_from_synthesis_mapping.py"
+)
+_SCRIPT_SPEC = importlib.util.spec_from_file_location(
+    "resume_from_synthesis_mapping",
+    _SCRIPT_PATH,
+)
+assert _SCRIPT_SPEC is not None
+assert _SCRIPT_SPEC.loader is not None
+resume_script = importlib.util.module_from_spec(_SCRIPT_SPEC)
+_SCRIPT_SPEC.loader.exec_module(resume_script)
+
+
+def _write_json(path: Path, payload: Any) -> None:
+    if hasattr(payload, "model_dump"):
+        payload = payload.model_dump(mode="json")
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def _build_project_dir(tmp_path: Path) -> Path:
+    project_dir = tmp_path / "run_1"
+    project_dir.mkdir()
+
+    axis = ThematicAxis(
+        axis_id="axis_1",
+        name="Axis",
+        description="Axis description",
+        theme_importance_score=1.0,
+    )
+    actor_metadata = ActorMetadata(
+        project_id="run_1",
+        actors=[
+            ActorProfile(
+                actor_id="actor_1",
+                display_name="Actor One",
+                actor_type="person",
+            )
+        ],
+    )
+    project = ThematicProject(
+        project_id="run_1",
+        theme="Theme",
+        books=[
+            BookRecord(
+                book_id="book_1",
+                title="Book",
+                author="Author",
+                source_path="/tmp/book.txt",
+                source_type="txt",
+            )
+        ],
+        requested_episode_count=None,
+        config=PipelineConfig(
+            skip_grounding=False,
+            skip_audio=False,
+            skip_spoken_delivery=True,
+        ),
+        status=ProjectStatus.ANALYZING,
+    )
+    corpus = ThematicCorpus(project_id="run_1", axes=[axis])
+
+    _write_json(project_dir / "thematic_axes.json", {"axes": [axis.model_dump(mode="json")]})
+    _write_json(project_dir / "thematic_project.json", project)
+    _write_json(project_dir / "thematic_corpus.json", corpus)
+    _write_json(project_dir / "actor_metadata.json", actor_metadata)
+    return project_dir
+
+
+def _build_synthesis_map() -> SynthesisMap:
+    primitive = SynthesisPrimitive(
+        id="primitive_1",
+        title="Primitive",
+        summary="Primitive summary",
+        axis_ids=["axis_1"],
+        core_passage_ids=[],
+        actor_ids=["actor_1"],
+    )
+    return SynthesisMap(
+        project_id="run_1",
+        primitives_by_family={"turning_points": [primitive]},
+        episode_candidate_clusters=[
+            {
+                "cluster_id": "cluster_1",
+                "title": "Cluster",
+                "summary": "Cluster summary",
+                "primary_member_id": "primitive_1",
+                "member_ids": ["primitive_1"],
+                "actor_ids": ["actor_1"],
+                "local_question": "What changed?",
+                "local_payoff_shape": "reveal",
+            }
+        ],
+    )
+
+
+def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    project_dir = _build_project_dir(tmp_path)
+    calls: dict[str, Any] = {"order": []}
+
+    class FakeOrchestrator:
+        def __init__(self, settings: Any) -> None:
+            self.settings = settings
+
+        def _bind_run_logger(self, bound_project_dir: Path) -> None:
+            calls["bound_project_dir"] = bound_project_dir
+
+        async def _map_synthesis(
+            self,
+            *,
+            project: ThematicProject,
+            corpus: ThematicCorpus,
+            project_dir: Path,
+            actor_metadata: ActorMetadata,
+        ) -> tuple[SynthesisMap, dict[str, Any]]:
+            calls["order"].append("map_synthesis")
+            calls["map_config"] = project.config
+            calls["map_corpus"] = corpus
+            calls["map_actor_metadata"] = actor_metadata
+            return _build_synthesis_map(), {
+                "primitives": {"unknown_actor_ids": 0},
+                "consolidation": {"unknown_actor_ids": 0},
+            }
+
+        async def _choose_narrative_strategy(
+            self,
+            *,
+            project: ThematicProject,
+            synthesis_map: SynthesisMap,
+            corpus: ThematicCorpus,
+            project_dir: Path,
+            actor_metadata: ActorMetadata,
+        ) -> tuple[NarrativeStrategy, dict[str, Any]]:
+            calls["order"].append("narrative_strategy")
+            calls["narrative_actor_metadata"] = actor_metadata
+            strategy = NarrativeStrategy(
+                strategy_type="chronological",
+                justification="Test",
+                series_arc="Test arc",
+                episodes=[
+                    StrategyEpisode(
+                        episode_number=1,
+                        title="Episode",
+                        driving_question="Question?",
+                        arc_summary="Arc summary",
+                        cluster_path=[
+                            {
+                                "occurrence_id": "occ_1",
+                                "cluster_id": "cluster_1",
+                                "usage": "primary",
+                                "emphasis": "anchor",
+                            }
+                        ],
+                    )
+                ],
+            )
+            return strategy, {"unknown_actor_ids": 0}
+
+        def _resolve_episode_count_from_strategy(
+            self,
+            project: ThematicProject,
+            strategy: NarrativeStrategy,
+        ) -> ThematicProject:
+            calls["order"].append("resolve_episode_count")
+            return project.model_copy(update={"episode_count": 1})
+
+        async def _plan_series(
+            self,
+            *,
+            project: ThematicProject,
+            synthesis_map: SynthesisMap,
+            strategy: NarrativeStrategy,
+            corpus: ThematicCorpus,
+            project_dir: Path,
+            actor_metadata: ActorMetadata,
+        ) -> tuple[list[Any], dict[str, Any]]:
+            calls["order"].append("plan_series")
+            calls["planning_actor_metadata"] = actor_metadata
+            calls["planning_config"] = project.config
+            return [SimpleNamespace(episode_number=1)], {"unknown_actor_ids": 0}
+
+        async def _produce_episode(
+            self,
+            plan: Any,
+            project: ThematicProject,
+            corpus: ThematicCorpus,
+            actor_metadata: ActorMetadata,
+            project_dir: Path,
+            semaphore: asyncio.Semaphore,
+        ) -> tuple[int, Any]:
+            calls["order"].append("produce_episode")
+            calls["production_actor_metadata"] = actor_metadata
+            calls["production_config"] = project.config
+            return plan.episode_number, SimpleNamespace(episode_number=plan.episode_number)
+
+        def _write_passage_utilization(self, **kwargs: Any) -> None:
+            calls["passage_utilization"] = kwargs
+
+        def _build_writing_actor_metrics(
+            self,
+            project_dir: Path,
+            spoken_scripts: list[tuple[int, Any]],
+        ) -> dict[str, Any]:
+            calls["spoken_scripts"] = spoken_scripts
+            return {"completed_episode_count": len(spoken_scripts)}
+
+        def _write_actor_metadata_metrics(self, **kwargs: Any) -> None:
+            calls["actor_metadata_metrics"] = kwargs
+
+        async def _render_episode_audio(
+            self,
+            episode_number: int,
+            spoken: Any,
+            config: PipelineConfig,
+            project_dir: Path,
+            semaphore: asyncio.Semaphore,
+            *,
+            skip_audio: bool,
+        ) -> None:
+            calls["order"].append("render_audio")
+            calls["audio_skip"] = skip_audio
+
+    monkeypatch.setattr(
+        resume_script,
+        "Settings",
+        lambda: SimpleNamespace(pipeline=SimpleNamespace(artifact_root=tmp_path)),
+    )
+    monkeypatch.setattr(resume_script, "PipelineOrchestrator", FakeOrchestrator)
+
+    asyncio.run(resume_script._resume_from_synthesis_mapping("run_1"))
+
+    assert calls["order"] == [
+        "map_synthesis",
+        "narrative_strategy",
+        "resolve_episode_count",
+        "plan_series",
+        "produce_episode",
+        "render_audio",
+    ]
+    assert calls["bound_project_dir"] == project_dir
+    assert calls["map_corpus"].axes[0].axis_id == "axis_1"
+    assert calls["map_actor_metadata"].actors[0].actor_id == "actor_1"
+    assert calls["narrative_actor_metadata"].actors[0].actor_id == "actor_1"
+    assert calls["planning_actor_metadata"].actors[0].actor_id == "actor_1"
+    assert calls["production_actor_metadata"].actors[0].actor_id == "actor_1"
+    assert calls["map_config"].skip_grounding is True
+    assert calls["map_config"].skip_audio is True
+    assert calls["map_config"].skip_spoken_delivery is False
+    assert calls["planning_config"].skip_audio is True
+    assert calls["production_config"].skip_grounding is True
+    assert calls["audio_skip"] is True
+    assert calls["actor_metadata_metrics"]["metrics"]["synthesis_primitives"] == {
+        "unknown_actor_ids": 0
+    }
+    assert calls["actor_metadata_metrics"]["metrics"]["synthesis_consolidation"] == {
+        "unknown_actor_ids": 0
+    }
+
+    final_project = ThematicProject.model_validate(
+        json.loads((project_dir / "thematic_project.json").read_text(encoding="utf-8"))
+    )
+    assert final_project.status == ProjectStatus.COMPLETE
+    assert final_project.requested_episode_count is None
+    assert final_project.episode_count == 1
+
+
+def test_resume_from_synthesis_mapping_rejects_axis_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    project_dir = _build_project_dir(tmp_path)
+    mismatched_axis = ThematicAxis(
+        axis_id="axis_1",
+        name="Changed Axis",
+        description="Axis description",
+        theme_importance_score=1.0,
+    )
+    _write_json(
+        project_dir / "thematic_axes.json",
+        {"axes": [mismatched_axis.model_dump(mode="json")]},
+    )
+
+    class FakeOrchestrator:
+        def __init__(self, settings: Any) -> None:
+            self.settings = settings
+
+        def _bind_run_logger(self, bound_project_dir: Path) -> None:
+            raise AssertionError("resume should fail before binding run logger")
+
+    monkeypatch.setattr(
+        resume_script,
+        "Settings",
+        lambda: SimpleNamespace(pipeline=SimpleNamespace(artifact_root=tmp_path)),
+    )
+    monkeypatch.setattr(resume_script, "PipelineOrchestrator", FakeOrchestrator)
+
+    with pytest.raises(RuntimeError, match="disagree on axes"):
+        asyncio.run(resume_script._resume_from_synthesis_mapping("run_1"))
+
+
+def test_resume_from_synthesis_mapping_requires_actor_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    project_dir = _build_project_dir(tmp_path)
+    (project_dir / "actor_metadata.json").unlink()
+
+    class FakeOrchestrator:
+        def __init__(self, settings: Any) -> None:
+            self.settings = settings
+
+    monkeypatch.setattr(
+        resume_script,
+        "Settings",
+        lambda: SimpleNamespace(pipeline=SimpleNamespace(artifact_root=tmp_path)),
+    )
+    monkeypatch.setattr(resume_script, "PipelineOrchestrator", FakeOrchestrator)
+
+    with pytest.raises(RuntimeError, match="Missing required artifact"):
+        asyncio.run(resume_script._resume_from_synthesis_mapping("run_1"))

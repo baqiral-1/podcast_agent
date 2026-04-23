@@ -25,15 +25,13 @@ def chapter_summary_instructions() -> str:
         Output requirements:
         - Return only valid JSON matching the response model with key `analysis` (or `null` when the chapter has no usable signal).
         - `analysis` should capture only what is clearly present in the chapter.
-        - Prefer concrete actors, institutions, places, events, arguments, and tensions over abstract academic language.
+        - Prefer concrete actors, events, arguments, disputes, and developments over abstract academic language.
         - Do not force lexical overlap with the theme if the chapter does not support it.
 
         Field guidance for `analysis`:
         - `themes_touched`: Strictly 3-4 most relevant themes present in the chapter.
-        - Strictly 2-5 `major_actors`, Strictly 2-5 `key_places`, Strictly 0-4 `key_institutions`: only explicit entities or very strong implicatures.
-        - `timeframe`: a concise temporal frame if available.
-        - `key_events_or_arguments`: Strictly 3-7 main claims or developments in the chapter
-        - `major_tensions`: Strictly 3-6 explicit disputes, tradeoffs, or contradictions.
+        - `major_actors`: Strictly 2-5 concrete people, factions, or institutions explicitly present in the chapter.
+        - `key_events_or_arguments`: Strictly 3-7 main claims, developments, disputes, tradeoffs, or contradictions in the chapter.
 
         Do not add markdown, commentary, or explanation outside the JSON object.
         """
@@ -57,7 +55,7 @@ def book_summary_instructions() -> str:
         Output requirements:
         - Return only valid JSON with a single key: `summary`.
         - Write one concise but information-dense synthesis of what this book contributes to the project theme.
-        - Highlight recurring patterns, major tensions, important actors or institutions, and the book's distinctive angle.
+        - Highlight recurring patterns, important actors, key developments, and the book's distinctive angle.
         - Use the chapter analysis objects as evidence. Do not invent arguments or chronology missing from the input.
         - Optimize for downstream axis discovery: emphasize reusable analytical lenses rather than prose flourish.
 
@@ -83,7 +81,9 @@ def theme_decomposition_instructions() -> str:
         - `books`: one object per book, each containing:
           - `book_id`, `title`, `author`
           - `book_summary`
-          - `chapters`: chapter-analysis objects
+          - `chapters`: compact chapter-analysis objects with `chapter_id`, `title`,
+            and `analysis` fields for `themes_touched`, `major_actors`, and
+            `key_events_or_arguments`
 
         Output requirements:
         - Return only valid JSON with keys `axes` and `actor_metadata`.
@@ -347,8 +347,10 @@ def synthesis_consolidation_instructions() -> str:
           - set `coverage_policy` as `anchor`, `major`, `supporting`, or `compressed`
           - articulate a `local_question`
           - choose one `local_payoff_shape`
-        - Aim for 3-8 members per cluster.
+        - Aim for 25-40 episode candidate clusters and 3-8 members per cluster.
         - Clusters should be small and focused episode-usable units rather than whole-series theses.
+        - Prefer creating more clusters over creating oversized clusters.
+        - It is better to create multiple clusters for the same or similar broad topic when they capture distinct themes.
 
         What not to do:
         - Do not emit merged narratives, narrative threads, graph edges, or thesis summaries.
@@ -424,7 +426,8 @@ def narrative_strategy_instructions() -> str:
         - `cluster_id`
         - `usage`: `primary` or `echo`
         - `emphasis`: `anchor`, `major`, `supporting`, or `compressed`
-        - `transition_note`: required after the first occurrence
+        - `transition_note`: required after the first occurrence. Keep this as
+          planner-only handoff logic, not draftable prose or a narrator line.
         - `chronology_break` optional, only when narrative order intentionally
           diverges from chronology
 
@@ -469,22 +472,15 @@ def narrative_strategy_instructions() -> str:
 
         Each `actor_arc_directives[]` item has:
         - `actor_id`
-        - `arc_refs`: one or more arc refs for this actor
+        - `arc_threads`: 1-4 distinct, scene-bindable arc threads for this actor
 
-        Each `arc_refs[]` item has:
-        - `ref_id`: stable, concise, unique within the actor
+        Each `arc_threads[]` item has:
+        - `thread_id`: stable, concise, unique within the actor
         - `arc_type`: `role`, `tracking`, `tension`, `turn`, `payoff`, or
           `guardrail`
         - `label`
-        - `premise`
-        - `pressure`
-        - `movement`
-        - `payoff`
-
-        The four semantic fields must each do distinct work:
         - `premise`: what this arc means in this episode
-        - `pressure`: the force, contradiction, risk, or constraint acting on
-          the actor
+        - `pressure`: the force, contradiction, risk, or constraint acting on the actor
         - `movement`: how this arc changes, deepens, recurs, or inverts
         - `payoff`: where this arc lands, inverts, or remains unresolved
 
@@ -520,11 +516,10 @@ def episode_planning_instructions() -> str:
 
         PRIORITY RULES
         - Do not change the `cluster_path`.
-        - Every primary cluster occurrence in `cluster_path` must appear in at least one normal scene card.
+        - Every primary cluster occurrence in `cluster_path` must appear in at least one scene card.
         - Ground every scene card in provided `passage_ids`. No scene without passage support.
         - Preserve `episode.actor_arc_directives` in the output.
         - Produce only `framing`, `scene_cards`, and episode-level fields required by the response model.
-        - Do not produce beat sheets or prose drafts.
 
         FRAMING
         - `opening_image`: concrete and scene-led.
@@ -535,22 +530,24 @@ def episode_planning_instructions() -> str:
         SCENE CARDS
 
         Counts and pacing:
-        - Target 25-35 scene cards for a full-length episode.
+        - Target 35-45 scene cards for a full-length episode.
         - Expand into micro-scenes rather than collapsing long stretches.
-        - At most one bridge card per episode.
-        - Set `estimated_duration_seconds` on every card as a positive value.
-        - `estimated_duration_seconds` drives per-scene script pacing targets downstream.
+        - Treat `coverage_depth` as treatment style, not as an unlimited license
+          to expand.
         - Set `coverage_depth` as `deep`, `standard`, or `compressed`.
 
         Importance allocation:
         - Anchor clusters get multiple scenes and deeper treatment.
         - Supporting or context clusters get fewer, shorter, or folded scenes.
         - Supporting material must remain intelligible even when compressed.
-        - Normal cards do real narrative work and visibly advance the episode.
-        - Bridge cards only connect cluster occurrences.
+        - Every card must do real narrative work and visibly advance the episode.
+        - Major handoffs between clusters belong in the destination scene's
+          `entry_image`, not in separate bridge cards. Open the new scene with
+          a concrete date, place, person or physical detail; not camera language,
+          outline commentary, or a meta-transition.
 
         Primitives:
-        - Map 1-2 `primitive_ids` per normal card.
+        - Map 1-2 `primitive_ids` per card.
         - Include enough `passage_ids` to support later writing.
         - Allocate primitives intentionally.
         - Include a primitive only when it performs clear episode work.
@@ -580,7 +577,7 @@ def episode_planning_instructions() -> str:
         - Do not bind the same operation each time.
 
         Each `arc_bindings[]` item has:
-        - `ref_id`: reference to `actor_arc_directives[].arc_refs[]`.
+        - `thread_id`: reference to `actor_arc_directives[].arc_threads[]`.
         - `scene_role`: `driver`, `blocked`, `counterforce`, or `subject`.
         - `scene_use`: `introduce`, `develop`, `complicate`, `stage_choice`, `show_consequence`, `pay_off`, or `avoid`.
         - `weight`: optional; `light`, `standard`, or `strong`.
@@ -599,8 +596,8 @@ def _actor_arc_realization_guidance() -> str:
     return dedent(
         """
         Actor-arc realization:
-        - Resolve each scene actor `arc_bindings[].ref_id` against `plan.actor_arc_directives[].arc_refs[]` before drafting that actor's scene work.
-        - Use arc ref `premise`, `pressure`, `movement`, and `payoff` as narrative guidance, not source evidence.
+        - Resolve each scene actor `arc_bindings[].thread_id` against `plan.actor_arc_directives[].arc_threads[]` before drafting that actor's scene work.
+        - Use arc thread `premise`, `pressure`, `movement`, and `payoff` as narrative guidance, not source evidence.
         - Use `arc_bindings[].scene_use` as the actor arc operation for the scene:
           - `introduce`: establish the actor's episode function
           - `develop`: deepen an existing pressure or pattern
@@ -632,7 +629,8 @@ def episode_writing_instructions() -> str:
             Input payload:
             - `episode_number`: current episode number.
             - `batch_id`: the current writing batch identifier.
-            - `plan`: the full episode plan, including framing and all scene cards.
+            - `is_final_batch`: whether this is the last writing batch for the episode.
+            - `plan`: the episode plan window for this batch, including framing and active scene cards.
             - `active_scene_card_ids`: the subset of scene cards to draft now.
             - `plan.scene_cards[].target_word_count_lower`: lower per-scene word target (computed at 110 WPM).
             - `plan.scene_cards[].target_word_count_higher`: higher per-scene word target (computed at 130 WPM).
@@ -645,13 +643,23 @@ def episode_writing_instructions() -> str:
 
             Writing guidance:
             - Follow `plan.scene_cards` order for cards listed in `active_scene_card_ids`.
+            - Treat this call as a batch window, not necessarily the full episode.
+            - If `is_final_batch` is false, do not close, summarize, resolve, or preview the episode.
+              End by completing the active scene's local movement only.
             - Keep `plan.driving_question` as the rhetorical anchor.
             - Preserve `plan.unresolved_questions` as live tensions when unresolved.
             - Keep framing commitments visible (`plan.framing`) without prematurely resolving the episode.
-            - Use each card's `scene_role`, `local_question`, `intended_move`, and `what_becomes_legible_later`.
+            - Use each card's `entry_image`, `scene_role`, `local_question`, `intended_move`, and `what_becomes_legible_later`.
+            - Start each section from the card's concrete `entry_image` or a
+              passage-supported equivalent. When a section marks a major turn,
+              let that image, fact, question, or action carry the handoff.
             - Respect `withhold_until` and delayed-legibility dynamics.
             - Keep claims grounded in each card's `primitive_ids` and `passage_ids`.
             - Treat `plan.target_word_count` as batch-level pacing guidance.
+            - Importance has already been converted into the per-scene and batch
+              word-count budgets. Treat those budgets as binding.
+            - If evidence exceeds the budget, select only the details needed for
+              the scene's `intended_move`.
             - Target total narration for this call within `batch_target_word_count_lower..batch_target_word_count_higher`.
             - Treat each active card's `target_word_count_lower` and `target_word_count_higher` as a pacing range:
               - allocate narration so the card lands within its target range
@@ -671,11 +679,17 @@ def episode_writing_instructions() -> str:
               - `contestation`: stage genuine disagreement
               - `synthesis`: integrate strands without over-resolving
               - for non-canonical labels, infer intent from `intended_move`, `local_question`, and neighboring cards
-            - Keep section/transition ids and boundaries coherent with the plan.
+            - Keep section ids and boundaries coherent with the plan.
             - Use citations only through structured `citations`; do not insert inline citation markers into prose.
 
             What not to do:
             - Do not draft scene cards outside `active_scene_card_ids`.
+            - Do not write standalone transition paragraphs or meta-transition
+              sentences that summarize what just happened or announce what is
+              about to happen.
+            - Do not use section-opening handrails such as "That is X,"
+              "Which brings us to," "Now let the clock run," "The pattern is,"
+              or single-sentence paragraphs whose only job is to mark a turn.
             - Do not invent facts, chronology, quotations, or source claims not supported by the provided passages.
             - Do not introduce new primary analytical claims that are outside the assigned scene cards and primitives.
             """
@@ -696,7 +710,7 @@ def episode_writing_no_citations_instructions() -> str:
         mechanism, time, place, and consequence from evidence rather than summarizing sources.
 
         INPUT PAYLOAD
-        - `episode_number`, `batch_id`
+        - `episode_number`, `batch_id`, `is_final_batch`
         - `plan`: episode plan window visible to this call
         - `active_scene_card_ids`: scene cards to draft now
         - `passages`: source evidence; `passages[].text` is canonical
@@ -708,19 +722,22 @@ def episode_writing_no_citations_instructions() -> str:
         - Per-scene targets: `target_word_count_lower` / `target_word_count_higher`
 
         PRIORITY RULES (govern everything below)
-        - Passages are evidence. `plan`, `actor_metadata`, actor arc refs, framing, and unresolved questions are scaffolding.
+        - Passages are evidence. `plan`, `actor_metadata`, actor arc threads, framing, and unresolved questions are scaffolding.
         - If scaffolding conflicts with passages, passages win.
         - Do not cite scaffolding, assert it as fact, or use it to fill evidence gaps.
         - Do not invent facts, chronology, quotations, dialogue, motives, private thoughts, emotions, sensory details, atmosphere, or causal links.
         - Atmosphere is allowed only from concrete passage-supported details.
         - Do not introduce primary analytical claims outside active scene cards and their primitives.
         - Do not draft outside `active_scene_card_ids`.
+        - Treat this call as a batch window, not necessarily the full episode.
+        - If `is_final_batch` is false, do not close, summarize, resolve, or preview the episode.
+          End by completing the active scene's local movement only.
         - `skip_grounding` is true: be especially conservative because no later grounding repair will run.
 
         PER-SCENE PROCEDURE
         For each active card:
-        1. Read `scene_role`, `local_question`, `intended_move`, `what_becomes_legible_later`, `primitive_ids`, and `passage_ids`.
-        2. Execute the scene role.
+        1. Read `entry_image`, `scene_role`, `local_question`, `intended_move`, `what_becomes_legible_later`, `primitive_ids`, and `passage_ids`.
+        2. Open from the concrete `entry_image` or a passage-supported equivalent, then execute the scene role.
         3. Resolve actor arc bindings.
         4. Use passages to reconstruct action, mechanism, time, place, and consequence.
         5. Use optional `passages[].chapter_context` only when present.
@@ -738,8 +755,8 @@ def episode_writing_no_citations_instructions() -> str:
         - For other labels, infer intent from `intended_move`, `local_question`, and neighboring cards.
 
         ACTOR ARCS
-        - Resolve each scene actor `arc_bindings[].ref_id` against `plan.actor_arc_directives[].arc_refs[]`.
-        - Use arc ref `premise`, `pressure`, `movement`, and `payoff` as narrative guidance only, never evidence.
+        - Resolve each scene actor `arc_bindings[].thread_id` against `plan.actor_arc_directives[].arc_threads[]`.
+        - Use arc thread `premise`, `pressure`, `movement`, and `payoff` as narrative guidance only, never evidence.
         - Treat actor metadata as guidance only. Passage evidence wins if actor metadata and passages conflict. Do not cite actor metadata.
         - Use `arc_bindings[].scene_use` as the actor arc operation for the scene only when passages support it: `introduce`: establish the actor's episode function; `develop`; `complicate`; `stage_choice`; `show_consequence`; `pay_off`; or `avoid`: keep the actor present without foregrounding the arc.
         - Use `arc_bindings[].weight` to scale narrative attention only when supported.
@@ -750,8 +767,16 @@ def episode_writing_no_citations_instructions() -> str:
         - Keep `plan.driving_question` live.
         - Keep unresolved questions unresolved until the draft itself resolves them.
         - Keep framing visible without exposing outline mechanics.
+        - Do not write next-episode teaser copy in prose sections.
+          `plan.framing.preview` is rendered separately by the pipeline.
 
         PACING
+        - Importance has already been converted into the per-scene and batch
+          word-count budgets. Treat those budgets as binding.
+        - Do not expand because evidence is dense, the cluster is important,
+          or actor arcs are interesting.
+        - If evidence exceeds the budget, select only the details needed for
+          the scene's `intended_move`.
         - Target total narration for this call within `batch_target_word_count_lower..batch_target_word_count_higher`.
         - Keep each active card within its `target_word_count_lower..target_word_count_higher`.
         - These target ranges already encode narrative importance; do not rebalance them.
@@ -759,10 +784,14 @@ def episode_writing_no_citations_instructions() -> str:
 
         OUTPUT
         - Return only JSON matching the requested schema.
-        - Keep section and transition ids and boundaries coherent with the plan.
+        - Keep section ids and boundaries coherent with the plan.
         - Populate `source_book_ids` only with `book_id` values from supporting passages; leave empty rather than guessing.
-        - Do not include a `citations` field in `prose_sections` or `transitions`.
+
+        What not to do:
         - Do not expose scaffolding: no outline labels, no "in this scene," no repeated signposting, and no meta-transitions.
+        - Do not use section-opening handrails such as "That is X" "Which brings us to" "Now let the clock run" "The pattern is" whose only job is to mark a turn.
+        - Do not invent facts, chronology, quotations, or source claims not supported by the provided passages.
+        - Do not introduce new primary analytical claims that are outside the assigned scene cards and primitives.
         """
     ).strip()
 
@@ -783,7 +812,7 @@ def grounding_validation_instructions() -> str:
 
         Output requirements:
         - Return only valid JSON matching `GroundingReport`.
-        - Evaluate section and transition text units separately using their ids.
+        - Evaluate section text units separately using their ids.
         - For each cited claim, emit a `ClaimAssessment` with a valid `text_unit_id`.
         - Review cross-book comparisons and emit `cross_book_claims` where needed.
         - Emit `fairness_flags` when a claim distorts a source position, context, or comparative frame.
@@ -811,12 +840,11 @@ def repair_instructions() -> str:
 
         Input payload:
         - `failing_sections`: only the prose sections that need repair.
-        - `failing_transitions`: only the transitions that need repair.
         - `failure_reasons`: the claim and fairness findings explaining what failed.
         - `cited_passages`: the evidence available for repair.
 
         Output requirements:
-        - Return only valid JSON with `repaired_sections` and `repaired_transitions`.
+        - Return only valid JSON with `repaired_sections`.
         - Preserve the original ids.
         - Repair only the supplied failing units.
         - Maintain or improve citations.
@@ -834,70 +862,176 @@ def repair_instructions() -> str:
 def spoken_delivery_instructions() -> str:
     return dedent(
         """
-        You are the spoken_delivery stage for a historical podcast pipeline.
-        Rewrite a completed episode script for spoken delivery in one pass.
+        You are the `oral_rewriter` stage of a prestige documentary podcast pipeline.
+        Your job is to recast a literary draft into the voice of a storyteller thinking aloud.
+
+        TRANSFORMATION MANDATE
+        - This is not a copyedit. A near-copy is a failed output.
+        - The input draft is already polished literary prose. Your job is NOT to polish
+          it further. Treat the input as source material to be re-spoken, not as a
+          manuscript to be edited. If a sentence in the input sounds good, that is
+          not a reason to keep it — it is often a reason to break it.
+        - Most sentences in your output must differ structurally from the corresponding
+          input sentence — not just in word choice or punctuation. If a paragraph in
+          your output could be produced by light editing of the input paragraph,
+          rewrite the paragraph.
+        - Rewrite structural/signposting sentences so their function becomes invisible.
+          Scene-setters like "Back up, a few years," "Cross the Gulf," "Step back to,"
+          "Rewind," "Open the ledger," and inverted scene-openers ("Inside a darkened
+          chamber, the king sits down...") are forbidden — they are essayistic stage
+          directions, not the motion of a mind working.
+        - Convert recap into consequence, thesis into pressure, transition into image
+          or action.
+        - Preserve facts, hedges, section_id, and order. Do not strengthen a hedged claim.
 
         VOICE
         The narrator is a historically literate storyteller with an expert's command of
-        the material, but he speaks like a person working through the meaning of events,
-        not like a lecturer delivering conclusions. They think out loud, have opinions, 
-        sit with human experience, and occasionall interrupt themselves. They trust the 
-        listener as an adult. They do not perform gravitas.
+        the material. He speaks the way an intelligent person thinks when they are
+        genuinely working something out — not the way a lecturer delivers conclusions
+        arrived at months ago. He trusts the listener as an adult. He does not perform
+        gravitas.
+
+        The surface is allowed to be uneven. This is the central permission. Asides,
+        fragments, self-correction, hedges, mid-sentence redirection, occasional
+        one-sentence paragraphs, specific numbers followed by "maybe more" — these are
+        features, not bugs. The output should look like a transcript, not a manuscript.
+        If every sentence in a paragraph lands on a clean, declarative beat, you have
+        written prose, not speech. Break it.
+
+        Concrete techniques to deploy:
+        - Lead with a named person or a specific object before any abstraction.
+        - Interrupt yourself. A dash, a "which —", a mid-thought correction.
+        - Ask a real question and answer it, when the material genuinely admits a
+          question. Not a rhetorical one.
+        - Hedge numbers and details that a person working from memory would hedge
+          ("four of them, maybe more"; "a few years later, I forget exactly when").
+        - Vary sentence length hard. Short for weight. Long and clausal for texture
+          and momentum.
+        - The narrator does not know everything equally. There should be moments where
+          he is specific and certain, and moments where he is admittedly approximate —
+          a date he's not sure of, a detail he's reconstructing.
+        - Do not tell the listener that a moment matters. Do not announce hinges,
+          pivots, turning points, or the weight of what's coming. If the moment matters,
+          the images you chose will carry it.
+
+        Have opinions and state them. Let contrary evidence sit without resolving too
+        neatly. If you cannot close a question, say so.
+
+        BANNED TELLS
+        These are signals of reflection, not reflection itself. Do not use:
+        - "Think about that." / "Consider what this means." / "Notice the grammar." /
+          "Hold that thought." / "Say the name, because…"
+        - "Little did they know." / "But here's where it gets interesting."
+        - Three-item rising lists ("It was X. It was Y. It was Z.").
+        - Stage-direction transitions: "Back up," "Cross the Gulf," "Step back to,"
+          "Rewind," "Open the ledger," "Meanwhile, in [place]," "Inside a
+          [room/building], [person] [does thing]."
+
+        BUDGETS (per episode)
+        - Second-person address ("you"): at most three uses total.
+        - "And you have to picture this"–type listener instructions: at most two.
+        - Any callback motif gets one setup and one payoff, no more.
 
         STYLE
-        Avoid abstract narrator crutches such as: system, structure, mechanism,
-        framework, dynamic, apparatus, landscape, ecosystem, fabric, interplay, nexus,
-        devastating, staggering, remarkable, breathtaking, fateful, extraordinary.
+        Avoid abstract narrator crutches: system, structure, mechanism, framework,
+        apparatus, landscape, ecosystem, fabric, interplay, nexus etc.
 
-        Avoid stock podcast phrasing such as:
-        - "Pause on that" / "Let that sink in" / "Read that again"
-        - "Picture this:" / "Imagine you're..."
-        - "Little did they know"
-        - "But here's where it gets interesting"
-        - Rhetorical questions aimed at the listener, unless the question genuinely
-          reframes what follows
-        - Three-item rising lists ("It was X. It was Y. It was Z.")
+        Move between sections on an image or a question, not on summary-and-tease.
 
-        CUTTING
-        Default to subtraction. Cut any sentence that restates what the surrounding
-        scene already established. Cut repeated thesis statements, recaps, and rhetorical
-        framing. Say important things once, cleanly. Do not paraphrase duplication;
-        delete it.
+        WORKED EXAMPLE
+        This is the transformation you are performing. Study the shape of the change,
+        not the topic.
 
-        HISTORICAL DISCIPLINE (most important rule)
-        Never strengthen a cautious claim. If the draft hedges, preserve or sharpen the
-        hedge. Keep all names, dates, chronology, causality, and attribution intact. Do
-        not smooth interpretive claims into certainty. Do not reach for single-cause
-        explanations.
+        Input (polished literary prose):
+        > In March 1968, at a small conference in Frascati outside Rome, the Italian
+        physicist Bruno Touschek presented his findings on electron-positron collisions
+        to an audience of roughly forty researchers. The work, conducted over the
+        previous two years at the Laboratori Nazionali, had demonstrated that colliding
+        beams could achieve energies previously thought to require linear accelerators
+        many times the size. The implications were considerable, and by the end of the
+        decade the technique would be adopted at Stanford and at CERN.
+        Touschek himself was an unusual figure. Born in Vienna in 1921 to a Jewish
+        mother and a Catholic father, he had survived the war in circumstances that
+        were, by any measure, improbable. Arrested by the Gestapo in Hamburg in 1945
+        while working on a secret radar project, he had been marched toward a
+        concentration camp, shot and left for dead, and rescued by British forces days
+        later. He arrived at Glasgow in 1947 and then drifted south to Italy, where he
+        would spend the rest of his working life.
+        The Frascati machine, called AdA, was the first of its kind. It was modest in
+        scale — a ring small enough to fit in a medium-sized room — but its principle
+        was radical. Rather than firing a beam at a fixed target, Touschek proposed to
+        accelerate electrons and positrons in opposite directions and collide them
+        head-on. The gain in effective collision energy was enormous. The engineering
+        problem of producing, storing, and steering a beam of antimatter was, at the
+        time, something most of his colleagues considered unserious.
+
+        Output (oral narration, thinking aloud):
+        > There's a conference in Frascati, outside Rome — small one, maybe forty people
+        in the room, I want to say. And Bruno Touschek gets up to present what he's been
+        working on. This is March of '68, and Touschek's the Italian physicist who's
+        been at the Laboratori Nazionali for the last couple of years, doing
+        electron-positron collisions. And what he's figured out is that you can get the
+        beams to do something people thought you needed a linear accelerator the size of
+        a small country for.
+        Which, if you're in that room, takes a minute to land. By the end of the decade,
+        Stanford's doing it. CERN's doing it.
+        Touschek himself is — he's an unusual case. Born in Vienna in 1921, Jewish
+        mother, Catholic father. How he gets through the war is honestly a little hard
+        to follow. He's working on some radar project in Hamburg, late in the war,
+        secret stuff, and the Gestapo pick him up in — I want to say early '45,
+        somewhere in there. They march him toward a camp. At some point on that march,
+        he gets shot. Left for dead. The British find him a few days later, and he
+        somehow walks out of all of that and ends up in Glasgow in '47. Then drifts down
+        to Italy, and that's where he stays for the rest of his life.
+        The machine at Frascati — they call it AdA — is the first of its kind. Small,
+        physically. Fits in a medium-sized room, basically. But the idea is the thing.
+        Instead of firing a beam at a target sitting there, you accelerate electrons one
+        way and positrons the other way, and you smash them into each other head-on. And
+        the energy you get out of that, relative to what you put in, is — it's a
+        completely different scale.
+        The catch is the positrons. Storing antimatter, steering it, keeping a beam of
+        the stuff coherent long enough to do anything with — most of the people in the
+        field, at the time, thought that part was science fiction. Touschek didn't.
+
+        Notice: the output is shorter. A paragraph ends on a flat, almost deadpan beat.
+        The narrator interrupts himself ("if that makes sense"). He leads with the named
+        person, not the setting. He replaces a literary image ("a quiet that was not
+        really quiet") with a talked-through version of the same observation. The facts
+        are preserved. The literary surface is not.
+
+        THE TEST
+        Read your output aloud. If it sounds like someone reading a well-edited book,
+        rewrite it. If it sounds like someone talking — uneven, specific, occasionally
+        lopsided, occasionally landing hard — you are done.
 
         PRONUNCIATION
         Add speech_hints.pronunciation_hints only for names or terms likely to be
-        misread. Keep `text` exactly as it appears in the segment. Keep `spoken_as`
-        concise.
+        misread. Keep `spoken_as` concise.
 
         INPUT
-        - episode_number, script, max_words_per_segment, tts_provider
+        episode_number, script, max_words_per_segment, tts_provider
 
         OUTPUT
         Return only valid JSON matching expected_schema exactly.
-        Return exactly two top-level keys: sections and transitions.
+        Return exactly one top-level key: sections.
         No wrapper keys. No extra fields.
 
-        Output exactly one section for each input script.prose_sections[] item and
-        exactly one transition for each input script.transitions[] item. Preserve all ids
-        and order. Do not merge, split, omit, duplicate, reorder, or rename sections or
-        transitions.
-
-        Each section must keep its original section_id.
-        Each transition must keep its original transition_id.
-        Use speech_hints only if it matches expected_schema exactly.
+        Output exactly one section for each input script.prose_sections[] item. Preserve
+        all ids and order. Do not merge, split, omit, duplicate, reorder, or rename
+        sections. Each section must keep its original section_id. Use speech_hints only
+        if it matches expected_schema exactly.
 
         Before returning, check:
-        1. Factual meaning and structure preserved?
-        2. Same number of sections and transitions as input?
-        3. Same ids, same order, no merged/split/omitted/duplicated units?
-        4. Duplicated framing cut?
-        5. Any hedged claims accidentally strengthened? (most common failure)
-        6. JSON matches expected_schema exactly?
+        1. Does each output paragraph differ structurally from its input paragraph, or
+           did you copyedit?
+        2. Did you avoid all banned tells and stage-direction transitions?
+        3. Factual meaning preserved? Hedges preserved (not strengthened)?
+        4. Same number of sections, same ids, same order?
+        5. JSON matches expected_schema exactly?
+
+        Return only a JSON object that matches the requested schema. Do not wrap the
+        response in markdown or prose. Do not repeat wrapper keys such as schema_name,
+        payload, or expected_schema.
+
         """
     ).strip()

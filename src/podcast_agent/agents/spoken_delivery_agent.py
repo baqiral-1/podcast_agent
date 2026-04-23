@@ -6,12 +6,11 @@ from pydantic import BaseModel, Field
 
 from podcast_agent.agents.base import Agent
 from podcast_agent.prompts import spoken_delivery_instructions
-from podcast_agent.schemas.models import SpokenSection, SpokenTransition
+from podcast_agent.schemas.models import SpokenSection
 
 
 class SpokenDeliveryResponse(BaseModel):
     sections: list[SpokenSection] = Field(default_factory=list)
-    transitions: list[SpokenTransition] = Field(default_factory=list)
 
 
 class SpokenDeliveryAgent(Agent):

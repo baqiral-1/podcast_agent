@@ -1,753 +1,1015 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Agentic Podcasts | The Partition of India</title>
-  <meta name="description" content="An 8-episode series examining the 1947 Partition of India, drawn from 9 landmark works of history.">
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Partition of India — Agentic Podcasts</title>
+<style>
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
-    html {
-      line-height: 1.6;
-      -webkit-text-size-adjust: 100%;
-    }
+:root {
+  --bg: #060708;
+  --text: #e8dcc8;
+  --accent: #c97a45;
+  --accent-dim: rgba(201,122,69,0.3);
+  --accent-glow: rgba(201,122,69,0.15);
+  --font: "Avenir Next", "SF Pro Text", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+}
 
-    body {
-      background: #060708;
-      color: #e8dcc8;
-      font-family: "Avenir Next", "SF Pro Text", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-      font-weight: 300;
-      -webkit-font-smoothing: antialiased;
-    }
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
 
-    a { color: inherit; text-decoration: none; }
+/* ── HEADER ── */
+.site-header {
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 2rem;
+  background: rgba(6,7,8,0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  position: relative;
+  z-index: 100;
+}
+.site-header .brand {
+  font-size: 0.75rem;
+  font-variant: small-caps;
+  letter-spacing: 0.08em;
+  color: var(--text);
+  opacity: 0.5;
+  text-decoration: none;
+  transition: opacity 0.3s;
+}
+.site-header .brand:hover { opacity: 0.85; }
+.site-header .series-title {
+  font-size: 1rem;
+  font-weight: 300;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text);
+  opacity: 0.8;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+.site-header .meta {
+  font-size: 0.75rem;
+  font-weight: 300;
+  opacity: 0.35;
+}
 
-    /* ── Header ── */
-    .site-header {
-      padding: 1.5rem 2rem;
-    }
+/* ── SPLIT PANEL ── */
+.split-container {
+  display: grid;
+  grid-template-columns: 45% 55%;
+  height: calc(100vh - 60px);
+}
 
-    .site-header a {
-      font-variant: small-caps;
-      font-size: 0.85rem;
-      font-weight: 700;
-      letter-spacing: 0.12em;
-      color: #e8dcc8;
-      transition: opacity 0.2s;
-    }
+/* ── LEFT PANEL — NOW PLAYING ── */
+.left-panel {
+  background: var(--bg);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(201,122,69,0.25) transparent;
+}
+.left-panel::-webkit-scrollbar { width: 6px; }
+.left-panel::-webkit-scrollbar-track { background: transparent; }
+.left-panel::-webkit-scrollbar-thumb { background: rgba(201,122,69,0.25); border-radius: 3px; }
 
-    .site-header a:hover { opacity: 0.7; }
+/* Episode image block */
+.episode-image-block {
+  position: relative;
+  width: 100%;
+  height: 45%;
+  min-height: 260px;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.episode-image-block img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: grayscale(0.6) contrast(1.1);
+  display: block;
+}
+/* Duotone + gradient overlay */
+.episode-image-block::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, rgba(201,122,69,0.15), rgba(6,7,8,0.55));
+  pointer-events: none;
+}
+/* Film grain */
+.episode-image-block::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  opacity: 0.12;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+  background-size: 128px 128px;
+}
+.image-ep-number {
+  position: absolute;
+  top: 1.2rem;
+  left: 1.5rem;
+  font-size: 3rem;
+  font-weight: 200;
+  color: rgba(232,220,200,0.3);
+  z-index: 3;
+  line-height: 1;
+}
+.image-ep-title {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 3rem 1.5rem 1.2rem;
+  background: linear-gradient(to top, rgba(6,7,8,0.9) 0%, transparent 100%);
+  z-index: 3;
+  font-size: 1.25rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  line-height: 1.3;
+}
 
-    /* ── Centered shell ── */
-    .shell {
-      max-width: 700px;
-      margin: 0 auto;
-      padding: 0 1.5rem;
-    }
+/* ── WAVEFORM SECTION ── */
+.waveform-section {
+  padding: 1.5rem 1.5rem 0.5rem;
+  flex-shrink: 0;
+}
+.waveform-label {
+  font-size: 0.7rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--accent);
+  opacity: 0.5;
+  margin-bottom: 0.75rem;
+}
+.waveform-canvas-wrap {
+  position: relative;
+  width: 100%;
+  cursor: pointer;
+}
+.waveform-canvas-wrap canvas {
+  display: block;
+  width: 100%;
+  height: 120px;
+}
+.time-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  opacity: 0.45;
+  margin-top: 0.5rem;
+  padding: 0 2px;
+}
 
-    /* ── Series header ── */
-    .series-header {
-      padding-top: 3rem;
-    }
+/* ── TRANSPORT CONTROLS ── */
+.transport {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  padding: 1rem 1.5rem;
+  flex-shrink: 0;
+}
+.transport button {
+  background: transparent;
+  border: none;
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.transport button:hover { color: #fff; }
+.transport button:active { transform: scale(0.93); }
 
-    .series-title {
-      font-size: clamp(2rem, 5vw, 3.5rem);
-      font-weight: 300;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      line-height: 1.15;
-      color: #e8dcc8;
-    }
+.btn-skip {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  border: 1.5px solid var(--accent-dim) !important;
+  font-size: 0.7rem;
+  font-weight: 500;
+  font-family: var(--font);
+  letter-spacing: -0.02em;
+  color: var(--accent) !important;
+  opacity: 0.8;
+}
+.btn-skip:hover { opacity: 1 !important; border-color: var(--accent) !important; }
 
-    .series-meta {
-      margin-top: 0.6rem;
-      font-size: 0.9rem;
-      color: rgba(232, 220, 200, 0.35);
-    }
+.transport button:disabled {
+  opacity: 0.28;
+  cursor: not-allowed;
+}
+.transport button:disabled:hover {
+  color: var(--text);
+  border-color: var(--accent-dim) !important;
+}
+.waveform-canvas-wrap.disabled {
+  cursor: default;
+  opacity: 0.55;
+}
 
-    .series-description {
-      margin-top: 1.4rem;
-      font-size: 1rem;
-      font-weight: 300;
-      line-height: 1.75;
-      color: rgba(232, 220, 200, 0.72);
-    }
+.btn-play {
+  width: 4.5rem;
+  height: 4.5rem;
+  border-radius: 50%;
+  border: 2px solid var(--accent) !important;
+  position: relative;
+}
+.btn-play svg { width: 1.8rem; height: 1.8rem; fill: var(--accent); }
+.btn-play:hover { border-color: #d99060 !important; background: rgba(201,122,69,0.08); }
+.btn-play:hover svg { fill: #d99060; }
 
-    .series-description-more {
-      display: none;
-      margin-top: 0.8rem;
-      font-size: 1rem;
-      font-weight: 300;
-      line-height: 1.75;
-      color: rgba(232, 220, 200, 0.72);
-    }
+.btn-speed {
+  padding: 0.35rem 0.75rem;
+  border-radius: 1rem;
+  border: 1.5px solid var(--accent-dim) !important;
+  font-size: 0.75rem;
+  font-weight: 500;
+  font-family: var(--font);
+  color: var(--accent) !important;
+  opacity: 0.8;
+  min-width: 2.8rem;
+  text-align: center;
+}
+.btn-speed:hover { opacity: 1 !important; border-color: var(--accent) !important; }
 
-    .series-description-more p { margin-top: 0.8rem; }
-    .series-description-more p:first-child { margin-top: 0; }
+/* ── EPISODE DESCRIPTION ── */
+.episode-desc {
+  padding: 1.2rem 1.5rem 2rem;
+  flex-grow: 1;
+  position: relative;
+}
+.episode-desc::before {
+  content: "";
+  position: absolute;
+  top: -1rem;
+  left: 10%;
+  right: 10%;
+  height: 60px;
+  background: radial-gradient(ellipse at center, rgba(201,122,69,0.06) 0%, transparent 70%);
+  pointer-events: none;
+}
+.episode-desc p {
+  font-weight: 300;
+  font-size: 0.92rem;
+  line-height: 1.75;
+  opacity: 0.72;
+  position: relative;
+}
 
-    .series-details.is-open .series-description-more {
-      display: block;
-    }
+/* ── RIGHT PANEL — PLAYLIST ── */
+.right-panel {
+  background: rgba(10,11,13,0.65);
+  border-left: 1px solid rgba(201,122,69,0.15);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(201,122,69,0.2) transparent;
+}
+.right-panel::-webkit-scrollbar { width: 6px; }
+.right-panel::-webkit-scrollbar-track { background: transparent; }
+.right-panel::-webkit-scrollbar-thumb { background: rgba(201,122,69,0.2); border-radius: 3px; }
 
-    .series-toggle {
-      display: inline-block;
-      margin-top: 0.5rem;
-      padding: 0;
-      border: 0;
-      background: transparent;
-      color: #c97a45;
-      font: inherit;
-      font-size: 0.9rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: opacity 0.2s;
-    }
+.playlist-header {
+  padding: 1.5rem 2rem 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-shrink: 0;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.playlist-header .label {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  opacity: 0.4;
+  font-weight: 500;
+}
+.playlist-header .total-runtime {
+  font-size: 0.78rem;
+  opacity: 0.3;
+  font-weight: 300;
+  font-variant-numeric: tabular-nums;
+}
 
-    .series-toggle:hover { opacity: 0.7; }
+/* Episode rows */
+.ep-row {
+  display: flex;
+  align-items: center;
+  padding: 1.2rem 2rem;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  cursor: pointer;
+  transition: all 0.25s ease;
+  position: relative;
+  border-left: 3px solid transparent;
+}
+.ep-row:hover {
+  background: rgba(201,122,69,0.05);
+}
+.ep-row:hover .ep-text .ep-title { opacity: 0.9; }
+.ep-row:hover .ep-play-indicator { opacity: 1; }
 
-    .series-sources {
-      margin-top: 1.2rem;
-      font-size: 0.85rem;
-      font-style: italic;
-      color: rgba(232, 220, 200, 0.3);
-      line-height: 1.6;
-    }
+.ep-row.active {
+  background: rgba(201,122,69,0.08);
+  border-left-color: var(--accent);
+}
+.ep-row.active .ep-num { color: var(--accent); opacity: 1; }
+.ep-row.active .ep-text .ep-title { opacity: 1; }
+.ep-row.active .ep-play-indicator .play-icon { display: none; }
+.ep-row.active .ep-play-indicator .eq-bars { display: flex; }
 
-    /* ── Episode list ── */
-    .episode-list {
-      padding-top: 3rem;
-      padding-bottom: 4rem;
-    }
+.ep-num {
+  font-size: 1.5rem;
+  font-weight: 200;
+  color: var(--accent);
+  opacity: 0.3;
+  min-width: 2.5rem;
+  text-align: center;
+  flex-shrink: 0;
+  transition: all 0.25s;
+  font-variant-numeric: tabular-nums;
+}
 
-    .episode {
-      padding: 2.5rem 0;
-      border-top: 1px solid rgba(255, 255, 255, 0.06);
-      opacity: 0;
-      transform: translateY(20px);
-      transition: opacity 0.6s ease, transform 0.6s ease;
-    }
+.ep-text {
+  flex: 1;
+  margin-left: 1rem;
+  min-width: 0;
+}
+.ep-text .ep-title {
+  font-weight: 500;
+  font-size: 1rem;
+  opacity: 0.72;
+  transition: opacity 0.25s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ep-text .ep-duration {
+  font-size: 0.8rem;
+  opacity: 0.35;
+  margin-top: 0.2rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 300;
+}
 
-    .episode.is-visible {
-      opacity: 1;
-      transform: translateY(0);
-    }
+.ep-play-indicator {
+  width: 2rem;
+  height: 2rem;
+  flex-shrink: 0;
+  margin-left: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.ep-row.active .ep-play-indicator { opacity: 1; }
 
-    .episode:last-child {
-      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-    }
+.play-icon {
+  width: 1.2rem;
+  height: 1.2rem;
+  border-radius: 50%;
+  border: 1.5px solid var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.play-icon svg { width: 0.5rem; height: 0.5rem; fill: var(--accent); margin-left: 1px; }
 
-    .episode-number {
-      font-size: clamp(3rem, 6vw, 5rem);
-      font-weight: 200;
-      color: rgba(201, 122, 69, 0.5);
-      line-height: 1;
-    }
+/* Equalizer bars */
+.eq-bars {
+  display: none;
+  align-items: flex-end;
+  gap: 2px;
+  height: 20px;
+}
+.eq-bars .bar {
+  width: 4px;
+  background: var(--accent);
+  border-radius: 1px;
+}
+.eq-bars .bar:nth-child(1) { animation: eq1 0.6s ease-in-out infinite; }
+.eq-bars .bar:nth-child(2) { animation: eq2 0.45s ease-in-out infinite; }
+.eq-bars .bar:nth-child(3) { animation: eq3 0.55s ease-in-out infinite; }
 
-    .episode-title {
-      margin-top: 0.3rem;
-      font-size: clamp(1.2rem, 2.5vw, 1.6rem);
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      line-height: 1.25;
-      color: #e8dcc8;
-    }
+.eq-bars.paused .bar { animation-play-state: paused !important; }
 
-    .episode-duration {
-      margin-top: 0.4rem;
-      font-size: 0.82rem;
-      color: rgba(232, 220, 200, 0.35);
-    }
+@keyframes eq1 { 0%,100% { height: 4px; } 50% { height: 16px; } }
+@keyframes eq2 { 0%,100% { height: 8px; } 50% { height: 12px; } }
+@keyframes eq3 { 0%,100% { height: 6px; } 50% { height: 18px; } }
 
-    .episode-preview {
-      margin-top: 1rem;
-      font-size: 0.95rem;
-      font-weight: 300;
-      line-height: 1.7;
-      color: rgba(232, 220, 200, 0.6);
-      max-width: 40rem;
-    }
+/* ── MOBILE — EPISODE TOGGLE ── */
+.mobile-playlist-toggle {
+  display: none;
+  width: 100%;
+  padding: 0.9rem 2rem;
+  background: rgba(201,122,69,0.06);
+  border: none;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 0.85rem;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  text-align: center;
+  opacity: 0.65;
+  transition: opacity 0.2s;
+}
+.mobile-playlist-toggle:hover { opacity: 1; }
+.mobile-playlist-toggle .arrow {
+  display: inline-block;
+  transition: transform 0.3s;
+  margin-left: 0.4rem;
+}
+.mobile-playlist-toggle.expanded .arrow { transform: rotate(180deg); }
 
-    .episode-arc {
-      display: none;
-      margin-top: 0.8rem;
-      font-size: 0.95rem;
-      font-weight: 300;
-      line-height: 1.7;
-      color: rgba(232, 220, 200, 0.6);
-      max-width: 40rem;
-    }
+/* ── MOBILE RESPONSIVE ── */
+@media (max-width: 768px) {
+  .site-header { padding: 0 1rem; }
+  .site-header .series-title { font-size: 0.85rem; }
+  .site-header .meta { display: none; }
 
-    .episode-details.is-open .episode-arc {
-      display: block;
-    }
+  .split-container {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+    height: auto;
+    min-height: calc(100vh - 60px);
+  }
 
-    .episode-toggle {
-      display: inline-block;
-      margin-top: 0.6rem;
-      padding: 0;
-      border: 0;
-      background: transparent;
-      color: #c97a45;
-      font: inherit;
-      font-size: 0.85rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: opacity 0.2s;
-    }
+  .left-panel {
+    overflow-y: visible;
+  }
+  .episode-image-block {
+    height: 200px;
+    min-height: 200px;
+  }
 
-    .episode-toggle:hover { opacity: 0.7; }
+  .transport {
+    position: sticky;
+    bottom: 0;
+    z-index: 50;
+    background: rgba(6,7,8,0.95);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-top: 1px solid rgba(255,255,255,0.04);
+    padding: 0.75rem 1rem;
+  }
 
-    /* ── Audio player ── */
-    .player {
-      margin-top: 1.4rem;
-    }
+  .mobile-playlist-toggle { display: block; }
 
-    .player-controls {
-      display: flex;
-      align-items: center;
-      gap: 1rem;
-    }
+  .right-panel {
+    border-left: none;
+    border-top: 1px solid rgba(201,122,69,0.15);
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.4s ease;
+  }
+  .right-panel.expanded {
+    max-height: 800px;
+    overflow-y: auto;
+  }
 
-    .play-btn {
-      width: 2.8rem;
-      height: 2.8rem;
-      flex-shrink: 0;
-      border-radius: 50%;
-      border: 1.5px solid #c97a45;
-      background: transparent;
-      color: #c97a45;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      transition: background 0.2s, transform 0.15s;
-    }
-
-    .play-btn:hover {
-      background: rgba(201, 122, 69, 0.1);
-      transform: scale(1.05);
-    }
-
-    .play-btn svg {
-      width: 0.9rem;
-      height: 0.9rem;
-      fill: currentColor;
-    }
-
-    .timeline-wrap {
-      flex: 1;
-    }
-
-    .timeline {
-      width: 100%;
-      -webkit-appearance: none;
-      appearance: none;
-      background: transparent;
-      cursor: pointer;
-      height: 3px;
-    }
-
-    .timeline::-webkit-slider-runnable-track {
-      height: 3px;
-      border-radius: 3px;
-      background: rgba(255, 255, 255, 0.1);
-    }
-
-    .timeline::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      width: 12px;
-      height: 12px;
-      border-radius: 50%;
-      background: #c97a45;
-      margin-top: -4.5px;
-    }
-
-    .timeline::-moz-range-track {
-      height: 3px;
-      border-radius: 3px;
-      background: rgba(255, 255, 255, 0.1);
-    }
-
-    .timeline::-moz-range-thumb {
-      width: 12px;
-      height: 12px;
-      border-radius: 50%;
-      background: #c97a45;
-      border: none;
-    }
-
-    .player-info {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-top: 0.5rem;
-      font-size: 0.8rem;
-      color: rgba(232, 220, 200, 0.35);
-      font-variant-numeric: tabular-nums;
-    }
-
-    .speed-btn {
-      padding: 0.2rem 0.55rem;
-      border-radius: 999px;
-      border: none;
-      background: rgba(201, 122, 69, 0.12);
-      color: #c97a45;
-      font: inherit;
-      font-size: 0.78rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: background 0.2s;
-    }
-
-    .speed-btn:hover {
-      background: rgba(201, 122, 69, 0.22);
-    }
-
-    audio { display: none; }
-
-    /* ── Footer ── */
-    .site-footer {
-      padding: 2rem 0 2.5rem;
-      text-align: center;
-    }
-
-    .site-footer a {
-      font-size: 0.8rem;
-      color: rgba(232, 220, 200, 0.2);
-      transition: color 0.2s;
-    }
-
-    .site-footer a:hover { color: rgba(232, 220, 200, 0.45); }
-
-    /* ── Responsive ── */
-    @media (max-width: 640px) {
-      .episode-number {
-        font-size: clamp(2.2rem, 5vw, 3rem);
-      }
-
-      .shell {
-        padding: 0 1rem;
-      }
-
-      .site-header {
-        padding: 1.2rem 1rem;
-      }
-
-      .episode {
-        padding: 2rem 0;
-      }
-    }
-  </style>
+  .ep-row { padding: 1rem 1.2rem; }
+  .ep-num { font-size: 1.2rem; min-width: 2rem; }
+  .ep-text .ep-title { font-size: 0.92rem; }
+  .episode-desc { padding: 1rem; }
+  .waveform-section { padding: 1rem; }
+}
+</style>
 </head>
 <body>
 
-  <!-- Header -->
-  <header class="site-header">
-    <a href="./index.html">Agentic Podcasts</a>
-  </header>
+<!-- HEADER -->
+<header class="site-header">
+  <a href="index.html" class="brand">Agentic Podcasts</a>
+  <span class="series-title">The Partition of India</span>
+  <span class="meta">Eight episodes</span>
+</header>
 
-  <main>
-    <!-- Series header -->
-    <section class="shell series-header">
-      <h1 class="series-title">The Partition of India</h1>
-      <p class="series-meta">Eight episodes. Nine books.</p>
-      <div class="series-details">
-        <p class="series-description">
-          The series begins by asking whether partition was a failure of individuals or of structures, then moves through the specific mechanisms&#8202;&mdash;&#8202;colonial engineering, electoral mobilization, the politics of speed, the drawing of borders, the organization of violence&#8202;&mdash;&#8202;showing how each mechanism transformed contingency into catastrophe.
-        </p>
-        <div class="series-description-more" data-role="series-more">
-          <p>The middle episodes reveal the hidden gears: personal relationships that functioned as constitutional mechanisms, a prophet whose moral authority grew as his political power waned, and a third force (the Sikhs) that nobody modeled.</p>
-          <p>The final episodes trace how partition&#8217;s logic reproduced itself&#8202;&mdash;&#8202;in the princely states, in Kashmir, in the constitutions of both nations, in memory and amnesia&#8202;&mdash;&#8202;converging on the insight that partition did not resolve the communal question but merely relocated and perpetuated it. The series closes by asking whether the furies unleashed in 1947 can ever be contained.</p>
-        </div>
-        <button class="series-toggle" data-role="series-toggle" type="button" aria-expanded="false">Read more</button>
+<!-- SPLIT PANELS -->
+<div class="split-container">
+
+  <!-- LEFT — NOW PLAYING -->
+  <div class="left-panel" id="leftPanel">
+    <div class="episode-image-block" id="episodeImageBlock">
+      <img id="episodeImage" src="images/partition-gandhi.jpg" alt="Episode image">
+      <span class="image-ep-number" id="imageEpNum">1</span>
+      <span class="image-ep-title" id="imageEpTitle">The Machinery and the Method</span>
+    </div>
+
+    <div class="waveform-section">
+      <div class="waveform-label">Now Playing</div>
+      <div class="waveform-canvas-wrap" id="waveformWrap">
+        <canvas id="waveformCanvas" height="120"></canvas>
       </div>
-      <p class="series-sources">Drawn from 9 works including Freedom at Midnight, India After Gandhi, Midnight&#8217;s Furies, The Great Partition, Indian Summer, Jinnah of Pakistan, and others.</p>
-    </section>
+      <div class="time-row">
+        <span id="timeCurrent">0:00:00</span>
+        <span id="timeTotal">1:44:44</span>
+      </div>
+    </div>
 
-    <!-- Episodes -->
-    <section class="shell episode-list" id="episodes">
+    <div class="transport">
+      <button class="btn-skip" id="btnBack30" title="Back 30 seconds">&minus;30</button>
+      <button class="btn-play" id="btnPlay" title="Play">
+        <svg id="iconPlay" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+        <svg id="iconPause" viewBox="0 0 24 24" style="display:none"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+      </button>
+      <button class="btn-skip" id="btnFwd30" title="Forward 30 seconds">+30</button>
+      <button class="btn-speed" id="btnSpeed" title="Playback speed">1&times;</button>
+    </div>
 
-      <!-- Episode 1 -->
-      <article class="episode">
-        <div class="episode-number">01</div>
-        <h2 class="episode-title">The Seeds of Division</h2>
-        <p class="episode-duration">1:32:14</p>
-        <p class="episode-preview">
-          Establishes the structural foundations of partition: British divide-and-rule, separate electorates, and the long arc from Hindu-Muslim unity to its collapse, culminating in the 1937 turning point that every source identifies as decisive.
-        </p>
-        <div class="episode-details">
-          <div class="episode-arc" data-role="episode-arc">
-            This episode establishes the deep structural foundations of partition by tracing how British colonial policies transformed fluid religious identities into rigid political categories. It moves from the 1909 introduction of separate electorates through the Khilafat movement&#8217;s rise and fall, the cycle of alliance and fracture, to the 1937 elections&#8202;&mdash;&#8202;the corpus&#8217;s strongest point of historiographic consensus as a decisive turning point. The episode sets up the series&#8217; central question: was partition the inevitable product of these structural forces, or did it remain contingent on individual decisions?
-          </div>
-          <button class="episode-toggle" data-role="episode-toggle" type="button" aria-expanded="false">Read more</button>
-        </div>
-        <div class="player">
-          <audio preload="metadata">
-            <source src="https://github.com/baqiral-1/podcast_agent/releases/download/partition-of-india-episodes-1-8-20260408T0000/episode-1.mp3" type="audio/mpeg">
-          </audio>
-          <div class="player-controls">
-            <button class="play-btn" data-role="play" type="button" aria-label="Play episode 1">
-              <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-            </button>
-            <div class="timeline-wrap">
-              <input class="timeline" data-role="timeline" type="range" min="0" max="100" step="0.1" value="0" aria-label="Seek">
-            </div>
-          </div>
-          <div class="player-info">
-            <span data-role="time">0:00:00 / 1:32:14</span>
-            <button class="speed-btn" data-role="speed" type="button">1x</button>
-          </div>
-        </div>
-      </article>
+    <div class="episode-desc">
+      <p id="episodeDescription">Open with the structural Raj - extraction, racial hierarchy, and separate electorates as the grammar Indians must speak to be heard. Then Gandhi&#x27;s answer: Salt March as administrative trap, Chauri Chaura as the self-imposed limit, Poona Pact as the method&#x27;s first real moral cost. This episode carries two load-bearing anchors (extractive structure; satyagraha method) because the rest of the series rests on both.</p>
+    </div>
+  </div>
 
-      <!-- Episode 2 -->
-      <article class="episode">
-        <div class="episode-number">02</div>
-        <h2 class="episode-title">The Ambassador Becomes the Architect</h2>
-        <p class="episode-duration">1:47:41</p>
-        <p class="episode-preview">
-          Traces Jinnah&#8217;s transformation and the shifting meaning of &#8216;Pakistan,&#8217; staging the debate between Congress hubris and Jinnah&#8217;s intransigence as co-authors of partition.
-        </p>
-        <div class="episode-details">
-          <div class="episode-arc" data-role="episode-arc">
-            This episode traces Jinnah&#8217;s transformation from the &#8216;Ambassador of Hindu-Muslim Unity&#8217; to the Quaid-i-Azam, while simultaneously examining how the meaning of &#8216;Pakistan&#8217; drifted from acronym to bargaining position to sovereign state. It stages the corpus&#8217;s sharpest blame-game debate: was partition primarily the product of Jinnah&#8217;s intransigence or Congress&#8217;s hubris? The episode culminates in Jinnah&#8217;s concealed illness and the question of whether a single man&#8217;s lungs determined the fate of a subcontinent.
-          </div>
-          <button class="episode-toggle" data-role="episode-toggle" type="button" aria-expanded="false">Read more</button>
-        </div>
-        <div class="player">
-          <audio preload="metadata">
-            <source src="https://github.com/baqiral-1/podcast_agent/releases/download/partition-of-india-episodes-1-8-20260408T0000/episode-2.mp3" type="audio/mpeg">
-          </audio>
-          <div class="player-controls">
-            <button class="play-btn" data-role="play" type="button" aria-label="Play episode 2">
-              <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-            </button>
-            <div class="timeline-wrap">
-              <input class="timeline" data-role="timeline" type="range" min="0" max="100" step="0.1" value="0" aria-label="Seek">
-            </div>
-          </div>
-          <div class="player-info">
-            <span data-role="time">0:00:00 / 1:47:41</span>
-            <button class="speed-btn" data-role="speed" type="button">1x</button>
-          </div>
-        </div>
-      </article>
+  <!-- RIGHT — PLAYLIST -->
+  <button class="mobile-playlist-toggle" id="playlistToggle">
+    Show episodes <span class="arrow">&#9660;</span>
+  </button>
 
-      <!-- Episode 3 -->
-      <article class="episode">
-        <div class="episode-number">03</div>
-        <h2 class="episode-title">The Last Exit</h2>
-        <p class="episode-duration">1:30:52</p>
-        <p class="episode-preview">
-          Examines the Cabinet Mission as the final alternative to partition, Nehru&#8217;s fatal press conference, the 1946 elections as referendum, and the question of inevitability.
-        </p>
-        <div class="episode-details">
-          <div class="episode-arc" data-role="episode-arc">
-            This episode examines the Cabinet Mission of 1946 as the last serious alternative to partition&#8202;&mdash;&#8202;a three-tier federal scheme that came tantalizingly close to preserving a united India. It traces how mutual distrust and incompatible interpretations destroyed the plan, how Nehru&#8217;s press conference convinced Jinnah that Congress would renege on any compromise, and how the 1946 elections gave Jinnah an electoral mandate that made partition politically irresistible. The episode directly confronts the inevitability question.
-          </div>
-          <button class="episode-toggle" data-role="episode-toggle" type="button" aria-expanded="false">Read more</button>
-        </div>
-        <div class="player">
-          <audio preload="metadata">
-            <source src="https://github.com/baqiral-1/podcast_agent/releases/download/partition-of-india-episodes-1-8-20260408T0000/episode-3.mp3" type="audio/mpeg">
-          </audio>
-          <div class="player-controls">
-            <button class="play-btn" data-role="play" type="button" aria-label="Play episode 3">
-              <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-            </button>
-            <div class="timeline-wrap">
-              <input class="timeline" data-role="timeline" type="range" min="0" max="100" step="0.1" value="0" aria-label="Seek">
-            </div>
-          </div>
-          <div class="player-info">
-            <span data-role="time">0:00:00 / 1:30:52</span>
-            <button class="speed-btn" data-role="speed" type="button">1x</button>
-          </div>
-        </div>
-      </article>
+  <div class="right-panel" id="rightPanel">
+    <div class="playlist-header">
+      <span class="label">Episodes</span>
+      <span class="total-runtime">12h 30m</span>
+    </div>
+    <div id="playlistRows"></div>
+  </div>
 
-      <!-- Episode 4 -->
-      <article class="episode">
-        <div class="episode-number">04</div>
-        <h2 class="episode-title">The Roulette Wheel of August 15</h2>
-        <p class="episode-duration">1:42:07</p>
-        <p class="episode-preview">
-          Focuses on Mountbatten&#8217;s acceleration, the Radcliffe Line, the boundary embargo, and the administrative absurdity of dividing the indivisible in 73 days.
-        </p>
-        <div class="episode-details">
-          <div class="episode-arc" data-role="episode-arc">
-            This episode plunges into the mechanics of partition&#8217;s execution: Mountbatten&#8217;s roulette-wheel selection of August 15, Radcliffe&#8217;s agonized line-drawing in a sweltering bungalow, the boundary embargo that kept millions in ignorance of which country they belonged to, and the absurdist comedy of dividing encyclopaedias and hat-pegs while irrigation systems and armies were being severed. It examines Mountbatten&#8217;s bias, the Ferozepur controversy, and the fatal disconnect between elite negotiations and popular experience.
-          </div>
-          <button class="episode-toggle" data-role="episode-toggle" type="button" aria-expanded="false">Read more</button>
-        </div>
-        <div class="player">
-          <audio preload="metadata">
-            <source src="https://github.com/baqiral-1/podcast_agent/releases/download/partition-of-india-episodes-1-8-20260408T0000/episode-4.mp3" type="audio/mpeg">
-          </audio>
-          <div class="player-controls">
-            <button class="play-btn" data-role="play" type="button" aria-label="Play episode 4">
-              <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-            </button>
-            <div class="timeline-wrap">
-              <input class="timeline" data-role="timeline" type="range" min="0" max="100" step="0.1" value="0" aria-label="Seek">
-            </div>
-          </div>
-          <div class="player-info">
-            <span data-role="time">0:00:00 / 1:42:07</span>
-            <button class="speed-btn" data-role="speed" type="button">1x</button>
-          </div>
-        </div>
-      </article>
+</div>
 
-      <!-- Episode 5 -->
-      <article class="episode">
-        <div class="episode-number">05</div>
-        <h2 class="episode-title">The Violence Beneath</h2>
-        <p class="episode-duration">1:46:39</p>
-        <p class="episode-preview">
-          Investigates strategic violence, Sikh militancy as the unforeseen third force, gendered dimensions of the carnage, and the mass migration that became an unplanned referendum.
-        </p>
-        <div class="episode-details">
-          <div class="episode-arc" data-role="episode-arc">
-            This episode investigates the violence that accompanied partition&#8202;&mdash;&#8202;not as spontaneous communal madness but as strategically organized political action. It documents the Sikh jathas, the Muslim League National Guards, the RSS, the complicity of railway staff and police, and the systematic use of women&#8217;s bodies as contested territory. It traces the mass migration of twelve million people as an unplanned referendum that imposed a brutal clarity where the constitutional settlement had left only confusion.
-          </div>
-          <button class="episode-toggle" data-role="episode-toggle" type="button" aria-expanded="false">Read more</button>
-        </div>
-        <div class="player">
-          <audio preload="metadata">
-            <source src="https://github.com/baqiral-1/podcast_agent/releases/download/partition-of-india-episodes-1-8-20260408T0000/episode-5.mp3" type="audio/mpeg">
-          </audio>
-          <div class="player-controls">
-            <button class="play-btn" data-role="play" type="button" aria-label="Play episode 5">
-              <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-            </button>
-            <div class="timeline-wrap">
-              <input class="timeline" data-role="timeline" type="range" min="0" max="100" step="0.1" value="0" aria-label="Seek">
-            </div>
-          </div>
-          <div class="player-info">
-            <span data-role="time">0:00:00 / 1:46:39</span>
-            <button class="speed-btn" data-role="speed" type="button">1x</button>
-          </div>
-        </div>
-      </article>
+<!-- HIDDEN AUDIO -->
+<audio id="audioEl" preload="metadata"></audio>
 
-      <!-- Episode 6 -->
-      <article class="episode">
-        <div class="episode-number">06</div>
-        <h2 class="episode-title">The Prophet and the Assassin</h2>
-        <p class="episode-duration">1:46:35</p>
-        <p class="episode-preview">
-          Follows Gandhi&#8217;s marginalization and moral authority, his fasts as counter-inscription, the Nehru-Patel rift, and his assassination as paradoxical stabilizer.
-        </p>
-        <div class="episode-details">
-          <div class="episode-arc" data-role="episode-arc">
-            This episode follows Gandhi&#8217;s paradoxical trajectory: declining political influence alongside growing moral authority. It traces his marginalization by Congress colleagues, his fasts in Calcutta and Delhi as acts of competing somatic politics, the Nehru-Patel rift that threatened to split the Indian state, and his assassination by a Hindu extremist that paradoxically stabilized the secular republic. The episode asks whether Gandhi&#8217;s death accomplished more for Indian unity than his life could.
-          </div>
-          <button class="episode-toggle" data-role="episode-toggle" type="button" aria-expanded="false">Read more</button>
-        </div>
-        <div class="player">
-          <audio preload="metadata">
-            <source src="https://github.com/baqiral-1/podcast_agent/releases/download/partition-of-india-episodes-1-8-20260408T0000/episode-6.mp3" type="audio/mpeg">
-          </audio>
-          <div class="player-controls">
-            <button class="play-btn" data-role="play" type="button" aria-label="Play episode 6">
-              <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-            </button>
-            <div class="timeline-wrap">
-              <input class="timeline" data-role="timeline" type="range" min="0" max="100" step="0.1" value="0" aria-label="Seek">
-            </div>
-          </div>
-          <div class="player-info">
-            <span data-role="time">0:00:00 / 1:46:35</span>
-            <button class="speed-btn" data-role="speed" type="button">1x</button>
-          </div>
-        </div>
-      </article>
+<script>
+// ── DATA ──
+const AUDIO_BASE = "https://github.com/baqiral-1/podcast_agent/releases/download/partition-of-india-episodes-1-8-20260420T0000/";
 
-      <!-- Episode 7 -->
-      <article class="episode">
-        <div class="episode-number">07</div>
-        <h2 class="episode-title">Partition&#8217;s Infinite Recursion</h2>
-        <p class="episode-duration">2:01:03</p>
-        <p class="episode-preview">
-          Traces how partition&#8217;s logic reproduced itself in the princely states, Kashmir, Pakistan&#8217;s foundational contradictions, India&#8217;s constitutional design, and the hardening of borders into nuclear standoff.
-        </p>
-        <div class="episode-details">
-          <div class="episode-arc" data-role="episode-arc">
-            This episode traces how partition&#8217;s logic reproduced itself at every scale: in the princely states crisis (partition&#8217;s fractal), in Kashmir (partition&#8217;s infinite recursion), in Pakistan&#8217;s foundational contradictions (the secular vision versus the Islamic state), and in India&#8217;s constitutional design (written in the shadow of communal carnage). It shows how provisional arrangements hardened into permanent structures with astonishing speed.
-          </div>
-          <button class="episode-toggle" data-role="episode-toggle" type="button" aria-expanded="false">Read more</button>
-        </div>
-        <div class="player">
-          <audio preload="metadata">
-            <source src="https://github.com/baqiral-1/podcast_agent/releases/download/partition-of-india-episodes-1-8-20260408T0000/episode-7.mp3" type="audio/mpeg">
-          </audio>
-          <div class="player-controls">
-            <button class="play-btn" data-role="play" type="button" aria-label="Play episode 7">
-              <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-            </button>
-            <div class="timeline-wrap">
-              <input class="timeline" data-role="timeline" type="range" min="0" max="100" step="0.1" value="0" aria-label="Seek">
-            </div>
-          </div>
-          <div class="player-info">
-            <span data-role="time">0:00:00 / 2:01:03</span>
-            <button class="speed-btn" data-role="speed" type="button">1x</button>
-          </div>
-        </div>
-      </article>
+const EPISODES = [
+  {
+    "num": 1,
+    "title": "The Machinery and the Method",
+    "duration": "1:44:44",
+    "durationSec": 6284,
+    "image": "images/partition-gandhi.jpg",
+    "audio": "https://github.com/baqiral-1/podcast_agent/releases/download/partition-of-india-episodes-1-8-20260420T0000/episode-1.mp3",
+    "desc": "Open with the structural Raj - extraction, racial hierarchy, and separate electorates as the grammar Indians must speak to be heard. Then Gandhi's answer: Salt March as administrative trap, Chauri Chaura as the self-imposed limit, Poona Pact as the method's first real moral cost. This episode carries two load-bearing anchors (extractive structure; satyagraha method) because the rest of the series rests on both."
+  },
+  {
+    "num": 2,
+    "title": "Lahore, 1940: What Did Jinnah Actually Mean?",
+    "duration": "1:24:35",
+    "durationSec": 5075,
+    "image": "images/partition-jinnah.jpg",
+    "audio": "https://github.com/baqiral-1/podcast_agent/releases/download/partition-of-india-episodes-1-8-20260420T0000/episode-2.mp3",
+    "desc": "Anchor the episode on the Lahore Resolution itself - ambiguous text, a Bengali mover with his own dream, a Quaid who hides his cards. Use Ayesha Jalal's bargaining-counter reading against the sovereignty-from-the-outset reading, and let the peasant imaginary of Pakistan show how a tactical slogan became a mass demand. Echo the electoral machinery from Ep1 to remind listeners how the ground was prepared."
+  },
+  {
+    "num": 3,
+    "title": "The War That Broke the Raj",
+    "duration": "1:27:54",
+    "durationSec": 5274,
+    "image": "images/partition-leaders.jpg",
+    "audio": "https://github.com/baqiral-1/podcast_agent/releases/download/partition-of-india-episodes-1-8-20260420T0000/episode-3.mp3",
+    "desc": "Singapore falls and the protector-myth dies; Cripps comes with a sabotaged brief; Quit India decapitates Congress; Bengal starves while Churchill moves shipping; Bose walks into the POW camps and builds an army; the Red Fort trials and the RIN mutiny show the Raj that its sepoys will no longer fire. Sterling balances reverse the creditor-debtor relationship. By 1946 Britain must leave - the question is on what terms."
+  },
+  {
+    "num": 4,
+    "title": "The Last Plan for a United India",
+    "duration": "1:26:07",
+    "durationSec": 5167,
+    "image": "images/partition-refugees.jpg",
+    "audio": "https://github.com/baqiral-1/podcast_agent/releases/download/partition-of-india-episodes-1-8-20260420T0000/episode-4.mp3",
+    "desc": "Pethick-Lawrence, Cripps and Wavell propose a federal three-tier plan; both parties 'accept' it in incompatible senses. Nehru's July press conference gives Jinnah the opening to withdraw. The League calls Direct Action; Calcutta burns for three days with Suhrawardy's government standing back. Noakhali and Bihar follow in reciprocal massacres. Each riot retroactively validates the two-nation theory. By year's end partition is not decided but has become the default."
+  },
+  {
+    "num": 5,
+    "title": "Ten Weeks",
+    "duration": "1:38:43",
+    "durationSec": 5923,
+    "image": "images/partition-mountbatten.jpg",
+    "audio": "https://github.com/baqiral-1/podcast_agent/releases/download/partition-of-india-episodes-1-8-20260420T0000/episode-5.mp3",
+    "desc": "Mountbatten arrives in March 1947 with plenipotentiary powers and a deadline. Plan Balkan collapses in one Simla night; Menon rewrites it; on 3 June the leaders assent around a table and 15 August is chosen on a whim. Congress moves from 'never' to yes; Jinnah, dying, refuses joint governor-generalship; Radcliffe draws lines he knows will kill people and burns his notes. The Mountbatten-Nehru friendship is on the scale at every decision."
+  },
+  {
+    "num": 6,
+    "title": "The Killing Ground",
+    "duration": "1:31:04",
+    "durationSec": 5464,
+    "image": "images/partition-salt-march.jpg",
+    "audio": "https://github.com/baqiral-1/podcast_agent/releases/download/partition-of-india-episodes-1-8-20260420T0000/episode-6.mp3",
+    "desc": "Anchor on Punjab: jathas with veterans as cadre, leaked train timetables, a Boundary Force of 25,000 for 14 million people, disbanded at the peak. Move to women as the currency of partition and the recovery operations that become a second violence. Pull back to the impossible arithmetic of the dead and the displaced. Close at midnight on 14-15 August - Nehru's 'Tryst with Destiny' inside the chamber, Punjab burning outside - so the listener holds both at once."
+  },
+  {
+    "num": 7,
+    "title": "Two States Being Made",
+    "duration": "1:48:09",
+    "durationSec": 6489,
+    "image": "images/partition-nehru.jpg",
+    "audio": "https://github.com/baqiral-1/podcast_agent/releases/download/partition-of-india-episodes-1-8-20260420T0000/episode-7.mp3",
+    "desc": "Paramountcy lapses and Menon, Patel, Mountbatten run the persuasion machine; Junagadh flips, Hyderabad is taken in a five-day 'police action' the government refuses to call a war. Kashmir is the mirror-case: Hindu maharaja, Muslim majority, a Pathan lashkar, Menon's flight to Jammu, the disputed sequence of accession and airlift. British commanders refuse Jinnah's order to invade; the ceasefire of 1 January 1949 freezes a rough front line into a permanent LoC. Close on the divergent trajectories of the two states: Ambedkar drafting a secular constitution in Delhi, Jinnah dead in Karachi, Urdu imposed on Bengal."
+  },
+  {
+    "num": 8,
+    "title": "Gandhi's Last Act",
+    "duration": "1:28:51",
+    "durationSec": 5331,
+    "image": "images/partition-jinnah-gandhi.jpg",
+    "audio": "https://github.com/baqiral-1/podcast_agent/releases/download/partition-of-india-episodes-1-8-20260420T0000/episode-8.mp3",
+    "desc": "From a burnt Calcutta mansion to a Delhi colonnade, one body does what fifty-five thousand troops cannot — and then breaks. The fast in Calcutta quiets Bengal; the fast in Delhi pries 55 crore out of a reluctant cabinet; ten days later Nathuram Godse fires three rounds on the Birla House colonnade. In the seventy-two hours after, Nehru and Patel — three days earlier at the point of rupture — write to each other that everything has changed, the RSS is banned, and Ambedkar's constitutional project moves forward on the tracks laid by the assassination. We close on Gandhi's private experiments so the listener leaves holding the Mahatma whole — not a clean saint, not a clean villain — and leaves the Hindutva resentment alive as the series' last open question."
+  }
+];
 
-      <!-- Episode 8 -->
-      <article class="episode">
-        <div class="episode-number">08</div>
-        <h2 class="episode-title">The Furies Unloosed</h2>
-        <p class="episode-duration">1:34:37</p>
-        <p class="episode-preview">
-          The convergence episode: weaves together the series&#8217; threads to reveal that partition did not resolve the communal question but relocated it, examining memory, amnesia, and the enduring legacies that make 1947 a living force.
-        </p>
-        <div class="episode-details">
-          <div class="episode-arc" data-role="episode-arc">
-            The convergence episode weaves together all the series&#8217; threads to reveal their shared foundation: partition did not resolve the communal question but merely relocated and perpetuated it. It examines the double helix of memory and amnesia&#8202;&mdash;&#8202;how both nations constructed self-serving mythologies while suppressing the human cost&#8202;&mdash;&#8202;and asks whether the furies unleashed in 1947 can ever be contained. Literature and bureaucracy converge on the same diagnosis: partition as a form of collective insanity whose consequences remain with us.
-          </div>
-          <button class="episode-toggle" data-role="episode-toggle" type="button" aria-expanded="false">Read more</button>
-        </div>
-        <div class="player">
-          <audio preload="metadata">
-            <source src="https://github.com/baqiral-1/podcast_agent/releases/download/partition-of-india-episodes-1-8-20260408T0000/episode-8.mp3" type="audio/mpeg">
-          </audio>
-          <div class="player-controls">
-            <button class="play-btn" data-role="play" type="button" aria-label="Play episode 8">
-              <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-            </button>
-            <div class="timeline-wrap">
-              <input class="timeline" data-role="timeline" type="range" min="0" max="100" step="0.1" value="0" aria-label="Seek">
-            </div>
-          </div>
-          <div class="player-info">
-            <span data-role="time">0:00:00 / 1:34:37</span>
-            <button class="speed-btn" data-role="speed" type="button">1x</button>
-          </div>
-        </div>
-      </article>
+// ── STATE ──
+let currentIndex = 0;
+let isPlaying = false;
+let speedOptions = [1, 1.25, 1.5, 2];
+let speedIndex = 0;
+let waveformBars = []; // cached per episode
+let animFrameId = null;
 
-    </section>
-  </main>
+// ── DOM REFS ──
+const audioEl = document.getElementById("audioEl");
+const btnPlay = document.getElementById("btnPlay");
+const iconPlay = document.getElementById("iconPlay");
+const iconPause = document.getElementById("iconPause");
+const btnBack30 = document.getElementById("btnBack30");
+const btnFwd30 = document.getElementById("btnFwd30");
+const btnSpeed = document.getElementById("btnSpeed");
+const episodeImage = document.getElementById("episodeImage");
+const imageEpNum = document.getElementById("imageEpNum");
+const imageEpTitle = document.getElementById("imageEpTitle");
+const episodeDescription = document.getElementById("episodeDescription");
+const timeCurrent = document.getElementById("timeCurrent");
+const timeTotal = document.getElementById("timeTotal");
+const canvas = document.getElementById("waveformCanvas");
+const ctx = canvas.getContext("2d");
+const waveformWrap = document.getElementById("waveformWrap");
+const playlistRows = document.getElementById("playlistRows");
+const playlistToggle = document.getElementById("playlistToggle");
+const rightPanel = document.getElementById("rightPanel");
 
-  <!-- Footer -->
-  <footer class="site-footer">
-    <a href="https://github.com/baqiral-1/podcast_agent" target="_blank" rel="noopener">github</a>
-  </footer>
+// ── SEEDED PSEUDO-RANDOM ──
+function seededRandom(seed) {
+  let s = seed;
+  return function() {
+    s = (s * 16807 + 0) % 2147483647;
+    return (s - 1) / 2147483646;
+  };
+}
 
-  <script>
-  (function () {
-    /* ── Series description toggle ── */
-    var seriesToggle = document.querySelector('[data-role="series-toggle"]');
-    if (seriesToggle) {
-      seriesToggle.addEventListener('click', function () {
-        var details = seriesToggle.closest('.series-details');
-        if (!details) return;
-        var open = details.classList.toggle('is-open');
-        seriesToggle.setAttribute('aria-expanded', open);
-        seriesToggle.textContent = open ? 'Show less' : 'Read more';
-      });
+function generateBars(episodeNum, count) {
+  const rng = seededRandom(episodeNum * 7919 + 137);
+  const bars = [];
+  for (let i = 0; i < count; i++) {
+    // Create organic waveform shape: base wave + noise
+    const pos = i / count;
+    const wave = 0.35 + 0.25 * Math.sin(pos * Math.PI * 2.5) + 0.15 * Math.sin(pos * Math.PI * 7.3);
+    const noise = rng() * 0.4;
+    bars.push(Math.min(1, Math.max(0.08, wave + noise - 0.15)));
+  }
+  return bars;
+}
+
+// ── WAVEFORM DRAWING ──
+function drawWaveform(progress) {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  const w = rect.width;
+  const h = 120;
+
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  ctx.scale(dpr, dpr);
+  canvas.style.width = w + "px";
+  canvas.style.height = h + "px";
+
+  ctx.clearRect(0, 0, w, h);
+
+  const barWidth = 3;
+  const gap = 1;
+  const step = barWidth + gap;
+  const barCount = Math.floor(w / step);
+
+  // Regenerate bars if count changed
+  if (waveformBars.length !== barCount) {
+    waveformBars = generateBars(EPISODES[currentIndex].num, barCount);
+  }
+
+  const playedBars = Math.floor(progress * barCount);
+  const midY = h / 2;
+
+  for (let i = 0; i < barCount; i++) {
+    const barH = waveformBars[i] * (h * 0.85);
+    const x = i * step;
+    const y = midY - barH / 2;
+
+    if (i < playedBars) {
+      ctx.fillStyle = "rgba(201,122,69,0.8)";
+    } else {
+      ctx.fillStyle = "rgba(201,122,69,0.25)";
     }
+    ctx.fillRect(x, y, barWidth, barH);
+  }
 
-    /* ── Episode description toggles ── */
-    document.querySelectorAll('[data-role="episode-toggle"]').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        var details = btn.closest('.episode-details');
-        if (!details) return;
-        var open = details.classList.toggle('is-open');
-        btn.setAttribute('aria-expanded', open);
-        btn.textContent = open ? 'Show less' : 'Read more';
-      });
+  // Playhead line
+  if (progress > 0) {
+    const px = progress * w;
+    ctx.strokeStyle = "#c97a45";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(px, 8);
+    ctx.lineTo(px, h - 8);
+    ctx.stroke();
+
+    // Circle on top of playhead
+    ctx.beginPath();
+    ctx.arc(px, 8, 4, 0, Math.PI * 2);
+    ctx.fillStyle = "#c97a45";
+    ctx.fill();
+  }
+}
+
+// ── TIME FORMAT ──
+function formatTime(sec) {
+  if (isNaN(sec) || sec < 0) sec = 0;
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = Math.floor(sec % 60);
+  return h + ":" + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+}
+
+// ── LOAD EPISODE ──
+function loadEpisode(index, autoplay) {
+  currentIndex = index;
+  const ep = EPISODES[index];
+
+  // Update left panel
+  episodeImage.src = ep.image;
+  imageEpNum.textContent = ep.num;
+  imageEpTitle.textContent = ep.title;
+  episodeDescription.textContent = ep.desc;
+  timeTotal.textContent = ep.duration;
+  timeCurrent.textContent = "0:00:00";
+
+  // Regenerate waveform bars
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  const barCount = Math.floor(rect.width / 4);
+  waveformBars = generateBars(ep.num, barCount);
+  drawWaveform(0);
+
+  // Load audio — use <source type="audio/mpeg"> so the browser
+  // knows the content type (GitHub serves application/octet-stream)
+  const hasAudio = Boolean(ep.audio);
+  audioEl.innerHTML = "";
+  audioEl.removeAttribute("src");
+  if (hasAudio) {
+    var source = document.createElement("source");
+    source.src = ep.audio;
+    source.type = "audio/mpeg";
+    audioEl.appendChild(source);
+  }
+  audioEl.load();
+  audioEl.playbackRate = speedOptions[speedIndex];
+  btnPlay.disabled = !hasAudio;
+  btnBack30.disabled = !hasAudio;
+  btnFwd30.disabled = !hasAudio;
+  btnSpeed.disabled = !hasAudio;
+  waveformWrap.classList.toggle("disabled", !hasAudio);
+
+  // Update playlist
+  updatePlaylistActive();
+
+  if (autoplay && hasAudio) {
+    audioEl.play().then(() => setPlaying(true)).catch(e => console.warn("Play failed:", e));
+  } else {
+    setPlaying(false);
+  }
+}
+
+// ── PLAY STATE ──
+function setPlaying(playing) {
+  isPlaying = playing;
+  iconPlay.style.display = playing ? "none" : "block";
+  iconPause.style.display = playing ? "block" : "none";
+  updateEqBars();
+  if (playing) {
+    startAnimation();
+  } else {
+    stopAnimation();
+  }
+}
+
+function startAnimation() {
+  if (animFrameId) return;
+  function tick() {
+    const progress = audioEl.duration ? audioEl.currentTime / audioEl.duration : 0;
+    drawWaveform(progress);
+    timeCurrent.textContent = formatTime(audioEl.currentTime);
+    animFrameId = requestAnimationFrame(tick);
+  }
+  animFrameId = requestAnimationFrame(tick);
+}
+
+function stopAnimation() {
+  if (animFrameId) {
+    cancelAnimationFrame(animFrameId);
+    animFrameId = null;
+  }
+  // One final draw
+  const progress = audioEl.duration ? audioEl.currentTime / audioEl.duration : 0;
+  drawWaveform(progress);
+  timeCurrent.textContent = formatTime(audioEl.currentTime);
+}
+
+// ── PLAYLIST ──
+function buildPlaylist() {
+  playlistRows.innerHTML = "";
+  EPISODES.forEach((ep, i) => {
+    const row = document.createElement("div");
+    row.className = "ep-row" + (i === currentIndex ? " active" : "");
+    row.dataset.index = i;
+
+    row.innerHTML = `
+      <span class="ep-num">${ep.num}</span>
+      <div class="ep-text">
+        <div class="ep-title">${ep.title}</div>
+        <div class="ep-duration">${ep.duration}</div>
+      </div>
+      <div class="ep-play-indicator">
+        <div class="play-icon"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
+        <div class="eq-bars${!isPlaying ? " paused" : ""}">
+          <div class="bar"></div>
+          <div class="bar"></div>
+          <div class="bar"></div>
+        </div>
+      </div>
+    `;
+
+    row.addEventListener("click", () => {
+      loadEpisode(i, Boolean(ep.audio));
     });
 
-    /* ── Scroll fade-in ── */
-    var observer = new IntersectionObserver(function (entries) {
-      entries.forEach(function (entry) {
-        if (entry.isIntersecting) {
-          entry.target.classList.add('is-visible');
-          observer.unobserve(entry.target);
-        }
-      });
-    }, { threshold: 0.1 });
+    playlistRows.appendChild(row);
+  });
+}
 
-    document.querySelectorAll('.episode').forEach(function (el) {
-      observer.observe(el);
-    });
-
-    /* ── Audio players ── */
-    var PLAY = 'M8 5v14l11-7z';
-    var PAUSE = 'M6 19h4V5H6v14zm8-14v14h4V5h-4z';
-    var speeds = [1, 1.25, 1.5, 2];
-
-    function fmt(s) {
-      var h = Math.floor(s / 3600);
-      var m = Math.floor((s % 3600) / 60);
-      var sec = Math.floor(s % 60);
-      return h + ':' + String(m).padStart(2, '0') + ':' + String(sec).padStart(2, '0');
+function updatePlaylistActive() {
+  const rows = playlistRows.querySelectorAll(".ep-row");
+  rows.forEach((row, i) => {
+    if (i === currentIndex) {
+      row.classList.add("active");
+    } else {
+      row.classList.remove("active");
     }
+  });
+  updateEqBars();
+}
 
-    var players = document.querySelectorAll('.player');
+function updateEqBars() {
+  const allEq = playlistRows.querySelectorAll(".eq-bars");
+  allEq.forEach(eq => {
+    if (isPlaying) {
+      eq.classList.remove("paused");
+    } else {
+      eq.classList.add("paused");
+    }
+  });
+}
 
-    players.forEach(function (p) {
-      var audio = p.querySelector('audio');
-      var playBtn = p.querySelector('[data-role="play"]');
-      var timeline = p.querySelector('[data-role="timeline"]');
-      var timeDisplay = p.querySelector('[data-role="time"]');
-      var speedBtn = p.querySelector('[data-role="speed"]');
-      var svgPath = playBtn.querySelector('path');
-      var si = 0;
+// ── EVENT LISTENERS ──
 
-      function pauseOthers() {
-        players.forEach(function (other) {
-          if (other === p) return;
-          var oa = other.querySelector('audio');
-          var op = other.querySelector('[data-role="play"] path');
-          if (oa && !oa.paused) {
-            oa.pause();
-            if (op) op.setAttribute('d', PLAY);
-          }
-        });
-      }
+// Play/pause
+btnPlay.addEventListener("click", () => {
+  if (btnPlay.disabled) return;
+  if (isPlaying) {
+    audioEl.pause();
+    setPlaying(false);
+  } else {
+    if (!audioEl.currentSrc && !audioEl.src) {
+      loadEpisode(currentIndex, true);
+    } else {
+      audioEl.play().then(() => setPlaying(true)).catch(e => console.warn("Play failed:", e));
+    }
+  }
+});
 
-      playBtn.addEventListener('click', function () {
-        if (audio.paused) {
-          pauseOthers();
-          audio.play();
-          svgPath.setAttribute('d', PAUSE);
-        } else {
-          audio.pause();
-          svgPath.setAttribute('d', PLAY);
-        }
-      });
+// Skip buttons
+btnBack30.addEventListener("click", () => {
+  if (btnBack30.disabled) return;
+  audioEl.currentTime = Math.max(0, audioEl.currentTime - 30);
+});
+btnFwd30.addEventListener("click", () => {
+  if (btnFwd30.disabled) return;
+  audioEl.currentTime = Math.min(audioEl.duration || 0, audioEl.currentTime + 30);
+});
 
-      audio.addEventListener('timeupdate', function () {
-        if (!audio.duration) return;
-        timeline.value = (audio.currentTime / audio.duration) * 100;
-        timeDisplay.textContent = fmt(audio.currentTime) + ' / ' + fmt(audio.duration);
-      });
+// Speed
+btnSpeed.addEventListener("click", () => {
+  if (btnSpeed.disabled) return;
+  speedIndex = (speedIndex + 1) % speedOptions.length;
+  audioEl.playbackRate = speedOptions[speedIndex];
+  btnSpeed.textContent = speedOptions[speedIndex] + "\u00d7";
+});
 
-      audio.addEventListener('ended', function () {
-        svgPath.setAttribute('d', PLAY);
-      });
+// Waveform seek
+waveformWrap.addEventListener("click", (e) => {
+  if (waveformWrap.classList.contains("disabled")) return;
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const ratio = x / rect.width;
+  if (audioEl.duration) {
+    audioEl.currentTime = ratio * audioEl.duration;
+    if (!isPlaying) {
+      const progress = audioEl.currentTime / audioEl.duration;
+      drawWaveform(progress);
+      timeCurrent.textContent = formatTime(audioEl.currentTime);
+    }
+  }
+});
 
-      timeline.addEventListener('input', function () {
-        if (!audio.duration) return;
-        audio.currentTime = (timeline.value / 100) * audio.duration;
-      });
+// Audio events
+audioEl.addEventListener("play", () => setPlaying(true));
+audioEl.addEventListener("pause", () => setPlaying(false));
+audioEl.addEventListener("ended", () => {
+  // Auto-advance to next episode
+  if (currentIndex < EPISODES.length - 1) {
+    loadEpisode(currentIndex + 1, true);
+  } else {
+    setPlaying(false);
+  }
+});
+audioEl.addEventListener("loadedmetadata", () => {
+  timeTotal.textContent = formatTime(audioEl.duration);
+});
 
-      speedBtn.addEventListener('click', function () {
-        si = (si + 1) % speeds.length;
-        audio.playbackRate = speeds[si];
-        speedBtn.textContent = speeds[si] + 'x';
-      });
-    });
-  }());
-  </script>
+// Resize: redraw waveform
+let resizeTimer;
+window.addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    const barCount = Math.floor(rect.width / 4);
+    waveformBars = generateBars(EPISODES[currentIndex].num, barCount);
+    const progress = audioEl.duration ? audioEl.currentTime / audioEl.duration : 0;
+    drawWaveform(progress);
+  }, 100);
+});
+
+// Mobile playlist toggle
+playlistToggle.addEventListener("click", () => {
+  rightPanel.classList.toggle("expanded");
+  playlistToggle.classList.toggle("expanded");
+  const isExpanded = rightPanel.classList.contains("expanded");
+  playlistToggle.innerHTML = (isExpanded ? "Hide episodes" : "Show episodes") +
+    ' <span class="arrow">&#9660;</span>';
+});
+
+// Keyboard controls
+document.addEventListener("keydown", (e) => {
+  if (e.code === "Space" && e.target === document.body) {
+    e.preventDefault();
+    btnPlay.click();
+  }
+  if (e.code === "ArrowLeft") {
+    audioEl.currentTime = Math.max(0, audioEl.currentTime - 10);
+  }
+  if (e.code === "ArrowRight") {
+    audioEl.currentTime = Math.min(audioEl.duration || 0, audioEl.currentTime + 10);
+  }
+});
+
+// ── INIT ──
+buildPlaylist();
+loadEpisode(0, false);
+</script>
+
 </body>
 </html>

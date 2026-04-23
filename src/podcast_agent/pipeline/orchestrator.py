@@ -53,6 +53,7 @@ from podcast_agent.schemas.models import (
     BookRecord,
     ChapterInfo,
     ChunkingConfig,
+    ClusterPathOccurrence,
     CoverageStats,
     EpisodeCandidateCluster,
     EpisodePlan,
@@ -67,12 +68,12 @@ from podcast_agent.schemas.models import (
     RenderManifest,
     RenderSegment,
     RepairResult,
-    ScriptTransition,
     SceneCard,
+    SceneCardDraft,
     SegmentDiff,
     SpokenSection,
     SpokenScript,
-    SpokenTransition,
+    StrategyEpisode,
     SYNTHESIS_PRIMITIVE_FAMILIES,
     SynthesisConsolidationResult,
     SynthesisMap,
@@ -84,7 +85,10 @@ from podcast_agent.schemas.models import (
     ThematicCorpus,
     ThematicProject,
 )
-from podcast_agent.tts.openai_compatible import build_tts_client
+from podcast_agent.tts.openai_compatible import (
+    build_tts_client,
+    supports_openai_tts_instructions,
+)
 from podcast_agent.utils.actor_metadata import (
     clean_axis_actor_ids,
     clean_scene_actor_links,
@@ -1991,8 +1995,13 @@ def _resolve_spoken_render_speed(speech_rate: str, base_speed: float) -> float:
     return min(4.0, max(0.1, resolved))
 
 
-def _supports_segment_tts_instructions(tts_provider: str) -> bool:
-    return tts_provider.strip().lower() in {"openai", "openai-compatible"}
+def _supports_segment_tts_instructions(
+    tts_provider: str,
+    tts_model_name: str | None = None,
+) -> bool:
+    if tts_provider.strip().lower() not in {"openai", "openai-compatible"}:
+        return False
+    return supports_openai_tts_instructions(tts_model_name)
 
 
 def _normalize_tts_instruction_text(text: str | None, *, max_chars: int | None = None) -> str | None:
@@ -2024,8 +2033,12 @@ def _segment_contains_pronunciation_term(segment_text: str, term: str) -> bool:
     return f" {normalized_term} " in f" {normalized_segment} "
 
 
-def _segment_hint_degradations(hints: SpeechHints, tts_provider: str) -> list[str]:
-    if _supports_segment_tts_instructions(tts_provider):
+def _segment_hint_degradations(
+    hints: SpeechHints,
+    tts_provider: str,
+    tts_model_name: str | None = None,
+) -> list[str]:
+    if _supports_segment_tts_instructions(tts_provider, tts_model_name):
         return []
     degradations: list[str] = []
     if hints.style != "neutral" or hints.intensity != "none" or hints.render_strategy == "slow_clause":
@@ -2117,6 +2130,7 @@ def _render_segments_for_spoken_segment(
     voice_id: str,
     speed: float,
     tts_provider: str,
+    tts_model_name: str | None,
     base_instructions: str | None,
 ) -> list[RenderSegment]:
     hints = segment.speech_hints
@@ -2125,8 +2139,8 @@ def _render_segments_for_spoken_segment(
         render_speed = _resolve_spoken_render_speed("slower", render_speed)
 
     text_parts = _split_render_text(segment.text, hints)
-    degradations = _segment_hint_degradations(hints, tts_provider)
-    supports_instructions = _supports_segment_tts_instructions(tts_provider)
+    degradations = _segment_hint_degradations(hints, tts_provider, tts_model_name)
+    supports_instructions = _supports_segment_tts_instructions(tts_provider, tts_model_name)
     render_segments: list[RenderSegment] = []
 
     for idx, (focus_phrase, part_text) in enumerate(text_parts, start=1):
@@ -2219,10 +2233,11 @@ def _normalize_spoken_segments(
 
 def build_render_manifest(
     spoken_script: SpokenScript,
-    voice_id: str = "ballad",
+    voice_id: str = "fable",
     speed: float = 1.0,
     words_per_minute: int = 130,
     base_instructions: str | None = None,
+    tts_model_name: str | None = "tts-1-hd",
 ) -> RenderManifest:
     segments: list[RenderSegment] = []
     tts_provider = spoken_script.tts_provider
@@ -2250,7 +2265,7 @@ def build_render_manifest(
             )
         )
 
-    for idx, section in enumerate(spoken_script.sections):
+    for section in spoken_script.sections:
         segments.extend(
             _render_segments_for_spoken_segment(
                 SimpleNamespace(
@@ -2261,24 +2276,10 @@ def build_render_manifest(
                 voice_id=voice_id,
                 speed=speed,
                 tts_provider=tts_provider,
+                tts_model_name=tts_model_name,
                 base_instructions=base_instructions,
             )
         )
-        if idx < len(spoken_script.transitions):
-            transition = spoken_script.transitions[idx]
-            segments.extend(
-                _render_segments_for_spoken_segment(
-                    SimpleNamespace(
-                        segment_id=transition.transition_id,
-                        text=transition.text,
-                        speech_hints=transition.speech_hints,
-                    ),
-                    voice_id=voice_id,
-                    speed=speed,
-                    tts_provider=tts_provider,
-                    base_instructions=base_instructions,
-                )
-            )
 
     total_words = sum(len(seg.text.split()) for seg in segments)
     estimated_seconds = int(total_words / words_per_minute * 60)
@@ -2295,8 +2296,6 @@ def _script_text_units(script: EpisodeScript) -> list[tuple[str, str]]:
     units: list[tuple[str, str]] = []
     for section in script.prose_sections:
         units.append((section.section_id, section.text))
-    for transition in script.transitions:
-        units.append((transition.transition_id, transition.text))
     return units
 
 
@@ -2353,6 +2352,397 @@ def _compute_scene_word_count_targets(
     }
 
 
+_OCCURRENCE_EMPHASIS_WEIGHTS: dict[str, float] = {
+    "anchor": 1.80,
+    "major": 1.20,
+    "supporting": 0.80,
+    "compressed": 0.60,
+}
+_OCCURRENCE_SPILLOVER_WEIGHTS: dict[str, float] = {
+    "anchor": 1.50,
+    "major": 1.00,
+    "supporting": 0.00,
+    "compressed": 0.00,
+}
+_ECHO_OCCURRENCE_WEIGHT_CAP = 0.65
+_DEFAULT_OCCURRENCE_WEIGHT = 1.00
+
+_COVERAGE_DEPTH_WEIGHTS: dict[str, float] = {
+    "deep": 1.45,
+    "standard": 1.00,
+    "compressed": 0.65,
+}
+_SCENE_ROLE_WEIGHTS: dict[str, float] = {
+    "shock": 1.20,
+    "process": 1.10,
+    "consequence": 1.10,
+    "contestation": 1.05,
+    "synthesis": 1.05,
+    "setup": 0.95,
+    "reaction": 1.00,
+}
+_ARC_BINDING_WEIGHTS: dict[str, float] = {
+    "strong": 1.15,
+    "standard": 1.00,
+    "light": 0.90,
+}
+_NO_ACTOR_ARC_WEIGHT = 0.95
+
+_SCENE_DURATION_BOUNDS_SECONDS: dict[str, tuple[float, float]] = {
+    "compressed": (45.0, 90.0),
+    "standard": (90.0, 150.0),
+    "deep": (150.0, 240.0),
+}
+_SUPPORTING_SCENE_UPPER_BOUND_RATIO = 0.50
+_WRITING_BATCH_WORD_OVERRUN_WARNING_RATIO = 1.08
+
+
+def _positive_allocation_weights(weights: list[float]) -> list[float]:
+    return [max(float(weight), 0.0001) for weight in weights]
+
+
+def _bounded_weighted_allocation(
+    *,
+    total: float,
+    weights: list[float],
+    bounds: list[tuple[float, float]],
+    overflow_weights: list[float] | None = None,
+) -> list[float]:
+    if not weights:
+        return []
+    if len(weights) != len(bounds):
+        raise ValueError("weights and bounds must have the same length")
+    if overflow_weights is not None and len(overflow_weights) != len(weights):
+        raise ValueError("overflow_weights and weights must have the same length")
+
+    positive_weights = _positive_allocation_weights(weights)
+    positive_overflow_weights = (
+        [max(float(weight), 0.0) for weight in overflow_weights]
+        if overflow_weights is not None
+        else positive_weights
+    )
+    min_total = sum(lower for lower, _ in bounds)
+    max_total = sum(upper for _, upper in bounds)
+    if total <= min_total:
+        scale = total / min_total if min_total > 0 else 0.0
+        return [lower * scale for lower, _ in bounds]
+    if total >= max_total:
+        allocations = [upper for _, upper in bounds]
+        stranded_total = total - max_total
+        return _redistribute_stranded_allocation(
+            allocations,
+            stranded_total,
+            positive_weights,
+            positive_overflow_weights,
+        )
+
+    allocations: list[float | None] = [None] * len(weights)
+    active = set(range(len(weights)))
+    remaining_total = float(total)
+
+    while active:
+        active_weight = sum(positive_weights[idx] for idx in active)
+        if active_weight <= 0:
+            equal_share = remaining_total / len(active)
+            for idx in active:
+                allocations[idx] = equal_share
+            remaining_total = 0.0
+            break
+
+        changed = False
+        for idx in list(active):
+            lower, upper = bounds[idx]
+            share = remaining_total * positive_weights[idx] / active_weight
+            if share < lower:
+                allocations[idx] = lower
+                remaining_total -= lower
+                active.remove(idx)
+                changed = True
+            elif share > upper:
+                allocations[idx] = upper
+                remaining_total -= upper
+                active.remove(idx)
+                changed = True
+
+        if not changed:
+            for idx in active:
+                allocations[idx] = (
+                    remaining_total
+                    * positive_weights[idx]
+                    / active_weight
+                )
+            remaining_total = 0.0
+            break
+
+    resolved_allocations = [float(value or 0.0) for value in allocations]
+    stranded_total = float(total) - sum(resolved_allocations)
+    if abs(stranded_total) > 1e-6:
+        return _redistribute_stranded_allocation(
+            resolved_allocations,
+            stranded_total,
+            positive_weights,
+            positive_overflow_weights,
+        )
+    return resolved_allocations
+
+
+def _redistribute_stranded_allocation(
+    allocations: list[float],
+    stranded_total: float,
+    fallback_weights: list[float],
+    overflow_weights: list[float],
+) -> list[float]:
+    if abs(stranded_total) <= 1e-6:
+        return allocations
+    redistribution_weights = (
+        overflow_weights
+        if stranded_total > 0 and sum(overflow_weights) > 0
+        else fallback_weights
+    )
+    redistribution_weight = sum(redistribution_weights)
+    if redistribution_weight <= 0:
+        equal_share = stranded_total / len(allocations)
+        return [allocation + equal_share for allocation in allocations]
+    return [
+        allocation
+        + stranded_total * redistribution_weights[idx] / redistribution_weight
+        for idx, allocation in enumerate(allocations)
+    ]
+
+
+def _round_allocations_to_total(
+    allocations: list[float],
+    target_total: int,
+) -> list[int]:
+    if not allocations:
+        return []
+
+    floor_values = [max(1, int(math.floor(value))) for value in allocations]
+    delta = int(target_total) - sum(floor_values)
+    fractions = sorted(
+        range(len(allocations)),
+        key=lambda idx: (allocations[idx] - math.floor(allocations[idx]), -idx),
+        reverse=True,
+    )
+
+    if delta > 0:
+        base_increment, remainder = divmod(delta, len(fractions))
+        if base_increment:
+            for idx in fractions:
+                floor_values[idx] += base_increment
+        for idx in fractions[:remainder]:
+            floor_values[idx] += 1
+    elif delta < 0:
+        for idx in reversed(fractions):
+            if delta == 0:
+                break
+            removable = min(floor_values[idx] - 1, -delta)
+            if removable <= 0:
+                continue
+            floor_values[idx] -= removable
+            delta += removable
+        if delta != 0:
+            raise ValueError(
+                "cannot round allocations to target without non-positive durations"
+            )
+
+    return floor_values
+
+
+def _scene_occurrence_id(scene: SceneCardDraft | SceneCard) -> str | None:
+    return scene.dominant_cluster_occurrence_id
+
+
+def _strategy_occurrence(
+    episode: StrategyEpisode,
+    occurrence_id: str,
+) -> ClusterPathOccurrence | None:
+    return next(
+        (
+            item
+            for item in episode.cluster_path
+            if item.occurrence_id == occurrence_id
+        ),
+        None,
+    )
+
+
+def _occurrence_weight(episode: StrategyEpisode, occurrence_id: str) -> float:
+    occurrence = _strategy_occurrence(episode, occurrence_id)
+    if occurrence is None:
+        return _DEFAULT_OCCURRENCE_WEIGHT
+
+    weight = _OCCURRENCE_EMPHASIS_WEIGHTS.get(
+        occurrence.emphasis,
+        _DEFAULT_OCCURRENCE_WEIGHT,
+    )
+    if occurrence.usage == "echo":
+        weight = min(weight, _ECHO_OCCURRENCE_WEIGHT_CAP)
+    return weight
+
+
+def _occurrence_spillover_weight(
+    episode: StrategyEpisode,
+    occurrence_id: str,
+) -> float:
+    occurrence = _strategy_occurrence(episode, occurrence_id)
+    if occurrence is None or occurrence.usage == "echo":
+        return 0.0
+    return _OCCURRENCE_SPILLOVER_WEIGHTS.get(occurrence.emphasis, 0.0)
+
+
+def _scene_arc_weight(scene: SceneCardDraft | SceneCard) -> float:
+    weights: list[float] = []
+    for actor in scene.actors:
+        for binding in actor.arc_bindings:
+            weights.append(
+                _ARC_BINDING_WEIGHTS.get(
+                    binding.weight,
+                    _ARC_BINDING_WEIGHTS["standard"],
+                )
+            )
+    return max(weights) if weights else _NO_ACTOR_ARC_WEIGHT
+
+
+def _scene_duration_category(scene: SceneCardDraft | SceneCard) -> str:
+    return scene.coverage_depth
+
+
+def _scene_duration_bounds(
+    scene: SceneCardDraft | SceneCard,
+    episode: StrategyEpisode,
+) -> tuple[float, float]:
+    lower, upper = _SCENE_DURATION_BOUNDS_SECONDS[_scene_duration_category(scene)]
+    occurrence_id = _scene_occurrence_id(scene)
+    occurrence = (
+        _strategy_occurrence(episode, occurrence_id)
+        if occurrence_id is not None
+        else None
+    )
+    if occurrence is not None and occurrence.emphasis == "supporting":
+        upper = lower + ((upper - lower) * _SUPPORTING_SCENE_UPPER_BOUND_RATIO)
+    return lower, upper
+
+
+def _scene_importance_weight(scene: SceneCardDraft | SceneCard) -> float:
+    coverage_weight = _COVERAGE_DEPTH_WEIGHTS.get(scene.coverage_depth, 1.0)
+    role_weight = _SCENE_ROLE_WEIGHTS.get(scene.scene_role, 1.0)
+    return coverage_weight * role_weight * _scene_arc_weight(scene)
+
+
+def _allocate_scene_durations(
+    scene_cards: list[SceneCardDraft | SceneCard],
+    episode: StrategyEpisode,
+    target_duration_seconds: int,
+) -> list[SceneCard]:
+    if not scene_cards:
+        return []
+    if target_duration_seconds <= 0:
+        raise ValueError("target_duration_seconds must be positive")
+
+    occurrence_ids: list[str] = []
+    seen_occurrence_ids: set[str] = set()
+    for scene in scene_cards:
+        occurrence_id = _scene_occurrence_id(scene) or "__unassigned__"
+        if occurrence_id in seen_occurrence_ids:
+            continue
+        seen_occurrence_ids.add(occurrence_id)
+        occurrence_ids.append(occurrence_id)
+
+    occurrence_weights = [
+        _occurrence_weight(episode, occurrence_id)
+        for occurrence_id in occurrence_ids
+    ]
+    occurrence_spillover_weights = [
+        _occurrence_spillover_weight(episode, occurrence_id)
+        for occurrence_id in occurrence_ids
+    ]
+    occurrence_bounds: list[tuple[float, float]] = []
+    for occurrence_id in occurrence_ids:
+        occurrence_scene_cards = [
+            scene
+            for scene in scene_cards
+            if (_scene_occurrence_id(scene) or "__unassigned__") == occurrence_id
+        ]
+        bounds = [
+            _scene_duration_bounds(scene, episode)
+            for scene in occurrence_scene_cards
+        ]
+        occurrence_bounds.append(
+            (
+                sum(lower for lower, _ in bounds),
+                sum(upper for _, upper in bounds),
+            )
+        )
+
+    occurrence_allocations = _bounded_weighted_allocation(
+        total=float(target_duration_seconds),
+        weights=occurrence_weights,
+        bounds=occurrence_bounds,
+        overflow_weights=occurrence_spillover_weights,
+    )
+    occurrence_seconds_by_id = dict(zip(occurrence_ids, occurrence_allocations, strict=True))
+
+    raw_scene_seconds_by_index: dict[int, float] = {}
+    for occurrence_id in occurrence_ids:
+        occurrence_scene_entries = [
+            (idx, scene)
+            for idx, scene in enumerate(scene_cards)
+            if (_scene_occurrence_id(scene) or "__unassigned__") == occurrence_id
+        ]
+        scene_weights = [
+            _scene_importance_weight(scene)
+            for _, scene in occurrence_scene_entries
+        ]
+        scene_bounds = [
+            _scene_duration_bounds(scene, episode)
+            for _, scene in occurrence_scene_entries
+        ]
+        occurrence_scene_seconds = _bounded_weighted_allocation(
+            total=occurrence_seconds_by_id[occurrence_id],
+            weights=scene_weights,
+            bounds=scene_bounds,
+        )
+        for (idx, _), seconds in zip(
+            occurrence_scene_entries,
+            occurrence_scene_seconds,
+            strict=True,
+        ):
+            raw_scene_seconds_by_index[idx] = seconds
+
+    raw_scene_seconds = [
+        raw_scene_seconds_by_index[idx]
+        for idx in range(len(scene_cards))
+    ]
+
+    rounded_scene_seconds = _round_allocations_to_total(
+        raw_scene_seconds,
+        int(target_duration_seconds),
+    )
+    if sum(rounded_scene_seconds) != int(target_duration_seconds):
+        raise ValueError(
+            "allocated scene durations must sum to target_duration_seconds "
+            f"({sum(rounded_scene_seconds)} != {int(target_duration_seconds)})"
+        )
+    return [
+        SceneCard.model_validate(
+            {
+                **scene.model_dump(mode="json"),
+                "estimated_duration_seconds": seconds,
+            }
+        )
+        for scene, seconds in zip(scene_cards, rounded_scene_seconds, strict=True)
+    ]
+
+
+def _writing_result_word_count(result: Any) -> int:
+    prose_sections = getattr(result, "prose_sections", []) or []
+    return sum(
+        len((getattr(section, "text", "") or "").split())
+        for section in prose_sections
+    )
+
+
 def _cluster_batch_group_sizes(cluster_count: int) -> list[int]:
     if cluster_count <= 0:
         return []
@@ -2372,8 +2762,6 @@ def _build_cluster_scene_batches(scene_cards: list[SceneCard]) -> list[list[Scen
     ordered_cluster_ids: list[str] = []
     seen_cluster_ids: set[str] = set()
     for scene in scene_cards:
-        if scene.card_kind != "normal":
-            continue
         cluster_id = scene.dominant_cluster_occurrence_id
         if not cluster_id or cluster_id in seen_cluster_ids:
             continue
@@ -2400,13 +2788,12 @@ def _build_cluster_scene_batches(scene_cards: list[SceneCard]) -> list[list[Scen
     last_batch_index = 0
     for scene in scene_cards:
         batch_index = last_batch_index
-        if scene.card_kind == "normal":
-            cluster_id = scene.dominant_cluster_occurrence_id
-            if cluster_id is not None:
-                batch_index = cluster_to_batch_index.get(cluster_id, last_batch_index)
-        else:
-            if scene.bridge_to_occurrence_id is not None:
-                batch_index = cluster_to_batch_index.get(scene.bridge_to_occurrence_id, last_batch_index)
+        cluster_id = scene.dominant_cluster_occurrence_id
+        if cluster_id is not None:
+            batch_index = max(
+                last_batch_index,
+                cluster_to_batch_index.get(cluster_id, last_batch_index),
+            )
         batches[batch_index].append(scene)
         last_batch_index = batch_index
 
@@ -2614,15 +3001,14 @@ def _build_scene_card_primitive_warnings(
     primitive_max: int,
 ) -> list[str]:
     warnings: list[str] = []
-    normal_cards = [scene for scene in scene_cards if scene.card_kind == "normal"]
     out_of_bounds_cards = [
         scene.scene_id
-        for scene in normal_cards
+        for scene in scene_cards
         if len(scene.primitive_ids) < primitive_min or len(scene.primitive_ids) > primitive_max
     ]
     if out_of_bounds_cards:
         warnings.append(
-            "normal_scene_primitive_density_out_of_range: "
+            "scene_primitive_density_out_of_range: "
             f"{len(out_of_bounds_cards)} scenes outside {primitive_min}-{primitive_max} primitives "
             f"({_preview_ids(out_of_bounds_cards)})"
         )
@@ -2641,16 +3027,16 @@ def _build_scene_card_primitive_warnings(
             f"{len(unknown_primitive_ids)} unknown ids ({_preview_ids(unknown_primitive_ids)})"
         )
 
-    if normal_cards:
-        min_distinct_needed = int(math.ceil(len(normal_cards) / max(1, primitive_max)))
+    if scene_cards:
+        min_distinct_needed = int(math.ceil(len(scene_cards) / max(1, primitive_max)))
         if primitive_pool_ids and len(primitive_pool_ids) < min_distinct_needed:
             warnings.append(
                 "primitive_pool_too_small_for_mapping_target: "
-                f"pool={len(primitive_pool_ids)} distinct primitives for {len(normal_cards)} normal scenes "
+                f"pool={len(primitive_pool_ids)} distinct primitives for {len(scene_cards)} scenes "
                 f"(>= {min_distinct_needed} suggested for {primitive_min}-{primitive_max} mapping)"
             )
         primitive_use_counts: dict[str, int] = {}
-        for scene in normal_cards:
+        for scene in scene_cards:
             for primitive_id in scene.primitive_ids:
                 primitive_use_counts[primitive_id] = primitive_use_counts.get(primitive_id, 0) + 1
         heavily_reused = sorted(
@@ -4707,7 +5093,7 @@ class PipelineOrchestrator:
                     covered_primary_occurrence_ids = {
                         scene.dominant_cluster_occurrence_id
                         for scene in plan_draft.scene_cards
-                        if scene.card_kind == "normal" and scene.dominant_cluster_occurrence_id
+                        if scene.dominant_cluster_occurrence_id
                     }
                     missing_primary_occurrence_ids = sorted(
                         primary_occurrence_ids.difference(covered_primary_occurrence_ids)
@@ -4738,7 +5124,7 @@ class PipelineOrchestrator:
                         covered_primary_occurrence_ids = {
                             scene.dominant_cluster_occurrence_id
                             for scene in plan_draft.scene_cards
-                            if scene.card_kind == "normal" and scene.dominant_cluster_occurrence_id
+                            if scene.dominant_cluster_occurrence_id
                         }
                         missing_primary_occurrence_ids = sorted(
                             primary_occurrence_ids.difference(covered_primary_occurrence_ids)
@@ -4772,9 +5158,19 @@ class PipelineOrchestrator:
                             * float(self.settings.pipeline.spoken_words_per_minute)
                         )
                     )
+                    allocated_scene_cards = _allocate_scene_durations(
+                        plan_draft.scene_cards,
+                        episode,
+                        int(round(float(plan_draft.target_duration_minutes) * 60.0)),
+                    )
+                    plan_payload = plan_draft.model_dump(mode="json")
+                    plan_payload["scene_cards"] = [
+                        scene.model_dump(mode="json")
+                        for scene in allocated_scene_cards
+                    ]
                     plan = EpisodePlan.model_validate(
                         {
-                            **plan_draft.model_dump(mode="json"),
+                            **plan_payload,
                             "target_word_count": target_word_count,
                         }
                     )
@@ -4794,6 +5190,10 @@ class PipelineOrchestrator:
                         "covered_primary_occurrence_count": len(covered_primary_occurrence_ids),
                         "missing_primary_occurrence_ids": missing_primary_occurrence_ids,
                         "actor_link_metrics": actor_link_metrics,
+                        "allocated_duration_seconds": sum(
+                            scene.estimated_duration_seconds
+                            for scene in plan.scene_cards
+                        ),
                     }
                     return episode.episode_number, plan, report
 
@@ -4849,8 +5249,6 @@ class PipelineOrchestrator:
                 continue
             for section in script.prose_sections:
                 utilized_passage_ids.update(citation.passage_id for citation in section.citations)
-            for transition in script.transitions:
-                utilized_passage_ids.update(citation.passage_id for citation in transition.citations)
 
         utilization = {
             "summary": {
@@ -4954,10 +5352,6 @@ class PipelineOrchestrator:
                         SpokenSection(section_id=section.section_id, text=section.text)
                         for section in script.prose_sections
                     ],
-                    transitions=[
-                        SpokenTransition(transition_id=transition.transition_id, text=transition.text)
-                        for transition in script.transitions
-                    ],
                     tts_provider=project.config.tts_provider,
                 )
                 _save_json(ep_dir / "spoken_script.json", spoken)
@@ -5008,7 +5402,6 @@ class PipelineOrchestrator:
                 )
                 scene_payload_by_id[scene_id] = scene_payload
             all_sections: list[ProseSection] = []
-            all_transitions: list[ScriptTransition] = []
             all_window_maps: list[Any] = []
             writing_agent = (
                 self.writing_agent_no_citations
@@ -5017,6 +5410,7 @@ class PipelineOrchestrator:
             )
 
             for batch_index, batch_scene_cards in enumerate(scene_batches, start=1):
+                is_final_batch = batch_index == len(scene_batches)
                 active_scene_card_ids = [scene.scene_id for scene in batch_scene_cards]
                 batch_scene_payloads = [
                     scene_payload_by_id[scene_id]
@@ -5036,11 +5430,6 @@ class PipelineOrchestrator:
                     "scene_cards": batch_scene_payloads,
                     "target_word_count": max(1, int(batch_target_word_count_higher)),
                 }
-                if batch_scene_payloads and episode_plan_payload.get("framing"):
-                    episode_plan_payload["framing"] = {
-                        **episode_plan_payload["framing"],
-                        "handoff_scene_card_id": batch_scene_payloads[0]["scene_id"],
-                    }
                 batch_passage_ids: list[str] = []
                 seen_passage_ids: set[str] = set()
                 for scene in batch_scene_cards:
@@ -5085,8 +5474,33 @@ class PipelineOrchestrator:
                     batch_target_word_count_higher=batch_target_word_count_higher,
                     skip_grounding=project.config.skip_grounding,
                     actor_metadata=compact_actor_metadata(batch_actor_metadata),
+                    is_final_batch=is_final_batch,
                 )
                 result = await asyncio.to_thread(writing_agent.run, payload)
+                actual_batch_word_count = _writing_result_word_count(result)
+                warning_threshold = int(
+                    math.ceil(
+                        float(batch_target_word_count_higher)
+                        * _WRITING_BATCH_WORD_OVERRUN_WARNING_RATIO
+                    )
+                )
+                if actual_batch_word_count > warning_threshold:
+                    self.run_logger.log(
+                        "episode_writing_budget_warning",
+                        episode=plan.episode_number,
+                        batch_id=f"batch_{batch_index}",
+                        actual_word_count=actual_batch_word_count,
+                        target_word_count_lower=batch_target_word_count_lower,
+                        target_word_count_higher=batch_target_word_count_higher,
+                        warning_threshold=warning_threshold,
+                        over_high_word_count=(
+                            actual_batch_word_count - batch_target_word_count_higher
+                        ),
+                        over_high_ratio=(
+                            actual_batch_word_count
+                            / max(1, batch_target_word_count_higher)
+                        ),
+                    )
                 if project.config.skip_grounding:
                     normalized_sections = [
                         ProseSection.model_validate({
@@ -5095,24 +5509,12 @@ class PipelineOrchestrator:
                         })
                         for section in result.prose_sections
                     ]
-                    normalized_transitions = [
-                        ScriptTransition.model_validate({
-                            **transition.model_dump(mode="json"),
-                            "citations": [],
-                        })
-                        for transition in result.transitions
-                    ]
                 else:
                     normalized_sections = [
                         ProseSection.model_validate(section.model_dump(mode="json"))
                         for section in result.prose_sections
                     ]
-                    normalized_transitions = [
-                        ScriptTransition.model_validate(transition.model_dump(mode="json"))
-                        for transition in result.transitions
-                    ]
                 all_sections.extend(normalized_sections)
-                all_transitions.extend(normalized_transitions)
                 all_window_maps.extend(result.window_map)
 
             script = EpisodeScript(
@@ -5120,7 +5522,6 @@ class PipelineOrchestrator:
                 title=plan.title,
                 framing=plan.framing,
                 prose_sections=all_sections,
-                transitions=all_transitions,
                 window_map=all_window_maps,
                 total_word_count=_script_total_word_count(
                     EpisodeScript(
@@ -5128,7 +5529,6 @@ class PipelineOrchestrator:
                         title=plan.title,
                         framing=plan.framing,
                         prose_sections=all_sections,
-                        transitions=all_transitions,
                         window_map=all_window_maps,
                     )
                 ),
@@ -5147,7 +5547,6 @@ class PipelineOrchestrator:
             ctx["output_summary"] = {
                 "words": script.total_word_count,
                 "sections": len(script.prose_sections),
-                "transitions": len(script.transitions),
                 "window_count": len(scene_batches),
             }
             return script
@@ -5158,7 +5557,7 @@ class PipelineOrchestrator:
     ) -> GroundingReport:
         async with _stage_log(
             self.run_logger, f"grounding_{episode_number}", project_dir,
-            episode=episode_number, text_unit_count=len(script.prose_sections) + len(script.transitions),
+            episode=episode_number, text_unit_count=len(script.prose_sections),
         ) as ctx:
             passage_lookup: dict[str, dict] = {}
             for axis_passages in corpus.passages_by_axis.values():
@@ -5226,11 +5625,6 @@ class PipelineOrchestrator:
                     for section in current_script.prose_sections
                     if section.section_id in failing_unit_ids
                 ]
-                failing_transitions = [
-                    transition.model_dump(mode="json")
-                    for transition in current_script.transitions
-                    if transition.transition_id in failing_unit_ids
-                ]
                 failure_reasons = [
                     {
                         "text_unit_id": c.text_unit_id,
@@ -5243,7 +5637,6 @@ class PipelineOrchestrator:
 
                 payload = self.repair_agent.build_payload(
                     failing_sections=failing_sections,
-                    failing_transitions=failing_transitions,
                     failure_reasons=failure_reasons,
                     passages=passage_lookup,
                 )
@@ -5253,12 +5646,7 @@ class PipelineOrchestrator:
                     section.section_id: section
                     for section in result.repaired_sections
                 }
-                repaired_transitions = {
-                    transition.transition_id: transition
-                    for transition in result.repaired_transitions
-                }
                 new_sections = []
-                new_transitions = []
                 diffs: list[SegmentDiff] = []
                 for section in current_script.prose_sections:
                     if section.section_id in repaired_sections:
@@ -5273,24 +5661,10 @@ class PipelineOrchestrator:
                         new_sections.append(repaired)
                     else:
                         new_sections.append(section)
-                for transition in current_script.transitions:
-                    if transition.transition_id in repaired_transitions:
-                        repaired = repaired_transitions[transition.transition_id]
-                        diffs.append(
-                            SegmentDiff(
-                                text_unit_id=transition.transition_id,
-                                before=transition.text,
-                                after=repaired.text,
-                            )
-                        )
-                        new_transitions.append(repaired)
-                    else:
-                        new_transitions.append(transition)
 
                 new_script = current_script.model_copy(
                     update={
                         "prose_sections": new_sections,
-                        "transitions": new_transitions,
                     }
                 )
                 new_script = new_script.model_copy(
@@ -5363,14 +5737,12 @@ class PipelineOrchestrator:
                 title=script.title,
                 framing=script.framing,
                 sections=result.sections,
-                transitions=result.transitions,
                 tts_provider=project.config.tts_provider,
             )
             _save_json(ep_dir / "spoken_script.json", spoken)
 
             ctx["output_summary"] = {
                 "sections": len(spoken.sections),
-                "transitions": len(spoken.transitions),
             }
             return spoken
 
@@ -5569,24 +5941,15 @@ class PipelineOrchestrator:
 
             async with _stage_log(
                 self.run_logger, f"audio_{episode_number}", project_dir,
-                episode=episode_number, segment_count=len(spoken.sections) + len(spoken.transitions),
+                episode=episode_number, segment_count=len(spoken.sections),
             ) as ctx:
-                expected_transitions = max(0, len(spoken.sections) - 1)
-                actual_transitions = len(spoken.transitions)
-                if actual_transitions != expected_transitions:
-                    self.run_logger.log(
-                        "spoken_transition_mismatch_warning",
-                        episode=episode_number,
-                        section_count=len(spoken.sections),
-                        transition_count=actual_transitions,
-                        expected_transition_count=expected_transitions,
-                    )
                 manifest = build_render_manifest(
                     spoken,
                     voice_id=self.settings.tts.voice,
                     speed=self.settings.tts.speed,
                     words_per_minute=self.settings.pipeline.spoken_words_per_minute,
                     base_instructions=self.settings.tts.instructions,
+                    tts_model_name=self.settings.tts.model_name,
                 )
                 _save_json(ep_dir / "render_manifest.json", manifest)
                 for seg in manifest.segments:

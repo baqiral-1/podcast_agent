@@ -168,7 +168,6 @@ def _build_run(tmp_path: Path) -> Path:
                 "handoff_scene_card_id": "scene_1",
             },
             "prose_sections": [{"section_id": "section_1", "scene_card_ids": ["scene_1"], "movement_goal": "discover", "text": "Narration"}],
-            "transitions": [],
             "window_map": [],
             "total_word_count": 1,
             "estimated_duration_seconds": 1,
@@ -186,7 +185,6 @@ def _build_run(tmp_path: Path) -> Path:
                 "handoff_scene_card_id": "scene_1",
             },
             "sections": [{"section_id": "section_1", "text": "Narration"}],
-            "transitions": [],
         },
     )
 

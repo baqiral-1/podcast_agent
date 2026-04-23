@@ -47,7 +47,7 @@ pip install -e ".[dev]"
 ```bash
 export OPENAI_API_KEY=...
 export OPENAI_BASE_URL=https://api.openai.com
-export LLM_MODEL_NAME=claude-opus-4-6
+export LLM_MODEL_NAME=claude-opus-4-7
 export DATABASE_URL=postgresql://postgres:secret@localhost:5432/podcast_agent
 export EMBEDDINGS_PROVIDER=openai
 export EMBEDDINGS_MODEL_NAME=text-embedding-3-small

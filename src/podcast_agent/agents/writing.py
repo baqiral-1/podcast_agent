@@ -2,21 +2,42 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+import re
+
+from pydantic import BaseModel, Field, model_validator
 
 from podcast_agent.agents.base import Agent
 from podcast_agent.prompts import (
     episode_writing_instructions,
     episode_writing_no_citations_instructions,
 )
-from podcast_agent.schemas.models import ProseSection, ScriptTransition, WindowMapEntry
+from podcast_agent.schemas.models import ProseSection, WindowMapEntry
+
+
+_TEASER_LINE_RE = re.compile(
+    r"(?im)^\s*(?:next time|coming up next|in the next episode|on the next episode)\b\s*[:.,-]?"
+)
+
+
+def _validate_no_teaser_lines(
+    sections: list[ProseSection] | list["ProseSectionNoCitations"],
+) -> None:
+    for section in sections:
+        if _TEASER_LINE_RE.search(section.text):
+            raise ValueError(
+                f"section {section.section_id!r} contains next-episode teaser copy"
+            )
 
 
 class EpisodeWritingResponse(BaseModel):
     batch_id: str
     prose_sections: list[ProseSection] = Field(default_factory=list)
-    transitions: list[ScriptTransition] = Field(default_factory=list)
     window_map: list[WindowMapEntry] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def reject_teaser_lines(self) -> "EpisodeWritingResponse":
+        _validate_no_teaser_lines(self.prose_sections)
+        return self
 
 
 class ProseSectionNoCitations(BaseModel):
@@ -27,19 +48,15 @@ class ProseSectionNoCitations(BaseModel):
     source_book_ids: list[str] = Field(default_factory=list)
 
 
-class ScriptTransitionNoCitations(BaseModel):
-    transition_id: str
-    after_section_id: str
-    before_section_id: str | None = None
-    text: str
-    source_book_ids: list[str] = Field(default_factory=list)
-
-
 class EpisodeWritingNoCitationsResponse(BaseModel):
     batch_id: str
     prose_sections: list[ProseSectionNoCitations] = Field(default_factory=list)
-    transitions: list[ScriptTransitionNoCitations] = Field(default_factory=list)
     window_map: list[WindowMapEntry] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def reject_teaser_lines(self) -> "EpisodeWritingNoCitationsResponse":
+        _validate_no_teaser_lines(self.prose_sections)
+        return self
 
 
 class WritingAgent(Agent):
@@ -61,10 +78,12 @@ class WritingAgent(Agent):
         batch_target_word_count_higher: int | None = None,
         skip_grounding: bool = False,
         actor_metadata: dict | None = None,
+        is_final_batch: bool = True,
     ) -> dict:
         payload = {
             "episode_number": episode_number,
             "batch_id": batch_id,
+            "is_final_batch": bool(is_final_batch),
             "plan": episode_plan,
             "active_scene_card_ids": active_scene_card_ids,
             "passages": passages,

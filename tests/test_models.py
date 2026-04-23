@@ -9,26 +9,26 @@ from pydantic import ValidationError
 
 from podcast_agent.schemas.models import (
     ActorArcDirective,
-    ActorArcRef,
+    ActorArcThread,
     ActorMetadata,
     ActorProfile,
     ActorRelationship,
     CandidateReading,
     ClusterPathOccurrence,
+    ChapterAnalysis,
     EpisodeCandidateCluster,
     EpisodePlan,
     EpisodePlanDraft,
     FramingBlock,
     NarrativeStrategy,
     ProseSection,
-    ScriptTransition,
     SceneActor,
     SceneActorArcBinding,
     SceneCard,
+    SceneCardDraft,
     SpeechHints,
     SpokenScript,
     SpokenSection,
-    SpokenTransition,
     StrategyEpisode,
     SYNTHESIS_PRIMITIVE_FAMILIES,
     SynthesisConsolidationResult,
@@ -113,6 +113,25 @@ def _normal_scene(scene_id: str = "scene_1", occurrence_id: str = "occ_1") -> Sc
     )
 
 
+def _normal_scene_draft(
+    scene_id: str = "scene_1",
+    occurrence_id: str = "occ_1",
+) -> SceneCardDraft:
+    return SceneCardDraft(
+        scene_id=scene_id,
+        title="The order arrives",
+        scene_role="setup",
+        dominant_cluster_occurrence_id=occurrence_id,
+        entry_image="A clerk opens the envelope.",
+        local_question="What changes first?",
+        observable_detail="Hands freeze over the paper.",
+        intended_move="Move from abstract policy to lived consequence.",
+        actors=[SceneActor(name="Clerk", presence="background")],
+        primitive_ids=["tp_1"],
+        passage_ids=["p1", "p2"],
+    )
+
+
 class TestThematicProject:
     def test_recommended_episode_count_accepts_new_bounds(self):
         project = ThematicProject(theme="War on terror", recommended_episode_count=6)
@@ -133,10 +152,30 @@ class TestThematicProject:
     def test_pipeline_config_defaults_synthesis_cap_to_600(self):
         config = PipelineConfig()
         assert config.synthesis_total_passage_cap == 600
-        assert config.min_episode_minutes == 85.0
-        assert config.target_episode_minutes == 90.0
-        assert config.scene_card_target_min == 30
+        assert config.passage_extraction_concurrency == 16
+        assert config.episode_write_concurrency == 10
+        assert config.min_episode_minutes == 95.0
+        assert config.target_episode_minutes == 100.0
+        assert config.scene_card_target_min == 35
         assert config.scene_card_target_max == 45
+
+    def test_chapter_analysis_discards_legacy_fields(self):
+        analysis = ChapterAnalysis.model_validate(
+            {
+                "themes_touched": ["theme"],
+                "major_actors": ["actor"],
+                "key_events_or_arguments": ["event"],
+                "key_places": ["place"],
+                "key_institutions": ["institution"],
+                "timeframe": "2001",
+                "major_tensions": ["tension"],
+            }
+        )
+        assert analysis.model_dump(mode="json") == {
+            "themes_touched": ["theme"],
+            "major_actors": ["actor"],
+            "key_events_or_arguments": ["event"],
+        }
 
 
 class TestSynthesisModels:
@@ -540,12 +579,12 @@ class TestSynthesisModels:
 
 
 class TestNarrativeStrategy:
-    def test_actor_arc_directive_roundtrip_uses_arc_refs(self):
+    def test_actor_arc_directive_roundtrip_uses_arc_threads(self):
         directive = ActorArcDirective(
             actor_id="mahatma_gandhi",
-            arc_refs=[
-                ActorArcRef(
-                    ref_id="gandhi_role_1",
+            arc_threads=[
+                ActorArcThread(
+                    thread_id="gandhi_role_1",
                     arc_type="role",
                     label="episode role",
                     premise="His restraint frames the episode's character function.",
@@ -553,8 +592,8 @@ class TestNarrativeStrategy:
                     movement="Restraint becomes harder to sustain across scenes.",
                     payoff="The listener sees restraint as a contested strategy.",
                 ),
-                ActorArcRef(
-                    ref_id="gandhi_tracking_1",
+                ActorArcThread(
+                    thread_id="gandhi_tracking_1",
                     arc_type="tracking",
                     label="listener tracking",
                     premise="Track how restraint becomes harder to sustain.",
@@ -562,8 +601,8 @@ class TestNarrativeStrategy:
                     movement="Each appearance should add pressure.",
                     payoff="The episode clarifies what restraint costs.",
                 ),
-                ActorArcRef(
-                    ref_id="gandhi_tension_1",
+                ActorArcThread(
+                    thread_id="gandhi_tension_1",
                     arc_type="tension",
                     label="tension line",
                     premise="Public discipline collides with escalating violence.",
@@ -571,8 +610,8 @@ class TestNarrativeStrategy:
                     movement="Pressure accumulates until restraint changes meaning.",
                     payoff="The tension remains visible at the episode close.",
                 ),
-                ActorArcRef(
-                    ref_id="gandhi_progression_1",
+                ActorArcThread(
+                    thread_id="gandhi_progression_1",
                     arc_type="turn",
                     label="arc progression",
                     premise="The episode changes what restraint can plausibly mean.",
@@ -580,8 +619,8 @@ class TestNarrativeStrategy:
                     movement="Move from principle to tested practice.",
                     payoff="Restraint lands as a consequential choice.",
                 ),
-                ActorArcRef(
-                    ref_id="gandhi_scene_job_1",
+                ActorArcThread(
+                    thread_id="gandhi_scene_job_1",
                     arc_type="payoff",
                     label="scene job",
                     premise="Use where restraint meets consequence.",
@@ -589,8 +628,8 @@ class TestNarrativeStrategy:
                     movement="Bind actor presence to scene consequence.",
                     payoff="The scene makes the actor arc legible.",
                 ),
-                ActorArcRef(
-                    ref_id="gandhi_guardrail_1",
+                ActorArcThread(
+                    thread_id="gandhi_guardrail_1",
                     arc_type="guardrail",
                     label="repetition guardrail",
                     premise="Do not re-explain restraint unless the scene changes its meaning.",
@@ -604,29 +643,73 @@ class TestNarrativeStrategy:
         restored = ActorArcDirective.model_validate(json.loads(directive.model_dump_json()))
 
         assert restored.actor_id == "mahatma_gandhi"
-        assert restored.arc_refs[1].ref_id == "gandhi_tracking_1"
-        assert restored.arc_refs[1].arc_type == "tracking"
-        assert restored.arc_refs[1].label == "listener tracking"
-        assert restored.arc_refs[1].pressure == "Public discipline collides with escalating violence."
+        assert restored.arc_threads[1].thread_id == "gandhi_tracking_1"
+        assert restored.arc_threads[1].arc_type == "tracking"
+        assert restored.arc_threads[1].label == "listener tracking"
+        assert restored.arc_threads[1].pressure == "Public discipline collides with escalating violence."
 
-    def test_actor_arc_directive_rejects_duplicate_ref_ids(self):
-        with pytest.raises(ValidationError, match="ref ids must be unique"):
+    def test_actor_arc_directive_rejects_duplicate_thread_ids(self):
+        with pytest.raises(ValidationError, match="thread ids must be unique"):
             ActorArcDirective(
                 actor_id="mahatma_gandhi",
-                arc_refs=[
-                    ActorArcRef(
-                        ref_id="gandhi_1",
+                arc_threads=[
+                    ActorArcThread(
+                        thread_id="gandhi_1",
                         arc_type="role",
                         label="role",
                         premise="Role",
                     ),
-                    ActorArcRef(
-                        ref_id="gandhi_1",
+                    ActorArcThread(
+                        thread_id="gandhi_1",
                         arc_type="payoff",
                         label="scene job",
                         premise="Scene job",
                     ),
                 ],
+            )
+
+    def test_actor_arc_directive_allows_single_thread(self):
+        directive = ActorArcDirective(
+            actor_id="mahatma_gandhi",
+            arc_threads=[
+                ActorArcThread(
+                    thread_id="gandhi_1",
+                    arc_type="role",
+                    label="role",
+                    premise="Role",
+                )
+            ],
+        )
+
+        assert directive.arc_threads[0].thread_id == "gandhi_1"
+
+    def test_actor_arc_thread_allows_noncanonical_arc_type(self):
+        thread = ActorArcThread(
+            thread_id="gandhi_ideologue_1",
+            arc_type="ideologue",
+            label="ideological frame",
+            premise="Frame policy around ideological commitments.",
+        )
+        assert thread.arc_type == "ideologue"
+
+    def test_actor_arc_thread_ignores_extra_fields(self):
+        thread = ActorArcThread.model_validate(
+            {
+                "thread_id": "gandhi_turn_1",
+                "arc_type": "turn",
+                "label": "turning point",
+                "premise": "An event forces a revised stance.",
+                "permise": "",
+            }
+        )
+        assert thread.premise == "An event forces a revised stance."
+        assert "permise" not in thread.model_dump()
+
+    def test_actor_arc_directive_rejects_empty_threads(self):
+        with pytest.raises(ValidationError):
+            ActorArcDirective(
+                actor_id="mahatma_gandhi",
+                arc_threads=[],
             )
 
     def test_strategy_episode_rejects_old_episode_actor_fields(self):
@@ -676,6 +759,19 @@ class TestNarrativeStrategy:
             emphasis="anchor",
         )
         assert occurrence.emphasis == "anchor"
+
+    def test_cluster_path_occurrence_ignores_extra_fields(self):
+        occurrence = ClusterPathOccurrence.model_validate(
+            {
+                "occurrence_id": "occ_1",
+                "cluster_id": "cluster_1",
+                "usage": "primary",
+                "emphasis": "major",
+                "emphosis": "compressed",
+            }
+        )
+        assert occurrence.emphasis == "major"
+        assert "emphosis" not in occurrence.model_dump()
 
     def test_strategy_episode_requires_transition_notes_after_first_occurrence(self):
         with pytest.raises(ValidationError, match="transition_note"):
@@ -773,7 +869,7 @@ class TestPlanningModels:
             presence="primary",
             arc_bindings=[
                 SceneActorArcBinding(
-                    ref_id="gandhi_tension_1",
+                    thread_id="gandhi_tension_1",
                     scene_role="blocked",
                     scene_use="complicate",
                     weight="strong",
@@ -782,7 +878,7 @@ class TestPlanningModels:
         )
 
         assert actor.presence == "primary"
-        assert actor.arc_bindings[0].ref_id == "gandhi_tension_1"
+        assert actor.arc_bindings[0].thread_id == "gandhi_tension_1"
         assert actor.arc_bindings[0].scene_role == "blocked"
         assert actor.arc_bindings[0].scene_use == "complicate"
 
@@ -792,7 +888,7 @@ class TestPlanningModels:
                 {
                     "name": "Mahatma Gandhi",
                     "role_in_scene": "tests restraint",
-                    "arc_ref_ids": ["gandhi_tension_1"],
+                    "arc_thread_ids": ["gandhi_tension_1"],
                     "motivation_aspect_ids": ["gandhi_motivation_1"],
                     "stake_aspect_ids": ["gandhi_stake_1"],
                     "pressure_aspect_ids": ["gandhi_pressure_1"],
@@ -805,28 +901,34 @@ class TestPlanningModels:
     def test_clean_scene_actor_links_filters_unknown_arc_bindings(self):
         actor_directive = ActorArcDirective(
             actor_id="mahatma_gandhi",
-            arc_refs=[
-                ActorArcRef(
-                    ref_id="gandhi_tension_1",
+            arc_threads=[
+                ActorArcThread(
+                    thread_id="gandhi_tension_1",
                     arc_type="tension",
                     label="tension line",
                     premise="Public discipline collides with escalating violence.",
+                ),
+                ActorArcThread(
+                    thread_id="gandhi_guardrail_1",
+                    arc_type="guardrail",
+                    label="guardrail",
+                    premise="Do not repeat the actor function without change.",
                 )
             ],
         )
-        scene = _normal_scene()
+        scene = _normal_scene_draft()
         scene.actors = [
             SceneActor(
                 name="Mahatma Gandhi",
                 actor_id="mahatma_gandhi",
                 arc_bindings=[
                     SceneActorArcBinding(
-                        ref_id="gandhi_tension_1",
+                        thread_id="gandhi_tension_1",
                         scene_role="blocked",
                         scene_use="complicate",
                     ),
                     SceneActorArcBinding(
-                        ref_id="missing_ref",
+                        thread_id="missing_thread",
                         scene_role="blocked",
                         scene_use="complicate",
                     ),
@@ -854,8 +956,8 @@ class TestPlanningModels:
         cleaned, metrics = clean_scene_actor_links(plan, metadata)
 
         cleaned_actor = cleaned.scene_cards[0].actors[0]
-        assert [binding.ref_id for binding in cleaned_actor.arc_bindings] == ["gandhi_tension_1"]
-        assert metrics["unknown_actor_arc_ref_ids"] == 1
+        assert [binding.thread_id for binding in cleaned_actor.arc_bindings] == ["gandhi_tension_1"]
+        assert metrics["unknown_actor_arc_thread_ids"] == 1
 
     def test_scene_card_allows_noncanonical_scene_role(self):
         card = SceneCard(
@@ -888,6 +990,57 @@ class TestPlanningModels:
             coverage_depth="deep",
         )
         assert card.coverage_depth == "deep"
+
+    def test_scene_card_draft_does_not_require_duration(self):
+        card = SceneCardDraft(
+            scene_id="scene_draft",
+            title="A hidden mechanism surfaces",
+            scene_role="reveal",
+            dominant_cluster_occurrence_id="ep1_occ1",
+            entry_image="The ledger opens.",
+            local_question="What finally becomes visible?",
+            observable_detail="A missing column is now clear.",
+            intended_move="Expose the mechanism.",
+            passage_ids=["p1"],
+            coverage_depth="deep",
+        )
+        assert card.coverage_depth == "deep"
+        assert "estimated_duration_seconds" not in card.model_dump()
+
+    def test_scene_card_draft_discards_legacy_duration(self):
+        card = SceneCardDraft.model_validate(
+            {
+                "scene_id": "scene_draft",
+                "title": "A hidden mechanism surfaces",
+                "scene_role": "reveal",
+                "dominant_cluster_occurrence_id": "ep1_occ1",
+                "entry_image": "The ledger opens.",
+                "local_question": "What finally becomes visible?",
+                "observable_detail": "A missing column is now clear.",
+                "intended_move": "Expose the mechanism.",
+                "passage_ids": ["p1"],
+                "estimated_duration_seconds": 120,
+                "coverage_depth": "deep",
+            }
+        )
+        assert "estimated_duration_seconds" not in card.model_dump()
+
+    def test_scene_card_requires_duration(self):
+        with pytest.raises(ValidationError, match="estimated_duration_seconds"):
+            SceneCard.model_validate(
+                {
+                    "scene_id": "scene_final",
+                    "title": "A hidden mechanism surfaces",
+                    "scene_role": "reveal",
+                    "dominant_cluster_occurrence_id": "ep1_occ1",
+                    "entry_image": "The ledger opens.",
+                    "local_question": "What finally becomes visible?",
+                    "observable_detail": "A missing column is now clear.",
+                    "intended_move": "Expose the mechanism.",
+                    "passage_ids": ["p1"],
+                    "coverage_depth": "deep",
+                }
+            )
 
     def test_scene_card_rejects_legacy_narrative_weight_field(self):
         with pytest.raises(ValidationError):
@@ -924,7 +1077,7 @@ class TestPlanningModels:
             )
 
     def test_normal_scene_card_requires_dominant_occurrence(self):
-        with pytest.raises(ValidationError, match="normal scene cards require"):
+        with pytest.raises(ValidationError, match="scene cards require"):
             SceneCard(
                 scene_id="scene_1",
                 title="The order arrives",
@@ -937,8 +1090,8 @@ class TestPlanningModels:
                 estimated_duration_seconds=60,
             )
 
-    def test_bridge_scene_card_requires_bridge_references(self):
-        with pytest.raises(ValidationError, match="bridge scene cards require"):
+    def test_scene_card_rejects_bridge_card_fields(self):
+        with pytest.raises(ValidationError):
             SceneCard(
                 scene_id="scene_bridge",
                 title="Bridge",
@@ -952,7 +1105,7 @@ class TestPlanningModels:
                 estimated_duration_seconds=60,
             )
 
-    def test_episode_plan_draft_validates_framing_handoff_and_bridge_limit(self):
+    def test_episode_plan_draft_validates_framing_handoff(self):
         with pytest.raises(ValidationError, match="handoff_scene_card_id"):
             EpisodePlanDraft(
                 episode_number=1,
@@ -964,11 +1117,11 @@ class TestPlanningModels:
                     opening_question="Question",
                     handoff_scene_card_id="missing_scene",
                 ),
-                scene_cards=[_normal_scene()],
+                scene_cards=[_normal_scene_draft()],
             )
 
     def test_episode_plan_draft_allows_non_scene_withhold_until_reference(self):
-        scene = _normal_scene()
+        scene = _normal_scene_draft()
         scene.withhold_until = "Full consequences are developed in Episode 5."
         draft = EpisodePlanDraft(
             episode_number=1,
@@ -979,15 +1132,15 @@ class TestPlanningModels:
         )
         assert draft.scene_cards[0].withhold_until == "Full consequences are developed in Episode 5."
 
-    def test_episode_plan_draft_defaults_target_duration_minutes_to_90(self):
+    def test_episode_plan_draft_defaults_target_duration_minutes_to_100(self):
         draft = EpisodePlanDraft(
             episode_number=1,
             title="Episode 1",
             driving_question="Why begin here?",
             framing=_framing(),
-            scene_cards=[_normal_scene()],
+            scene_cards=[_normal_scene_draft()],
         )
-        assert draft.target_duration_minutes == 90.0
+        assert draft.target_duration_minutes == 100.0
 
     def test_episode_plan_roundtrip(self):
         draft = EpisodePlan(
@@ -1030,17 +1183,7 @@ class TestSpeechAndStyleModels:
         )
         assert section.text == ""
 
-    def test_script_transition_allows_empty_text(self):
-        transition = ScriptTransition.model_validate(
-            {
-                "transition_id": "transition_1",
-                "after_section_id": "section_1",
-                "text": "",
-            }
-        )
-        assert transition.text == ""
-
-    def test_spoken_script_roundtrip_preserves_sections_and_transitions(self):
+    def test_spoken_script_roundtrip_preserves_sections(self):
         spoken = SpokenScript(
             episode_number=1,
             title="Episode 1",
@@ -1052,13 +1195,6 @@ class TestSpeechAndStyleModels:
                     speech_hints=SpeechHints(style="measured", pace="slower"),
                 )
             ],
-            transitions=[
-                SpokenTransition(
-                    transition_id="transition_1",
-                    text="Then the order reaches the city.",
-                )
-            ],
         )
         restored = SpokenScript.model_validate(json.loads(spoken.model_dump_json()))
         assert restored.sections[0].speech_hints.style == "measured"
-        assert restored.transitions[0].transition_id == "transition_1"

@@ -6,12 +6,11 @@ from pydantic import BaseModel, Field
 
 from podcast_agent.agents.base import Agent
 from podcast_agent.prompts import repair_instructions
-from podcast_agent.schemas.models import ProseSection, ScriptTransition
+from podcast_agent.schemas.models import ProseSection
 
 
 class RepairResponse(BaseModel):
     repaired_sections: list[ProseSection] = Field(default_factory=list)
-    repaired_transitions: list[ScriptTransition] = Field(default_factory=list)
 
 
 class RepairAgent(Agent):
@@ -24,13 +23,11 @@ class RepairAgent(Agent):
     def build_payload(
         self,
         failing_sections: list[dict],
-        failing_transitions: list[dict],
         failure_reasons: list[dict],
         passages: dict[str, dict],
     ) -> dict:
         return {
             "failing_sections": failing_sections,
-            "failing_transitions": failing_transitions,
             "failure_reasons": failure_reasons,
             "cited_passages": passages,
         }

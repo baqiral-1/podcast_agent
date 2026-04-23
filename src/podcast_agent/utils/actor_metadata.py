@@ -18,6 +18,7 @@ from podcast_agent.schemas.models import (
     EpisodePlanDraft,
     SceneActor,
     SceneCard,
+    SceneCardDraft,
     StrategyEpisode,
     SynthesisPrimitive,
     SynthesisPrimitivesArtifact,
@@ -395,10 +396,10 @@ def clean_scene_actor_links(
         "fuzzy_scene_actor_matches": 0,
         "unmatched_scene_actor_names": 0,
         "unknown_actor_ids": 0,
-        "unknown_actor_arc_ref_ids": 0,
+        "unknown_actor_arc_thread_ids": 0,
     }
-    ref_ids_by_actor = _episode_actor_arc_ref_ids(plan)
-    cleaned_scenes: list[SceneCard] = []
+    thread_ids_by_actor = _episode_actor_arc_thread_ids(plan)
+    cleaned_scenes: list[SceneCardDraft | SceneCard] = []
     for scene in plan.scene_cards:
         cleaned_actors: list[SceneActor] = []
         for actor in scene.actors:
@@ -418,16 +419,16 @@ def clean_scene_actor_links(
                         metrics["exact_scene_actor_matches"] += 1
             update = {"actor_id": actor_id}
             if actor_id:
-                valid_ref_ids = ref_ids_by_actor.get(actor_id, set())
+                valid_thread_ids = thread_ids_by_actor.get(actor_id, set())
                 filtered_bindings = []
-                seen_ref_ids: set[str] = set()
+                seen_thread_ids: set[str] = set()
                 for binding in actor.arc_bindings:
-                    if valid_ref_ids and binding.ref_id not in valid_ref_ids:
-                        metrics["unknown_actor_arc_ref_ids"] += 1
+                    if valid_thread_ids and binding.thread_id not in valid_thread_ids:
+                        metrics["unknown_actor_arc_thread_ids"] += 1
                         continue
-                    if binding.ref_id not in seen_ref_ids:
+                    if binding.thread_id not in seen_thread_ids:
                         filtered_bindings.append(binding)
-                        seen_ref_ids.add(binding.ref_id)
+                        seen_thread_ids.add(binding.thread_id)
                 update["arc_bindings"] = filtered_bindings
             else:
                 update["arc_bindings"] = []
@@ -452,11 +453,11 @@ def clean_scene_actor_links(
     ), metrics
 
 
-def _episode_actor_arc_ref_ids(plan: EpisodePlanDraft | EpisodePlan) -> dict[str, set[str]]:
-    ref_ids_by_actor: dict[str, set[str]] = {}
+def _episode_actor_arc_thread_ids(plan: EpisodePlanDraft | EpisodePlan) -> dict[str, set[str]]:
+    thread_ids_by_actor: dict[str, set[str]] = {}
     for actor in plan.actor_arc_directives:
-        ref_ids_by_actor[actor.actor_id] = {ref.ref_id for ref in actor.arc_refs}
-    return ref_ids_by_actor
+        thread_ids_by_actor[actor.actor_id] = {thread.thread_id for thread in actor.arc_threads}
+    return thread_ids_by_actor
 
 
 def compact_actor_metadata(actor_metadata: ActorMetadata) -> dict[str, Any]:
