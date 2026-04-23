@@ -530,11 +530,8 @@ def episode_planning_instructions() -> str:
         SCENE CARDS
 
         Counts and pacing:
-        - Target 35-45 scene cards for a full-length episode.
+        - Target 30-35 scene cards for a full-length episode.
         - Expand into micro-scenes rather than collapsing long stretches.
-        - Treat `coverage_depth` as treatment style, not as an unlimited license
-          to expand.
-        - Set `coverage_depth` as `deep`, `standard`, or `compressed`.
 
         Importance allocation:
         - Anchor clusters get multiple scenes and deeper treatment.
@@ -557,9 +554,10 @@ def episode_planning_instructions() -> str:
 
         Craft:
         - Prefer observable detail, local consequence, and partial legibility over abstract summary.
-        - Prefer canonical `scene_role` values: `setup`, `shock`, `consequence`, `reaction`, `contestation`, `process`, `synthesis`.
+        - Prefer canonical `scene_role` values: `setup`, `shock`, `action`, `consequence`, `reaction`, `contestation`, `synthesis`.
         - Non-canonical non-empty `scene_role` labels are allowed when they better fit the episode's internal logic.
         - Scene-card `scene_role` describes the whole scene's narrative job.
+        - `action` and `consequence` scenes normally have at least one actor.
 
         ACTORS IN SCENES
 
@@ -567,7 +565,6 @@ def episode_planning_instructions() -> str:
         - Include `actor_id` when the listed actor exists in `actor_metadata`.
         - Set scene actor `presence` as `primary`, `secondary`, or `background`.
         - Not every scene needs actors.
-        - Process, geography, and consequence scenes often should not have actors.
 
         Actor arc bindings:
         - Create `arc_bindings` only when the scene introduces, develops, complicates, stages a choice, shows consequence, pays off, or intentionally avoids an actor arc.
@@ -673,7 +670,7 @@ def episode_writing_instructions() -> str:
             - Follow scene-role intent:
               - `setup`: establish concrete situation and stakes
               - `shock`: deliver rupture/irreversible turn
-              - `process`: make mechanisms legible through action
+              - `action`: show named actors doing concrete things
               - `consequence`: show downstream effects
               - `reaction`: show adaptation or counter-move
               - `contestation`: stage genuine disagreement
@@ -684,6 +681,8 @@ def episode_writing_instructions() -> str:
 
             What not to do:
             - Do not draft scene cards outside `active_scene_card_ids`.
+            - Do not write next-episode teaser copy.
+              `plan.framing.preview` is rendered separately by the pipeline.
             - Do not write standalone transition paragraphs or meta-transition
               sentences that summarize what just happened or announce what is
               about to happen.
@@ -747,7 +746,7 @@ def episode_writing_no_citations_instructions() -> str:
         SCENE ROLES
         - `setup`: establish concrete situation and stakes
         - `shock`: deliver rupture or irreversible turn
-        - `process`: make mechanisms legible through action
+        - `action`: write an observable beat: named actors doing concrete things, with date, place, and physical detail
         - `consequence`: show downstream effects
         - `reaction`: show adaptation or counter-move
         - `contestation`: stage genuine disagreement
@@ -780,15 +779,17 @@ def episode_writing_no_citations_instructions() -> str:
         - Target total narration for this call within `batch_target_word_count_lower..batch_target_word_count_higher`.
         - Keep each active card within its `target_word_count_lower..target_word_count_higher`.
         - These target ranges already encode narrative importance; do not rebalance them.
-        - Use word count to make process legible, locate the listener, and land shocks or consequences.
+        - Use word count to make action legible, locate the listener, and land shocks or consequences.
 
         OUTPUT
         - Return only JSON matching the requested schema.
+        - Do not include a `citations` field.
         - Keep section ids and boundaries coherent with the plan.
         - Populate `source_book_ids` only with `book_id` values from supporting passages; leave empty rather than guessing.
 
         What not to do:
         - Do not expose scaffolding: no outline labels, no "in this scene," no repeated signposting, and no meta-transitions.
+        - Do not output standalone transitions.
         - Do not use section-opening handrails such as "That is X" "Which brings us to" "Now let the clock run" "The pattern is" whose only job is to mark a turn.
         - Do not invent facts, chronology, quotations, or source claims not supported by the provided passages.
         - Do not introduce new primary analytical claims that are outside the assigned scene cards and primitives.

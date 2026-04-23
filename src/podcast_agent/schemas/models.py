@@ -755,7 +755,6 @@ class _SceneCardBase(StrictModel):
     actors: list[SceneActor] = Field(default_factory=list, max_length=4)
     primitive_ids: list[str] = Field(default_factory=list)
     passage_ids: list[str] = Field(default_factory=list)
-    coverage_depth: Literal["deep", "standard", "compressed"] = "standard"
 
     @model_validator(mode="after")
     def validate_card_shape(self) -> "_SceneCardBase":
@@ -766,19 +765,38 @@ class _SceneCardBase(StrictModel):
         return self
 
 
+def _migrate_legacy_scene_card(data: Any) -> Any:
+    if not isinstance(data, dict):
+        return data
+    cleaned = dict(data)
+    cleaned.pop("coverage_depth", None)
+    role = cleaned.get("scene_role")
+    if role == "process":
+        cleaned["scene_role"] = "action"
+    elif role == "perspective shift":
+        cleaned["scene_role"] = "perspective_shift"
+    return cleaned
+
+
 class SceneCardDraft(_SceneCardBase):
     @model_validator(mode="before")
     @classmethod
-    def discard_legacy_duration(cls, data: Any) -> Any:
-        if isinstance(data, dict):
-            cleaned = dict(data)
-            cleaned.pop("estimated_duration_seconds", None)
-            return cleaned
-        return data
+    def migrate_legacy_fields(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        cleaned = _migrate_legacy_scene_card(data)
+        cleaned = dict(cleaned)
+        cleaned.pop("estimated_duration_seconds", None)
+        return cleaned
 
 
 class SceneCard(_SceneCardBase):
     estimated_duration_seconds: int = Field(gt=0)
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_legacy_fields(cls, data: Any) -> Any:
+        return _migrate_legacy_scene_card(data)
 
 
 class EpisodePlanDraft(StrictModel):

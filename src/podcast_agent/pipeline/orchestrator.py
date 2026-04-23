@@ -2367,33 +2367,60 @@ _OCCURRENCE_SPILLOVER_WEIGHTS: dict[str, float] = {
 _ECHO_OCCURRENCE_WEIGHT_CAP = 0.65
 _DEFAULT_OCCURRENCE_WEIGHT = 1.00
 
-_COVERAGE_DEPTH_WEIGHTS: dict[str, float] = {
-    "deep": 1.45,
-    "standard": 1.00,
-    "compressed": 0.65,
-}
 _SCENE_ROLE_WEIGHTS: dict[str, float] = {
     "shock": 1.20,
-    "process": 1.10,
+    "action": 1.10,
     "consequence": 1.10,
     "contestation": 1.05,
     "synthesis": 1.05,
-    "setup": 0.95,
     "reaction": 1.00,
+    "setup": 0.95,
+    "reversal": 1.10,
+    "reveal": 1.05,
+    "stage_choice": 1.05,
+    "perspective_shift": 0.95,
+}
+_PRESENCE_WEIGHTS: dict[str, float] = {
+    "primary": 1.30,
+    "secondary": 1.00,
+    "background": 0.80,
+    "none": 0.65,
 }
 _ARC_BINDING_WEIGHTS: dict[str, float] = {
-    "strong": 1.15,
-    "standard": 1.00,
-    "light": 0.90,
+    "strong": 1.50,
+    "standard": 1.20,
+    "light": 1.00,
+    "none": 0.85,
 }
-_NO_ACTOR_ARC_WEIGHT = 0.95
 
-_SCENE_DURATION_BOUNDS_SECONDS: dict[str, tuple[float, float]] = {
-    "compressed": (45.0, 90.0),
-    "standard": (90.0, 150.0),
-    "deep": (150.0, 240.0),
+# Bounds are multipliers of avg_sec = target_duration_seconds / n_cards so
+# the allocator self-calibrates to episode length and card count.
+_BOUNDS_MULT_BY_PRESENCE_BINDING: dict[tuple[str, str], tuple[float, float]] = {
+    ("primary", "strong"): (0.90, 1.44),
+    ("primary", "standard"): (0.66, 1.20),
+    ("primary", "light"): (0.54, 0.99),
+    ("primary", "none"): (0.48, 0.84),
+    ("secondary", "strong"): (0.60, 1.08),
+    ("secondary", "standard"): (0.51, 0.90),
+    ("secondary", "light"): (0.42, 0.78),
+    ("secondary", "none"): (0.36, 0.66),
+    ("background", "strong"): (0.42, 0.78),
+    ("background", "standard"): (0.36, 0.66),
+    ("background", "light"): (0.33, 0.60),
+    ("background", "none"): (0.30, 0.54),
 }
-_SUPPORTING_SCENE_UPPER_BOUND_RATIO = 0.50
+
+# For no-actor cards, bounds key on what the scene is trying to do.
+_NO_ACTOR_BOUNDS_MULT_BY_BUCKET: dict[str, tuple[float, float]] = {
+    "argument": (0.27, 0.54),
+    "mid": (0.45, 0.90),
+    "action": (0.60, 1.20),
+}
+_ARGUMENT_ROLES: frozenset[str] = frozenset({"synthesis", "perspective_shift"})
+_ACTION_BUCKET_ROLES: frozenset[str] = frozenset(
+    {"shock", "action", "consequence", "reveal", "reversal", "stage_choice"}
+)
+
 _WRITING_BATCH_WORD_OVERRUN_WARNING_RATIO = 1.08
 
 
@@ -2591,43 +2618,57 @@ def _occurrence_spillover_weight(
     return _OCCURRENCE_SPILLOVER_WEIGHTS.get(occurrence.emphasis, 0.0)
 
 
-def _scene_arc_weight(scene: SceneCardDraft | SceneCard) -> float:
-    weights: list[float] = []
+def _scene_max_presence(scene: SceneCardDraft | SceneCard) -> str:
+    ranks = {"primary": 3, "secondary": 2, "background": 1}
+    best = "none"
     for actor in scene.actors:
-        for binding in actor.arc_bindings:
-            weights.append(
-                _ARC_BINDING_WEIGHTS.get(
-                    binding.weight,
-                    _ARC_BINDING_WEIGHTS["standard"],
-                )
-            )
-    return max(weights) if weights else _NO_ACTOR_ARC_WEIGHT
+        if ranks.get(actor.presence, 0) > ranks.get(best, 0):
+            best = actor.presence
+    return best
 
 
-def _scene_duration_category(scene: SceneCardDraft | SceneCard) -> str:
-    return scene.coverage_depth
+def _scene_max_binding(scene: SceneCardDraft | SceneCard) -> str:
+    ranks = {"strong": 3, "standard": 2, "light": 1}
+    bindings = [binding.weight for actor in scene.actors for binding in actor.arc_bindings]
+    if not bindings:
+        return "none"
+    return max(bindings, key=lambda weight: ranks.get(weight, 0))
+
+
+def _no_actor_bucket(role: str) -> str:
+    if role in _ARGUMENT_ROLES:
+        return "argument"
+    if role in _ACTION_BUCKET_ROLES:
+        return "action"
+    return "mid"
 
 
 def _scene_duration_bounds(
     scene: SceneCardDraft | SceneCard,
     episode: StrategyEpisode,
+    avg_sec: float,
 ) -> tuple[float, float]:
-    lower, upper = _SCENE_DURATION_BOUNDS_SECONDS[_scene_duration_category(scene)]
-    occurrence_id = _scene_occurrence_id(scene)
-    occurrence = (
-        _strategy_occurrence(episode, occurrence_id)
-        if occurrence_id is not None
-        else None
-    )
-    if occurrence is not None and occurrence.emphasis == "supporting":
-        upper = lower + ((upper - lower) * _SUPPORTING_SCENE_UPPER_BOUND_RATIO)
-    return lower, upper
+    presence = _scene_max_presence(scene)
+    if presence == "none":
+        bucket = _no_actor_bucket(scene.scene_role)
+        lower_mult, upper_mult = _NO_ACTOR_BOUNDS_MULT_BY_BUCKET[bucket]
+    else:
+        binding = _scene_max_binding(scene)
+        lower_mult, upper_mult = _BOUNDS_MULT_BY_PRESENCE_BINDING.get(
+            (presence, binding),
+            (0.27, 0.54),
+        )
+    return lower_mult * avg_sec, upper_mult * avg_sec
 
 
 def _scene_importance_weight(scene: SceneCardDraft | SceneCard) -> float:
-    coverage_weight = _COVERAGE_DEPTH_WEIGHTS.get(scene.coverage_depth, 1.0)
+    presence = _scene_max_presence(scene)
+    binding = _scene_max_binding(scene)
     role_weight = _SCENE_ROLE_WEIGHTS.get(scene.scene_role, 1.0)
-    return coverage_weight * role_weight * _scene_arc_weight(scene)
+    presence_weight = _PRESENCE_WEIGHTS[presence]
+    if presence == "none":
+        return presence_weight * role_weight
+    return presence_weight * _ARC_BINDING_WEIGHTS.get(binding, 0.85) * role_weight
 
 
 def _allocate_scene_durations(
@@ -2639,6 +2680,7 @@ def _allocate_scene_durations(
         return []
     if target_duration_seconds <= 0:
         raise ValueError("target_duration_seconds must be positive")
+    avg_sec = float(target_duration_seconds) / len(scene_cards)
 
     occurrence_ids: list[str] = []
     seen_occurrence_ids: set[str] = set()
@@ -2665,7 +2707,7 @@ def _allocate_scene_durations(
             if (_scene_occurrence_id(scene) or "__unassigned__") == occurrence_id
         ]
         bounds = [
-            _scene_duration_bounds(scene, episode)
+            _scene_duration_bounds(scene, episode, avg_sec)
             for scene in occurrence_scene_cards
         ]
         occurrence_bounds.append(
@@ -2695,7 +2737,7 @@ def _allocate_scene_durations(
             for _, scene in occurrence_scene_entries
         ]
         scene_bounds = [
-            _scene_duration_bounds(scene, episode)
+            _scene_duration_bounds(scene, episode, avg_sec)
             for _, scene in occurrence_scene_entries
         ]
         occurrence_scene_seconds = _bounded_weighted_allocation(

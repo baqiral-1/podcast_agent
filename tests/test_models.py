@@ -973,23 +973,56 @@ class TestPlanningModels:
             estimated_duration_seconds=90,
         )
         assert card.scene_role == "reveal"
-        assert card.coverage_depth == "standard"
+        assert "coverage_depth" not in card.model_dump()
 
-    def test_scene_card_accepts_coverage_depth(self):
-        card = SceneCard(
-            scene_id="scene_deep",
-            title="A hidden mechanism surfaces",
-            scene_role="reveal",
-            dominant_cluster_occurrence_id="ep1_occ1",
-            entry_image="The ledger opens.",
-            local_question="What finally becomes visible?",
-            observable_detail="A missing column is now clear.",
-            intended_move="Expose the mechanism.",
-            passage_ids=["p1"],
-            estimated_duration_seconds=120,
-            coverage_depth="deep",
+    def test_scene_card_draft_drops_coverage_depth_on_load(self):
+        card = SceneCardDraft.model_validate(
+            {
+                "scene_id": "scene_draft",
+                "title": "A hidden mechanism surfaces",
+                "scene_role": "reveal",
+                "dominant_cluster_occurrence_id": "ep1_occ1",
+                "entry_image": "The ledger opens.",
+                "local_question": "What finally becomes visible?",
+                "observable_detail": "A missing column is now clear.",
+                "intended_move": "Expose the mechanism.",
+                "passage_ids": ["p1"],
+                "coverage_depth": "deep",
+            }
         )
-        assert card.coverage_depth == "deep"
+        assert "coverage_depth" not in card.model_dump()
+
+    def test_scene_card_draft_aliases_process_to_action(self):
+        card = SceneCardDraft.model_validate(
+            {
+                "scene_id": "scene_action",
+                "title": "A hidden mechanism surfaces",
+                "scene_role": "process",
+                "dominant_cluster_occurrence_id": "ep1_occ1",
+                "entry_image": "The ledger opens.",
+                "local_question": "What finally becomes visible?",
+                "observable_detail": "A missing column is now clear.",
+                "intended_move": "Expose the mechanism.",
+                "passage_ids": ["p1"],
+            }
+        )
+        assert card.scene_role == "action"
+
+    def test_scene_card_draft_fixes_perspective_shift_typo(self):
+        card = SceneCardDraft.model_validate(
+            {
+                "scene_id": "scene_shift",
+                "title": "A hidden mechanism surfaces",
+                "scene_role": "perspective shift",
+                "dominant_cluster_occurrence_id": "ep1_occ1",
+                "entry_image": "The ledger opens.",
+                "local_question": "What finally becomes visible?",
+                "observable_detail": "A missing column is now clear.",
+                "intended_move": "Expose the mechanism.",
+                "passage_ids": ["p1"],
+            }
+        )
+        assert card.scene_role == "perspective_shift"
 
     def test_scene_card_draft_does_not_require_duration(self):
         card = SceneCardDraft(
@@ -1002,9 +1035,7 @@ class TestPlanningModels:
             observable_detail="A missing column is now clear.",
             intended_move="Expose the mechanism.",
             passage_ids=["p1"],
-            coverage_depth="deep",
         )
-        assert card.coverage_depth == "deep"
         assert "estimated_duration_seconds" not in card.model_dump()
 
     def test_scene_card_draft_discards_legacy_duration(self):
@@ -1020,7 +1051,6 @@ class TestPlanningModels:
                 "intended_move": "Expose the mechanism.",
                 "passage_ids": ["p1"],
                 "estimated_duration_seconds": 120,
-                "coverage_depth": "deep",
             }
         )
         assert "estimated_duration_seconds" not in card.model_dump()
@@ -1038,7 +1068,6 @@ class TestPlanningModels:
                     "observable_detail": "A missing column is now clear.",
                     "intended_move": "Expose the mechanism.",
                     "passage_ids": ["p1"],
-                    "coverage_depth": "deep",
                 }
             )
 
@@ -1057,7 +1086,6 @@ class TestPlanningModels:
                     "passage_ids": ["p1"],
                     "estimated_duration_seconds": 120,
                     "narrative_weight": 2.5,
-                    "coverage_depth": "deep",
                 }
             )
 

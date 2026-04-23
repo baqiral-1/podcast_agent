@@ -226,14 +226,17 @@ class TestRedesignedAgents:
         assert payload["planning_feedback"]["issue"] == "uncovered_primary_occurrences"
         assert "`available_passages`" in agent.instructions
         assert "`estimated_duration_seconds`" not in agent.instructions
-        assert "final scene durations are computed" in agent.instructions
         assert "PRIORITY RULES" in agent.instructions
         assert "No scene without passage support" in agent.instructions
-        assert "Target 35-45 scene cards" in agent.instructions
+        assert "Target 30-35 scene cards" in agent.instructions
         assert "Allocate primitives intentionally" in agent.instructions
         assert "Preserve `episode.actor_arc_directives`" in agent.instructions
         assert "`arc_bindings`" in agent.instructions
         assert "Set scene actor `presence` as `primary`, `secondary`, or `background`" in agent.instructions
+        assert "`coverage_depth`" not in agent.instructions
+        assert "`setup`, `shock`, `action`, `consequence`, `reaction`, `contestation`, `synthesis`" in agent.instructions
+        assert "Prefer observable detail, local consequence, and partial legibility over abstract summary." in agent.instructions
+        assert "`action` and `consequence` scenes normally have at least one actor." in agent.instructions
         assert "Scene-card `scene_role` describes the whole scene's narrative job." in agent.instructions
         assert "`arc_bindings[].scene_role` is the actor's role inside the scene" in agent.instructions
         assert "`scene_role`: `driver`, `blocked`, `counterforce`, or `subject`" in agent.instructions
@@ -281,6 +284,7 @@ class TestRedesignedAgents:
         assert "Passage evidence wins if actor metadata and passages conflict." in agent.instructions
         assert "target ranges already encode narrative importance" in agent.instructions
         assert "`entry_image`" in agent.instructions
+        assert "`action`: show named actors doing concrete things" in agent.instructions
         assert "Do not write standalone transition paragraphs" in agent.instructions
         assert "Resolve each scene actor `arc_bindings[].thread_id` against `plan.actor_arc_directives[].arc_threads[]`" in agent.instructions
         assert "Use arc thread `premise`, `pressure`, `movement`, and `payoff` as narrative guidance" in agent.instructions
@@ -363,6 +367,7 @@ class TestRedesignedAgents:
         assert "Populate `source_book_ids`" in agent.instructions
         assert "target ranges already encode narrative importance" in agent.instructions
         assert "`entry_image`" in agent.instructions
+        assert "`action`: write an observable beat" in agent.instructions
         assert "Do not output standalone transitions." in agent.instructions
         assert "Resolve each scene actor `arc_bindings[].thread_id` against `plan.actor_arc_directives[].arc_threads[]`" in agent.instructions
         assert "Use arc thread `premise`, `pressure`, `movement`, and `payoff` as narrative guidance" in agent.instructions
@@ -421,20 +426,19 @@ class TestRedesignedAgents:
         )
         assert agent.schema_name == "spoken_delivery"
         assert payload["max_words_per_segment"] == 250
-        assert "You are the spoken_delivery stage" in agent.instructions
+        assert "You are the `oral_rewriter` stage" in agent.instructions
         assert "historically literate storyteller" in agent.instructions
         assert "Have opinions and state them" in agent.instructions
         assert "Avoid abstract narrator crutches" in agent.instructions
-        assert "Avoid stock podcast tics" in agent.instructions
-        assert "Default to subtraction." in agent.instructions
+        assert "Move between sections on an image or a question" in agent.instructions
+        assert "BANNED TELLS" in agent.instructions
         assert "Return only valid JSON matching expected_schema exactly." in agent.instructions
         assert "Return exactly one top-level key: sections." in agent.instructions
         assert "No wrapper keys. No extra fields." in agent.instructions
         assert "Output exactly one section for each input script.prose_sections[]" in agent.instructions
         assert "Do not merge, split, omit, duplicate, reorder, or rename" in agent.instructions
-        assert "Never strengthen a cautious claim." in agent.instructions
+        assert "Do not strengthen a hedged claim." in agent.instructions
         assert "Add speech_hints.pronunciation_hints only" in agent.instructions
-        assert "Keep `text` exactly as it appears in the segment." in agent.instructions
         assert "JSON matches expected_schema exactly?" in agent.instructions
         assert "Output Format:" not in agent.instructions
         assert "You are the `narrative_historian` stage" not in agent.instructions

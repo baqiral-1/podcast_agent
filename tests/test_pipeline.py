@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import threading
 import time
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -23,6 +25,8 @@ from podcast_agent.pipeline.orchestrator import (
     _flatten_synthesis_primitives,
     _resolve_synthesis_bm25_keep_fraction_by_passage,
     _round_allocations_to_total,
+    _scene_duration_bounds,
+    _scene_importance_weight,
     _split_sentences,
     _script_total_word_count,
     _trim_candidate_texts_by_bm25,
@@ -44,6 +48,8 @@ from podcast_agent.schemas.models import (
     PassagePair,
     PipelineConfig,
     ProseSection,
+    SceneActor,
+    SceneActorArcBinding,
     SceneCard,
     SpokenScript,
     SpokenSection,
@@ -66,6 +72,74 @@ def _framing() -> FramingBlock:
         opening_question="Question",
         handoff_scene_card_id="scene_1",
     )
+
+
+def _strategy_episode(*occurrences: ClusterPathOccurrence) -> StrategyEpisode:
+    return StrategyEpisode(
+        episode_number=1,
+        title="Episode",
+        driving_question="Question?",
+        arc_summary="Arc",
+        cluster_path=list(occurrences),
+    )
+
+
+def _scene_card(
+    scene_id: str,
+    occurrence_id: str,
+    *,
+    scene_role: str = "action",
+    actors: list[SceneActor] | None = None,
+) -> SceneCard:
+    return SceneCard(
+        scene_id=scene_id,
+        title=scene_id,
+        scene_role=scene_role,
+        dominant_cluster_occurrence_id=occurrence_id,
+        entry_image="Image",
+        local_question="Question",
+        observable_detail="Detail",
+        intended_move="Move",
+        passage_ids=["p1"],
+        actors=list(actors or []),
+        estimated_duration_seconds=120,
+    )
+
+
+def _scene_actor(
+    *,
+    name: str = "Actor",
+    presence: str = "secondary",
+    binding_weight: str | None = None,
+) -> SceneActor:
+    bindings = []
+    if binding_weight is not None:
+        bindings.append(
+            SceneActorArcBinding(
+                thread_id="thread_1",
+                scene_role="driver",
+                scene_use="develop",
+                weight=binding_weight,
+            )
+        )
+    return SceneActor(name=name, presence=presence, arc_bindings=bindings)
+
+
+def _load_middle_east_v2_episode_fixtures() -> list[tuple[StrategyEpisode, EpisodePlan]]:
+    run_dir = Path("runs/middle_east_v2")
+    strategy_payload = json.loads((run_dir / "narrative_strategy.json").read_text())
+    plan_payload = json.loads((run_dir / "series_plan.json").read_text())
+    strategy_by_episode = {
+        episode["episode_number"]: StrategyEpisode.model_validate(episode)
+        for episode in strategy_payload["episodes"]
+    }
+    return [
+        (
+            strategy_by_episode[episode["episode_number"]],
+            EpisodePlan.model_validate(episode),
+        )
+        for episode in plan_payload["episodes"]
+    ]
 
 
 class DummyTTSClient:
@@ -266,7 +340,6 @@ def test_compute_scene_word_count_targets_scales_with_words_per_minute():
             intended_move="Move",
             passage_ids=["p1"],
             estimated_duration_seconds=30,
-            coverage_depth="deep",
         ),
         SceneCard(
             scene_id="scene_compressed",
@@ -279,7 +352,6 @@ def test_compute_scene_word_count_targets_scales_with_words_per_minute():
             intended_move="Move",
             passage_ids=["p2"],
             estimated_duration_seconds=90,
-            coverage_depth="compressed",
         ),
     ]
     targets = _compute_scene_word_count_targets(scenes, episode_target_word_count=1200, words_per_minute=140.0)
@@ -321,127 +393,95 @@ def test_compute_scene_word_count_targets_requires_positive_scene_durations():
         )
 
 
-def test_allocate_scene_durations_uses_emphasis_depth_and_role():
-    def card(
-        scene_id: str,
-        occurrence_id: str,
-        *,
-        coverage_depth: str = "standard",
-        scene_role: str = "process",
-    ) -> SceneCard:
-        return SceneCard.model_validate({
-            "scene_id": scene_id,
-            "title": scene_id,
-            "scene_role": scene_role,
-            "dominant_cluster_occurrence_id": occurrence_id,
-            "entry_image": "Image",
-            "local_question": "Question",
-            "observable_detail": "Detail",
-            "intended_move": "Move",
-            "passage_ids": ["p1"],
-            "estimated_duration_seconds": 120,
-            "coverage_depth": coverage_depth,
-        })
-
-    episode = StrategyEpisode(
-        episode_number=1,
-        title="Episode",
-        driving_question="Question?",
-        arc_summary="Arc",
-        cluster_path=[
-            ClusterPathOccurrence(
-                occurrence_id="occ_anchor",
-                cluster_id="cluster_anchor",
-                usage="primary",
-                emphasis="anchor",
-            ),
-            ClusterPathOccurrence(
-                occurrence_id="occ_supporting",
-                cluster_id="cluster_supporting",
-                usage="primary",
-                emphasis="supporting",
-                transition_note="Then shift.",
-            ),
-            ClusterPathOccurrence(
-                occurrence_id="occ_echo",
-                cluster_id="cluster_echo",
-                usage="echo",
-                emphasis="anchor",
-                transition_note="Then echo.",
-            ),
-        ],
+def test_scene_importance_weight_three_factor():
+    scene = _scene_card(
+        "scene_1",
+        "occ_1",
+        scene_role="shock",
+        actors=[_scene_actor(presence="primary", binding_weight="strong")],
     )
-    scenes = [
-        card("anchor_deep", "occ_anchor", coverage_depth="deep"),
-        card("anchor_standard", "occ_anchor", coverage_depth="standard"),
-        card("support_standard", "occ_supporting", coverage_depth="standard"),
-        card("support_compressed", "occ_supporting", coverage_depth="compressed"),
-        card("echo_standard", "occ_echo", coverage_depth="standard"),
-        card("echo_compressed", "occ_echo", coverage_depth="compressed"),
-    ]
 
-    allocated = _allocate_scene_durations(scenes, episode, target_duration_seconds=720)
-    seconds = {scene.scene_id: scene.estimated_duration_seconds for scene in allocated}
+    assert _scene_importance_weight(scene) == pytest.approx(1.30 * 1.50 * 1.20)
 
-    assert sum(seconds.values()) == 720
-    assert seconds["anchor_deep"] > seconds["anchor_standard"]
-    assert seconds["support_standard"] > seconds["support_compressed"]
-    assert seconds["echo_standard"] > seconds["echo_compressed"]
-    assert seconds["anchor_deep"] + seconds["anchor_standard"] > (
-        seconds["support_standard"] + seconds["support_compressed"]
+
+def test_scene_duration_bounds_no_actor_by_role_bucket():
+    episode = _strategy_episode(
+        ClusterPathOccurrence(
+            occurrence_id="occ_1",
+            cluster_id="cluster_1",
+            usage="primary",
+            emphasis="anchor",
+        )
     )
+
+    assert _scene_duration_bounds(
+        _scene_card("argument", "occ_1", scene_role="synthesis"),
+        episode,
+        avg_sec=150.0,
+    ) == pytest.approx((40.5, 81.0))
+    assert _scene_duration_bounds(
+        _scene_card("action", "occ_1", scene_role="consequence"),
+        episode,
+        avg_sec=150.0,
+    ) == pytest.approx((90.0, 180.0))
+    assert _scene_duration_bounds(
+        _scene_card("mid", "occ_1", scene_role="setup"),
+        episode,
+        avg_sec=150.0,
+    ) == pytest.approx((67.5, 135.0))
+
+
+def test_scene_duration_bounds_scales_with_avg_sec():
+    episode = _strategy_episode(
+        ClusterPathOccurrence(
+            occurrence_id="occ_1",
+            cluster_id="cluster_1",
+            usage="primary",
+            emphasis="anchor",
+        )
+    )
+    scene = _scene_card(
+        "scene_1",
+        "occ_1",
+        actors=[_scene_actor(presence="primary", binding_weight="strong")],
+    )
+
+    short_bounds = _scene_duration_bounds(scene, episode, avg_sec=100.0)
+    long_bounds = _scene_duration_bounds(scene, episode, avg_sec=250.0)
+
+    assert long_bounds[0] == pytest.approx(short_bounds[0] * 2.5)
+    assert long_bounds[1] == pytest.approx(short_bounds[1] * 2.5)
 
 
 def test_allocate_scene_durations_spillover_goes_only_to_anchor_and_major():
-    def card(scene_id: str, occurrence_id: str) -> SceneCard:
-        return SceneCard(
-            scene_id=scene_id,
-            title=scene_id,
-            scene_role="process",
-            dominant_cluster_occurrence_id=occurrence_id,
-            entry_image="Image",
-            local_question="Question",
-            observable_detail="Detail",
-            intended_move="Move",
-            passage_ids=["p1"],
-            estimated_duration_seconds=120,
-            coverage_depth="standard",
-        )
-
-    episode = StrategyEpisode(
-        episode_number=1,
-        title="Episode",
-        driving_question="Question?",
-        arc_summary="Arc",
-        cluster_path=[
-            ClusterPathOccurrence(
-                occurrence_id="occ_anchor",
-                cluster_id="cluster_anchor",
-                usage="primary",
-                emphasis="anchor",
-            ),
-            ClusterPathOccurrence(
-                occurrence_id="occ_major",
-                cluster_id="cluster_major",
-                usage="primary",
-                emphasis="major",
-                transition_note="Then shift.",
-            ),
-            ClusterPathOccurrence(
-                occurrence_id="occ_supporting",
-                cluster_id="cluster_supporting",
-                usage="primary",
-                emphasis="supporting",
-                transition_note="Then shift.",
-            ),
-        ],
+    episode = _strategy_episode(
+        ClusterPathOccurrence(
+            occurrence_id="occ_anchor",
+            cluster_id="cluster_anchor",
+            usage="primary",
+            emphasis="anchor",
+        ),
+        ClusterPathOccurrence(
+            occurrence_id="occ_major",
+            cluster_id="cluster_major",
+            usage="primary",
+            emphasis="major",
+            transition_note="Then shift.",
+        ),
+        ClusterPathOccurrence(
+            occurrence_id="occ_supporting",
+            cluster_id="cluster_supporting",
+            usage="primary",
+            emphasis="supporting",
+            transition_note="Then shift.",
+        ),
     )
 
     allocated = _allocate_scene_durations(
         [
-            card("anchor_scene", "occ_anchor"),
-            card("major_scene", "occ_major"),
-            card("support_scene", "occ_supporting"),
+            _scene_card("anchor_scene", "occ_anchor"),
+            _scene_card("major_scene", "occ_major"),
+            _scene_card("support_scene", "occ_supporting"),
         ],
         episode,
         target_duration_seconds=600,
@@ -450,141 +490,52 @@ def test_allocate_scene_durations_spillover_goes_only_to_anchor_and_major():
 
     assert sum(seconds.values()) == 600
     assert seconds["support_scene"] == 120
-    assert seconds["anchor_scene"] - 150 == 108
-    assert seconds["major_scene"] - 150 == 72
+    assert seconds["anchor_scene"] > seconds["major_scene"] > seconds["support_scene"]
+    assert seconds["anchor_scene"] + seconds["major_scene"] == 480
 
 
-def test_allocate_scene_durations_preserves_war_on_terror_ep1_shaped_target():
-    def card(
-        scene_id: str,
-        occurrence_id: str,
-        *,
-        coverage_depth: str,
-        scene_role: str,
-    ) -> SceneCard:
-        return SceneCard.model_validate({
-            "scene_id": scene_id,
-            "title": scene_id,
-            "scene_role": scene_role,
-            "dominant_cluster_occurrence_id": occurrence_id,
-            "entry_image": "Image",
-            "local_question": "Question",
-            "observable_detail": "Detail",
-            "intended_move": "Move",
-            "passage_ids": ["p1"],
-            "estimated_duration_seconds": 120,
-            "coverage_depth": coverage_depth,
-        })
-
-    episode = StrategyEpisode(
-        episode_number=1,
-        title="1979: The Long Fuse",
-        driving_question="Question?",
-        arc_summary="Arc",
-        cluster_path=[
-            ClusterPathOccurrence(
-                occurrence_id="ep1_occ1",
-                cluster_id="cl_imperial_cycle",
-                usage="primary",
-                emphasis="supporting",
-            ),
-            ClusterPathOccurrence(
-                occurrence_id="ep1_occ2",
-                cluster_id="cl_1979_preconditions",
-                usage="primary",
-                emphasis="anchor",
-                transition_note="Then shift.",
-            ),
-            ClusterPathOccurrence(
-                occurrence_id="ep1_occ3",
-                cluster_id="cl_afghan_jihad_incubator",
-                usage="primary",
-                emphasis="anchor",
-                transition_note="Then shift.",
-            ),
-            ClusterPathOccurrence(
-                occurrence_id="ep1_occ4",
-                cluster_id="cl_ideological_genealogy",
-                usage="primary",
-                emphasis="major",
-                transition_note="Then shift.",
-            ),
-            ClusterPathOccurrence(
-                occurrence_id="ep1_occ5",
-                cluster_id="cl_bin_laden_declares_war",
-                usage="primary",
-                emphasis="major",
-                transition_note="Then shift.",
-            ),
-            ClusterPathOccurrence(
-                occurrence_id="ep1_occ6",
-                cluster_id="cl_arab_intellectual_collapse",
-                usage="primary",
-                emphasis="supporting",
-                transition_note="Then shift.",
-            ),
-            ClusterPathOccurrence(
-                occurrence_id="ep1_occ7",
-                cluster_id="cl_saudi_blowback",
-                usage="primary",
-                emphasis="supporting",
-                transition_note="Then shift.",
-            ),
-        ],
-    )
-    scenes = [
-        card("ep1_s01", "ep1_occ1", coverage_depth="compressed", scene_role="setup"),
-        card("ep1_s02", "ep1_occ1", coverage_depth="standard", scene_role="process"),
-        card("ep1_s03", "ep1_occ1", coverage_depth="compressed", scene_role="contestation"),
-        card("ep1_s04", "ep1_occ2", coverage_depth="compressed", scene_role="setup"),
-        card("ep1_s05", "ep1_occ2", coverage_depth="deep", scene_role="shock"),
-        card("ep1_s06", "ep1_occ2", coverage_depth="standard", scene_role="reaction"),
-        card("ep1_s07", "ep1_occ2", coverage_depth="compressed", scene_role="reaction"),
-        card("ep1_s08", "ep1_occ2", coverage_depth="deep", scene_role="shock"),
-        card("ep1_s09", "ep1_occ2", coverage_depth="compressed", scene_role="process"),
-        card("ep1_s10", "ep1_occ2", coverage_depth="standard", scene_role="consequence"),
-        card("ep1_s11", "ep1_occ2", coverage_depth="deep", scene_role="synthesis"),
-        card("ep1_s12", "ep1_occ2", coverage_depth="deep", scene_role="shock"),
-        card("ep1_s13", "ep1_occ2", coverage_depth="standard", scene_role="synthesis"),
-        card("ep1_s14", "ep1_occ3", coverage_depth="standard", scene_role="setup"),
-        card("ep1_s15", "ep1_occ3", coverage_depth="deep", scene_role="shock"),
-        card("ep1_s16", "ep1_occ3", coverage_depth="standard", scene_role="process"),
-        card("ep1_s17", "ep1_occ3", coverage_depth="compressed", scene_role="process"),
-        card("ep1_s18", "ep1_occ3", coverage_depth="standard", scene_role="consequence"),
-        card("ep1_s19", "ep1_occ3", coverage_depth="deep", scene_role="development"),
-        card("ep1_s20", "ep1_occ3", coverage_depth="deep", scene_role="contestation"),
-        card("ep1_s21", "ep1_occ3", coverage_depth="compressed", scene_role="contestation"),
-        card("ep1_s22", "ep1_occ3", coverage_depth="deep", scene_role="synthesis"),
-        card("ep1_s23", "ep1_occ4", coverage_depth="deep", scene_role="setup"),
-        card("ep1_s24", "ep1_occ4", coverage_depth="standard", scene_role="consequence"),
-        card("ep1_s25", "ep1_occ4", coverage_depth="deep", scene_role="shock"),
-        card("ep1_s26", "ep1_occ4", coverage_depth="standard", scene_role="process"),
-        card("ep1_s27", "ep1_occ4", coverage_depth="standard", scene_role="development"),
-        card("ep1_s28", "ep1_occ4", coverage_depth="standard", scene_role="contestation"),
-        card("ep1_s29", "ep1_occ5", coverage_depth="deep", scene_role="shock"),
-        card("ep1_s30", "ep1_occ5", coverage_depth="standard", scene_role="process"),
-        card("ep1_s31", "ep1_occ5", coverage_depth="standard", scene_role="reaction"),
-        card("ep1_s32", "ep1_occ5", coverage_depth="deep", scene_role="shock"),
-        card("ep1_s33", "ep1_occ5", coverage_depth="standard", scene_role="contestation"),
-        card("ep1_s34", "ep1_occ5", coverage_depth="deep", scene_role="synthesis"),
-        card("ep1_s35", "ep1_occ5", coverage_depth="deep", scene_role="contestation"),
-        card("ep1_s36", "ep1_occ6", coverage_depth="compressed", scene_role="shock"),
-        card("ep1_s37", "ep1_occ6", coverage_depth="deep", scene_role="consequence"),
-        card("ep1_s38", "ep1_occ7", coverage_depth="deep", scene_role="contestation"),
-        card("ep1_s39", "ep1_occ7", coverage_depth="standard", scene_role="reversal"),
-        card("ep1_s40", "ep1_occ7", coverage_depth="deep", scene_role="synthesis"),
+def test_allocate_scene_durations_middle_east_v2_ep1_rebalances_retarged_roles():
+    episode, plan = _load_middle_east_v2_episode_fixtures()[0]
+    role_remap = {
+        "e1_s06": "synthesis",
+        "e1_s21": "action",
+        "e1_s26": "synthesis",
+        "e1_s31": "action",
+    }
+    remapped_scene_cards = [
+        scene.model_copy(update={"scene_role": role_remap.get(scene.scene_id, scene.scene_role)})
+        for scene in plan.scene_cards
     ]
-
-    allocated = _allocate_scene_durations(scenes, episode, target_duration_seconds=5400)
+    allocated = _allocate_scene_durations(
+        remapped_scene_cards,
+        episode,
+        target_duration_seconds=int(plan.target_duration_minutes * 60),
+    )
     seconds = {scene.scene_id: scene.estimated_duration_seconds for scene in allocated}
 
-    assert sum(seconds.values()) == 5400
-    assert seconds["ep1_s01"] + seconds["ep1_s02"] + seconds["ep1_s03"] <= 255
-    assert seconds["ep1_s36"] + seconds["ep1_s37"] <= 263
-    assert seconds["ep1_s37"] <= 195
-    assert seconds["ep1_s38"] + seconds["ep1_s39"] + seconds["ep1_s40"] <= 510
-    assert seconds["ep1_s04"] < seconds["ep1_s05"]
-    assert seconds["ep1_s15"] > seconds["ep1_s17"]
+    assert sum(seconds.values()) == 6000
+    assert seconds["e1_s07"] == pytest.approx(90, abs=10)
+    assert seconds["e1_s06"] == pytest.approx(90, abs=10)
+    assert seconds["e1_s26"] == pytest.approx(105, abs=15)
+    assert seconds["e1_s36"] == pytest.approx(65, abs=10)
+    assert seconds["e1_s21"] == pytest.approx(215, abs=20)
+    assert seconds["e1_s34"] == pytest.approx(175, abs=20)
+    assert seconds["e1_s26"] < seconds["e1_s21"]
+    assert seconds["e1_s36"] < seconds["e1_s34"]
+    assert seconds["e1_s33"] > seconds["e1_s36"]
+
+
+def test_allocate_scene_durations_totals_sum_to_target():
+    for episode, plan in _load_middle_east_v2_episode_fixtures():
+        target_duration_seconds = int(plan.target_duration_minutes * 60)
+        allocated = _allocate_scene_durations(
+            plan.scene_cards,
+            episode,
+            target_duration_seconds=target_duration_seconds,
+        )
+
+        assert len(allocated) == len(plan.scene_cards)
+        assert sum(scene.estimated_duration_seconds for scene in allocated) == target_duration_seconds
 
 
 def test_round_allocations_to_total_handles_large_positive_delta():
@@ -1155,12 +1106,11 @@ def test_write_episode_payload_uses_unequal_scene_duration_targets(monkeypatch, 
                     "primitive_ids": [],
                     "passage_ids": ["p1"],
                     "estimated_duration_seconds": 6300,
-                    "coverage_depth": "deep",
                 },
                 {
                     "scene_id": "scene_context",
                     "title": "Context scene",
-                    "scene_role": "process",
+                    "scene_role": "action",
                     "dominant_cluster_occurrence_id": "occ_1",
                     "entry_image": "Image",
                     "local_question": "Question",
@@ -1169,7 +1119,6 @@ def test_write_episode_payload_uses_unequal_scene_duration_targets(monkeypatch, 
                     "primitive_ids": [],
                     "passage_ids": ["p2"],
                     "estimated_duration_seconds": 2100,
-                    "coverage_depth": "compressed",
                 },
             ],
             "target_duration_minutes": 140.0,

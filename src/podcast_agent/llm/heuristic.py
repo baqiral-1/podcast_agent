@@ -538,7 +538,6 @@ class HeuristicLLMClient(LLMClient):
                 "actors": [],
                 "primitive_ids": [],
                 "passage_ids": passage_ids,
-                "coverage_depth": "deep",
             }
         ]
         return {
