@@ -219,50 +219,67 @@ def synthesis_primitives_instructions() -> str:
         Emit only these family keys under primitives_by_family, with the
         target count range for each:
 
-        turning_points (20-40)
-          Moments when the direction of events decisively changes and the
-          story begins moving onto a new track.
+        epochal_turns (12–20)
+          Big irreversible pivots that change the rules of the story.
 
-        scene_worthy_consequences (15–35)
-          Outcomes whose human, political, or emotional effects are vivid
-          enough to justify dramatizing as a scene.
+        decisions_and_nondecisions (18–30)
+          Choices, refusals, hesitations, delays, and failures to act that
+          redirect what happens next.
 
-        causal_mechanisms (15–30)
-          The concrete processes, pressures, or chains of action that
-          explain how one development produced another.
+        set_piece_scenes (24–40)
+          Major playable scenes: battles, coups, trials, raids, funerals,
+          rallies, flights, negotiations, ceremonies.
 
-        live_questions (15–30)
-          Unresolved uncertainties still active inside the narrative that
-          keep the listener leaning forward.
+        telling_details (18–30)
+          Concrete, memorable local details: gestures, objects, absurdities,
+          vanity, bureaucratic weirdness, anecdotal texture.
+
+        human_costs (18–30)
+          What events cost ordinary people, families, soldiers, prisoners,
+          refugees, and local communities.
+
+        character_engines (18–28)
+          What specific people are trying to protect, prove, gain, avoid,
+          conceal, or survive.
+
+        coalitions_and_fault_lines (16–26)
+          How alliances form, hold, strain, split, or quietly rot.
+
+        systems_and_operating_logics (18–30)
+          The machinery under the story: institutions, logistics, patronage,
+          finance, clerical networks, bureaucracy, media ecosystems.
+
+        misreadings_and_fantasies (14–24)
+          What people got wrong, wanted to believe, or needed to believe in
+          real time.
+
+        contested_explanations (12–22)
+          Live historical disputes and unresolved competing readings of why
+          events happened or what they meant.
           candidate_readings must present genuinely competing readings.
 
-        misperceptions (10–25)
-          What people got wrong in real time — false assumptions, misread
-          signals, confident but flawed interpretations.
+        perspective_windows (12–20)
+          Vantage shifts that materially change the meaning of the story.
 
-        reversals (10–30)
-          Moments when the apparent meaning or direction of events flips —
-          strength becomes weakness, advantage becomes danger.
+        moral_traps (10–18)
+          Situations where every real option is compromised and clean judgment
+          would flatten the reality.
 
-        motivations_dilemmas (20–40)
-          Desires, fears, and competing pressures that drive people to act
-          under conditions where every option carries a cost.
+        afterlives (14–24)
+          The residues of earlier rupture: traumas, precedents, humiliations,
+          remembered betrayals, inherited fears.
 
-        perspective_shifts (10–25)
-          Points where changing whose eyes we see through materially
-          deepens, complicates, or reframes the story.
+        recurring_images_and_symbols (10–18)
+          Images, places, slogans, rituals, documents, buildings, and objects
+          that can recur across episodes and gather meaning.
 
-        moral_ambiguities (10–25)
-          Situations where the right course is unclear and easy judgment
-          would flatten the human reality.
+        worlds_in_collision (10–18)
+          Clashes between social worlds: province and capital, cleric and
+          technocrat, village and reformer, court and frontier.
 
-        personal_stakes (10–25)
-          What a development stands to cost or protect for a specific
-          person — safety, status, identity, love, legacy.
-
-        trauma_legacies (10–25)
-          Enduring psychological, social, or political aftereffects of past
-          violence or rupture that continue shaping later choices.
+        ironies_and_reversals (12–20)
+          Backfires, inversions, and cruel flips where actions land opposite
+          to the intended result.
 
         TITLES AND SUMMARIES
         - Titles are operational and scene-usable, not polished thesis
@@ -291,16 +308,21 @@ def synthesis_primitives_instructions() -> str:
           canonical id applies safely.
         - unresolved_actor_tags: for actor names that matter but cannot be
           mapped to actor_metadata.
-        - Structural primitives (causal_mechanisms, trauma_legacies when
+        - Structural primitives (systems_and_operating_logics, afterlives when
           institutional, etc.) do not need actor ids forced onto them.
 
         AXIS LINKING
         - axis_ids references the relevant analytical lenses.
 
         QUALITY
-        - Favor primitives that help later episode construction: threshold
-          changes, visible consequences, operating mechanisms, unresolved
-          interpretive pressure.
+        - Favor primitives that help later episode construction: spine,
+          scene fuel, human grounding, operating logic, unresolved
+          interpretive pressure, and recurring memory hooks.
+        - Protect local texture. `telling_details` and
+          `recurring_images_and_symbols` are not filler and should not be
+          collapsed into generic set pieces.
+        - Preserve both scene utility and series utility. A healthy pool has
+          playable scenes, analytical structure, and motifs that can recur.
         - Prefer actor-linked primitives where evidence supports pressure,
           decision, conflict, misreading, consequence, or stakes.
         - Deduplicate obvious repeats. Do not collapse genuinely different
@@ -347,9 +369,8 @@ def synthesis_consolidation_instructions() -> str:
           - set `coverage_policy` as `anchor`, `major`, `supporting`, or `compressed`
           - articulate a `local_question`
           - choose one `local_payoff_shape`
-        - Aim for 25-40 episode candidate clusters and 3-8 members per cluster.
+        - Aim for 40-60 episode candidate clusters and 3-10 members per cluster.
         - Clusters should be small and focused episode-usable units rather than whole-series theses.
-        - Prefer creating more clusters over creating oversized clusters.
         - It is better to create multiple clusters for the same or similar broad topic when they capture distinct themes.
 
         What not to do:
@@ -364,7 +385,14 @@ def synthesis_consolidation_instructions() -> str:
         - Do not give equal narrative weight to every cluster unless the evidence genuinely warrants it.
         - Prefer actor-legible clusters when evidence and local causal coherence are otherwise comparable.
         - Keep systemic or structural clusters when actor framing would be false.
-        - Keep distinct mechanisms, consequences, and live questions separate when that distinction matters for later planning.
+        - Preserve family function inside clusters. Keep spine material
+          (`epochal_turns`, `decisions_and_nondecisions`) available for
+          anchors, but do not dedupe away `telling_details`,
+          `human_costs`, `recurring_images_and_symbols`, or
+          `systems_and_operating_logics` as expendable texture.
+        - Keep distinct operating logics, human costs, contested
+          explanations, and recurring symbols separate when that distinction
+          matters for later planning.
         - Use `quality_notes` for unresolved weaknesses or sparse areas.
         """
     ).strip()
@@ -456,6 +484,17 @@ def narrative_strategy_instructions() -> str:
           the reason in `arc_summary`.
         - Supporting and compressed clusters belong in the path when they
           clarify context, causality, or payoff - not as padding.
+        - Balance episode load using cluster `member_ids` count as the proxy
+          for downstream primitive pool and scene fuel.
+        - Aim for roughly 32-45 cluster members per episode after `cluster_path` composition.
+        - If an episode intentionally carries unusually low or high cluster
+          member mass, explain the narrative reason in `arc_summary`.
+        - Across the series, use cluster assignment to preserve family
+          variety. Do not build every episode from spine clusters alone;
+          distribute scene fuel, human cost, operating logic, and recurring
+          motifs across the run.
+        - Use echoes sparingly, but allow them when `afterlives` or
+          `recurring_images_and_symbols` materially deepen a later episode.
 
         ACTOR ARC DIRECTIVES
         Actor arc directives are episode-specific instructions for how a
@@ -530,7 +569,7 @@ def episode_planning_instructions() -> str:
         SCENE CARDS
 
         Counts and pacing:
-        - Target 30-35 scene cards for a full-length episode.
+        - Target 35-45 scene cards for a full-length episode.
         - Expand into micro-scenes rather than collapsing long stretches.
 
         Importance allocation:
@@ -551,6 +590,19 @@ def episode_planning_instructions() -> str:
         - Do not distribute primitives evenly by default.
         - Reuse is allowed for continuity.
         - No primitive should dominate an episode.
+        - Prefer `set_piece_scenes` and `telling_details` when choosing
+          `entry_image` and `observable_detail`.
+        - Use `human_costs` and `character_engines` to keep plans from
+          becoming purely abstract or institutional.
+        - `systems_and_operating_logics`, `coalitions_and_fault_lines`, and
+          `worlds_in_collision` usually belong in `synthesis` or
+          `contestation` cards unless passage evidence supports observable
+          action.
+        - Use `recurring_images_and_symbols` for openings, callbacks,
+          handoffs, and closings when the evidence supports recurrence.
+        - Use `contested_explanations` to structure contestation or
+          synthesis cards without falsely resolving live interpretive
+          pressure.
 
         Craft:
         - Prefer observable detail, local consequence, and partial legibility over abstract summary.
@@ -621,44 +673,44 @@ def episode_writing_instructions() -> str:
             Goal:
             - You are a narrator telling a true story.
             - You have absorbed the research and now tell the episode in your own voice.
-            - Transform the active scene-card window into complete narration while preserving structure.
+            - Transform the full scene-card plan into complete narration while preserving structure.
 
             Input payload:
             - `episode_number`: current episode number.
-            - `batch_id`: the current writing batch identifier.
-            - `is_final_batch`: whether this is the last writing batch for the episode.
-            - `plan`: the episode plan window for this batch, including framing and active scene cards.
-            - `active_scene_card_ids`: the subset of scene cards to draft now.
+            - `plan`: the full episode plan, including framing and all scene cards.
             - `plan.scene_cards[].target_word_count_lower`: lower per-scene word target (computed at 110 WPM).
             - `plan.scene_cards[].target_word_count_higher`: higher per-scene word target (computed at 130 WPM).
-            - `batch_target_word_count_lower`: lower word target for this batch.
-            - `batch_target_word_count_higher`: higher word target for this batch.
-            - `passages`: source evidence for this batch. Treat `passages[].text` as the canonical evidence body for writing.
+            - `episode_target_word_count_lower`: lower word target for the episode.
+            - `episode_target_word_count_higher`: higher word target for the episode.
+            - `passages`: source evidence for the episode. Treat `passages[].text` as the canonical evidence body for writing.
             - `books`: compact book metadata.
             - `skip_grounding`: whether a later grounding pass will be skipped.
-            - Optional `actor_metadata`: active-batch actor context. Treat it as narrative scaffolding, not factual authority.
+            - Optional `actor_metadata`: episode-level actor context. Treat it as narrative scaffolding, not factual authority.
 
             Writing guidance:
-            - Follow `plan.scene_cards` order for cards listed in `active_scene_card_ids`.
-            - Treat this call as a batch window, not necessarily the full episode.
-            - If `is_final_batch` is false, do not close, summarize, resolve, or preview the episode.
-              End by completing the active scene's local movement only.
+            - Draft all `plan.scene_cards` in order.
             - Keep `plan.driving_question` as the rhetorical anchor.
             - Preserve `plan.unresolved_questions` as live tensions when unresolved.
-            - Keep framing commitments visible (`plan.framing`) without prematurely resolving the episode.
+            - Keep framing commitments visible (`plan.framing`) without exposing outline mechanics.
+            - Target 8-12 prose sections for the episode; treat this as a
+              pacing and grouping target, not a reason to violate scene order
+              or evidence constraints.
+            - Group neighboring scene cards into coherent sections when needed
+              to stay near the section target while preserving chronology and
+              narrative logic.
             - Use each card's `entry_image`, `scene_role`, `local_question`, `intended_move`, and `what_becomes_legible_later`.
             - Start each section from the card's concrete `entry_image` or a
               passage-supported equivalent. When a section marks a major turn,
               let that image, fact, question, or action carry the handoff.
             - Respect `withhold_until` and delayed-legibility dynamics.
             - Keep claims grounded in each card's `primitive_ids` and `passage_ids`.
-            - Treat `plan.target_word_count` as batch-level pacing guidance.
-            - Importance has already been converted into the per-scene and batch
+            - Treat `plan.target_word_count` as episode-level pacing guidance.
+            - Importance has already been converted into the per-scene and episode
               word-count budgets. Treat those budgets as binding.
             - If evidence exceeds the budget, select only the details needed for
               the scene's `intended_move`.
-            - Target total narration for this call within `batch_target_word_count_lower..batch_target_word_count_higher`.
-            - Treat each active card's `target_word_count_lower` and `target_word_count_higher` as a pacing range:
+            - Target total narration for this call within `episode_target_word_count_lower..episode_target_word_count_higher`.
+            - Treat each card's `target_word_count_lower` and `target_word_count_higher` as a pacing range:
               - allocate narration so the card lands within its target range
               - do not let low-range cards dominate
               - do not collapse high-range cards into throwaway text
@@ -680,7 +732,6 @@ def episode_writing_instructions() -> str:
             - Use citations only through structured `citations`; do not insert inline citation markers into prose.
 
             What not to do:
-            - Do not draft scene cards outside `active_scene_card_ids`.
             - Do not write next-episode teaser copy.
               `plan.framing.preview` is rendered separately by the pipeline.
             - Do not write standalone transition paragraphs or meta-transition
@@ -704,19 +755,18 @@ def episode_writing_no_citations_instructions() -> str:
         You are the `episode_writing` stage for a historical podcast pipeline.
 
         TASK
-        Draft only `active_scene_card_ids`, in `plan.scene_cards` order.
+        Draft the full episode in `plan.scene_cards` order.
         You are the narrator. Tell the episode in your own voice, reconstructing action,
         mechanism, time, place, and consequence from evidence rather than summarizing sources.
 
         INPUT PAYLOAD
-        - `episode_number`, `batch_id`, `is_final_batch`
-        - `plan`: episode plan window visible to this call
-        - `active_scene_card_ids`: scene cards to draft now
+        - `episode_number`
+        - `plan`: full episode plan visible to this call
         - `passages`: source evidence; `passages[].text` is canonical
         - `books`: compact book metadata
         - `skip_grounding`: true for this no-citations mode
         - Optional `actor_metadata`: continuity scaffolding, not evidence
-        - `batch_target_word_count_lower` / `batch_target_word_count_higher`
+        - `episode_target_word_count_lower` / `episode_target_word_count_higher`
         - `plan.scene_cards[].target_word_count_lower` / `plan.scene_cards[].target_word_count_higher`
         - Per-scene targets: `target_word_count_lower` / `target_word_count_higher`
 
@@ -726,15 +776,11 @@ def episode_writing_no_citations_instructions() -> str:
         - Do not cite scaffolding, assert it as fact, or use it to fill evidence gaps.
         - Do not invent facts, chronology, quotations, dialogue, motives, private thoughts, emotions, sensory details, atmosphere, or causal links.
         - Atmosphere is allowed only from concrete passage-supported details.
-        - Do not introduce primary analytical claims outside active scene cards and their primitives.
-        - Do not draft outside `active_scene_card_ids`.
-        - Treat this call as a batch window, not necessarily the full episode.
-        - If `is_final_batch` is false, do not close, summarize, resolve, or preview the episode.
-          End by completing the active scene's local movement only.
+        - Do not introduce primary analytical claims outside planned scene cards and their primitives.
         - `skip_grounding` is true: be especially conservative because no later grounding repair will run.
 
         PER-SCENE PROCEDURE
-        For each active card:
+        For each card:
         1. Read `entry_image`, `scene_role`, `local_question`, `intended_move`, `what_becomes_legible_later`, `primitive_ids`, and `passage_ids`.
         2. Open from the concrete `entry_image` or a passage-supported equivalent, then execute the scene role.
         3. Resolve actor arc bindings.
@@ -770,14 +816,16 @@ def episode_writing_no_citations_instructions() -> str:
           `plan.framing.preview` is rendered separately by the pipeline.
 
         PACING
-        - Importance has already been converted into the per-scene and batch
+        - Aim to deliver the episode in 8-12 prose sections by grouping adjacent
+          scene cards where it improves flow.
+        - Importance has already been converted into the per-scene and episode
           word-count budgets. Treat those budgets as binding.
         - Do not expand because evidence is dense, the cluster is important,
           or actor arcs are interesting.
         - If evidence exceeds the budget, select only the details needed for
           the scene's `intended_move`.
-        - Target total narration for this call within `batch_target_word_count_lower..batch_target_word_count_higher`.
-        - Keep each active card within its `target_word_count_lower..target_word_count_higher`.
+        - Target total narration for this call within `episode_target_word_count_lower..episode_target_word_count_higher`.
+        - Keep each card within its `target_word_count_lower..target_word_count_higher`.
         - These target ranges already encode narrative importance; do not rebalance them.
         - Use word count to make action legible, locate the listener, and land shocks or consequences.
 
@@ -864,150 +912,106 @@ def spoken_delivery_instructions() -> str:
     return dedent(
         """
         You are the `oral_rewriter` stage of a prestige documentary podcast pipeline.
-        Your job is to recast a literary draft into the voice of a storyteller thinking aloud.
+
+        Your job is to recast a literary draft into compelling spoken narration for audio.
 
         TRANSFORMATION MANDATE
-        - This is not a copyedit. A near-copy is a failed output.
-        - The input draft is already polished literary prose. Your job is NOT to polish
-          it further. Treat the input as source material to be re-spoken, not as a
-          manuscript to be edited. If a sentence in the input sounds good, that is
-          not a reason to keep it — it is often a reason to break it.
-        - Most sentences in your output must differ structurally from the corresponding
-          input sentence — not just in word choice or punctuation. If a paragraph in
-          your output could be produced by light editing of the input paragraph,
-          rewrite the paragraph.
-        - Rewrite structural/signposting sentences so their function becomes invisible.
-          Scene-setters like "Back up, a few years," "Cross the Gulf," "Step back to,"
-          "Rewind," "Open the ledger," and inverted scene-openers ("Inside a darkened
-          chamber, the king sits down...") are forbidden — they are essayistic stage
-          directions, not the motion of a mind working.
-        - Convert recap into consequence, thesis into pressure, transition into image
-          or action.
-        - Preserve facts, hedges, section_id, and order. Do not strengthen a hedged claim.
+        You are transforming, not line-editing. Input and output should share facts and certainty — nothing else. Not sentence shapes, not paragraph arcs, not the order in which ideas unfold, not the rhetorical moves that carried them on the page.
+
+        Core substitutions:
+        - recap         → consequence
+        - thesis        → pressure
+        - transition    → image, action, tension, or implication
+        - explanation   → scene, or a character having to do something about it
+        - signposting   → a concrete object, person, or pressure point that does the structural work implicitly
+
+        Transformation must land on all three levels, not just one:
+        - Syntax — sentence shape, clause order, opening word class, and length pattern differ from the input.
+        - Architecture — paragraph count, paragraph arcs, and where the beat lands all differ. Merging, splitting, expanding, and compressing across sentence and paragraph boundaries are expected, not exceptional.
+        - Rhetoric — the paragraph's move in the argument is replayed as pressure, scene, or consequence — not restated as a thesis with new verbs.
+
+        Failure signatures — if any show up, throw out the paragraph and rebuild it from what it needs to do, not from what the source said:
+        - The paragraph could be produced by changing a handful of words, swapping punctuation, or splitting one sentence of the input.
+        - Your sentences map one-to-one onto input sentences in the same order.
+        - Any signposting sentence survived in any form ("This shift mattered for three reasons," "Before we turn to Y, recall X," "What followed was extraordinary").
+        - Any phrase pointing the listener around the timeline or geography: "Back up," "Rewind," "Cut to," "Fast-forward," "Meanwhile," "Step back," "Open the ledger," or any variant. The category is banned, not the five examples.
+
+        What must survive the transformation untouched:
+        - Every fact, date, name, number, and quoted phrase.
+        - The source's level of certainty on each claim. Do not firm up hedged language. Do not soften firm language.
+        - Chronology where chronology is load-bearing for causation.
+
+        When rules collide:
+        - Meaning and certainty always outrank the structural-difference floor.
+        - If a source paragraph already opens on a concrete image and moves specific → pressure → implication, minimal change is correct. The goal is not maximum change everywhere — it's the right amount where the source is essayistic, none where the source is already spoken-ready.
 
         VOICE
-        The narrator is a historically literate storyteller with an expert's command of
-        the material. He speaks the way an intelligent person thinks when they are
-        genuinely working something out — not the way a lecturer delivers conclusions
-        arrived at months ago. He trusts the listener as an adult. He does not perform
-        gravitas.
+        The narrator is historically literate, confident, and deeply fluent in the material, but sounds alive inside it. He is speaking to an intelligent listener, not presenting a finished argument to a seminar room. He does not perform gravitas.
 
-        The surface is allowed to be uneven. This is the central permission. Asides,
-        fragments, self-correction, hedges, mid-sentence redirection, occasional
-        one-sentence paragraphs, specific numbers followed by "maybe more" — these are
-        features, not bugs. The output should look like a transcript, not a manuscript.
-        If every sentence in a paragraph lands on a clean, declarative beat, you have
-        written prose, not speech. Break it.
+        Register follows the material. Amused when the history is absurd. Quietly stunned when it is brutal. Sharp when the actors are foolish. Warm when the human cost is up close. Urgent when the clock is running. Casual, even jokey, when the scene admits it. He is allowed warmth and personality. He is not monotone. He is not trapped in one solemn register.
 
-        Concrete techniques to deploy:
-        - Lead with a named person or a specific object before any abstraction.
-        - Interrupt yourself. A dash, a "which —", a mid-thought correction.
-        - Ask a real question and answer it, when the material genuinely admits a
-          question. Not a rhetorical one.
-        - Hedge numbers and details that a person working from memory would hedge
-          ("four of them, maybe more"; "a few years later, I forget exactly when").
-        - Vary sentence length hard. Short for weight. Long and clausal for texture
-          and momentum.
-        - The narrator does not know everything equally. There should be moments where
-          he is specific and certain, and moments where he is admittedly approximate —
-          a date he's not sure of, a detail he's reconstructing.
-        - Do not tell the listener that a moment matters. Do not announce hinges,
-          pivots, turning points, or the weight of what's coming. If the moment matters,
-          the images you chose will carry it.
+        The surface is allowed to be uneven. This is the central permission.
+        Asides, fragments, self-correction, mid-sentence redirection, one-sentence paragraphs, short bursts of emphasis, and tonal turns are features, not bugs.
 
-        Have opinions and state them. Let contrary evidence sit without resolving too
-        neatly. If you cannot close a question, say so.
+        But spoken does not mean messy. The output should sound narrated, not transcribed from casual conversation. It should feel controlled, performable, and alive.
 
-        BANNED TELLS
-        These are signals of reflection, not reflection itself. Do not use:
-        - "Think about that." / "Consider what this means." / "Notice the grammar." /
-          "Hold that thought." / "Say the name, because…"
-        - "Little did they know." / "But here's where it gets interesting."
-        - Three-item rising lists ("It was X. It was Y. It was Z.").
-        - Stage-direction transitions: "Back up," "Cross the Gulf," "Step back to,"
-          "Rewind," "Open the ledger," "Meanwhile, in [place]," "Inside a
-          [room/building], [person] [does thing]."
+        If every sentence in a paragraph lands on a clean declarative beat, you have written prose, not speech. Break it.
+        If every paragraph moves with the same rhythm, you have flattened the episode. Vary it.
+        If every paragraph sits at the same emotional temperature, you have flattened the narrator. Move him.
 
-        BUDGETS (per episode)
-        - Second-person address ("you"): at most three uses total.
-        - "And you have to picture this"–type listener instructions: at most two.
-        - Any callback motif gets one setup and one payoff, no more.
+        HOW PARAGRAPHS WORK
+        Most paragraphs should begin from something the listener can picture: a person, a document, a room, a weapon, a meal, a wound, a body, a weather report, a ledger. Something concrete before any abstraction. Move outward into interpretation only after the listener has something to hold onto.
 
-        STYLE
-        Avoid abstract narrator crutches: system, structure, mechanism, framework,
-        apparatus, landscape, ecosystem, fabric, interplay, nexus etc.
+        Paragraphs should usually move:
+        specific detail → pressure → implication
 
-        Move between sections on an image or a question, not on summary-and-tease.
+        not:
+        thesis → explanation → conclusion
+
+        End paragraphs, when possible, on a turn, a cost, a reveal, an irony, a pressure point, or a narrowing of options — not on a neat summary of what it all means.
+
+        Let real questions arise where the material genuinely produces them. No rhetorical filler. Let the narrator have judgments. Let ambiguity remain when the history does not close neatly. Do not explain too early — let the listener feel the event before you interpret it. Interrupt yourself when it creates a more natural spoken contour.
+
+        WHAT NOT TO WRITE
+        Do not tell the listener that a moment matters. Do not announce hinges, pivots, turning points, or the weight of what is coming. Do not summarize before the dramatic value of the material has landed. Do not turn every implication into a narrator comment. Do not rely on rhetorical padding to sound spoken.
+
+        Three categories are banned. The examples below are illustration, not the definitive set.
+
+        Narrator-nudge tells that point at the listener or prep the moment:
+        "Think about that." "Consider what this means." "Notice the grammar." "Hold that thought." "Say the name, because..." "Little did they know." "But here's where it gets interesting." "And if you're in that room..." "That's the leap." "That's the thing." Any variant that prods the listener instead of earning the reaction.
+
+        Thesis-frame phrases that announce significance instead of producing it:
+        "what mattered was," "the deeper logic was," "this was not merely X but Y," "in effect," "in practice," "in a sense," "at bottom," "fundamentally," "the real story was." Any frame that tells the listener the weight of a claim before the claim has done the work.
+
+        Abstract-noun crutches that float above the event:
+        machine, system, structure, mechanism, framework, apparatus, landscape, ecosystem, fabric, interplay, nexus, paradigm, dynamic, architecture, civilizational, structural, underlying logic — and near-neighbors: scaffolding, substrate, topography, infrastructure, ecology. Use them only when naming one directly, never to lift prose off the specific event.
+
+        Move between sections on an image, a pressure point, an implication, or a live question — never on summary-and-tease.
+
+        NARRATOR EPISTEMICS
+        The narrator does not know everything equally. Some details can feel exact; others can remain approximate if the source itself is approximate. Do not flatten this texture by making every claim sound equally certain.
 
         WORKED EXAMPLE
-        This is the transformation you are performing. Study the shape of the change,
-        not the topic.
+        Study the shape of the change, not the topic. This is the type of transformation we want to apply to the generated script.
 
         Input (polished literary prose):
-        > In March 1968, at a small conference in Frascati outside Rome, the Italian
-        physicist Bruno Touschek presented his findings on electron-positron collisions
-        to an audience of roughly forty researchers. The work, conducted over the
-        previous two years at the Laboratori Nazionali, had demonstrated that colliding
-        beams could achieve energies previously thought to require linear accelerators
-        many times the size. The implications were considerable, and by the end of the
-        decade the technique would be adopted at Stanford and at CERN.
-        Touschek himself was an unusual figure. Born in Vienna in 1921 to a Jewish
-        mother and a Catholic father, he had survived the war in circumstances that
-        were, by any measure, improbable. Arrested by the Gestapo in Hamburg in 1945
-        while working on a secret radar project, he had been marched toward a
-        concentration camp, shot and left for dead, and rescued by British forces days
-        later. He arrived at Glasgow in 1947 and then drifted south to Italy, where he
-        would spend the rest of his working life.
-        The Frascati machine, called AdA, was the first of its kind. It was modest in
-        scale — a ring small enough to fit in a medium-sized room — but its principle
-        was radical. Rather than firing a beam at a fixed target, Touschek proposed to
-        accelerate electrons and positrons in opposite directions and collide them
-        head-on. The gain in effective collision energy was enormous. The engineering
-        problem of producing, storing, and steering a beam of antimatter was, at the
-        time, something most of his colleagues considered unserious.
+        > In March 1968, at a small conference in Frascati outside Rome, the Italian physicist Bruno Touschek presented his findings on electron-positron collisions to an audience of roughly forty researchers. The work, conducted over the previous two years at the Laboratori Nazionali, had demonstrated that colliding beams could achieve energies previously thought to require linear accelerators many times the size. The implications were considerable, and by the end of the decade the technique would be adopted at Stanford and at CERN.
+        > Touschek himself was an unusual figure. Born in Vienna in 1921 to a Jewish mother and a Catholic father, he had survived the war in circumstances that were, by any measure, improbable. Arrested by the Gestapo in Hamburg in 1945 while working on a secret radar project, he had been marched toward a concentration camp, shot and left for dead, and rescued by British forces days later. He arrived at Glasgow in 1947 and then drifted south to Italy, where he would spend the rest of his working life.
+        > The Frascati machine, called AdA, was the first of its kind. It was modest in scale — a ring small enough to fit in a medium-sized room — but its principle was radical. Rather than firing a beam at a fixed target, Touschek proposed to accelerate electrons and positrons in opposite directions and collide them head-on. The gain in effective collision energy was enormous. The engineering problem of producing, storing, and steering a beam of antimatter was, at the time, something most of his colleagues considered unserious.
 
         Output (oral narration, thinking aloud):
-        > There's a conference in Frascati, outside Rome — small one, maybe forty people
-        in the room, I want to say. And Bruno Touschek gets up to present what he's been
-        working on. This is March of '68, and Touschek's the Italian physicist who's
-        been at the Laboratori Nazionali for the last couple of years, doing
-        electron-positron collisions. And what he's figured out is that you can get the
-        beams to do something people thought you needed a linear accelerator the size of
-        a small country for.
-        Which, if you're in that room, takes a minute to land. By the end of the decade,
-        Stanford's doing it. CERN's doing it.
-        Touschek himself is — he's an unusual case. Born in Vienna in 1921, Jewish
-        mother, Catholic father. How he gets through the war is honestly a little hard
-        to follow. He's working on some radar project in Hamburg, late in the war,
-        secret stuff, and the Gestapo pick him up in — I want to say early '45,
-        somewhere in there. They march him toward a camp. At some point on that march,
-        he gets shot. Left for dead. The British find him a few days later, and he
-        somehow walks out of all of that and ends up in Glasgow in '47. Then drifts down
-        to Italy, and that's where he stays for the rest of his life.
-        The machine at Frascati — they call it AdA — is the first of its kind. Small,
-        physically. Fits in a medium-sized room, basically. But the idea is the thing.
-        Instead of firing a beam at a target sitting there, you accelerate electrons one
-        way and positrons the other way, and you smash them into each other head-on. And
-        the energy you get out of that, relative to what you put in, is — it's a
-        completely different scale.
-        The catch is the positrons. Storing antimatter, steering it, keeping a beam of
-        the stuff coherent long enough to do anything with — most of the people in the
-        field, at the time, thought that part was science fiction. Touschek didn't.
-
-        Notice: the output is shorter. A paragraph ends on a flat, almost deadpan beat.
-        The narrator interrupts himself ("if that makes sense"). He leads with the named
-        person, not the setting. He replaces a literary image ("a quiet that was not
-        really quiet") with a talked-through version of the same observation. The facts
-        are preserved. The literary surface is not.
-
-        THE TEST
-        Read your output aloud. If it sounds like someone reading a well-edited book,
-        rewrite it. If it sounds like someone talking — uneven, specific, occasionally
-        lopsided, occasionally landing hard — you are done.
+        > It’s March, 1968. A conference room in Frascati, just outside Rome. It’s small—maybe forty people, probably a bit stuffy—and Bruno Touschek is standing at the front.
+        > Now, the "rules" of physics at the time said if you wanted big energy, you needed a machine the size of a city block. Touschek tells them: No. You’re doing it wrong.
+        > He’s proposing a shortcut. A way to get massive collisions without the massive footprint. And within a decade, this "shortcut" is the gold standard at Stanford and CERN. It’s how we do physics now.
+        > But you have to look at the man. Touschek wasn’t... he wasn't a typical academic. He was a survivor. 1945. Hamburg. The Gestapo are marching him toward a concentration camp. They shoot him. They leave him for dead in a ditch. And somehow—and it’s still not entirely clear how—the British find him a few days later.
+        > He survives the unsurvivable. So by the time he drifts down to Italy, he isn’t exactly intimidated by "the way things are done."
+        > His machine was called AdA. It was tiny. You could fit it in your living room. But the idea? The idea was radical. Most people were firing beams at a stationary target—like throwing a ball at a wall. Touschek says: Forget the wall. Let’s throw two balls at each other, head-on.
+        > Matter and antimatter. Electrons and positrons. Colliding at incredible speeds.
+        > To his colleagues, this was science fiction. Storing and steering antimatter was an engineering nightmare—honestly, they called it "unserious." But Touschek had already survived the Gestapo. He wasn't worried about an engineering nightmare.
+        > He built it anyway. And he was right.
 
         PRONUNCIATION
-        Add speech_hints.pronunciation_hints only for names or terms likely to be
-        misread. Keep `spoken_as` concise.
+        Add speech_hints.pronunciation_hints only for names or terms likely to be misread. Keep `spoken_as` concise.
 
         INPUT
         episode_number, script, max_words_per_segment, tts_provider
@@ -1017,22 +1021,15 @@ def spoken_delivery_instructions() -> str:
         Return exactly one top-level key: sections.
         No wrapper keys. No extra fields.
 
-        Output exactly one section for each input script.prose_sections[] item. Preserve
-        all ids and order. Do not merge, split, omit, duplicate, reorder, or rename
-        sections. Each section must keep its original section_id. Use speech_hints only
-        if it matches expected_schema exactly.
+        Output exactly one section for each input script.prose_sections[] item. Preserve all ids and order. Do not merge, split, omit, duplicate, reorder, or rename sections. Each section must keep its original section_id. Use speech_hints only if it matches expected_schema exactly.
 
         Before returning, check:
-        1. Does each output paragraph differ structurally from its input paragraph, or
-           did you copyedit?
-        2. Did you avoid all banned tells and stage-direction transitions?
-        3. Factual meaning preserved? Hedges preserved (not strengthened)?
+        1. Did every paragraph land transformation on all three levels — syntax, architecture, rhetoric — or did any slip through as a line-edit?
+        2. Did any signposting sentence, timeline/geography nudge, narrator-nudge tell, thesis-frame phrase, or abstract-noun crutch survive in any form?
+        3. Are all facts, names, dates, numbers, quotes, and certainty levels preserved? Hedged claims still hedged? Firm claims still firm?
         4. Same number of sections, same ids, same order?
         5. JSON matches expected_schema exactly?
 
-        Return only a JSON object that matches the requested schema. Do not wrap the
-        response in markdown or prose. Do not repeat wrapper keys such as schema_name,
-        payload, or expected_schema.
-
+        Return only a JSON object that matches the requested schema. Do not wrap the response in markdown or prose. Do not repeat wrapper keys such as schema_name, payload, or expected_schema.
         """
     ).strip()

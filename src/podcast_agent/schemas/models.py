@@ -127,7 +127,16 @@ class PipelineConfig(StrictModel):
     synthesis_axis_pct: float = Field(default=1.0, ge=0.0, le=1.0)
     synthesis_axis_min: int = Field(default=10, ge=0)
     synthesis_axis_max: int = Field(default=15, ge=1)
-    synthesis_total_passage_cap: int = Field(default=600, ge=1)
+    synthesis_total_passage_cap: int = Field(default=500, ge=1)
+    synthesis_floor_budget_fraction: float = Field(default=0.35, gt=0.0, le=1.0)
+    synthesis_axis_floor_min: int = Field(default=10, ge=0)
+    synthesis_axis_floor_max: int = Field(default=15, ge=1)
+    synthesis_axis_ceiling_multiplier: float = Field(default=1.4, ge=1.0)
+    synthesis_trim_top_fraction: float = Field(default=0.10, ge=0.0, le=1.0)
+    synthesis_trim_mid_fraction: float = Field(default=0.15, ge=0.0, le=1.0)
+    synthesis_trim_top_keep_fraction: float = Field(default=0.50, gt=0.0, le=1.0)
+    synthesis_trim_mid_keep_fraction: float = Field(default=0.40, gt=0.0, le=1.0)
+    synthesis_trim_tail_keep_fraction: float = Field(default=0.30, gt=0.0, le=1.0)
     planning_axis_pct: float = Field(default=1.0, ge=0.0, le=1.0)
     planning_axis_min: int = Field(default=10, ge=0)
     planning_axis_max: int = Field(default=15, ge=1)
@@ -136,10 +145,10 @@ class PipelineConfig(StrictModel):
     max_repair_attempts: int = Field(default=3, ge=0)
     tts_provider: str = "openai"
     tts_concurrency: int = Field(default=12, ge=1)
-    episode_planning_concurrency: int = Field(default=9, ge=1)
-    episode_write_concurrency: int = Field(default=10, ge=1)
-    target_episode_minutes: float = Field(default=100.0, gt=0.0)
-    min_episode_minutes: float = Field(default=95.0, gt=0.0)
+    episode_planning_concurrency: int = Field(default=6, ge=1)
+    episode_write_concurrency: int = Field(default=6, ge=1)
+    target_episode_minutes: float = Field(default=90.0, gt=0.0)
+    min_episode_minutes: float = Field(default=85.0, gt=0.0)
     duration_shortfall_policy: Literal["warn"] = "warn"
     scene_card_target_min: int = Field(default=35, ge=1)
     scene_card_target_max: int = Field(default=45, ge=1)
@@ -166,8 +175,12 @@ class PipelineConfig(StrictModel):
             )
         if self.synthesis_axis_max < self.synthesis_axis_min:
             raise ValueError("synthesis_axis_max must be >= synthesis_axis_min")
+        if self.synthesis_axis_floor_max < self.synthesis_axis_floor_min:
+            raise ValueError("synthesis_axis_floor_max must be >= synthesis_axis_floor_min")
         if self.planning_axis_max < self.planning_axis_min:
             raise ValueError("planning_axis_max must be >= planning_axis_min")
+        if (self.synthesis_trim_top_fraction + self.synthesis_trim_mid_fraction) > 1.0:
+            raise ValueError("synthesis trim top and mid fractions must sum to <= 1.0")
         if self.scene_card_target_max < self.scene_card_target_min:
             raise ValueError("scene_card_target_max must be >= scene_card_target_min")
         if self.scene_card_primitives_max < self.scene_card_primitives_min:
@@ -461,17 +474,22 @@ class LiveQuestion(SynthesisPrimitive):
 
 
 SYNTHESIS_PRIMITIVE_FAMILIES: tuple[str, ...] = (
-    "turning_points",
-    "scene_worthy_consequences",
-    "causal_mechanisms",
-    "live_questions",
-    "misperceptions",
-    "reversals",
-    "motivations_dilemmas",
-    "perspective_shifts",
-    "moral_ambiguities",
-    "personal_stakes",
-    "trauma_legacies",
+    "epochal_turns",
+    "decisions_and_nondecisions",
+    "set_piece_scenes",
+    "telling_details",
+    "human_costs",
+    "character_engines",
+    "coalitions_and_fault_lines",
+    "systems_and_operating_logics",
+    "misreadings_and_fantasies",
+    "contested_explanations",
+    "perspective_windows",
+    "moral_traps",
+    "afterlives",
+    "recurring_images_and_symbols",
+    "worlds_in_collision",
+    "ironies_and_reversals",
 )
 SYNTHESIS_PRIMITIVE_FAMILY_SET = set(SYNTHESIS_PRIMITIVE_FAMILIES)
 
@@ -492,12 +510,12 @@ def _normalize_family_mapping(
     return normalized
 
 
-def _drop_invalid_live_questions(
+def _drop_invalid_contested_explanations(
     mapping: dict[str, list[SynthesisPrimitive]],
 ) -> dict[str, list[SynthesisPrimitive]]:
-    mapping["live_questions"] = [
+    mapping["contested_explanations"] = [
         item
-        for item in mapping.get("live_questions", [])
+        for item in mapping.get("contested_explanations", [])
         if len(item.candidate_readings) >= 2
     ]
     return mapping
@@ -538,7 +556,7 @@ class SynthesisPrimitivesArtifact(StrictModel):
             self.primitives_by_family,
             mapping_name="primitives_by_family",
         )
-        self.primitives_by_family = _drop_invalid_live_questions(normalized)
+        self.primitives_by_family = _drop_invalid_contested_explanations(normalized)
         return self
 
 
@@ -592,7 +610,7 @@ class SynthesisMap(StrictModel):
             self.primitives_by_family,
             mapping_name="primitives_by_family",
         )
-        self.primitives_by_family = _drop_invalid_live_questions(normalized)
+        self.primitives_by_family = _drop_invalid_contested_explanations(normalized)
         primitive_ids = set(self.primitive_by_id())
         for cluster in self.episode_candidate_clusters:
             missing = [member_id for member_id in cluster.member_ids if member_id not in primitive_ids]
@@ -809,7 +827,7 @@ class EpisodePlanDraft(StrictModel):
     actor_arc_directives: list[ActorArcDirective] = Field(default_factory=list, max_length=4)
     framing: FramingBlock
     scene_cards: list[SceneCardDraft] = Field(default_factory=list, min_length=1)
-    target_duration_minutes: float = Field(default=100.0, gt=0.0)
+    target_duration_minutes: float = Field(default=90.0, gt=0.0)
 
     @model_validator(mode="after")
     def validate_scene_cards(self) -> "EpisodePlanDraft":
@@ -849,17 +867,11 @@ class ProseSection(StrictModel):
     source_book_ids: list[str] = Field(default_factory=list)
 
 
-class WindowMapEntry(StrictModel):
-    batch_id: str = Field(min_length=1)
-    section_ids: list[str] = Field(default_factory=list)
-
-
 class EpisodeScript(StrictModel):
     episode_number: int = Field(ge=1)
     title: str
     framing: FramingBlock
     prose_sections: list[ProseSection] = Field(default_factory=list)
-    window_map: list[WindowMapEntry] = Field(default_factory=list)
     total_word_count: int = Field(default=0, ge=0)
     estimated_duration_seconds: int = Field(default=0, ge=0)
 

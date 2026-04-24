@@ -164,7 +164,7 @@ class TestRedesignedAgents:
         assert payload["synthesis_feedback"]["issue"] == "thin_grounding"
         assert "PRIORITY RULES (govern everything below)" in agent.instructions
         assert "passages_by_axis: evidence grouped by axis" in agent.instructions
-        assert "misperceptions (10–25)" in agent.instructions
+        assert "epochal_turns (12–20)" in agent.instructions
         assert "Score every primitive on 0.0–1.0" in agent.instructions
         assert "Scores must be meaningfully non-flat" in agent.instructions
 
@@ -172,7 +172,7 @@ class TestRedesignedAgents:
         agent = SynthesisConsolidationAgent(_mock_llm())
         payload = agent.build_payload(
             project_id="proj",
-            primitives={"primitives_by_family": {"turning_points": []}},
+            primitives={"primitives_by_family": {"epochal_turns": []}},
             axes_summary=[{"axis_id": "axis_1"}],
             book_metadata=[{"book_id": "b1"}],
             series_size_hint=3,
@@ -185,9 +185,9 @@ class TestRedesignedAgents:
         assert payload["consolidation_feedback"]["issue"] == "cluster_density"
         assert "actor_tension" in agent.instructions
         assert "`coverage_policy`" in agent.instructions
-        assert "Aim for 25-40 episode candidate clusters" in agent.instructions
+        assert "Aim for 40-60 episode candidate clusters" in agent.instructions
         assert "create multiple clusters for the same or similar broad topic" in agent.instructions
-        assert "Prefer creating more clusters over creating oversized clusters" in agent.instructions
+        assert "Do not create oversized clusters that erase meaningful internal tension." in agent.instructions
         assert "Do not give equal narrative weight to every cluster" in agent.instructions
 
     def test_narrative_strategy_agent_payload(self):
@@ -206,6 +206,8 @@ class TestRedesignedAgents:
         assert payload["strategy_feedback"]["issue"] == "cluster_home_collision"
         assert "must also set `emphasis`" in agent.instructions
         assert "Multiple `anchor` occurrences may appear in one episode" in agent.instructions
+        assert "cluster `member_ids` count as the proxy" in agent.instructions
+        assert "Aim for roughly 32-45 cluster members per episode" in agent.instructions
         assert "`actor_arc_directives` must contain only the 1-4 actors" in agent.instructions
         assert "`arc_threads`" in agent.instructions
         assert "`arc_type`" in agent.instructions
@@ -228,7 +230,7 @@ class TestRedesignedAgents:
         assert "`estimated_duration_seconds`" not in agent.instructions
         assert "PRIORITY RULES" in agent.instructions
         assert "No scene without passage support" in agent.instructions
-        assert "Target 30-35 scene cards" in agent.instructions
+        assert "Target 35-45 scene cards" in agent.instructions
         assert "Allocate primitives intentionally" in agent.instructions
         assert "Preserve `episode.actor_arc_directives`" in agent.instructions
         assert "`arc_bindings`" in agent.instructions
@@ -250,39 +252,35 @@ class TestRedesignedAgents:
         agent = WritingAgent(_mock_llm())
         payload = agent.build_payload(
             episode_number=1,
-            batch_id="batch_2",
             episode_plan={"episode_number": 1},
-            active_scene_card_ids=["scene_2"],
             passages=[{"passage_id": "p1"}],
             book_metadata=[{"book_id": "b1"}],
-            batch_target_word_count_lower=120,
-            batch_target_word_count_higher=180,
+            episode_target_word_count_lower=120,
+            episode_target_word_count_higher=180,
             skip_grounding=True,
             actor_metadata={"actors": [{"actor_id": "actor_1"}]},
-            is_final_batch=False,
         )
         assert agent.schema_name == "episode_writing"
         assert payload["actor_metadata"]["actors"][0]["actor_id"] == "actor_1"
-        assert payload["is_final_batch"] is False
         assert payload["skip_grounding"] is True
-        assert payload["batch_target_word_count_lower"] == 120
-        assert payload["batch_target_word_count_higher"] == 180
+        assert payload["episode_target_word_count_lower"] == 120
+        assert payload["episode_target_word_count_higher"] == 180
         assert "scene_word_count_targets" not in payload
         assert "previous_sections" not in payload
-        assert "`active_scene_card_ids`" in agent.instructions
-        assert "`is_final_batch`" in agent.instructions
-        assert "batch window" in agent.instructions
+        assert "Draft all `plan.scene_cards` in order." in agent.instructions
         assert "next-episode teaser copy" in agent.instructions
         assert "`plan.framing.preview` is rendered separately" in agent.instructions
         assert "`target_word_count_lower`" in agent.instructions
         assert "`target_word_count_higher`" in agent.instructions
-        assert "`batch_target_word_count_lower`" in agent.instructions
-        assert "`batch_target_word_count_higher`" in agent.instructions
+        assert "`episode_target_word_count_lower`" in agent.instructions
+        assert "`episode_target_word_count_higher`" in agent.instructions
         assert "`passages[].text`" in agent.instructions
         assert agent.instructions.count("Optional `actor_metadata`") == 1
         assert agent.instructions.count("Do not cite actor metadata.") == 1
         assert "Passage evidence wins if actor metadata and passages conflict." in agent.instructions
         assert "target ranges already encode narrative importance" in agent.instructions
+        assert "Target 8-12 prose sections for the episode" in agent.instructions
+        assert "Group neighboring scene cards into coherent sections" in agent.instructions
         assert "`entry_image`" in agent.instructions
         assert "`action`: show named actors doing concrete things" in agent.instructions
         assert "Do not write standalone transition paragraphs" in agent.instructions
@@ -298,7 +296,6 @@ class TestRedesignedAgents:
         with pytest.raises(ValidationError, match="next-episode teaser copy"):
             WritingAgent(_mock_llm()).response_model.model_validate(
                 {
-                    "batch_id": "batch_1",
                     "prose_sections": [
                         {
                             "section_id": "section_1",
@@ -306,15 +303,13 @@ class TestRedesignedAgents:
                             "movement_goal": "discover",
                             "text": "The scene lands.\n\nNext time: another story begins.",
                         }
-                    ],
-                    "window_map": [],
+                    ]
                 }
             )
 
     def test_writing_response_allows_ordinary_next_time_phrase(self):
         response = WritingAgent(_mock_llm()).response_model.model_validate(
             {
-                "batch_id": "batch_1",
                 "prose_sections": [
                     {
                         "section_id": "section_1",
@@ -322,8 +317,7 @@ class TestRedesignedAgents:
                         "movement_goal": "discover",
                         "text": "But the next time you hear the official story, remember the archive.",
                     }
-                ],
-                "window_map": [],
+                ]
             }
         )
 
@@ -333,33 +327,30 @@ class TestRedesignedAgents:
         agent = WritingAgentNoCitations(_mock_llm())
         payload = agent.build_payload(
             episode_number=1,
-            batch_id="batch_1",
             episode_plan={"episode_number": 1},
-            active_scene_card_ids=["scene_1"],
             passages=[{"passage_id": "p1", "text": "Evidence"}],
             book_metadata=[{"book_id": "b1"}],
-            batch_target_word_count_lower=140,
-            batch_target_word_count_higher=220,
+            episode_target_word_count_lower=140,
+            episode_target_word_count_higher=220,
             skip_grounding=True,
             actor_metadata={"actors": [{"actor_id": "actor_1"}]},
         )
         assert agent.schema_name == "episode_writing"
         assert payload["actor_metadata"]["actors"][0]["actor_id"] == "actor_1"
-        assert payload["is_final_batch"] is True
         assert payload["skip_grounding"] is True
-        assert payload["batch_target_word_count_lower"] == 140
-        assert payload["batch_target_word_count_higher"] == 220
+        assert payload["episode_target_word_count_lower"] == 140
+        assert payload["episode_target_word_count_higher"] == 220
         assert "scene_word_count_targets" not in payload
         assert "previous_sections" not in payload
         assert "`target_word_count_lower`" in agent.instructions
         assert "`target_word_count_higher`" in agent.instructions
-        assert "`batch_target_word_count_lower`" in agent.instructions
-        assert "`batch_target_word_count_higher`" in agent.instructions
-        assert "`is_final_batch`" in agent.instructions
-        assert "batch window" in agent.instructions
+        assert "`episode_target_word_count_lower`" in agent.instructions
+        assert "`episode_target_word_count_higher`" in agent.instructions
+        assert "Draft the full episode" in agent.instructions
         assert "next-episode teaser copy" in agent.instructions
         assert "`plan.framing.preview` is rendered separately" in agent.instructions
         assert "Target total narration for this call within" in agent.instructions
+        assert "Aim to deliver the episode in 8-12 prose sections" in agent.instructions
         assert "Optional `actor_metadata`" in agent.instructions
         assert "Passage evidence wins if actor metadata and passages conflict." in agent.instructions
         assert "Do not cite actor metadata." in agent.instructions
@@ -367,7 +358,7 @@ class TestRedesignedAgents:
         assert "Populate `source_book_ids`" in agent.instructions
         assert "target ranges already encode narrative importance" in agent.instructions
         assert "`entry_image`" in agent.instructions
-        assert "`action`: write an observable beat" in agent.instructions
+        assert "`action`: write an observable beat: named actors doing concrete things" in agent.instructions
         assert "Do not output standalone transitions." in agent.instructions
         assert "Resolve each scene actor `arc_bindings[].thread_id` against `plan.actor_arc_directives[].arc_threads[]`" in agent.instructions
         assert "Use arc thread `premise`, `pressure`, `movement`, and `payoff` as narrative guidance" in agent.instructions
@@ -381,7 +372,6 @@ class TestRedesignedAgents:
         with pytest.raises(ValidationError, match="next-episode teaser copy"):
             WritingAgentNoCitations(_mock_llm()).response_model.model_validate(
                 {
-                    "batch_id": "batch_1",
                     "prose_sections": [
                         {
                             "section_id": "section_1",
@@ -390,8 +380,7 @@ class TestRedesignedAgents:
                             "text": "The scene lands.\n\nIn the next episode, another story begins.",
                             "source_book_ids": ["b1"],
                         }
-                    ],
-                    "window_map": [],
+                    ]
                 }
             )
 
@@ -427,17 +416,18 @@ class TestRedesignedAgents:
         assert agent.schema_name == "spoken_delivery"
         assert payload["max_words_per_segment"] == 250
         assert "You are the `oral_rewriter` stage" in agent.instructions
-        assert "historically literate storyteller" in agent.instructions
-        assert "Have opinions and state them" in agent.instructions
-        assert "Avoid abstract narrator crutches" in agent.instructions
-        assert "Move between sections on an image or a question" in agent.instructions
-        assert "BANNED TELLS" in agent.instructions
+        assert "Your job is to recast a literary draft into compelling spoken narration for audio." in agent.instructions
+        assert "TRANSFORMATION MANDATE" in agent.instructions
+        assert "HOW PARAGRAPHS WORK" in agent.instructions
+        assert "Do not tell the listener that a moment matters." in agent.instructions
+        assert "Before returning, check:" in agent.instructions
+        assert "Narrator-nudge tells that point at the listener or prep the moment:" in agent.instructions
         assert "Return only valid JSON matching expected_schema exactly." in agent.instructions
         assert "Return exactly one top-level key: sections." in agent.instructions
         assert "No wrapper keys. No extra fields." in agent.instructions
         assert "Output exactly one section for each input script.prose_sections[]" in agent.instructions
         assert "Do not merge, split, omit, duplicate, reorder, or rename" in agent.instructions
-        assert "Do not strengthen a hedged claim." in agent.instructions
+        assert "Do not firm up hedged language. Do not soften firm language." in agent.instructions
         assert "Add speech_hints.pronunciation_hints only" in agent.instructions
         assert "JSON matches expected_schema exactly?" in agent.instructions
         assert "Output Format:" not in agent.instructions
@@ -465,8 +455,8 @@ class TestHeuristicClient:
             )
         )
         assert result.project_id == "proj"
-        assert result.primitives_by_family["turning_points"][0].id == "tp_001"
-        assert result.primitives_by_family["misperceptions"][0].id == "mp_001"
+        assert result.primitives_by_family["epochal_turns"][0].id == "et_001"
+        assert result.primitives_by_family["misreadings_and_fantasies"][0].id == "mf_001"
 
     def test_narrative_strategy_agent_run_returns_cluster_path_episodes(self):
         agent = NarrativeStrategyAgent(HeuristicLLMClient())

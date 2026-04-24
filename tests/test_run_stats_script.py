@@ -5,6 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from podcast_agent.schemas.models import SYNTHESIS_PRIMITIVE_FAMILIES
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "generate_run_stats.py"
@@ -46,12 +47,11 @@ def _build_run(tmp_path: Path) -> Path:
         {
             "project_id": "demo-run",
             "primitives_by_family": {
-                "turning_points": [{"id": "tp_1", "title": "Turn", "summary": "Summary", "core_passage_ids": ["p1"]}],
-                "scene_worthy_consequences": [],
-                "causal_mechanisms": [],
-                "live_questions": [
+                **{family: [] for family in SYNTHESIS_PRIMITIVE_FAMILIES},
+                "epochal_turns": [{"id": "et_1", "title": "Turn", "summary": "Summary", "core_passage_ids": ["p1"]}],
+                "contested_explanations": [
                     {
-                        "id": "lq_1",
+                        "id": "cx_1",
                         "title": "Question",
                         "summary": "Summary",
                         "core_passage_ids": ["p2"],
@@ -61,12 +61,6 @@ def _build_run(tmp_path: Path) -> Path:
                         ],
                     }
                 ],
-                "reversals": [],
-                "motivations_dilemmas": [],
-                "perspective_shifts": [],
-                "moral_ambiguities": [],
-                "personal_stakes": [],
-                "trauma_legacies": [],
             },
             "quality_score": 0.6,
             "quality_notes": [],
@@ -81,19 +75,18 @@ def _build_run(tmp_path: Path) -> Path:
                     "cluster_id": "cluster_1",
                     "title": "Cluster One",
                     "summary": "Summary",
-                    "primary_member_id": "tp_1",
-                    "member_ids": ["tp_1"],
+                    "primary_member_id": "et_1",
+                    "member_ids": ["et_1"],
                     "local_question": "What changes?",
                     "local_payoff_shape": "reveal",
                 }
             ],
             "primitives_by_family": {
-                "turning_points": [{"id": "tp_1", "title": "Turn", "summary": "Summary", "core_passage_ids": ["p1"]}],
-                "scene_worthy_consequences": [],
-                "causal_mechanisms": [],
-                "live_questions": [
+                **{family: [] for family in SYNTHESIS_PRIMITIVE_FAMILIES},
+                "epochal_turns": [{"id": "et_1", "title": "Turn", "summary": "Summary", "core_passage_ids": ["p1"]}],
+                "contested_explanations": [
                     {
-                        "id": "lq_1",
+                        "id": "cx_1",
                         "title": "Question",
                         "summary": "Summary",
                         "core_passage_ids": ["p2"],
@@ -103,12 +96,6 @@ def _build_run(tmp_path: Path) -> Path:
                         ],
                     }
                 ],
-                "reversals": [],
-                "motivations_dilemmas": [],
-                "perspective_shifts": [],
-                "moral_ambiguities": [],
-                "personal_stakes": [],
-                "trauma_legacies": [],
             },
             "quality_score": 0.7,
             "quality_notes": [],
@@ -168,7 +155,6 @@ def _build_run(tmp_path: Path) -> Path:
                 "handoff_scene_card_id": "scene_1",
             },
             "prose_sections": [{"section_id": "section_1", "scene_card_ids": ["scene_1"], "movement_goal": "discover", "text": "Narration"}],
-            "window_map": [],
             "total_word_count": 1,
             "estimated_duration_seconds": 1,
         },
@@ -199,7 +185,7 @@ def test_generate_run_stats_html(tmp_path: Path):
 
     html = output_path.read_text(encoding="utf-8")
     assert "War on Terror" in html
-    assert "turning_points: 1" in html
+    assert "epochal_turns: 1" in html
     assert "Clusters: 1" in html
     assert "Driving question:" in html
 

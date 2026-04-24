@@ -262,60 +262,85 @@ class HeuristicLLMClient(LLMClient):
             if actor.get("actor_id")
         ]
         family_templates: dict[str, tuple[str, str, str]] = {
-            "turning_points": (
-                "tp_001",
-                "Heuristic turning point",
-                "A threshold crossing changes what becomes possible next.",
+            "epochal_turns": (
+                "et_001",
+                "Heuristic epochal turn",
+                "A large irreversible pivot changes the rules of the story.",
             ),
-            "scene_worthy_consequences": (
-                "sc_001",
-                "Heuristic consequence",
-                "A visible consequence follows from the turn.",
+            "decisions_and_nondecisions": (
+                "dn_001",
+                "Heuristic decision or nondecision",
+                "A choice, refusal, delay, or failure to act redirects events.",
             ),
-            "causal_mechanisms": (
-                "cm_001",
-                "Heuristic mechanism",
-                "A process explains how local change propagates.",
+            "set_piece_scenes": (
+                "ss_001",
+                "Heuristic set piece",
+                "A major playable scene concentrates the story's pressure.",
             ),
-            "live_questions": (
-                "lq_001",
-                "Heuristic live question",
-                "The evidence supports more than one plausible reading.",
+            "telling_details": (
+                "td_001",
+                "Heuristic telling detail",
+                "A concrete memorable detail makes the history locally vivid.",
             ),
-            "misperceptions": (
-                "mp_001",
-                "Heuristic misperception",
-                "Actors misread the situation in ways that shape later choices and outcomes.",
+            "human_costs": (
+                "hc_001",
+                "Heuristic human cost",
+                "A development lands as lived damage for people on the ground.",
             ),
-            "reversals": (
-                "rv_001",
-                "Heuristic reversal",
-                "A development flips expectations or stated intent.",
+            "character_engines": (
+                "cg_001",
+                "Heuristic character engine",
+                "A person's motive, fear, or ambition helps drive the story.",
             ),
-            "motivations_dilemmas": (
-                "md_001",
-                "Heuristic motivation dilemma",
-                "Actors face pressure between competing goals and constraints.",
+            "coalitions_and_fault_lines": (
+                "cf_001",
+                "Heuristic coalition fault line",
+                "An alliance holds, strains, or fractures under pressure.",
             ),
-            "perspective_shifts": (
-                "ps_001",
-                "Heuristic perspective shift",
-                "Interpretation changes when viewed through a different actor lens.",
+            "systems_and_operating_logics": (
+                "so_001",
+                "Heuristic operating logic",
+                "A system or institutional logic explains how pressure propagates.",
             ),
-            "moral_ambiguities": (
-                "ma_001",
-                "Heuristic moral ambiguity",
-                "The evidence supports conflicting judgments about responsibility.",
+            "misreadings_and_fantasies": (
+                "mf_001",
+                "Heuristic misreading",
+                "Actors misread reality or cling to a flattering illusion.",
             ),
-            "personal_stakes": (
-                "st_001",
-                "Heuristic personal stake",
-                "Individual risk and cost become decisive for later outcomes.",
+            "contested_explanations": (
+                "cx_001",
+                "Heuristic contested explanation",
+                "The evidence supports more than one plausible explanation.",
             ),
-            "trauma_legacies": (
-                "tl_001",
-                "Heuristic trauma legacy",
-                "Past violence continues shaping present choices and fears.",
+            "perspective_windows": (
+                "pw_001",
+                "Heuristic perspective window",
+                "Meaning changes when seen from a different vantage.",
+            ),
+            "moral_traps": (
+                "mt_001",
+                "Heuristic moral trap",
+                "Every available option carries compromise or stain.",
+            ),
+            "afterlives": (
+                "al_001",
+                "Heuristic afterlife",
+                "An earlier rupture keeps shaping the present.",
+            ),
+            "recurring_images_and_symbols": (
+                "rs_001",
+                "Heuristic recurring image",
+                "An image or symbol can recur across the series and gather meaning.",
+            ),
+            "worlds_in_collision": (
+                "wc_001",
+                "Heuristic worlds in collision",
+                "Different social or political worlds collide and expose the gap between them.",
+            ),
+            "ironies_and_reversals": (
+                "ir_001",
+                "Heuristic irony or reversal",
+                "A development lands opposite to its intended or expected result.",
             ),
         }
         primitives_by_family: dict[str, list[dict[str, Any]]] = {}
@@ -329,7 +354,7 @@ class HeuristicLLMClient(LLMClient):
                 passage_ids=passage_ids[:3],
                 actor_ids=actor_ids[:1],
             )
-            if family == "live_questions":
+            if family == "contested_explanations":
                 primitive["candidate_readings"] = [
                     {
                         "label": "reading_a",
@@ -557,30 +582,26 @@ class HeuristicLLMClient(LLMClient):
                 "preview": None,
             },
             "scene_cards": scene_cards,
-            "target_duration_minutes": 100.0,
+            "target_duration_minutes": 90.0,
         }
 
     def _generate_episode_writing(self, payload: PromptPayload) -> dict[str, Any]:
-        batch_id = str(payload.get("batch_id", "batch_1"))
-        active_scene_card_ids = [
-            str(scene_id) for scene_id in payload.get("active_scene_card_ids", [])
+        plan = payload.get("plan", {})
+        scene_cards = plan.get("scene_cards", [])
+        scene_card_ids = [
+            str(scene.get("scene_id"))
+            for scene in scene_cards
+            if isinstance(scene, dict) and scene.get("scene_id")
         ] or ["scene_01"]
         return {
-            "batch_id": batch_id,
             "prose_sections": [
                 {
-                    "section_id": f"section_{batch_id}",
-                    "scene_card_ids": active_scene_card_ids,
+                    "section_id": "section_1",
+                    "scene_card_ids": scene_card_ids,
                     "movement_goal": "discover",
                     "text": "Heuristic narration content.",
                     "citations": [],
                     "source_book_ids": [],
-                }
-            ],
-            "window_map": [
-                {
-                    "batch_id": batch_id,
-                    "section_ids": [f"section_{batch_id}"],
                 }
             ],
         }

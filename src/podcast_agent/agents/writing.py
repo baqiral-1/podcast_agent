@@ -11,7 +11,7 @@ from podcast_agent.prompts import (
     episode_writing_instructions,
     episode_writing_no_citations_instructions,
 )
-from podcast_agent.schemas.models import ProseSection, WindowMapEntry
+from podcast_agent.schemas.models import ProseSection
 
 
 _TEASER_LINE_RE = re.compile(
@@ -30,9 +30,7 @@ def _validate_no_teaser_lines(
 
 
 class EpisodeWritingResponse(BaseModel):
-    batch_id: str
     prose_sections: list[ProseSection] = Field(default_factory=list)
-    window_map: list[WindowMapEntry] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def reject_teaser_lines(self) -> "EpisodeWritingResponse":
@@ -49,9 +47,7 @@ class ProseSectionNoCitations(BaseModel):
 
 
 class EpisodeWritingNoCitationsResponse(BaseModel):
-    batch_id: str
     prose_sections: list[ProseSectionNoCitations] = Field(default_factory=list)
-    window_map: list[WindowMapEntry] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def reject_teaser_lines(self) -> "EpisodeWritingNoCitationsResponse":
@@ -69,33 +65,27 @@ class WritingAgent(Agent):
     def build_payload(
         self,
         episode_number: int,
-        batch_id: str,
         episode_plan: dict,
-        active_scene_card_ids: list[str],
         passages: list[dict],
         book_metadata: list[dict],
-        batch_target_word_count_lower: int | None = None,
-        batch_target_word_count_higher: int | None = None,
+        episode_target_word_count_lower: int | None = None,
+        episode_target_word_count_higher: int | None = None,
         skip_grounding: bool = False,
         actor_metadata: dict | None = None,
-        is_final_batch: bool = True,
     ) -> dict:
         payload = {
             "episode_number": episode_number,
-            "batch_id": batch_id,
-            "is_final_batch": bool(is_final_batch),
             "plan": episode_plan,
-            "active_scene_card_ids": active_scene_card_ids,
             "passages": passages,
             "books": book_metadata,
             "skip_grounding": skip_grounding,
         }
         if actor_metadata is not None:
             payload["actor_metadata"] = actor_metadata
-        if batch_target_word_count_lower is not None:
-            payload["batch_target_word_count_lower"] = int(batch_target_word_count_lower)
-        if batch_target_word_count_higher is not None:
-            payload["batch_target_word_count_higher"] = int(batch_target_word_count_higher)
+        if episode_target_word_count_lower is not None:
+            payload["episode_target_word_count_lower"] = int(episode_target_word_count_lower)
+        if episode_target_word_count_higher is not None:
+            payload["episode_target_word_count_higher"] = int(episode_target_word_count_higher)
         return payload
 
 

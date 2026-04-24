@@ -70,16 +70,16 @@ class TestLLMConfig:
 
     def test_resolve_thinking_budget_defaults(self):
         config = LLMConfig()
-        assert config.resolve_thinking_budget("theme_decomposition") == 20_000
-        assert config.resolve_thinking_budget("synthesis_primitives") == 35_000
-        assert config.resolve_thinking_budget("synthesis_consolidation") == 20_000
-        assert config.resolve_thinking_budget("episode_planning") == 15_000
+        assert config.resolve_thinking_budget("theme_decomposition") == 30_000
+        assert config.resolve_thinking_budget("synthesis_primitives") == 30_000
+        assert config.resolve_thinking_budget("synthesis_consolidation") == 30_000
+        assert config.resolve_thinking_budget("episode_planning") == 30_000
         assert config.resolve_thinking_budget("chapter_summary") is None
 
     def test_resolve_anthropic_thinking_effort_defaults_from_legacy_budgets(self):
         config = LLMConfig()
-        assert config.resolve_anthropic_thinking_effort("episode_writing") == "medium"
-        assert config.resolve_anthropic_thinking_effort("theme_decomposition") == "high"
+        assert config.resolve_anthropic_thinking_effort("episode_writing") == "xhigh"
+        assert config.resolve_anthropic_thinking_effort("theme_decomposition") == "xhigh"
         assert config.resolve_anthropic_thinking_effort("synthesis_primitives") == "xhigh"
         assert config.resolve_anthropic_thinking_effort("chapter_summary") is None
 
@@ -118,8 +118,8 @@ class TestPipelineRuntimeConfig:
         assert config.max_chunk_words == 1000
         assert config.chunk_overlap_words == 75
         assert config.max_repair_attempts == 3
-        assert config.episode_planning_concurrency == 9
-        assert config.episode_write_concurrency == 10
+        assert config.episode_planning_concurrency == 6
+        assert config.episode_write_concurrency == 6
         assert config.tts_concurrency == 5
         assert config.spoken_words_per_minute == 130
 
@@ -138,10 +138,19 @@ class TestPipelineRuntimeConfig:
         assert config.synthesis_axis_pct == 1.0
         assert config.synthesis_axis_min == 10
         assert config.synthesis_axis_max == 15
+        assert config.synthesis_floor_budget_fraction == 0.35
+        assert config.synthesis_axis_floor_min == 10
+        assert config.synthesis_axis_floor_max == 15
+        assert config.synthesis_axis_ceiling_multiplier == 1.4
+        assert config.synthesis_trim_top_fraction == 0.10
+        assert config.synthesis_trim_mid_fraction == 0.15
+        assert config.synthesis_trim_top_keep_fraction == 0.50
+        assert config.synthesis_trim_mid_keep_fraction == 0.40
+        assert config.synthesis_trim_tail_keep_fraction == 0.30
         assert config.planning_axis_pct == 1.0
         assert config.planning_axis_min == 10
         assert config.planning_axis_max == 15
-        assert config.synthesis_total_passage_cap == 600
+        assert config.synthesis_total_passage_cap == 500
         assert config.planning_total_passage_cap == 300
         assert config.passage_extraction_concurrency == 16
         assert config.llm_global_max_concurrency == 30
@@ -170,5 +179,9 @@ class TestPipelineRuntimeConfig:
     def test_axis_budget_bounds_validation(self):
         with pytest.raises(ValueError, match="synthesis_axis_max"):
             PipelineRuntimeConfig(synthesis_axis_min=40, synthesis_axis_max=20)
+        with pytest.raises(ValueError, match="synthesis_axis_floor_max"):
+            PipelineRuntimeConfig(synthesis_axis_floor_min=15, synthesis_axis_floor_max=10)
         with pytest.raises(ValueError, match="planning_axis_max"):
             PipelineRuntimeConfig(planning_axis_min=50, planning_axis_max=30)
+        with pytest.raises(ValueError, match="synthesis trim top and mid fractions"):
+            PipelineRuntimeConfig(synthesis_trim_top_fraction=0.75, synthesis_trim_mid_fraction=0.35)

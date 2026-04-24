@@ -167,63 +167,6 @@ def _tokenize(text: str) -> list[str]:
     return _WORD_RE.findall(text.lower())
 
 
-def _split_contiguous_windows(items: list[Any], window_count: int) -> list[list[Any]]:
-    if not items:
-        return []
-    effective_windows = max(1, min(window_count, len(items)))
-    base = len(items) // effective_windows
-    remainder = len(items) % effective_windows
-    windows: list[list[Any]] = []
-    start = 0
-    for idx in range(effective_windows):
-        size = base + (1 if idx < remainder else 0)
-        end = start + size
-        windows.append(items[start:end])
-        start = end
-    return windows
-
-
-def _split_weighted_contiguous_windows(
-    items: list[Any],
-    weights: list[float],
-    window_count: int,
-) -> list[list[Any]]:
-    if not items:
-        return []
-    if len(items) != len(weights):
-        raise ValueError("items and weights must have the same length")
-
-    effective_windows = max(1, min(window_count, len(items)))
-    if effective_windows == 1:
-        return [list(items)]
-
-    normalized_weights = [max(float(weight), 0.0) for weight in weights]
-    remaining_total = sum(normalized_weights)
-    windows: list[list[Any]] = []
-    start = 0
-
-    for idx in range(effective_windows):
-        if idx == effective_windows - 1:
-            windows.append(items[start:])
-            break
-        windows_left = effective_windows - idx
-        max_end = len(items) - (windows_left - 1)
-        target_weight = remaining_total / windows_left if windows_left > 0 else remaining_total
-        accumulated = 0.0
-        end = start
-        while end < max_end:
-            accumulated += normalized_weights[end]
-            end += 1
-            if accumulated >= target_weight:
-                break
-        if end <= start:
-            end = start + 1
-        windows.append(items[start:end])
-        remaining_total -= sum(normalized_weights[start:end])
-        start = end
-    return windows
-
-
 def _extract_insight_refs(text: str) -> list[str]:
     if not text:
         return []
@@ -304,119 +247,6 @@ def _build_window_synthesis_context(
             "narrative_threads": list(plan.synthesis_context.narrative_threads),
         }
     )
-
-
-def _build_writing_windows(plan: EpisodePlan, window_count: int) -> list[dict[str, Any]]:
-    if (
-        plan.narrative_spine is None
-        or not plan.narrative_spine.spine_segments
-        or not plan.scene_cards
-    ):
-        return [
-            {
-                "spine_segments": (
-                    list(plan.narrative_spine.spine_segments)
-                    if plan.narrative_spine is not None
-                    else []
-                ),
-                "attribution_moments": (
-                    list(plan.narrative_spine.attribution_moments)
-                    if plan.narrative_spine is not None
-                    else []
-                ),
-                "scene_cards": list(plan.scene_cards),
-                "anchor_scene_ids": list(plan.anchor_scene_ids),
-                "beats": window_beats,
-            }
-            for window_beats in _split_contiguous_windows(list(plan.beats), window_count)
-        ]
-
-    beats_by_scene_id: dict[str, list[EpisodeBeat]] = {
-        scene.scene_id: []
-        for scene in plan.scene_cards
-    }
-    for beat in plan.beats:
-        if beat.scene_id in beats_by_scene_id:
-            beats_by_scene_id[beat.scene_id].append(beat)
-
-    scenes_by_spine_id: dict[str, list[Any]] = {}
-    for scene in plan.scene_cards:
-        scenes_by_spine_id.setdefault(scene.spine_segment_id, []).append(scene)
-
-    active_spine_segments: list[dict[str, Any]] = []
-    for spine_segment in plan.narrative_spine.spine_segments:
-        window_scene_cards = scenes_by_spine_id.get(spine_segment.spine_segment_id, [])
-        if not window_scene_cards:
-            continue
-        window_beats = [
-            beat
-            for scene in window_scene_cards
-            for beat in beats_by_scene_id.get(scene.scene_id, [])
-        ]
-        weight = sum(float(beat.estimated_duration_seconds) for beat in window_beats)
-        if weight <= 0:
-            weight = sum(float(scene.estimated_duration_seconds) for scene in window_scene_cards)
-        active_spine_segments.append(
-            {
-                "spine_segment": spine_segment,
-                "scene_cards": window_scene_cards,
-                "beats": window_beats,
-                "weight": max(weight, 1.0),
-            }
-        )
-
-    if not active_spine_segments:
-        return [
-            {
-                "spine_segments": list(plan.narrative_spine.spine_segments),
-                "attribution_moments": list(plan.narrative_spine.attribution_moments),
-                "scene_cards": list(plan.scene_cards),
-                "anchor_scene_ids": list(plan.anchor_scene_ids),
-                "beats": window_beats,
-            }
-            for window_beats in _split_contiguous_windows(list(plan.beats), window_count)
-        ]
-
-    spine_windows = _split_weighted_contiguous_windows(
-        active_spine_segments,
-        [float(item["weight"]) for item in active_spine_segments],
-        window_count,
-    )
-    window_specs: list[dict[str, Any]] = []
-    for spine_window in spine_windows:
-        window_spine_segments = [item["spine_segment"] for item in spine_window]
-        window_scene_cards = [
-            scene
-            for item in spine_window
-            for scene in item["scene_cards"]
-        ]
-        window_scene_ids = {scene.scene_id for scene in window_scene_cards}
-        window_beats = [
-            beat
-            for beat in plan.beats
-            if beat.scene_id in window_scene_ids
-        ]
-        window_spine_segment_ids = {
-            segment.spine_segment_id for segment in window_spine_segments
-        }
-        window_specs.append(
-            {
-                "spine_segments": window_spine_segments,
-                "attribution_moments": [
-                    moment
-                    for moment in plan.narrative_spine.attribution_moments
-                    if moment.insert_after_segment_id in window_spine_segment_ids
-                ],
-                "scene_cards": window_scene_cards,
-                "anchor_scene_ids": [
-                    scene_id
-                    for scene_id in plan.anchor_scene_ids
-                    if scene_id in window_scene_ids
-                ],
-                "beats": window_beats,
-            }
-        )
-    return window_specs
 
 
 def _bm25_score(
@@ -533,12 +363,18 @@ def _trim_candidate_texts_by_bm25(
 
 def _resolve_synthesis_bm25_keep_fraction_by_passage(
     passages: list[ExtractedPassage],
+    *,
+    top_fraction: float = 0.10,
+    mid_fraction: float = 0.15,
+    top_keep_fraction: float = 0.50,
+    mid_keep_fraction: float = 0.40,
+    tail_keep_fraction: float = 0.30,
 ) -> tuple[dict[str, float], dict[str, int]]:
     if not passages:
         return {}, {
-            "top_10_passages": 0,
-            "next_20_passages": 0,
-            "next_70_passages": 0,
+            "top_tier_passages": 0,
+            "mid_tier_passages": 0,
+            "tail_tier_passages": 0,
         }
 
     ranked_passages = sorted(
@@ -550,24 +386,24 @@ def _resolve_synthesis_bm25_keep_fraction_by_passage(
         ),
     )
     passage_count = len(ranked_passages)
-    top_10_count = min(passage_count, max(0, math.ceil(passage_count * 0.10)))
-    next_20_count = min(
-        max(0, passage_count - top_10_count),
-        max(0, math.ceil(passage_count * 0.20)),
+    top_tier_count = min(passage_count, max(0, math.ceil(passage_count * top_fraction)))
+    mid_tier_count = min(
+        max(0, passage_count - top_tier_count),
+        max(0, math.ceil(passage_count * mid_fraction)),
     )
     keep_fraction_by_passage_id: dict[str, float] = {}
     for idx, passage in enumerate(ranked_passages):
-        if idx < top_10_count:
-            keep_fraction_by_passage_id[passage.passage_id] = 0.4
+        if idx < top_tier_count:
+            keep_fraction_by_passage_id[passage.passage_id] = top_keep_fraction
             continue
-        if idx < top_10_count + next_20_count:
-            keep_fraction_by_passage_id[passage.passage_id] = 0.33
+        if idx < top_tier_count + mid_tier_count:
+            keep_fraction_by_passage_id[passage.passage_id] = mid_keep_fraction
             continue
-        keep_fraction_by_passage_id[passage.passage_id] = 0.25
+        keep_fraction_by_passage_id[passage.passage_id] = tail_keep_fraction
     return keep_fraction_by_passage_id, {
-        "top_10_passages": top_10_count,
-        "next_20_passages": next_20_count,
-        "next_70_passages": max(0, passage_count - top_10_count - next_20_count),
+        "top_tier_passages": top_tier_count,
+        "mid_tier_passages": mid_tier_count,
+        "tail_tier_passages": max(0, passage_count - top_tier_count - mid_tier_count),
     }
 
 
@@ -972,6 +808,42 @@ def _rank_synthesis_axis_passages(
     )
 
 
+def _combined_synthesis_passage_score(passage: ExtractedPassage) -> float:
+    return (0.7 * float(passage.relevance_score)) + (0.3 * float(passage.quotability_score))
+
+
+def _synthesis_source_key(
+    passage: ExtractedPassage,
+) -> tuple[str, tuple[str, ...]] | tuple[str, str]:
+    if passage.chunk_ids:
+        return (passage.book_id, tuple(passage.chunk_ids))
+    return ("passage", passage.passage_id)
+
+
+def _compute_synthesis_axis_floor_and_ceiling(
+    *,
+    total_cap: int,
+    axis_count: int,
+    floor_budget_fraction: float,
+    axis_floor_min: int,
+    axis_floor_max: int,
+    axis_ceiling_multiplier: float,
+) -> tuple[int, int, float]:
+    cap = max(0, int(total_cap))
+    count = max(0, int(axis_count))
+    if cap <= 0 or count <= 0:
+        return 0, 0, 0.0
+    fair_share = cap / count
+    configured_floor = min(
+        max(0, axis_floor_max),
+        max(max(0, axis_floor_min), math.floor(floor_budget_fraction * cap / count)),
+    )
+    max_feasible_floor = cap // count
+    axis_floor = min(configured_floor, max_feasible_floor)
+    axis_ceiling = max(axis_floor, int(round(axis_ceiling_multiplier * fair_share)))
+    return axis_floor, axis_ceiling, fair_share
+
+
 def _allocate_synthesis_passages_by_axis(
     *,
     axes: list[ThematicAxis],
@@ -979,6 +851,10 @@ def _allocate_synthesis_passages_by_axis(
     total_cap: int,
     importance_power: float,
     cross_pair_ids: set[str],
+    floor_budget_fraction: float = 0.35,
+    axis_floor_min: int = 10,
+    axis_floor_max: int = 15,
+    axis_ceiling_multiplier: float = 1.4,
 ) -> tuple[dict[str, list[ExtractedPassage]], dict[str, Any]]:
     if not axes:
         return {}, {
@@ -989,6 +865,19 @@ def _allocate_synthesis_passages_by_axis(
             "axis_order": [],
             "axis_quota_by_axis": {},
             "axis_weight_by_axis": {},
+            "selected_axis_count": 0,
+            "fair_share": 0.0,
+            "axis_floor": 0,
+            "axis_ceiling": 0,
+            "per_axis_counts_before_refill": {},
+            "per_axis_counts_after_refill": {},
+            "selected_passage_ids_by_axis": {},
+            "global_refill_added_count": 0,
+            "ceiling_blocked_candidate_count": 0,
+            "fallback_fill_count": 0,
+            "duplicate_source_candidates_skipped": 0,
+            "duplicate_passage_ids_detected_final": 0,
+            "duplicate_source_keys_detected_final": 0,
         }
     cap = max(0, int(total_cap))
     axis_order = sorted(axes, key=lambda axis: (-axis.theme_importance_score, axis.axis_id))
@@ -999,12 +888,13 @@ def _allocate_synthesis_passages_by_axis(
         min_weight=0.5,
         max_weight=1.0,
     )
-    quotas = _compute_weighted_axis_budgets(
-        axis_ids=axis_ids,
-        total_budget=cap,
-        weight_by_axis=weights,
-        floor_per_axis=0,
-        cap_per_axis=None,
+    axis_floor, axis_ceiling, fair_share = _compute_synthesis_axis_floor_and_ceiling(
+        total_cap=cap,
+        axis_count=len(axis_ids),
+        floor_budget_fraction=floor_budget_fraction,
+        axis_floor_min=axis_floor_min,
+        axis_floor_max=axis_floor_max,
+        axis_ceiling_multiplier=axis_ceiling_multiplier,
     )
     ranked_by_axis = {
         axis_id: _rank_synthesis_axis_passages(
@@ -1014,64 +904,126 @@ def _allocate_synthesis_passages_by_axis(
         for axis_id in axis_ids
     }
 
-    def _source_key(passage: ExtractedPassage) -> tuple[str, tuple[str, ...]] | tuple[str, str]:
-        if passage.chunk_ids:
-            return (passage.book_id, tuple(passage.chunk_ids))
-        return ("passage", passage.passage_id)
-
     selected_by_axis: dict[str, list[ExtractedPassage]] = {axis_id: [] for axis_id in axis_ids}
     used_source_keys: set[tuple[str, tuple[str, ...]] | tuple[str, str]] = set()
+    duplicate_source_candidates_skipped = 0
     for axis_id in axis_ids:
-        quota = max(0, int(quotas.get(axis_id, 0)))
-        if quota <= 0:
-            continue
         for passage in ranked_by_axis.get(axis_id, []):
-            if len(selected_by_axis[axis_id]) >= quota:
+            if len(selected_by_axis[axis_id]) >= axis_floor:
                 break
-            source_key = _source_key(passage)
+            source_key = _synthesis_source_key(passage)
             if source_key in used_source_keys:
+                duplicate_source_candidates_skipped += 1
                 continue
             selected_by_axis[axis_id].append(passage)
             used_source_keys.add(source_key)
 
-    remaining_slots = max(0, cap - len(used_source_keys))
-    round_robin_fill_count = 0
-    next_index_by_axis = {
+    per_axis_counts_before_refill = {
         axis_id: len(selected_by_axis[axis_id])
         for axis_id in axis_ids
     }
-    while remaining_slots > 0:
-        added = False
-        for axis_id in axis_ids:
-            ranked = ranked_by_axis.get(axis_id, [])
-            idx = next_index_by_axis.get(axis_id, 0)
-            while idx < len(ranked) and _source_key(ranked[idx]) in used_source_keys:
-                idx += 1
-            next_index_by_axis[axis_id] = idx
-            if idx >= len(ranked):
+    remaining_slots = max(0, cap - sum(len(items) for items in selected_by_axis.values()))
+    global_refill_added_count = 0
+    ceiling_blocked_candidate_count = 0
+    fallback_fill_count = 0
+    refill_pool: list[tuple[tuple[Any, ...], str, ExtractedPassage]] = []
+    for axis_id in axis_ids:
+        for passage in ranked_by_axis.get(axis_id, []):
+            source_key = _synthesis_source_key(passage)
+            if source_key in used_source_keys:
                 continue
-            passage = ranked[idx]
-            selected_by_axis[axis_id].append(passage)
-            used_source_keys.add(_source_key(passage))
-            next_index_by_axis[axis_id] = idx + 1
-            round_robin_fill_count += 1
-            remaining_slots -= 1
-            added = True
+            refill_pool.append((
+                (
+                    -(1 if passage.passage_id in cross_pair_ids else 0),
+                    -_combined_synthesis_passage_score(passage),
+                    -passage.relevance_score,
+                    -passage.quotability_score,
+                    passage.passage_id,
+                ),
+                axis_id,
+                passage,
+            ))
+    refill_pool.sort(key=lambda item: (item[0], item[1]))
+    for _, axis_id, passage in refill_pool:
+        if remaining_slots <= 0:
+            break
+        if len(selected_by_axis[axis_id]) >= axis_ceiling:
+            ceiling_blocked_candidate_count += 1
+            continue
+        source_key = _synthesis_source_key(passage)
+        if source_key in used_source_keys:
+            duplicate_source_candidates_skipped += 1
+            continue
+        selected_by_axis[axis_id].append(passage)
+        used_source_keys.add(source_key)
+        global_refill_added_count += 1
+        remaining_slots -= 1
+    if remaining_slots > 0:
+        for _, axis_id, passage in refill_pool:
             if remaining_slots <= 0:
                 break
-        if not added:
-            break
+            source_key = _synthesis_source_key(passage)
+            if source_key in used_source_keys:
+                duplicate_source_candidates_skipped += 1
+                continue
+            selected_by_axis[axis_id].append(passage)
+            used_source_keys.add(source_key)
+            fallback_fill_count += 1
+            remaining_slots -= 1
+
+    passage_axes: dict[str, list[str]] = {}
+    source_key_axes: dict[tuple[str, tuple[str, ...]] | tuple[str, str], list[str]] = {}
+    for axis_id, passages in selected_by_axis.items():
+        for passage in passages:
+            passage_axes.setdefault(passage.passage_id, []).append(axis_id)
+            source_key_axes.setdefault(_synthesis_source_key(passage), []).append(axis_id)
+    duplicate_passage_ids = {
+        passage_id: axes_for_passage
+        for passage_id, axes_for_passage in passage_axes.items()
+        if len(axes_for_passage) > 1
+    }
+    duplicate_source_keys = {
+        repr(source_key): axes_for_source
+        for source_key, axes_for_source in source_key_axes.items()
+        if len(axes_for_source) > 1
+    }
+    if duplicate_passage_ids or duplicate_source_keys:
+        raise ValueError(
+            "Duplicate synthesis passages detected after allocation: "
+            f"passage_ids={duplicate_passage_ids}, source_keys={duplicate_source_keys}"
+        )
 
     input_total = sum(len(items) for items in passages_by_axis.values())
     output_total = sum(len(items) for items in selected_by_axis.values())
     return selected_by_axis, {
         "input_total": input_total,
         "output_total": output_total,
-        "round_robin_fill_count": round_robin_fill_count,
+        "round_robin_fill_count": 0,
         "total_cap": cap,
         "axis_order": axis_ids,
-        "axis_quota_by_axis": quotas,
+        "axis_quota_by_axis": {axis_id: axis_floor for axis_id in axis_ids},
         "axis_weight_by_axis": {axis_id: round(float(weights.get(axis_id, 0.0)), 6) for axis_id in axis_ids},
+        "selected_axis_count": len(axis_ids),
+        "fair_share": round(float(fair_share), 6),
+        "axis_floor": axis_floor,
+        "axis_ceiling": axis_ceiling,
+        "axis_floor_by_axis": {axis_id: axis_floor for axis_id in axis_ids},
+        "axis_ceiling_by_axis": {axis_id: axis_ceiling for axis_id in axis_ids},
+        "per_axis_counts_before_refill": per_axis_counts_before_refill,
+        "per_axis_counts_after_refill": {
+            axis_id: len(selected_by_axis[axis_id])
+            for axis_id in axis_ids
+        },
+        "selected_passage_ids_by_axis": {
+            axis_id: [passage.passage_id for passage in selected_by_axis[axis_id]]
+            for axis_id in axis_ids
+        },
+        "global_refill_added_count": global_refill_added_count,
+        "ceiling_blocked_candidate_count": ceiling_blocked_candidate_count,
+        "fallback_fill_count": fallback_fill_count,
+        "duplicate_source_candidates_skipped": duplicate_source_candidates_skipped,
+        "duplicate_passage_ids_detected_final": 0,
+        "duplicate_source_keys_detected_final": 0,
     }
 
 
@@ -2421,7 +2373,9 @@ _ACTION_BUCKET_ROLES: frozenset[str] = frozenset(
     {"shock", "action", "consequence", "reveal", "reversal", "stage_choice"}
 )
 
-_WRITING_BATCH_WORD_OVERRUN_WARNING_RATIO = 1.08
+_WRITING_WORD_OVERRUN_WARNING_RATIO = 1.08
+_WRITING_SECTION_TARGET_MIN = 8
+_WRITING_SECTION_TARGET_MAX = 12
 
 
 def _positive_allocation_weights(weights: list[float]) -> list[float]:
@@ -2785,63 +2739,6 @@ def _writing_result_word_count(result: Any) -> int:
     )
 
 
-def _cluster_batch_group_sizes(cluster_count: int) -> list[int]:
-    if cluster_count <= 0:
-        return []
-    if cluster_count <= 2:
-        return [1] * cluster_count
-
-    batch_count = min(2, cluster_count)
-    base = cluster_count // batch_count
-    remainder = cluster_count % batch_count
-    return [base + (1 if idx < remainder else 0) for idx in range(batch_count)]
-
-
-def _build_cluster_scene_batches(scene_cards: list[SceneCard]) -> list[list[SceneCard]]:
-    if not scene_cards:
-        return []
-
-    ordered_cluster_ids: list[str] = []
-    seen_cluster_ids: set[str] = set()
-    for scene in scene_cards:
-        cluster_id = scene.dominant_cluster_occurrence_id
-        if not cluster_id or cluster_id in seen_cluster_ids:
-            continue
-        seen_cluster_ids.add(cluster_id)
-        ordered_cluster_ids.append(cluster_id)
-
-    if not ordered_cluster_ids:
-        return [list(scene_cards)]
-
-    group_sizes = _cluster_batch_group_sizes(len(ordered_cluster_ids))
-    cluster_groups: list[list[str]] = []
-    start = 0
-    for size in group_sizes:
-        end = start + size
-        cluster_groups.append(ordered_cluster_ids[start:end])
-        start = end
-
-    cluster_to_batch_index: dict[str, int] = {}
-    for batch_index, cluster_group in enumerate(cluster_groups):
-        for cluster_id in cluster_group:
-            cluster_to_batch_index[cluster_id] = batch_index
-
-    batches: list[list[SceneCard]] = [[] for _ in cluster_groups]
-    last_batch_index = 0
-    for scene in scene_cards:
-        batch_index = last_batch_index
-        cluster_id = scene.dominant_cluster_occurrence_id
-        if cluster_id is not None:
-            batch_index = max(
-                last_batch_index,
-                cluster_to_batch_index.get(cluster_id, last_batch_index),
-            )
-        batches[batch_index].append(scene)
-        last_batch_index = batch_index
-
-    return [batch for batch in batches if batch]
-
-
 def _build_passage_lookup(corpus: ThematicCorpus) -> dict[str, ExtractedPassage]:
     passage_lookup: dict[str, ExtractedPassage] = {}
     for axis_passages in corpus.passages_by_axis.values():
@@ -2867,6 +2764,14 @@ def _flatten_synthesis_primitives(synthesis_map: SynthesisMap) -> dict[str, Synt
         for item in synthesis_map.primitives_by_family.get(family, []):
             flattened[item.id] = item
     return flattened
+
+
+def _primitive_family_lookup(synthesis_map: SynthesisMap) -> dict[str, str]:
+    family_by_primitive_id: dict[str, str] = {}
+    for family in SYNTHESIS_PRIMITIVE_FAMILIES:
+        for item in synthesis_map.primitives_by_family.get(family, []):
+            family_by_primitive_id[item.id] = family
+    return family_by_primitive_id
 
 
 def _build_episode_synthesis_map_payload(
@@ -3031,6 +2936,73 @@ def _build_scene_card_count_warnings(
         warnings.append(
             "scene_card_count_above_target: "
             f"{scene_card_count} > {scene_card_target_max} (target range {scene_card_target_min}-{scene_card_target_max})"
+        )
+    return warnings
+
+
+_SPINE_PRIMITIVE_FAMILIES = frozenset({"epochal_turns", "decisions_and_nondecisions"})
+_SCENE_DETAIL_PRIMITIVE_FAMILIES = frozenset({"set_piece_scenes", "telling_details"})
+_HUMAN_GROUNDING_PRIMITIVE_FAMILIES = frozenset({"human_costs", "character_engines"})
+_SYSTEM_CONTEXT_PRIMITIVE_FAMILIES = frozenset(
+    {
+        "systems_and_operating_logics",
+        "coalitions_and_fault_lines",
+        "worlds_in_collision",
+    }
+)
+_RECURRENCE_PRIMITIVE_FAMILIES = frozenset({"afterlives", "recurring_images_and_symbols"})
+
+
+def _build_scene_card_family_warnings(
+    *,
+    episode: StrategyEpisode,
+    primitive_pool_ids: set[str],
+    primitive_family_by_id: dict[str, str],
+) -> list[str]:
+    families_present = {
+        primitive_family_by_id[primitive_id]
+        for primitive_id in primitive_pool_ids
+        if primitive_id in primitive_family_by_id
+    }
+    warnings: list[str] = []
+    if not families_present:
+        return warnings
+
+    if families_present.isdisjoint(_SPINE_PRIMITIVE_FAMILIES):
+        warnings.append(
+            "primitive_family_missing_spine: "
+            "episode primitive pool lacks epochal_turns/decisions_and_nondecisions"
+        )
+    if families_present.isdisjoint(_SCENE_DETAIL_PRIMITIVE_FAMILIES):
+        warnings.append(
+            "primitive_family_missing_scene_or_detail: "
+            "episode primitive pool lacks set_piece_scenes/telling_details"
+        )
+    if families_present.isdisjoint(_HUMAN_GROUNDING_PRIMITIVE_FAMILIES):
+        warnings.append(
+            "primitive_family_missing_human_grounding: "
+            "episode primitive pool lacks human_costs/character_engines"
+        )
+    if families_present.isdisjoint(_SYSTEM_CONTEXT_PRIMITIVE_FAMILIES):
+        warnings.append(
+            "primitive_family_missing_system_or_context: "
+            "episode primitive pool lacks systems_and_operating_logics/"
+            "coalitions_and_fault_lines/worlds_in_collision"
+        )
+
+    anchor_major_count = sum(
+        1
+        for occurrence in episode.cluster_path
+        if occurrence.emphasis in {"anchor", "major"}
+    )
+    if (
+        anchor_major_count >= max(2, int(math.ceil(len(episode.cluster_path) / 2.0)))
+        and families_present.isdisjoint(_RECURRENCE_PRIMITIVE_FAMILIES)
+    ):
+        warnings.append(
+            "primitive_family_missing_recurrence: "
+            "anchor/major-heavy episode primitive pool lacks afterlives/"
+            "recurring_images_and_symbols"
         )
     return warnings
 
@@ -4731,9 +4703,9 @@ class PipelineOrchestrator:
             selected_axis_by_id = {axis.axis_id: axis for axis in selected_axes}
             selected_axis_ids = {axis.axis_id for axis in selected_axes}
             synthesis_trim_tiers = {
-                "top_10_passages": 0,
-                "next_20_passages": 0,
-                "next_70_passages": 0,
+                "top_tier_passages": 0,
+                "mid_tier_passages": 0,
+                "tail_tier_passages": 0,
             }
             synthesis_total_cap = max(1, project.config.synthesis_total_passage_cap)
             cross_pair_ids = {
@@ -4751,6 +4723,10 @@ class PipelineOrchestrator:
                 total_cap=synthesis_total_cap,
                 importance_power=project.config.pre_axis_relevance_power,
                 cross_pair_ids=cross_pair_ids,
+                floor_budget_fraction=project.config.synthesis_floor_budget_fraction,
+                axis_floor_min=project.config.synthesis_axis_floor_min,
+                axis_floor_max=project.config.synthesis_axis_floor_max,
+                axis_ceiling_multiplier=project.config.synthesis_axis_ceiling_multiplier,
             )
 
             axes_summary = [
@@ -4775,7 +4751,14 @@ class PipelineOrchestrator:
                 ]
                 if axis is not None:
                     synthesis_keep_fraction_by_passage_id, passage_tier_counts = (
-                        _resolve_synthesis_bm25_keep_fraction_by_passage(passages)
+                        _resolve_synthesis_bm25_keep_fraction_by_passage(
+                            passages,
+                            top_fraction=project.config.synthesis_trim_top_fraction,
+                            mid_fraction=project.config.synthesis_trim_mid_fraction,
+                            top_keep_fraction=project.config.synthesis_trim_top_keep_fraction,
+                            mid_keep_fraction=project.config.synthesis_trim_mid_keep_fraction,
+                            tail_keep_fraction=project.config.synthesis_trim_tail_keep_fraction,
+                        )
                     )
                     for key, value in passage_tier_counts.items():
                         synthesis_trim_tiers[key] = synthesis_trim_tiers.get(key, 0) + int(value)
@@ -4857,6 +4840,17 @@ class PipelineOrchestrator:
                 "selected_passages": sum(len(items) for items in synthesis_passages_by_axis.values()),
                 "synthesis_cap": synthesis_total_cap,
                 "synthesis_trim_tiers": synthesis_trim_tiers,
+                "synthesis_trim_keep_fractions": {
+                    "top_fraction": project.config.synthesis_trim_top_fraction,
+                    "mid_fraction": project.config.synthesis_trim_mid_fraction,
+                    "tail_fraction": max(
+                        0.0,
+                        1.0 - project.config.synthesis_trim_top_fraction - project.config.synthesis_trim_mid_fraction,
+                    ),
+                    "top_keep_fraction": project.config.synthesis_trim_top_keep_fraction,
+                    "mid_keep_fraction": project.config.synthesis_trim_mid_keep_fraction,
+                    "tail_keep_fraction": project.config.synthesis_trim_tail_keep_fraction,
+                },
                 "cap_report": cap_report,
                 "clusters": len(synthesis_map.episode_candidate_clusters),
                 "primitive_counts_by_family": {
@@ -5038,6 +5032,7 @@ class PipelineOrchestrator:
                 )
             passage_lookup = _build_passage_lookup(corpus)
             primitive_lookup = _flatten_synthesis_primitives(synthesis_map)
+            primitive_family_by_id = _primitive_family_lookup(synthesis_map)
             cluster_lookup = {
                 cluster.cluster_id: cluster
                 for cluster in synthesis_map.episode_candidate_clusters
@@ -5187,7 +5182,16 @@ class PipelineOrchestrator:
                         primitive_min=project.config.scene_card_primitives_min,
                         primitive_max=project.config.scene_card_primitives_max,
                     )
-                    planning_warnings = scene_card_count_warnings + scene_card_primitive_warnings
+                    scene_card_family_warnings = _build_scene_card_family_warnings(
+                        episode=episode,
+                        primitive_pool_ids=set(primitive_ids),
+                        primitive_family_by_id=primitive_family_by_id,
+                    )
+                    planning_warnings = (
+                        scene_card_count_warnings
+                        + scene_card_primitive_warnings
+                        + scene_card_family_warnings
+                    )
                     for warning in planning_warnings:
                         logger.warning(
                             "episode_planning_warning episode=%s %s",
@@ -5227,6 +5231,7 @@ class PipelineOrchestrator:
                         "scene_card_primitive_policy": project.config.scene_card_primitive_policy,
                         "scene_card_count_warnings": scene_card_count_warnings,
                         "scene_card_primitive_warnings": scene_card_primitive_warnings,
+                        "scene_card_family_warnings": scene_card_family_warnings,
                         "scene_card_warning_count": len(planning_warnings),
                         "primary_occurrence_count": len(primary_occurrence_ids),
                         "covered_primary_occurrence_count": len(covered_primary_occurrence_ids),
@@ -5418,7 +5423,6 @@ class PipelineOrchestrator:
                 {"book_id": b.book_id, "title": b.title, "author": b.author}
                 for b in project.books
             ]
-            scene_batches = _build_cluster_scene_batches(plan.scene_cards)
             scene_word_count_targets_lower = _compute_scene_word_count_targets(
                 plan.scene_cards,
                 plan.target_word_count,
@@ -5443,135 +5447,125 @@ class PipelineOrchestrator:
                     scene_word_count_targets_higher.get(scene_id, 0)
                 )
                 scene_payload_by_id[scene_id] = scene_payload
-            all_sections: list[ProseSection] = []
-            all_window_maps: list[Any] = []
             writing_agent = (
                 self.writing_agent_no_citations
                 if project.config.skip_grounding
                 else self.writing_agent
             )
-
-            for batch_index, batch_scene_cards in enumerate(scene_batches, start=1):
-                is_final_batch = batch_index == len(scene_batches)
-                active_scene_card_ids = [scene.scene_id for scene in batch_scene_cards]
-                batch_scene_payloads = [
-                    scene_payload_by_id[scene_id]
-                    for scene_id in active_scene_card_ids
-                    if scene_id in scene_payload_by_id
-                ]
-                batch_target_word_count_lower = sum(
-                    scene_word_count_targets_lower.get(scene_id, 0)
-                    for scene_id in active_scene_card_ids
-                )
-                batch_target_word_count_higher = sum(
-                    scene_word_count_targets_higher.get(scene_id, 0)
-                    for scene_id in active_scene_card_ids
-                )
-                episode_plan_payload = {
-                    **full_episode_plan_payload,
-                    "scene_cards": batch_scene_payloads,
-                    "target_word_count": max(1, int(batch_target_word_count_higher)),
+            episode_plan_payload = {
+                **full_episode_plan_payload,
+                "scene_cards": [
+                    scene_payload_by_id[scene.scene_id]
+                    for scene in plan.scene_cards
+                    if scene.scene_id in scene_payload_by_id
+                ],
+            }
+            episode_target_word_count_lower = sum(scene_word_count_targets_lower.values())
+            episode_target_word_count_higher = sum(scene_word_count_targets_higher.values())
+            episode_passage_ids: list[str] = []
+            seen_passage_ids: set[str] = set()
+            for scene in plan.scene_cards:
+                for passage_id in scene.passage_ids:
+                    if passage_id in seen_passage_ids or passage_id not in passage_lookup:
+                        continue
+                    seen_passage_ids.add(passage_id)
+                    episode_passage_ids.append(passage_id)
+            passages = [
+                {
+                    "passage_id": passage_lookup[passage_id].passage_id,
+                    "book_id": passage_lookup[passage_id].book_id,
+                    "text": _resolve_writing_passage_text(passage_lookup[passage_id]),
+                    "chapter_ref": passage_lookup[passage_id].chapter_ref,
                 }
-                batch_passage_ids: list[str] = []
-                seen_passage_ids: set[str] = set()
-                for scene in batch_scene_cards:
-                    for passage_id in scene.passage_ids:
-                        if passage_id in seen_passage_ids or passage_id not in passage_lookup:
-                            continue
-                        seen_passage_ids.add(passage_id)
-                        batch_passage_ids.append(passage_id)
-                passages = [
-                    {
-                        "passage_id": passage_lookup[passage_id].passage_id,
-                        "book_id": passage_lookup[passage_id].book_id,
-                        "text": _resolve_writing_passage_text(passage_lookup[passage_id]),
-                        "chapter_ref": passage_lookup[passage_id].chapter_ref,
-                    }
-                    for passage_id in batch_passage_ids
-                ]
-                batch_actor_ids = {
+                for passage_id in episode_passage_ids
+            ]
+            episode_actor_ids = {
+                actor.actor_id
+                for scene in plan.scene_cards
+                for actor in scene.actors
+                if actor.actor_id
+            }
+            if not episode_actor_ids:
+                episode_actor_ids.update(
                     actor.actor_id
-                    for scene in batch_scene_cards
-                    for actor in scene.actors
+                    for actor in plan.actor_arc_directives
                     if actor.actor_id
-                }
-                if not batch_actor_ids:
-                    batch_actor_ids.update(
-                        actor.actor_id
-                        for actor in plan.actor_arc_directives
-                        if actor.actor_id
-                    )
-                batch_actor_metadata = select_actor_metadata_subset(
-                    actor_metadata,
-                    batch_actor_ids,
                 )
-                payload = writing_agent.build_payload(
-                    episode_number=plan.episode_number,
-                    batch_id=f"batch_{batch_index}",
-                    episode_plan=episode_plan_payload,
-                    active_scene_card_ids=active_scene_card_ids,
-                    passages=passages,
-                    book_metadata=book_metadata,
-                    batch_target_word_count_lower=batch_target_word_count_lower,
-                    batch_target_word_count_higher=batch_target_word_count_higher,
-                    skip_grounding=project.config.skip_grounding,
-                    actor_metadata=compact_actor_metadata(batch_actor_metadata),
-                    is_final_batch=is_final_batch,
+            episode_actor_metadata = select_actor_metadata_subset(
+                actor_metadata,
+                episode_actor_ids,
+            )
+            payload = writing_agent.build_payload(
+                episode_number=plan.episode_number,
+                episode_plan=episode_plan_payload,
+                passages=passages,
+                book_metadata=book_metadata,
+                episode_target_word_count_lower=episode_target_word_count_lower,
+                episode_target_word_count_higher=episode_target_word_count_higher,
+                skip_grounding=project.config.skip_grounding,
+                actor_metadata=compact_actor_metadata(episode_actor_metadata),
+            )
+            result = await asyncio.to_thread(writing_agent.run, payload)
+            actual_word_count = _writing_result_word_count(result)
+            warning_threshold = int(
+                math.ceil(
+                    float(episode_target_word_count_higher)
+                    * _WRITING_WORD_OVERRUN_WARNING_RATIO
                 )
-                result = await asyncio.to_thread(writing_agent.run, payload)
-                actual_batch_word_count = _writing_result_word_count(result)
-                warning_threshold = int(
-                    math.ceil(
-                        float(batch_target_word_count_higher)
-                        * _WRITING_BATCH_WORD_OVERRUN_WARNING_RATIO
-                    )
+            )
+            if actual_word_count > warning_threshold:
+                self.run_logger.log(
+                    "episode_writing_budget_warning",
+                    episode=plan.episode_number,
+                    actual_word_count=actual_word_count,
+                    target_word_count_lower=episode_target_word_count_lower,
+                    target_word_count_higher=episode_target_word_count_higher,
+                    warning_threshold=warning_threshold,
+                    over_high_word_count=(
+                        actual_word_count - episode_target_word_count_higher
+                    ),
+                    over_high_ratio=(
+                        actual_word_count
+                        / max(1, episode_target_word_count_higher)
+                    ),
                 )
-                if actual_batch_word_count > warning_threshold:
-                    self.run_logger.log(
-                        "episode_writing_budget_warning",
-                        episode=plan.episode_number,
-                        batch_id=f"batch_{batch_index}",
-                        actual_word_count=actual_batch_word_count,
-                        target_word_count_lower=batch_target_word_count_lower,
-                        target_word_count_higher=batch_target_word_count_higher,
-                        warning_threshold=warning_threshold,
-                        over_high_word_count=(
-                            actual_batch_word_count - batch_target_word_count_higher
-                        ),
-                        over_high_ratio=(
-                            actual_batch_word_count
-                            / max(1, batch_target_word_count_higher)
-                        ),
-                    )
-                if project.config.skip_grounding:
-                    normalized_sections = [
-                        ProseSection.model_validate({
-                            **section.model_dump(mode="json"),
-                            "citations": [],
-                        })
-                        for section in result.prose_sections
-                    ]
-                else:
-                    normalized_sections = [
-                        ProseSection.model_validate(section.model_dump(mode="json"))
-                        for section in result.prose_sections
-                    ]
-                all_sections.extend(normalized_sections)
-                all_window_maps.extend(result.window_map)
+            if project.config.skip_grounding:
+                normalized_sections = [
+                    ProseSection.model_validate({
+                        **section.model_dump(mode="json"),
+                        "citations": [],
+                    })
+                    for section in result.prose_sections
+                ]
+            else:
+                normalized_sections = [
+                    ProseSection.model_validate(section.model_dump(mode="json"))
+                    for section in result.prose_sections
+                ]
+            section_count = len(normalized_sections)
+            if (
+                section_count < _WRITING_SECTION_TARGET_MIN
+                or section_count > _WRITING_SECTION_TARGET_MAX
+            ):
+                self.run_logger.log(
+                    "episode_writing_section_count_warning",
+                    episode=plan.episode_number,
+                    section_count=section_count,
+                    target_section_count_min=_WRITING_SECTION_TARGET_MIN,
+                    target_section_count_max=_WRITING_SECTION_TARGET_MAX,
+                )
 
             script = EpisodeScript(
                 episode_number=plan.episode_number,
                 title=plan.title,
                 framing=plan.framing,
-                prose_sections=all_sections,
-                window_map=all_window_maps,
+                prose_sections=normalized_sections,
                 total_word_count=_script_total_word_count(
                     EpisodeScript(
                         episode_number=plan.episode_number,
                         title=plan.title,
                         framing=plan.framing,
-                        prose_sections=all_sections,
-                        window_map=all_window_maps,
+                        prose_sections=normalized_sections,
                     )
                 ),
                 estimated_duration_seconds=0,
@@ -5589,7 +5583,6 @@ class PipelineOrchestrator:
             ctx["output_summary"] = {
                 "words": script.total_word_count,
                 "sections": len(script.prose_sections),
-                "window_count": len(scene_batches),
             }
             return script
 
@@ -5766,19 +5759,46 @@ class PipelineOrchestrator:
             self.run_logger, f"spoken_delivery_{episode_number}", project_dir,
             episode=episode_number, section_count=len(script.prose_sections),
         ) as ctx:
-            payload = self.spoken_delivery_agent.build_payload(
-                episode_number=episode_number,
-                script=script.model_dump(mode="json"),
-                max_words_per_segment=project.config.spoken_chunk_max_words,
-                tts_provider=project.config.tts_provider,
-            )
-            result = await asyncio.to_thread(self.spoken_delivery_agent.run, payload)
+            rewritten_sections: list[SpokenSection] = []
+            for section in script.prose_sections:
+                section_word_count = len(section.text.split())
+                section_script = script.model_copy(
+                    update={
+                        "prose_sections": [section],
+                        "total_word_count": section_word_count,
+                        "estimated_duration_seconds": _estimate_duration_seconds_from_words(
+                            section_word_count,
+                            float(self.settings.pipeline.spoken_words_per_minute),
+                        ),
+                    }
+                )
+                payload = self.spoken_delivery_agent.build_payload(
+                    episode_number=episode_number,
+                    script=section_script.model_dump(mode="json"),
+                    max_words_per_segment=project.config.spoken_chunk_max_words,
+                    tts_provider=project.config.tts_provider,
+                )
+                result = await asyncio.to_thread(self.spoken_delivery_agent.run, payload)
+                if len(result.sections) != 1:
+                    raise RuntimeError(
+                        "Spoken delivery must return exactly one section per section rewrite "
+                        f"(episode {episode_number}, section {section.section_id}); "
+                        f"received {len(result.sections)}."
+                    )
+                rewritten_section = result.sections[0]
+                if rewritten_section.section_id != section.section_id:
+                    raise RuntimeError(
+                        "Spoken delivery returned section_id mismatch for section rewrite "
+                        f"(episode {episode_number}); expected {section.section_id!r}, "
+                        f"received {rewritten_section.section_id!r}."
+                    )
+                rewritten_sections.append(rewritten_section)
 
             spoken = SpokenScript(
                 episode_number=episode_number,
                 title=script.title,
                 framing=script.framing,
-                sections=result.sections,
+                sections=rewritten_sections,
                 tts_provider=project.config.tts_provider,
             )
             _save_json(ep_dir / "spoken_script.json", spoken)

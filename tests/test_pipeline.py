@@ -14,9 +14,9 @@ import pytest
 from podcast_agent.llm.heuristic import HeuristicLLMClient
 from podcast_agent.pipeline.orchestrator import (
     PipelineOrchestrator,
+    _allocate_synthesis_passages_by_axis,
     _allocate_scene_durations,
-    _build_cluster_scene_batches,
-    _cluster_batch_group_sizes,
+    _build_scene_card_family_warnings,
     _compute_scene_word_count_targets,
     _build_scene_card_count_warnings,
     _build_scene_card_primitive_warnings,
@@ -239,37 +239,6 @@ def test_build_scene_card_primitive_warnings_reports_density_and_unknown_ids():
     )
     assert any(warning.startswith("scene_primitive_density_out_of_range") for warning in warnings)
     assert any(warning.startswith("scene_card_unknown_primitive_ids") for warning in warnings)
-
-
-def test_cluster_scene_batches_preserve_scene_order_for_recurring_clusters():
-    def card(scene_id: str, occurrence_id: str) -> SceneCard:
-        return SceneCard(
-            scene_id=scene_id,
-            title=scene_id,
-            scene_role="setup",
-            dominant_cluster_occurrence_id=occurrence_id,
-            entry_image="Image",
-            local_question="Question",
-            observable_detail="Detail",
-            intended_move="Move",
-            primitive_ids=[],
-            passage_ids=["p1"],
-            estimated_duration_seconds=60,
-        )
-
-    batches = _build_cluster_scene_batches([
-        card("scene_01", "occ_1"),
-        card("scene_02", "occ_1"),
-        card("scene_03", "occ_2"),
-        card("scene_04", "occ_3"),
-        card("scene_05", "occ_1"),
-        card("scene_06", "occ_3"),
-    ])
-
-    assert [[scene.scene_id for scene in batch] for batch in batches] == [
-        ["scene_01", "scene_02", "scene_03"],
-        ["scene_04", "scene_05", "scene_06"],
-    ]
 
 
 def test_script_total_word_count_counts_sections():
@@ -545,26 +514,6 @@ def test_round_allocations_to_total_handles_large_positive_delta():
     assert rounded == [8, 8, 9]
 
 
-@pytest.mark.parametrize(
-    ("cluster_count", "expected"),
-    [
-        (0, []),
-        (1, [1]),
-        (2, [1, 1]),
-        (3, [2, 1]),
-        (4, [2, 2]),
-        (5, [3, 2]),
-        (6, [3, 3]),
-        (7, [4, 3]),
-        (8, [4, 4]),
-        (9, [5, 4]),
-        (10, [5, 5]),
-    ],
-)
-def test_cluster_batch_group_sizes(cluster_count: int, expected: list[int]):
-    assert _cluster_batch_group_sizes(cluster_count) == expected
-
-
 def test_trim_candidate_texts_by_bm25_keeps_one_quarter_of_sentences():
     axis = ThematicAxis(
         axis_id="axis_1",
@@ -611,20 +560,97 @@ def test_resolve_synthesis_bm25_keep_fraction_by_passage_uses_relevance_tiers():
     keep_fraction_by_passage_id, tier_counts = _resolve_synthesis_bm25_keep_fraction_by_passage(passages)
 
     assert tier_counts == {
-        "top_10_passages": 1,
-        "next_20_passages": 2,
-        "next_70_passages": 7,
+        "top_tier_passages": 1,
+        "mid_tier_passages": 2,
+        "tail_tier_passages": 7,
     }
-    assert keep_fraction_by_passage_id["p1"] == 0.4
-    assert keep_fraction_by_passage_id["p2"] == 0.33
-    assert keep_fraction_by_passage_id["p3"] == 0.33
-    assert keep_fraction_by_passage_id["p4"] == 0.25
-    assert keep_fraction_by_passage_id["p5"] == 0.25
-    assert keep_fraction_by_passage_id["p6"] == 0.25
-    assert keep_fraction_by_passage_id["p7"] == 0.25
-    assert keep_fraction_by_passage_id["p8"] == 0.25
-    assert keep_fraction_by_passage_id["p9"] == 0.25
-    assert keep_fraction_by_passage_id["p10"] == 0.25
+    assert keep_fraction_by_passage_id["p1"] == 0.5
+    assert keep_fraction_by_passage_id["p2"] == 0.4
+    assert keep_fraction_by_passage_id["p3"] == 0.4
+    assert keep_fraction_by_passage_id["p4"] == 0.3
+    assert keep_fraction_by_passage_id["p5"] == 0.3
+    assert keep_fraction_by_passage_id["p6"] == 0.3
+    assert keep_fraction_by_passage_id["p7"] == 0.3
+    assert keep_fraction_by_passage_id["p8"] == 0.3
+    assert keep_fraction_by_passage_id["p9"] == 0.3
+    assert keep_fraction_by_passage_id["p10"] == 0.3
+
+
+def test_allocate_synthesis_passages_by_axis_uses_dynamic_floor_global_refill_and_exact_dedupe():
+    axis_1 = ThematicAxis(axis_id="axis_1", name="Axis 1", description="A1", theme_importance_score=0.95)
+    axis_2 = ThematicAxis(axis_id="axis_2", name="Axis 2", description="A2", theme_importance_score=0.75)
+    axis_3 = ThematicAxis(axis_id="axis_3", name="Axis 3", description="A3", theme_importance_score=0.65)
+    selected_by_axis, cap_report = _allocate_synthesis_passages_by_axis(
+        axes=[axis_1, axis_2, axis_3],
+        passages_by_axis={
+            "axis_1": [
+                ExtractedPassage(passage_id="p1", book_id="b1", chunk_ids=["c1"], text="P1", axis_id="axis_1", relevance_score=0.92, quotability_score=0.8),
+                ExtractedPassage(passage_id="p2", book_id="b1", chunk_ids=["c2"], text="P2", axis_id="axis_1", relevance_score=0.55, quotability_score=0.5),
+            ],
+            "axis_2": [
+                ExtractedPassage(passage_id="p3", book_id="b1", chunk_ids=["c1"], text="P3 dup", axis_id="axis_2", relevance_score=0.99, quotability_score=0.95),
+                ExtractedPassage(passage_id="p4", book_id="b1", chunk_ids=["c4"], text="P4", axis_id="axis_2", relevance_score=0.78, quotability_score=0.7),
+                ExtractedPassage(passage_id="p5", book_id="b1", chunk_ids=["c5"], text="P5", axis_id="axis_2", relevance_score=0.4, quotability_score=0.4),
+            ],
+            "axis_3": [
+                ExtractedPassage(passage_id="p6", book_id="b1", chunk_ids=["c6"], text="P6", axis_id="axis_3", relevance_score=0.88, quotability_score=0.82),
+                ExtractedPassage(passage_id="p7", book_id="b1", chunk_ids=["c7"], text="P7", axis_id="axis_3", relevance_score=0.87, quotability_score=0.83),
+            ],
+        },
+        total_cap=5,
+        importance_power=1.3,
+        cross_pair_ids=set(),
+        floor_budget_fraction=0.25,
+        axis_floor_min=1,
+        axis_floor_max=1,
+        axis_ceiling_multiplier=1.2,
+    )
+
+    all_ids = [
+        passage.passage_id
+        for passages in selected_by_axis.values()
+        for passage in passages
+    ]
+    assert all_ids == ["p1", "p2", "p4", "p6", "p7"]
+    assert len(set(all_ids)) == len(all_ids)
+    assert cap_report["axis_floor"] == 1
+    assert cap_report["axis_ceiling"] == 2
+    assert cap_report["per_axis_counts_before_refill"] == {
+        "axis_1": 1,
+        "axis_2": 1,
+        "axis_3": 1,
+    }
+    assert cap_report["per_axis_counts_after_refill"] == {
+        "axis_1": 2,
+        "axis_2": 1,
+        "axis_3": 2,
+    }
+    assert cap_report["duplicate_source_candidates_skipped"] == 1
+
+
+def test_allocate_synthesis_passages_by_axis_raises_on_duplicate_passage_ids():
+    axis_1 = ThematicAxis(axis_id="axis_1", name="Axis 1", description="A1", theme_importance_score=0.95)
+    axis_2 = ThematicAxis(axis_id="axis_2", name="Axis 2", description="A2", theme_importance_score=0.75)
+
+    with pytest.raises(ValueError, match="Duplicate synthesis passages detected"):
+        _allocate_synthesis_passages_by_axis(
+            axes=[axis_1, axis_2],
+            passages_by_axis={
+                "axis_1": [
+                    ExtractedPassage(passage_id="dup", book_id="b1", chunk_ids=["c1"], text="P1", axis_id="axis_1", relevance_score=0.92, quotability_score=0.8),
+                ],
+                "axis_2": [
+                    ExtractedPassage(passage_id="dup", book_id="b2", chunk_ids=["c2"], text="P2", axis_id="axis_2", relevance_score=0.91, quotability_score=0.8),
+                ],
+            },
+            total_cap=2,
+            importance_power=1.3,
+            cross_pair_ids=set(),
+            floor_budget_fraction=0.25,
+            axis_floor_min=1,
+            axis_floor_max=1,
+            axis_ceiling_multiplier=1.2,
+        )
 
 
 def test_trim_candidate_texts_by_bm25_supports_per_passage_keep_fractions():
@@ -707,7 +733,7 @@ def test_build_passage_lookup_and_flatten_primitives():
     synthesis_map = SynthesisMap(
         project_id="proj",
         primitives_by_family=_primitives_by_family(
-            turning_points=[_primitive("tp_1", "Turn")]
+            epochal_turns=[_primitive("tp_1", "Turn")]
         ),
     )
     assert _build_passage_lookup(corpus)["p1"].book_id == "b1"
@@ -735,6 +761,53 @@ def test_orchestrator_initializes_redesigned_agents(monkeypatch):
     assert orchestrator.synthesis_primitives_agent.schema_name == "synthesis_primitives"
     assert orchestrator.synthesis_consolidation_agent.schema_name == "synthesis_consolidation"
     assert not hasattr(orchestrator, "synthesis_mapping_agent")
+
+
+def test_build_scene_card_family_warnings_reports_missing_mix():
+    episode = StrategyEpisode(
+        episode_number=1,
+        title="Episode 1",
+        driving_question="Q1",
+        arc_summary="A1",
+        cluster_path=[
+            ClusterPathOccurrence(
+                occurrence_id="occ_1",
+                cluster_id="cluster_1",
+                usage="primary",
+                emphasis="anchor",
+            ),
+            ClusterPathOccurrence(
+                occurrence_id="occ_2",
+                cluster_id="cluster_2",
+                usage="echo",
+                emphasis="major",
+                transition_note="Shift to the next packet.",
+            ),
+        ],
+    )
+
+    warnings = _build_scene_card_family_warnings(
+        episode=episode,
+        primitive_pool_ids={"et_1"},
+        primitive_family_by_id={"et_1": "epochal_turns"},
+    )
+
+    assert "primitive_family_missing_scene_or_detail" in warnings[0] or any(
+        warning.startswith("primitive_family_missing_scene_or_detail")
+        for warning in warnings
+    )
+    assert any(
+        warning.startswith("primitive_family_missing_human_grounding")
+        for warning in warnings
+    )
+    assert any(
+        warning.startswith("primitive_family_missing_system_or_context")
+        for warning in warnings
+    )
+    assert any(
+        warning.startswith("primitive_family_missing_recurrence")
+        for warning in warnings
+    )
 
 
 def test_map_synthesis_caps_total_passages_and_keeps_cross_pair_priority(monkeypatch, tmp_path):
@@ -772,6 +845,10 @@ def test_map_synthesis_caps_total_passages_and_keeps_cross_pair_priority(monkeyp
             synthesis_axis_pct=1.0,
             synthesis_axis_min=2,
             synthesis_axis_max=2,
+            synthesis_floor_budget_fraction=0.25,
+            synthesis_axis_floor_min=1,
+            synthesis_axis_floor_max=1,
+            synthesis_axis_ceiling_multiplier=1.5,
         ),
     )
     axis_1 = ThematicAxis(axis_id="axis_1", name="Axis 1", description="A1", theme_importance_score=0.95)
@@ -819,6 +896,7 @@ def test_map_synthesis_caps_total_passages_and_keeps_cross_pair_priority(monkeyp
         for item in book_group["passages"]
     ]
     assert len(all_ids) == 4
+    assert len(set(all_ids)) == 4
     assert "p1" in all_ids
     assert "p6" in all_ids
     assert "p7" not in all_ids
@@ -855,7 +933,6 @@ def test_write_episode_passes_full_text_to_writing_agent(monkeypatch, tmp_path):
         captured["payload"] = payload
         return orchestrator.writing_agent.response_model.model_validate(
             {
-                "batch_id": payload["batch_id"],
                 "prose_sections": [
                     {
                         "section_id": "section_1",
@@ -863,8 +940,7 @@ def test_write_episode_passes_full_text_to_writing_agent(monkeypatch, tmp_path):
                         "movement_goal": "discover",
                         "text": "Draft text.",
                     }
-                ],
-                "window_map": [{"batch_id": payload["batch_id"], "section_ids": ["section_1"]}],
+                ]
             }
         )
 
@@ -922,11 +998,12 @@ def test_write_episode_passes_full_text_to_writing_agent(monkeypatch, tmp_path):
     asyncio.run(orchestrator._write_episode(plan, project, corpus, ep_dir, tmp_path))
 
     payload = captured["payload"]
-    assert payload["is_final_batch"] is True
     assert payload["passages"][0]["text"] == "Full text evidence for writing."
+    assert payload["episode_target_word_count_lower"] == 550
+    assert payload["episode_target_word_count_higher"] == 650
 
 
-def test_write_episode_uses_multiple_batches_for_many_scene_cards(monkeypatch, tmp_path):
+def test_write_episode_uses_single_writing_call_for_many_scene_cards(monkeypatch, tmp_path):
     heuristic = HeuristicLLMClient()
     monkeypatch.setattr("podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic)
     monkeypatch.setattr(
@@ -949,19 +1026,14 @@ def test_write_episode_uses_multiple_batches_for_many_scene_cards(monkeypatch, t
         captured_payloads.append(payload)
         return orchestrator.writing_agent.response_model.model_validate(
             {
-                "batch_id": payload["batch_id"],
                 "prose_sections": [
                     {
-                        "section_id": f"section_{payload['batch_id']}",
-                        "scene_card_ids": payload["active_scene_card_ids"],
+                        "section_id": "section_1",
+                        "scene_card_ids": [scene["scene_id"] for scene in payload["plan"]["scene_cards"]],
                         "movement_goal": "discover",
                         "text": "Draft text.",
                     }
-                ],
-                "window_map": [{
-                    "batch_id": payload["batch_id"],
-                    "section_ids": [f"section_{payload['batch_id']}"],
-                }],
+                ]
             }
         )
 
@@ -1020,22 +1092,20 @@ def test_write_episode_uses_multiple_batches_for_many_scene_cards(monkeypatch, t
     ep_dir = tmp_path / "episodes" / "1"
     asyncio.run(orchestrator._write_episode(plan, project, corpus, ep_dir, tmp_path))
 
-    assert len(captured_payloads) == 2
-    assert [payload["batch_id"] for payload in captured_payloads] == ["batch_1", "batch_2"]
-    assert [len(payload["active_scene_card_ids"]) for payload in captured_payloads] == [13, 13]
-    assert [len(payload["passages"]) for payload in captured_payloads] == [13, 13]
-    assert [payload["is_final_batch"] for payload in captured_payloads] == [False, True]
-    assert [payload["batch_target_word_count_lower"] for payload in captured_payloads] == [7150, 7150]
-    assert [payload["batch_target_word_count_higher"] for payload in captured_payloads] == [8450, 8450]
-
-    for payload in captured_payloads:
-        assert "previous_sections" not in payload
-        payload_scene_cards = payload["plan"]["scene_cards"]
-        assert [scene["scene_id"] for scene in payload_scene_cards] == payload["active_scene_card_ids"]
-        assert payload["plan"]["framing"]["handoff_scene_card_id"] == "scene_1"
-        assert all("estimated_duration_seconds" not in scene for scene in payload_scene_cards)
-        assert all(scene["target_word_count_lower"] == 550 for scene in payload_scene_cards)
-        assert all(scene["target_word_count_higher"] == 650 for scene in payload_scene_cards)
+    assert len(captured_payloads) == 1
+    payload = captured_payloads[0]
+    assert len(payload["passages"]) == 26
+    assert payload["episode_target_word_count_lower"] == 14300
+    assert payload["episode_target_word_count_higher"] == 16900
+    assert "previous_sections" not in payload
+    payload_scene_cards = payload["plan"]["scene_cards"]
+    assert [scene["scene_id"] for scene in payload_scene_cards] == [
+        f"scene_{idx}" for idx in range(1, 27)
+    ]
+    assert payload["plan"]["framing"]["handoff_scene_card_id"] == "scene_1"
+    assert all("estimated_duration_seconds" not in scene for scene in payload_scene_cards)
+    assert all(scene["target_word_count_lower"] == 550 for scene in payload_scene_cards)
+    assert all(scene["target_word_count_higher"] == 650 for scene in payload_scene_cards)
 
 
 def test_write_episode_payload_uses_unequal_scene_duration_targets(monkeypatch, tmp_path):
@@ -1061,16 +1131,14 @@ def test_write_episode_payload_uses_unequal_scene_duration_targets(monkeypatch, 
         captured["payload"] = payload
         return orchestrator.writing_agent.response_model.model_validate(
             {
-                "batch_id": payload["batch_id"],
                 "prose_sections": [
                     {
                         "section_id": "section_1",
-                        "scene_card_ids": payload["active_scene_card_ids"],
+                        "scene_card_ids": [scene["scene_id"] for scene in payload["plan"]["scene_cards"]],
                         "movement_goal": "discover",
                         "text": "Draft text.",
                     }
-                ],
-                "window_map": [{"batch_id": payload["batch_id"], "section_ids": ["section_1"]}],
+                ]
             }
         )
 
@@ -1163,8 +1231,8 @@ def test_write_episode_payload_uses_unequal_scene_duration_targets(monkeypatch, 
         "scene_anchor": (11550, 13650),
         "scene_context": (3850, 4550),
     }
-    assert captured["payload"]["batch_target_word_count_lower"] == 15400
-    assert captured["payload"]["batch_target_word_count_higher"] == 18200
+    assert captured["payload"]["episode_target_word_count_lower"] == 15400
+    assert captured["payload"]["episode_target_word_count_higher"] == 18200
 
 
 def test_write_episode_uses_no_citation_agent_when_skip_grounding(monkeypatch, tmp_path):
@@ -1201,7 +1269,6 @@ def test_write_episode_uses_no_citation_agent_when_skip_grounding(monkeypatch, t
         captured["payload"] = payload
         return orchestrator.writing_agent_no_citations.response_model.model_validate(
             {
-                "batch_id": payload["batch_id"],
                 "prose_sections": [
                     {
                         "section_id": "section_1",
@@ -1210,8 +1277,7 @@ def test_write_episode_uses_no_citation_agent_when_skip_grounding(monkeypatch, t
                         "text": " ".join(["word"] * 800),
                         "source_book_ids": ["b1"],
                     }
-                ],
-                "window_map": [{"batch_id": payload["batch_id"], "section_ids": ["section_1"]}],
+                ]
             }
         )
 
@@ -1272,11 +1338,10 @@ def test_write_episode_uses_no_citation_agent_when_skip_grounding(monkeypatch, t
 
     payload = captured["payload"]
     assert payload["skip_grounding"] is True
-    assert payload["is_final_batch"] is True
     assert "scene_word_count_targets" not in payload
     assert "previous_sections" not in payload
-    assert payload["batch_target_word_count_lower"] == 550
-    assert payload["batch_target_word_count_higher"] == 650
+    assert payload["episode_target_word_count_lower"] == 550
+    assert payload["episode_target_word_count_higher"] == 650
     scene = payload["plan"]["scene_cards"][0]
     assert scene["scene_id"] == "scene_1"
     assert "estimated_duration_seconds" not in scene
@@ -1288,9 +1353,18 @@ def test_write_episode_uses_no_citation_agent_when_skip_grounding(monkeypatch, t
         for event_type, payload in logged_events
         if event_type == "episode_writing_budget_warning"
     ]
+    section_count_warnings = [
+        payload
+        for event_type, payload in logged_events
+        if event_type == "episode_writing_section_count_warning"
+    ]
     assert budget_warnings
     assert budget_warnings[0]["actual_word_count"] == 800
     assert budget_warnings[0]["target_word_count_higher"] == 650
+    assert section_count_warnings
+    assert section_count_warnings[0]["section_count"] == 1
+    assert section_count_warnings[0]["target_section_count_min"] == 8
+    assert section_count_warnings[0]["target_section_count_max"] == 12
 
 
 def test_validate_grounding_uses_full_text_lookup(monkeypatch, tmp_path):
@@ -1350,6 +1424,150 @@ def test_validate_grounding_uses_full_text_lookup(monkeypatch, tmp_path):
 
     payload = captured["payload"]
     assert payload["cited_passages"]["p1"]["text"] == "Full text evidence for grounding."
+
+
+def test_rewrite_for_speech_rewrites_each_section_individually(monkeypatch, tmp_path):
+    heuristic = HeuristicLLMClient()
+    monkeypatch.setattr("podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic)
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.PGVectorRetrieval",
+        lambda settings, run_logger=None: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.RetrievalService",
+        lambda settings, vector_store: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.build_tts_client",
+        lambda settings: DummyTTSClient(),
+    )
+
+    orchestrator = PipelineOrchestrator()
+    payloads: list[dict] = []
+
+    def fake_spoken_run(payload: dict):
+        payloads.append(payload)
+        section = payload["script"]["prose_sections"][0]
+        return orchestrator.spoken_delivery_agent.response_model.model_validate(
+            {
+                "sections": [
+                    {
+                        "section_id": section["section_id"],
+                        "text": f"spoken::{section['text']}",
+                    }
+                ]
+            }
+        )
+
+    orchestrator.spoken_delivery_agent.run = fake_spoken_run
+
+    script = EpisodeScript(
+        episode_number=1,
+        title="Episode 1",
+        framing=_framing(),
+        prose_sections=[
+            ProseSection(
+                section_id="section_1",
+                scene_card_ids=["scene_1"],
+                movement_goal="discover",
+                text="First section",
+            ),
+            ProseSection(
+                section_id="section_2",
+                scene_card_ids=["scene_2"],
+                movement_goal="discover",
+                text="Second section",
+            ),
+        ],
+    )
+    project = ThematicProject(
+        project_id="proj",
+        theme="War on terror",
+        books=[
+            BookRecord(
+                book_id="b1",
+                title="Book 1",
+                author="Author",
+                source_path="/tmp/book.txt",
+                source_type="txt",
+            )
+        ],
+    )
+    ep_dir = tmp_path / "episodes" / "1"
+    ep_dir.mkdir(parents=True, exist_ok=True)
+
+    spoken = asyncio.run(
+        orchestrator._rewrite_for_speech(1, script, project, ep_dir, tmp_path)
+    )
+
+    assert len(payloads) == 2
+    assert payloads[0]["script"]["prose_sections"][0]["section_id"] == "section_1"
+    assert payloads[1]["script"]["prose_sections"][0]["section_id"] == "section_2"
+    assert len(payloads[0]["script"]["prose_sections"]) == 1
+    assert len(payloads[1]["script"]["prose_sections"]) == 1
+    assert [section.section_id for section in spoken.sections] == ["section_1", "section_2"]
+    assert [section.text for section in spoken.sections] == [
+        "spoken::First section",
+        "spoken::Second section",
+    ]
+
+
+def test_rewrite_for_speech_raises_on_invalid_section_contract(monkeypatch, tmp_path):
+    heuristic = HeuristicLLMClient()
+    monkeypatch.setattr("podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic)
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.PGVectorRetrieval",
+        lambda settings, run_logger=None: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.RetrievalService",
+        lambda settings, vector_store: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.build_tts_client",
+        lambda settings: DummyTTSClient(),
+    )
+
+    orchestrator = PipelineOrchestrator()
+
+    def fake_spoken_run(_payload: dict):
+        return orchestrator.spoken_delivery_agent.response_model.model_validate(
+            {"sections": [{"section_id": "wrong_id", "text": "spoken"}]}
+        )
+
+    orchestrator.spoken_delivery_agent.run = fake_spoken_run
+
+    script = EpisodeScript(
+        episode_number=1,
+        title="Episode 1",
+        framing=_framing(),
+        prose_sections=[
+            ProseSection(
+                section_id="section_1",
+                scene_card_ids=["scene_1"],
+                movement_goal="discover",
+                text="First section",
+            )
+        ],
+    )
+    project = ThematicProject(
+        project_id="proj",
+        theme="War on terror",
+        books=[
+            BookRecord(
+                book_id="b1",
+                title="Book 1",
+                author="Author",
+                source_path="/tmp/book.txt",
+                source_type="txt",
+            )
+        ],
+    )
+    ep_dir = tmp_path / "episodes" / "1"
+    ep_dir.mkdir(parents=True, exist_ok=True)
+
+    with pytest.raises(RuntimeError, match="section_id mismatch"):
+        asyncio.run(orchestrator._rewrite_for_speech(1, script, project, ep_dir, tmp_path))
 
 
 def test_render_episode_audio_writes_section_only_manifest(monkeypatch, tmp_path):
@@ -1564,7 +1782,7 @@ def test_plan_series_parallelizes_episode_planning_with_configured_limit(monkeyp
             ),
         ],
         primitives_by_family=_primitives_by_family(
-            turning_points=[
+            epochal_turns=[
                 _primitive("tp_1", "T1"),
                 _primitive("tp_2", "T2"),
                 _primitive("tp_3", "T3"),
@@ -1628,7 +1846,7 @@ def test_plan_series_parallelizes_episode_planning_with_configured_limit(monkeyp
         assert [
             cluster["cluster_id"] for cluster in synthesis_payload["episode_candidate_clusters"]
         ] == [f"ec_{episode_number}"]
-        assert [item["id"] for item in synthesis_payload["primitives_by_family"]["turning_points"]] == [
+        assert [item["id"] for item in synthesis_payload["primitives_by_family"]["epochal_turns"]] == [
             f"tp_{episode_number}"
         ]
         available_passages = payloads_by_episode[episode_number]["available_passages"]
@@ -1732,7 +1950,7 @@ def test_plan_series_uses_actor_arc_directives_for_episode_metadata(monkeypatch,
                 primary_actor_id="actor_cluster",
             )
         ],
-        primitives_by_family=_primitives_by_family(turning_points=[primitive]),
+        primitives_by_family=_primitives_by_family(epochal_turns=[primitive]),
     )
     project = ThematicProject(
         project_id="proj",
@@ -1896,7 +2114,7 @@ def test_plan_series_trims_available_passages_for_planning_with_episode_context(
             )
         ],
         primitives_by_family=_primitives_by_family(
-            turning_points=[_primitive("tp_1", "T1")]
+            epochal_turns=[_primitive("tp_1", "T1")]
         ),
     )
     corpus = ThematicCorpus(

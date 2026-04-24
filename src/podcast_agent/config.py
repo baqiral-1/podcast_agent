@@ -98,13 +98,13 @@ class LLMConfig(BaseModel):
     )
     thinking_budget_tokens: dict[str, int] = Field(
         default_factory=lambda: {
-            "narrative_strategy": 10000,
-            "episode_planning": 26000,
-            "episode_writing": 10000,
-            "spoken_delivery": 26000,
+            "narrative_strategy": 30000,
+            "episode_planning": 30000,
+            "episode_writing": 30000,
+            "spoken_delivery": 30000,
             "synthesis_primitives": 30000,
-            "synthesis_consolidation": 10000,
-            "theme_decomposition": 10000,
+            "synthesis_consolidation": 30000,
+            "theme_decomposition": 30000,
         },
         description=(
             "Legacy per-schema thinking budget in tokens. "
@@ -285,8 +285,8 @@ class PipelineRuntimeConfig(BaseModel):
     chunk_overlap_words: int = Field(default=75, ge=0)
     min_chunk_words: int = Field(default=80, ge=10)
     max_repair_attempts: int = Field(default=3, ge=0)
-    episode_planning_concurrency: int = Field(default=9, ge=1)
-    episode_write_concurrency: int = Field(default=10, ge=1)
+    episode_planning_concurrency: int = Field(default=6, ge=1)
+    episode_write_concurrency: int = Field(default=6, ge=1)
     tts_concurrency: int = Field(default=5, ge=1)
     llm_global_max_concurrency: int = Field(default=30, ge=1)
     audio_retry_attempts: int = Field(default=3, ge=0)
@@ -312,7 +312,16 @@ class PipelineRuntimeConfig(BaseModel):
     synthesis_axis_pct: float = Field(default=1.0, ge=0.0, le=1.0)
     synthesis_axis_min: int = Field(default=10, ge=0)
     synthesis_axis_max: int = Field(default=15, ge=1)
-    synthesis_total_passage_cap: int = Field(default=600, ge=1)
+    synthesis_total_passage_cap: int = Field(default=500, ge=1)
+    synthesis_floor_budget_fraction: float = Field(default=0.35, gt=0.0, le=1.0)
+    synthesis_axis_floor_min: int = Field(default=10, ge=0)
+    synthesis_axis_floor_max: int = Field(default=15, ge=1)
+    synthesis_axis_ceiling_multiplier: float = Field(default=1.4, ge=1.0)
+    synthesis_trim_top_fraction: float = Field(default=0.10, ge=0.0, le=1.0)
+    synthesis_trim_mid_fraction: float = Field(default=0.15, ge=0.0, le=1.0)
+    synthesis_trim_top_keep_fraction: float = Field(default=0.50, gt=0.0, le=1.0)
+    synthesis_trim_mid_keep_fraction: float = Field(default=0.40, gt=0.0, le=1.0)
+    synthesis_trim_tail_keep_fraction: float = Field(default=0.30, gt=0.0, le=1.0)
     planning_axis_pct: float = Field(default=1.0, ge=0.0, le=1.0)
     planning_axis_min: int = Field(default=10, ge=0)
     planning_axis_max: int = Field(default=15, ge=1)
@@ -329,8 +338,12 @@ class PipelineRuntimeConfig(BaseModel):
             )
         if self.synthesis_axis_max < self.synthesis_axis_min:
             raise ValueError("synthesis_axis_max must be >= synthesis_axis_min")
+        if self.synthesis_axis_floor_max < self.synthesis_axis_floor_min:
+            raise ValueError("synthesis_axis_floor_max must be >= synthesis_axis_floor_min")
         if self.planning_axis_max < self.planning_axis_min:
             raise ValueError("planning_axis_max must be >= planning_axis_min")
+        if (self.synthesis_trim_top_fraction + self.synthesis_trim_mid_fraction) > 1.0:
+            raise ValueError("synthesis trim top and mid fractions must sum to <= 1.0")
         return self
 
 

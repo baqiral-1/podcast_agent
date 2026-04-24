@@ -63,7 +63,6 @@ from podcast_agent.schemas.models import (
     ThematicCorpus,
     ThematicProject,
     TurningPoint,
-    WindowMapEntry,
 )
 
 __all__ = [
@@ -129,5 +128,4 @@ __all__ = [
     "ThematicCorpus",
     "ThematicProject",
     "TurningPoint",
-    "WindowMapEntry",
 ]

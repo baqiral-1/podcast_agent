@@ -106,7 +106,7 @@ def _build_synthesis_map() -> SynthesisMap:
     )
     return SynthesisMap(
         project_id="run_1",
-        primitives_by_family={"turning_points": [primitive]},
+        primitives_by_family={"epochal_turns": [primitive]},
         episode_candidate_clusters=[
             {
                 "cluster_id": "cluster_1",

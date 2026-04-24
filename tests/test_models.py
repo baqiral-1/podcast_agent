@@ -47,7 +47,7 @@ from podcast_agent.utils.actor_metadata import (
 )
 
 
-def _turning_point(primitive_id: str = "tp_1") -> SynthesisPrimitive:
+def _epochal_turn(primitive_id: str = "et_1") -> SynthesisPrimitive:
     return SynthesisPrimitive(
         id=primitive_id,
         title="Threshold breaks",
@@ -58,7 +58,7 @@ def _turning_point(primitive_id: str = "tp_1") -> SynthesisPrimitive:
     )
 
 
-def _live_question(primitive_id: str = "lq_1") -> SynthesisPrimitive:
+def _contested_explanation(primitive_id: str = "cx_1") -> SynthesisPrimitive:
     return SynthesisPrimitive(
         id=primitive_id,
         title="Competing readings",
@@ -107,7 +107,7 @@ def _normal_scene(scene_id: str = "scene_1", occurrence_id: str = "occ_1") -> Sc
         observable_detail="Hands freeze over the paper.",
         intended_move="Move from abstract policy to lived consequence.",
         actors=[SceneActor(name="Clerk", presence="background")],
-        primitive_ids=["tp_1"],
+        primitive_ids=["et_1"],
         passage_ids=["p1", "p2"],
         estimated_duration_seconds=600,
     )
@@ -127,7 +127,7 @@ def _normal_scene_draft(
         observable_detail="Hands freeze over the paper.",
         intended_move="Move from abstract policy to lived consequence.",
         actors=[SceneActor(name="Clerk", presence="background")],
-        primitive_ids=["tp_1"],
+        primitive_ids=["et_1"],
         passage_ids=["p1", "p2"],
     )
 
@@ -149,13 +149,22 @@ class TestThematicProject:
         with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
             PipelineConfig(scene_batch_min_cards=1)
 
-    def test_pipeline_config_defaults_synthesis_cap_to_600(self):
+    def test_pipeline_config_defaults_synthesis_cap_to_500(self):
         config = PipelineConfig()
-        assert config.synthesis_total_passage_cap == 600
+        assert config.synthesis_total_passage_cap == 500
+        assert config.synthesis_floor_budget_fraction == 0.35
+        assert config.synthesis_axis_floor_min == 10
+        assert config.synthesis_axis_floor_max == 15
+        assert config.synthesis_axis_ceiling_multiplier == 1.4
+        assert config.synthesis_trim_top_fraction == 0.10
+        assert config.synthesis_trim_mid_fraction == 0.15
+        assert config.synthesis_trim_top_keep_fraction == 0.50
+        assert config.synthesis_trim_mid_keep_fraction == 0.40
+        assert config.synthesis_trim_tail_keep_fraction == 0.30
         assert config.passage_extraction_concurrency == 16
-        assert config.episode_write_concurrency == 10
-        assert config.min_episode_minutes == 95.0
-        assert config.target_episode_minutes == 100.0
+        assert config.episode_write_concurrency == 6
+        assert config.min_episode_minutes == 85.0
+        assert config.target_episode_minutes == 90.0
         assert config.scene_card_target_min == 35
         assert config.scene_card_target_max == 45
 
@@ -364,9 +373,9 @@ class TestSynthesisModels:
         artifact = SynthesisPrimitivesArtifact(
             project_id="proj",
             primitives_by_family=_family_map(
-                turning_points=[
+                epochal_turns=[
                     SynthesisPrimitive(
-                        id="tp_1",
+                        id="et_1",
                         title="Decision",
                         summary="A decision lands.",
                         core_passage_ids=["p1"],
@@ -376,7 +385,7 @@ class TestSynthesisModels:
             ),
         )
         cleaned, metrics = clean_synthesis_primitive_actor_links(artifact, metadata)
-        primitive = cleaned.primitives_by_family["turning_points"][0]
+        primitive = cleaned.primitives_by_family["epochal_turns"][0]
         assert primitive.actor_ids == ["jawaharlal_nehru"]
         assert primitive.actor_tags == []
         assert primitive.unresolved_actor_tags == ["Unknown actor"]
@@ -388,20 +397,20 @@ class TestSynthesisModels:
             EpisodeCandidateCluster(
                 title="Cluster",
                 summary="Summary",
-                primary_member_id="tp_missing",
-                member_ids=["tp_1"],
+                primary_member_id="et_missing",
+                member_ids=["et_1"],
                 local_question="What changes?",
                 local_payoff_shape="reveal",
             )
 
     def test_importance_fields_default_and_roundtrip(self):
-        primitive = _turning_point("tp_1")
+        primitive = _epochal_turn("et_1")
         cluster = EpisodeCandidateCluster(
             cluster_id="cluster_1",
             title="Cluster",
             summary="Summary",
-            primary_member_id="tp_1",
-            member_ids=["tp_1"],
+            primary_member_id="et_1",
+            member_ids=["et_1"],
             local_question="What changes?",
             local_payoff_shape="reveal",
         )
@@ -424,23 +433,23 @@ class TestSynthesisModels:
         with pytest.raises(ValidationError, match="unknown member_ids"):
             SynthesisMap(
                 project_id="proj",
-                primitives_by_family=_family_map(turning_points=[_turning_point("tp_1")]),
+                primitives_by_family=_family_map(epochal_turns=[_epochal_turn("et_1")]),
                 episode_candidate_clusters=[
                     EpisodeCandidateCluster(
                         cluster_id="cluster_1",
                         title="Cluster",
                         summary="Summary",
-                        primary_member_id="tp_1",
-                        member_ids=["tp_1", "tp_999"],
+                        primary_member_id="et_1",
+                        member_ids=["et_1", "tp_999"],
                         local_question="What changes?",
                         local_payoff_shape="reveal",
                     )
                 ],
             )
 
-    def test_live_questions_with_fewer_than_two_candidate_readings_are_dropped(self):
-        invalid_live_question = SynthesisPrimitive(
-            id="lq_invalid",
+    def test_contested_explanations_with_fewer_than_two_candidate_readings_are_dropped(self):
+        invalid_contested_explanation = SynthesisPrimitive(
+            id="cx_invalid",
             title="Single reading",
             summary="The evidence supports only one explicit reading.",
             core_passage_ids=["p1"],
@@ -456,35 +465,45 @@ class TestSynthesisModels:
         artifact = SynthesisPrimitivesArtifact(
             project_id="proj",
             primitives_by_family=_family_map(
-                turning_points=[_turning_point("tp_1")],
-                live_questions=[invalid_live_question, _live_question("lq_valid")],
+                epochal_turns=[_epochal_turn("et_1")],
+                contested_explanations=[
+                    invalid_contested_explanation,
+                    _contested_explanation("cx_valid"),
+                ],
             ),
         )
         synthesis_map = SynthesisMap(
             project_id="proj",
             primitives_by_family=_family_map(
-                turning_points=[_turning_point("tp_1")],
-                live_questions=[invalid_live_question, _live_question("lq_valid")],
+                epochal_turns=[_epochal_turn("et_1")],
+                contested_explanations=[
+                    invalid_contested_explanation,
+                    _contested_explanation("cx_valid"),
+                ],
             ),
         )
 
-        assert [item.id for item in artifact.primitives_by_family["live_questions"]] == [
-            "lq_valid"
+        assert [
+            item.id for item in artifact.primitives_by_family["contested_explanations"]
+        ] == [
+            "cx_valid"
         ]
-        assert [item.id for item in synthesis_map.primitives_by_family["live_questions"]] == [
-            "lq_valid"
+        assert [
+            item.id for item in synthesis_map.primitives_by_family["contested_explanations"]
+        ] == [
+            "cx_valid"
         ]
-        assert [item.id for item in artifact.primitives_by_family["turning_points"]] == ["tp_1"]
+        assert [item.id for item in artifact.primitives_by_family["epochal_turns"]] == ["et_1"]
 
-    def test_synthesis_map_rejects_cluster_references_to_dropped_live_questions(self):
+    def test_synthesis_map_rejects_cluster_references_to_dropped_contested_explanations(self):
         with pytest.raises(ValidationError, match="unknown member_ids"):
             SynthesisMap(
                 project_id="proj",
                 primitives_by_family=_family_map(
-                    turning_points=[_turning_point("tp_1")],
-                    live_questions=[
+                    epochal_turns=[_epochal_turn("et_1")],
+                    contested_explanations=[
                         SynthesisPrimitive(
-                            id="lq_invalid",
+                            id="cx_invalid",
                             title="Single reading",
                             summary="The evidence supports only one explicit reading.",
                             core_passage_ids=["p1"],
@@ -503,8 +522,8 @@ class TestSynthesisModels:
                         cluster_id="cluster_1",
                         title="Opening cluster",
                         summary="A compact causal chain.",
-                        primary_member_id="tp_1",
-                        member_ids=["tp_1", "lq_invalid"],
+                        primary_member_id="et_1",
+                        member_ids=["et_1", "cx_invalid"],
                         local_question="Why does the order matter?",
                         local_payoff_shape="reveal",
                     )
@@ -515,16 +534,16 @@ class TestSynthesisModels:
         synthesis_map = SynthesisMap(
             project_id="proj",
             primitives_by_family=_family_map(
-                turning_points=[_turning_point("tp_1")],
-                live_questions=[_live_question("lq_1")],
+                epochal_turns=[_epochal_turn("et_1")],
+                contested_explanations=[_contested_explanation("cx_1")],
             ),
             episode_candidate_clusters=[
                 EpisodeCandidateCluster(
                     cluster_id="cluster_1",
                     title="Opening cluster",
                     summary="A compact causal chain.",
-                    primary_member_id="tp_1",
-                    member_ids=["tp_1", "lq_1"],
+                    primary_member_id="et_1",
+                    member_ids=["et_1", "cx_1"],
                     local_question="Why does the order matter?",
                     local_payoff_shape="reveal",
                 )
@@ -532,9 +551,9 @@ class TestSynthesisModels:
             quality_score=0.7,
         )
         restored = SynthesisMap.model_validate(json.loads(synthesis_map.model_dump_json()))
-        assert restored.episode_candidate_clusters[0].primary_member_id == "tp_1"
+        assert restored.episode_candidate_clusters[0].primary_member_id == "et_1"
         assert (
-            restored.primitives_by_family["live_questions"][0].candidate_readings[1].label
+            restored.primitives_by_family["contested_explanations"][0].candidate_readings[1].label
             == "reading_b"
         )
 
@@ -542,14 +561,14 @@ class TestSynthesisModels:
         with pytest.raises(ValidationError, match="unknown member_ids"):
             SynthesisConsolidationResult(
                 project_id="proj",
-                primitive_ids_by_family={"turning_points": ["tp_1"]},
+                primitive_ids_by_family={"epochal_turns": ["et_1"]},
                 episode_candidate_clusters=[
                     EpisodeCandidateCluster(
                         cluster_id="cluster_1",
                         title="Cluster",
                         summary="Summary",
-                        primary_member_id="tp_1",
-                        member_ids=["tp_1", "tp_999"],
+                        primary_member_id="et_1",
+                        member_ids=["et_1", "tp_999"],
                         local_question="What changes?",
                         local_payoff_shape="reveal",
                     )
@@ -560,22 +579,22 @@ class TestSynthesisModels:
         result = SynthesisConsolidationResult(
             project_id="proj",
             primitive_ids_by_family={
-                "turning_points": ["tp_1"],
-                "live_questions": ["lq_1"],
+                "epochal_turns": ["et_1"],
+                "contested_explanations": ["cx_1"],
             },
             episode_candidate_clusters=[
                 EpisodeCandidateCluster(
                     cluster_id="cluster_1",
                     title="Cluster",
                     summary="Summary",
-                    primary_member_id="tp_1",
-                    member_ids=["tp_1", "lq_1"],
+                    primary_member_id="et_1",
+                    member_ids=["et_1", "cx_1"],
                     local_question="What changes?",
                     local_payoff_shape="reveal",
                 )
             ],
         )
-        assert result.episode_candidate_clusters[0].member_ids == ["tp_1", "lq_1"]
+        assert result.episode_candidate_clusters[0].member_ids == ["et_1", "cx_1"]
 
 
 class TestNarrativeStrategy:
@@ -1160,7 +1179,7 @@ class TestPlanningModels:
         )
         assert draft.scene_cards[0].withhold_until == "Full consequences are developed in Episode 5."
 
-    def test_episode_plan_draft_defaults_target_duration_minutes_to_100(self):
+    def test_episode_plan_draft_defaults_target_duration_minutes_to_90(self):
         draft = EpisodePlanDraft(
             episode_number=1,
             title="Episode 1",
@@ -1168,7 +1187,7 @@ class TestPlanningModels:
             framing=_framing(),
             scene_cards=[_normal_scene_draft()],
         )
-        assert draft.target_duration_minutes == 100.0
+        assert draft.target_duration_minutes == 90.0
 
     def test_episode_plan_roundtrip(self):
         draft = EpisodePlan(

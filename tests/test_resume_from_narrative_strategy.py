@@ -65,11 +65,11 @@ def _build_project_dir(tmp_path: Path) -> Path:
     )
     primitives = SynthesisPrimitivesArtifact(
         project_id="run_1",
-        primitives_by_family={"turning_points": [primitive]},
+        primitives_by_family={"epochal_turns": [primitive]},
     )
     synthesis_map = SynthesisMap(
         project_id="run_1",
-        primitives_by_family={"turning_points": [primitive]},
+        primitives_by_family={"epochal_turns": [primitive]},
         episode_candidate_clusters=[
             {
                 "cluster_id": "cluster_1",
