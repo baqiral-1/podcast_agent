@@ -395,20 +395,13 @@ class HeuristicLLMClient(LLMClient):
         primary_member_id = member_ids[0] if member_ids else "tp_001"
         return {
             "project_id": payload.get("project_id", "project"),
-            "episode_candidate_clusters": [
+            "evidence_packs": [
                 {
-                    "cluster_id": "cluster_001",
-                    "title": "Heuristic cluster",
-                    "summary": "A compact local causal chain.",
-                    "primary_member_id": primary_member_id,
-                    "member_ids": member_ids or [primary_member_id],
+                    "pack_id": "pack_001",
+                    "title": "Heuristic pack",
+                    "local_summary": "A compact local causal chain.",
+                    "primitive_ids": member_ids or [primary_member_id],
                     "actor_ids": actor_ids[:1],
-                    "primary_actor_id": actor_ids[0] if actor_ids else None,
-                    "actor_tension": "A heuristic actor pressure shapes the local chain." if actor_ids else "",
-                    "narrative_importance_score": 0.5,
-                    "coverage_policy": "anchor",
-                    "local_question": "What changes the stakes locally?",
-                    "local_payoff_shape": "reveal",
                 }
             ],
             "primitive_ids_by_family": primitive_ids_by_family,
@@ -419,25 +412,25 @@ class HeuristicLLMClient(LLMClient):
     def _generate_narrative_strategy(self, payload: PromptPayload) -> dict[str, Any]:
         requested_episode_count = payload.get("requested_episode_count")
         synthesis_map = payload.get("synthesis_map", {})
-        clusters = synthesis_map.get("episode_candidate_clusters", [])
-        if not clusters:
-            clusters = [{"cluster_id": "cluster_001", "title": "Heuristic cluster"}]
+        packs = synthesis_map.get("evidence_packs", [])
+        if not packs:
+            packs = [{"pack_id": "pack_001", "title": "Heuristic pack"}]
         if requested_episode_count is None:
-            recommended_episode_count = max(6, min(10, len(clusters)))
+            recommended_episode_count = max(6, min(10, len(packs)))
         else:
             recommended_episode_count = max(6, min(10, int(requested_episode_count)))
-        while len(clusters) < recommended_episode_count:
-            idx = len(clusters) + 1
-            clusters.append(
+        while len(packs) < recommended_episode_count:
+            idx = len(packs) + 1
+            packs.append(
                 {
-                    "cluster_id": f"cluster_{idx:03d}",
-                    "title": f"Heuristic cluster {idx}",
+                    "pack_id": f"pack_{idx:03d}",
+                    "title": f"Heuristic pack {idx}",
                 }
             )
         episodes = []
         for idx in range(recommended_episode_count):
-            cluster = clusters[idx % len(clusters)]
-            cluster_actor_ids = list(cluster.get("actor_ids", []))
+            pack = packs[idx % len(packs)]
+            pack_actor_ids = list(pack.get("actor_ids", []))
             actor_arc_directives = [
                 {
                     "actor_id": actor_id,
@@ -448,7 +441,7 @@ class HeuristicLLMClient(LLMClient):
                             "label": "episode role",
                             "premise": "This actor provides the heuristic character spine for the episode.",
                             "pressure": "Episode events constrain the actor's available choices.",
-                            "movement": "The actor's position becomes clearer as the cluster path develops.",
+                            "movement": "The actor's position becomes clearer as the episode spine develops.",
                             "payoff": "The episode lands the actor's function as part of the local turn.",
                         },
                         {
@@ -465,7 +458,7 @@ class HeuristicLLMClient(LLMClient):
                             "arc_type": "tension",
                             "label": "tension line",
                             "premise": "External pressure constrains the actor's available choices.",
-                            "pressure": "The cluster path narrows the actor's options.",
+                            "pressure": "The episode spine narrows the actor's options.",
                             "movement": "Pressure should become more concrete across scenes.",
                             "payoff": "The tension should clarify the episode's local consequence.",
                         },
@@ -473,7 +466,7 @@ class HeuristicLLMClient(LLMClient):
                             "thread_id": f"{actor_id}_progression_1",
                             "arc_type": "turn",
                             "label": "arc progression",
-                            "premise": "The actor's position changes as the cluster path develops.",
+                            "premise": "The actor's position changes as the episode spine develops.",
                             "pressure": "A decision or consequence should alter what the actor can do.",
                             "movement": "Move from setup toward consequence.",
                             "payoff": "The actor's changed position should make the episode turn legible.",
@@ -498,31 +491,32 @@ class HeuristicLLMClient(LLMClient):
                         },
                     ],
                 }
-                for actor_id in cluster_actor_ids[:1]
+                for actor_id in pack_actor_ids[:1]
             ]
+            listener_question = (
+                "What local turn best explains the series?"
+                if idx == 0
+                else f"What does episode {idx + 1} newly reveal?"
+            )
             episodes.append(
                 {
                     "episode_number": idx + 1,
                     "title": f"Episode {idx + 1}",
-                    "driving_question": (
-                        "What local turn best explains the series?"
-                        if idx == 0
-                        else f"What does episode {idx + 1} newly reveal?"
-                    ),
-                    "thematic_focus": cluster.get("title", "Heuristic focus"),
-                    "arc_summary": f"Episode {idx + 1} follows a discovery-ordered cluster path.",
+                    "driving_question": listener_question,
+                    "thematic_focus": pack.get("title", "Heuristic focus"),
+                    "arc_summary": f"Episode {idx + 1} follows a single proposition spine.",
                     "unresolved_questions": [],
                     "actor_arc_directives": actor_arc_directives,
-                    "cluster_path": [
-                        {
-                            "occurrence_id": f"occ_{idx + 1:03d}",
-                            "cluster_id": cluster.get("cluster_id", "cluster_001"),
-                            "usage": "primary",
-                            "emphasis": cluster.get("coverage_policy", "anchor"),
-                            "transition_note": "",
-                            "chronology_break": None,
-                        }
-                    ],
+                    "episode_spine": {
+                        "listener_question": listener_question,
+                        "working_claim": f"{pack.get('title', 'This pack')} carries the controlling proposition.",
+                        "target_end_state": "The episode should land a clearer proposition.",
+                        "verdict_mode": "constrain",
+                        "primary_counterposition": "A competing interpretation remains live.",
+                        "spine_pack_ids": [pack.get("pack_id", "pack_001")],
+                        "support_pack_roles": {},
+                        "allowed_recalls": [],
+                    },
                 }
             )
         return {
@@ -537,23 +531,26 @@ class HeuristicLLMClient(LLMClient):
     def _generate_episode_planning(self, payload: PromptPayload) -> dict[str, Any]:
         episode = payload.get("episode", {})
         episode_number = int(episode.get("episode_number", 1))
-        cluster_path = episode.get("cluster_path", [])
+        episode_spine = episode.get("episode_spine", {})
         available_passages = payload.get("available_passages", [])
         passage_ids = [
             str(passage.get("passage_id", uuid4().hex))
             for passage in available_passages[:3]
         ]
-        occurrence_id = (
-            str(cluster_path[0].get("occurrence_id", "occ_001"))
-            if cluster_path
-            else "occ_001"
-        )
+        dominant_pack_id = "pack_001"
+        if episode_spine:
+            dominant_pack_id = str(
+                (episode_spine.get("spine_pack_ids") or ["pack_001"])[0]
+            )
         scene_cards = [
             {
                 "scene_id": "scene_01",
+                "batch_id": "b01",
                 "title": "Heuristic scene 1",
                 "scene_role": "setup",
-                "dominant_cluster_occurrence_id": occurrence_id,
+                "dominant_pack_id": dominant_pack_id,
+                "spine_relation": "set_stakes",
+                "state_effect": "The listener understands what the proposition is testing.",
                 "entry_image": "A concrete opening image.",
                 "local_question": "What changes here?",
                 "observable_detail": "A visible consequence lands in the scene.",
@@ -572,6 +569,17 @@ class HeuristicLLMClient(LLMClient):
             "thematic_focus": episode.get("thematic_focus", "Heuristic focus"),
             "arc_summary": episode.get("arc_summary", "A heuristic episode arc."),
             "unresolved_questions": episode.get("unresolved_questions", []),
+            "episode_spine": episode_spine
+            or {
+                "listener_question": episode.get("driving_question", "What changes here?"),
+                "working_claim": "The episode tests one proposition.",
+                "target_end_state": "The proposition ends clearer than it began.",
+                "verdict_mode": "constrain",
+                "primary_counterposition": "An alternative reading remains plausible.",
+                "spine_pack_ids": [dominant_pack_id],
+                "support_pack_roles": {},
+                "allowed_recalls": [],
+            },
             "actor_arc_directives": episode.get("actor_arc_directives", []),
             "framing": {
                 "opening_image": "A listener-facing opening image.",
@@ -582,6 +590,7 @@ class HeuristicLLMClient(LLMClient):
                 "preview": None,
             },
             "scene_cards": scene_cards,
+            "dropped_support_pack_reasons": {},
             "target_duration_minutes": 90.0,
         }
 
@@ -594,15 +603,15 @@ class HeuristicLLMClient(LLMClient):
             if isinstance(scene, dict) and scene.get("scene_id")
         ] or ["scene_01"]
         return {
-            "prose_sections": [
+            "scene_prose": [
                 {
-                    "section_id": "section_1",
-                    "scene_card_ids": scene_card_ids,
+                    "scene_card_id": scene_id,
                     "movement_goal": "discover",
                     "text": "Heuristic narration content.",
                     "citations": [],
                     "source_book_ids": [],
                 }
+                for scene_id in scene_card_ids
             ],
         }
 
@@ -622,19 +631,18 @@ class HeuristicLLMClient(LLMClient):
 
     def _generate_spoken_delivery(self, payload: PromptPayload) -> dict[str, Any]:
         script = payload.get("script", {})
+        sections = script.get("prose_sections", [])
+        section = sections[0] if sections else {}
         return {
-            "sections": [
-                {
-                    "section_id": str(section.get("section_id", uuid4().hex)),
-                    "text": str(section.get("text", "Spoken delivery text.")),
-                    "speech_hints": {
-                        "style": "neutral",
-                        "intensity": "none",
-                        "pause_before_ms": 300,
-                        "pause_after_ms": 300,
-                        "pace": "normal",
-                    },
-                }
-                for section in script.get("prose_sections", [])
-            ],
+            "text": str(section.get("text", "Spoken delivery text.")),
+            "speech_hints": {
+                "style": "neutral",
+                "intensity": "none",
+                "pause_before_ms": 300,
+                "pause_after_ms": 300,
+                "pace": "normal",
+                "pronunciation_hints": [],
+                "emphasis_targets": [],
+                "render_strategy": "plain",
+            },
         }

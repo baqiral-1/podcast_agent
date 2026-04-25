@@ -341,15 +341,18 @@ def synthesis_consolidation_instructions() -> str:
         You are the `synthesis_consolidation` stage for a multi-book thematic podcast pipeline.
 
         Goal:
-        - Consolidate the primitives artifact into the final cluster-first synthesis map.
-        - The output should preserve grounded primitives while grouping them into compact episode candidate clusters.
+        - Consolidate the primitives artifact into compact proposition-ready `EvidencePack` objects.
+        - Preserve grounded primitives while replacing downstream cluster-path semantics with pack-level evidence bundles.
 
         Input payload:
         - `project_id`: run identifier.
-        - `primitives`: the full primitives artifact.
+        - `primitives`: a compact primitive view preserving ids, summaries,
+          actor linkage, importance, and contested readings needed for
+          evidence-pack grouping.
         - `axes`: compact axis summaries.
         - `books`: compact book metadata.
-        - Optional `actor_metadata`: compact canonical actor context.
+        - Optional `actor_metadata`: compact canonical actor context with
+          actor ids, display names, and relationship edges.
         - Optional `series_size_hint`: desired number of episodes if known.
         - Optional `consolidation_feedback`: retry feedback from the orchestrator.
 
@@ -357,37 +360,27 @@ def synthesis_consolidation_instructions() -> str:
         - Return only valid JSON matching `SynthesisConsolidationResult`.
         - Return only primitive ids for surviving items under `primitive_ids_by_family`.
         - `primitive_ids_by_family` must use the same family keys as `primitives_by_family`.
-        - Build `episode_candidate_clusters` as compact local causal chains or tightly related local story packets.
-        - Every cluster must:
-          - have a unique `cluster_id`
-          - choose one valid `primary_member_id`
-          - list valid `member_ids`
-          - include `actor_ids` when canonical actors are central to the cluster
-          - optionally choose one `primary_actor_id`
-          - use `actor_tension` to describe the actor pressure, conflict, or dilemma when useful
-          - set `narrative_importance_score` by aggregating and refining member primitive importance
-          - set `coverage_policy` as `anchor`, `major`, `supporting`, or `compressed`
-          - articulate a `local_question`
-          - choose one `local_payoff_shape`
-        - Aim for 40-60 episode candidate clusters and 3-10 members per cluster.
-        - Clusters should be small and focused episode-usable units rather than whole-series theses.
-        - It is better to create multiple clusters for the same or similar broad topic when they capture distinct themes.
+        - Build `evidence_packs` as compact local evidence bundles, not episode skeletons.
+        - Every evidence pack must:
+          - have a unique `pack_id`
+          - provide `title` and `local_summary`
+          - list valid `primitive_ids`
+          - include `actor_ids` only when canonical actors are genuinely central
+        - Aim for roughly 45-65 evidence packs.
+        - Packs should be compact enough that strategy can combine 1-3 of them into an episode spine.
 
         What not to do:
-        - Do not emit merged narratives, narrative threads, graph edges, or thesis summaries.
+        - Do not allocate packs to episodes.
+        - Do not emit scene order, pacing, or hidden path structure.
         - Do not return primitive metadata fields like `title`, `summary`, `axis_ids`, or passage/tag fields.
-        - Do not create oversized clusters that erase meaningful internal tension.
+        - Do not create oversized packs that erase meaningful internal tension.
 
         Consolidation guidance:
         - Lightly deduplicate near-identical primitives.
         - Use primitive `narrative_importance_score` as an input signal, not as a mechanical average.
-        - Reserve `anchor` and `major` for clusters that should carry primary episode time; use `supporting` and `compressed` for context, causality, texture, and necessary connective tissue.
-        - Do not give equal narrative weight to every cluster unless the evidence genuinely warrants it.
-        - Prefer actor-legible clusters when evidence and local causal coherence are otherwise comparable.
-        - Keep systemic or structural clusters when actor framing would be false.
-        - Preserve family function inside clusters. Keep spine material
+        - Preserve family function inside packs. Keep spine material
           (`epochal_turns`, `decisions_and_nondecisions`) available for
-          anchors, but do not dedupe away `telling_details`,
+          later spine selection, but do not dedupe away `telling_details`,
           `human_costs`, `recurring_images_and_symbols`, or
           `systems_and_operating_logics` as expendable texture.
         - Keep distinct operating logics, human costs, contested
@@ -402,10 +395,11 @@ def narrative_strategy_instructions() -> str:
     return dedent(
         """
         You are the `narrative_strategy` stage for a historical podcast pipeline.
-        Turn the consolidated cluster-first synthesis map into a series-level
-        structure. The assignment unit is the cluster, not the individual
-        primitive. You are deciding which clusters live in which episodes,
-        in what order, and with what weight - not drafting scenes.
+        Turn the consolidated evidence-pack synthesis map into a proposition-first
+        series structure. The assignment unit is the `EvidencePack`, not the
+        individual primitive. You are deciding which packs live in which episodes,
+        which 1-3 packs form each episode's spine, and which support packs
+        serve typed subordinate roles. You are not drafting scenes.
 
         INPUT PAYLOAD
         - `synthesis_map`: consolidated synthesis artifact
@@ -417,11 +411,17 @@ def narrative_strategy_instructions() -> str:
         - `strategy_feedback` (optional): retry feedback from the orchestrator
 
         PRIORITY RULES
-        - Every cluster should have exactly one primary home episode across
-          the series. Never assign the same cluster as primary in two episodes.
-        - Every episode must have at least one genuine primary cluster anchor.
-        - Strategy assigns clusters, not scenes. Do not produce scene-level
-          detail, pacing, or beat structure; that is the planning stage.
+        - Every pack should have exactly one home episode across the series.
+        - Every episode must have exactly one default `EpisodeSpine`.
+        - Each `EpisodeSpine.spine_pack_ids` must contain 1-3 tightly linked packs.
+        - Support packs must be typed with exactly one role each:
+          `stakes`, `mechanism`, `counterpressure`, `consequence`, or `texture`.
+        - Infer pack role and recall eligibility from each pack's `title`,
+          `local_summary`, `primitive_ids`, `actor_ids`, and the underlying
+          primitives. Do not assume consolidation has already preclassified
+          packs for you.
+        - Strategy assigns packs, not scenes. Do not produce scene-level detail,
+          pacing, or beat structure; that is the planning stage.
 
         SERIES SHAPE
         - `strategy_type`: choose one schema value:
@@ -433,75 +433,46 @@ def narrative_strategy_instructions() -> str:
 
         Build episodes around escalation, consequence, contestation,
         discovery, and payoff. Do not partition material evenly. Do not
-        organize episodes as biographies unless the cluster path genuinely
+        organize episodes as biographies unless the pack evidence genuinely
         warrants it.
 
         EPISODES
         Each episode includes:
         - `episode_number`
         - `title`
-        - `driving_question`: listener-facing, narrow and concrete enough to
-          sustain a long-form argument
         - `thematic_focus`
         - `arc_summary`
-        - `cluster_path`
+        - `episode_spine`
         - `actor_arc_directives`
         - `unresolved_questions` optional
 
-        CLUSTER PATHS
-        Each `cluster_path[]` occurrence has:
-        - `occurrence_id`
-        - `cluster_id`
-        - `usage`: `primary` or `echo`
-        - `emphasis`: `anchor`, `major`, `supporting`, or `compressed`
-        - `transition_note`: required after the first occurrence. Keep this as
-          planner-only handoff logic, not draftable prose or a narrator line.
-        - `chronology_break` optional, only when narrative order intentionally
-          diverges from chronology
+        EPISODE SPINE
+        Each `episode_spine` only includes:
+        - `listener_question`
+        - `working_claim`
+        - `target_end_state`
+        - `verdict_mode`: `answer`, `constrain`, `reframe`, or `preserve_ambiguity`
+        - `primary_counterposition`
+        - `spine_pack_ids`
+        - `support_pack_roles`
+        - `allowed_recalls`
 
-        Usage:
-        - `primary`: this episode is the cluster's home. Exactly one per
-          cluster across the series.
-        - `echo`: the cluster has already had its primary home; this occurrence
-          enriches or recalls it. Use echoes sparingly and only when they
-          meaningfully enrich the episode.
-
-        Emphasis:
-        - `anchor`: load-bearing. The episode's structure depends on it.
-        - `major`: substantial treatment, not load-bearing alone.
-        - `supporting`: clarifies context, causality, or payoff.
-        - `compressed`: present for intelligibility; receives light coverage.
-
-        Weighting:
-        - Use cluster `narrative_importance_score` and `coverage_policy` to
-          decide anchor/major assignments.
-        - Each `cluster_path` occurrence must also set `emphasis` as `anchor`,
-          `major`, `supporting`, or `compressed`.
-        - Multiple `anchor` occurrences may appear in one episode when the
-          story has more than one central load-bearing cluster.
-        - Aim for 1-3 anchors per episode as a soft target. More is allowed
-          when the story genuinely has multiple load-bearing clusters; note
-          the reason in `arc_summary`.
-        - Supporting and compressed clusters belong in the path when they
-          clarify context, causality, or payoff - not as padding.
-        - Balance episode load using cluster `member_ids` count as the proxy
-          for downstream primitive pool and scene fuel.
-        - Aim for roughly 32-45 cluster members per episode after `cluster_path` composition.
-        - If an episode intentionally carries unusually low or high cluster
-          member mass, explain the narrative reason in `arc_summary`.
-        - Across the series, use cluster assignment to preserve family
-          variety. Do not build every episode from spine clusters alone;
-          distribute scene fuel, human cost, operating logic, and recurring
-          motifs across the run.
-        - Use echoes sparingly, but allow them when `afterlives` or
-          `recurring_images_and_symbols` materially deepen a later episode.
+        Strategy rules:
+        - The listener-facing `listener_question` and internal `working_claim`
+          must be linked but not mechanically duplicated.
+        - `spine_pack_ids` must contain 1-3 packs.
+        - Support packs cannot also appear in the spine.
+        - Each support pack gets exactly one support role.
+        - Default total pack budget is 5-7 packs per episode.
+        - Allow later recalls only when explicitly justified.
+        - Fail rather than auto-rescoping if no dominant proposition can be formed.
 
         ACTOR ARC DIRECTIVES
         Actor arc directives are episode-specific instructions for how a
         selected actor functions across scenes. They are not synthesis
         primitives, evidence summaries, or copied registry metadata. If a
         directive could have been written without reading this episode's
-        cluster path, it is not doing its job.
+          spine and assigned packs, it is not doing its job.
 
         Selection:
         - `actor_arc_directives` must contain only the 1-4 actors whose episode
@@ -526,9 +497,10 @@ def narrative_strategy_instructions() -> str:
         QUALITY
         - Use actor continuity to clarify pressure, choice, collision,
           consequence, and payoff across episodes.
-        - Keep the listener-facing `driving_question` narrow and concrete.
+        - Keep the listener-facing `listener_question` narrow and concrete.
         - Do not revert to primitive-level or beat-level assignment logic.
-          Clusters are the unit.
+          Packs are the unit.
+        - Build episodes around one controlling proposition by default.
 
         OUTPUT
         Return only valid JSON matching `NarrativeStrategy`.
@@ -542,28 +514,30 @@ def episode_planning_instructions() -> str:
         You are the `episode_planning` stage for a historical podcast pipeline.
 
         Expand one strategy episode into a framing block plus scene cards.
-        The strategy episode's `cluster_path` is binding structure. You are giving it
-        scene-level shape, not reconsidering it.
+        The strategy episode's `episode_spine` plus assigned evidence packs are
+        binding structure. You are giving them scene-level shape, not
+        reconsidering proposition selection.
 
         INPUT PAYLOAD
         - `episode`: one episode object from `narrative_strategy`.
-        - `synthesis_map`: the consolidated cluster-first synthesis.
+        - `synthesis_map`: the consolidated pack-first synthesis.
         - `project`: theme, sub-themes, book metadata, and duration goals.
         - `available_passages`: evidence available to this episode.
         - `actor_metadata`: episode-relevant canonical actor context.
         - Optional `planning_feedback`: retry feedback from the orchestrator.
 
         PRIORITY RULES
-        - Do not change the `cluster_path`.
-        - Every primary cluster occurrence in `cluster_path` must appear in at least one scene card.
+        - Do not change the `episode_spine`.
+        - Every `episode_spine.spine_pack_ids` pack must appear in at least one scene card.
         - Ground every scene card in provided `passage_ids`. No scene without passage support.
         - Preserve `episode.actor_arc_directives` in the output.
         - Produce only `framing`, `scene_cards`, and episode-level fields required by the response model.
+        - Every scene card must explicitly map to the proposition chain.
 
         FRAMING
         - `opening_image`: concrete and scene-led.
         - `threat_or_unresolved_action`: keeps the episode in motion.
-        - `opening_question`: frames the investigation without answering it.
+        - `opening_question`: should align with `episode.episode_spine.listener_question`.
         - `handoff_scene_card_id`: must point to a real scene card.
 
         SCENE CARDS
@@ -571,21 +545,25 @@ def episode_planning_instructions() -> str:
         Counts and pacing:
         - Target 35-45 scene cards for a full-length episode.
         - Expand into micro-scenes rather than collapsing long stretches.
+        - Group scene cards into 6-10 contiguous batches for downstream packaging.
+        - Every scene card must set `batch_id`; use stable contiguous ids such as `b01`, `b02`, and so on.
+        - Once a batch changes, do not return to an earlier `batch_id` later in the episode.
 
-        Importance allocation:
-        - Anchor clusters get multiple scenes and deeper treatment.
-        - Supporting or context clusters get fewer, shorter, or folded scenes.
-        - Supporting material must remain intelligible even when compressed.
-        - Every card must do real narrative work and visibly advance the episode.
-        - Major handoffs between clusters belong in the destination scene's
-          `entry_image`, not in separate bridge cards. Open the new scene with
-          a concrete date, place, person or physical detail; not camera language,
-          outline commentary, or a meta-transition.
+        Spine mapping:
+        - Every scene card must set `batch_id`.
+        - Every scene card must set `dominant_pack_id`.
+        - Every scene card must set `spine_relation` as one of:
+          `spine_advance`, `set_stakes`, `supply_mechanism`,
+          `apply_counterpressure`, `show_consequence`, `turn`, or `texture_support`.
+        - Every scene card must set `state_effect` as a short, explicit statement
+          of how the listener's understanding changes.
+        - `texture_support` scenes are allowed only when they still serve the same proposition.
+        - Do not create free-floating atmospheric scenes; they should follow the episode spine.
+        - Preserve a real opening setup, a real turn, and an ending that reaches the target end state.
 
         Primitives:
         - Map 1-2 `primitive_ids` per card.
         - Include enough `passage_ids` to support later writing.
-        - Allocate primitives intentionally.
         - Include a primitive only when it performs clear episode work.
         - Do not distribute primitives evenly by default.
         - Reuse is allowed for continuity.
@@ -610,6 +588,7 @@ def episode_planning_instructions() -> str:
         - Non-canonical non-empty `scene_role` labels are allowed when they better fit the episode's internal logic.
         - Scene-card `scene_role` describes the whole scene's narrative job.
         - `action` and `consequence` scenes normally have at least one actor.
+        - Support packs may be dropped only when they do not fit the spine chain; if dropped, include an explicit reason in `dropped_support_pack_reasons`.
 
         ACTORS IN SCENES
 
@@ -678,6 +657,7 @@ def episode_writing_instructions() -> str:
             Input payload:
             - `episode_number`: current episode number.
             - `plan`: the full episode plan, including framing and all scene cards.
+            - `plan.episode_spine`: the locked spine contract chosen by strategy.
             - `plan.scene_cards[].target_word_count_lower`: lower per-scene word target (computed at 110 WPM).
             - `plan.scene_cards[].target_word_count_higher`: higher per-scene word target (computed at 130 WPM).
             - `episode_target_word_count_lower`: lower word target for the episode.
@@ -689,19 +669,15 @@ def episode_writing_instructions() -> str:
 
             Writing guidance:
             - Draft all `plan.scene_cards` in order.
-            - Keep `plan.driving_question` as the rhetorical anchor.
+            - Write one prose item for each input `plan.scene_cards[]` item.
+            - Keep `plan.episode_spine.listener_question` as the rhetorical anchor.
+            - Preserve the full `plan.episode_spine` contract.
             - Preserve `plan.unresolved_questions` as live tensions when unresolved.
             - Keep framing commitments visible (`plan.framing`) without exposing outline mechanics.
-            - Target 8-12 prose sections for the episode; treat this as a
-              pacing and grouping target, not a reason to violate scene order
-              or evidence constraints.
-            - Group neighboring scene cards into coherent sections when needed
-              to stay near the section target while preserving chronology and
-              narrative logic.
-            - Use each card's `entry_image`, `scene_role`, `local_question`, `intended_move`, and `what_becomes_legible_later`.
-            - Start each section from the card's concrete `entry_image` or a
-              passage-supported equivalent. When a section marks a major turn,
-              let that image, fact, question, or action carry the handoff.
+            - Use each card's `entry_image`, `scene_role`, `local_question`,
+              `spine_relation`, `state_effect`, `intended_move`, and `what_becomes_legible_later`.
+            - Start each scene's prose from the card's concrete `entry_image`
+              or a passage-supported equivalent.
             - Respect `withhold_until` and delayed-legibility dynamics.
             - Keep claims grounded in each card's `primitive_ids` and `passage_ids`.
             - Treat `plan.target_word_count` as episode-level pacing guidance.
@@ -728,8 +704,9 @@ def episode_writing_instructions() -> str:
               - `contestation`: stage genuine disagreement
               - `synthesis`: integrate strands without over-resolving
               - for non-canonical labels, infer intent from `intended_move`, `local_question`, and neighboring cards
-            - Keep section ids and boundaries coherent with the plan.
             - Use citations only through structured `citations`; do not insert inline citation markers into prose.
+            - Return one output item per input scene card; do not merge, split,
+              omit, duplicate, reorder, or rename scene outputs.
 
             What not to do:
             - Do not write next-episode teaser copy.
@@ -742,6 +719,7 @@ def episode_writing_instructions() -> str:
               or single-sentence paragraphs whose only job is to mark a turn.
             - Do not invent facts, chronology, quotations, or source claims not supported by the provided passages.
             - Do not introduce new primary analytical claims that are outside the assigned scene cards and primitives.
+            - Do not introduce a new load-bearing question, a second ending, or a support-thread takeover.
             """
         )
         .strip()
@@ -756,6 +734,7 @@ def episode_writing_no_citations_instructions() -> str:
 
         TASK
         Draft the full episode in `plan.scene_cards` order.
+        Write one prose item for each input scene card.
         You are the narrator. Tell the episode in your own voice, reconstructing action,
         mechanism, time, place, and consequence from evidence rather than summarizing sources.
 
@@ -816,8 +795,6 @@ def episode_writing_no_citations_instructions() -> str:
           `plan.framing.preview` is rendered separately by the pipeline.
 
         PACING
-        - Aim to deliver the episode in 8-12 prose sections by grouping adjacent
-          scene cards where it improves flow.
         - Importance has already been converted into the per-scene and episode
           word-count budgets. Treat those budgets as binding.
         - Do not expand because evidence is dense, the cluster is important,
@@ -832,7 +809,8 @@ def episode_writing_no_citations_instructions() -> str:
         OUTPUT
         - Return only JSON matching the requested schema.
         - Do not include a `citations` field.
-        - Keep section ids and boundaries coherent with the plan.
+        - Return one output item per input scene card; do not merge, split,
+          omit, duplicate, reorder, or rename scene outputs.
         - Populate `source_book_ids` only with `book_id` values from supporting passages; leave empty rather than guessing.
 
         What not to do:
@@ -1000,8 +978,8 @@ def spoken_delivery_instructions() -> str:
         > The Frascati machine, called AdA, was the first of its kind. It was modest in scale — a ring small enough to fit in a medium-sized room — but its principle was radical. Rather than firing a beam at a fixed target, Touschek proposed to accelerate electrons and positrons in opposite directions and collide them head-on. The gain in effective collision energy was enormous. The engineering problem of producing, storing, and steering a beam of antimatter was, at the time, something most of his colleagues considered unserious.
 
         Output (oral narration, thinking aloud):
-        > It’s March, 1968. A conference room in Frascati, just outside Rome. It’s small—maybe forty people, probably a bit stuffy—and Bruno Touschek is standing at the front.
-        > Now, the "rules" of physics at the time said if you wanted big energy, you needed a machine the size of a city block. Touschek tells them: No. You’re doing it wrong.
+        > A small conference room in Frascati, just outside Rome. It’s small—maybe forty people, probably a bit stuffy—and Bruno Touschek is standing at the front.
+        > The rules in March 1968 were simple: if you wanted big energy, you needed a machine the size of a city block. Touschek tells them: No. You’re doing it wrong.
         > He’s proposing a shortcut. A way to get massive collisions without the massive footprint. And within a decade, this "shortcut" is the gold standard at Stanford and CERN. It’s how we do physics now.
         > But you have to look at the man. Touschek wasn’t... he wasn't a typical academic. He was a survivor. 1945. Hamburg. The Gestapo are marching him toward a concentration camp. They shoot him. They leave him for dead in a ditch. And somehow—and it’s still not entirely clear how—the British find him a few days later.
         > He survives the unsurvivable. So by the time he drifts down to Italy, he isn’t exactly intimidated by "the way things are done."
@@ -1011,23 +989,26 @@ def spoken_delivery_instructions() -> str:
         > He built it anyway. And he was right.
 
         PRONUNCIATION
-        Add speech_hints.pronunciation_hints only for names or terms likely to be misread. Keep `spoken_as` concise.
+        Add `speech_hints.pronunciation_hints` only for names or terms likely to be misread. Keep `spoken_as` concise.
 
         INPUT
         episode_number, script, max_words_per_segment, tts_provider
 
         OUTPUT
         Return only valid JSON matching expected_schema exactly.
-        Return exactly one top-level key: sections.
+        Return exactly two top-level keys: text, speech_hints.
         No wrapper keys. No extra fields.
 
-        Output exactly one section for each input script.prose_sections[] item. Preserve all ids and order. Do not merge, split, omit, duplicate, reorder, or rename sections. Each section must keep its original section_id. Use speech_hints only if it matches expected_schema exactly.
+        The response applies to the single input `script.prose_sections[0]`.
+        Return only the rewritten spoken text for that section in `text`.
+        Do not return `section_id`.
+        Use `speech_hints` only if it matches expected_schema exactly.
 
         Before returning, check:
         1. Did every paragraph land transformation on all three levels — syntax, architecture, rhetoric — or did any slip through as a line-edit?
         2. Did any signposting sentence, timeline/geography nudge, narrator-nudge tell, thesis-frame phrase, or abstract-noun crutch survive in any form?
         3. Are all facts, names, dates, numbers, quotes, and certainty levels preserved? Hedged claims still hedged? Firm claims still firm?
-        4. Same number of sections, same ids, same order?
+        4. Does `text` rewrite only the single input `script.prose_sections[0]` without dropping or inventing material?
         5. JSON matches expected_schema exactly?
 
         Return only a JSON object that matches the requested schema. Do not wrap the response in markdown or prose. Do not repeat wrapper keys such as schema_name, payload, or expected_schema.

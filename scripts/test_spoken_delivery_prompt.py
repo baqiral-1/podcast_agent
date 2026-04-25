@@ -15,7 +15,12 @@ from podcast_agent.agents.spoken_delivery_agent import SpokenDeliveryAgent
 from podcast_agent.config import Settings
 from podcast_agent.langchain.llm import build_llm_client
 from podcast_agent.pipeline.orchestrator import _save_json
-from podcast_agent.schemas.models import EpisodeScript, PipelineConfig, SpokenScript
+from podcast_agent.schemas.models import (
+    EpisodeScript,
+    PipelineConfig,
+    SpokenScript,
+    SpokenSection,
+)
 
 
 @dataclass(frozen=True)
@@ -181,19 +186,34 @@ def main() -> int:
     if args.prompt_file is not None:
         agent.instructions = args.prompt_file.read_text(encoding="utf-8").strip()
 
-    payload = agent.build_payload(
-        episode_number=episode_input.episode_number,
-        script=episode_input.script.model_dump(mode="json"),
-        max_words_per_segment=episode_input.pipeline_config.spoken_chunk_max_words,
-        tts_provider=episode_input.tts_provider,
-    )
-
-    result = agent.run(payload)
+    rewritten_sections: list[SpokenSection] = []
+    for section in episode_input.script.prose_sections:
+        section_word_count = len(section.text.split())
+        section_script = episode_input.script.model_copy(
+            update={
+                "prose_sections": [section],
+                "total_word_count": section_word_count,
+            }
+        )
+        payload = agent.build_payload(
+            episode_number=episode_input.episode_number,
+            script=section_script.model_dump(mode="json"),
+            max_words_per_segment=episode_input.pipeline_config.spoken_chunk_max_words,
+            tts_provider=episode_input.tts_provider,
+        )
+        result = agent.run(payload)
+        rewritten_sections.append(
+            SpokenSection(
+                section_id=section.section_id,
+                text=result.text,
+                speech_hints=result.speech_hints,
+            )
+        )
     spoken_script = SpokenScript(
         episode_number=episode_input.episode_number,
         title=episode_input.script.title,
         framing=episode_input.script.framing,
-        sections=result.sections,
+        sections=rewritten_sections,
         tts_provider=episode_input.tts_provider,
     )
 

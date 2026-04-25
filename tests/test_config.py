@@ -120,6 +120,7 @@ class TestPipelineRuntimeConfig:
         assert config.max_repair_attempts == 3
         assert config.episode_planning_concurrency == 6
         assert config.episode_write_concurrency == 6
+        assert config.spoken_delivery_concurrency is None
         assert config.tts_concurrency == 5
         assert config.spoken_words_per_minute == 130
 

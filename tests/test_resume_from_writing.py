@@ -55,6 +55,16 @@ def _episode_plan() -> EpisodePlan:
             "thematic_focus": "Focus",
             "arc_summary": "Arc summary",
             "unresolved_questions": [],
+            "episode_spine": {
+                "listener_question": "Question?",
+                "working_claim": "A working claim.",
+                "target_end_state": "The episode lands a constrained answer.",
+                "verdict_mode": "constrain",
+                "primary_counterposition": "A rival interpretation remains plausible.",
+                "spine_pack_ids": ["pack_1"],
+                "support_pack_roles": {},
+                "allowed_recalls": [],
+            },
             "framing": {
                 "opening_image": "Image",
                 "threat_or_unresolved_action": "Threat",
@@ -66,7 +76,9 @@ def _episode_plan() -> EpisodePlan:
                     "scene_id": "scene_1",
                     "title": "Scene",
                     "scene_role": "setup",
-                    "dominant_cluster_occurrence_id": "occ_1",
+                    "dominant_pack_id": "pack_1",
+                    "spine_relation": "set_stakes",
+                    "state_effect": "The stakes become legible.",
                     "entry_image": "Image",
                     "local_question": "Question",
                     "observable_detail": "Detail",
@@ -107,16 +119,13 @@ def _build_project_dir(tmp_path: Path) -> Path:
     synthesis_map = SynthesisMap(
         project_id="run_1",
         primitives_by_family={"epochal_turns": [primitive]},
-        episode_candidate_clusters=[
+        evidence_packs=[
             {
-                "cluster_id": "cluster_1",
-                "title": "Cluster",
-                "summary": "Cluster summary",
-                "primary_member_id": "primitive_1",
-                "member_ids": ["primitive_1"],
+                "pack_id": "pack_1",
+                "title": "Pack",
+                "local_summary": "Pack summary",
+                "primitive_ids": ["primitive_1"],
                 "actor_ids": ["actor_1"],
-                "local_question": "What changed?",
-                "local_payoff_shape": "reveal",
             }
         ],
     )
@@ -140,14 +149,16 @@ def _build_project_dir(tmp_path: Path) -> Path:
                 title="Episode",
                 driving_question="Question?",
                 arc_summary="Arc summary",
-                cluster_path=[
-                    {
-                        "occurrence_id": "occ_1",
-                        "cluster_id": "cluster_1",
-                        "usage": "primary",
-                        "emphasis": "anchor",
-                    }
-                ],
+                episode_spine={
+                    "listener_question": "Question?",
+                    "working_claim": "A working claim.",
+                    "target_end_state": "The episode lands a constrained answer.",
+                    "verdict_mode": "constrain",
+                    "primary_counterposition": "A rival interpretation remains plausible.",
+                    "spine_pack_ids": ["pack_1"],
+                    "support_pack_roles": {},
+                    "allowed_recalls": [],
+                },
             )
         ],
     )
@@ -211,6 +222,7 @@ def test_resume_from_writing_uses_series_plan_and_actor_metadata(
             actor_metadata: ActorMetadata,
             project_dir: Path,
             semaphore: asyncio.Semaphore,
+            spoken_semaphore: asyncio.Semaphore | None = None,
         ) -> tuple[int, Any]:
             calls["production_actor_metadata"] = actor_metadata
             calls["production_config"] = project.config

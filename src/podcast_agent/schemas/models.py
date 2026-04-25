@@ -55,6 +55,31 @@ class InsightType(str, Enum):
     EPISTEMIC_DRIFT = "epistemic_drift"
 
 
+class SupportPackRole(str, Enum):
+    STAKES = "stakes"
+    MECHANISM = "mechanism"
+    COUNTERPRESSURE = "counterpressure"
+    CONSEQUENCE = "consequence"
+    TEXTURE = "texture"
+
+
+class SpineRelation(str, Enum):
+    SPINE_ADVANCE = "spine_advance"
+    SET_STAKES = "set_stakes"
+    SUPPLY_MECHANISM = "supply_mechanism"
+    APPLY_COUNTERPRESSURE = "apply_counterpressure"
+    SHOW_CONSEQUENCE = "show_consequence"
+    TURN = "turn"
+    TEXTURE_SUPPORT = "texture_support"
+
+
+class VerdictMode(str, Enum):
+    ANSWER = "answer"
+    CONSTRAIN = "constrain"
+    REFRAME = "reframe"
+    PRESERVE_AMBIGUITY = "preserve_ambiguity"
+
+
 # ---------------------------------------------------------------------------
 # 3.1 Project-Level Models
 # ---------------------------------------------------------------------------
@@ -147,6 +172,7 @@ class PipelineConfig(StrictModel):
     tts_concurrency: int = Field(default=12, ge=1)
     episode_planning_concurrency: int = Field(default=6, ge=1)
     episode_write_concurrency: int = Field(default=6, ge=1)
+    spoken_delivery_concurrency: int | None = Field(default=None, ge=1)
     target_episode_minutes: float = Field(default=90.0, gt=0.0)
     min_episode_minutes: float = Field(default=85.0, gt=0.0)
     duration_shortfall_policy: Literal["warn"] = "warn"
@@ -521,27 +547,88 @@ def _drop_invalid_contested_explanations(
     return mapping
 
 
-class EpisodeCandidateCluster(StrictModel):
-    cluster_id: str = Field(default_factory=lambda: f"cluster_{new_id()[:8]}")
+class EvidencePack(StrictModel):
+    pack_id: str = Field(default_factory=lambda: f"pack_{new_id()[:8]}")
     title: str = Field(min_length=1)
-    summary: str = Field(min_length=1)
-    primary_member_id: str = Field(min_length=1)
-    member_ids: list[str] = Field(min_length=1)
+    local_summary: str = Field(min_length=1)
+    primitive_ids: list[str] = Field(min_length=1)
     actor_ids: list[str] = Field(default_factory=list)
-    primary_actor_id: str | None = None
-    actor_tension: str = ""
-    narrative_importance_score: float = Field(default=0.5, ge=0.0, le=1.0)
-    coverage_policy: Literal["anchor", "major", "supporting", "compressed"] = "supporting"
-    local_question: str = Field(min_length=1)
-    local_payoff_shape: Literal[
-        "reveal", "reversal", "escalation", "fallout", "unresolved"
-    ]
 
     @model_validator(mode="after")
-    def validate_membership(self) -> "EpisodeCandidateCluster":
-        if self.primary_member_id not in self.member_ids:
-            raise ValueError("primary_member_id must also appear in member_ids")
+    def validate_pack(self) -> "EvidencePack":
+        seen_primitive_ids: set[str] = set()
+        deduped_primitive_ids: list[str] = []
+        for primitive_id in self.primitive_ids:
+            if primitive_id in seen_primitive_ids:
+                continue
+            seen_primitive_ids.add(primitive_id)
+            deduped_primitive_ids.append(primitive_id)
+        self.primitive_ids = deduped_primitive_ids
+
+        seen_actor_ids: set[str] = set()
+        deduped_actor_ids: list[str] = []
+        for actor_id in self.actor_ids:
+            if not actor_id or actor_id in seen_actor_ids:
+                continue
+            seen_actor_ids.add(actor_id)
+            deduped_actor_ids.append(actor_id)
+        self.actor_ids = deduped_actor_ids
         return self
+
+class EpisodeSpine(StrictModel):
+    listener_question: str = Field(min_length=1)
+    working_claim: str = Field(min_length=1)
+    target_end_state: str = Field(min_length=1)
+    verdict_mode: VerdictMode
+    primary_counterposition: str = Field(min_length=1)
+    spine_pack_ids: list[str] = Field(min_length=1, max_length=3)
+    support_pack_roles: dict[str, SupportPackRole] = Field(default_factory=dict)
+    allowed_recalls: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_spine(self) -> "EpisodeSpine":
+        seen_pack_ids: set[str] = set()
+        deduped_spine_pack_ids: list[str] = []
+        for pack_id in self.spine_pack_ids:
+            if not pack_id or pack_id in seen_pack_ids:
+                continue
+            seen_pack_ids.add(pack_id)
+            deduped_spine_pack_ids.append(pack_id)
+        self.spine_pack_ids = deduped_spine_pack_ids
+        if not self.spine_pack_ids:
+            raise ValueError("spine_pack_ids must contain at least one pack id")
+        if len(self.spine_pack_ids) > 3:
+            raise ValueError("spine_pack_ids supports at most 3 pack ids")
+
+        overlap = sorted(set(self.spine_pack_ids).intersection(self.support_pack_roles))
+        if overlap:
+            raise ValueError(f"support packs cannot also appear in spine_pack_ids: {overlap}")
+
+        allowed_recalls: list[str] = []
+        seen_recall_ids: set[str] = set()
+        reserved_pack_ids = set(self.spine_pack_ids).union(self.support_pack_roles)
+        for pack_id in self.allowed_recalls:
+            if not pack_id or pack_id in seen_recall_ids or pack_id in reserved_pack_ids:
+                continue
+            seen_recall_ids.add(pack_id)
+            allowed_recalls.append(pack_id)
+        self.allowed_recalls = allowed_recalls
+        return self
+
+    @property
+    def assigned_pack_ids(self) -> list[str]:
+        ordered: list[str] = []
+        seen: set[str] = set()
+        for pack_id in [
+            *self.spine_pack_ids,
+            *self.support_pack_roles.keys(),
+            *self.allowed_recalls,
+        ]:
+            if not pack_id or pack_id in seen:
+                continue
+            seen.add(pack_id)
+            ordered.append(pack_id)
+        return ordered
 
 
 class SynthesisPrimitivesArtifact(StrictModel):
@@ -562,7 +649,7 @@ class SynthesisPrimitivesArtifact(StrictModel):
 
 class SynthesisConsolidationResult(StrictModel):
     project_id: str
-    episode_candidate_clusters: list[EpisodeCandidateCluster] = Field(default_factory=list)
+    evidence_packs: list[EvidencePack] = Field(default_factory=list)
     primitive_ids_by_family: dict[str, list[str]] = Field(default_factory=dict)
     quality_score: float = Field(default=0.0, ge=0.0, le=1.0)
     quality_notes: list[str] = Field(default_factory=list)
@@ -580,19 +667,18 @@ class SynthesisConsolidationResult(StrictModel):
             mapping_name="primitive_ids_by_family",
         )
         primitive_ids = self.primitive_ids()
-        for cluster in self.episode_candidate_clusters:
-            missing = [member_id for member_id in cluster.member_ids if member_id not in primitive_ids]
+        for pack in self.evidence_packs:
+            missing = [member_id for member_id in pack.primitive_ids if member_id not in primitive_ids]
             if missing:
                 raise ValueError(
-                    "episode_candidate_clusters contains unknown member_ids "
-                    f"for {cluster.cluster_id}: {missing}"
+                    "evidence_packs contains unknown primitive_ids "
+                    f"for {pack.pack_id}: {missing}"
                 )
         return self
 
-
 class SynthesisMap(StrictModel):
     project_id: str
-    episode_candidate_clusters: list[EpisodeCandidateCluster] = Field(default_factory=list)
+    evidence_packs: list[EvidencePack] = Field(default_factory=list)
     primitives_by_family: dict[str, list[SynthesisPrimitive]] = Field(default_factory=dict)
     quality_score: float = Field(default=0.0, ge=0.0, le=1.0)
     quality_notes: list[str] = Field(default_factory=list)
@@ -612,14 +698,13 @@ class SynthesisMap(StrictModel):
         )
         self.primitives_by_family = _drop_invalid_contested_explanations(normalized)
         primitive_ids = set(self.primitive_by_id())
-        for cluster in self.episode_candidate_clusters:
-            missing = [member_id for member_id in cluster.member_ids if member_id not in primitive_ids]
+        for pack in self.evidence_packs:
+            missing = [member_id for member_id in pack.primitive_ids if member_id not in primitive_ids]
             if missing:
                 raise ValueError(
-                    f"episode_candidate_clusters contains unknown member_ids for {cluster.cluster_id}: {missing}"
+                    f"evidence_packs contains unknown primitive_ids for {pack.pack_id}: {missing}"
                 )
         return self
-
 
 # ---------------------------------------------------------------------------
 # 3.5 Episode Planning Models
@@ -629,17 +714,6 @@ class SynthesisMap(StrictModel):
 class ChronologyBreak(StrictModel):
     break_type: Literal["setup_jump", "flashback", "payoff_return"]
     note: str = Field(min_length=1)
-
-
-class ClusterPathOccurrence(StrictModel):
-    model_config = ConfigDict(extra="ignore")
-
-    occurrence_id: str = Field(default_factory=lambda: f"occ_{new_id()[:8]}")
-    cluster_id: str = Field(min_length=1)
-    usage: Literal["primary", "echo"]
-    emphasis: Literal["anchor", "major", "supporting", "compressed"] = "supporting"
-    transition_note: str = ""
-    chronology_break: ChronologyBreak | None = None
 
 
 class ActorArcThread(StrictModel):
@@ -673,16 +747,13 @@ class StrategyEpisode(StrictModel):
     thematic_focus: str = Field(default="")
     arc_summary: str = Field(min_length=1)
     unresolved_questions: list[str] = Field(default_factory=list)
-    cluster_path: list[ClusterPathOccurrence] = Field(default_factory=list, min_length=1)
+    episode_spine: EpisodeSpine
     actor_arc_directives: list[ActorArcDirective] = Field(default_factory=list, max_length=4)
 
     @model_validator(mode="after")
-    def validate_cluster_path(self) -> "StrategyEpisode":
-        for idx, occurrence in enumerate(self.cluster_path[1:], start=1):
-            if not occurrence.transition_note.strip():
-                raise ValueError(
-                    f"cluster_path occurrence {idx + 1} must include a transition_note"
-                )
+    def validate_spine(self) -> "StrategyEpisode":
+        if self.driving_question != self.episode_spine.listener_question:
+            self.driving_question = self.episode_spine.listener_question
         return self
 
 
@@ -706,22 +777,21 @@ class NarrativeStrategy(StrictModel):
         if self.recommended_episode_count is not None and self.episodes:
             if self.recommended_episode_count != len(self.episodes):
                 raise ValueError("recommended_episode_count must match the number of episodes")
-        cluster_primary_homes: dict[str, int] = {}
+        pack_primary_homes: dict[str, int] = {}
         for episode in self.episodes:
-            has_primary = False
-            for occurrence in episode.cluster_path:
-                if occurrence.usage == "primary":
-                    has_primary = True
-                    if occurrence.cluster_id not in cluster_primary_homes:
-                        cluster_primary_homes[occurrence.cluster_id] = episode.episode_number
-                    elif cluster_primary_homes[occurrence.cluster_id] != episode.episode_number:
-                        raise ValueError(
-                            f"cluster {occurrence.cluster_id} has multiple primary home episodes"
-                        )
-            if not has_primary:
+            if not episode.episode_spine.spine_pack_ids:
                 raise ValueError(
-                    f"episode {episode.episode_number} must contain at least one primary cluster"
+                    f"episode {episode.episode_number} must contain at least one spine pack"
                 )
+            for pack_id in episode.episode_spine.assigned_pack_ids:
+                if pack_id in episode.episode_spine.allowed_recalls:
+                    continue
+                if pack_id not in pack_primary_homes:
+                    pack_primary_homes[pack_id] = episode.episode_number
+                elif pack_primary_homes[pack_id] != episode.episode_number:
+                    raise ValueError(
+                        f"pack {pack_id} has multiple primary home episodes"
+                    )
         return self
 
 
@@ -759,9 +829,12 @@ class SceneActor(StrictModel):
 
 class _SceneCardBase(StrictModel):
     scene_id: str = Field(default_factory=lambda: f"scene_{new_id()[:8]}")
+    batch_id: str = Field(min_length=1)
     title: str = Field(min_length=1)
     scene_role: str = Field(min_length=1)
-    dominant_cluster_occurrence_id: str | None = None
+    dominant_pack_id: str | None = None
+    spine_relation: SpineRelation
+    state_effect: str = Field(min_length=1)
     entry_image: str = ""
     local_question: str = ""
     observable_detail: str = ""
@@ -778,8 +851,8 @@ class _SceneCardBase(StrictModel):
     def validate_card_shape(self) -> "_SceneCardBase":
         if not self.scene_role.strip():
             raise ValueError("scene_role must not be blank")
-        if not self.dominant_cluster_occurrence_id:
-            raise ValueError("scene cards require dominant_cluster_occurrence_id")
+        if not self.dominant_pack_id:
+            raise ValueError("scene cards require dominant_pack_id")
         return self
 
 
@@ -787,6 +860,7 @@ def _migrate_legacy_scene_card(data: Any) -> Any:
     if not isinstance(data, dict):
         return data
     cleaned = dict(data)
+    cleaned.setdefault("batch_id", "b01")
     cleaned.pop("coverage_depth", None)
     role = cleaned.get("scene_role")
     if role == "process":
@@ -824,9 +898,11 @@ class EpisodePlanDraft(StrictModel):
     thematic_focus: str = ""
     arc_summary: str = ""
     unresolved_questions: list[str] = Field(default_factory=list)
+    episode_spine: EpisodeSpine
     actor_arc_directives: list[ActorArcDirective] = Field(default_factory=list, max_length=4)
     framing: FramingBlock
     scene_cards: list[SceneCardDraft] = Field(default_factory=list, min_length=1)
+    dropped_support_pack_reasons: dict[str, str] = Field(default_factory=dict)
     target_duration_minutes: float = Field(default=90.0, gt=0.0)
 
     @model_validator(mode="after")
@@ -834,8 +910,26 @@ class EpisodePlanDraft(StrictModel):
         scene_ids = [scene.scene_id for scene in self.scene_cards]
         if len(scene_ids) != len(set(scene_ids)):
             raise ValueError("scene_cards must use unique scene_id values")
+        seen_batch_ids: set[str] = set()
+        current_batch_id: str | None = None
+        for scene in self.scene_cards:
+            batch_id = scene.batch_id.strip()
+            if not batch_id:
+                raise ValueError("scene_cards require non-blank batch_id values")
+            if current_batch_id is None:
+                current_batch_id = batch_id
+                seen_batch_ids.add(batch_id)
+                continue
+            if batch_id == current_batch_id:
+                continue
+            if batch_id in seen_batch_ids:
+                raise ValueError("scene_cards must use contiguous batch_id runs")
+            current_batch_id = batch_id
+            seen_batch_ids.add(batch_id)
         if self.framing.handoff_scene_card_id not in set(scene_ids):
             raise ValueError("framing.handoff_scene_card_id must reference an existing scene card")
+        if self.driving_question != self.episode_spine.listener_question:
+            self.driving_question = self.episode_spine.listener_question
         return self
 
 

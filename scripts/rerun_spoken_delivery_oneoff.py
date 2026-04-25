@@ -24,7 +24,12 @@ from podcast_agent.pipeline.orchestrator import (
     _save_json,
     build_render_manifest,
 )
-from podcast_agent.schemas.models import EpisodeScript, RenderManifest, SpokenScript
+from podcast_agent.schemas.models import (
+    EpisodeScript,
+    RenderManifest,
+    SpokenScript,
+    SpokenSection,
+)
 
 
 DEFAULT_PROJECT_IDS = [
@@ -85,8 +90,8 @@ def _extract_spoken_payload(event: dict[str, Any]) -> dict[str, Any] | None:
     return model_payload
 
 
-def _collect_logged_spoken_payloads(log_path: Path) -> dict[int, dict[str, Any]]:
-    payload_by_episode: dict[int, dict[str, Any]] = {}
+def _collect_logged_spoken_payloads(log_path: Path) -> dict[int, list[dict[str, Any]]]:
+    payloads_by_episode: dict[int, list[dict[str, Any]]] = {}
     for line in log_path.read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
@@ -109,8 +114,8 @@ def _collect_logged_spoken_payloads(log_path: Path) -> dict[int, dict[str, Any]]
                 raise RuntimeError(
                     f"Missing '{required_field}' in spoken payload for episode {episode_number}"
                 )
-        payload_by_episode[episode_number] = model_payload
-    return payload_by_episode
+        payloads_by_episode.setdefault(episode_number, []).append(model_payload)
+    return payloads_by_episode
 
 
 def _execute_in_bounded_parallel(
@@ -251,21 +256,42 @@ def _infer_render_settings(manifests: list[RenderManifest]) -> RenderSettings:
     )
 
 
-def _build_spoken_script(payload: dict[str, Any], result: Any) -> SpokenScript:
+def _build_spoken_section(payload: dict[str, Any], result: Any) -> SpokenSection:
     episode_number = payload["episode_number"]
     if not isinstance(episode_number, int) or episode_number < 1:
         raise RuntimeError(f"Invalid episode_number in payload: {episode_number!r}")
 
     script = EpisodeScript.model_validate(payload["script"])
+    if len(script.prose_sections) != 1:
+        raise RuntimeError(
+            "Spoken delivery rerun expects a single prose section per payload; "
+            f"episode {episode_number} payload contained {len(script.prose_sections)} sections."
+        )
     tts_provider = payload.get("tts_provider")
     if not isinstance(tts_provider, str) or not tts_provider.strip():
         raise RuntimeError(f"Invalid tts_provider in payload for episode {episode_number}")
 
+    section = script.prose_sections[0]
+    return SpokenSection(
+        section_id=section.section_id,
+        text=result.text,
+        speech_hints=result.speech_hints,
+    )
+
+
+def _build_spoken_script(
+    episode_script: EpisodeScript,
+    *,
+    tts_provider: str,
+    sections: list[SpokenSection],
+) -> SpokenScript:
+    if not isinstance(tts_provider, str) or not tts_provider.strip():
+        raise RuntimeError(f"Invalid tts_provider for episode {episode_script.episode_number}")
     return SpokenScript(
-        episode_number=episode_number,
-        title=script.title,
-        framing=script.framing,
-        sections=result.sections,
+        episode_number=episode_script.episode_number,
+        title=episode_script.title,
+        framing=episode_script.framing,
+        sections=sections,
         tts_provider=tts_provider,
     )
 
@@ -349,7 +375,7 @@ def main() -> int:
             raise RuntimeError(f"Missing run.log: {run_log}")
 
         episode_dirs = _episode_dirs(project_dir)
-        payload_by_episode = _collect_logged_spoken_payloads(run_log)
+        payloads_by_episode = _collect_logged_spoken_payloads(run_log)
         manifests: list[RenderManifest] = []
 
         for episode_dir in episode_dirs:
@@ -362,7 +388,7 @@ def main() -> int:
                 required_path = episode_dir / required_name
                 if not required_path.exists():
                     raise RuntimeError(f"Missing required file: {required_path}")
-            if episode_number not in payload_by_episode:
+            if episode_number not in payloads_by_episode:
                 raise RuntimeError(
                     f"No spoken_delivery payload in run.log for {project_id} episode {episode_number}"
                 )
@@ -389,14 +415,59 @@ def main() -> int:
 
         def _process_episode(episode_number: int) -> int:
             episode_dir = episode_dir_by_number[episode_number]
-            payload = payload_by_episode[episode_number]
-            if payload["episode_number"] != episode_number:
+            episode_script = EpisodeScript.model_validate(
+                _load_json(episode_dir / "episode_script.json")
+            )
+            section_payloads = payloads_by_episode[episode_number]
+            payload_by_section_id: dict[str, dict[str, Any]] = {}
+            tts_provider: str | None = None
+            for payload in section_payloads:
+                if payload["episode_number"] != episode_number:
+                    raise RuntimeError(
+                        f"Episode mismatch in payload for {project_id} episode {episode_number}"
+                    )
+                payload_script = EpisodeScript.model_validate(payload["script"])
+                if len(payload_script.prose_sections) != 1:
+                    raise RuntimeError(
+                        "Spoken delivery rerun expects a single prose section per payload; "
+                        f"episode {episode_number} payload contained {len(payload_script.prose_sections)} sections."
+                    )
+                section_id = payload_script.prose_sections[0].section_id
+                payload_by_section_id[section_id] = payload
+                candidate_provider = payload.get("tts_provider")
+                if not isinstance(candidate_provider, str) or not candidate_provider.strip():
+                    raise RuntimeError(
+                        f"Invalid tts_provider in payload for episode {episode_number}"
+                    )
+                if tts_provider is None:
+                    tts_provider = candidate_provider
+                elif tts_provider != candidate_provider:
+                    raise RuntimeError(
+                        f"Conflicting tts_provider values in payloads for episode {episode_number}"
+                    )
+
+            missing_section_ids = [
+                section.section_id
+                for section in episode_script.prose_sections
+                if section.section_id not in payload_by_section_id
+            ]
+            if missing_section_ids:
                 raise RuntimeError(
-                    f"Episode mismatch in payload for {project_id} episode {episode_number}"
+                    "Missing spoken_delivery payloads for episode "
+                    f"{episode_number} sections: {missing_section_ids}"
                 )
 
-            result = orchestrator.spoken_delivery_agent.run(payload)
-            spoken_script = _build_spoken_script(payload, result)
+            rewritten_sections: list[SpokenSection] = []
+            for section in episode_script.prose_sections:
+                payload = payload_by_section_id[section.section_id]
+                result = orchestrator.spoken_delivery_agent.run(payload)
+                rewritten_sections.append(_build_spoken_section(payload, result))
+
+            spoken_script = _build_spoken_script(
+                episode_script,
+                tts_provider=tts_provider or render_settings.voice_id,
+                sections=rewritten_sections,
+            )
             _save_json(episode_dir / "spoken_script.json", spoken_script)
 
             render_manifest = build_render_manifest(

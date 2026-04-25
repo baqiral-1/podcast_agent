@@ -142,6 +142,13 @@ async def _resume_from_writing(project_id: str) -> None:
 
     try:
         sem = asyncio.Semaphore(max(1, project.config.episode_write_concurrency))
+        spoken_sem = asyncio.Semaphore(
+            max(
+                1,
+                project.config.spoken_delivery_concurrency
+                or project.config.episode_write_concurrency,
+            )
+        )
         ep_tasks = [
             orchestrator._produce_episode(
                 plan,
@@ -150,6 +157,7 @@ async def _resume_from_writing(project_id: str) -> None:
                 actor_metadata,
                 project_dir,
                 sem,
+                spoken_sem,
             )
             for plan in episode_plans
         ]

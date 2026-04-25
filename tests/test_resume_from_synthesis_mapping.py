@@ -107,16 +107,13 @@ def _build_synthesis_map() -> SynthesisMap:
     return SynthesisMap(
         project_id="run_1",
         primitives_by_family={"epochal_turns": [primitive]},
-        episode_candidate_clusters=[
+        evidence_packs=[
             {
-                "cluster_id": "cluster_1",
-                "title": "Cluster",
-                "summary": "Cluster summary",
-                "primary_member_id": "primitive_1",
-                "member_ids": ["primitive_1"],
+                "pack_id": "pack_1",
+                "title": "Pack",
+                "local_summary": "Pack summary",
+                "primitive_ids": ["primitive_1"],
                 "actor_ids": ["actor_1"],
-                "local_question": "What changed?",
-                "local_payoff_shape": "reveal",
             }
         ],
     )
@@ -174,14 +171,16 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
                         title="Episode",
                         driving_question="Question?",
                         arc_summary="Arc summary",
-                        cluster_path=[
-                            {
-                                "occurrence_id": "occ_1",
-                                "cluster_id": "cluster_1",
-                                "usage": "primary",
-                                "emphasis": "anchor",
-                            }
-                        ],
+                        episode_spine={
+                            "listener_question": "Question?",
+                            "working_claim": "A working claim.",
+                            "target_end_state": "The episode lands a constrained answer.",
+                            "verdict_mode": "constrain",
+                            "primary_counterposition": "A rival interpretation remains plausible.",
+                            "spine_pack_ids": ["pack_1"],
+                            "support_pack_roles": {},
+                            "allowed_recalls": [],
+                        },
                     )
                 ],
             )
@@ -218,6 +217,7 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
             actor_metadata: ActorMetadata,
             project_dir: Path,
             semaphore: asyncio.Semaphore,
+            spoken_semaphore: asyncio.Semaphore | None = None,
         ) -> tuple[int, Any]:
             calls["order"].append("produce_episode")
             calls["production_actor_metadata"] = actor_metadata

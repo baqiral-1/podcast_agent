@@ -8,7 +8,7 @@ from podcast_agent.schemas.models import SynthesisConsolidationResult
 
 
 class SynthesisConsolidationAgent(Agent):
-    """Consolidates primitives into the cluster-first synthesis artifact."""
+    """Consolidates primitives into the evidence-pack synthesis artifact."""
 
     schema_name = "synthesis_consolidation"
     response_model = SynthesisConsolidationResult

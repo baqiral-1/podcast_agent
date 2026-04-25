@@ -8,7 +8,7 @@ from podcast_agent.schemas.models import NarrativeStrategy
 
 
 class NarrativeStrategyAgent(Agent):
-    """Chooses the macro-level series structure from cluster-first synthesis."""
+    """Chooses the macro-level series structure from evidence-pack synthesis."""
 
     schema_name = "narrative_strategy"
     response_model = NarrativeStrategy

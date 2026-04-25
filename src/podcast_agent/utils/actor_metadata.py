@@ -489,6 +489,27 @@ def compact_actor_metadata(actor_metadata: ActorMetadata) -> dict[str, Any]:
     }
 
 
+def compact_consolidation_actor_metadata(actor_metadata: ActorMetadata) -> dict[str, Any]:
+    return {
+        "actors": [
+            {
+                "actor_id": actor.actor_id,
+                "display_name": actor.display_name,
+            }
+            for actor in actor_metadata.actors
+        ],
+        "relationships": [
+            {
+                "source_actor_id": relationship.source_actor_id,
+                "target_actor_id": relationship.target_actor_id,
+                "relationship_type": relationship.relationship_type,
+                "description": relationship.description,
+            }
+            for relationship in actor_metadata.relationships
+        ],
+    }
+
+
 def compact_actor_registry(actor_metadata: ActorMetadata) -> dict[str, Any]:
     return {
         "actors": [

@@ -6,6 +6,7 @@ import sys
 import threading
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -77,8 +78,8 @@ def test_collect_logged_spoken_payloads_uses_latest_per_episode(tmp_path: Path):
 
     payloads = script_module._collect_logged_spoken_payloads(log_path)
     assert sorted(payloads.keys()) == [1, 2]
-    assert payloads[1]["script"]["title"] == "new"
-    assert payloads[2]["script"]["title"] == "two"
+    assert [payload["script"]["title"] for payload in payloads[1]] == ["old", "new"]
+    assert [payload["script"]["title"] for payload in payloads[2]] == ["two"]
 
 
 def _make_manifest(
@@ -222,6 +223,53 @@ def test_parse_args_accepts_spoken_max_retry_attempts_override(
     )
     args = script_module._parse_args()
     assert args.spoken_max_retry_attempts == 2
+
+
+def test_build_spoken_section_maps_flattened_response_to_single_section():
+    payload = {
+        "episode_number": 1,
+        "script": {
+            "episode_number": 1,
+            "title": "Episode One",
+            "framing": {
+                "opening_image": "Image",
+                "threat_or_unresolved_action": "Threat",
+                "opening_question": "Question",
+                "handoff_scene_card_id": "scene_1",
+            },
+            "prose_sections": [
+                {
+                    "section_id": "section_1",
+                    "scene_card_ids": ["scene_1"],
+                    "movement_goal": "discover",
+                    "text": "Narration",
+                }
+            ],
+        },
+        "tts_provider": "openai-compatible",
+    }
+    result = SimpleNamespace(
+        text="Spoken narration",
+        speech_hints={
+            "style": "measured",
+            "intensity": "light",
+            "pace": "slower",
+            "pause_before_ms": 250,
+            "pause_after_ms": 350,
+            "pronunciation_hints": [
+                {"text": "Panipat", "spoken_as": "PAH-nee-puht"},
+            ],
+            "emphasis_targets": ["Spoken"],
+            "render_strategy": "plain",
+        },
+    )
+
+    spoken_section = script_module._build_spoken_section(payload, result)
+
+    assert spoken_section.section_id == "section_1"
+    assert spoken_section.text == "Spoken narration"
+    assert spoken_section.speech_hints.style == "measured"
+    assert spoken_section.speech_hints.pronunciation_hints[0].spoken_as == "PAH-nee-puht"
 
 
 def test_execute_in_bounded_parallel_respects_max_workers():

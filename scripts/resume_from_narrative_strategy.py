@@ -11,6 +11,7 @@ from podcast_agent.config import Settings
 from podcast_agent.pipeline.orchestrator import PipelineOrchestrator, _save_json
 from podcast_agent.schemas.models import (
     ActorMetadata,
+    NarrativeStrategy,
     ProjectStatus,
     SpokenScript,
     SynthesisMap,
@@ -31,6 +32,21 @@ STRICT_TRACKED_FILES = (
 
 def _load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _load_persisted_strategy(project_dir: Path) -> NarrativeStrategy:
+    strategy_path = project_dir / "narrative_strategy.json"
+    strategy = NarrativeStrategy.model_validate(_load_json(strategy_path))
+    if not strategy.episodes:
+        raise RuntimeError(
+            "Persisted narrative_strategy.json must contain at least one episode before planning."
+        )
+    for episode in strategy.episodes:
+        if episode.episode_spine is None:
+            raise RuntimeError(
+                "Persisted narrative_strategy.json contains an episode without episode_spine."
+            )
+    return strategy
 
 
 def _snapshot_file(path: Path) -> dict[str, Any]:
@@ -109,7 +125,7 @@ async def _resume_from_narrative_strategy(project_id: str) -> None:
 
     actor_metrics: dict[str, Any] = {}
     try:
-        strategy, strategy_actor_metrics = await orchestrator._choose_narrative_strategy(
+        _, strategy_actor_metrics = await orchestrator._choose_narrative_strategy(
             project=project,
             synthesis_map=synthesis_map,
             corpus=corpus,
@@ -117,6 +133,7 @@ async def _resume_from_narrative_strategy(project_id: str) -> None:
             actor_metadata=actor_metadata,
         )
         actor_metrics["narrative_strategy"] = strategy_actor_metrics
+        strategy = _load_persisted_strategy(project_dir)
 
         project = orchestrator._resolve_episode_count_from_strategy(project, strategy)
         _save_json(project_dir / "thematic_project.json", project)
@@ -138,6 +155,13 @@ async def _resume_from_narrative_strategy(project_id: str) -> None:
         _save_json(project_dir / "thematic_project.json", project)
 
         sem = asyncio.Semaphore(max(1, project.config.episode_write_concurrency))
+        spoken_sem = asyncio.Semaphore(
+            max(
+                1,
+                project.config.spoken_delivery_concurrency
+                or project.config.episode_write_concurrency,
+            )
+        )
         ep_tasks = [
             orchestrator._produce_episode(
                 plan,
@@ -146,6 +170,7 @@ async def _resume_from_narrative_strategy(project_id: str) -> None:
                 actor_metadata,
                 project_dir,
                 sem,
+                spoken_sem,
             )
             for plan in episode_plans
         ]

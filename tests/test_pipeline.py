@@ -10,12 +10,15 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from pydantic import ValidationError
 
 from podcast_agent.llm.heuristic import HeuristicLLMClient
 from podcast_agent.pipeline.orchestrator import (
     PipelineOrchestrator,
     _allocate_synthesis_passages_by_axis,
+    _compact_primitives_for_consolidation,
     _allocate_scene_durations,
+    _build_spine_plan_diagnostics,
     _build_scene_card_family_warnings,
     _compute_scene_word_count_targets,
     _build_scene_card_count_warnings,
@@ -23,6 +26,8 @@ from podcast_agent.pipeline.orchestrator import (
     _build_passage_lookup,
     _estimate_duration_seconds_from_words,
     _flatten_synthesis_primitives,
+    _occurrence_spillover_weight,
+    _occurrence_weight,
     _resolve_synthesis_bm25_keep_fraction_by_passage,
     _round_allocations_to_total,
     _scene_duration_bounds,
@@ -37,11 +42,13 @@ from podcast_agent.schemas.models import (
     ActorArcThread,
     ActorMetadata,
     ActorProfile,
+    ActorRelationship,
     BookRecord,
-    ClusterPathOccurrence,
-    EpisodeCandidateCluster,
+    CandidateReading,
+    EvidencePack,
     EpisodeScript,
     EpisodePlan,
+    EpisodeSpine,
     ExtractedPassage,
     FramingBlock,
     NarrativeStrategy,
@@ -51,9 +58,11 @@ from podcast_agent.schemas.models import (
     SceneActor,
     SceneActorArcBinding,
     SceneCard,
+    SpineRelation,
     SpokenScript,
     SpokenSection,
     StrategyEpisode,
+    SupportPackRole,
     SYNTHESIS_PRIMITIVE_FAMILIES,
     SynthesisConsolidationResult,
     SynthesisPrimitive,
@@ -62,6 +71,7 @@ from podcast_agent.schemas.models import (
     ThematicCorpus,
     ThematicAxis,
     ThematicProject,
+    VerdictMode,
 )
 
 
@@ -74,19 +84,44 @@ def _framing() -> FramingBlock:
     )
 
 
-def _strategy_episode(*occurrences: ClusterPathOccurrence) -> StrategyEpisode:
+def _episode_spine(
+    *spine_pack_ids: str,
+    support_pack_roles: dict[str, SupportPackRole] | None = None,
+    allowed_recalls: list[str] | None = None,
+) -> EpisodeSpine:
+    return EpisodeSpine(
+        listener_question="Question?",
+        working_claim="A working claim.",
+        target_end_state="The proposition becomes clearer.",
+        verdict_mode=VerdictMode.CONSTRAIN,
+        primary_counterposition="A competing interpretation remains plausible.",
+        spine_pack_ids=list(spine_pack_ids),
+        support_pack_roles=dict(support_pack_roles or {}),
+        allowed_recalls=list(allowed_recalls or []),
+    )
+
+
+def _strategy_episode(
+    *spine_pack_ids: str,
+    support_pack_roles: dict[str, SupportPackRole] | None = None,
+    allowed_recalls: list[str] | None = None,
+) -> StrategyEpisode:
     return StrategyEpisode(
         episode_number=1,
         title="Episode",
         driving_question="Question?",
         arc_summary="Arc",
-        cluster_path=list(occurrences),
+        episode_spine=_episode_spine(
+            *spine_pack_ids,
+            support_pack_roles=support_pack_roles,
+            allowed_recalls=allowed_recalls,
+        ),
     )
 
 
 def _scene_card(
     scene_id: str,
-    occurrence_id: str,
+    pack_id: str,
     *,
     scene_role: str = "action",
     actors: list[SceneActor] | None = None,
@@ -95,7 +130,9 @@ def _scene_card(
         scene_id=scene_id,
         title=scene_id,
         scene_role=scene_role,
-        dominant_cluster_occurrence_id=occurrence_id,
+        dominant_pack_id=pack_id,
+        spine_relation=SpineRelation.SPINE_ADVANCE,
+        state_effect="The listener's understanding moves forward.",
         entry_image="Image",
         local_question="Question",
         observable_detail="Detail",
@@ -121,22 +158,113 @@ def _scene_actor(
                 scene_use="develop",
                 weight=binding_weight,
             )
-        )
+    )
     return SceneActor(name=name, presence=presence, arc_bindings=bindings)
+
+
+def _normalize_fixture_strategy_episode(payload: dict[str, object]) -> dict[str, object]:
+    if "episode_spine" in payload:
+        return payload
+    cluster_path = list(payload.pop("cluster_path", []) or [])
+    spine_pack_ids = [
+        item["cluster_id"]
+        for item in cluster_path
+        if item.get("usage") == "primary"
+    ]
+    support_pack_roles: dict[str, str] = {}
+    allowed_recalls: list[str] = []
+    for item in cluster_path:
+        cluster_id = str(item.get("cluster_id", ""))
+        if not cluster_id:
+            continue
+        if item.get("usage") == "echo":
+            allowed_recalls.append(cluster_id)
+            continue
+        if cluster_id in spine_pack_ids[:3]:
+            continue
+        support_pack_roles[cluster_id] = (
+            "texture" if item.get("emphasis") == "compressed" else "mechanism"
+        )
+    listener_question = str(payload.get("driving_question", "What changes here?"))
+    thematic_focus = str(payload.get("thematic_focus", "") or listener_question)
+    arc_summary = str(payload.get("arc_summary", "") or thematic_focus)
+    unresolved_questions = list(payload.get("unresolved_questions", []) or [])
+    payload["episode_spine"] = {
+        "listener_question": listener_question,
+        "working_claim": thematic_focus,
+        "target_end_state": arc_summary,
+        "verdict_mode": "constrain",
+        "primary_counterposition": unresolved_questions[0] if unresolved_questions else "A competing interpretation remains plausible.",
+        "spine_pack_ids": spine_pack_ids[:3] or [cluster_path[0]["cluster_id"]],
+        "support_pack_roles": support_pack_roles,
+        "allowed_recalls": allowed_recalls,
+    }
+    return payload
+
+
+def _normalize_fixture_plan_episode(
+    payload: dict[str, object],
+    strategy_episode: StrategyEpisode,
+    occurrence_to_pack_id: dict[str, str],
+) -> dict[str, object]:
+    normalized = dict(payload)
+    normalized["episode_spine"] = strategy_episode.episode_spine.model_dump(mode="json")
+    normalized_scene_cards: list[dict[str, object]] = []
+    for card in normalized.get("scene_cards", []):
+        scene = dict(card)
+        dominant_pack_id = scene.pop("dominant_cluster_occurrence_id", None)
+        if dominant_pack_id:
+            scene["dominant_pack_id"] = occurrence_to_pack_id.get(str(dominant_pack_id), str(dominant_pack_id))
+        if "spine_relation" not in scene:
+            role = str(scene.get("scene_role", "")).strip()
+            scene["spine_relation"] = {
+                "setup": "set_stakes",
+                "shock": "turn",
+                "action": "spine_advance",
+                "consequence": "show_consequence",
+                "reaction": "supply_mechanism",
+                "contestation": "apply_counterpressure",
+                "synthesis": "spine_advance",
+            }.get(role, "spine_advance")
+        if "state_effect" not in scene:
+            scene["state_effect"] = (
+                str(scene.get("intended_move", "")).strip()
+                or str(scene.get("local_question", "")).strip()
+                or "The listener's understanding shifts."
+            )
+        normalized_scene_cards.append(scene)
+    normalized["scene_cards"] = normalized_scene_cards
+    return normalized
 
 
 def _load_middle_east_v2_episode_fixtures() -> list[tuple[StrategyEpisode, EpisodePlan]]:
     run_dir = Path("runs/middle_east_v2")
     strategy_payload = json.loads((run_dir / "narrative_strategy.json").read_text())
     plan_payload = json.loads((run_dir / "series_plan.json").read_text())
+    occurrence_map_by_episode = {
+        episode["episode_number"]: {
+            str(item.get("occurrence_id", "")): str(item.get("cluster_id", ""))
+            for item in episode.get("cluster_path", [])
+            if item.get("occurrence_id") and item.get("cluster_id")
+        }
+        for episode in strategy_payload["episodes"]
+    }
     strategy_by_episode = {
-        episode["episode_number"]: StrategyEpisode.model_validate(episode)
+        episode["episode_number"]: StrategyEpisode.model_validate(
+            _normalize_fixture_strategy_episode(dict(episode))
+        )
         for episode in strategy_payload["episodes"]
     }
     return [
         (
             strategy_by_episode[episode["episode_number"]],
-            EpisodePlan.model_validate(episode),
+            EpisodePlan.model_validate(
+                _normalize_fixture_plan_episode(
+                    dict(episode),
+                    strategy_by_episode[episode["episode_number"]],
+                    occurrence_map_by_episode.get(episode["episode_number"], {}),
+                )
+            ),
         )
         for episode in plan_payload["episodes"]
     ]
@@ -192,6 +320,77 @@ def _primitives_by_family(
     return payload
 
 
+def test_compact_primitives_for_consolidation_omits_passage_and_legacy_tag_fields():
+    artifact = SynthesisPrimitivesArtifact(
+        project_id="proj",
+        primitives_by_family=_primitives_by_family(
+            contested_explanations=[
+                SynthesisPrimitive(
+                    id="cx_1",
+                    title="Competing readings",
+                    summary="The evidence supports multiple readings.",
+                    axis_ids=["axis_1"],
+                    core_passage_ids=["p1"],
+                    support_passage_ids=["p2"],
+                    timeframe="1947",
+                    geography="Delhi",
+                    primary_actor_ids=["actor_1"],
+                    affected_actor_ids=["actor_2"],
+                    actor_ids=["actor_1", "actor_2"],
+                    actor_tags=["Legacy actor"],
+                    institution_tags=["Congress"],
+                    unresolved_actor_tags=["Unknown actor"],
+                    narrative_importance_score=0.82,
+                    candidate_readings=[
+                        CandidateReading(
+                            label="reading_a",
+                            summary="One reading.",
+                            support_passage_ids=["p3"],
+                        ),
+                        CandidateReading(
+                            label="reading_b",
+                            summary="Another reading.",
+                            support_passage_ids=["p4"],
+                        ),
+                    ],
+                )
+            ]
+        ),
+        quality_score=0.6,
+        quality_notes=["thin comparative grounding"],
+    )
+
+    payload = _compact_primitives_for_consolidation(artifact)
+    primitive = payload["primitives_by_family"]["contested_explanations"][0]
+
+    assert set(primitive) == {
+        "id",
+        "title",
+        "summary",
+        "axis_ids",
+        "timeframe",
+        "geography",
+        "primary_actor_ids",
+        "affected_actor_ids",
+        "actor_ids",
+        "unresolved_actor_tags",
+        "narrative_importance_score",
+        "candidate_readings",
+    }
+    assert primitive["candidate_readings"] == [
+        {
+            "label": "reading_a",
+            "summary": "One reading.",
+        },
+        {
+            "label": "reading_b",
+            "summary": "Another reading.",
+        }
+    ]
+    assert payload["quality_score"] == 0.6
+    assert payload["quality_notes"] == ["thin comparative grounding"]
+
+
 def test_build_scene_card_count_warnings_for_under_target():
     warnings = _build_scene_card_count_warnings(
         scene_card_count=18,
@@ -208,7 +407,9 @@ def test_build_scene_card_primitive_warnings_reports_density_and_unknown_ids():
             scene_id="scene_1",
             title="Scene 1",
             scene_role="setup",
-            dominant_cluster_occurrence_id="occ_1",
+            dominant_pack_id="pack_1",
+            spine_relation=SpineRelation.SET_STAKES,
+            state_effect="The stakes become visible.",
             entry_image="Image",
             local_question="Question",
             observable_detail="Detail",
@@ -221,7 +422,9 @@ def test_build_scene_card_primitive_warnings_reports_density_and_unknown_ids():
             scene_id="scene_2",
             title="Scene 2",
             scene_role="reaction",
-            dominant_cluster_occurrence_id="occ_2",
+            dominant_pack_id="pack_2",
+            spine_relation=SpineRelation.SUPPLY_MECHANISM,
+            state_effect="The mechanism becomes visible.",
             entry_image="Image",
             local_question="Question",
             observable_detail="Detail",
@@ -269,7 +472,9 @@ def test_compute_scene_word_count_targets_uses_scene_durations():
             scene_id="scene_1",
             title="Scene 1",
             scene_role="setup",
-            dominant_cluster_occurrence_id="occ_1",
+            dominant_pack_id="pack_1",
+            spine_relation=SpineRelation.SET_STAKES,
+            state_effect="The stakes become visible.",
             entry_image="Image",
             local_question="Question",
             observable_detail="Detail",
@@ -282,7 +487,9 @@ def test_compute_scene_word_count_targets_uses_scene_durations():
             scene_id="scene_2",
             title="Scene 2",
             scene_role="reaction",
-            dominant_cluster_occurrence_id="occ_2",
+            dominant_pack_id="pack_2",
+            spine_relation=SpineRelation.SUPPLY_MECHANISM,
+            state_effect="The mechanism becomes visible.",
             entry_image="Image",
             local_question="Question",
             observable_detail="Detail",
@@ -302,7 +509,9 @@ def test_compute_scene_word_count_targets_scales_with_words_per_minute():
             scene_id="scene_anchor",
             title="Anchor",
             scene_role="setup",
-            dominant_cluster_occurrence_id="occ_1",
+            dominant_pack_id="pack_1",
+            spine_relation=SpineRelation.SET_STAKES,
+            state_effect="The stakes become visible.",
             entry_image="Image",
             local_question="Question",
             observable_detail="Detail",
@@ -314,7 +523,9 @@ def test_compute_scene_word_count_targets_scales_with_words_per_minute():
             scene_id="scene_compressed",
             title="Compressed",
             scene_role="reaction",
-            dominant_cluster_occurrence_id="occ_2",
+            dominant_pack_id="pack_2",
+            spine_relation=SpineRelation.SUPPLY_MECHANISM,
+            state_effect="The mechanism becomes visible.",
             entry_image="Image",
             local_question="Question",
             observable_detail="Detail",
@@ -332,7 +543,9 @@ def test_compute_scene_word_count_targets_requires_positive_scene_durations():
         scene_id="scene_1",
         title="Scene 1",
         scene_role="setup",
-        dominant_cluster_occurrence_id="occ_1",
+        dominant_pack_id="pack_1",
+        spine_relation=SpineRelation.SET_STAKES,
+        state_effect="The stakes become visible.",
         entry_image="Image",
         local_question="Question",
         observable_detail="Detail",
@@ -347,7 +560,9 @@ def test_compute_scene_word_count_targets_requires_positive_scene_durations():
                 "scene_id": "scene_2",
                 "title": "Scene 2",
                 "scene_role": "reaction",
-                "dominant_cluster_occurrence_id": "occ_2",
+                "dominant_pack_id": "pack_2",
+                "spine_relation": "supply_mechanism",
+                "state_effect": "The mechanism becomes visible.",
                 "passage_ids": ["p2"],
                 "estimated_duration_seconds": 0,
             }
@@ -365,7 +580,7 @@ def test_compute_scene_word_count_targets_requires_positive_scene_durations():
 def test_scene_importance_weight_three_factor():
     scene = _scene_card(
         "scene_1",
-        "occ_1",
+        "pack_1",
         scene_role="shock",
         actors=[_scene_actor(presence="primary", binding_weight="strong")],
     )
@@ -373,45 +588,59 @@ def test_scene_importance_weight_three_factor():
     assert _scene_importance_weight(scene) == pytest.approx(1.30 * 1.50 * 1.20)
 
 
-def test_scene_duration_bounds_no_actor_by_role_bucket():
+def test_occurrence_weight_uses_increased_spine_weight():
     episode = _strategy_episode(
-        ClusterPathOccurrence(
-            occurrence_id="occ_1",
-            cluster_id="cluster_1",
-            usage="primary",
-            emphasis="anchor",
-        )
+        "pack_anchor",
+        support_pack_roles={
+            "pack_major": SupportPackRole.MECHANISM,
+            "pack_supporting": SupportPackRole.TEXTURE,
+        },
     )
 
+    assert _occurrence_weight(episode, "pack_anchor") == pytest.approx(1.75)
+    assert _occurrence_weight(episode, "pack_major") == pytest.approx(0.90)
+    assert _occurrence_weight(episode, "pack_supporting") == pytest.approx(0.60)
+
+
+def test_occurrence_spillover_weight_uses_increased_spine_weight():
+    episode = _strategy_episode(
+        "pack_anchor",
+        support_pack_roles={
+            "pack_major": SupportPackRole.MECHANISM,
+            "pack_supporting": SupportPackRole.TEXTURE,
+        },
+    )
+
+    assert _occurrence_spillover_weight(episode, "pack_anchor") == pytest.approx(1.15)
+    assert _occurrence_spillover_weight(episode, "pack_major") == pytest.approx(0.25)
+    assert _occurrence_spillover_weight(episode, "pack_supporting") == pytest.approx(0.00)
+
+
+def test_scene_duration_bounds_no_actor_by_role_bucket():
+    episode = _strategy_episode("pack_1")
+
     assert _scene_duration_bounds(
-        _scene_card("argument", "occ_1", scene_role="synthesis"),
+        _scene_card("argument", "pack_1", scene_role="synthesis"),
         episode,
         avg_sec=150.0,
     ) == pytest.approx((40.5, 81.0))
     assert _scene_duration_bounds(
-        _scene_card("action", "occ_1", scene_role="consequence"),
+        _scene_card("action", "pack_1", scene_role="consequence"),
         episode,
         avg_sec=150.0,
     ) == pytest.approx((90.0, 180.0))
     assert _scene_duration_bounds(
-        _scene_card("mid", "occ_1", scene_role="setup"),
+        _scene_card("mid", "pack_1", scene_role="setup"),
         episode,
         avg_sec=150.0,
     ) == pytest.approx((67.5, 135.0))
 
 
 def test_scene_duration_bounds_scales_with_avg_sec():
-    episode = _strategy_episode(
-        ClusterPathOccurrence(
-            occurrence_id="occ_1",
-            cluster_id="cluster_1",
-            usage="primary",
-            emphasis="anchor",
-        )
-    )
+    episode = _strategy_episode("pack_1")
     scene = _scene_card(
         "scene_1",
-        "occ_1",
+        "pack_1",
         actors=[_scene_actor(presence="primary", binding_weight="strong")],
     )
 
@@ -424,33 +653,18 @@ def test_scene_duration_bounds_scales_with_avg_sec():
 
 def test_allocate_scene_durations_spillover_goes_only_to_anchor_and_major():
     episode = _strategy_episode(
-        ClusterPathOccurrence(
-            occurrence_id="occ_anchor",
-            cluster_id="cluster_anchor",
-            usage="primary",
-            emphasis="anchor",
-        ),
-        ClusterPathOccurrence(
-            occurrence_id="occ_major",
-            cluster_id="cluster_major",
-            usage="primary",
-            emphasis="major",
-            transition_note="Then shift.",
-        ),
-        ClusterPathOccurrence(
-            occurrence_id="occ_supporting",
-            cluster_id="cluster_supporting",
-            usage="primary",
-            emphasis="supporting",
-            transition_note="Then shift.",
-        ),
+        "pack_anchor",
+        support_pack_roles={
+            "pack_major": SupportPackRole.MECHANISM,
+            "pack_supporting": SupportPackRole.TEXTURE,
+        },
     )
 
     allocated = _allocate_scene_durations(
         [
-            _scene_card("anchor_scene", "occ_anchor"),
-            _scene_card("major_scene", "occ_major"),
-            _scene_card("support_scene", "occ_supporting"),
+            _scene_card("anchor_scene", "pack_anchor"),
+            _scene_card("major_scene", "pack_major"),
+            _scene_card("support_scene", "pack_supporting"),
         ],
         episode,
         target_duration_seconds=600,
@@ -483,15 +697,15 @@ def test_allocate_scene_durations_middle_east_v2_ep1_rebalances_retarged_roles()
     seconds = {scene.scene_id: scene.estimated_duration_seconds for scene in allocated}
 
     assert sum(seconds.values()) == 6000
-    assert seconds["e1_s07"] == pytest.approx(90, abs=10)
-    assert seconds["e1_s06"] == pytest.approx(90, abs=10)
-    assert seconds["e1_s26"] == pytest.approx(105, abs=15)
-    assert seconds["e1_s36"] == pytest.approx(65, abs=10)
-    assert seconds["e1_s21"] == pytest.approx(215, abs=20)
-    assert seconds["e1_s34"] == pytest.approx(175, abs=20)
+    assert seconds["e1_s07"] == pytest.approx(202, abs=10)
+    assert seconds["e1_s06"] == pytest.approx(202, abs=10)
+    assert seconds["e1_s26"] == pytest.approx(52, abs=10)
+    assert seconds["e1_s36"] == pytest.approx(55, abs=10)
+    assert seconds["e1_s21"] == pytest.approx(100, abs=15)
+    assert seconds["e1_s34"] == pytest.approx(151, abs=15)
     assert seconds["e1_s26"] < seconds["e1_s21"]
     assert seconds["e1_s36"] < seconds["e1_s34"]
-    assert seconds["e1_s33"] > seconds["e1_s36"]
+    assert seconds["e1_s33"] >= seconds["e1_s36"]
 
 
 def test_allocate_scene_durations_totals_sum_to_target():
@@ -505,6 +719,52 @@ def test_allocate_scene_durations_totals_sum_to_target():
 
         assert len(allocated) == len(plan.scene_cards)
         assert sum(scene.estimated_duration_seconds for scene in allocated) == target_duration_seconds
+
+
+def test_build_spine_plan_diagnostics_accepts_065_spine_share():
+    episode = _strategy_episode(
+        "pack_spine",
+        support_pack_roles={"pack_support": SupportPackRole.MECHANISM},
+    )
+    scene_cards = [
+        _scene_card(f"spine_{idx}", "pack_spine")
+        for idx in range(12)
+    ] + [
+        _scene_card(
+            f"support_{idx}",
+            "pack_support",
+            scene_role="synthesis",
+        ).model_copy(update={"spine_relation": SpineRelation.SUPPLY_MECHANISM})
+        for idx in range(7)
+    ] + [
+        _scene_card("spine_ending", "pack_spine", scene_role="consequence")
+    ]
+    scene_cards[-1] = scene_cards[-1].model_copy(
+        update={
+            "dominant_pack_id": "pack_spine",
+            "spine_relation": SpineRelation.SHOW_CONSEQUENCE,
+        }
+    )
+    plan = EpisodePlan(
+        episode_number=1,
+        title="Episode",
+        driving_question="Question?",
+        thematic_focus="Focus",
+        arc_summary="Arc",
+        unresolved_questions=[],
+        episode_spine=episode.episode_spine,
+        actor_arc_directives=[],
+        framing=_framing().model_copy(update={"handoff_scene_card_id": "spine_0"}),
+        scene_cards=scene_cards,
+        target_duration_minutes=90.0,
+        target_word_count=1000,
+    )
+
+    diagnostics = _build_spine_plan_diagnostics(episode=episode, plan=plan)
+
+    assert diagnostics["spine_scene_share"] == pytest.approx(0.65)
+    assert diagnostics["spine_word_share"] == pytest.approx(0.65)
+    assert "spine_underweight" not in diagnostics["failure_labels"]
 
 
 def test_round_allocations_to_total_handles_large_positive_delta():
@@ -769,21 +1029,11 @@ def test_build_scene_card_family_warnings_reports_missing_mix():
         title="Episode 1",
         driving_question="Q1",
         arc_summary="A1",
-        cluster_path=[
-            ClusterPathOccurrence(
-                occurrence_id="occ_1",
-                cluster_id="cluster_1",
-                usage="primary",
-                emphasis="anchor",
-            ),
-            ClusterPathOccurrence(
-                occurrence_id="occ_2",
-                cluster_id="cluster_2",
-                usage="echo",
-                emphasis="major",
-                transition_note="Shift to the next packet.",
-            ),
-        ],
+        episode_spine=_episode_spine(
+            "pack_1",
+            support_pack_roles={"pack_2": SupportPackRole.MECHANISM},
+            allowed_recalls=["pack_3"],
+        ),
     )
 
     warnings = _build_scene_card_family_warnings(
@@ -910,6 +1160,193 @@ def test_map_synthesis_caps_total_passages_and_keeps_cross_pair_priority(monkeyp
     ]
 
 
+def test_map_synthesis_sends_compact_consolidation_payload_and_reconstructs_full_primitives(
+    monkeypatch,
+    tmp_path,
+):
+    heuristic = HeuristicLLMClient()
+    monkeypatch.setattr("podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic)
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.PGVectorRetrieval",
+        lambda settings, run_logger=None: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.RetrievalService",
+        lambda settings, vector_store: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.build_tts_client",
+        lambda settings: DummyTTSClient(),
+    )
+
+    orchestrator = PipelineOrchestrator()
+    captured: dict[str, object] = {}
+
+    primitives = SynthesisPrimitivesArtifact(
+        project_id="proj",
+        primitives_by_family=_primitives_by_family(
+            contested_explanations=[
+                SynthesisPrimitive(
+                    id="cx_1",
+                    title="Competing readings",
+                    summary="The evidence supports multiple readings.",
+                    axis_ids=["axis_1"],
+                    core_passage_ids=["p1"],
+                    support_passage_ids=["p2"],
+                    timeframe="1947",
+                    geography="Delhi",
+                    primary_actor_ids=["actor_1"],
+                    affected_actor_ids=["actor_2"],
+                    actor_ids=["actor_1", "actor_2"],
+                    unresolved_actor_tags=["Unknown actor"],
+                    narrative_importance_score=0.84,
+                    candidate_readings=[
+                        CandidateReading(
+                            label="reading_a",
+                            summary="One reading.",
+                            support_passage_ids=["p3"],
+                        ),
+                        CandidateReading(
+                            label="reading_b",
+                            summary="Another reading.",
+                            support_passage_ids=["p4"],
+                        ),
+                    ],
+                )
+            ]
+        ),
+        quality_score=0.74,
+        quality_notes=["preserve contested readings"],
+    )
+
+    orchestrator.synthesis_primitives_agent.run = lambda _payload: primitives
+
+    def fake_consolidation_run(payload: dict):
+        captured["payload"] = payload
+        return SynthesisConsolidationResult(
+            project_id="proj",
+            evidence_packs=[
+                EvidencePack(
+                    pack_id="pack_1",
+                    title="Pack",
+                    local_summary="Summary",
+                    primitive_ids=["cx_1"],
+                    actor_ids=["actor_1"],
+                )
+            ],
+            primitive_ids_by_family={"contested_explanations": ["cx_1"]},
+            quality_score=0.91,
+            quality_notes=["kept one pack"],
+        )
+
+    orchestrator.synthesis_consolidation_agent.run = fake_consolidation_run
+
+    project = ThematicProject(
+        project_id="proj",
+        theme="War on terror",
+        books=[
+            BookRecord(
+                book_id="b1",
+                title="Book 1",
+                author="Author",
+                source_path="/tmp/book.txt",
+                source_type="txt",
+            )
+        ],
+    )
+    axis = ThematicAxis(
+        axis_id="axis_1",
+        name="Axis 1",
+        description="A1",
+        theme_importance_score=0.95,
+    )
+    corpus = ThematicCorpus(
+        project_id="proj",
+        axes=[axis],
+        passages_by_axis={
+            "axis_1": [
+                ExtractedPassage(
+                    passage_id="p1",
+                    book_id="b1",
+                    chunk_ids=["c1"],
+                    text="P1",
+                    axis_id="axis_1",
+                    relevance_score=0.9,
+                    quotability_score=0.8,
+                )
+            ]
+        },
+    )
+    actor_metadata = ActorMetadata(
+        project_id="proj",
+        actors=[
+            ActorProfile(
+                actor_id="actor_1",
+                display_name="Actor One",
+                actor_type="person",
+                description="Primary actor.",
+                aliases=["One"],
+                book_ids=["b1"],
+                goals_or_motivational_pressures=["Drive events"],
+            ),
+            ActorProfile(
+                actor_id="actor_2",
+                display_name="Actor Two",
+                actor_type="person",
+                description="Affected actor.",
+            ),
+        ],
+        relationships=[
+            ActorRelationship(
+                source_actor_id="actor_1",
+                target_actor_id="actor_2",
+                relationship_type="pressures",
+                description="Actor One pressures Actor Two.",
+                confidence="high",
+            )
+        ],
+        quality_notes=["verbose actor metadata"],
+    )
+
+    synthesis_map, _actor_metrics = asyncio.run(
+        orchestrator._map_synthesis(project, corpus, tmp_path, actor_metadata)
+    )
+
+    consolidation_payload = captured["payload"]
+    compact_primitive = (
+        consolidation_payload["primitives"]["primitives_by_family"]["contested_explanations"][0]
+    )
+    assert "core_passage_ids" not in compact_primitive
+    assert "support_passage_ids" not in compact_primitive
+    assert "actor_tags" not in compact_primitive
+    assert "institution_tags" not in compact_primitive
+    assert compact_primitive["candidate_readings"] == [
+        {"label": "reading_a", "summary": "One reading."},
+        {"label": "reading_b", "summary": "Another reading."},
+    ]
+    assert consolidation_payload["actor_metadata"] == {
+        "actors": [
+            {"actor_id": "actor_1", "display_name": "Actor One"},
+            {"actor_id": "actor_2", "display_name": "Actor Two"},
+        ],
+        "relationships": [
+            {
+                "source_actor_id": "actor_1",
+                "target_actor_id": "actor_2",
+                "relationship_type": "pressures",
+                "description": "Actor One pressures Actor Two.",
+            }
+        ],
+    }
+
+    restored = synthesis_map.primitives_by_family["contested_explanations"][0]
+    assert restored.core_passage_ids == ["p1"]
+    assert restored.support_passage_ids == ["p2"]
+    assert restored.candidate_readings[0].support_passage_ids == ["p3"]
+    assert restored.candidate_readings[1].support_passage_ids == ["p4"]
+    assert restored.unresolved_actor_tags == ["Unknown actor"]
+
+
 def test_write_episode_passes_full_text_to_writing_agent(monkeypatch, tmp_path):
     heuristic = HeuristicLLMClient()
     monkeypatch.setattr("podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic)
@@ -933,10 +1370,9 @@ def test_write_episode_passes_full_text_to_writing_agent(monkeypatch, tmp_path):
         captured["payload"] = payload
         return orchestrator.writing_agent.response_model.model_validate(
             {
-                "prose_sections": [
+                "scene_prose": [
                     {
-                        "section_id": "section_1",
-                        "scene_card_ids": ["scene_1"],
+                        "scene_card_id": "scene_1",
                         "movement_goal": "discover",
                         "text": "Draft text.",
                     }
@@ -959,13 +1395,16 @@ def test_write_episode_passes_full_text_to_writing_agent(monkeypatch, tmp_path):
             "thematic_focus": "Focus",
             "arc_summary": "Arc",
             "unresolved_questions": [],
+            "episode_spine": _episode_spine("pack_1").model_dump(mode="json"),
             "framing": _framing().model_dump(mode="json"),
             "scene_cards": [
                 {
                     "scene_id": "scene_1",
                     "title": "Scene 1",
                     "scene_role": "setup",
-                    "dominant_cluster_occurrence_id": "occ_1",
+                    "dominant_pack_id": "pack_1",
+                    "spine_relation": "set_stakes",
+                    "state_effect": "The stakes become visible.",
                     "entry_image": "Image",
                     "local_question": "Question",
                     "observable_detail": "Detail",
@@ -1026,13 +1465,14 @@ def test_write_episode_uses_single_writing_call_for_many_scene_cards(monkeypatch
         captured_payloads.append(payload)
         return orchestrator.writing_agent.response_model.model_validate(
             {
-                "prose_sections": [
+                "scene_prose": [
                     {
-                        "section_id": "section_1",
-                        "scene_card_ids": [scene["scene_id"] for scene in payload["plan"]["scene_cards"]],
+                        "scene_card_id": scene["scene_id"],
                         "movement_goal": "discover",
                         "text": "Draft text.",
+                        "source_book_ids": [],
                     }
+                    for scene in payload["plan"]["scene_cards"]
                 ]
             }
         )
@@ -1052,13 +1492,20 @@ def test_write_episode_uses_single_writing_call_for_many_scene_cards(monkeypatch
             "thematic_focus": "Focus",
             "arc_summary": "Arc",
             "unresolved_questions": [],
+            "episode_spine": _episode_spine(
+                "pack_1",
+                "pack_2",
+                "pack_3",
+            ).model_dump(mode="json"),
             "framing": _framing().model_dump(mode="json"),
             "scene_cards": [
                 {
                     "scene_id": f"scene_{idx}",
                     "title": f"Scene {idx}",
                     "scene_role": "setup",
-                    "dominant_cluster_occurrence_id": f"occ_{idx}",
+                    "dominant_pack_id": f"pack_{idx}",
+                    "spine_relation": "set_stakes",
+                    "state_effect": "The stakes become visible.",
                     "entry_image": "Image",
                     "local_question": "Question",
                     "observable_detail": "Detail",
@@ -1131,13 +1578,14 @@ def test_write_episode_payload_uses_unequal_scene_duration_targets(monkeypatch, 
         captured["payload"] = payload
         return orchestrator.writing_agent.response_model.model_validate(
             {
-                "prose_sections": [
+                "scene_prose": [
                     {
-                        "section_id": "section_1",
-                        "scene_card_ids": [scene["scene_id"] for scene in payload["plan"]["scene_cards"]],
+                        "scene_card_id": scene["scene_id"],
                         "movement_goal": "discover",
                         "text": "Draft text.",
+                        "source_book_ids": [],
                     }
+                    for scene in payload["plan"]["scene_cards"]
                 ]
             }
         )
@@ -1157,6 +1605,7 @@ def test_write_episode_payload_uses_unequal_scene_duration_targets(monkeypatch, 
             "thematic_focus": "Focus",
             "arc_summary": "Arc",
             "unresolved_questions": [],
+            "episode_spine": _episode_spine("pack_1").model_dump(mode="json"),
             "framing": {
                 **_framing().model_dump(mode="json"),
                 "handoff_scene_card_id": "scene_anchor",
@@ -1166,7 +1615,9 @@ def test_write_episode_payload_uses_unequal_scene_duration_targets(monkeypatch, 
                     "scene_id": "scene_anchor",
                     "title": "Anchor scene",
                     "scene_role": "setup",
-                    "dominant_cluster_occurrence_id": "occ_1",
+                    "dominant_pack_id": "pack_1",
+                    "spine_relation": "set_stakes",
+                    "state_effect": "The stakes become visible.",
                     "entry_image": "Image",
                     "local_question": "Question",
                     "observable_detail": "Detail",
@@ -1179,7 +1630,9 @@ def test_write_episode_payload_uses_unequal_scene_duration_targets(monkeypatch, 
                     "scene_id": "scene_context",
                     "title": "Context scene",
                     "scene_role": "action",
-                    "dominant_cluster_occurrence_id": "occ_1",
+                    "dominant_pack_id": "pack_1",
+                    "spine_relation": "spine_advance",
+                    "state_effect": "The argument advances.",
                     "entry_image": "Image",
                     "local_question": "Question",
                     "observable_detail": "Detail",
@@ -1269,10 +1722,9 @@ def test_write_episode_uses_no_citation_agent_when_skip_grounding(monkeypatch, t
         captured["payload"] = payload
         return orchestrator.writing_agent_no_citations.response_model.model_validate(
             {
-                "prose_sections": [
+                "scene_prose": [
                     {
-                        "section_id": "section_1",
-                        "scene_card_ids": ["scene_1"],
+                        "scene_card_id": "scene_1",
                         "movement_goal": "discover",
                         "text": " ".join(["word"] * 800),
                         "source_book_ids": ["b1"],
@@ -1298,13 +1750,16 @@ def test_write_episode_uses_no_citation_agent_when_skip_grounding(monkeypatch, t
             "thematic_focus": "Focus",
             "arc_summary": "Arc",
             "unresolved_questions": [],
+            "episode_spine": _episode_spine("pack_1").model_dump(mode="json"),
             "framing": _framing().model_dump(mode="json"),
             "scene_cards": [
                 {
                     "scene_id": "scene_1",
                     "title": "Scene 1",
                     "scene_role": "setup",
-                    "dominant_cluster_occurrence_id": "occ_1",
+                    "dominant_pack_id": "pack_1",
+                    "spine_relation": "set_stakes",
+                    "state_effect": "The stakes become visible.",
                     "entry_image": "Image",
                     "local_question": "Question",
                     "observable_detail": "Detail",
@@ -1361,10 +1816,7 @@ def test_write_episode_uses_no_citation_agent_when_skip_grounding(monkeypatch, t
     assert budget_warnings
     assert budget_warnings[0]["actual_word_count"] == 800
     assert budget_warnings[0]["target_word_count_higher"] == 650
-    assert section_count_warnings
-    assert section_count_warnings[0]["section_count"] == 1
-    assert section_count_warnings[0]["target_section_count_min"] == 8
-    assert section_count_warnings[0]["target_section_count_max"] == 12
+    assert section_count_warnings == []
 
 
 def test_validate_grounding_uses_full_text_lookup(monkeypatch, tmp_path):
@@ -1450,12 +1902,19 @@ def test_rewrite_for_speech_rewrites_each_section_individually(monkeypatch, tmp_
         section = payload["script"]["prose_sections"][0]
         return orchestrator.spoken_delivery_agent.response_model.model_validate(
             {
-                "sections": [
-                    {
-                        "section_id": section["section_id"],
-                        "text": f"spoken::{section['text']}",
-                    }
-                ]
+                "text": f"spoken::{section['text']}",
+                "speech_hints": {
+                    "style": "measured",
+                    "intensity": "light",
+                    "pause_before_ms": 100,
+                    "pause_after_ms": 200,
+                    "pace": "slower",
+                    "pronunciation_hints": [
+                        {"text": "Panipat", "spoken_as": "PAH-nee-puht"},
+                    ],
+                    "emphasis_targets": ["spoken"],
+                    "render_strategy": "plain",
+                },
             }
         )
 
@@ -1510,6 +1969,8 @@ def test_rewrite_for_speech_rewrites_each_section_individually(monkeypatch, tmp_
         "spoken::First section",
         "spoken::Second section",
     ]
+    assert spoken.sections[0].speech_hints.style == "measured"
+    assert spoken.sections[0].speech_hints.pronunciation_hints[0].text == "Panipat"
 
 
 def test_rewrite_for_speech_raises_on_invalid_section_contract(monkeypatch, tmp_path):
@@ -1532,7 +1993,7 @@ def test_rewrite_for_speech_raises_on_invalid_section_contract(monkeypatch, tmp_
 
     def fake_spoken_run(_payload: dict):
         return orchestrator.spoken_delivery_agent.response_model.model_validate(
-            {"sections": [{"section_id": "wrong_id", "text": "spoken"}]}
+            {"speech_hints": {"style": "neutral"}}
         )
 
     orchestrator.spoken_delivery_agent.run = fake_spoken_run
@@ -1566,8 +2027,151 @@ def test_rewrite_for_speech_raises_on_invalid_section_contract(monkeypatch, tmp_
     ep_dir = tmp_path / "episodes" / "1"
     ep_dir.mkdir(parents=True, exist_ok=True)
 
-    with pytest.raises(RuntimeError, match="section_id mismatch"):
+    with pytest.raises(ValidationError, match="text"):
         asyncio.run(orchestrator._rewrite_for_speech(1, script, project, ep_dir, tmp_path))
+
+
+def test_produce_episode_releases_write_slot_before_spoken_delivery(monkeypatch, tmp_path):
+    heuristic = HeuristicLLMClient()
+    monkeypatch.setattr("podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic)
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.PGVectorRetrieval",
+        lambda settings, run_logger=None: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.RetrievalService",
+        lambda settings, vector_store: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.build_tts_client",
+        lambda settings: DummyTTSClient(),
+    )
+
+    orchestrator = PipelineOrchestrator()
+    event_log: list[tuple[str, int, float]] = []
+    lock = threading.Lock()
+
+    async def fake_write_episode(
+        plan: EpisodePlan,
+        project: ThematicProject,
+        corpus: ThematicCorpus,
+        ep_dir: Path,
+        project_dir: Path,
+        actor_metadata: ActorMetadata | None = None,
+    ) -> EpisodeScript:
+        with lock:
+            event_log.append(("write_start", plan.episode_number, time.monotonic()))
+        await asyncio.sleep(0.03)
+        with lock:
+            event_log.append(("write_end", plan.episode_number, time.monotonic()))
+        return EpisodeScript(
+            episode_number=plan.episode_number,
+            title=f"Episode {plan.episode_number}",
+            framing=_framing(),
+            prose_sections=[
+                ProseSection(
+                    section_id="section_1",
+                    scene_card_ids=["scene_1"],
+                    movement_goal="discover",
+                    text="Draft section.",
+                )
+            ],
+        )
+
+    async def fake_rewrite_for_speech(
+        episode_number: int,
+        script: EpisodeScript,
+        project: ThematicProject,
+        ep_dir: Path,
+        project_dir: Path,
+    ) -> SpokenScript:
+        with lock:
+            event_log.append(("spoken_start", episode_number, time.monotonic()))
+        await asyncio.sleep(0.20 if episode_number == 1 else 0.02)
+        with lock:
+            event_log.append(("spoken_end", episode_number, time.monotonic()))
+        return SpokenScript(
+            episode_number=episode_number,
+            title=script.title,
+            framing=script.framing,
+            sections=[SpokenSection(section_id="section_1", text="spoken section")],
+            tts_provider=project.config.tts_provider,
+        )
+
+    orchestrator._write_episode = fake_write_episode  # type: ignore[method-assign]
+    orchestrator._rewrite_for_speech = fake_rewrite_for_speech  # type: ignore[method-assign]
+
+    project = ThematicProject(
+        project_id="proj",
+        theme="War on terror",
+        books=[
+            BookRecord(
+                book_id="b1",
+                title="Book 1",
+                author="Author",
+                source_path="/tmp/book.txt",
+                source_type="txt",
+            )
+        ],
+        config=PipelineConfig(
+            skip_grounding=True,
+            episode_write_concurrency=2,
+            spoken_delivery_concurrency=1,
+        ),
+    )
+    corpus = ThematicCorpus(project_id="proj")
+    actor_metadata = ActorMetadata(project_id="proj")
+    plans = [
+        EpisodePlan(
+            episode_number=episode_number,
+            title=f"Episode {episode_number}",
+            driving_question="Question?",
+            thematic_focus="Focus",
+            arc_summary="Arc",
+            unresolved_questions=[],
+            episode_spine=_episode_spine("pack_1").model_copy(
+                update={"episode_number": episode_number}
+            ),
+            actor_arc_directives=[],
+            framing=_framing().model_copy(update={"handoff_scene_card_id": "scene_1"}),
+            scene_cards=[_scene_card("scene_1", "pack_1")],
+            target_duration_minutes=90.0,
+            target_word_count=120,
+        )
+        for episode_number in (1, 2, 3)
+    ]
+
+    async def _run_production() -> None:
+        write_sem = asyncio.Semaphore(2)
+        spoken_sem = asyncio.Semaphore(1)
+        await asyncio.gather(
+            *[
+                orchestrator._produce_episode(
+                    plan,
+                    project,
+                    corpus,
+                    actor_metadata,
+                    tmp_path,
+                    write_sem,
+                    spoken_sem,
+                )
+                for plan in plans
+            ]
+        )
+
+    asyncio.run(_run_production())
+
+    write_start_ep3 = next(
+        timestamp
+        for event, episode_number, timestamp in event_log
+        if event == "write_start" and episode_number == 3
+    )
+    spoken_end_ep1 = next(
+        timestamp
+        for event, episode_number, timestamp in event_log
+        if event == "spoken_end" and episode_number == 1
+    )
+    assert write_start_ep3 < spoken_end_ep1
 
 
 def test_render_episode_audio_writes_section_only_manifest(monkeypatch, tmp_path):
@@ -1655,7 +2259,7 @@ def test_plan_series_parallelizes_episode_planning_with_configured_limit(monkeyp
             payloads_by_episode[episode_number] = payload
         try:
             time.sleep(0.05)
-            primary_occurrence_id = payload["episode"]["cluster_path"][0]["occurrence_id"]
+            primary_pack_id = payload["episode"]["episode_spine"]["spine_pack_ids"][0]
             return orchestrator.episode_planning_agent.response_model.model_validate(
                 {
                     "episode_number": episode_number,
@@ -1664,6 +2268,7 @@ def test_plan_series_parallelizes_episode_planning_with_configured_limit(monkeyp
                     "thematic_focus": payload["episode"]["thematic_focus"],
                     "arc_summary": payload["episode"]["arc_summary"],
                     "unresolved_questions": payload["episode"]["unresolved_questions"],
+                    "episode_spine": payload["episode"]["episode_spine"],
                     "framing": {
                         "opening_image": "Image",
                         "threat_or_unresolved_action": "Threat",
@@ -1675,7 +2280,9 @@ def test_plan_series_parallelizes_episode_planning_with_configured_limit(monkeyp
                             "scene_id": "scene_1",
                             "title": "Scene 1",
                             "scene_role": "setup",
-                            "dominant_cluster_occurrence_id": primary_occurrence_id,
+                            "dominant_pack_id": primary_pack_id,
+                            "spine_relation": "set_stakes",
+                            "state_effect": "The stakes become visible.",
                             "passage_ids": [],
                             "primitive_ids": [],
                         }
@@ -1714,71 +2321,44 @@ def test_plan_series_parallelizes_episode_planning_with_configured_limit(monkeyp
                 title="Episode 1",
                 driving_question="Q1",
                 arc_summary="A1",
-                cluster_path=[
-                    ClusterPathOccurrence(
-                        occurrence_id="occ_1",
-                        cluster_id="ec_1",
-                        usage="primary",
-                    )
-                ],
+                episode_spine=_episode_spine("ec_1"),
             ),
             StrategyEpisode(
                 episode_number=2,
                 title="Episode 2",
                 driving_question="Q2",
                 arc_summary="A2",
-                cluster_path=[
-                    ClusterPathOccurrence(
-                        occurrence_id="occ_2",
-                        cluster_id="ec_2",
-                        usage="primary",
-                    )
-                ],
+                episode_spine=_episode_spine("ec_2"),
             ),
             StrategyEpisode(
                 episode_number=3,
                 title="Episode 3",
                 driving_question="Q3",
                 arc_summary="A3",
-                cluster_path=[
-                    ClusterPathOccurrence(
-                        occurrence_id="occ_3",
-                        cluster_id="ec_3",
-                        usage="primary",
-                    )
-                ],
+                episode_spine=_episode_spine("ec_3"),
             ),
         ],
     )
     synthesis_map = SynthesisMap(
         project_id="proj",
-        episode_candidate_clusters=[
-            EpisodeCandidateCluster(
-                cluster_id="ec_1",
+        evidence_packs=[
+            EvidencePack(
+                pack_id="ec_1",
                 title="C1",
-                summary="S1",
-                primary_member_id="tp_1",
-                member_ids=["tp_1"],
-                local_question="L1",
-                local_payoff_shape="reveal",
+                local_summary="S1",
+                primitive_ids=["tp_1"],
             ),
-            EpisodeCandidateCluster(
-                cluster_id="ec_2",
+            EvidencePack(
+                pack_id="ec_2",
                 title="C2",
-                summary="S2",
-                primary_member_id="tp_2",
-                member_ids=["tp_2"],
-                local_question="L2",
-                local_payoff_shape="reveal",
+                local_summary="S2",
+                primitive_ids=["tp_2"],
             ),
-            EpisodeCandidateCluster(
-                cluster_id="ec_3",
+            EvidencePack(
+                pack_id="ec_3",
                 title="C3",
-                summary="S3",
-                primary_member_id="tp_3",
-                member_ids=["tp_3"],
-                local_question="L3",
-                local_payoff_shape="reveal",
+                local_summary="S3",
+                primitive_ids=["tp_3"],
             ),
         ],
         primitives_by_family=_primitives_by_family(
@@ -1843,9 +2423,7 @@ def test_plan_series_parallelizes_episode_planning_with_configured_limit(monkeyp
     }
     for episode_number in [1, 2, 3]:
         synthesis_payload = payloads_by_episode[episode_number]["synthesis_map"]
-        assert [
-            cluster["cluster_id"] for cluster in synthesis_payload["episode_candidate_clusters"]
-        ] == [f"ec_{episode_number}"]
+        assert [pack["pack_id"] for pack in synthesis_payload["evidence_packs"]] == [f"ec_{episode_number}"]
         assert [item["id"] for item in synthesis_payload["primitives_by_family"]["epochal_turns"]] == [
             f"tp_{episode_number}"
         ]
@@ -1877,7 +2455,7 @@ def test_plan_series_uses_actor_arc_directives_for_episode_metadata(monkeypatch,
 
     def fake_planning_run(payload: dict):
         captured_payload.update(payload)
-        primary_occurrence_id = payload["episode"]["cluster_path"][0]["occurrence_id"]
+        primary_pack_id = payload["episode"]["episode_spine"]["spine_pack_ids"][0]
         return orchestrator.episode_planning_agent.response_model.model_validate(
             {
                 "episode_number": payload["episode"]["episode_number"],
@@ -1886,6 +2464,7 @@ def test_plan_series_uses_actor_arc_directives_for_episode_metadata(monkeypatch,
                 "thematic_focus": payload["episode"]["thematic_focus"],
                 "arc_summary": payload["episode"]["arc_summary"],
                 "unresolved_questions": payload["episode"]["unresolved_questions"],
+                "episode_spine": payload["episode"]["episode_spine"],
                 "framing": {
                     "opening_image": "Image",
                     "threat_or_unresolved_action": "Threat",
@@ -1897,7 +2476,9 @@ def test_plan_series_uses_actor_arc_directives_for_episode_metadata(monkeypatch,
                         "scene_id": "scene_1",
                         "title": "Scene 1",
                         "scene_role": "setup",
-                        "dominant_cluster_occurrence_id": primary_occurrence_id,
+                        "dominant_pack_id": primary_pack_id,
+                        "spine_relation": "set_stakes",
+                        "state_effect": "The stakes become visible.",
                         "passage_ids": ["p1"],
                         "primitive_ids": ["tp_1"],
                     }
@@ -1919,13 +2500,7 @@ def test_plan_series_uses_actor_arc_directives_for_episode_metadata(monkeypatch,
                 driving_question="Q1",
                 arc_summary="A1",
                 actor_arc_directives=[strategy_actor],
-                cluster_path=[
-                    ClusterPathOccurrence(
-                        occurrence_id="occ_1",
-                        cluster_id="ec_1",
-                        usage="primary",
-                    )
-                ],
+                episode_spine=_episode_spine("ec_1"),
             )
         ],
     )
@@ -1937,17 +2512,13 @@ def test_plan_series_uses_actor_arc_directives_for_episode_metadata(monkeypatch,
     )
     synthesis_map = SynthesisMap(
         project_id="proj",
-        episode_candidate_clusters=[
-            EpisodeCandidateCluster(
-                cluster_id="ec_1",
+        evidence_packs=[
+            EvidencePack(
+                pack_id="ec_1",
                 title="C1",
-                summary="S1",
-                primary_member_id="tp_1",
-                member_ids=["tp_1"],
-                local_question="L1",
-                local_payoff_shape="reveal",
+                local_summary="S1",
+                primitive_ids=["tp_1"],
                 actor_ids=["actor_cluster"],
-                primary_actor_id="actor_cluster",
             )
         ],
         primitives_by_family=_primitives_by_family(epochal_turns=[primitive]),
@@ -2031,7 +2602,7 @@ def test_plan_series_trims_available_passages_for_planning_with_episode_context(
 
     def fake_planning_run(payload: dict):
         captured_payload.update(payload)
-        primary_occurrence_id = payload["episode"]["cluster_path"][0]["occurrence_id"]
+        primary_pack_id = payload["episode"]["episode_spine"]["spine_pack_ids"][0]
         return orchestrator.episode_planning_agent.response_model.model_validate(
             {
                 "episode_number": payload["episode"]["episode_number"],
@@ -2040,6 +2611,7 @@ def test_plan_series_trims_available_passages_for_planning_with_episode_context(
                 "thematic_focus": payload["episode"]["thematic_focus"],
                 "arc_summary": payload["episode"]["arc_summary"],
                 "unresolved_questions": payload["episode"]["unresolved_questions"],
+                "episode_spine": payload["episode"]["episode_spine"],
                 "framing": {
                     "opening_image": "Image",
                     "threat_or_unresolved_action": "Threat",
@@ -2051,7 +2623,9 @@ def test_plan_series_trims_available_passages_for_planning_with_episode_context(
                         "scene_id": "scene_1",
                         "title": "Scene 1",
                         "scene_role": "setup",
-                        "dominant_cluster_occurrence_id": primary_occurrence_id,
+                        "dominant_pack_id": primary_pack_id,
+                        "spine_relation": "set_stakes",
+                        "state_effect": "The stakes become visible.",
                         "passage_ids": [],
                         "primitive_ids": [],
                     }
@@ -2090,27 +2664,18 @@ def test_plan_series_trims_available_passages_for_planning_with_episode_context(
                 thematic_focus="focusbeta",
                 arc_summary="arcgamma",
                 unresolved_questions=["unresolveddelta"],
-                cluster_path=[
-                    ClusterPathOccurrence(
-                        occurrence_id="occ_1",
-                        cluster_id="ec_1",
-                        usage="primary",
-                    )
-                ],
+                episode_spine=_episode_spine("ec_1"),
             )
         ],
     )
     synthesis_map = SynthesisMap(
         project_id="proj",
-        episode_candidate_clusters=[
-            EpisodeCandidateCluster(
-                cluster_id="ec_1",
+        evidence_packs=[
+            EvidencePack(
+                pack_id="ec_1",
                 title="Cluster 1",
-                summary="Summary",
-                primary_member_id="tp_1",
-                member_ids=["tp_1"],
-                local_question="Question",
-                local_payoff_shape="reveal",
+                local_summary="Summary",
+                primitive_ids=["tp_1"],
             )
         ],
         primitives_by_family=_primitives_by_family(

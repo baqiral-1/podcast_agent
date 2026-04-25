@@ -287,6 +287,7 @@ class PipelineRuntimeConfig(BaseModel):
     max_repair_attempts: int = Field(default=3, ge=0)
     episode_planning_concurrency: int = Field(default=6, ge=1)
     episode_write_concurrency: int = Field(default=6, ge=1)
+    spoken_delivery_concurrency: int | None = Field(default=None, ge=1)
     tts_concurrency: int = Field(default=5, ge=1)
     llm_global_max_concurrency: int = Field(default=30, ge=1)
     audio_retry_attempts: int = Field(default=3, ge=0)

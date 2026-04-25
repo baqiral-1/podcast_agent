@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import re
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from podcast_agent.agents.base import Agent
 from podcast_agent.prompts import (
     episode_writing_instructions,
     episode_writing_no_citations_instructions,
 )
-from podcast_agent.schemas.models import ProseSection
+from podcast_agent.schemas.models import Citation
 
 
 _TEASER_LINE_RE = re.compile(
@@ -20,43 +20,54 @@ _TEASER_LINE_RE = re.compile(
 
 
 def _validate_no_teaser_lines(
-    sections: list[ProseSection] | list["ProseSectionNoCitations"],
+    sections: list["SceneProse"] | list["SceneProseNoCitations"],
 ) -> None:
     for section in sections:
         if _TEASER_LINE_RE.search(section.text):
             raise ValueError(
-                f"section {section.section_id!r} contains next-episode teaser copy"
+                f"scene {section.scene_card_id!r} contains next-episode teaser copy"
             )
 
 
+class SceneProse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    scene_card_id: str
+    movement_goal: str
+    text: str
+    citations: list[Citation] = Field(default_factory=list)
+    source_book_ids: list[str] = Field(default_factory=list)
+
+
 class EpisodeWritingResponse(BaseModel):
-    prose_sections: list[ProseSection] = Field(default_factory=list)
+    model_config = ConfigDict(extra="forbid")
+    scene_prose: list[SceneProse] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def reject_teaser_lines(self) -> "EpisodeWritingResponse":
-        _validate_no_teaser_lines(self.prose_sections)
+        _validate_no_teaser_lines(self.scene_prose)
         return self
 
 
-class ProseSectionNoCitations(BaseModel):
-    section_id: str
-    scene_card_ids: list[str] = Field(default_factory=list)
+class SceneProseNoCitations(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    scene_card_id: str
     movement_goal: str
     text: str
     source_book_ids: list[str] = Field(default_factory=list)
 
 
 class EpisodeWritingNoCitationsResponse(BaseModel):
-    prose_sections: list[ProseSectionNoCitations] = Field(default_factory=list)
+    model_config = ConfigDict(extra="forbid")
+    scene_prose: list[SceneProseNoCitations] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def reject_teaser_lines(self) -> "EpisodeWritingNoCitationsResponse":
-        _validate_no_teaser_lines(self.prose_sections)
+        _validate_no_teaser_lines(self.scene_prose)
         return self
 
 
 class WritingAgent(Agent):
-    """Drafts a section-based episode batch from scene-card windows."""
+    """Drafts scene-level prose from ordered scene cards."""
 
     schema_name = "episode_writing"
     response_model = EpisodeWritingResponse
@@ -90,7 +101,7 @@ class WritingAgent(Agent):
 
 
 class WritingAgentNoCitations(WritingAgent):
-    """Drafts a section-based episode batch without citation requirements."""
+    """Drafts scene-level prose without citation requirements."""
 
     schema_name = "episode_writing"
     response_model = EpisodeWritingNoCitationsResponse

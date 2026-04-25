@@ -14,11 +14,11 @@ from podcast_agent.schemas.models import (
     ActorProfile,
     ActorRelationship,
     CandidateReading,
-    ClusterPathOccurrence,
     ChapterAnalysis,
-    EpisodeCandidateCluster,
+    EvidencePack,
     EpisodePlan,
     EpisodePlanDraft,
+    EpisodeSpine,
     FramingBlock,
     NarrativeStrategy,
     ProseSection,
@@ -26,10 +26,12 @@ from podcast_agent.schemas.models import (
     SceneActorArcBinding,
     SceneCard,
     SceneCardDraft,
+    SpineRelation,
     SpeechHints,
     SpokenScript,
     SpokenSection,
     StrategyEpisode,
+    SupportPackRole,
     SYNTHESIS_PRIMITIVE_FAMILIES,
     SynthesisConsolidationResult,
     SynthesisMap,
@@ -37,11 +39,13 @@ from podcast_agent.schemas.models import (
     SynthesisPrimitivesArtifact,
     ThematicProject,
     PipelineConfig,
+    VerdictMode,
 )
 from podcast_agent.utils.actor_metadata import (
     ActorMatcher,
     clean_scene_actor_links,
     clean_synthesis_primitive_actor_links,
+    compact_consolidation_actor_metadata,
     normalize_actor_name,
     sanitize_actor_metadata_payload,
 )
@@ -96,12 +100,15 @@ def _framing() -> FramingBlock:
     )
 
 
-def _normal_scene(scene_id: str = "scene_1", occurrence_id: str = "occ_1") -> SceneCard:
+def _normal_scene(scene_id: str = "scene_1", pack_id: str = "pack_1") -> SceneCard:
     return SceneCard(
         scene_id=scene_id,
+        batch_id="b01",
         title="The order arrives",
         scene_role="setup",
-        dominant_cluster_occurrence_id=occurrence_id,
+        dominant_pack_id=pack_id,
+        spine_relation=SpineRelation.SET_STAKES,
+        state_effect="The stakes become legible.",
         entry_image="A clerk opens the envelope.",
         local_question="What changes first?",
         observable_detail="Hands freeze over the paper.",
@@ -115,13 +122,16 @@ def _normal_scene(scene_id: str = "scene_1", occurrence_id: str = "occ_1") -> Sc
 
 def _normal_scene_draft(
     scene_id: str = "scene_1",
-    occurrence_id: str = "occ_1",
+    pack_id: str = "pack_1",
 ) -> SceneCardDraft:
     return SceneCardDraft(
         scene_id=scene_id,
+        batch_id="b01",
         title="The order arrives",
         scene_role="setup",
-        dominant_cluster_occurrence_id=occurrence_id,
+        dominant_pack_id=pack_id,
+        spine_relation=SpineRelation.SET_STAKES,
+        state_effect="The stakes become legible.",
         entry_image="A clerk opens the envelope.",
         local_question="What changes first?",
         observable_detail="Hands freeze over the paper.",
@@ -129,6 +139,19 @@ def _normal_scene_draft(
         actors=[SceneActor(name="Clerk", presence="background")],
         primitive_ids=["et_1"],
         passage_ids=["p1", "p2"],
+    )
+
+
+def _episode_spine(pack_id: str = "pack_1") -> EpisodeSpine:
+    return EpisodeSpine(
+        listener_question="Why does this decision land so hard?",
+        working_claim="This episode tests one controlling proposition.",
+        target_end_state="The listener leaves with a constrained verdict.",
+        verdict_mode=VerdictMode.CONSTRAIN,
+        primary_counterposition="A rival interpretation still pulls at the evidence.",
+        spine_pack_ids=[pack_id],
+        support_pack_roles={"pack_support": SupportPackRole.MECHANISM},
+        allowed_recalls=[],
     )
 
 
@@ -163,6 +186,7 @@ class TestThematicProject:
         assert config.synthesis_trim_tail_keep_fraction == 0.30
         assert config.passage_extraction_concurrency == 16
         assert config.episode_write_concurrency == 6
+        assert config.spoken_delivery_concurrency is None
         assert config.min_episode_minutes == 85.0
         assert config.target_episode_minutes == 90.0
         assert config.scene_card_target_min == 35
@@ -392,57 +416,91 @@ class TestSynthesisModels:
         assert metrics["exact_actor_tag_matches"] == 1
         assert metrics["unmatched_actor_tags"] == 1
 
-    def test_episode_candidate_cluster_requires_primary_member_in_member_ids(self):
-        with pytest.raises(ValidationError, match="primary_member_id"):
-            EpisodeCandidateCluster(
-                title="Cluster",
-                summary="Summary",
-                primary_member_id="et_missing",
-                member_ids=["et_1"],
-                local_question="What changes?",
-                local_payoff_shape="reveal",
-            )
+    def test_compact_consolidation_actor_metadata_keeps_minimal_actor_and_relationship_fields(self):
+        metadata = ActorMetadata(
+            actors=[
+                ActorProfile(
+                    actor_id="jawaharlal_nehru",
+                    display_name="Jawaharlal Nehru",
+                    aliases=["Nehru"],
+                    actor_type="person",
+                    description="Prime minister.",
+                    book_ids=["book_1"],
+                    goals_or_motivational_pressures=["Hold the union together"],
+                ),
+                ActorProfile(
+                    actor_id="vallabhbhai_patel",
+                    display_name="Vallabhbhai Patel",
+                    actor_type="person",
+                    description="Home minister.",
+                ),
+            ],
+            relationships=[
+                ActorRelationship(
+                    source_actor_id="jawaharlal_nehru",
+                    target_actor_id="vallabhbhai_patel",
+                    relationship_type="other",
+                    description="They share a cabinet and a rivalry.",
+                    confidence="high",
+                )
+            ],
+            quality_notes=["extra context"],
+        )
+
+        payload = compact_consolidation_actor_metadata(metadata)
+
+        assert payload == {
+            "actors": [
+                {
+                    "actor_id": "jawaharlal_nehru",
+                    "display_name": "Jawaharlal Nehru",
+                },
+                {
+                    "actor_id": "vallabhbhai_patel",
+                    "display_name": "Vallabhbhai Patel",
+                },
+            ],
+            "relationships": [
+                {
+                    "source_actor_id": "jawaharlal_nehru",
+                    "target_actor_id": "vallabhbhai_patel",
+                    "relationship_type": "other",
+                    "description": "They share a cabinet and a rivalry.",
+                }
+            ],
+        }
 
     def test_importance_fields_default_and_roundtrip(self):
         primitive = _epochal_turn("et_1")
-        cluster = EpisodeCandidateCluster(
-            cluster_id="cluster_1",
-            title="Cluster",
-            summary="Summary",
-            primary_member_id="et_1",
-            member_ids=["et_1"],
-            local_question="What changes?",
-            local_payoff_shape="reveal",
+        pack = EvidencePack(
+            pack_id="pack_1",
+            title="Pack",
+            local_summary="Summary",
+            primitive_ids=["et_1"],
         )
 
         assert primitive.narrative_importance_score == 0.5
-        assert cluster.narrative_importance_score == 0.5
-        assert cluster.coverage_policy == "supporting"
+        assert pack.primitive_ids == ["et_1"]
 
-        restored = EpisodeCandidateCluster.model_validate(
+        restored = EvidencePack.model_validate(
             {
-                **cluster.model_dump(mode="json"),
-                "narrative_importance_score": 0.85,
-                "coverage_policy": "anchor",
+                **pack.model_dump(mode="json"),
+                "actor_ids": ["actor_1", "actor_1", ""],
             }
         )
-        assert restored.narrative_importance_score == 0.85
-        assert restored.coverage_policy == "anchor"
+        assert restored.actor_ids == ["actor_1"]
 
-    def test_synthesis_map_rejects_unknown_cluster_member_ids(self):
-        with pytest.raises(ValidationError, match="unknown member_ids"):
+    def test_synthesis_map_rejects_unknown_pack_primitive_ids(self):
+        with pytest.raises(ValidationError, match="unknown primitive_ids"):
             SynthesisMap(
                 project_id="proj",
                 primitives_by_family=_family_map(epochal_turns=[_epochal_turn("et_1")]),
-                episode_candidate_clusters=[
-                    EpisodeCandidateCluster(
-                        cluster_id="cluster_1",
-                        title="Cluster",
-                        summary="Summary",
-                        primary_member_id="et_1",
-                        member_ids=["et_1", "tp_999"],
-                        local_question="What changes?",
-                        local_payoff_shape="reveal",
+                evidence_packs=[
+                    EvidencePack(
+                        pack_id="pack_1",
+                        title="Pack",
+                        local_summary="Summary",
+                        primitive_ids=["et_1", "tp_999"],
                     )
                 ],
             )
@@ -495,8 +553,8 @@ class TestSynthesisModels:
         ]
         assert [item.id for item in artifact.primitives_by_family["epochal_turns"]] == ["et_1"]
 
-    def test_synthesis_map_rejects_cluster_references_to_dropped_contested_explanations(self):
-        with pytest.raises(ValidationError, match="unknown member_ids"):
+    def test_synthesis_map_rejects_pack_references_to_dropped_contested_explanations(self):
+        with pytest.raises(ValidationError, match="unknown primitive_ids"):
             SynthesisMap(
                 project_id="proj",
                 primitives_by_family=_family_map(
@@ -517,60 +575,51 @@ class TestSynthesisModels:
                         )
                     ],
                 ),
-                episode_candidate_clusters=[
-                    EpisodeCandidateCluster(
-                        cluster_id="cluster_1",
-                        title="Opening cluster",
-                        summary="A compact causal chain.",
-                        primary_member_id="et_1",
-                        member_ids=["et_1", "cx_invalid"],
-                        local_question="Why does the order matter?",
-                        local_payoff_shape="reveal",
+                evidence_packs=[
+                    EvidencePack(
+                        pack_id="pack_1",
+                        title="Opening pack",
+                        local_summary="A compact causal chain.",
+                        primitive_ids=["et_1", "cx_invalid"],
                     )
                 ],
             )
 
-    def test_synthesis_map_roundtrip_preserves_cluster_first_shape(self):
+    def test_synthesis_map_roundtrip_preserves_evidence_pack_shape(self):
         synthesis_map = SynthesisMap(
             project_id="proj",
             primitives_by_family=_family_map(
                 epochal_turns=[_epochal_turn("et_1")],
                 contested_explanations=[_contested_explanation("cx_1")],
             ),
-            episode_candidate_clusters=[
-                EpisodeCandidateCluster(
-                    cluster_id="cluster_1",
-                    title="Opening cluster",
-                    summary="A compact causal chain.",
-                    primary_member_id="et_1",
-                    member_ids=["et_1", "cx_1"],
-                    local_question="Why does the order matter?",
-                    local_payoff_shape="reveal",
+            evidence_packs=[
+                EvidencePack(
+                    pack_id="pack_1",
+                    title="Opening pack",
+                    local_summary="A compact causal chain.",
+                    primitive_ids=["et_1", "cx_1"],
                 )
             ],
             quality_score=0.7,
         )
         restored = SynthesisMap.model_validate(json.loads(synthesis_map.model_dump_json()))
-        assert restored.episode_candidate_clusters[0].primary_member_id == "et_1"
+        assert restored.evidence_packs[0].primitive_ids[0] == "et_1"
         assert (
             restored.primitives_by_family["contested_explanations"][0].candidate_readings[1].label
             == "reading_b"
         )
 
-    def test_synthesis_consolidation_result_rejects_unknown_cluster_member_ids(self):
-        with pytest.raises(ValidationError, match="unknown member_ids"):
+    def test_synthesis_consolidation_result_rejects_unknown_pack_primitive_ids(self):
+        with pytest.raises(ValidationError, match="unknown primitive_ids"):
             SynthesisConsolidationResult(
                 project_id="proj",
                 primitive_ids_by_family={"epochal_turns": ["et_1"]},
-                episode_candidate_clusters=[
-                    EpisodeCandidateCluster(
-                        cluster_id="cluster_1",
-                        title="Cluster",
-                        summary="Summary",
-                        primary_member_id="et_1",
-                        member_ids=["et_1", "tp_999"],
-                        local_question="What changes?",
-                        local_payoff_shape="reveal",
+                evidence_packs=[
+                    EvidencePack(
+                        pack_id="pack_1",
+                        title="Pack",
+                        local_summary="Summary",
+                        primitive_ids=["et_1", "tp_999"],
                     )
                 ],
             )
@@ -582,19 +631,16 @@ class TestSynthesisModels:
                 "epochal_turns": ["et_1"],
                 "contested_explanations": ["cx_1"],
             },
-            episode_candidate_clusters=[
-                EpisodeCandidateCluster(
-                    cluster_id="cluster_1",
-                    title="Cluster",
-                    summary="Summary",
-                    primary_member_id="et_1",
-                    member_ids=["et_1", "cx_1"],
-                    local_question="What changes?",
-                    local_payoff_shape="reveal",
+            evidence_packs=[
+                EvidencePack(
+                    pack_id="pack_1",
+                    title="Pack",
+                    local_summary="Summary",
+                    primitive_ids=["et_1", "cx_1"],
                 )
             ],
         )
-        assert result.episode_candidate_clusters[0].member_ids == ["et_1", "cx_1"]
+        assert result.evidence_packs[0].primitive_ids == ["et_1", "cx_1"]
 
 
 class TestNarrativeStrategy:
@@ -739,88 +785,64 @@ class TestNarrativeStrategy:
                     "title": "Episode 1",
                     "driving_question": "What changed?",
                     "arc_summary": "Arc",
+                    "episode_spine": _episode_spine("pack_1").model_dump(mode="json"),
                     "actor_ids": ["mahatma_gandhi"],
                     "primary_actor_ids": ["mahatma_gandhi"],
                     "actor_arc_summary": "Old summary.",
-                    "cluster_path": [
-                        {
-                            "occurrence_id": "occ_1",
-                            "cluster_id": "cluster_1",
-                            "usage": "primary",
-                        }
-                    ],
+                    "cluster_path": [],
                 }
             )
 
-    def test_strategy_episode_allows_echo_on_first_and_last_occurrence(self):
-        episode = StrategyEpisode(
-            episode_number=1,
-            title="Episode 1",
-            driving_question="What changed?",
-            arc_summary="Arc",
-            cluster_path=[
-                ClusterPathOccurrence(
-                    occurrence_id="occ_1",
-                    cluster_id="cluster_1",
-                    usage="echo",
-                    transition_note="",
-                )
-            ],
-        )
-        assert episode.cluster_path[0].usage == "echo"
-        assert episode.cluster_path[0].emphasis == "supporting"
-
-    def test_cluster_path_occurrence_accepts_emphasis(self):
-        occurrence = ClusterPathOccurrence(
-            occurrence_id="occ_1",
-            cluster_id="cluster_1",
-            usage="primary",
-            emphasis="anchor",
-        )
-        assert occurrence.emphasis == "anchor"
-
-    def test_cluster_path_occurrence_ignores_extra_fields(self):
-        occurrence = ClusterPathOccurrence.model_validate(
-            {
-                "occurrence_id": "occ_1",
-                "cluster_id": "cluster_1",
-                "usage": "primary",
-                "emphasis": "major",
-                "emphosis": "compressed",
-            }
-        )
-        assert occurrence.emphasis == "major"
-        assert "emphosis" not in occurrence.model_dump()
-
-    def test_strategy_episode_requires_transition_notes_after_first_occurrence(self):
-        with pytest.raises(ValidationError, match="transition_note"):
-            StrategyEpisode(
-                episode_number=1,
-                title="Episode 1",
-                driving_question="What changed?",
-                arc_summary="Arc",
-                cluster_path=[
-                    ClusterPathOccurrence(
-                        occurrence_id="occ_1",
-                        cluster_id="cluster_1",
-                        usage="primary",
-                        transition_note="",
-                    ),
-                    ClusterPathOccurrence(
-                        occurrence_id="occ_2",
-                        cluster_id="cluster_1",
-                        usage="primary",
-                        transition_note="",
-                    ),
-                ],
+    def test_episode_spine_rejects_support_overlap_with_spine(self):
+        with pytest.raises(ValidationError, match="support packs cannot also appear"):
+            EpisodeSpine(
+                listener_question="What changed?",
+                working_claim="A claim",
+                target_end_state="A clearer state",
+                verdict_mode=VerdictMode.CONSTRAIN,
+                primary_counterposition="Another reading",
+                spine_pack_ids=["pack_1"],
+                support_pack_roles={"pack_1": SupportPackRole.STAKES},
             )
 
-    def test_narrative_strategy_rejects_primary_cluster_in_multiple_home_episodes(self):
+    def test_episode_spine_rejects_removed_rhetorical_fields(self):
+        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+            EpisodeSpine.model_validate(
+                {
+                    "listener_question": "What changed?",
+                    "working_claim": "A claim",
+                    "target_end_state": "A clearer state",
+                    "verdict_mode": "constrain",
+                    "primary_counterposition": "Another reading",
+                    "spine_pack_ids": ["pack_1"],
+                    "support_pack_roles": {},
+                    "allowed_recalls": [],
+                    "opening_state": "Removed field",
+                }
+            )
+
+    def test_episode_spine_rejects_episode_number_field(self):
+        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+            EpisodeSpine.model_validate(
+                {
+                    "episode_number": 1,
+                    "listener_question": "What changed?",
+                    "working_claim": "A claim",
+                    "target_end_state": "A clearer state",
+                    "verdict_mode": "constrain",
+                    "primary_counterposition": "Another reading",
+                    "spine_pack_ids": ["pack_1"],
+                    "support_pack_roles": {},
+                    "allowed_recalls": [],
+                }
+            )
+
+    def test_narrative_strategy_rejects_pack_home_collision(self):
         with pytest.raises(ValidationError, match="multiple primary home episodes"):
             NarrativeStrategy(
                 strategy_type="convergence",
                 justification="Use converging local causal chains.",
-                series_arc="Each episode carries one cluster home.",
+                series_arc="Each episode carries one pack home.",
                 episode_arc_outline=["Ep 1", "Ep 2"],
                 episodes=[
                     StrategyEpisode(
@@ -828,38 +850,24 @@ class TestNarrativeStrategy:
                         title="Episode 1",
                         driving_question="Why begin here?",
                         arc_summary="Arc 1",
-                        cluster_path=[
-                            ClusterPathOccurrence(
-                                occurrence_id="occ_1",
-                                cluster_id="cluster_1",
-                                usage="primary",
-                                transition_note="",
-                            )
-                        ],
+                        episode_spine=_episode_spine("pack_1"),
                     ),
                     StrategyEpisode(
                         episode_number=2,
                         title="Episode 2",
                         driving_question="Why return?",
                         arc_summary="Arc 2",
-                        cluster_path=[
-                            ClusterPathOccurrence(
-                                occurrence_id="occ_2",
-                                cluster_id="cluster_1",
-                                usage="primary",
-                                transition_note="",
-                            )
-                        ],
+                        episode_spine=_episode_spine("pack_1"),
                     ),
                 ],
             )
 
-    def test_narrative_strategy_requires_at_least_one_primary_cluster_per_episode(self):
-        with pytest.raises(ValidationError, match="must contain at least one primary cluster"):
+    def test_narrative_strategy_requires_at_least_one_spine_pack_per_episode(self):
+        with pytest.raises(ValidationError, match="at least 1 item"):
             NarrativeStrategy(
                 strategy_type="convergence",
                 justification="Use converging local causal chains.",
-                series_arc="Each episode carries one cluster home.",
+                series_arc="Each episode carries one spine pack.",
                 episode_arc_outline=["Ep 1"],
                 episodes=[
                     StrategyEpisode(
@@ -867,14 +875,10 @@ class TestNarrativeStrategy:
                         title="Episode 1",
                         driving_question="Why begin here?",
                         arc_summary="Arc 1",
-                        cluster_path=[
-                            ClusterPathOccurrence(
-                                occurrence_id="occ_1",
-                                cluster_id="cluster_1",
-                                usage="echo",
-                                transition_note="",
-                            )
-                        ],
+                        episode_spine={
+                            **_episode_spine("pack_1").model_dump(mode="json"),
+                            "spine_pack_ids": [],
+                        },
                     ),
                 ],
             )
@@ -958,6 +962,7 @@ class TestPlanningModels:
             episode_number=1,
             title="Episode 1",
             driving_question="Why begin here?",
+            episode_spine=_episode_spine("pack_1"),
             actor_arc_directives=[actor_directive],
             framing=_framing(),
             scene_cards=[scene],
@@ -983,7 +988,9 @@ class TestPlanningModels:
             scene_id="scene_reveal",
             title="A hidden mechanism surfaces",
             scene_role="reveal",
-            dominant_cluster_occurrence_id="ep1_occ1",
+            dominant_pack_id="pack_1",
+            spine_relation=SpineRelation.SPINE_ADVANCE,
+            state_effect="The mechanism becomes visible.",
             entry_image="The ledger opens.",
             local_question="What finally becomes visible?",
             observable_detail="A missing column is now clear.",
@@ -998,9 +1005,12 @@ class TestPlanningModels:
         card = SceneCardDraft.model_validate(
             {
                 "scene_id": "scene_draft",
+                "batch_id": "b01",
                 "title": "A hidden mechanism surfaces",
                 "scene_role": "reveal",
-                "dominant_cluster_occurrence_id": "ep1_occ1",
+                "dominant_pack_id": "pack_1",
+                "spine_relation": "spine_advance",
+                "state_effect": "The mechanism becomes visible.",
                 "entry_image": "The ledger opens.",
                 "local_question": "What finally becomes visible?",
                 "observable_detail": "A missing column is now clear.",
@@ -1015,9 +1025,12 @@ class TestPlanningModels:
         card = SceneCardDraft.model_validate(
             {
                 "scene_id": "scene_action",
+                "batch_id": "b01",
                 "title": "A hidden mechanism surfaces",
                 "scene_role": "process",
-                "dominant_cluster_occurrence_id": "ep1_occ1",
+                "dominant_pack_id": "pack_1",
+                "spine_relation": "spine_advance",
+                "state_effect": "The mechanism becomes visible.",
                 "entry_image": "The ledger opens.",
                 "local_question": "What finally becomes visible?",
                 "observable_detail": "A missing column is now clear.",
@@ -1031,9 +1044,12 @@ class TestPlanningModels:
         card = SceneCardDraft.model_validate(
             {
                 "scene_id": "scene_shift",
+                "batch_id": "b01",
                 "title": "A hidden mechanism surfaces",
                 "scene_role": "perspective shift",
-                "dominant_cluster_occurrence_id": "ep1_occ1",
+                "dominant_pack_id": "pack_1",
+                "spine_relation": "spine_advance",
+                "state_effect": "The mechanism becomes visible.",
                 "entry_image": "The ledger opens.",
                 "local_question": "What finally becomes visible?",
                 "observable_detail": "A missing column is now clear.",
@@ -1048,7 +1064,9 @@ class TestPlanningModels:
             scene_id="scene_draft",
             title="A hidden mechanism surfaces",
             scene_role="reveal",
-            dominant_cluster_occurrence_id="ep1_occ1",
+            dominant_pack_id="pack_1",
+            spine_relation=SpineRelation.SPINE_ADVANCE,
+            state_effect="The mechanism becomes visible.",
             entry_image="The ledger opens.",
             local_question="What finally becomes visible?",
             observable_detail="A missing column is now clear.",
@@ -1063,7 +1081,9 @@ class TestPlanningModels:
                 "scene_id": "scene_draft",
                 "title": "A hidden mechanism surfaces",
                 "scene_role": "reveal",
-                "dominant_cluster_occurrence_id": "ep1_occ1",
+                "dominant_pack_id": "pack_1",
+                "spine_relation": "spine_advance",
+                "state_effect": "The mechanism becomes visible.",
                 "entry_image": "The ledger opens.",
                 "local_question": "What finally becomes visible?",
                 "observable_detail": "A missing column is now clear.",
@@ -1079,9 +1099,12 @@ class TestPlanningModels:
             SceneCard.model_validate(
                 {
                     "scene_id": "scene_final",
+                    "batch_id": "b01",
                     "title": "A hidden mechanism surfaces",
                     "scene_role": "reveal",
-                    "dominant_cluster_occurrence_id": "ep1_occ1",
+                    "dominant_pack_id": "pack_1",
+                    "spine_relation": "spine_advance",
+                    "state_effect": "The mechanism becomes visible.",
                     "entry_image": "The ledger opens.",
                     "local_question": "What finally becomes visible?",
                     "observable_detail": "A missing column is now clear.",
@@ -1095,9 +1118,12 @@ class TestPlanningModels:
             SceneCard.model_validate(
                 {
                     "scene_id": "scene_deep",
+                    "batch_id": "b01",
                     "title": "A hidden mechanism surfaces",
                     "scene_role": "reveal",
-                    "dominant_cluster_occurrence_id": "ep1_occ1",
+                    "dominant_pack_id": "pack_1",
+                    "spine_relation": "spine_advance",
+                    "state_effect": "The mechanism becomes visible.",
                     "entry_image": "The ledger opens.",
                     "local_question": "What finally becomes visible?",
                     "observable_detail": "A missing column is now clear.",
@@ -1112,9 +1138,12 @@ class TestPlanningModels:
         with pytest.raises(ValidationError, match="scene_role must not be blank"):
             SceneCard(
                 scene_id="scene_blank",
+                batch_id="b01",
                 title="Invalid role",
                 scene_role="   ",
-                dominant_cluster_occurrence_id="ep1_occ1",
+                dominant_pack_id="pack_1",
+                spine_relation=SpineRelation.SPINE_ADVANCE,
+                state_effect="The mechanism becomes visible.",
                 entry_image="Image",
                 local_question="Question",
                 observable_detail="Detail",
@@ -1129,6 +1158,8 @@ class TestPlanningModels:
                 scene_id="scene_1",
                 title="The order arrives",
                 scene_role="setup",
+                spine_relation=SpineRelation.SET_STAKES,
+                state_effect="The stakes become visible.",
                 entry_image="Envelope on desk.",
                 local_question="What changes first?",
                 observable_detail="Hands stop.",
@@ -1141,9 +1172,13 @@ class TestPlanningModels:
         with pytest.raises(ValidationError):
             SceneCard(
                 scene_id="scene_bridge",
+                batch_id="b01",
                 title="Bridge",
                 card_kind="bridge",
                 scene_role="synthesis",
+                dominant_pack_id="pack_1",
+                spine_relation=SpineRelation.SPINE_ADVANCE,
+                state_effect="The argument advances.",
                 entry_image="The silence shifts.",
                 local_question="How do we move forward?",
                 observable_detail="A messenger leaves.",
@@ -1158,6 +1193,7 @@ class TestPlanningModels:
                 episode_number=1,
                 title="Episode 1",
                 driving_question="Why begin here?",
+                episode_spine=_episode_spine("pack_1"),
                 framing=FramingBlock(
                     opening_image="Image",
                     threat_or_unresolved_action="Threat",
@@ -1174,6 +1210,7 @@ class TestPlanningModels:
             episode_number=1,
             title="Episode 1",
             driving_question="Why begin here?",
+            episode_spine=_episode_spine("pack_1"),
             framing=_framing(),
             scene_cards=[scene],
         )
@@ -1184,10 +1221,33 @@ class TestPlanningModels:
             episode_number=1,
             title="Episode 1",
             driving_question="Why begin here?",
+            episode_spine=_episode_spine("pack_1"),
             framing=_framing(),
             scene_cards=[_normal_scene_draft()],
         )
         assert draft.target_duration_minutes == 90.0
+
+    def test_episode_plan_draft_rejects_noncontiguous_batch_ids(self):
+        scene_one = _normal_scene_draft(scene_id="scene_1")
+        scene_one.batch_id = "b01"
+        scene_two = _normal_scene_draft(scene_id="scene_2")
+        scene_two.batch_id = "b02"
+        scene_three = _normal_scene_draft(scene_id="scene_3")
+        scene_three.batch_id = "b01"
+        with pytest.raises(ValidationError, match="contiguous batch_id"):
+            EpisodePlanDraft(
+                episode_number=1,
+                title="Episode 1",
+                driving_question="Why begin here?",
+                episode_spine=_episode_spine("pack_1"),
+                framing=FramingBlock(
+                    opening_image="Image",
+                    threat_or_unresolved_action="Threat",
+                    opening_question="Question",
+                    handoff_scene_card_id="scene_3",
+                ),
+                scene_cards=[scene_one, scene_two, scene_three],
+            )
 
     def test_episode_plan_roundtrip(self):
         draft = EpisodePlan(
@@ -1197,6 +1257,7 @@ class TestPlanningModels:
             thematic_focus="Opening moves",
             arc_summary="The episode traces one local causal chain.",
             unresolved_questions=["What still remains unclear?"],
+            episode_spine=_episode_spine("pack_1"),
             framing=_framing(),
             scene_cards=[_normal_scene()],
             target_duration_minutes=140.0,

@@ -51,12 +51,13 @@ from podcast_agent.schemas.models import (
     AudioSegmentResult,
     ActorMetadata,
     BookRecord,
+    Citation,
     ChapterInfo,
     ChunkingConfig,
-    ClusterPathOccurrence,
     CoverageStats,
-    EpisodeCandidateCluster,
+    EvidencePack,
     EpisodePlan,
+    EpisodeSpine,
     EpisodeScript,
     ExtractedPassage,
     GroundingReport,
@@ -71,9 +72,11 @@ from podcast_agent.schemas.models import (
     SceneCard,
     SceneCardDraft,
     SegmentDiff,
+    SpineRelation,
     SpokenSection,
     SpokenScript,
     StrategyEpisode,
+    SupportPackRole,
     SYNTHESIS_PRIMITIVE_FAMILIES,
     SynthesisConsolidationResult,
     SynthesisMap,
@@ -94,6 +97,7 @@ from podcast_agent.utils.actor_metadata import (
     clean_scene_actor_links,
     clean_strategy_actor_links,
     clean_synthesis_primitive_actor_links,
+    compact_consolidation_actor_metadata,
     compact_actor_registry,
     compact_actor_metadata,
     sanitize_actor_metadata_payload,
@@ -2304,20 +2308,25 @@ def _compute_scene_word_count_targets(
     }
 
 
-_OCCURRENCE_EMPHASIS_WEIGHTS: dict[str, float] = {
-    "anchor": 1.80,
-    "major": 1.20,
-    "supporting": 0.80,
-    "compressed": 0.60,
+_PACK_ROLE_WEIGHTS: dict[str, float] = {
+    "spine": 1.75,
+    "stakes": 0.95,
+    "mechanism": 0.90,
+    "counterpressure": 0.95,
+    "consequence": 0.95,
+    "texture": 0.60,
+    "recall": 0.65,
 }
-_OCCURRENCE_SPILLOVER_WEIGHTS: dict[str, float] = {
-    "anchor": 1.50,
-    "major": 1.00,
-    "supporting": 0.00,
-    "compressed": 0.00,
+_PACK_ROLE_SPILLOVER_WEIGHTS: dict[str, float] = {
+    "spine": 1.15,
+    "stakes": 0.25,
+    "mechanism": 0.25,
+    "counterpressure": 0.20,
+    "consequence": 0.20,
+    "texture": 0.00,
+    "recall": 0.00,
 }
-_ECHO_OCCURRENCE_WEIGHT_CAP = 0.65
-_DEFAULT_OCCURRENCE_WEIGHT = 1.00
+_DEFAULT_PACK_WEIGHT = 1.00
 
 _SCENE_ROLE_WEIGHTS: dict[str, float] = {
     "shock": 1.20,
@@ -2374,8 +2383,8 @@ _ACTION_BUCKET_ROLES: frozenset[str] = frozenset(
 )
 
 _WRITING_WORD_OVERRUN_WARNING_RATIO = 1.08
-_WRITING_SECTION_TARGET_MIN = 8
-_WRITING_SECTION_TARGET_MAX = 12
+_PLAN_BATCH_TARGET_MIN = 6
+_PLAN_BATCH_TARGET_MAX = 10
 
 
 def _positive_allocation_weights(weights: list[float]) -> list[float]:
@@ -2531,45 +2540,44 @@ def _round_allocations_to_total(
 
 
 def _scene_occurrence_id(scene: SceneCardDraft | SceneCard) -> str | None:
-    return scene.dominant_cluster_occurrence_id
+    return scene.dominant_pack_id
 
 
-def _strategy_occurrence(
+def _episode_pack_role(episode: StrategyEpisode, pack_id: str) -> str | None:
+    if pack_id in episode.episode_spine.spine_pack_ids:
+        return "spine"
+    support_role = episode.episode_spine.support_pack_roles.get(pack_id)
+    if support_role is not None:
+        return support_role.value
+    if pack_id in episode.episode_spine.allowed_recalls:
+        return "recall"
+    return None
+
+
+def _scene_pack_id_for_episode(
+    scene: SceneCardDraft | SceneCard,
     episode: StrategyEpisode,
-    occurrence_id: str,
-) -> ClusterPathOccurrence | None:
-    return next(
-        (
-            item
-            for item in episode.cluster_path
-            if item.occurrence_id == occurrence_id
-        ),
-        None,
-    )
+) -> str | None:
+    if scene.dominant_pack_id in episode.episode_spine.assigned_pack_ids:
+        return scene.dominant_pack_id
+    return scene.dominant_pack_id
 
 
 def _occurrence_weight(episode: StrategyEpisode, occurrence_id: str) -> float:
-    occurrence = _strategy_occurrence(episode, occurrence_id)
-    if occurrence is None:
-        return _DEFAULT_OCCURRENCE_WEIGHT
-
-    weight = _OCCURRENCE_EMPHASIS_WEIGHTS.get(
-        occurrence.emphasis,
-        _DEFAULT_OCCURRENCE_WEIGHT,
-    )
-    if occurrence.usage == "echo":
-        weight = min(weight, _ECHO_OCCURRENCE_WEIGHT_CAP)
-    return weight
+    role = _episode_pack_role(episode, occurrence_id)
+    if role is None:
+        return _DEFAULT_PACK_WEIGHT
+    return _PACK_ROLE_WEIGHTS.get(role, _DEFAULT_PACK_WEIGHT)
 
 
 def _occurrence_spillover_weight(
     episode: StrategyEpisode,
     occurrence_id: str,
 ) -> float:
-    occurrence = _strategy_occurrence(episode, occurrence_id)
-    if occurrence is None or occurrence.usage == "echo":
+    role = _episode_pack_role(episode, occurrence_id)
+    if role is None:
         return 0.0
-    return _OCCURRENCE_SPILLOVER_WEIGHTS.get(occurrence.emphasis, 0.0)
+    return _PACK_ROLE_SPILLOVER_WEIGHTS.get(role, 0.0)
 
 
 def _scene_max_presence(scene: SceneCardDraft | SceneCard) -> str:
@@ -2732,11 +2740,192 @@ def _allocate_scene_durations(
 
 
 def _writing_result_word_count(result: Any) -> int:
-    prose_sections = getattr(result, "prose_sections", []) or []
+    prose_sections = getattr(result, "scene_prose", []) or []
     return sum(
         len((getattr(section, "text", "") or "").split())
         for section in prose_sections
     )
+
+
+def _build_scene_batch_warnings(scene_cards: list[SceneCardDraft | SceneCard]) -> list[str]:
+    batch_ids = list(dict.fromkeys(scene.batch_id for scene in scene_cards if scene.batch_id))
+    batch_count = len(batch_ids)
+    warnings: list[str] = []
+    if batch_count < _PLAN_BATCH_TARGET_MIN:
+        warnings.append(
+            f"{batch_count} distinct scene batches planned (target {_PLAN_BATCH_TARGET_MIN}-{_PLAN_BATCH_TARGET_MAX})"
+        )
+    if batch_count > _PLAN_BATCH_TARGET_MAX:
+        warnings.append(
+            f"{batch_count} distinct scene batches planned (target {_PLAN_BATCH_TARGET_MIN}-{_PLAN_BATCH_TARGET_MAX})"
+        )
+    return warnings
+
+
+def _normalize_writing_scene_outputs(
+    *,
+    result: Any,
+    plan: EpisodePlan,
+    skip_grounding: bool,
+) -> list[dict[str, Any]]:
+    scene_outputs = getattr(result, "scene_prose", []) or []
+    expected_scene_ids = [scene.scene_id for scene in plan.scene_cards]
+    returned_scene_ids = [
+        str(getattr(scene_output, "scene_card_id", "") or "")
+        for scene_output in scene_outputs
+    ]
+    if returned_scene_ids != expected_scene_ids:
+        raise RuntimeError(
+            "Episode writing must return exactly one scene output per planned scene, in order "
+            f"(episode {plan.episode_number}); expected {expected_scene_ids}, received {returned_scene_ids}."
+        )
+
+    normalized: list[dict[str, Any]] = []
+    for scene_output in scene_outputs:
+        payload = {
+            "scene_card_id": str(scene_output.scene_card_id),
+            "movement_goal": str(scene_output.movement_goal),
+            "text": str(scene_output.text),
+            "source_book_ids": list(getattr(scene_output, "source_book_ids", []) or []),
+        }
+        if skip_grounding:
+            payload["citations"] = []
+        else:
+            payload["citations"] = [
+                Citation.model_validate(citation.model_dump(mode="json"))
+                for citation in getattr(scene_output, "citations", []) or []
+            ]
+        normalized.append(payload)
+    return normalized
+
+
+def _merge_scene_outputs_into_sections(
+    *,
+    plan: EpisodePlan,
+    scene_outputs: list[dict[str, Any]],
+) -> list[ProseSection]:
+    output_by_scene_id = {
+        str(scene_output["scene_card_id"]): scene_output
+        for scene_output in scene_outputs
+    }
+    merged_sections: list[ProseSection] = []
+    current_batch_id: str | None = None
+    current_scene_ids: list[str] = []
+    current_texts: list[str] = []
+    current_citations: list[Any] = []
+    current_source_book_ids: list[str] = []
+    current_movement_goal: str = ""
+
+    def flush_current_batch() -> None:
+        nonlocal current_batch_id, current_scene_ids, current_texts
+        nonlocal current_citations, current_source_book_ids, current_movement_goal
+        if current_batch_id is None:
+            return
+        deduped_source_book_ids = list(dict.fromkeys(current_source_book_ids))
+        merged_sections.append(
+            ProseSection.model_validate(
+                {
+                    "section_id": f"section_{current_batch_id}",
+                    "scene_card_ids": list(current_scene_ids),
+                    "movement_goal": current_movement_goal or "continue",
+                    "text": "\n\n".join(text for text in current_texts if text).strip(),
+                    "citations": list(current_citations),
+                    "source_book_ids": deduped_source_book_ids,
+                }
+            )
+        )
+        current_batch_id = None
+        current_scene_ids = []
+        current_texts = []
+        current_citations = []
+        current_source_book_ids = []
+        current_movement_goal = ""
+
+    for scene in plan.scene_cards:
+        batch_id = scene.batch_id
+        scene_output = output_by_scene_id[scene.scene_id]
+        if current_batch_id is not None and batch_id != current_batch_id:
+            flush_current_batch()
+        if current_batch_id is None:
+            current_batch_id = batch_id
+            current_movement_goal = str(scene_output.get("movement_goal", "") or "")
+        current_scene_ids.append(scene.scene_id)
+        current_texts.append(str(scene_output.get("text", "") or ""))
+        current_citations.extend(scene_output.get("citations", []) or [])
+        current_source_book_ids.extend(
+            str(book_id)
+            for book_id in (scene_output.get("source_book_ids", []) or [])
+            if book_id
+        )
+    flush_current_batch()
+    return merged_sections
+
+
+_ENDING_MARKER_RE = re.compile(r"\b(?:in the end|ultimately|finally|the verdict)\b", re.IGNORECASE)
+_QUESTION_SENTENCE_RE = re.compile(r"[^?]+\?")
+
+
+def _build_spine_script_diagnostics(
+    *,
+    plan: EpisodePlan,
+    script: EpisodeScript,
+) -> dict[str, Any]:
+    expected_scene_ids = [scene.scene_id for scene in plan.scene_cards]
+    rendered_scene_ids = [
+        scene_id
+        for section in script.prose_sections
+        for scene_id in section.scene_card_ids
+        if scene_id
+    ]
+    seen_rendered: set[str] = set()
+    rendered_scene_order: list[str] = []
+    for scene_id in rendered_scene_ids:
+        if scene_id in seen_rendered:
+            continue
+        seen_rendered.add(scene_id)
+        rendered_scene_order.append(scene_id)
+    scene_order_preserved = rendered_scene_order == expected_scene_ids
+
+    ending_marker_sections = [
+        section.section_id
+        for section in script.prose_sections
+        if _ENDING_MARKER_RE.search(section.text or "")
+    ]
+    question_sentences = [
+        match.group(0).strip()
+        for section in script.prose_sections
+        for match in _QUESTION_SENTENCE_RE.finditer(section.text or "")
+    ]
+    driving_question = plan.episode_spine.listener_question.strip().lower()
+    new_load_bearing_question_detected = any(
+        sentence.strip().lower() != driving_question
+        for sentence in question_sentences[1:]
+    )
+    last_section_scene_ids = script.prose_sections[-1].scene_card_ids if script.prose_sections else []
+    ending_alignment_pass = bool(last_section_scene_ids and last_section_scene_ids[-1] == expected_scene_ids[-1])
+    second_ending_detected = len(ending_marker_sections) > 1
+    return {
+        "scene_order_preserved": scene_order_preserved,
+        "ending_alignment_pass": ending_alignment_pass,
+        "new_load_bearing_question_detected": new_load_bearing_question_detected,
+        "second_ending_detected": second_ending_detected,
+        "spine_drift_detected": (
+            not scene_order_preserved
+            or new_load_bearing_question_detected
+            or second_ending_detected
+            or not ending_alignment_pass
+        ),
+        "failure_labels": [
+            label
+            for label, enabled in [
+                ("new_load_bearing_question", new_load_bearing_question_detected),
+                ("second_ending", second_ending_detected),
+                ("ending_displacement", not ending_alignment_pass),
+                ("multi_proposition_episode", new_load_bearing_question_detected and second_ending_detected),
+            ]
+            if enabled
+        ],
+    }
 
 
 def _build_passage_lookup(corpus: ThematicCorpus) -> dict[str, ExtractedPassage]:
@@ -2776,23 +2965,23 @@ def _primitive_family_lookup(synthesis_map: SynthesisMap) -> dict[str, str]:
 
 def _build_episode_synthesis_map_payload(
     synthesis_map: SynthesisMap,
-    cluster_ids: list[str],
-    cluster_lookup: dict[str, EpisodeCandidateCluster],
+    pack_ids: list[str],
+    pack_lookup: dict[str, EvidencePack],
 ) -> tuple[dict[str, Any], list[str]]:
-    selected_clusters: list[EpisodeCandidateCluster] = []
-    seen_cluster_ids: set[str] = set()
+    selected_packs: list[EvidencePack] = []
+    seen_pack_ids: set[str] = set()
     primitive_ids: list[str] = []
     seen_primitive_ids: set[str] = set()
 
-    for cluster_id in cluster_ids:
-        if cluster_id in seen_cluster_ids:
+    for pack_id in pack_ids:
+        if pack_id in seen_pack_ids:
             continue
-        cluster = cluster_lookup.get(cluster_id)
-        if cluster is None:
-            raise RuntimeError(f"Unknown cluster_id in strategy: {cluster_id}")
-        seen_cluster_ids.add(cluster_id)
-        selected_clusters.append(cluster)
-        for member_id in cluster.member_ids:
+        pack = pack_lookup.get(pack_id)
+        if pack is None:
+            raise RuntimeError(f"Unknown pack_id in strategy: {pack_id}")
+        seen_pack_ids.add(pack_id)
+        selected_packs.append(pack)
+        for member_id in pack.primitive_ids:
             if member_id in seen_primitive_ids:
                 continue
             seen_primitive_ids.add(member_id)
@@ -2808,8 +2997,8 @@ def _build_episode_synthesis_map_payload(
         ]
     payload = {
         "project_id": synthesis_map.project_id,
-        "episode_candidate_clusters": [
-            cluster.model_dump(mode="json") for cluster in selected_clusters
+        "evidence_packs": [
+            pack.model_dump(mode="json") for pack in selected_packs
         ],
         "primitives_by_family": primitives_by_family,
         "quality_score": synthesis_map.quality_score,
@@ -2856,11 +3045,47 @@ def _reconstruct_synthesis_map(
 
     return SynthesisMap(
         project_id=project_id,
-        episode_candidate_clusters=list(consolidation.episode_candidate_clusters),
+        evidence_packs=list(consolidation.evidence_packs),
         primitives_by_family=primitives_by_family,
         quality_score=consolidation.quality_score,
         quality_notes=list(consolidation.quality_notes),
     )
+
+
+def _compact_primitives_for_consolidation(
+    primitives: SynthesisPrimitivesArtifact,
+) -> dict[str, Any]:
+    return {
+        "project_id": primitives.project_id,
+        "primitives_by_family": {
+            family: [
+                {
+                    "id": primitive.id,
+                    "title": primitive.title,
+                    "summary": primitive.summary,
+                    "axis_ids": list(primitive.axis_ids),
+                    "timeframe": primitive.timeframe,
+                    "geography": primitive.geography,
+                    "primary_actor_ids": list(primitive.primary_actor_ids),
+                    "affected_actor_ids": list(primitive.affected_actor_ids),
+                    "actor_ids": list(primitive.actor_ids),
+                    "unresolved_actor_tags": list(primitive.unresolved_actor_tags),
+                    "narrative_importance_score": primitive.narrative_importance_score,
+                    "candidate_readings": [
+                        {
+                            "label": reading.label,
+                            "summary": reading.summary,
+                        }
+                        for reading in primitive.candidate_readings
+                    ],
+                }
+                for primitive in primitives.primitives_by_family.get(family, [])
+            ]
+            for family in SYNTHESIS_PRIMITIVE_FAMILIES
+        },
+        "quality_score": primitives.quality_score,
+        "quality_notes": list(primitives.quality_notes),
+    }
 
 
 def _merge_actor_metric_dicts(metrics_items: Any) -> dict[str, Any]:
@@ -2894,13 +3119,13 @@ def _actor_linkage_counts(
         for family in SYNTHESIS_PRIMITIVE_FAMILIES
         for primitive in synthesis_map.primitives_by_family.get(family, [])
     ]
-    clusters = synthesis_map.episode_candidate_clusters
+    packs = synthesis_map.evidence_packs
     scenes = [scene for plan in episode_plans for scene in plan.scene_cards]
     return {
         "primitive_count": len(primitives),
         "actor_linked_primitive_count": sum(1 for primitive in primitives if primitive.actor_ids),
-        "cluster_count": len(clusters),
-        "actor_linked_cluster_count": sum(1 for cluster in clusters if cluster.actor_ids),
+        "pack_count": len(packs),
+        "actor_linked_pack_count": sum(1 for pack in packs if pack.actor_ids),
         "episode_count": len(strategy.episodes),
         "actor_linked_episode_count": sum(1 for episode in strategy.episodes if episode.actor_arc_directives),
         "scene_count": len(scenes),
@@ -2990,18 +3215,13 @@ def _build_scene_card_family_warnings(
             "coalitions_and_fault_lines/worlds_in_collision"
         )
 
-    anchor_major_count = sum(
-        1
-        for occurrence in episode.cluster_path
-        if occurrence.emphasis in {"anchor", "major"}
+    support_pack_count = len(episode.episode_spine.support_pack_roles) + len(
+        episode.episode_spine.allowed_recalls
     )
-    if (
-        anchor_major_count >= max(2, int(math.ceil(len(episode.cluster_path) / 2.0)))
-        and families_present.isdisjoint(_RECURRENCE_PRIMITIVE_FAMILIES)
-    ):
+    if support_pack_count >= 1 and families_present.isdisjoint(_RECURRENCE_PRIMITIVE_FAMILIES):
         warnings.append(
             "primitive_family_missing_recurrence: "
-            "anchor/major-heavy episode primitive pool lacks afterlives/"
+            "support-heavy episode primitive pool lacks afterlives/"
             "recurring_images_and_symbols"
         )
     return warnings
@@ -3065,6 +3285,108 @@ def _build_scene_card_primitive_warnings(
                 f"({_preview_ids(heavily_reused)})"
             )
     return warnings
+
+
+def _scene_counts_toward_spine(
+    scene: SceneCardDraft | SceneCard,
+    episode: StrategyEpisode,
+) -> bool:
+    if _scene_pack_id_for_episode(scene, episode) in episode.episode_spine.spine_pack_ids:
+        return True
+    return scene.spine_relation in {
+        SpineRelation.SPINE_ADVANCE,
+        SpineRelation.TURN,
+    }
+
+
+def _build_spine_plan_diagnostics(
+    *,
+    episode: StrategyEpisode,
+    plan: EpisodePlanDraft | EpisodePlan,
+) -> dict[str, Any]:
+    scene_cards = list(plan.scene_cards)
+    total_scene_count = len(scene_cards)
+    spine_scene_cards = [
+        scene
+        for scene in scene_cards
+        if _scene_counts_toward_spine(scene, episode)
+    ]
+    scene_share = (
+        len(spine_scene_cards) / total_scene_count
+        if total_scene_count
+        else 0.0
+    )
+
+    total_word_weight = sum(max(1, len(scene.state_effect.split())) for scene in scene_cards)
+    spine_word_weight = sum(
+        max(1, len(scene.state_effect.split()))
+        for scene in spine_scene_cards
+    )
+    word_share = (
+        spine_word_weight / total_word_weight
+        if total_word_weight
+        else 0.0
+    )
+
+    support_scene_count = total_scene_count - len(spine_scene_cards)
+    last_scene = scene_cards[-1] if scene_cards else None
+    ending_alignment_pass = bool(
+        last_scene
+        and _scene_counts_toward_spine(last_scene, episode)
+        and last_scene.spine_relation in {
+            SpineRelation.TURN,
+            SpineRelation.SPINE_ADVANCE,
+            SpineRelation.SHOW_CONSEQUENCE,
+        }
+    )
+    dropped_support_pack_reasons = dict(plan.dropped_support_pack_reasons)
+    dropped_support_pack_ids = list(dropped_support_pack_reasons)
+    support_takeover_detected = support_scene_count > max(1, int(math.floor(total_scene_count * 0.30)))
+    secondary_chain_detected = support_scene_count >= max(2, len(spine_scene_cards))
+    diagnostics = {
+        "spine_scene_share": round(scene_share, 4),
+        "spine_word_share": round(word_share, 4),
+        "ending_alignment_pass": ending_alignment_pass,
+        "secondary_chain_detected": secondary_chain_detected,
+        "support_takeover_detected": support_takeover_detected,
+        "new_load_bearing_question_detected": False,
+        "second_ending_detected": False,
+        "spine_drift_detected": (
+            scene_share < 0.65
+            or word_share < 0.65
+            or support_takeover_detected
+            or not ending_alignment_pass
+        ),
+        "dropped_support_pack_ids": dropped_support_pack_ids,
+        "dropped_support_pack_reasons": dropped_support_pack_reasons,
+        "failure_labels": [],
+        "scene_trace": [
+            {
+                "scene_id": scene.scene_id,
+                "dominant_pack_id": scene.dominant_pack_id,
+                "spine_relation": scene.spine_relation.value,
+                "state_effect": scene.state_effect,
+                "counts_toward_spine_dominance": _scene_counts_toward_spine(
+                    scene,
+                    episode,
+                ),
+                "contributed_to_drift": not _scene_counts_toward_spine(
+                    scene,
+                    episode,
+                ),
+            }
+            for scene in scene_cards
+        ],
+    }
+    if diagnostics["spine_scene_share"] < 0.65 or diagnostics["spine_word_share"] < 0.65:
+        diagnostics["failure_labels"].append("spine_underweight")
+    if diagnostics["secondary_chain_detected"]:
+        diagnostics["failure_labels"].append("parallel_full_arc")
+    if diagnostics["support_takeover_detected"]:
+        diagnostics["failure_labels"].append("support_thread_takeover")
+    if not diagnostics["ending_alignment_pass"]:
+        diagnostics["failure_labels"].append("ending_displacement")
+    return diagnostics
 
 
 # ---------------------------------------------------------------------------
@@ -3265,9 +3587,24 @@ class PipelineOrchestrator:
         logger.info("Phase 3: Episode Production (%d episodes)", len(episode_plans))
         project = project.model_copy(update={"status": ProjectStatus.PRODUCING})
 
-        sem = asyncio.Semaphore(pipeline_config.episode_write_concurrency)
+        sem = asyncio.Semaphore(max(1, pipeline_config.episode_write_concurrency))
+        spoken_sem = asyncio.Semaphore(
+            max(
+                1,
+                pipeline_config.spoken_delivery_concurrency
+                or pipeline_config.episode_write_concurrency,
+            )
+        )
         ep_tasks = [
-            self._produce_episode(plan, project, corpus, actor_metadata, project_dir, sem)
+            self._produce_episode(
+                plan,
+                project,
+                corpus,
+                actor_metadata,
+                project_dir,
+                sem,
+                spoken_sem,
+            )
             for plan in episode_plans
         ]
         ep_results = await asyncio.gather(*ep_tasks, return_exceptions=True)
@@ -4814,11 +5151,11 @@ class PipelineOrchestrator:
 
             consolidation_payload = self.synthesis_consolidation_agent.build_payload(
                 project_id=project.project_id,
-                primitives=primitives.model_dump(mode="json"),
+                primitives=_compact_primitives_for_consolidation(primitives),
                 axes_summary=axes_summary,
                 book_metadata=book_metadata,
                 series_size_hint=project.requested_episode_count,
-                actor_metadata=compact_actor_metadata(actor_metadata),
+                actor_metadata=compact_consolidation_actor_metadata(actor_metadata),
             )
             consolidation = await asyncio.to_thread(
                 self.synthesis_consolidation_agent.run,
@@ -4852,7 +5189,7 @@ class PipelineOrchestrator:
                     "tail_keep_fraction": project.config.synthesis_trim_tail_keep_fraction,
                 },
                 "cap_report": cap_report,
-                "clusters": len(synthesis_map.episode_candidate_clusters),
+                "evidence_packs": len(synthesis_map.evidence_packs),
                 "primitive_counts_by_family": {
                     family: len(synthesis_map.primitives_by_family.get(family, []))
                     for family in SYNTHESIS_PRIMITIVE_FAMILIES
@@ -4875,7 +5212,7 @@ class PipelineOrchestrator:
         actor_metadata = actor_metadata or ActorMetadata(project_id=project.project_id)
         async with _stage_log(
             self.run_logger, "narrative_strategy", project_dir,
-            cluster_count=len(synthesis_map.episode_candidate_clusters),
+            pack_count=len(synthesis_map.evidence_packs),
         ) as ctx:
             synthesis_summary = synthesis_map.model_dump(mode="json")
             thematic_axes = []
@@ -4972,11 +5309,11 @@ class PipelineOrchestrator:
     ) -> tuple[SynthesisConsolidationResult, dict[str, Any]]:
         valid_actor_ids = {actor.actor_id for actor in actor_metadata.actors}
         unknown_actor_ids = 0
-        cleaned_clusters: list[EpisodeCandidateCluster] = []
-        for cluster in consolidation.episode_candidate_clusters:
+        cleaned_packs: list[EvidencePack] = []
+        for pack in consolidation.evidence_packs:
             actor_ids: list[str] = []
             seen: set[str] = set()
-            for actor_id in cluster.actor_ids:
+            for actor_id in pack.actor_ids:
                 if actor_id not in valid_actor_ids:
                     unknown_actor_ids += 1
                     continue
@@ -4984,22 +5321,13 @@ class PipelineOrchestrator:
                     continue
                 seen.add(actor_id)
                 actor_ids.append(actor_id)
-            primary_actor_id = cluster.primary_actor_id
-            if primary_actor_id and primary_actor_id not in valid_actor_ids:
-                unknown_actor_ids += 1
-                primary_actor_id = None
-            if primary_actor_id and primary_actor_id not in actor_ids:
-                actor_ids.insert(0, primary_actor_id)
-            cleaned_clusters.append(
-                cluster.model_copy(
-                    update={
-                        "actor_ids": actor_ids,
-                        "primary_actor_id": primary_actor_id,
-                    }
+            cleaned_packs.append(
+                pack.model_copy(
+                    update={"actor_ids": actor_ids}
                 )
             )
         return consolidation.model_copy(
-            update={"episode_candidate_clusters": cleaned_clusters}
+            update={"evidence_packs": cleaned_packs}
         ), {"unknown_actor_ids": unknown_actor_ids}
 
     async def _plan_series(
@@ -5027,15 +5355,15 @@ class PipelineOrchestrator:
             ]
             if missing_episodes:
                 raise RuntimeError(
-                    "Narrative strategy did not assign cluster paths for "
+                    "Narrative strategy did not assign episode spines for "
                     f"episodes: {missing_episodes}"
                 )
             passage_lookup = _build_passage_lookup(corpus)
             primitive_lookup = _flatten_synthesis_primitives(synthesis_map)
             primitive_family_by_id = _primitive_family_lookup(synthesis_map)
-            cluster_lookup = {
-                cluster.cluster_id: cluster
-                for cluster in synthesis_map.episode_candidate_clusters
+            pack_lookup = {
+                pack.pack_id: pack
+                for pack in synthesis_map.evidence_packs
             }
             project_metadata = {
                 "theme": project.theme,
@@ -5058,11 +5386,11 @@ class PipelineOrchestrator:
                 episode: Any,
             ) -> tuple[int, EpisodePlan, dict[str, Any]]:
                 async with planning_sem:
-                    cluster_ids = [occurrence.cluster_id for occurrence in episode.cluster_path]
+                    pack_ids = list(episode.episode_spine.assigned_pack_ids)
                     episode_synthesis_map_payload, primitive_ids = _build_episode_synthesis_map_payload(
                         synthesis_map,
-                        cluster_ids,
-                        cluster_lookup,
+                        pack_ids,
+                        pack_lookup,
                     )
                     episode_actor_ids = {
                         actor.actor_id
@@ -5073,11 +5401,7 @@ class PipelineOrchestrator:
                         actor_metadata,
                         episode_actor_ids,
                     )
-                    primary_occurrence_ids = {
-                        occurrence.occurrence_id
-                        for occurrence in episode.cluster_path
-                        if occurrence.usage == "primary"
-                    }
+                    required_spine_pack_ids = set(episode.episode_spine.spine_pack_ids)
                     passage_ids: list[str] = []
                     seen_passage_ids: set[str] = set()
                     for primitive_id in primitive_ids:
@@ -5112,8 +5436,9 @@ class PipelineOrchestrator:
                         available_passages,
                         keep_fraction=0.5,
                     )
+                    episode_payload = episode.model_dump(mode="json")
                     payload = self.episode_planning_agent.build_payload(
-                        episode=episode.model_dump(mode="json"),
+                        episode=episode_payload,
                         synthesis_map=episode_synthesis_map_payload,
                         project_metadata=project_metadata,
                         available_passages=available_passages,
@@ -5121,30 +5446,34 @@ class PipelineOrchestrator:
                     )
                     plan_draft = await asyncio.to_thread(self.episode_planning_agent.run, payload)
                     plan_draft = plan_draft.model_copy(
-                        update={"actor_arc_directives": episode.actor_arc_directives}
+                        update={
+                            "actor_arc_directives": episode.actor_arc_directives,
+                            "episode_spine": episode.episode_spine,
+                            "driving_question": episode.episode_spine.listener_question,
+                        }
                     )
                     plan_draft, actor_link_metrics = clean_scene_actor_links(
                         plan_draft,
                         episode_actor_metadata,
                     )
-                    covered_primary_occurrence_ids = {
-                        scene.dominant_cluster_occurrence_id
+                    covered_spine_pack_ids = {
+                        _scene_pack_id_for_episode(scene, episode)
                         for scene in plan_draft.scene_cards
-                        if scene.dominant_cluster_occurrence_id
+                        if _scene_pack_id_for_episode(scene, episode) in required_spine_pack_ids
                     }
-                    missing_primary_occurrence_ids = sorted(
-                        primary_occurrence_ids.difference(covered_primary_occurrence_ids)
+                    missing_spine_pack_ids = sorted(
+                        required_spine_pack_ids.difference(covered_spine_pack_ids)
                     )
-                    if missing_primary_occurrence_ids:
+                    if missing_spine_pack_ids:
                         retry_payload = self.episode_planning_agent.build_payload(
-                            episode=episode.model_dump(mode="json"),
+                            episode=episode_payload,
                             synthesis_map=episode_synthesis_map_payload,
                             project_metadata=project_metadata,
                             available_passages=available_passages,
                             actor_metadata=compact_actor_metadata(episode_actor_metadata),
                             planning_feedback={
-                                "issue": "missing_primary_occurrence_coverage",
-                                "missing_primary_occurrence_ids": missing_primary_occurrence_ids,
+                                "issue": "missing_spine_coverage",
+                                "missing_spine_pack_ids": missing_spine_pack_ids,
                             },
                         )
                         plan_draft = await asyncio.to_thread(
@@ -5152,25 +5481,33 @@ class PipelineOrchestrator:
                             retry_payload,
                         )
                         plan_draft = plan_draft.model_copy(
-                            update={"actor_arc_directives": episode.actor_arc_directives}
+                            update={
+                                "actor_arc_directives": episode.actor_arc_directives,
+                                "episode_spine": episode.episode_spine,
+                                "driving_question": episode.episode_spine.listener_question,
+                            }
                         )
                         plan_draft, actor_link_metrics = clean_scene_actor_links(
                             plan_draft,
                             episode_actor_metadata,
                         )
-                        covered_primary_occurrence_ids = {
-                            scene.dominant_cluster_occurrence_id
+                        covered_spine_pack_ids = {
+                            _scene_pack_id_for_episode(scene, episode)
                             for scene in plan_draft.scene_cards
-                            if scene.dominant_cluster_occurrence_id
+                            if _scene_pack_id_for_episode(scene, episode) in required_spine_pack_ids
                         }
-                        missing_primary_occurrence_ids = sorted(
-                            primary_occurrence_ids.difference(covered_primary_occurrence_ids)
+                        missing_spine_pack_ids = sorted(
+                            required_spine_pack_ids.difference(covered_spine_pack_ids)
                         )
-                    if missing_primary_occurrence_ids:
+                    if missing_spine_pack_ids:
                         raise RuntimeError(
-                            "Episode planning failed to cover primary occurrences for episode "
-                            f"{episode.episode_number}: {missing_primary_occurrence_ids}"
+                            "Episode planning failed to cover spine packs for episode "
+                            f"{episode.episode_number}: {missing_spine_pack_ids}"
                         )
+                    spine_diagnostics = _build_spine_plan_diagnostics(
+                        episode=episode,
+                        plan=plan_draft,
+                    )
                     scene_card_count_warnings = _build_scene_card_count_warnings(
                         scene_card_count=len(plan_draft.scene_cards),
                         scene_card_target_min=project.config.scene_card_target_min,
@@ -5187,10 +5524,14 @@ class PipelineOrchestrator:
                         primitive_pool_ids=set(primitive_ids),
                         primitive_family_by_id=primitive_family_by_id,
                     )
+                    scene_batch_warnings = _build_scene_batch_warnings(
+                        plan_draft.scene_cards,
+                    )
                     planning_warnings = (
                         scene_card_count_warnings
                         + scene_card_primitive_warnings
                         + scene_card_family_warnings
+                        + scene_batch_warnings
                     )
                     for warning in planning_warnings:
                         logger.warning(
@@ -5232,10 +5573,15 @@ class PipelineOrchestrator:
                         "scene_card_count_warnings": scene_card_count_warnings,
                         "scene_card_primitive_warnings": scene_card_primitive_warnings,
                         "scene_card_family_warnings": scene_card_family_warnings,
+                        "scene_batch_warnings": scene_batch_warnings,
                         "scene_card_warning_count": len(planning_warnings),
-                        "primary_occurrence_count": len(primary_occurrence_ids),
-                        "covered_primary_occurrence_count": len(covered_primary_occurrence_ids),
-                        "missing_primary_occurrence_ids": missing_primary_occurrence_ids,
+                        "scene_batch_count": len(
+                            dict.fromkeys(scene.batch_id for scene in plan.scene_cards)
+                        ),
+                        "spine_pack_count": len(required_spine_pack_ids),
+                        "covered_spine_pack_count": len(covered_spine_pack_ids),
+                        "missing_spine_pack_ids": missing_spine_pack_ids,
+                        "spine_diagnostics": spine_diagnostics,
                         "actor_link_metrics": actor_link_metrics,
                         "allocated_duration_seconds": sum(
                             scene.estimated_duration_seconds
@@ -5365,6 +5711,7 @@ class PipelineOrchestrator:
         actor_metadata: ActorMetadata,
         project_dir: Path,
         semaphore: asyncio.Semaphore,
+        spoken_semaphore: asyncio.Semaphore | None = None,
     ) -> tuple[int, SpokenScript]:
         async with semaphore:
             ep_dir = project_dir / "episodes" / str(plan.episode_number)
@@ -5386,25 +5733,27 @@ class PipelineOrchestrator:
             else:
                 self.run_logger.log("grounding_skipped", episode=plan.episode_number)
 
-            if not project.config.skip_spoken_delivery:
+        if not project.config.skip_spoken_delivery:
+            spoken_gate = spoken_semaphore or semaphore
+            async with spoken_gate:
                 spoken = await self._rewrite_for_speech(
                     plan.episode_number, script, project, ep_dir, project_dir,
                 )
-            else:
-                spoken = SpokenScript(
-                    episode_number=plan.episode_number,
-                    title=script.title,
-                    framing=script.framing,
-                    sections=[
-                        SpokenSection(section_id=section.section_id, text=section.text)
-                        for section in script.prose_sections
-                    ],
-                    tts_provider=project.config.tts_provider,
-                )
-                _save_json(ep_dir / "spoken_script.json", spoken)
-                self.run_logger.log("spoken_delivery_skipped", episode=plan.episode_number)
+        else:
+            spoken = SpokenScript(
+                episode_number=plan.episode_number,
+                title=script.title,
+                framing=script.framing,
+                sections=[
+                    SpokenSection(section_id=section.section_id, text=section.text)
+                    for section in script.prose_sections
+                ],
+                tts_provider=project.config.tts_provider,
+            )
+            _save_json(ep_dir / "spoken_script.json", spoken)
+            self.run_logger.log("spoken_delivery_skipped", episode=plan.episode_number)
 
-            return (plan.episode_number, spoken)
+        return (plan.episode_number, spoken)
 
     async def _write_episode(
         self, plan: EpisodePlan, project: ThematicProject,
@@ -5530,30 +5879,21 @@ class PipelineOrchestrator:
                     ),
                 )
             if project.config.skip_grounding:
-                normalized_sections = [
-                    ProseSection.model_validate({
-                        **section.model_dump(mode="json"),
-                        "citations": [],
-                    })
-                    for section in result.prose_sections
-                ]
-            else:
-                normalized_sections = [
-                    ProseSection.model_validate(section.model_dump(mode="json"))
-                    for section in result.prose_sections
-                ]
-            section_count = len(normalized_sections)
-            if (
-                section_count < _WRITING_SECTION_TARGET_MIN
-                or section_count > _WRITING_SECTION_TARGET_MAX
-            ):
-                self.run_logger.log(
-                    "episode_writing_section_count_warning",
-                    episode=plan.episode_number,
-                    section_count=section_count,
-                    target_section_count_min=_WRITING_SECTION_TARGET_MIN,
-                    target_section_count_max=_WRITING_SECTION_TARGET_MAX,
+                normalized_scene_outputs = _normalize_writing_scene_outputs(
+                    result=result,
+                    plan=plan,
+                    skip_grounding=True,
                 )
+            else:
+                normalized_scene_outputs = _normalize_writing_scene_outputs(
+                    result=result,
+                    plan=plan,
+                    skip_grounding=False,
+                )
+            normalized_sections = _merge_scene_outputs_into_sections(
+                plan=plan,
+                scene_outputs=normalized_scene_outputs,
+            )
 
             script = EpisodeScript(
                 episode_number=plan.episode_number,
@@ -5579,10 +5919,29 @@ class PipelineOrchestrator:
                 }
             )
             _save_json(ep_dir / "episode_script.json", script)
+            spine_script_diagnostics = _build_spine_script_diagnostics(
+                plan=plan,
+                script=script,
+            )
+            _save_json(
+                ep_dir / "spine_diagnostics.json",
+                spine_script_diagnostics,
+            )
+            self.run_logger.log(
+                "spine_diagnostics",
+                episode=plan.episode_number,
+                **{
+                    key: value
+                    for key, value in spine_script_diagnostics.items()
+                    if key != "failure_labels"
+                },
+                failure_labels=spine_script_diagnostics.get("failure_labels", []),
+            )
 
             ctx["output_summary"] = {
                 "words": script.total_word_count,
                 "sections": len(script.prose_sections),
+                "spine_diagnostics": spine_script_diagnostics,
             }
             return script
 
@@ -5779,20 +6138,13 @@ class PipelineOrchestrator:
                     tts_provider=project.config.tts_provider,
                 )
                 result = await asyncio.to_thread(self.spoken_delivery_agent.run, payload)
-                if len(result.sections) != 1:
-                    raise RuntimeError(
-                        "Spoken delivery must return exactly one section per section rewrite "
-                        f"(episode {episode_number}, section {section.section_id}); "
-                        f"received {len(result.sections)}."
+                rewritten_sections.append(
+                    SpokenSection(
+                        section_id=section.section_id,
+                        text=result.text,
+                        speech_hints=result.speech_hints,
                     )
-                rewritten_section = result.sections[0]
-                if rewritten_section.section_id != section.section_id:
-                    raise RuntimeError(
-                        "Spoken delivery returned section_id mismatch for section rewrite "
-                        f"(episode {episode_number}); expected {section.section_id!r}, "
-                        f"received {rewritten_section.section_id!r}."
-                    )
-                rewritten_sections.append(rewritten_section)
+                )
 
             spoken = SpokenScript(
                 episode_number=episode_number,

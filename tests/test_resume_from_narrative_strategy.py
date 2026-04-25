@@ -7,6 +7,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
+
 from podcast_agent.schemas.models import (
     ActorMetadata,
     ActorProfile,
@@ -14,6 +16,7 @@ from podcast_agent.schemas.models import (
     NarrativeStrategy,
     PipelineConfig,
     ProjectStatus,
+    SupportPackRole,
     StrategyEpisode,
     SynthesisMap,
     SynthesisPrimitive,
@@ -70,16 +73,13 @@ def _build_project_dir(tmp_path: Path) -> Path:
     synthesis_map = SynthesisMap(
         project_id="run_1",
         primitives_by_family={"epochal_turns": [primitive]},
-        episode_candidate_clusters=[
+        evidence_packs=[
             {
-                "cluster_id": "cluster_1",
-                "title": "Cluster",
-                "summary": "Cluster summary",
-                "primary_member_id": "primitive_1",
-                "member_ids": ["primitive_1"],
+                "pack_id": "pack_1",
+                "title": "Pack",
+                "local_summary": "Pack summary",
+                "primitive_ids": ["primitive_1"],
                 "actor_ids": ["actor_1"],
-                "local_question": "What changed?",
-                "local_payoff_shape": "reveal",
             }
         ],
     )
@@ -160,14 +160,16 @@ def test_resume_from_narrative_strategy_passes_actor_metadata_and_forces_skips(
                         title="Episode",
                         driving_question="Question?",
                         arc_summary="Arc summary",
-                        cluster_path=[
-                            {
-                                "occurrence_id": "occ_1",
-                                "cluster_id": "cluster_1",
-                                "usage": "primary",
-                                "emphasis": "anchor",
-                            }
-                        ],
+                        episode_spine={
+                            "listener_question": "Question?",
+                            "working_claim": "A working claim.",
+                            "target_end_state": "The episode lands a constrained answer.",
+                            "verdict_mode": "constrain",
+                            "primary_counterposition": "A rival interpretation remains plausible.",
+                            "spine_pack_ids": ["pack_1"],
+                            "support_pack_roles": {},
+                            "allowed_recalls": [],
+                        },
                         actor_arc_directives=[
                             {
                                 "actor_id": "actor_1",
@@ -184,6 +186,26 @@ def test_resume_from_narrative_strategy_passes_actor_metadata_and_forces_skips(
                     )
                 ],
             )
+            persisted_strategy = strategy.model_copy(
+                update={
+                    "episodes": [
+                        strategy.episodes[0].model_copy(
+                            update={
+                                "title": "Persisted Episode",
+                                "episode_spine": strategy.episodes[0].episode_spine.model_copy(
+                                    update={
+                                        "support_pack_roles": {
+                                            "pack_support": SupportPackRole.MECHANISM
+                                        },
+                                        "allowed_recalls": ["pack_recall"],
+                                    }
+                                ),
+                            }
+                        )
+                    ]
+                }
+            )
+            _write_json(project_dir / "narrative_strategy.json", persisted_strategy)
             return strategy, {"unknown_actor_ids": 0}
 
         def _resolve_episode_count_from_strategy(
@@ -206,6 +228,7 @@ def test_resume_from_narrative_strategy_passes_actor_metadata_and_forces_skips(
         ) -> tuple[list[Any], dict[str, Any]]:
             calls["planning_actor_metadata"] = actor_metadata
             calls["planning_config"] = project.config
+            calls["planning_strategy"] = strategy
             return [SimpleNamespace(episode_number=1)], {"unknown_actor_ids": 0}
 
         async def _produce_episode(
@@ -216,6 +239,7 @@ def test_resume_from_narrative_strategy_passes_actor_metadata_and_forces_skips(
             actor_metadata: ActorMetadata,
             project_dir: Path,
             semaphore: asyncio.Semaphore,
+            spoken_semaphore: asyncio.Semaphore | None = None,
         ) -> tuple[int, Any]:
             calls["production_actor_metadata"] = actor_metadata
             calls["production_config"] = project.config
@@ -260,6 +284,14 @@ def test_resume_from_narrative_strategy_passes_actor_metadata_and_forces_skips(
     assert calls["narrative_actor_metadata"].actors[0].actor_id == "actor_1"
     assert calls["planning_actor_metadata"].actors[0].actor_id == "actor_1"
     assert calls["production_actor_metadata"].actors[0].actor_id == "actor_1"
+    assert calls["resolved_strategy"].episodes[0].title == "Persisted Episode"
+    assert calls["planning_strategy"].episodes[0].title == "Persisted Episode"
+    assert calls["planning_strategy"].episodes[0].episode_spine.support_pack_roles == {
+        "pack_support": "mechanism"
+    }
+    assert calls["planning_strategy"].episodes[0].episode_spine.allowed_recalls == [
+        "pack_recall"
+    ]
     assert calls["narrative_config"].skip_grounding is True
     assert calls["narrative_config"].skip_audio is True
     assert calls["narrative_config"].skip_spoken_delivery is False
@@ -274,3 +306,88 @@ def test_resume_from_narrative_strategy_passes_actor_metadata_and_forces_skips(
         json.loads((project_dir / "thematic_project.json").read_text(encoding="utf-8"))
     )
     assert final_project.status == ProjectStatus.COMPLETE
+
+
+def test_resume_from_narrative_strategy_fails_before_planning_when_persisted_strategy_is_empty(
+    monkeypatch,
+    tmp_path,
+):
+    project_dir = _build_project_dir(tmp_path)
+    calls: dict[str, Any] = {"planning_called": False}
+
+    class FakeOrchestrator:
+        def __init__(self, settings: Any) -> None:
+            self.settings = settings
+
+        def _bind_run_logger(self, bound_project_dir: Path) -> None:
+            return None
+
+        async def _choose_narrative_strategy(
+            self,
+            *,
+            project: ThematicProject,
+            synthesis_map: SynthesisMap,
+            corpus: ThematicCorpus,
+            project_dir: Path,
+            actor_metadata: ActorMetadata,
+        ) -> tuple[NarrativeStrategy, dict[str, Any]]:
+            strategy = NarrativeStrategy(
+                strategy_type="chronological",
+                justification="Test",
+                series_arc="Test arc",
+                episodes=[
+                    StrategyEpisode(
+                        episode_number=1,
+                        title="Episode",
+                        driving_question="Question?",
+                        arc_summary="Arc summary",
+                        episode_spine={
+                            "listener_question": "Question?",
+                            "working_claim": "A working claim.",
+                            "target_end_state": "The episode lands a constrained answer.",
+                            "verdict_mode": "constrain",
+                            "primary_counterposition": "A rival interpretation remains plausible.",
+                            "spine_pack_ids": ["pack_1"],
+                            "support_pack_roles": {},
+                            "allowed_recalls": [],
+                        },
+                    )
+                ],
+            )
+            _write_json(
+                project_dir / "narrative_strategy.json",
+                {
+                    "strategy_type": "chronological",
+                    "justification": "Broken persisted strategy",
+                    "series_arc": "Broken",
+                    "episodes": [],
+                },
+            )
+            return strategy, {"unknown_actor_ids": 0}
+
+        def _resolve_episode_count_from_strategy(
+            self,
+            project: ThematicProject,
+            strategy: NarrativeStrategy,
+        ) -> ThematicProject:
+            return project
+
+        async def _plan_series(self, **kwargs: Any) -> tuple[list[Any], dict[str, Any]]:
+            calls["planning_called"] = True
+            return [], {}
+
+    monkeypatch.setattr(
+        resume_script,
+        "Settings",
+        lambda: SimpleNamespace(pipeline=SimpleNamespace(artifact_root=tmp_path)),
+    )
+    monkeypatch.setattr(resume_script, "PipelineOrchestrator", FakeOrchestrator)
+
+    with pytest.raises(RuntimeError, match="must contain at least one episode"):
+        asyncio.run(resume_script._resume_from_narrative_strategy("run_1"))
+
+    assert calls["planning_called"] is False
+    final_project = ThematicProject.model_validate(
+        json.loads((project_dir / "thematic_project.json").read_text(encoding="utf-8"))
+    )
+    assert final_project.status == ProjectStatus.FAILED

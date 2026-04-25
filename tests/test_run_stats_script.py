@@ -70,15 +70,12 @@ def _build_run(tmp_path: Path) -> Path:
         run_dir / "synthesis_map.json",
         {
             "project_id": "demo-run",
-            "episode_candidate_clusters": [
+            "evidence_packs": [
                 {
-                    "cluster_id": "cluster_1",
-                    "title": "Cluster One",
-                    "summary": "Summary",
-                    "primary_member_id": "et_1",
-                    "member_ids": ["et_1"],
-                    "local_question": "What changes?",
-                    "local_payoff_shape": "reveal",
+                    "pack_id": "pack_1",
+                    "title": "Pack One",
+                    "local_summary": "Summary",
+                    "primitive_ids": ["et_1"],
                 }
             ],
             "primitives_by_family": {
@@ -116,14 +113,16 @@ def _build_run(tmp_path: Path) -> Path:
                     "thematic_focus": "Opening rupture",
                     "arc_summary": "Follow the local consequences.",
                     "unresolved_questions": [],
-                    "cluster_path": [
-                        {
-                            "occurrence_id": "occ_1",
-                            "cluster_id": "cluster_1",
-                            "usage": "primary",
-                            "transition_note": "",
-                        }
-                    ],
+                    "episode_spine": {
+                        "listener_question": "Why does the order land so hard?",
+                        "working_claim": "Opening rupture clarifies the proposition.",
+                        "target_end_state": "The local consequences become legible.",
+                        "verdict_mode": "constrain",
+                        "primary_counterposition": "Another reading remains possible.",
+                        "spine_pack_ids": ["pack_1"],
+                        "support_pack_roles": {},
+                        "allowed_recalls": [],
+                    },
                 }
             ],
         },
@@ -186,7 +185,7 @@ def test_generate_run_stats_html(tmp_path: Path):
     html = output_path.read_text(encoding="utf-8")
     assert "War on Terror" in html
     assert "epochal_turns: 1" in html
-    assert "Clusters: 1" in html
+    assert "Evidence packs: 1" in html
     assert "Driving question:" in html
 
 
