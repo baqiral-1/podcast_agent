@@ -5,7 +5,7 @@ import asyncio
 import hashlib
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, TypeVar
 
 from podcast_agent.config import Settings
 from podcast_agent.pipeline.orchestrator import PipelineOrchestrator, _save_json
@@ -33,6 +33,8 @@ STRICT_TRACKED_FILES = (
     "series_plan.json",
     "actor_metadata.json",
 )
+
+T = TypeVar("T")
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -115,7 +117,52 @@ def _load_existing_stage_metrics(project_dir: Path) -> dict[str, Any]:
     return dict(stage_metrics)
 
 
-async def _resume_from_writing(project_id: str) -> None:
+def _select_single_episode(
+    items: list[T],
+    *,
+    episode_number: int,
+    value_getter: Callable[[T], int],
+    source_name: str,
+) -> T:
+    matches = [item for item in items if value_getter(item) == episode_number]
+    if not matches:
+        raise RuntimeError(
+            f"{source_name} does not contain episode_number {episode_number}"
+        )
+    if len(matches) > 1:
+        raise RuntimeError(
+            f"{source_name} contains duplicate episode_number {episode_number}"
+        )
+    return matches[0]
+
+
+def _completed_episode_numbers(
+    project_dir: Path,
+    episode_plans: list[EpisodePlan],
+) -> list[int]:
+    completed: list[int] = []
+    for plan in episode_plans:
+        script_path = project_dir / "episodes" / str(plan.episode_number) / "episode_script.json"
+        if script_path.exists():
+            completed.append(plan.episode_number)
+    return completed
+
+
+def _load_completed_spoken_scripts(
+    project_dir: Path,
+    episode_plans: list[EpisodePlan],
+) -> list[tuple[int, SpokenScript]]:
+    spoken_scripts: list[tuple[int, SpokenScript]] = []
+    for plan in episode_plans:
+        spoken_path = project_dir / "episodes" / str(plan.episode_number) / "spoken_script.json"
+        if not spoken_path.exists():
+            continue
+        spoken = SpokenScript.model_validate(_load_json(spoken_path))
+        spoken_scripts.append((plan.episode_number, spoken))
+    return spoken_scripts
+
+
+async def _retry_single_episode_from_writing(project_id: str, episode_number: int) -> None:
     settings = Settings()
     orchestrator = PipelineOrchestrator(settings)
     project_dir = settings.pipeline.artifact_root / project_id
@@ -125,6 +172,7 @@ async def _resume_from_writing(project_id: str) -> None:
     strict_snapshots = _capture_snapshots(project_dir)
 
     project = ThematicProject.model_validate(_load_json(project_dir / "thematic_project.json"))
+    original_status = project.status
     corpus = ThematicCorpus.model_validate(_load_json(project_dir / "thematic_corpus.json"))
     _ = SynthesisPrimitivesArtifact.model_validate(
         _load_json(project_dir / "synthesis_primitives.json")
@@ -134,6 +182,25 @@ async def _resume_from_writing(project_id: str) -> None:
     episode_architectures = _load_episode_architectures(project_dir)
     episode_plans = _load_episode_plans(project_dir)
     actor_metadata = ActorMetadata.model_validate(_load_json(project_dir / "actor_metadata.json"))
+
+    target_plan = _select_single_episode(
+        episode_plans,
+        episode_number=episode_number,
+        value_getter=lambda item: item.episode_number,
+        source_name="series_plan.json",
+    )
+    target_architecture = _select_single_episode(
+        episode_architectures,
+        episode_number=episode_number,
+        value_getter=lambda item: item.episode_number,
+        source_name="episode_architectures.json",
+    )
+    target_strategy_episode = _select_single_episode(
+        strategy.episodes,
+        episode_number=episode_number,
+        value_getter=lambda item: item.episode_number,
+        source_name="narrative_strategy.json",
+    )
 
     orchestrator._bind_run_logger(project_dir)
 
@@ -155,56 +222,38 @@ async def _resume_from_writing(project_id: str) -> None:
     )
     _save_json(project_dir / "thematic_project.json", project)
 
-    architecture_by_number = {
-        episode.episode_number: episode
-        for episode in episode_architectures
-    }
-    strategy_by_number = {
-        episode.episode_number: episode
-        for episode in strategy.episodes
-    }
+    ep_dir = project_dir / "episodes" / str(episode_number)
+    ep_dir.mkdir(parents=True, exist_ok=True)
+
     try:
-        sem = asyncio.Semaphore(max(1, project.config.episode_write_concurrency))
-        spoken_sem = asyncio.Semaphore(
-            max(
-                1,
-                project.config.spoken_delivery_concurrency
-                or project.config.episode_write_concurrency,
-            )
+        script = await orchestrator._write_episode(
+            target_plan,
+            target_strategy_episode,
+            target_architecture,
+            project,
+            corpus,
+            ep_dir,
+            project_dir,
+            actor_metadata,
         )
-        ep_tasks = [
-            orchestrator._produce_episode(
-                plan,
-                strategy_by_number[plan.episode_number],
-                architecture_by_number[plan.episode_number],
-                project,
-                corpus,
-                actor_metadata,
-                project_dir,
-                sem,
-                spoken_sem,
-            )
-            for plan in episode_plans
-        ]
-        ep_results = await asyncio.gather(*ep_tasks, return_exceptions=True)
+        spoken = await orchestrator._rewrite_for_speech(
+            episode_number,
+            script,
+            project,
+            ep_dir,
+            project_dir,
+        )
+        audio_sem = asyncio.Semaphore(max(1, project.config.tts_concurrency))
+        await orchestrator._render_episode_audio(
+            episode_number,
+            spoken,
+            project.config,
+            project_dir,
+            audio_sem,
+            skip_audio=True,
+        )
 
-        spoken_scripts: list[tuple[int, SpokenScript]] = []
-        production_errors: list[str] = []
-        for plan, result in zip(episode_plans, ep_results, strict=True):
-            if isinstance(result, Exception):
-                production_errors.append(f"episode {plan.episode_number}: {result}")
-                continue
-            spoken_scripts.append(result)
-        spoken_scripts.sort(key=lambda item: item[0])
-
-        completed_episode_numbers = [episode_number for episode_number, _ in spoken_scripts]
-        expected_episode_numbers = [plan.episode_number for plan in episode_plans]
-        if completed_episode_numbers != expected_episode_numbers:
-            production_errors.append(
-                "completed episode numbers did not match series_plan.json "
-                f"({completed_episode_numbers} != {expected_episode_numbers})"
-            )
-
+        completed_episode_numbers = _completed_episode_numbers(project_dir, episode_plans)
         orchestrator._write_passage_utilization(
             project=project,
             corpus=corpus,
@@ -214,9 +263,10 @@ async def _resume_from_writing(project_id: str) -> None:
         )
 
         actor_metrics = _load_existing_stage_metrics(project_dir)
+        completed_spoken_scripts = _load_completed_spoken_scripts(project_dir, episode_plans)
         actor_metrics["writing"] = orchestrator._build_writing_actor_metrics(
             project_dir,
-            spoken_scripts,
+            completed_spoken_scripts,
         )
         orchestrator._write_actor_metadata_metrics(
             project_dir=project_dir,
@@ -227,39 +277,17 @@ async def _resume_from_writing(project_id: str) -> None:
             metrics=actor_metrics,
         )
 
-        audio_errors: list[str] = []
-        if spoken_scripts:
-            audio_sem = asyncio.Semaphore(max(1, project.config.tts_concurrency))
-            audio_tasks = [
-                orchestrator._render_episode_audio(
-                    episode_number,
-                    spoken,
-                    project.config,
-                    project_dir,
-                    audio_sem,
-                    skip_audio=True,
-                )
-                for episode_number, spoken in spoken_scripts
-            ]
-            audio_results = await asyncio.gather(*audio_tasks, return_exceptions=True)
-            for episode_number, result in zip(
-                (episode_number for episode_number, _ in spoken_scripts),
-                audio_results,
-                strict=True,
-            ):
-                if isinstance(result, Exception):
-                    audio_errors.append(f"episode {episode_number}: {result}")
-
-        if production_errors or audio_errors:
-            details = production_errors + audio_errors
-            raise RuntimeError("Resume failed from writing onward: " + "; ".join(details))
-
         _verify_snapshots_unchanged(project_dir=project_dir, before=strict_snapshots)
 
-        project = project.model_copy(update={"status": ProjectStatus.COMPLETE})
+        final_status = (
+            original_status
+            if original_status == ProjectStatus.COMPLETE
+            else ProjectStatus.COMPLETE
+        )
+        project = project.model_copy(update={"status": final_status})
         _save_json(project_dir / "thematic_project.json", project)
     except Exception:
-        project = project.model_copy(update={"status": ProjectStatus.FAILED})
+        project = project.model_copy(update={"status": original_status})
         _save_json(project_dir / "thematic_project.json", project)
         raise
 
@@ -267,8 +295,8 @@ async def _resume_from_writing(project_id: str) -> None:
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Resume an existing run from writing onward using existing series plan, "
-            "synthesis artifacts, and actor metadata with strict integrity checks."
+            "Retry writing, spoken delivery, and render manifest generation for one "
+            "episode in an existing run using persisted planning artifacts."
         )
     )
     parser.add_argument(
@@ -276,12 +304,18 @@ def _parse_args() -> argparse.Namespace:
         required=True,
         help="Run directory name under the configured artifact root.",
     )
+    parser.add_argument(
+        "--episode-number",
+        type=int,
+        required=True,
+        help="Episode number to retry from writing onward.",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = _parse_args()
-    asyncio.run(_resume_from_writing(args.project_id))
+    asyncio.run(_retry_single_episode_from_writing(args.project_id, args.episode_number))
 
 
 if __name__ == "__main__":

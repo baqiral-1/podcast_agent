@@ -11,6 +11,7 @@ import pytest
 
 from podcast_agent.schemas.models import (
     ActorMetadata,
+    EpisodeArchitecture,
     ActorProfile,
     BookRecord,
     NarrativeStrategy,
@@ -107,15 +108,6 @@ def _build_synthesis_map() -> SynthesisMap:
     return SynthesisMap(
         project_id="run_1",
         primitives_by_family={"epochal_turns": [primitive]},
-        evidence_packs=[
-            {
-                "pack_id": "pack_1",
-                "title": "Pack",
-                "local_summary": "Pack summary",
-                "primitive_ids": ["primitive_1"],
-                "actor_ids": ["actor_1"],
-            }
-        ],
     )
 
 
@@ -147,7 +139,6 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
             calls["map_actor_metadata"] = actor_metadata
             return _build_synthesis_map(), {
                 "primitives": {"unknown_actor_ids": 0},
-                "consolidation": {"unknown_actor_ids": 0},
             }
 
         async def _choose_narrative_strategy(
@@ -177,9 +168,9 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
                             "target_end_state": "The episode lands a constrained answer.",
                             "verdict_mode": "constrain",
                             "primary_counterposition": "A rival interpretation remains plausible.",
-                            "spine_pack_ids": ["pack_1"],
-                            "support_pack_roles": {},
-                            "allowed_recalls": [],
+                            "core_primitive_ids": ["primitive_1"],
+                            "support_primitive_roles": {},
+                            "recall_primitive_ids": [],
                         },
                     )
                 ],
@@ -200,6 +191,7 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
             project: ThematicProject,
             synthesis_map: SynthesisMap,
             strategy: NarrativeStrategy,
+            episode_architectures: list[EpisodeArchitecture],
             corpus: ThematicCorpus,
             project_dir: Path,
             actor_metadata: ActorMetadata,
@@ -207,11 +199,121 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
             calls["order"].append("plan_series")
             calls["planning_actor_metadata"] = actor_metadata
             calls["planning_config"] = project.config
+            calls["planning_strategy"] = strategy
             return [SimpleNamespace(episode_number=1)], {"unknown_actor_ids": 0}
+
+        async def _build_episode_architectures(
+            self,
+            *,
+            project: ThematicProject,
+            synthesis_map: SynthesisMap,
+            strategy: NarrativeStrategy,
+            corpus: ThematicCorpus,
+            project_dir: Path,
+            actor_metadata: ActorMetadata,
+        ) -> tuple[list[EpisodeArchitecture], dict[str, Any]]:
+            calls["order"].append("episode_architecture")
+            calls["architecture_actor_metadata"] = actor_metadata
+            architecture = EpisodeArchitecture(
+                episode_number=1,
+                major_turn_section_id="section_03",
+                allowed_recurring_primitive_ids=["primitive_1"],
+                forbidden_redundancies=[],
+                sections=[
+                    {
+                        "section_id": "section_01",
+                        "purpose": "opening",
+                        "approx_runtime_minutes": 20.0,
+                        "primitive_ids": ["primitive_1"],
+                        "section_question": "Q1?",
+                        "section_resolution": "R1",
+                        "entry_state": "E1",
+                        "exit_state": "X1",
+                        "transition_logic": "T1",
+                        "depends_on_section_ids": [],
+                        "sets_up_section_ids": ["section_02"],
+                        "argument_role": "frame",
+                        "inference_mode": "scene_first",
+                        "recurrence_role": "plant",
+                        "pressure_type": "mass_political",
+                        "resolution_type": "escalation",
+                        "closure_level": "low",
+                        "priority_core_passage_ids": [],
+                    },
+                    {
+                        "section_id": "section_02",
+                        "purpose": "setup",
+                        "approx_runtime_minutes": 20.0,
+                        "primitive_ids": ["primitive_1"],
+                        "section_question": "Q2?",
+                        "section_resolution": "R2",
+                        "entry_state": "E2",
+                        "exit_state": "X2",
+                        "transition_logic": "T2",
+                        "depends_on_section_ids": ["section_01"],
+                        "sets_up_section_ids": ["section_03"],
+                        "argument_role": "establish_mechanism",
+                        "inference_mode": "mechanism_first",
+                        "recurrence_role": "deepen",
+                        "pressure_type": "mass_political",
+                        "resolution_type": "escalation",
+                        "closure_level": "low",
+                        "priority_core_passage_ids": [],
+                    },
+                    {
+                        "section_id": "section_03",
+                        "purpose": "turn",
+                        "approx_runtime_minutes": 25.0,
+                        "primitive_ids": ["primitive_1"],
+                        "section_question": "Q3?",
+                        "section_resolution": "R3",
+                        "entry_state": "E3",
+                        "exit_state": "X3",
+                        "transition_logic": "T3",
+                        "depends_on_section_ids": ["section_02"],
+                        "sets_up_section_ids": ["section_04"],
+                        "argument_role": "test_viability",
+                        "inference_mode": "contrast_first",
+                        "recurrence_role": "deepen",
+                        "pressure_type": "mass_political",
+                        "resolution_type": "reversal",
+                        "closure_level": "medium",
+                        "priority_core_passage_ids": [],
+                    },
+                    {
+                        "section_id": "section_04",
+                        "purpose": "closing",
+                        "approx_runtime_minutes": 25.0,
+                        "primitive_ids": ["primitive_1"],
+                        "section_question": "Q4?",
+                        "section_resolution": "R4",
+                        "entry_state": "E4",
+                        "exit_state": "X4",
+                        "transition_logic": "T4",
+                        "depends_on_section_ids": ["section_03"],
+                        "sets_up_section_ids": [],
+                        "argument_role": "close",
+                        "inference_mode": "aftermath_first",
+                        "recurrence_role": "payoff",
+                        "pressure_type": "mass_political",
+                        "resolution_type": "containment",
+                        "closure_level": "high",
+                        "priority_core_passage_ids": [],
+                    },
+                ],
+                architecture_notes=[],
+            )
+            _write_json(
+                project_dir / "episode_architectures.json",
+                {"episodes": [architecture.model_dump(mode="json")]},
+            )
+            return [architecture], {"unknown_actor_ids": 0}
 
         async def _produce_episode(
             self,
             plan: Any,
+            strategy_episode: StrategyEpisode,
+            architecture: EpisodeArchitecture,
             project: ThematicProject,
             corpus: ThematicCorpus,
             actor_metadata: ActorMetadata,
@@ -222,6 +324,8 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
             calls["order"].append("produce_episode")
             calls["production_actor_metadata"] = actor_metadata
             calls["production_config"] = project.config
+            calls["production_strategy_episode"] = strategy_episode
+            calls["production_architecture"] = architecture
             return plan.episode_number, SimpleNamespace(episode_number=plan.episode_number)
 
         def _write_passage_utilization(self, **kwargs: Any) -> None:
@@ -264,6 +368,7 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
         "map_synthesis",
         "narrative_strategy",
         "resolve_episode_count",
+        "episode_architecture",
         "plan_series",
         "produce_episode",
         "render_audio",
@@ -272,6 +377,7 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
     assert calls["map_corpus"].axes[0].axis_id == "axis_1"
     assert calls["map_actor_metadata"].actors[0].actor_id == "actor_1"
     assert calls["narrative_actor_metadata"].actors[0].actor_id == "actor_1"
+    assert calls["architecture_actor_metadata"].actors[0].actor_id == "actor_1"
     assert calls["planning_actor_metadata"].actors[0].actor_id == "actor_1"
     assert calls["production_actor_metadata"].actors[0].actor_id == "actor_1"
     assert calls["map_config"].skip_grounding is True
@@ -283,7 +389,7 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
     assert calls["actor_metadata_metrics"]["metrics"]["synthesis_primitives"] == {
         "unknown_actor_ids": 0
     }
-    assert calls["actor_metadata_metrics"]["metrics"]["synthesis_consolidation"] == {
+    assert calls["actor_metadata_metrics"]["metrics"]["episode_architecture"] == {
         "unknown_actor_ids": 0
     }
 

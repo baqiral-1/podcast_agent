@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from contextvars import Context, copy_context
+from contextvars import copy_context
 import json
 import re
 import socket
@@ -114,7 +114,9 @@ def is_api_status_transient_error(exc: Exception) -> bool:
 
     message = str(exc).lower()
     if (
-        "internal server error" in message
+        "overloaded_error" in message
+        or "overloaded" in message
+        or "internal server error" in message
         or "service unavailable" in message
         or "gateway timeout" in message
         or "temporarily unavailable" in message

@@ -25,9 +25,9 @@ class TestParseSubThemes:
         with pytest.raises(typer.BadParameter, match="non-empty"):
             _parse_sub_themes("valid, ,other")
 
-    def test_rejects_more_than_fifteen(self):
-        raw = "a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16"
-        with pytest.raises(typer.BadParameter, match="at most 15"):
+    def test_rejects_more_than_thirty(self):
+        raw = ",".join(f"a{i}" for i in range(1, 32))
+        with pytest.raises(typer.BadParameter, match="at most 30"):
             _parse_sub_themes(raw)
 
 

@@ -332,11 +332,6 @@ class HeuristicLLMClient(LLMClient):
                 "Heuristic recurring image",
                 "An image or symbol can recur across the series and gather meaning.",
             ),
-            "worlds_in_collision": (
-                "wc_001",
-                "Heuristic worlds in collision",
-                "Different social or political worlds collide and expose the gap between them.",
-            ),
             "ironies_and_reversals": (
                 "ir_001",
                 "Heuristic irony or reversal",
@@ -375,147 +370,53 @@ class HeuristicLLMClient(LLMClient):
             "quality_notes": ["Heuristic primitives artifact."],
         }
 
-    def _generate_synthesis_consolidation(self, payload: PromptPayload) -> dict[str, Any]:
-        primitives = payload.get("primitives", {})
-        primitives_by_family = primitives.get("primitives_by_family", {})
-        actor_metadata = payload.get("actor_metadata", {}) or {}
-        actor_ids = [
-            str(actor.get("actor_id", ""))
-            for actor in actor_metadata.get("actors", [])
-            if actor.get("actor_id")
-        ]
-        member_ids: list[str] = []
-        primitive_ids_by_family: dict[str, list[str]] = {}
-        for family in SYNTHESIS_PRIMITIVE_FAMILIES:
-            family_items = primitives_by_family.get(family, [])
-            family_ids = [str(item.get("id", uuid4().hex)) for item in family_items]
-            primitive_ids_by_family[family] = family_ids
-            for item in family_items[:1]:
-                member_ids.append(str(item.get("id", uuid4().hex)))
-        primary_member_id = member_ids[0] if member_ids else "tp_001"
-        return {
-            "project_id": payload.get("project_id", "project"),
-            "evidence_packs": [
-                {
-                    "pack_id": "pack_001",
-                    "title": "Heuristic pack",
-                    "local_summary": "A compact local causal chain.",
-                    "primitive_ids": member_ids or [primary_member_id],
-                    "actor_ids": actor_ids[:1],
-                }
-            ],
-            "primitive_ids_by_family": primitive_ids_by_family,
-            "quality_score": float(primitives.get("quality_score", 0.5)),
-            "quality_notes": ["Heuristic consolidated synthesis map."],
-        }
-
     def _generate_narrative_strategy(self, payload: PromptPayload) -> dict[str, Any]:
         requested_episode_count = payload.get("requested_episode_count")
         synthesis_map = payload.get("synthesis_map", {})
-        packs = synthesis_map.get("evidence_packs", [])
-        if not packs:
-            packs = [{"pack_id": "pack_001", "title": "Heuristic pack"}]
+        primitive_ids = []
+        for family_items in (synthesis_map.get("primitives_by_family", {}) or {}).values():
+            for item in family_items:
+                primitive_id = str(item.get("id", ""))
+                if primitive_id:
+                    primitive_ids.append(primitive_id)
+        if not primitive_ids:
+            primitive_ids = ["primitive_001", "primitive_002", "primitive_003"]
         if requested_episode_count is None:
-            recommended_episode_count = max(6, min(10, len(packs)))
+            recommended_episode_count = 6
         else:
             recommended_episode_count = max(6, min(10, int(requested_episode_count)))
-        while len(packs) < recommended_episode_count:
-            idx = len(packs) + 1
-            packs.append(
-                {
-                    "pack_id": f"pack_{idx:03d}",
-                    "title": f"Heuristic pack {idx}",
-                }
-            )
         episodes = []
         for idx in range(recommended_episode_count):
-            pack = packs[idx % len(packs)]
-            pack_actor_ids = list(pack.get("actor_ids", []))
-            actor_arc_directives = [
-                {
-                    "actor_id": actor_id,
-                    "arc_threads": [
-                        {
-                            "thread_id": f"{actor_id}_role_1",
-                            "arc_type": "role",
-                            "label": "episode role",
-                            "premise": "This actor provides the heuristic character spine for the episode.",
-                            "pressure": "Episode events constrain the actor's available choices.",
-                            "movement": "The actor's position becomes clearer as the episode spine develops.",
-                            "payoff": "The episode lands the actor's function as part of the local turn.",
-                        },
-                        {
-                            "thread_id": f"{actor_id}_tracking_1",
-                            "arc_type": "tracking",
-                            "label": "listener tracking",
-                            "premise": "Track how the actor's position becomes clearer across the episode.",
-                            "pressure": "New evidence or consequences should sharpen what is at stake.",
-                            "movement": "Each relevant scene should add pressure rather than repeat the same role.",
-                            "payoff": "The listener should understand why this actor mattered to the episode.",
-                        },
-                        {
-                            "thread_id": f"{actor_id}_tension_1",
-                            "arc_type": "tension",
-                            "label": "tension line",
-                            "premise": "External pressure constrains the actor's available choices.",
-                            "pressure": "The episode spine narrows the actor's options.",
-                            "movement": "Pressure should become more concrete across scenes.",
-                            "payoff": "The tension should clarify the episode's local consequence.",
-                        },
-                        {
-                            "thread_id": f"{actor_id}_progression_1",
-                            "arc_type": "turn",
-                            "label": "arc progression",
-                            "premise": "The actor's position changes as the episode spine develops.",
-                            "pressure": "A decision or consequence should alter what the actor can do.",
-                            "movement": "Move from setup toward consequence.",
-                            "payoff": "The actor's changed position should make the episode turn legible.",
-                        },
-                        {
-                            "thread_id": f"{actor_id}_scene_job_1",
-                            "arc_type": "payoff",
-                            "label": "scene job",
-                            "premise": "Use this actor where pressure turns into consequence.",
-                            "pressure": "The scene should not merely name the actor.",
-                            "movement": "Bind actor presence to visible consequence.",
-                            "payoff": "The payoff should connect actor pressure to episode meaning.",
-                        },
-                        {
-                            "thread_id": f"{actor_id}_guardrail_1",
-                            "arc_type": "guardrail",
-                            "label": "repetition guardrail",
-                            "premise": "Do not restate the same actor function unless the scene changes or pays it off.",
-                            "pressure": "Repeated appearances can flatten the actor into a label.",
-                            "movement": "Vary actor use by scene.",
-                            "payoff": "The episode should preserve actor continuity without repetition.",
-                        },
-                    ],
-                }
-                for actor_id in pack_actor_ids[:1]
-            ]
             listener_question = (
                 "What local turn best explains the series?"
                 if idx == 0
                 else f"What does episode {idx + 1} newly reveal?"
             )
+            core_start = idx * 5
+            core_ids = primitive_ids[core_start:core_start + 5] or primitive_ids[:5]
+            support_ids = primitive_ids[core_start + 5:core_start + 12] or primitive_ids[:7]
             episodes.append(
                 {
                     "episode_number": idx + 1,
                     "title": f"Episode {idx + 1}",
                     "driving_question": listener_question,
-                    "thematic_focus": pack.get("title", "Heuristic focus"),
+                    "thematic_focus": "Heuristic focus",
                     "arc_summary": f"Episode {idx + 1} follows a single proposition spine.",
                     "unresolved_questions": [],
-                    "actor_arc_directives": actor_arc_directives,
+                    "actor_arc_directives": [],
                     "episode_spine": {
                         "listener_question": listener_question,
-                        "working_claim": f"{pack.get('title', 'This pack')} carries the controlling proposition.",
+                        "working_claim": "Selected primitives carry the controlling proposition.",
                         "target_end_state": "The episode should land a clearer proposition.",
                         "verdict_mode": "constrain",
                         "primary_counterposition": "A competing interpretation remains live.",
-                        "spine_pack_ids": [pack.get("pack_id", "pack_001")],
-                        "support_pack_roles": {},
-                        "allowed_recalls": [],
+                        "core_primitive_ids": core_ids,
+                        "support_primitive_roles": {
+                            primitive_id: "mechanism"
+                            for primitive_id in support_ids
+                            if primitive_id not in core_ids
+                        },
+                        "recall_primitive_ids": [],
                     },
                 }
             )
@@ -528,70 +429,114 @@ class HeuristicLLMClient(LLMClient):
             "episodes": episodes,
         }
 
-    def _generate_episode_planning(self, payload: PromptPayload) -> dict[str, Any]:
+    def _generate_episode_architecture(self, payload: PromptPayload) -> dict[str, Any]:
         episode = payload.get("episode", {})
-        episode_number = int(episode.get("episode_number", 1))
         episode_spine = episode.get("episode_spine", {})
+        primitive_ids = list(episode_spine.get("assigned_primitive_ids") or [])
+        if not primitive_ids:
+            primitive_ids = list(episode_spine.get("core_primitive_ids") or ["primitive_001"])
+        section_count = min(12, max(8, len(primitive_ids))) if primitive_ids else 8
+        closing_minutes = 2.0
+        non_closing_count = max(1, section_count - 1)
+        non_closing_minutes = max(1.0, (100.0 - closing_minutes) / non_closing_count)
+        sections = []
+        for idx in range(section_count):
+            section_id = f"section_{idx + 1:02d}"
+            local_primitive_ids = [primitive_ids[min(idx, len(primitive_ids) - 1)]]
+            is_closing = idx == section_count - 1
+            sections.append(
+                {
+                    "section_id": section_id,
+                    "purpose": (
+                        "opening"
+                        if idx == 0
+                        else "closing" if is_closing else "setup"
+                    ),
+                    "approx_runtime_minutes": closing_minutes if is_closing else non_closing_minutes,
+                    "primitive_ids": local_primitive_ids,
+                    "section_question": f"What does section {idx + 1} make newly visible?",
+                    "section_resolution": f"Section {idx + 1} advances the heuristic argument.",
+                    "entry_state": "The listener is carrying forward the prior section's uncertainty.",
+                    "exit_state": "The listener leaves with a clearer local understanding.",
+                    "transition_logic": "Move by clarifying the next structural pressure.",
+                    "depends_on_section_ids": [f"section_{idx:02d}"] if idx > 0 else [],
+                    "sets_up_section_ids": [f"section_{idx + 2:02d}"] if idx < section_count - 1 else [],
+                    "argument_role": "frame" if idx == 0 else "close" if idx == section_count - 1 else "establish_mechanism",
+                    "inference_mode": "scene_first" if idx == 0 else "mechanism_first",
+                    "recurrence_role": "plant" if idx == 0 else "payoff" if idx == section_count - 1 else "deepen",
+                    "pressure_type": "mass_political",
+                    "resolution_type": "escalation" if idx < section_count - 1 else "containment",
+                    "closure_level": "high" if idx == section_count - 1 else "low",
+                    "priority_core_passage_ids": [],
+                }
+            )
+        return {
+            "episode_number": int(episode.get("episode_number", 1)),
+            "major_turn_section_id": sections[min(2, len(sections) - 1)]["section_id"],
+            "allowed_recurring_primitive_ids": primitive_ids[:2],
+            "forbidden_redundancies": [],
+            "sections": sections,
+            "architecture_notes": ["Heuristic architecture output."],
+        }
+
+    def _generate_episode_planning(self, payload: PromptPayload) -> dict[str, Any]:
+        architecture = payload.get("architecture", {})
+        strategy_episode = payload.get("strategy_episode", {})
+        episode_number = int(architecture.get("episode_number", 1))
+        episode_spine = strategy_episode.get("episode_spine", {})
         available_passages = payload.get("available_passages", [])
         passage_ids = [
             str(passage.get("passage_id", uuid4().hex))
             for passage in available_passages[:3]
         ]
-        dominant_pack_id = "pack_001"
+        dominant_primitive_id = "primitive_001"
         if episode_spine:
-            dominant_pack_id = str(
-                (episode_spine.get("spine_pack_ids") or ["pack_001"])[0]
+            dominant_primitive_id = str(
+                (episode_spine.get("core_primitive_ids") or ["primitive_001"])[0]
             )
-        scene_cards = [
-            {
-                "scene_id": "scene_01",
-                "batch_id": "b01",
-                "title": "Heuristic scene 1",
-                "scene_role": "setup",
-                "dominant_pack_id": dominant_pack_id,
-                "spine_relation": "set_stakes",
-                "state_effect": "The listener understands what the proposition is testing.",
-                "entry_image": "A concrete opening image.",
-                "local_question": "What changes here?",
-                "observable_detail": "A visible consequence lands in the scene.",
-                "intended_move": "Move the listener into the next discovery step.",
-                "timeframe": None,
-                "location": None,
-                "actors": [],
-                "primitive_ids": [],
-                "passage_ids": passage_ids,
-            }
-        ]
+        sections = architecture.get("sections") or [{"section_id": "section_01"}]
+        scene_cards = []
+        default_duration = 180
+        for idx in range(40):
+            source_section = sections[min(idx, len(sections) - 1)]
+            section_id = str(source_section.get("section_id", "section_01"))
+            is_closing = idx == 39
+            scene_cards.append(
+                {
+                    "scene_id": f"scene_{idx + 1:02d}",
+                    "section_id": section_id if not is_closing else str(sections[-1].get("section_id", section_id)),
+                    "title": f"Heuristic scene {idx + 1}",
+                    "scene_role": "setup" if idx == 0 else "consequence" if is_closing else "action",
+                    "dominant_primitive_id": dominant_primitive_id,
+                    "spine_relation": "set_stakes" if idx == 0 else "show_consequence" if is_closing else "spine_advance",
+                    "state_effect": "The listener understands what the proposition is testing." if idx == 0 else "The listener carries the argument forward." if not is_closing else "The listener leaves with a constrained conclusion.",
+                    "entry_image": "A concrete opening image." if idx == 0 else "A grounded detail keeps the scene moving.",
+                    "local_question": "What changes here?",
+                    "observable_detail": "A visible consequence lands in the scene.",
+                    "intended_move": "Move the listener into the next discovery step.",
+                    "timeframe": None,
+                    "location": None,
+                    "actors": [],
+                    "primitive_ids": [dominant_primitive_id],
+                    "passage_ids": passage_ids,
+                    "estimated_duration_seconds": 120 if is_closing else default_duration,
+                }
+            )
         return {
             "episode_number": episode_number,
-            "title": episode.get("title", f"Episode {episode_number}"),
-            "driving_question": episode.get("driving_question", "What changes here?"),
-            "thematic_focus": episode.get("thematic_focus", "Heuristic focus"),
-            "arc_summary": episode.get("arc_summary", "A heuristic episode arc."),
-            "unresolved_questions": episode.get("unresolved_questions", []),
-            "episode_spine": episode_spine
-            or {
-                "listener_question": episode.get("driving_question", "What changes here?"),
-                "working_claim": "The episode tests one proposition.",
-                "target_end_state": "The proposition ends clearer than it began.",
-                "verdict_mode": "constrain",
-                "primary_counterposition": "An alternative reading remains plausible.",
-                "spine_pack_ids": [dominant_pack_id],
-                "support_pack_roles": {},
-                "allowed_recalls": [],
-            },
-            "actor_arc_directives": episode.get("actor_arc_directives", []),
             "framing": {
                 "opening_image": "A listener-facing opening image.",
                 "threat_or_unresolved_action": "A threat remains active as the episode starts.",
-                "opening_question": episode.get("driving_question", "What changes here?"),
+                "opening_question": (
+                    strategy_episode.get("driving_question", "What changes here?")
+                    or "What changes here?"
+                ),
                 "handoff_scene_card_id": "scene_01",
                 "recap": None,
                 "preview": None,
             },
             "scene_cards": scene_cards,
-            "dropped_support_pack_reasons": {},
-            "target_duration_minutes": 90.0,
+            "dropped_support_primitive_reasons": {},
         }
 
     def _generate_episode_writing(self, payload: PromptPayload) -> dict[str, Any]:
@@ -632,9 +577,13 @@ class HeuristicLLMClient(LLMClient):
     def _generate_spoken_delivery(self, payload: PromptPayload) -> dict[str, Any]:
         script = payload.get("script", {})
         sections = script.get("prose_sections", [])
-        section = sections[0] if sections else {}
+        text = "\n\n".join(
+            str(section.get("text", "")).strip()
+            for section in sections
+            if str(section.get("text", "")).strip()
+        )
         return {
-            "text": str(section.get("text", "Spoken delivery text.")),
+            "text": text or "Spoken delivery text.",
             "speech_hints": {
                 "style": "neutral",
                 "intensity": "none",

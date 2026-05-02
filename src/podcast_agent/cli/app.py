@@ -30,8 +30,8 @@ def _parse_sub_themes(raw: Optional[str]) -> list[str]:
         seen.add(trimmed)
         normalized.append(trimmed)
 
-    if len(normalized) > 15:
-        raise typer.BadParameter("Sub-themes supports at most 15 values.")
+    if len(normalized) > 30:
+        raise typer.BadParameter("Sub-themes supports at most 30 values.")
     return normalized
 
 

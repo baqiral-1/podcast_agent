@@ -68,6 +68,13 @@ def test_transient_error_true_for_api_internal_server_message_without_status() -
     assert is_transient_error(exc)
 
 
+def test_transient_error_true_for_api_overloaded_message_without_status() -> None:
+    exc = APIStatusError(
+        "{'type': 'error', 'error': {'details': None, 'type': 'overloaded_error', 'message': 'Overloaded'}}"
+    )
+    assert is_transient_error(exc)
+
+
 def test_json_parse_error_detects_jsondecodeerror() -> None:
     exc = json.JSONDecodeError("Expecting ',' delimiter", '{"a":1 "b":2}', 7)
     assert is_json_parse_error(exc)

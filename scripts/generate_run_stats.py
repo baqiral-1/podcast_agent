@@ -61,20 +61,20 @@ def _render_episode_cards(run_dir: Path, strategy: dict[str, Any]) -> str:
         script = _load_optional_json(ep_dir / "episode_script.json") or {}
         spoken = _load_optional_json(ep_dir / "spoken_script.json") or {}
         episode_spine = episode.get("episode_spine", {})
-        spine_pack_ids = episode_spine.get("spine_pack_ids", [])
+        core_primitive_ids = episode_spine.get("core_primitive_ids", [])
         cards.append(
             """
             <section class='card'>
               <h3>{title}</h3>
               <p><strong>Driving question:</strong> {question}</p>
-              <p><strong>Spine packs:</strong> {spine_pack_count}</p>
+              <p><strong>Core primitives:</strong> {core_primitive_count}</p>
               <p><strong>Script sections:</strong> {section_count}</p>
               <p><strong>Spoken sections:</strong> {spoken_count}</p>
             </section>
             """.format(
                 title=_escape(episode.get("title", f"Episode {episode.get('episode_number', '?')}")),
                 question=_escape(episode.get("driving_question", "")),
-                spine_pack_count=len(spine_pack_ids),
+                core_primitive_count=len(core_primitive_ids),
                 section_count=len(script.get("prose_sections", [])),
                 spoken_count=len(spoken.get("sections", [])),
             )
@@ -121,7 +121,7 @@ def _render_html(run_dir: Path) -> str:
   <p><strong>Status:</strong> {_escape(project.get('status'))}</p>
   <div class='grid'>
     <section class='card'><h2>Primitives</h2>{primitive_count_rows}</section>
-    <section class='card'><h2>Consolidated</h2><p>Evidence packs: {len(synthesis_map.get('evidence_packs', []))}</p><p>Quality score: {_escape(synthesis_map.get('quality_score'))}</p></section>
+    <section class='card'><h2>Synthesis Map</h2><p>Quality score: {_escape(synthesis_map.get('quality_score'))}</p></section>
     <section class='card'><h2>Strategy</h2><p>Type: {_escape(strategy.get('strategy_type'))}</p><p>Episodes: {len(episodes)}</p></section>
     <section class='card'><h2>Planning</h2><p>Planned episodes: {len(planned_episodes)}</p></section>
   </div>

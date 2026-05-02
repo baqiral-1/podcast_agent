@@ -13,9 +13,11 @@ from podcast_agent.schemas.models import (
     ActorMetadata,
     ActorProfile,
     ActorRelationship,
+    ArchitectureSection,
     CandidateReading,
     ChapterAnalysis,
     EvidencePack,
+    EpisodeArchitecture,
     EpisodePlan,
     EpisodePlanDraft,
     EpisodeSpine,
@@ -103,7 +105,7 @@ def _framing() -> FramingBlock:
 def _normal_scene(scene_id: str = "scene_1", pack_id: str = "pack_1") -> SceneCard:
     return SceneCard(
         scene_id=scene_id,
-        batch_id="b01",
+        section_id="section_1",
         title="The order arrives",
         scene_role="setup",
         dominant_pack_id=pack_id,
@@ -126,7 +128,7 @@ def _normal_scene_draft(
 ) -> SceneCardDraft:
     return SceneCardDraft(
         scene_id=scene_id,
-        batch_id="b01",
+        section_id="section_1",
         title="The order arrives",
         scene_role="setup",
         dominant_pack_id=pack_id,
@@ -143,15 +145,20 @@ def _normal_scene_draft(
 
 
 def _episode_spine(pack_id: str = "pack_1") -> EpisodeSpine:
+    core_primitive_ids = [pack_id, *[f"core_{idx}" for idx in range(2, 8)]]
+    support_primitive_roles = {
+        f"support_{idx}": SupportPackRole.MECHANISM if idx % 2 == 0 else SupportPackRole.TEXTURE
+        for idx in range(1, 11)
+    }
     return EpisodeSpine(
         listener_question="Why does this decision land so hard?",
         working_claim="This episode tests one controlling proposition.",
         target_end_state="The listener leaves with a constrained verdict.",
         verdict_mode=VerdictMode.CONSTRAIN,
         primary_counterposition="A rival interpretation still pulls at the evidence.",
-        spine_pack_ids=[pack_id],
-        support_pack_roles={"pack_support": SupportPackRole.MECHANISM},
-        allowed_recalls=[],
+        core_primitive_ids=core_primitive_ids,
+        support_primitive_roles=support_primitive_roles,
+        recall_primitive_ids=[],
     )
 
 
@@ -172,25 +179,34 @@ class TestThematicProject:
         with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
             PipelineConfig(scene_batch_min_cards=1)
 
-    def test_pipeline_config_defaults_synthesis_cap_to_500(self):
+    def test_pipeline_config_defaults_synthesis_cap_to_600(self):
         config = PipelineConfig()
-        assert config.synthesis_total_passage_cap == 500
-        assert config.synthesis_floor_budget_fraction == 0.35
-        assert config.synthesis_axis_floor_min == 10
-        assert config.synthesis_axis_floor_max == 15
-        assert config.synthesis_axis_ceiling_multiplier == 1.4
+        assert config.synthesis_total_passage_cap == 600
+        assert config.synthesis_floor_budget_fraction == 0.0
+        assert config.synthesis_axis_floor_min == 0
+        assert config.synthesis_axis_floor_max == 0
+        assert config.synthesis_axis_ceiling_multiplier == 1.68
         assert config.synthesis_trim_top_fraction == 0.10
-        assert config.synthesis_trim_mid_fraction == 0.15
-        assert config.synthesis_trim_top_keep_fraction == 0.50
-        assert config.synthesis_trim_mid_keep_fraction == 0.40
-        assert config.synthesis_trim_tail_keep_fraction == 0.30
+        assert config.synthesis_trim_mid_fraction == 0.20
+        assert config.synthesis_trim_next_fraction == 0.0
+        assert config.synthesis_trim_top_keep_fraction == 0.35
+        assert config.synthesis_trim_mid_keep_fraction == 0.25
+        assert config.synthesis_trim_next_keep_fraction == 0.30
+        assert config.synthesis_trim_tail_keep_fraction == 0.15
         assert config.passage_extraction_concurrency == 16
         assert config.episode_write_concurrency == 6
         assert config.spoken_delivery_concurrency is None
-        assert config.min_episode_minutes == 85.0
-        assert config.target_episode_minutes == 90.0
-        assert config.scene_card_target_min == 35
-        assert config.scene_card_target_max == 45
+        assert config.min_episode_minutes == 100.0
+        assert config.max_episode_minutes == 120.0
+        assert config.scene_card_target_min == 45
+        assert config.scene_card_target_max == 55
+
+    def test_thematic_project_rejects_more_than_thirty_sub_themes(self):
+        with pytest.raises(ValidationError, match="at most 30 entries"):
+            ThematicProject(
+                theme="Theme",
+                sub_themes=[f"s{i}" for i in range(31)],
+            )
 
     def test_chapter_analysis_discards_legacy_fields(self):
         analysis = ChapterAnalysis.model_validate(
@@ -212,6 +228,7 @@ class TestThematicProject:
 
 
 class TestSynthesisModels:
+
     def test_actor_metadata_validates_relationship_references(self):
         metadata = ActorMetadata(
             project_id="proj",
@@ -382,6 +399,46 @@ class TestSynthesisModels:
         assert metrics["evidence_confidence_normalized_count"] == 3
         assert metrics["motivations_converted_count"] == 1
         assert metrics["nested_relationship_flattened_count"] == 2
+
+    def test_sanitize_actor_metadata_drops_invalid_narrative_functions_not_actor(self):
+        raw = {
+            "actors": [
+                {
+                    "actor_id": "louis_mountbatten",
+                    "display_name": "Louis Mountbatten",
+                    "actor_type": "person",
+                    "narrative_functions": ["decision_maker", "imperial_showman"],
+                    "narrative_importance_score": 0.9,
+                }
+            ]
+        }
+
+        metadata, metrics = sanitize_actor_metadata_payload(raw, project_id="proj")
+
+        assert [actor.actor_id for actor in metadata.actors] == ["louis_mountbatten"]
+        assert metadata.actors[0].narrative_functions == ["decision_maker"]
+        assert metrics["dropped_actor_count"] == 0
+        assert metrics["invalid_narrative_function_dropped_count"] == 1
+
+    def test_sanitize_actor_metadata_keeps_actor_when_all_narrative_functions_invalid(self):
+        raw = {
+            "actors": [
+                {
+                    "actor_id": "louis_mountbatten",
+                    "display_name": "Louis Mountbatten",
+                    "actor_type": "person",
+                    "narrative_functions": ["imperial_showman", "deadline_driver"],
+                    "narrative_importance_score": 0.9,
+                }
+            ]
+        }
+
+        metadata, metrics = sanitize_actor_metadata_payload(raw, project_id="proj")
+
+        assert [actor.actor_id for actor in metadata.actors] == ["louis_mountbatten"]
+        assert metadata.actors[0].narrative_functions == []
+        assert metrics["dropped_actor_count"] == 0
+        assert metrics["invalid_narrative_function_dropped_count"] == 2
 
     def test_synthesis_primitive_actor_tags_move_to_ids_and_unresolved(self):
         metadata = ActorMetadata(
@@ -655,7 +712,7 @@ class TestNarrativeStrategy:
                     premise="His restraint frames the episode's character function.",
                     pressure="Escalating violence narrows his choices.",
                     movement="Restraint becomes harder to sustain across scenes.",
-                    payoff="The listener sees restraint as a contested strategy.",
+                    resolution="The listener sees restraint as a contested strategy.",
                 ),
                 ActorArcThread(
                     thread_id="gandhi_tracking_1",
@@ -664,7 +721,7 @@ class TestNarrativeStrategy:
                     premise="Track how restraint becomes harder to sustain.",
                     pressure="Public discipline collides with escalating violence.",
                     movement="Each appearance should add pressure.",
-                    payoff="The episode clarifies what restraint costs.",
+                    resolution="The episode clarifies what restraint costs.",
                 ),
                 ActorArcThread(
                     thread_id="gandhi_tension_1",
@@ -673,7 +730,7 @@ class TestNarrativeStrategy:
                     premise="Public discipline collides with escalating violence.",
                     pressure="Followers and opponents both test discipline.",
                     movement="Pressure accumulates until restraint changes meaning.",
-                    payoff="The tension remains visible at the episode close.",
+                    resolution="The tension remains visible at the episode close.",
                 ),
                 ActorArcThread(
                     thread_id="gandhi_progression_1",
@@ -682,7 +739,7 @@ class TestNarrativeStrategy:
                     premise="The episode changes what restraint can plausibly mean.",
                     pressure="A decision changes the arc.",
                     movement="Move from principle to tested practice.",
-                    payoff="Restraint lands as a consequential choice.",
+                    resolution="Restraint lands as a consequential choice.",
                 ),
                 ActorArcThread(
                     thread_id="gandhi_scene_job_1",
@@ -691,7 +748,7 @@ class TestNarrativeStrategy:
                     premise="Use where restraint meets consequence.",
                     pressure="The scene must do more than repeat the actor function.",
                     movement="Bind actor presence to scene consequence.",
-                    payoff="The scene makes the actor arc legible.",
+                    resolution="The scene makes the actor arc legible.",
                 ),
                 ActorArcThread(
                     thread_id="gandhi_guardrail_1",
@@ -700,7 +757,7 @@ class TestNarrativeStrategy:
                     premise="Do not re-explain restraint unless the scene changes its meaning.",
                     pressure="Repeated appearances can flatten the actor.",
                     movement="Vary actor function across scenes.",
-                    payoff="The actor remains continuous without becoming repetitive.",
+                    resolution="The actor remains continuous without becoming repetitive.",
                 ),
             ],
         )
@@ -757,6 +814,21 @@ class TestNarrativeStrategy:
         )
         assert thread.arc_type == "ideologue"
 
+    def test_actor_arc_thread_accepts_legacy_payoff_alias(self):
+        thread = ActorArcThread.model_validate(
+            {
+                "thread_id": "gandhi_turn_1",
+                "arc_type": "turn",
+                "label": "turning point",
+                "premise": "An event forces a revised stance.",
+                "payoff": "Legacy field remains readable.",
+            }
+        )
+        assert thread.resolution == "Legacy field remains readable."
+        dumped = thread.model_dump(mode="json")
+        assert "payoff" not in dumped
+        assert dumped["resolution"] == "Legacy field remains readable."
+
     def test_actor_arc_thread_ignores_extra_fields(self):
         thread = ActorArcThread.model_validate(
             {
@@ -794,15 +866,54 @@ class TestNarrativeStrategy:
             )
 
     def test_episode_spine_rejects_support_overlap_with_spine(self):
-        with pytest.raises(ValidationError, match="support packs cannot also appear"):
+        support_primitive_roles = {
+            "pack_1": SupportPackRole.STAKES,
+            **{
+                f"support_{idx}": (
+                    SupportPackRole.MECHANISM if idx % 2 == 0 else SupportPackRole.TEXTURE
+                )
+                for idx in range(1, 10)
+            },
+        }
+        with pytest.raises(
+            ValidationError, match="support primitives cannot also appear in core_primitive_ids"
+        ):
             EpisodeSpine(
                 listener_question="What changed?",
                 working_claim="A claim",
                 target_end_state="A clearer state",
                 verdict_mode=VerdictMode.CONSTRAIN,
                 primary_counterposition="Another reading",
-                spine_pack_ids=["pack_1"],
-                support_pack_roles={"pack_1": SupportPackRole.STAKES},
+                core_primitive_ids=["pack_1", *[f"core_{idx}" for idx in range(2, 8)]],
+                support_primitive_roles=support_primitive_roles,
+            )
+
+    def test_episode_spine_rejects_core_primitive_count_outside_new_range(self):
+        with pytest.raises(ValidationError, match="core_primitive_ids must contain 7-10"):
+            EpisodeSpine(
+                listener_question="What changed?",
+                working_claim="A claim",
+                target_end_state="A clearer state",
+                verdict_mode=VerdictMode.CONSTRAIN,
+                primary_counterposition="Another reading",
+                core_primitive_ids=[f"core_{idx}" for idx in range(1, 7)],
+                support_primitive_roles={
+                    f"support_{idx}": SupportPackRole.MECHANISM for idx in range(1, 11)
+                },
+            )
+
+    def test_episode_spine_rejects_support_primitive_count_outside_new_range(self):
+        with pytest.raises(ValidationError, match="support_primitive_roles must contain 10-14"):
+            EpisodeSpine(
+                listener_question="What changed?",
+                working_claim="A claim",
+                target_end_state="A clearer state",
+                verdict_mode=VerdictMode.CONSTRAIN,
+                primary_counterposition="Another reading",
+                core_primitive_ids=[f"core_{idx}" for idx in range(1, 8)],
+                support_primitive_roles={
+                    f"support_{idx}": SupportPackRole.MECHANISM for idx in range(1, 10)
+                },
             )
 
     def test_episode_spine_rejects_removed_rhetorical_fields(self):
@@ -1005,7 +1116,7 @@ class TestPlanningModels:
         card = SceneCardDraft.model_validate(
             {
                 "scene_id": "scene_draft",
-                "batch_id": "b01",
+                "section_id": "section_1",
                 "title": "A hidden mechanism surfaces",
                 "scene_role": "reveal",
                 "dominant_pack_id": "pack_1",
@@ -1025,7 +1136,7 @@ class TestPlanningModels:
         card = SceneCardDraft.model_validate(
             {
                 "scene_id": "scene_action",
-                "batch_id": "b01",
+                "section_id": "section_1",
                 "title": "A hidden mechanism surfaces",
                 "scene_role": "process",
                 "dominant_pack_id": "pack_1",
@@ -1044,7 +1155,7 @@ class TestPlanningModels:
         card = SceneCardDraft.model_validate(
             {
                 "scene_id": "scene_shift",
-                "batch_id": "b01",
+                "section_id": "section_1",
                 "title": "A hidden mechanism surfaces",
                 "scene_role": "perspective shift",
                 "dominant_pack_id": "pack_1",
@@ -1099,7 +1210,7 @@ class TestPlanningModels:
             SceneCard.model_validate(
                 {
                     "scene_id": "scene_final",
-                    "batch_id": "b01",
+                    "section_id": "section_1",
                     "title": "A hidden mechanism surfaces",
                     "scene_role": "reveal",
                     "dominant_pack_id": "pack_1",
@@ -1118,7 +1229,7 @@ class TestPlanningModels:
             SceneCard.model_validate(
                 {
                     "scene_id": "scene_deep",
-                    "batch_id": "b01",
+                    "section_id": "section_1",
                     "title": "A hidden mechanism surfaces",
                     "scene_role": "reveal",
                     "dominant_pack_id": "pack_1",
@@ -1138,7 +1249,7 @@ class TestPlanningModels:
         with pytest.raises(ValidationError, match="scene_role must not be blank"):
             SceneCard(
                 scene_id="scene_blank",
-                batch_id="b01",
+                section_id="section_1",
                 title="Invalid role",
                 scene_role="   ",
                 dominant_pack_id="pack_1",
@@ -1172,7 +1283,7 @@ class TestPlanningModels:
         with pytest.raises(ValidationError):
             SceneCard(
                 scene_id="scene_bridge",
-                batch_id="b01",
+                section_id="section_1",
                 title="Bridge",
                 card_kind="bridge",
                 scene_role="synthesis",
@@ -1225,16 +1336,16 @@ class TestPlanningModels:
             framing=_framing(),
             scene_cards=[_normal_scene_draft()],
         )
-        assert draft.target_duration_minutes == 90.0
+        assert draft.target_duration_minutes == 100.0
 
-    def test_episode_plan_draft_rejects_noncontiguous_batch_ids(self):
+    def test_episode_plan_draft_rejects_noncontiguous_section_ids(self):
         scene_one = _normal_scene_draft(scene_id="scene_1")
-        scene_one.batch_id = "b01"
+        scene_one.section_id = "section_1"
         scene_two = _normal_scene_draft(scene_id="scene_2")
-        scene_two.batch_id = "b02"
+        scene_two.section_id = "section_2"
         scene_three = _normal_scene_draft(scene_id="scene_3")
-        scene_three.batch_id = "b01"
-        with pytest.raises(ValidationError, match="contiguous batch_id"):
+        scene_three.section_id = "section_1"
+        with pytest.raises(ValidationError, match="contiguous architecture section order"):
             EpisodePlanDraft(
                 episode_number=1,
                 title="Episode 1",
@@ -1261,7 +1372,7 @@ class TestPlanningModels:
             framing=_framing(),
             scene_cards=[_normal_scene()],
             target_duration_minutes=140.0,
-            target_word_count=16800,
+            target_word_count=18900,
         )
         restored = EpisodePlan.model_validate(json.loads(draft.model_dump_json()))
         assert restored.framing.handoff_scene_card_id == "scene_1"
@@ -1306,3 +1417,75 @@ class TestSpeechAndStyleModels:
         )
         restored = SpokenScript.model_validate(json.loads(spoken.model_dump_json()))
         assert restored.sections[0].speech_hints.style == "measured"
+
+
+class TestEpisodeArchitectureModels:
+    def _build_architecture(self, section_count: int) -> EpisodeArchitecture:
+        sections = []
+        for idx in range(section_count):
+            section_id = f"section_{idx + 1:02d}"
+            sections.append(
+                ArchitectureSection(
+                    section_id=section_id,
+                    purpose="opening" if idx == 0 else "closing" if idx == section_count - 1 else "setup",
+                    approx_runtime_minutes=100.0 / section_count,
+                    primitive_ids=["et_1"],
+                    section_question=f"Question {idx + 1}?",
+                    section_resolution=f"Resolution {idx + 1}",
+                    entry_state=f"Entry {idx + 1}",
+                    exit_state=f"Exit {idx + 1}",
+                    transition_logic=f"Transition {idx + 1}",
+                    depends_on_section_ids=[f"section_{idx:02d}"] if idx > 0 else [],
+                    sets_up_section_ids=[f"section_{idx + 2:02d}"] if idx < section_count - 1 else [],
+                    argument_role="frame" if idx == 0 else "close" if idx == section_count - 1 else "establish_mechanism",
+                    inference_mode="scene_first" if idx == 0 else "mechanism_first",
+                    recurrence_role="plant" if idx == 0 else "payoff" if idx == section_count - 1 else "deepen",
+                    pressure_type="mass_political",
+                    resolution_type="containment" if idx == section_count - 1 else "escalation",
+                    closure_level="high" if idx == section_count - 1 else "low",
+                )
+            )
+        return EpisodeArchitecture(
+            episode_number=1,
+            title="Episode 1",
+            driving_question="Why begin here?",
+            thematic_focus="Opening moves",
+            arc_summary="The episode traces one local causal chain.",
+            unresolved_questions=[],
+            episode_spine=_episode_spine("et_1"),
+            actor_arc_directives=[],
+            major_turn_section_id=sections[min(2, len(sections) - 1)].section_id,
+            allowed_recurring_primitive_ids=[],
+            forbidden_redundancies=[],
+            sections=sections,
+            architecture_notes=[],
+        )
+
+    def test_episode_architecture_accepts_nine_sections(self):
+        architecture = self._build_architecture(9)
+        assert len(architecture.sections) == 9
+
+    def test_episode_architecture_accepts_ten_sections(self):
+        architecture = self._build_architecture(10)
+        assert len(architecture.sections) == 10
+
+    def test_episode_architecture_rejects_removed_target_section_count_field(self):
+        with pytest.raises(ValidationError, match="target_section_count"):
+            EpisodeArchitecture.model_validate(
+                {
+                    **self._build_architecture(9).model_dump(mode="json"),
+                    "target_section_count": 9,
+                }
+            )
+
+    def test_episode_architecture_accepts_eleven_sections(self):
+        architecture = self._build_architecture(11)
+        assert len(architecture.sections) == 11
+
+    def test_episode_architecture_accepts_twelve_sections(self):
+        architecture = self._build_architecture(12)
+        assert len(architecture.sections) == 12
+
+    def test_episode_architecture_rejects_more_than_twelve_sections(self):
+        with pytest.raises(ValidationError, match="at most 12 items"):
+            self._build_architecture(13)

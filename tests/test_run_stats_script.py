@@ -70,14 +70,6 @@ def _build_run(tmp_path: Path) -> Path:
         run_dir / "synthesis_map.json",
         {
             "project_id": "demo-run",
-            "evidence_packs": [
-                {
-                    "pack_id": "pack_1",
-                    "title": "Pack One",
-                    "local_summary": "Summary",
-                    "primitive_ids": ["et_1"],
-                }
-            ],
             "primitives_by_family": {
                 **{family: [] for family in SYNTHESIS_PRIMITIVE_FAMILIES},
                 "epochal_turns": [{"id": "et_1", "title": "Turn", "summary": "Summary", "core_passage_ids": ["p1"]}],
@@ -119,9 +111,9 @@ def _build_run(tmp_path: Path) -> Path:
                         "target_end_state": "The local consequences become legible.",
                         "verdict_mode": "constrain",
                         "primary_counterposition": "Another reading remains possible.",
-                        "spine_pack_ids": ["pack_1"],
-                        "support_pack_roles": {},
-                        "allowed_recalls": [],
+                        "core_primitive_ids": ["primitive_1"],
+                        "support_primitive_roles": {},
+                        "recall_primitive_ids": [],
                     },
                 }
             ],
@@ -185,7 +177,8 @@ def test_generate_run_stats_html(tmp_path: Path):
     html = output_path.read_text(encoding="utf-8")
     assert "War on Terror" in html
     assert "epochal_turns: 1" in html
-    assert "Evidence packs: 1" in html
+    assert "Synthesis Map" in html
+    assert "Core primitives:</strong> 1" in html
     assert "Driving question:" in html
 
 

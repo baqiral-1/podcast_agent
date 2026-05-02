@@ -16,7 +16,8 @@ class EpisodePlanningAgent(Agent):
 
     def build_payload(
         self,
-        episode: dict,
+        strategy_episode: dict,
+        architecture: dict,
         synthesis_map: dict,
         project_metadata: dict,
         available_passages: list[dict],
@@ -24,7 +25,8 @@ class EpisodePlanningAgent(Agent):
         planning_feedback: dict | None = None,
     ) -> dict:
         payload = {
-            "episode": episode,
+            "strategy_episode": strategy_episode,
+            "architecture": architecture,
             "synthesis_map": synthesis_map,
             "project": project_metadata,
             "available_passages": available_passages,

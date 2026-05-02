@@ -8,7 +8,7 @@ from enum import Enum
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 def utc_now() -> datetime:
@@ -55,7 +55,7 @@ class InsightType(str, Enum):
     EPISTEMIC_DRIFT = "epistemic_drift"
 
 
-class SupportPackRole(str, Enum):
+class SupportPrimitiveRole(str, Enum):
     STAKES = "stakes"
     MECHANISM = "mechanism"
     COUNTERPRESSURE = "counterpressure"
@@ -78,6 +78,63 @@ class VerdictMode(str, Enum):
     CONSTRAIN = "constrain"
     REFRAME = "reframe"
     PRESERVE_AMBIGUITY = "preserve_ambiguity"
+
+
+class SectionPurpose(str, Enum):
+    OPENING = "opening"
+    SETUP = "setup"
+    TURN = "turn"
+    MECHANISM = "mechanism"
+    COUNTERPRESSURE = "counterpressure"
+    COLLAPSE = "collapse"
+    CLOSING = "closing"
+
+
+class ArgumentRole(str, Enum):
+    FRAME = "frame"
+    ESTABLISH_MECHANISM = "establish_mechanism"
+    TEST_VIABILITY = "test_viability"
+    BREAK_ROMANTIC_READING = "break_romantic_reading"
+    CONVERT_EVENT_INTO_STRUCTURE = "convert_event_into_structure"
+    CLOSE = "close"
+
+
+class InferenceMode(str, Enum):
+    SCENE_FIRST = "scene_first"
+    MECHANISM_FIRST = "mechanism_first"
+    CONTRAST_FIRST = "contrast_first"
+    AFTERMATH_FIRST = "aftermath_first"
+
+
+class RecurrenceRole(str, Enum):
+    NONE = "none"
+    PLANT = "plant"
+    DEEPEN = "deepen"
+    PAYOFF = "payoff"
+
+
+class PressureType(str, Enum):
+    CONSTITUTIONAL = "constitutional"
+    MASS_POLITICAL = "mass_political"
+    COMMUNAL = "communal"
+    MORAL = "moral"
+    IMPERIAL = "imperial"
+    PERSONAL = "personal"
+
+
+class ResolutionType(str, Enum):
+    REDEFINITION = "redefinition"
+    COLLAPSE = "collapse"
+    REVERSAL = "reversal"
+    DISILLUSION = "disillusion"
+    ESCALATION = "escalation"
+    CONTAINMENT = "containment"
+
+
+class ClosureLevel(str, Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
 
 
 # ---------------------------------------------------------------------------
@@ -132,8 +189,8 @@ class BookRecord(StrictModel):
 
 
 class PipelineConfig(StrictModel):
-    max_axes: int = Field(default=15, ge=1)
-    min_axes: int = Field(default=10, ge=1)
+    max_axes: int = Field(default=20, ge=1)
+    min_axes: int = Field(default=12, ge=1)
     passage_retrieval_percentage: float = Field(default=0.25, gt=0.0, le=1.0)
     passage_retrieval_min_per_book: int = Field(default=10, ge=1)
     passage_retrieval_max_per_book: int = Field(default=25, ge=1)
@@ -150,41 +207,44 @@ class PipelineConfig(StrictModel):
     mmr_synthesis_lambda: float = Field(default=0.75, ge=0.0, le=1.0)
     mmr_planning_lambda: float = Field(default=0.75, ge=0.0, le=1.0)
     synthesis_axis_pct: float = Field(default=1.0, ge=0.0, le=1.0)
-    synthesis_axis_min: int = Field(default=10, ge=0)
-    synthesis_axis_max: int = Field(default=15, ge=1)
-    synthesis_total_passage_cap: int = Field(default=500, ge=1)
-    synthesis_floor_budget_fraction: float = Field(default=0.35, gt=0.0, le=1.0)
-    synthesis_axis_floor_min: int = Field(default=10, ge=0)
-    synthesis_axis_floor_max: int = Field(default=15, ge=1)
-    synthesis_axis_ceiling_multiplier: float = Field(default=1.4, ge=1.0)
+    synthesis_axis_min: int = Field(default=12, ge=0)
+    synthesis_axis_max: int = Field(default=20, ge=1)
+    synthesis_total_passage_cap: int = Field(default=600, ge=1)
+    synthesis_floor_budget_fraction: float = Field(default=0.0, ge=0.0, le=1.0)
+    synthesis_axis_floor_min: int = Field(default=0, ge=0)
+    synthesis_axis_floor_max: int = Field(default=0, ge=0)
+    synthesis_axis_ceiling_multiplier: float = Field(default=1.68, ge=1.0)
     synthesis_trim_top_fraction: float = Field(default=0.10, ge=0.0, le=1.0)
-    synthesis_trim_mid_fraction: float = Field(default=0.15, ge=0.0, le=1.0)
-    synthesis_trim_top_keep_fraction: float = Field(default=0.50, gt=0.0, le=1.0)
-    synthesis_trim_mid_keep_fraction: float = Field(default=0.40, gt=0.0, le=1.0)
-    synthesis_trim_tail_keep_fraction: float = Field(default=0.30, gt=0.0, le=1.0)
+    synthesis_trim_mid_fraction: float = Field(default=0.20, ge=0.0, le=1.0)
+    synthesis_trim_next_fraction: float = Field(default=0.0, ge=0.0, le=1.0)
+    synthesis_trim_top_keep_fraction: float = Field(default=0.35, gt=0.0, le=1.0)
+    synthesis_trim_mid_keep_fraction: float = Field(default=0.25, gt=0.0, le=1.0)
+    synthesis_trim_next_keep_fraction: float = Field(default=0.30, gt=0.0, le=1.0)
+    synthesis_trim_tail_keep_fraction: float = Field(default=0.15, gt=0.0, le=1.0)
     planning_axis_pct: float = Field(default=1.0, ge=0.0, le=1.0)
-    planning_axis_min: int = Field(default=10, ge=0)
-    planning_axis_max: int = Field(default=15, ge=1)
+    planning_axis_min: int = Field(default=12, ge=0)
+    planning_axis_max: int = Field(default=20, ge=1)
     planning_total_passage_cap: int = Field(default=300, ge=1)
     synthesis_quality_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
     max_repair_attempts: int = Field(default=3, ge=0)
     tts_provider: str = "openai"
     tts_concurrency: int = Field(default=12, ge=1)
+    episode_architecture_concurrency: int = Field(default=6, ge=1)
     episode_planning_concurrency: int = Field(default=6, ge=1)
     episode_write_concurrency: int = Field(default=6, ge=1)
     spoken_delivery_concurrency: int | None = Field(default=None, ge=1)
-    target_episode_minutes: float = Field(default=90.0, gt=0.0)
-    min_episode_minutes: float = Field(default=85.0, gt=0.0)
+    min_episode_minutes: float = Field(default=100.0, gt=0.0)
+    max_episode_minutes: float = Field(default=120.0, gt=0.0)
     duration_shortfall_policy: Literal["warn"] = "warn"
-    scene_card_target_min: int = Field(default=35, ge=1)
-    scene_card_target_max: int = Field(default=45, ge=1)
+    scene_card_target_min: int = Field(default=45, ge=1)
+    scene_card_target_max: int = Field(default=55, ge=1)
     scene_card_target_policy: Literal["warn"] = "warn"
     scene_card_primitives_min: int = Field(default=1, ge=0)
     scene_card_primitives_max: int = Field(default=2, ge=1)
     scene_card_primitive_policy: Literal["warn"] = "warn"
     passage_extraction_concurrency: int = Field(default=16, ge=1)
-    chunk_max_words: int = Field(default=1000, ge=50)
-    chunk_overlap_words: int = Field(default=75, ge=0)
+    chunk_max_words: int = Field(default=750, ge=50)
+    chunk_overlap_words: int = Field(default=30, ge=0)
     spoken_chunk_max_words: int = Field(default=250, ge=50)
     max_author_names_per_episode: int = Field(default=3, ge=0)
     attribution_budget: float = Field(default=0.2, ge=0.0, le=1.0)
@@ -205,12 +265,18 @@ class PipelineConfig(StrictModel):
             raise ValueError("synthesis_axis_floor_max must be >= synthesis_axis_floor_min")
         if self.planning_axis_max < self.planning_axis_min:
             raise ValueError("planning_axis_max must be >= planning_axis_min")
-        if (self.synthesis_trim_top_fraction + self.synthesis_trim_mid_fraction) > 1.0:
-            raise ValueError("synthesis trim top and mid fractions must sum to <= 1.0")
+        if (
+            self.synthesis_trim_top_fraction
+            + self.synthesis_trim_mid_fraction
+            + self.synthesis_trim_next_fraction
+        ) > 1.0:
+            raise ValueError("synthesis trim top, mid, and next fractions must sum to <= 1.0")
         if self.scene_card_target_max < self.scene_card_target_min:
             raise ValueError("scene_card_target_max must be >= scene_card_target_min")
         if self.scene_card_primitives_max < self.scene_card_primitives_min:
             raise ValueError("scene_card_primitives_max must be >= scene_card_primitives_min")
+        if self.max_episode_minutes < self.min_episode_minutes:
+            raise ValueError("max_episode_minutes must be >= min_episode_minutes")
         return self
 
 
@@ -218,7 +284,7 @@ class ThematicProject(StrictModel):
     project_id: str = Field(default_factory=new_id)
     theme: str
     theme_elaboration: str | None = None
-    sub_themes: list[str] = Field(default_factory=list, max_length=15)
+    sub_themes: list[str] = Field(default_factory=list, max_length=30)
     books: list[BookRecord] = Field(default_factory=list)
     requested_episode_count: int | None = Field(default=None, ge=1)
     recommended_episode_count: int | None = Field(default=None, ge=6, le=10)
@@ -246,8 +312,8 @@ class ThematicProject(StrictModel):
                 continue
             seen.add(item)
             normalized.append(item)
-        if len(normalized) > 15:
-            raise ValueError("sub_themes supports at most 15 entries.")
+        if len(normalized) > 30:
+            raise ValueError("sub_themes supports at most 30 entries.")
         return normalized
 
 
@@ -257,8 +323,8 @@ class ThematicProject(StrictModel):
 
 
 class ChunkingConfig(StrictModel):
-    max_chunk_words: int = Field(default=1000, ge=50)
-    overlap_words: int = Field(default=75, ge=0)
+    max_chunk_words: int = Field(default=750, ge=50)
+    overlap_words: int = Field(default=30, ge=0)
     min_chunk_words: int = Field(default=80, ge=10)
     split_on: list[str] = Field(default_factory=lambda: ["\n\n", ". "])
 
@@ -470,7 +536,6 @@ class SynthesisPrimitiveBase(StrictModel):
             combined.append(passage_id)
         return combined
 
-
 class CandidateReading(StrictModel):
     label: str = Field(min_length=1)
     summary: str = Field(min_length=1)
@@ -514,7 +579,6 @@ SYNTHESIS_PRIMITIVE_FAMILIES: tuple[str, ...] = (
     "moral_traps",
     "afterlives",
     "recurring_images_and_symbols",
-    "worlds_in_collision",
     "ironies_and_reversals",
 )
 SYNTHESIS_PRIMITIVE_FAMILY_SET = set(SYNTHESIS_PRIMITIVE_FAMILIES)
@@ -547,87 +611,69 @@ def _drop_invalid_contested_explanations(
     return mapping
 
 
-class EvidencePack(StrictModel):
-    pack_id: str = Field(default_factory=lambda: f"pack_{new_id()[:8]}")
-    title: str = Field(min_length=1)
-    local_summary: str = Field(min_length=1)
-    primitive_ids: list[str] = Field(min_length=1)
-    actor_ids: list[str] = Field(default_factory=list)
-
-    @model_validator(mode="after")
-    def validate_pack(self) -> "EvidencePack":
-        seen_primitive_ids: set[str] = set()
-        deduped_primitive_ids: list[str] = []
-        for primitive_id in self.primitive_ids:
-            if primitive_id in seen_primitive_ids:
-                continue
-            seen_primitive_ids.add(primitive_id)
-            deduped_primitive_ids.append(primitive_id)
-        self.primitive_ids = deduped_primitive_ids
-
-        seen_actor_ids: set[str] = set()
-        deduped_actor_ids: list[str] = []
-        for actor_id in self.actor_ids:
-            if not actor_id or actor_id in seen_actor_ids:
-                continue
-            seen_actor_ids.add(actor_id)
-            deduped_actor_ids.append(actor_id)
-        self.actor_ids = deduped_actor_ids
-        return self
-
 class EpisodeSpine(StrictModel):
     listener_question: str = Field(min_length=1)
     working_claim: str = Field(min_length=1)
     target_end_state: str = Field(min_length=1)
     verdict_mode: VerdictMode
     primary_counterposition: str = Field(min_length=1)
-    spine_pack_ids: list[str] = Field(min_length=1, max_length=3)
-    support_pack_roles: dict[str, SupportPackRole] = Field(default_factory=dict)
-    allowed_recalls: list[str] = Field(default_factory=list)
+    core_primitive_ids: list[str] = Field(min_length=1)
+    support_primitive_roles: dict[str, SupportPrimitiveRole] = Field(default_factory=dict)
+    recall_primitive_ids: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_spine(self) -> "EpisodeSpine":
-        seen_pack_ids: set[str] = set()
-        deduped_spine_pack_ids: list[str] = []
-        for pack_id in self.spine_pack_ids:
-            if not pack_id or pack_id in seen_pack_ids:
+        seen_primitive_ids: set[str] = set()
+        deduped_core_primitive_ids: list[str] = []
+        for primitive_id in self.core_primitive_ids:
+            if not primitive_id or primitive_id in seen_primitive_ids:
                 continue
-            seen_pack_ids.add(pack_id)
-            deduped_spine_pack_ids.append(pack_id)
-        self.spine_pack_ids = deduped_spine_pack_ids
-        if not self.spine_pack_ids:
-            raise ValueError("spine_pack_ids must contain at least one pack id")
-        if len(self.spine_pack_ids) > 3:
-            raise ValueError("spine_pack_ids supports at most 3 pack ids")
+            seen_primitive_ids.add(primitive_id)
+            deduped_core_primitive_ids.append(primitive_id)
+        self.core_primitive_ids = deduped_core_primitive_ids
+        if not self.core_primitive_ids:
+            raise ValueError("core_primitive_ids must contain at least one primitive id")
+        if len(self.core_primitive_ids) < 7 or len(self.core_primitive_ids) > 10:
+            raise ValueError("core_primitive_ids must contain 7-10 primitive ids")
+        if len(self.support_primitive_roles) < 10 or len(self.support_primitive_roles) > 14:
+            raise ValueError("support_primitive_roles must contain 10-14 primitive ids")
 
-        overlap = sorted(set(self.spine_pack_ids).intersection(self.support_pack_roles))
+        overlap = sorted(set(self.core_primitive_ids).intersection(self.support_primitive_roles))
         if overlap:
-            raise ValueError(f"support packs cannot also appear in spine_pack_ids: {overlap}")
+            raise ValueError(
+                f"support primitives cannot also appear in core_primitive_ids: {overlap}"
+            )
 
-        allowed_recalls: list[str] = []
+        recall_primitive_ids: list[str] = []
         seen_recall_ids: set[str] = set()
-        reserved_pack_ids = set(self.spine_pack_ids).union(self.support_pack_roles)
-        for pack_id in self.allowed_recalls:
-            if not pack_id or pack_id in seen_recall_ids or pack_id in reserved_pack_ids:
+        reserved_primitive_ids = set(self.core_primitive_ids).union(
+            self.support_primitive_roles
+        )
+        for primitive_id in self.recall_primitive_ids:
+            if (
+                not primitive_id
+                or primitive_id in seen_recall_ids
+                or primitive_id in reserved_primitive_ids
+            ):
                 continue
-            seen_recall_ids.add(pack_id)
-            allowed_recalls.append(pack_id)
-        self.allowed_recalls = allowed_recalls
+            seen_recall_ids.add(primitive_id)
+            recall_primitive_ids.append(primitive_id)
+        self.recall_primitive_ids = recall_primitive_ids
         return self
 
     @property
-    def assigned_pack_ids(self) -> list[str]:
+    def assigned_primitive_ids(self) -> list[str]:
         ordered: list[str] = []
         seen: set[str] = set()
-        for pack_id in [
-            *self.spine_pack_ids,
-            *self.support_pack_roles.keys(),
-            *self.allowed_recalls,
+        for primitive_id in [
+            *self.core_primitive_ids,
+            *self.support_primitive_roles.keys(),
+            *self.recall_primitive_ids,
         ]:
-            if not pack_id or pack_id in seen:
+            if not primitive_id or primitive_id in seen:
                 continue
-            seen.add(pack_id)
-            ordered.append(pack_id)
+            seen.add(primitive_id)
+            ordered.append(primitive_id)
         return ordered
 
 
@@ -647,38 +693,8 @@ class SynthesisPrimitivesArtifact(StrictModel):
         return self
 
 
-class SynthesisConsolidationResult(StrictModel):
-    project_id: str
-    evidence_packs: list[EvidencePack] = Field(default_factory=list)
-    primitive_ids_by_family: dict[str, list[str]] = Field(default_factory=dict)
-    quality_score: float = Field(default=0.0, ge=0.0, le=1.0)
-    quality_notes: list[str] = Field(default_factory=list)
-
-    def primitive_ids(self) -> set[str]:
-        ids: set[str] = set()
-        for family_ids in self.primitive_ids_by_family.values():
-            ids.update(family_ids)
-        return ids
-
-    @model_validator(mode="after")
-    def validate_cluster_members(self) -> "SynthesisConsolidationResult":
-        self.primitive_ids_by_family = _normalize_family_mapping(
-            self.primitive_ids_by_family,
-            mapping_name="primitive_ids_by_family",
-        )
-        primitive_ids = self.primitive_ids()
-        for pack in self.evidence_packs:
-            missing = [member_id for member_id in pack.primitive_ids if member_id not in primitive_ids]
-            if missing:
-                raise ValueError(
-                    "evidence_packs contains unknown primitive_ids "
-                    f"for {pack.pack_id}: {missing}"
-                )
-        return self
-
 class SynthesisMap(StrictModel):
     project_id: str
-    evidence_packs: list[EvidencePack] = Field(default_factory=list)
     primitives_by_family: dict[str, list[SynthesisPrimitive]] = Field(default_factory=dict)
     quality_score: float = Field(default=0.0, ge=0.0, le=1.0)
     quality_notes: list[str] = Field(default_factory=list)
@@ -697,13 +713,6 @@ class SynthesisMap(StrictModel):
             mapping_name="primitives_by_family",
         )
         self.primitives_by_family = _drop_invalid_contested_explanations(normalized)
-        primitive_ids = set(self.primitive_by_id())
-        for pack in self.evidence_packs:
-            missing = [member_id for member_id in pack.primitive_ids if member_id not in primitive_ids]
-            if missing:
-                raise ValueError(
-                    f"evidence_packs contains unknown primitive_ids for {pack.pack_id}: {missing}"
-                )
         return self
 
 # ---------------------------------------------------------------------------
@@ -725,7 +734,11 @@ class ActorArcThread(StrictModel):
     premise: str = Field(min_length=1)
     pressure: str = ""
     movement: str = ""
-    payoff: str = ""
+    resolution: str = Field(
+        default="",
+        validation_alias=AliasChoices("resolution", "payoff"),
+        serialization_alias="resolution",
+    )
 
 
 class ActorArcDirective(StrictModel):
@@ -777,21 +790,6 @@ class NarrativeStrategy(StrictModel):
         if self.recommended_episode_count is not None and self.episodes:
             if self.recommended_episode_count != len(self.episodes):
                 raise ValueError("recommended_episode_count must match the number of episodes")
-        pack_primary_homes: dict[str, int] = {}
-        for episode in self.episodes:
-            if not episode.episode_spine.spine_pack_ids:
-                raise ValueError(
-                    f"episode {episode.episode_number} must contain at least one spine pack"
-                )
-            for pack_id in episode.episode_spine.assigned_pack_ids:
-                if pack_id in episode.episode_spine.allowed_recalls:
-                    continue
-                if pack_id not in pack_primary_homes:
-                    pack_primary_homes[pack_id] = episode.episode_number
-                elif pack_primary_homes[pack_id] != episode.episode_number:
-                    raise ValueError(
-                        f"pack {pack_id} has multiple primary home episodes"
-                    )
         return self
 
 
@@ -802,6 +800,81 @@ class FramingBlock(StrictModel):
     handoff_scene_card_id: str = Field(min_length=1)
     recap: str | None = None
     preview: str | None = None
+
+
+class ArchitectureSection(StrictModel):
+    section_id: str = Field(min_length=1)
+    purpose: SectionPurpose
+    approx_runtime_minutes: float = Field(gt=0.0)
+    primitive_ids: list[str] = Field(default_factory=list, min_length=1)
+    section_question: str = Field(min_length=1)
+    section_resolution: str = Field(min_length=1)
+    entry_state: str = Field(min_length=1)
+    exit_state: str = Field(min_length=1)
+    transition_logic: str = Field(min_length=1)
+    depends_on_section_ids: list[str] = Field(default_factory=list)
+    sets_up_section_ids: list[str] = Field(default_factory=list)
+    argument_role: ArgumentRole
+    inference_mode: InferenceMode
+    recurrence_role: RecurrenceRole = RecurrenceRole.NONE
+    pressure_type: PressureType
+    resolution_type: ResolutionType
+    closure_level: ClosureLevel = ClosureLevel.LOW
+    priority_core_passage_ids: list[str] = Field(default_factory=list)
+
+
+class EpisodeArchitecture(StrictModel):
+    episode_number: int = Field(ge=1)
+    major_turn_section_id: str = Field(min_length=1)
+    allowed_recurring_primitive_ids: list[str] = Field(default_factory=list)
+    forbidden_redundancies: list[str] = Field(default_factory=list)
+    sections: list[ArchitectureSection] = Field(default_factory=list, min_length=8, max_length=12)
+    architecture_notes: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def drop_legacy_target_duration_minutes(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "target_duration_minutes" in data:
+            return {k: v for k, v in data.items() if k != "target_duration_minutes"}
+        return data
+
+    @property
+    def runtime_minutes(self) -> float:
+        return sum(section.approx_runtime_minutes for section in self.sections)
+
+    @model_validator(mode="after")
+    def validate_architecture(self) -> "EpisodeArchitecture":
+        seen_section_ids: set[str] = set()
+        ordered_section_ids: list[str] = []
+        section_by_id: dict[str, ArchitectureSection] = {}
+        for section in self.sections:
+            if section.section_id in seen_section_ids:
+                raise ValueError("sections must use unique section_id values")
+            seen_section_ids.add(section.section_id)
+            ordered_section_ids.append(section.section_id)
+            section_by_id[section.section_id] = section
+
+        if self.major_turn_section_id not in section_by_id:
+            raise ValueError("major_turn_section_id must reference an existing section")
+
+        section_indices = {section_id: idx for idx, section_id in enumerate(ordered_section_ids)}
+        for section in self.sections:
+            for dependency_id in [*section.depends_on_section_ids, *section.sets_up_section_ids]:
+                if dependency_id not in section_by_id:
+                    raise ValueError(
+                        f"section dependency references unknown section_id: {dependency_id}"
+                    )
+            if any(
+                section_indices[dependency_id] >= section_indices[section.section_id]
+                for dependency_id in section.depends_on_section_ids
+            ):
+                raise ValueError("depends_on_section_ids must reference earlier sections")
+            if any(
+                section_indices[next_id] <= section_indices[section.section_id]
+                for next_id in section.sets_up_section_ids
+            ):
+                raise ValueError("sets_up_section_ids must reference later sections")
+        return self
 
 
 class SceneActorArcBinding(StrictModel):
@@ -829,10 +902,10 @@ class SceneActor(StrictModel):
 
 class _SceneCardBase(StrictModel):
     scene_id: str = Field(default_factory=lambda: f"scene_{new_id()[:8]}")
-    batch_id: str = Field(min_length=1)
+    section_id: str = Field(min_length=1)
     title: str = Field(min_length=1)
     scene_role: str = Field(min_length=1)
-    dominant_pack_id: str | None = None
+    dominant_primitive_id: str | None = None
     spine_relation: SpineRelation
     state_effect: str = Field(min_length=1)
     entry_image: str = ""
@@ -851,8 +924,10 @@ class _SceneCardBase(StrictModel):
     def validate_card_shape(self) -> "_SceneCardBase":
         if not self.scene_role.strip():
             raise ValueError("scene_role must not be blank")
-        if not self.dominant_pack_id:
-            raise ValueError("scene cards require dominant_pack_id")
+        if not self.dominant_primitive_id:
+            raise ValueError("scene cards require dominant_primitive_id")
+        if self.dominant_primitive_id not in self.primitive_ids:
+            raise ValueError("dominant_primitive_id must appear in primitive_ids")
         return self
 
 
@@ -860,8 +935,10 @@ def _migrate_legacy_scene_card(data: Any) -> Any:
     if not isinstance(data, dict):
         return data
     cleaned = dict(data)
-    cleaned.setdefault("batch_id", "b01")
     cleaned.pop("coverage_depth", None)
+    dominant_pack_id = cleaned.pop("dominant_pack_id", None)
+    if dominant_pack_id and "dominant_primitive_id" not in cleaned:
+        cleaned["dominant_primitive_id"] = dominant_pack_id
     role = cleaned.get("scene_role")
     if role == "process":
         cleaned["scene_role"] = "action"
@@ -871,15 +948,12 @@ def _migrate_legacy_scene_card(data: Any) -> Any:
 
 
 class SceneCardDraft(_SceneCardBase):
+    estimated_duration_seconds: int = Field(gt=0)
+
     @model_validator(mode="before")
     @classmethod
     def migrate_legacy_fields(cls, data: Any) -> Any:
-        if not isinstance(data, dict):
-            return data
-        cleaned = _migrate_legacy_scene_card(data)
-        cleaned = dict(cleaned)
-        cleaned.pop("estimated_duration_seconds", None)
-        return cleaned
+        return _migrate_legacy_scene_card(data)
 
 
 class SceneCard(_SceneCardBase):
@@ -893,43 +967,17 @@ class SceneCard(_SceneCardBase):
 
 class EpisodePlanDraft(StrictModel):
     episode_number: int = Field(ge=1)
-    title: str = Field(min_length=1)
-    driving_question: str = Field(min_length=1)
-    thematic_focus: str = ""
-    arc_summary: str = ""
-    unresolved_questions: list[str] = Field(default_factory=list)
-    episode_spine: EpisodeSpine
-    actor_arc_directives: list[ActorArcDirective] = Field(default_factory=list, max_length=4)
     framing: FramingBlock
     scene_cards: list[SceneCardDraft] = Field(default_factory=list, min_length=1)
-    dropped_support_pack_reasons: dict[str, str] = Field(default_factory=dict)
-    target_duration_minutes: float = Field(default=90.0, gt=0.0)
+    dropped_support_primitive_reasons: dict[str, str] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate_scene_cards(self) -> "EpisodePlanDraft":
         scene_ids = [scene.scene_id for scene in self.scene_cards]
         if len(scene_ids) != len(set(scene_ids)):
             raise ValueError("scene_cards must use unique scene_id values")
-        seen_batch_ids: set[str] = set()
-        current_batch_id: str | None = None
-        for scene in self.scene_cards:
-            batch_id = scene.batch_id.strip()
-            if not batch_id:
-                raise ValueError("scene_cards require non-blank batch_id values")
-            if current_batch_id is None:
-                current_batch_id = batch_id
-                seen_batch_ids.add(batch_id)
-                continue
-            if batch_id == current_batch_id:
-                continue
-            if batch_id in seen_batch_ids:
-                raise ValueError("scene_cards must use contiguous batch_id runs")
-            current_batch_id = batch_id
-            seen_batch_ids.add(batch_id)
         if self.framing.handoff_scene_card_id not in set(scene_ids):
             raise ValueError("framing.handoff_scene_card_id must reference an existing scene card")
-        if self.driving_question != self.episode_spine.listener_question:
-            self.driving_question = self.episode_spine.listener_question
         return self
 
 

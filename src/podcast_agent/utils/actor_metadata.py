@@ -10,6 +10,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from podcast_agent.schemas.models import (
+    ActorArcDirective,
     ActorMention,
     ActorMetadata,
     ActorProfile,
@@ -47,6 +48,21 @@ _VALID_ACTOR_TYPES = {
     "other",
 }
 _VALID_EVIDENCE_CONFIDENCE = {"high", "medium", "low"}
+_VALID_NARRATIVE_FUNCTIONS = {
+    "decision_maker",
+    "broker",
+    "victim",
+    "witness",
+    "ideologue",
+    "commander",
+    "administrator",
+    "opposition",
+    "beneficiary",
+    "constraint",
+    "catalyst",
+    "symbol",
+    "other",
+}
 _ACTOR_PROFILE_FIELDS = set(ActorProfile.model_fields)
 
 
@@ -152,6 +168,7 @@ def sanitize_actor_metadata_payload(
         "evidence_confidence_normalized_count": 0,
         "motivations_converted_count": 0,
         "unknown_actor_field_dropped_count": 0,
+        "invalid_narrative_function_dropped_count": 0,
         "nested_relationship_flattened_count": 0,
         "dropped_relationship_count": 0,
         "relationship_type_normalized_count": 0,
@@ -187,6 +204,12 @@ def sanitize_actor_metadata_payload(
                 actor_payload.get("motivations")
             )
             metrics["motivations_converted_count"] += 1
+        if "narrative_functions" in actor_payload:
+            sanitized_functions, dropped_function_count = _sanitize_narrative_functions(
+                actor_payload.get("narrative_functions")
+            )
+            actor_payload["narrative_functions"] = sanitized_functions
+            metrics["invalid_narrative_function_dropped_count"] += dropped_function_count
         actor_id = actor_payload.get("actor_id")
         for nested_relationship in actor_payload.get("relationships", []) or []:
             if not isinstance(nested_relationship, dict) or not isinstance(actor_id, str):
@@ -273,6 +296,26 @@ def _coerce_string_list(value: Any) -> list[str]:
     else:
         values = []
     return [str(item).strip() for item in values if str(item).strip()]
+
+
+def _sanitize_narrative_functions(value: Any) -> tuple[list[str], int]:
+    if value is None:
+        return [], 0
+    if isinstance(value, str):
+        values = [value]
+    elif isinstance(value, list):
+        values = value
+    else:
+        return [], 1
+    filtered: list[str] = []
+    dropped = 0
+    for item in values:
+        normalized = str(item).strip()
+        if not normalized or normalized not in _VALID_NARRATIVE_FUNCTIONS:
+            dropped += 1
+            continue
+        filtered.append(normalized)
+    return filtered, dropped
 
 
 def _strip_unknown_actor_fields(actor_payload: dict[str, Any]) -> tuple[dict[str, Any], int]:
@@ -388,6 +431,7 @@ def clean_strategy_actor_links(
 def clean_scene_actor_links(
     plan: EpisodePlanDraft | EpisodePlan,
     actor_metadata: ActorMetadata,
+    actor_arc_directives: list[ActorArcDirective],
 ) -> tuple[EpisodePlanDraft | EpisodePlan, dict[str, Any]]:
     matcher = ActorMatcher(actor_metadata)
     valid_actor_ids = {actor.actor_id for actor in actor_metadata.actors}
@@ -398,7 +442,7 @@ def clean_scene_actor_links(
         "unknown_actor_ids": 0,
         "unknown_actor_arc_thread_ids": 0,
     }
-    thread_ids_by_actor = _episode_actor_arc_thread_ids(plan)
+    thread_ids_by_actor = _episode_actor_arc_thread_ids(actor_arc_directives)
     cleaned_scenes: list[SceneCardDraft | SceneCard] = []
     for scene in plan.scene_cards:
         cleaned_actors: list[SceneActor] = []
@@ -435,27 +479,18 @@ def clean_scene_actor_links(
             cleaned_actors.append(actor.model_copy(update=update))
         cleaned_scenes.append(scene.model_copy(update={"actors": cleaned_actors}))
 
-    actor_arc_directives = []
-    seen_actor_ids: set[str] = set()
-    for actor in plan.actor_arc_directives:
-        if actor.actor_id not in valid_actor_ids:
-            metrics["unknown_actor_ids"] += 1
-            continue
-        if actor.actor_id in seen_actor_ids:
-            continue
-        seen_actor_ids.add(actor.actor_id)
-        actor_arc_directives.append(actor)
     return plan.model_copy(
         update={
             "scene_cards": cleaned_scenes,
-            "actor_arc_directives": actor_arc_directives,
         }
     ), metrics
 
 
-def _episode_actor_arc_thread_ids(plan: EpisodePlanDraft | EpisodePlan) -> dict[str, set[str]]:
+def _episode_actor_arc_thread_ids(
+    actor_arc_directives: list[ActorArcDirective],
+) -> dict[str, set[str]]:
     thread_ids_by_actor: dict[str, set[str]] = {}
-    for actor in plan.actor_arc_directives:
+    for actor in actor_arc_directives:
         thread_ids_by_actor[actor.actor_id] = {thread.thread_id for thread in actor.arc_threads}
     return thread_ids_by_actor
 

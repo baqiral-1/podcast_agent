@@ -8,6 +8,8 @@ from typing import Any
 from podcast_agent.config import Settings
 from podcast_agent.pipeline.orchestrator import PipelineOrchestrator, _save_json
 from podcast_agent.schemas.models import (
+    ActorMetadata,
+    EpisodeArchitecture,
     EpisodePlan,
     ProjectStatus,
     SynthesisMap,
@@ -50,10 +52,16 @@ async def main() -> None:
     if isinstance(episode_plans_payload, dict) and "episodes" in episode_plans_payload:
         episode_plans = [EpisodePlan.model_validate(item) for item in episode_plans_payload["episodes"]]
     else:
-        episode_plans = await orchestrator._plan_series(
+        architecture_payload = _load_json(project_dir / "episode_architectures.json")
+        episode_architectures = [
+            EpisodeArchitecture.model_validate(item)
+            for item in architecture_payload.get("episodes", [])
+        ]
+        episode_plans, _ = await orchestrator._plan_series(
             project=project,
             synthesis_map=synthesis_map,
             strategy=strategy,
+            episode_architectures=episode_architectures,
             corpus=corpus,
             project_dir=project_dir,
         )
@@ -61,9 +69,30 @@ async def main() -> None:
     project = project.model_copy(update={"status": ProjectStatus.PRODUCING})
     _save_json(project_dir / "thematic_project.json", project)
 
+    architecture_payload = _load_json(project_dir / "episode_architectures.json")
+    architecture_by_number = {
+        episode.episode_number: episode
+        for episode in [
+            EpisodeArchitecture.model_validate(item)
+            for item in architecture_payload.get("episodes", [])
+        ]
+    }
+    strategy_by_number = {
+        episode.episode_number: episode
+        for episode in strategy.episodes
+    }
     sem = asyncio.Semaphore(project.config.episode_write_concurrency)
     ep_tasks = [
-        orchestrator._produce_episode(plan, project, corpus, project_dir, sem)
+        orchestrator._produce_episode(
+            plan,
+            strategy_by_number[plan.episode_number],
+            architecture_by_number[plan.episode_number],
+            project,
+            corpus,
+            ActorMetadata(project_id=project.project_id),
+            project_dir,
+            sem,
+        )
         for plan in episode_plans
     ]
     ep_results = await asyncio.gather(*ep_tasks, return_exceptions=True)

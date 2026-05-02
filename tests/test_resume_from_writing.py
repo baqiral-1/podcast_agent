@@ -10,6 +10,7 @@ from typing import Any
 from podcast_agent.schemas.models import (
     ActorMetadata,
     ActorProfile,
+    EpisodeArchitecture,
     BookRecord,
     EpisodePlan,
     NarrativeStrategy,
@@ -50,21 +51,6 @@ def _episode_plan() -> EpisodePlan:
     return EpisodePlan.model_validate(
         {
             "episode_number": 1,
-            "title": "Episode",
-            "driving_question": "Question?",
-            "thematic_focus": "Focus",
-            "arc_summary": "Arc summary",
-            "unresolved_questions": [],
-            "episode_spine": {
-                "listener_question": "Question?",
-                "working_claim": "A working claim.",
-                "target_end_state": "The episode lands a constrained answer.",
-                "verdict_mode": "constrain",
-                "primary_counterposition": "A rival interpretation remains plausible.",
-                "spine_pack_ids": ["pack_1"],
-                "support_pack_roles": {},
-                "allowed_recalls": [],
-            },
             "framing": {
                 "opening_image": "Image",
                 "threat_or_unresolved_action": "Threat",
@@ -74,9 +60,10 @@ def _episode_plan() -> EpisodePlan:
             "scene_cards": [
                 {
                     "scene_id": "scene_1",
+                    "section_id": "section_1",
                     "title": "Scene",
                     "scene_role": "setup",
-                    "dominant_pack_id": "pack_1",
+                    "dominant_primitive_id": "primitive_1",
                     "spine_relation": "set_stakes",
                     "state_effect": "The stakes become legible.",
                     "entry_image": "Image",
@@ -88,8 +75,97 @@ def _episode_plan() -> EpisodePlan:
                     "estimated_duration_seconds": 60,
                 }
             ],
-            "target_duration_minutes": 1.0,
             "target_word_count": 150,
+        }
+    )
+
+
+def _episode_architecture() -> EpisodeArchitecture:
+    return EpisodeArchitecture.model_validate(
+        {
+            "episode_number": 1,
+            "major_turn_section_id": "section_1",
+            "allowed_recurring_primitive_ids": [],
+            "forbidden_redundancies": [],
+            "sections": [
+                {
+                    "section_id": "section_1",
+                    "purpose": "opening",
+                    "approx_runtime_minutes": 0.25,
+                    "primitive_ids": ["primitive_1"],
+                    "section_question": "Question?",
+                    "section_resolution": "Step one.",
+                    "entry_state": "Start",
+                    "exit_state": "Move",
+                    "transition_logic": "Advance.",
+                    "depends_on_section_ids": [],
+                    "sets_up_section_ids": ["section_2"],
+                    "argument_role": "frame",
+                    "inference_mode": "scene_first",
+                    "recurrence_role": "none",
+                    "pressure_type": "mass_political",
+                    "resolution_type": "escalation",
+                    "closure_level": "low",
+                },
+                {
+                    "section_id": "section_2",
+                    "purpose": "setup",
+                    "approx_runtime_minutes": 0.25,
+                    "primitive_ids": ["primitive_1"],
+                    "section_question": "Question?",
+                    "section_resolution": "Step two.",
+                    "entry_state": "Move",
+                    "exit_state": "Turn",
+                    "transition_logic": "Escalate.",
+                    "depends_on_section_ids": ["section_1"],
+                    "sets_up_section_ids": ["section_3"],
+                    "argument_role": "establish_mechanism",
+                    "inference_mode": "mechanism_first",
+                    "recurrence_role": "none",
+                    "pressure_type": "mass_political",
+                    "resolution_type": "escalation",
+                    "closure_level": "low",
+                },
+                {
+                    "section_id": "section_3",
+                    "purpose": "turn",
+                    "approx_runtime_minutes": 0.25,
+                    "primitive_ids": ["primitive_1"],
+                    "section_question": "Question?",
+                    "section_resolution": "Step three.",
+                    "entry_state": "Turn",
+                    "exit_state": "Close",
+                    "transition_logic": "Pivot.",
+                    "depends_on_section_ids": ["section_2"],
+                    "sets_up_section_ids": ["section_4"],
+                    "argument_role": "test_viability",
+                    "inference_mode": "contrast_first",
+                    "recurrence_role": "none",
+                    "pressure_type": "mass_political",
+                    "resolution_type": "reversal",
+                    "closure_level": "medium",
+                },
+                {
+                    "section_id": "section_4",
+                    "purpose": "closing",
+                    "approx_runtime_minutes": 0.25,
+                    "primitive_ids": ["primitive_1"],
+                    "section_question": "Question?",
+                    "section_resolution": "Resolved.",
+                    "entry_state": "Close",
+                    "exit_state": "End",
+                    "transition_logic": "Close the loop.",
+                    "depends_on_section_ids": ["section_3"],
+                    "sets_up_section_ids": [],
+                    "argument_role": "close",
+                    "inference_mode": "aftermath_first",
+                    "recurrence_role": "none",
+                    "pressure_type": "mass_political",
+                    "resolution_type": "containment",
+                    "closure_level": "high",
+                }
+            ],
+            "architecture_notes": [],
         }
     )
 
@@ -119,15 +195,6 @@ def _build_project_dir(tmp_path: Path) -> Path:
     synthesis_map = SynthesisMap(
         project_id="run_1",
         primitives_by_family={"epochal_turns": [primitive]},
-        evidence_packs=[
-            {
-                "pack_id": "pack_1",
-                "title": "Pack",
-                "local_summary": "Pack summary",
-                "primitive_ids": ["primitive_1"],
-                "actor_ids": ["actor_1"],
-            }
-        ],
     )
     actor_metadata = ActorMetadata(
         project_id="run_1",
@@ -155,9 +222,9 @@ def _build_project_dir(tmp_path: Path) -> Path:
                     "target_end_state": "The episode lands a constrained answer.",
                     "verdict_mode": "constrain",
                     "primary_counterposition": "A rival interpretation remains plausible.",
-                    "spine_pack_ids": ["pack_1"],
-                    "support_pack_roles": {},
-                    "allowed_recalls": [],
+                    "core_primitive_ids": ["primitive_1"],
+                    "support_primitive_roles": {},
+                    "recall_primitive_ids": [],
                 },
             )
         ],
@@ -184,6 +251,7 @@ def _build_project_dir(tmp_path: Path) -> Path:
     )
     corpus = ThematicCorpus(project_id="run_1", axes=[axis])
     plan = _episode_plan()
+    architecture = _episode_architecture()
 
     _write_json(project_dir / "thematic_axes.json", {"axes": [axis.model_dump(mode="json")]})
     _write_json(project_dir / "thematic_project.json", project)
@@ -191,6 +259,7 @@ def _build_project_dir(tmp_path: Path) -> Path:
     _write_json(project_dir / "synthesis_primitives.json", primitives)
     _write_json(project_dir / "synthesis_map.json", synthesis_map)
     _write_json(project_dir / "narrative_strategy.json", strategy)
+    _write_json(project_dir / "episode_architectures.json", {"episodes": [architecture.model_dump(mode="json")]})
     _write_json(project_dir / "series_plan.json", {"episodes": [plan.model_dump(mode="json")]})
     _write_json(project_dir / "actor_metadata.json", actor_metadata)
     _write_json(
@@ -217,6 +286,8 @@ def test_resume_from_writing_uses_series_plan_and_actor_metadata(
         async def _produce_episode(
             self,
             plan: EpisodePlan,
+            strategy_episode: StrategyEpisode,
+            architecture: EpisodeArchitecture,
             project: ThematicProject,
             corpus: ThematicCorpus,
             actor_metadata: ActorMetadata,
@@ -227,6 +298,8 @@ def test_resume_from_writing_uses_series_plan_and_actor_metadata(
             calls["production_actor_metadata"] = actor_metadata
             calls["production_config"] = project.config
             calls["produced_episode_number"] = plan.episode_number
+            calls["produced_strategy_episode"] = strategy_episode
+            calls["produced_architecture"] = architecture
             return plan.episode_number, SimpleNamespace(episode_number=plan.episode_number)
 
         def _write_passage_utilization(self, **kwargs: Any) -> None:
@@ -266,6 +339,8 @@ def test_resume_from_writing_uses_series_plan_and_actor_metadata(
 
     assert calls["bound_project_dir"] == project_dir
     assert calls["produced_episode_number"] == 1
+    assert calls["produced_strategy_episode"].title == "Episode"
+    assert calls["produced_architecture"].episode_number == 1
     assert calls["production_actor_metadata"].actors[0].actor_id == "actor_1"
     assert calls["production_config"].skip_grounding is True
     assert calls["production_config"].skip_audio is True

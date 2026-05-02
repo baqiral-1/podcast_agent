@@ -12,7 +12,6 @@ from podcast_agent.pipeline.orchestrator import PipelineOrchestrator, _save_json
 from podcast_agent.schemas.models import (
     ActorMetadata,
     EpisodeArchitecture,
-    EpisodePlan,
     NarrativeStrategy,
     ProjectStatus,
     SpokenScript,
@@ -78,7 +77,7 @@ def _verify_snapshots_unchanged(
             )
 
 
-async def _resume_from_episode_planning(project_id: str) -> None:
+async def _resume_from_episode_architecture(project_id: str) -> None:
     settings = Settings()
     orchestrator = PipelineOrchestrator(settings)
     project_dir = settings.pipeline.artifact_root / project_id
@@ -117,6 +116,7 @@ async def _resume_from_episode_planning(project_id: str) -> None:
         update={
             "skip_grounding": True,
             "skip_audio": True,
+            "skip_spoken_delivery": False,
         }
     )
     project = project.model_copy(
@@ -222,7 +222,7 @@ async def _resume_from_episode_planning(project_id: str) -> None:
         project = project.model_copy(update={"status": ProjectStatus.FAILED})
         _save_json(project_dir / "thematic_project.json", project)
         details = production_errors + audio_errors
-        raise RuntimeError("Resume failed after planning: " + "; ".join(details))
+        raise RuntimeError("Resume failed after episode architecture: " + "; ".join(details))
 
     _verify_snapshots_unchanged(project_dir=project_dir, before=strict_snapshots)
 
@@ -233,8 +233,8 @@ async def _resume_from_episode_planning(project_id: str) -> None:
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Resume an existing run from episode planning onward using existing thematic "
-            "artifacts and strict integrity checks."
+            "Resume an existing run from episode architecture onward using existing "
+            "thematic artifacts and strict integrity checks."
         )
     )
     parser.add_argument(
@@ -247,7 +247,7 @@ def _parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = _parse_args()
-    asyncio.run(_resume_from_episode_planning(args.project_id))
+    asyncio.run(_resume_from_episode_architecture(args.project_id))
 
 
 if __name__ == "__main__":

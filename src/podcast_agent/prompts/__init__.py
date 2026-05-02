@@ -3,6 +3,7 @@
 from podcast_agent.prompts.instructions import (
     book_summary_instructions,
     chapter_summary_instructions,
+    episode_architecture_instructions,
     episode_planning_instructions,
     episode_writing_no_citations_instructions,
     episode_writing_instructions,
@@ -11,7 +12,6 @@ from podcast_agent.prompts.instructions import (
     passage_extraction_instructions,
     repair_instructions,
     spoken_delivery_instructions,
-    synthesis_consolidation_instructions,
     synthesis_primitives_instructions,
     theme_decomposition_instructions,
 )
@@ -19,6 +19,7 @@ from podcast_agent.prompts.instructions import (
 __all__ = [
     "book_summary_instructions",
     "chapter_summary_instructions",
+    "episode_architecture_instructions",
     "episode_planning_instructions",
     "episode_writing_no_citations_instructions",
     "episode_writing_instructions",
@@ -27,7 +28,6 @@ __all__ = [
     "passage_extraction_instructions",
     "repair_instructions",
     "spoken_delivery_instructions",
-    "synthesis_consolidation_instructions",
     "synthesis_primitives_instructions",
     "theme_decomposition_instructions",
 ]

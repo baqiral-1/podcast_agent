@@ -17,7 +17,7 @@ class ThemeDecompositionResponse(BaseModel):
 
 
 class ThemeDecompositionAgent(Agent):
-    """Decomposes a user theme into 10-15 strong thematic axes spanning all books.
+    """Decomposes a user theme into 12-20 strong thematic axes spanning all books.
 
     This stage is the intentional consumer of chapter-level analysis and
     synthesized per-book summaries. Later stages use retrieved passage evidence

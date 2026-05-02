@@ -11,6 +11,7 @@ from podcast_agent.config import Settings
 from podcast_agent.pipeline.orchestrator import PipelineOrchestrator, _save_json
 from podcast_agent.schemas.models import (
     ActorMetadata,
+    EpisodeArchitecture,
     NarrativeStrategy,
     ProjectStatus,
     SpokenScript,
@@ -47,6 +48,20 @@ def _load_persisted_strategy(project_dir: Path) -> NarrativeStrategy:
                 "Persisted narrative_strategy.json contains an episode without episode_spine."
             )
     return strategy
+
+
+def _load_persisted_architectures(project_dir: Path) -> list[EpisodeArchitecture]:
+    architecture_path = project_dir / "episode_architectures.json"
+    payload = _load_json(architecture_path)
+    architectures_payload = payload.get("episodes")
+    if not isinstance(architectures_payload, list):
+        raise RuntimeError(
+            "Persisted episode_architectures.json must contain a top-level 'episodes' list."
+        )
+    return [
+        EpisodeArchitecture.model_validate(architecture)
+        for architecture in architectures_payload
+    ]
 
 
 def _snapshot_file(path: Path) -> dict[str, Any]:
@@ -138,6 +153,21 @@ async def _resume_from_narrative_strategy(project_id: str) -> None:
         project = orchestrator._resolve_episode_count_from_strategy(project, strategy)
         _save_json(project_dir / "thematic_project.json", project)
 
+        episode_architectures, architecture_actor_metrics = await orchestrator._build_episode_architectures(
+            project=project,
+            synthesis_map=synthesis_map,
+            strategy=strategy,
+            corpus=corpus,
+            project_dir=project_dir,
+            actor_metadata=actor_metadata,
+        )
+        actor_metrics["episode_architecture"] = architecture_actor_metrics
+        persisted_architectures = _load_persisted_architectures(project_dir)
+        if len(persisted_architectures) != project.episode_count:
+            raise RuntimeError(
+                "Persisted episode architectures do not match the resolved episode count."
+            )
+
         project = project.model_copy(update={"status": ProjectStatus.PLANNING})
         _save_json(project_dir / "thematic_project.json", project)
 
@@ -145,6 +175,7 @@ async def _resume_from_narrative_strategy(project_id: str) -> None:
             project=project,
             synthesis_map=synthesis_map,
             strategy=strategy,
+            episode_architectures=persisted_architectures,
             corpus=corpus,
             project_dir=project_dir,
             actor_metadata=actor_metadata,
@@ -165,6 +196,8 @@ async def _resume_from_narrative_strategy(project_id: str) -> None:
         ep_tasks = [
             orchestrator._produce_episode(
                 plan,
+                next(item for item in strategy.episodes if item.episode_number == plan.episode_number),
+                next(item for item in persisted_architectures if item.episode_number == plan.episode_number),
                 project,
                 corpus,
                 actor_metadata,
