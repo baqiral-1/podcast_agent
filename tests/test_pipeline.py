@@ -35,9 +35,9 @@ from podcast_agent.pipeline.orchestrator import (
     _scene_duration_bounds,
     _scene_importance_weight,
     _extract_previous_spoken_tail,
-    _spoken_delivery_batch_section_id,
     _split_sentences,
     _script_total_word_count,
+    _trim_synthesis_primitives_by_family_caps,
     _trim_candidate_texts_by_bm25,
     _trim_candidate_texts_by_bm25_query_text,
 )
@@ -69,9 +69,11 @@ from podcast_agent.schemas.models import (
     SupportPackRole,
     SYNTHESIS_PRIMITIVE_FAMILIES,
     SynthesisConsolidationResult,
-    SynthesisPrimitive,
-    SynthesisPrimitivesArtifact,
     SynthesisMap,
+    SynthesisPrimitiveBase,
+    SynthesisPrimitivesArtifact,
+    ContestedExplanationPrimitive,
+    EpochalTurnPrimitive,
     ThematicCorpus,
     ThematicAxis,
     ThematicProject,
@@ -95,7 +97,7 @@ def _episode_spine(
 ) -> EpisodeSpine:
     provided_core_ids = list(spine_pack_ids) or ["pack_1"]
     core_primitive_ids = list(provided_core_ids)
-    while len(core_primitive_ids) < 7:
+    while len(core_primitive_ids) < 6:
         core_primitive_ids.append(f"core_{len(core_primitive_ids) + 1}")
     merged_support_roles = dict(support_pack_roles or {})
     next_support_idx = 1
@@ -109,10 +111,7 @@ def _episode_spine(
         )
     return EpisodeSpine(
         listener_question="Question?",
-        working_claim="A working claim.",
-        target_end_state="The proposition becomes clearer.",
-        verdict_mode=VerdictMode.CONSTRAIN,
-        primary_counterposition="A competing interpretation remains plausible.",
+        argument="A working claim.",
         core_primitive_ids=core_primitive_ids,
         support_primitive_roles=merged_support_roles,
         recall_primitive_ids=list(allowed_recalls or []),
@@ -127,7 +126,6 @@ def _strategy_episode(
     return StrategyEpisode(
         episode_number=1,
         title="Episode",
-        driving_question="Question?",
         arc_summary="Arc",
         episode_spine=_episode_spine(
             *spine_pack_ids,
@@ -209,10 +207,7 @@ def _normalize_fixture_strategy_episode(payload: dict[str, object]) -> dict[str,
     unresolved_questions = list(payload.get("unresolved_questions", []) or [])
     payload["episode_spine"] = {
         "listener_question": listener_question,
-        "working_claim": thematic_focus,
-        "target_end_state": arc_summary,
-        "verdict_mode": "constrain",
-        "primary_counterposition": unresolved_questions[0] if unresolved_questions else "A competing interpretation remains plausible.",
+        "argument": thematic_focus,
         "core_primitive_ids": (spine_pack_ids[:3] or [cluster_path[0]["cluster_id"]])
         + [f"core_{idx}" for idx in range(4, 8)],
         "support_primitive_roles": {
@@ -300,14 +295,19 @@ class DummyTTSClient:
         return None
 
 
-def _primitive(primitive_id: str, title: str = "Title") -> SynthesisPrimitive:
+def _primitive(primitive_id: str, title: str = "Title") -> EpochalTurnPrimitive:
     match = primitive_id.rsplit("_", 1)
     suffix = match[1] if len(match) == 2 and match[1].isdigit() else "1"
-    return SynthesisPrimitive(
+    return EpochalTurnPrimitive(
         id=primitive_id,
+        family="epochal_turns",
         title=title,
         summary="Summary",
         core_passage_ids=[f"p{suffix}"],
+        before_state="The old arrangement still holds.",
+        after_state="The balance has changed.",
+        change_driver="A decisive move forces the turn.",
+        irreversibility_reason="The fallout cannot be reversed quickly.",
     )
 
 
@@ -338,11 +338,50 @@ def _actor_arc_directive(actor_id: str = "actor_primary") -> ActorArcDirective:
 
 
 def _primitives_by_family(
-    **overrides: list[SynthesisPrimitive],
-) -> dict[str, list[SynthesisPrimitive]]:
+    **overrides: list[SynthesisPrimitiveBase],
+) -> dict[str, list[SynthesisPrimitiveBase]]:
     payload = {family: [] for family in SYNTHESIS_PRIMITIVE_FAMILIES}
     payload.update(overrides)
     return payload
+
+
+def _generic_primitive(
+    primitive_id: str,
+    *,
+    family: str,
+    narrative_importance_score: float = 0.5,
+    core_passage_ids: list[str] | None = None,
+    support_passage_ids: list[str] | None = None,
+) -> SynthesisPrimitiveBase:
+    return SynthesisPrimitiveBase(
+        id=primitive_id,
+        family=family,
+        title=f"Primitive {primitive_id}",
+        summary=f"Summary {primitive_id}",
+        axis_ids=["axis_1"],
+        core_passage_ids=list(core_passage_ids or []),
+        support_passage_ids=list(support_passage_ids or []),
+        narrative_importance_score=narrative_importance_score,
+    )
+
+
+def _epochal_turn(
+    primitive_id: str,
+    *,
+    narrative_importance_score: float = 0.5,
+    core_passage_ids: list[str] | None = None,
+    support_passage_ids: list[str] | None = None,
+) -> SynthesisPrimitiveBase:
+    return SynthesisPrimitiveBase(
+        id=primitive_id,
+        family="epochal_turns",
+        title=f"Primitive {primitive_id}",
+        summary=f"Summary {primitive_id}",
+        axis_ids=["axis_1"],
+        core_passage_ids=list(core_passage_ids or []),
+        support_passage_ids=list(support_passage_ids or []),
+        narrative_importance_score=narrative_importance_score,
+    )
 
 
 def test_compact_primitives_for_consolidation_omits_passage_and_legacy_tag_fields():
@@ -350,8 +389,9 @@ def test_compact_primitives_for_consolidation_omits_passage_and_legacy_tag_field
         project_id="proj",
         primitives_by_family=_primitives_by_family(
             contested_explanations=[
-                SynthesisPrimitive(
+                ContestedExplanationPrimitive(
                     id="cx_1",
+                    family="contested_explanations",
                     title="Competing readings",
                     summary="The evidence supports multiple readings.",
                     axis_ids=["axis_1"],
@@ -414,6 +454,75 @@ def test_compact_primitives_for_consolidation_omits_passage_and_legacy_tag_field
     ]
     assert payload["quality_score"] == 0.6
     assert payload["quality_notes"] == ["thin comparative grounding"]
+
+
+def test_trim_synthesis_primitives_by_family_caps_trims_by_rank():
+    artifact = SynthesisPrimitivesArtifact(
+        project_id="proj",
+        primitives_by_family=_primitives_by_family(
+            epochal_turns=[
+                _epochal_turn(
+                    "et_high",
+                    narrative_importance_score=0.9,
+                    core_passage_ids=["p1", "p2"],
+                    support_passage_ids=["p3"],
+                ),
+                _epochal_turn(
+                    "et_mid",
+                    narrative_importance_score=0.8,
+                    core_passage_ids=["p1"],
+                    support_passage_ids=["p2", "p3"],
+                ),
+                _epochal_turn(
+                    "et_low",
+                    narrative_importance_score=0.3,
+                    core_passage_ids=["p1"],
+                ),
+            ],
+            telling_details=[
+                _generic_primitive(
+                    "td_keep",
+                    family="telling_details",
+                    narrative_importance_score=0.6,
+                    core_passage_ids=["p4"],
+                )
+            ],
+        ),
+        quality_score=0.7,
+        quality_notes=["keep strongest primitives only"],
+    )
+
+    trimmed = _trim_synthesis_primitives_by_family_caps(
+        artifact,
+        family_max_counts={"epochal_turns": 2, "telling_details": 1},
+    )
+
+    assert [item.id for item in trimmed.primitives_by_family["epochal_turns"]] == [
+        "et_high",
+        "et_mid",
+    ]
+    assert [item.id for item in trimmed.primitives_by_family["telling_details"]] == ["td_keep"]
+    assert trimmed.quality_score == artifact.quality_score
+    assert trimmed.quality_notes == artifact.quality_notes
+
+
+def test_trim_synthesis_primitives_by_family_caps_is_stable_when_counts_fit():
+    artifact = SynthesisPrimitivesArtifact(
+        project_id="proj",
+        primitives_by_family=_primitives_by_family(
+            epochal_turns=[_epochal_turn("et_1")],
+            telling_details=[_generic_primitive("td_1", family="telling_details")],
+        ),
+        quality_score=0.5,
+        quality_notes=[],
+    )
+
+    trimmed = _trim_synthesis_primitives_by_family_caps(
+        artifact,
+        family_max_counts={"epochal_turns": 2, "telling_details": 2},
+    )
+
+    assert trimmed is artifact
 
 
 def test_build_scene_card_count_warnings_for_under_target():
@@ -1155,7 +1264,6 @@ def test_build_scene_card_family_warnings_reports_missing_mix():
     episode = StrategyEpisode(
         episode_number=1,
         title="Episode 1",
-        driving_question="Q1",
         arc_summary="A1",
         episode_spine=_episode_spine(
             "pack_1",
@@ -1323,8 +1431,9 @@ def test_map_synthesis_sends_compact_consolidation_payload_and_reconstructs_full
         project_id="proj",
         primitives_by_family=_primitives_by_family(
             contested_explanations=[
-                SynthesisPrimitive(
+                ContestedExplanationPrimitive(
                     id="cx_1",
+                    family="contested_explanations",
                     title="Competing readings",
                     summary="The evidence supports multiple readings.",
                     axis_ids=["axis_1"],
@@ -2260,9 +2369,7 @@ def test_rewrite_for_speech_rewrites_each_section_individually(monkeypatch, tmp_
 
     def fake_spoken_run(payload: dict):
         payloads.append(payload)
-        text = " ".join(
-            section["text"] for section in payload["script"]["prose_sections"]
-        )
+        text = str(payload["section"]["text"])
         return orchestrator.spoken_delivery_agent.response_model.model_validate(
             {
                 "text": f"spoken::{text}.",
@@ -2323,10 +2430,8 @@ def test_rewrite_for_speech_rewrites_each_section_individually(monkeypatch, tmp_
     )
 
     assert len(payloads) == 2
-    assert payloads[0]["script"]["prose_sections"][0]["section_id"] == "section_1"
-    assert payloads[1]["script"]["prose_sections"][0]["section_id"] == "section_2"
-    assert len(payloads[0]["script"]["prose_sections"]) == 1
-    assert len(payloads[1]["script"]["prose_sections"]) == 1
+    assert payloads[0]["section"]["section_id"] == "section_1"
+    assert payloads[1]["section"]["section_id"] == "section_2"
     assert "batch_index" not in payloads[0]
     assert "batch_index" not in payloads[1]
     assert "batch_count" not in payloads[0]
@@ -2337,10 +2442,7 @@ def test_rewrite_for_speech_rewrites_each_section_individually(monkeypatch, tmp_
     assert payloads[1]["previous_spoken_tail"] == "spoken::First section."
     assert "upcoming_batches_summary" not in payloads[0]
     assert "upcoming_batches_summary" not in payloads[1]
-    assert [section.section_id for section in spoken.sections] == [
-        _spoken_delivery_batch_section_id(1),
-        _spoken_delivery_batch_section_id(2),
-    ]
+    assert [section.section_id for section in spoken.sections] == ["section_1", "section_2"]
     assert [section.text for section in spoken.sections] == [
         "spoken::First section.",
         "spoken::Second section.",
@@ -2664,12 +2766,12 @@ def test_plan_series_parallelizes_episode_planning_with_configured_limit(monkeyp
             payloads_by_episode[episode_number] = payload
         try:
             time.sleep(0.05)
-            primary_pack_id = payload["episode"]["episode_spine"]["spine_pack_ids"][0]
+            primary_pack_id = payload["episode"]["episode_spine"]["core_primitive_ids"][0]
             return orchestrator.episode_planning_agent.response_model.model_validate(
                 {
                     "episode_number": episode_number,
                     "title": payload["episode"]["title"],
-                    "driving_question": payload["episode"]["driving_question"],
+                    "driving_question": payload["episode"]["episode_spine"]["listener_question"],
                     "thematic_focus": payload["episode"]["thematic_focus"],
                     "arc_summary": payload["episode"]["arc_summary"],
                     "unresolved_questions": payload["episode"]["unresolved_questions"],
@@ -2724,21 +2826,18 @@ def test_plan_series_parallelizes_episode_planning_with_configured_limit(monkeyp
             StrategyEpisode(
                 episode_number=1,
                 title="Episode 1",
-                driving_question="Q1",
                 arc_summary="A1",
                 episode_spine=_episode_spine("ec_1"),
             ),
             StrategyEpisode(
                 episode_number=2,
                 title="Episode 2",
-                driving_question="Q2",
                 arc_summary="A2",
                 episode_spine=_episode_spine("ec_2"),
             ),
             StrategyEpisode(
                 episode_number=3,
                 title="Episode 3",
-                driving_question="Q3",
                 arc_summary="A3",
                 episode_spine=_episode_spine("ec_3"),
             ),
@@ -2860,12 +2959,12 @@ def test_plan_series_uses_actor_arc_directives_for_episode_metadata(monkeypatch,
 
     def fake_planning_run(payload: dict):
         captured_payload.update(payload)
-        primary_pack_id = payload["episode"]["episode_spine"]["spine_pack_ids"][0]
+        primary_pack_id = payload["episode"]["episode_spine"]["core_primitive_ids"][0]
         return orchestrator.episode_planning_agent.response_model.model_validate(
             {
                 "episode_number": payload["episode"]["episode_number"],
                 "title": payload["episode"]["title"],
-                "driving_question": payload["episode"]["driving_question"],
+                "driving_question": payload["episode"]["episode_spine"]["listener_question"],
                 "thematic_focus": payload["episode"]["thematic_focus"],
                 "arc_summary": payload["episode"]["arc_summary"],
                 "unresolved_questions": payload["episode"]["unresolved_questions"],
@@ -2902,7 +3001,6 @@ def test_plan_series_uses_actor_arc_directives_for_episode_metadata(monkeypatch,
             StrategyEpisode(
                 episode_number=1,
                 title="Episode 1",
-                driving_question="Q1",
                 arc_summary="A1",
                 actor_arc_directives=[strategy_actor],
                 episode_spine=_episode_spine("ec_1"),
@@ -3007,12 +3105,12 @@ def test_plan_series_trims_available_passages_for_planning_with_episode_context(
 
     def fake_planning_run(payload: dict):
         captured_payload.update(payload)
-        primary_pack_id = payload["episode"]["episode_spine"]["spine_pack_ids"][0]
+        primary_pack_id = payload["episode"]["episode_spine"]["core_primitive_ids"][0]
         return orchestrator.episode_planning_agent.response_model.model_validate(
             {
                 "episode_number": payload["episode"]["episode_number"],
                 "title": payload["episode"]["title"],
-                "driving_question": payload["episode"]["driving_question"],
+                "driving_question": payload["episode"]["episode_spine"]["listener_question"],
                 "thematic_focus": payload["episode"]["thematic_focus"],
                 "arc_summary": payload["episode"]["arc_summary"],
                 "unresolved_questions": payload["episode"]["unresolved_questions"],
@@ -3065,7 +3163,6 @@ def test_plan_series_trims_available_passages_for_planning_with_episode_context(
             StrategyEpisode(
                 episode_number=1,
                 title="Episode One",
-                driving_question="drivingalpha",
                 thematic_focus="focusbeta",
                 arc_summary="arcgamma",
                 unresolved_questions=["unresolveddelta"],

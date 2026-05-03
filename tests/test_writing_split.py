@@ -27,22 +27,26 @@ class DummyTTSClient:
         return None
 
 
+def _core_primitive_ids() -> list[str]:
+    return [f"primitive_{idx}" for idx in range(1, 8)]
+
+
+def _support_primitive_roles() -> dict[str, str]:
+    return {f"support_{idx}": "mechanism" for idx in range(1, 10)}
+
+
 def _strategy_episode() -> StrategyEpisode:
     return StrategyEpisode.model_validate(
         {
             "episode_number": 1,
             "title": "Episode 1",
-            "driving_question": "How does the hinge turn?",
             "arc_summary": "The episode tracks a split point cleanly.",
             "unresolved_questions": ["What follows from the hinge?"],
             "episode_spine": {
                 "listener_question": "How does the hinge turn?",
-                "working_claim": "The hinge redirects the episode.",
-                "target_end_state": "The implication becomes legible.",
-                "verdict_mode": "constrain",
-                "primary_counterposition": "A competing reading remains plausible.",
-                "core_primitive_ids": ["primitive_1"],
-                "support_primitive_roles": {},
+                "argument": "The hinge redirects the episode.",
+                "core_primitive_ids": _core_primitive_ids(),
+                "support_primitive_roles": _support_primitive_roles(),
                 "recall_primitive_ids": [],
             },
             "actor_arc_directives": [],
@@ -357,6 +361,9 @@ def test_write_episode_splits_large_episode_into_two_sequential_parts(
         "section_3",
         "section_4",
     ]
+    assert "state_effect" not in first_payload["plan"]["scene_cards"][0]
+    assert "local_question" not in first_payload["plan"]["scene_cards"][0]
+    assert "what_becomes_legible_later" not in second_payload["plan"]["scene_cards"][0]
     assert "prior_window_continuity" not in first_payload
     continuity = second_payload["prior_window_continuity"]
     assert continuity["completed_scene_count"] == 2
@@ -366,17 +373,11 @@ def test_write_episode_splits_large_episode_into_two_sequential_parts(
         "section_id",
         "scene_role",
         "spine_relation",
-        "state_effect",
-        "local_question",
         "withhold_until",
-        "what_becomes_legible_later",
         "intended_move",
     }
     assert continuity["last_completed_scene"]["scene_id"] == "scene_2"
-    assert continuity["live_unresolved_questions"] == [
-        "What follows from the hinge?",
-        "Who now gets to decide?",
-    ]
+    assert continuity["live_unresolved_questions"] == ["What follows from the hinge?"]
     assert continuity["carry_forward_threads"][0].startswith(
         "Keep this tension live without restating it explicitly:"
     )

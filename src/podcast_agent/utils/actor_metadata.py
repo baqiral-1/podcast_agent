@@ -15,13 +15,14 @@ from podcast_agent.schemas.models import (
     ActorMetadata,
     ActorProfile,
     ActorRelationship,
+    BaseSynthesisPrimitive,
     EpisodePlan,
     EpisodePlanDraft,
     SceneActor,
     SceneCard,
     SceneCardDraft,
     StrategyEpisode,
-    SynthesisPrimitive,
+    SynthesisPrimitiveBase,
     SynthesisPrimitivesArtifact,
     ThematicAxis,
 )
@@ -353,46 +354,17 @@ def clean_synthesis_primitive_actor_links(
     artifact: SynthesisPrimitivesArtifact,
     actor_metadata: ActorMetadata,
 ) -> tuple[SynthesisPrimitivesArtifact, dict[str, Any]]:
-    matcher = ActorMatcher(actor_metadata)
     valid_actor_ids = {actor.actor_id for actor in actor_metadata.actors}
-    metrics = {
-        "exact_actor_tag_matches": 0,
-        "fuzzy_actor_tag_matches": 0,
-        "unmatched_actor_tags": 0,
-        "unknown_actor_ids": 0,
-    }
-    cleaned_by_family: dict[str, list[SynthesisPrimitive]] = {}
+    metrics = {"unknown_actor_ids": 0}
+    cleaned_by_family: dict[str, list[BaseSynthesisPrimitive]] = {}
     for family, primitives in artifact.primitives_by_family.items():
-        cleaned_items: list[SynthesisPrimitive] = []
+        cleaned_items: list[BaseSynthesisPrimitive] = []
         for primitive in primitives:
-            primary_ids = _filter_known_ids(primitive.primary_actor_ids, valid_actor_ids, metrics)
-            affected_ids = _filter_known_ids(primitive.affected_actor_ids, valid_actor_ids, metrics)
             actor_ids = _filter_known_ids(primitive.actor_ids, valid_actor_ids, metrics)
-            unresolved = list(primitive.unresolved_actor_tags)
-            for tag in primitive.actor_tags:
-                match = matcher.match(tag)
-                if match is None:
-                    if tag not in unresolved:
-                        unresolved.append(tag)
-                    metrics["unmatched_actor_tags"] += 1
-                    continue
-                if match.match_type == "fuzzy":
-                    metrics["fuzzy_actor_tag_matches"] += 1
-                else:
-                    metrics["exact_actor_tag_matches"] += 1
-                if match.actor_id not in actor_ids:
-                    actor_ids.append(match.actor_id)
-            for actor_id in [*primary_ids, *affected_ids]:
-                if actor_id not in actor_ids:
-                    actor_ids.append(actor_id)
             cleaned_items.append(
                 primitive.model_copy(
                     update={
-                        "primary_actor_ids": primary_ids,
-                        "affected_actor_ids": affected_ids,
                         "actor_ids": actor_ids,
-                        "actor_tags": [],
-                        "unresolved_actor_tags": unresolved,
                     }
                 )
             )
@@ -581,7 +553,7 @@ def select_actor_metadata_subset(
     )
 
 
-def collect_actor_ids_for_primitives(primitives: list[SynthesisPrimitive]) -> set[str]:
+def collect_actor_ids_for_primitives(primitives: list[SynthesisPrimitiveBase]) -> set[str]:
     actor_ids: set[str] = set()
     for primitive in primitives:
         actor_ids.update(primitive.actor_ids)

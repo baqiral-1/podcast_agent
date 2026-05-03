@@ -56,6 +56,57 @@ def test_summarize_retryable_error_compacts_retry_payload() -> None:
     assert summary["raw_payload_chars"] > 0
 
 
+def test_summarize_retryable_error_includes_parse_error_window_middle() -> None:
+    raw_content = "".join(chr(65 + (idx % 26)) for idx in range(3000))
+    exc = RetryableGenerationError(
+        "JSON parsing failed",
+        data={
+            "raw_content": raw_content,
+            "parse_error_line": 22,
+            "parse_error_column": 7,
+            "parse_error_char": 1500,
+        },
+    )
+
+    summary = _summarize_retryable_error(exc)
+
+    assert summary["parse_error_line"] == 22
+    assert summary["parse_error_column"] == 7
+    assert summary["parse_error_char"] == 1500
+    assert summary["raw_content_error_window_start"] == 1000
+    assert summary["raw_content_error_window_end"] == 2000
+    assert summary["raw_content_error_window"] == raw_content[1000:2000]
+
+
+def test_summarize_retryable_error_includes_parse_error_window_start_boundary() -> None:
+    raw_content = "abcdef" * 200
+    exc = RetryableGenerationError(
+        "JSON parsing failed",
+        data={"raw_content": raw_content, "parse_error_char": 120},
+    )
+
+    summary = _summarize_retryable_error(exc)
+
+    assert summary["raw_content_error_window_start"] == 0
+    assert summary["raw_content_error_window_end"] == 620
+    assert summary["raw_content_error_window"] == raw_content[:620]
+
+
+def test_summarize_retryable_error_includes_parse_error_window_end_boundary() -> None:
+    raw_content = "abcdef" * 200
+    parse_error_char = len(raw_content) - 80
+    exc = RetryableGenerationError(
+        "JSON parsing failed",
+        data={"raw_content": raw_content, "parse_error_char": parse_error_char},
+    )
+
+    summary = _summarize_retryable_error(exc)
+
+    assert summary["raw_content_error_window_start"] == parse_error_char - 500
+    assert summary["raw_content_error_window_end"] == len(raw_content)
+    assert summary["raw_content_error_window"] == raw_content[parse_error_char - 500 :]
+
+
 def test_summarize_retryable_error_ignores_non_retryable_error() -> None:
     summary = _summarize_retryable_error(ValueError("boom"))
     assert summary == {}

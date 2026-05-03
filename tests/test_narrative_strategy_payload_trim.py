@@ -13,23 +13,19 @@ from podcast_agent.pipeline.orchestrator import (
     _build_narrative_strategy_actor_metadata_payload,
     _build_narrative_strategy_project_metadata_payload,
     _build_narrative_strategy_synthesis_map_payload,
-    _build_narrative_strategy_thematic_axes_payload,
     _compact_narrative_strategy_runtime_payload,
 )
 from podcast_agent.schemas.models import (
     ActorMetadata,
     ActorProfile,
     ActorRelationship,
+    BaseSynthesisPrimitive,
     BookRecord,
     EpisodeSpine,
-    ExtractedPassage,
     NarrativeStrategy,
     PipelineConfig,
+    SynthesisPrimitivesArtifact,
     StrategyEpisode,
-    SynthesisMap,
-    SynthesisPrimitive,
-    ThematicAxis,
-    ThematicCorpus,
     ThematicProject,
     VerdictMode,
 )
@@ -72,12 +68,13 @@ def test_compact_narrative_strategy_runtime_payload_elides_empty_values():
 
 
 def test_build_narrative_strategy_payload_helpers_trim_fields():
-    synthesis_map = SynthesisMap(
+    synthesis_map = SynthesisPrimitivesArtifact(
         project_id="proj",
         primitives_by_family={
             "epochal_turns": [
-                SynthesisPrimitive(
+                BaseSynthesisPrimitive(
                     id="et_1",
+                    family="epochal_turns",
                     title="Turn",
                     summary="A decisive turn.",
                     axis_ids=["axis_1"],
@@ -85,33 +82,13 @@ def test_build_narrative_strategy_payload_helpers_trim_fields():
                     support_passage_ids=[],
                     timeframe=None,
                     geography="Delhi",
-                    primary_actor_ids=["actor_1"],
-                    affected_actor_ids=["actor_2"],
                     actor_ids=["actor_1", "actor_2"],
-                    actor_tags=["tag"],
-                    institution_tags=["institution"],
-                    unresolved_actor_tags=[],
                     narrative_importance_score=0.82,
-                    candidate_readings=[],
                 )
             ]
         },
         quality_score=0.6,
         quality_notes=[],
-    )
-    corpus = ThematicCorpus(
-        project_id="proj",
-        axes=[
-            ThematicAxis(
-                axis_id="axis_1",
-                name="Axis",
-                description="Axis description.",
-                theme_importance_score=0.9,
-                guiding_questions=["What changed?"],
-                relevance_by_book={"b1": 1.0},
-                keywords=["state", "court"],
-            )
-        ],
     )
     project = ThematicProject(
         project_id="proj",
@@ -158,7 +135,6 @@ def test_build_narrative_strategy_payload_helpers_trim_fields():
     )
 
     synthesis_payload = _build_narrative_strategy_synthesis_map_payload(synthesis_map)
-    axis_payload = _build_narrative_strategy_thematic_axes_payload(corpus)
     project_payload = _build_narrative_strategy_project_metadata_payload(project)
     actor_payload = _build_narrative_strategy_actor_metadata_payload(actor_metadata)
 
@@ -168,18 +144,9 @@ def test_build_narrative_strategy_payload_helpers_trim_fields():
     assert "institution_tags" not in primitive
     assert "support_passage_ids" not in primitive
     assert "timeframe" not in primitive
+    assert "axis_ids" not in primitive
     assert "candidate_readings" not in primitive
     assert primitive["geography"] == "Delhi"
-
-    assert axis_payload == [
-        {
-            "axis_id": "axis_1",
-            "name": "Axis",
-            "description": "Axis description.",
-            "theme_importance_score": 0.9,
-            "guiding_questions": ["What changed?"],
-        }
-    ]
     assert "sub_themes" not in project_payload
     assert actor_payload == {
         "actors": [
@@ -228,15 +195,23 @@ def test_choose_narrative_strategy_uses_trimmed_runtime_payload(monkeypatch, tmp
                 StrategyEpisode(
                     episode_number=1,
                     title="Episode 1",
-                    driving_question="Question?",
                     arc_summary="Arc",
                     episode_spine=EpisodeSpine(
                         listener_question="Question?",
-                        working_claim="Claim",
-                        target_end_state="End state",
-                        verdict_mode=VerdictMode.CONSTRAIN,
-                        primary_counterposition="Counter",
-                        core_primitive_ids=["et_1"],
+                        argument="Claim",
+                        core_primitive_ids=[
+                            "et_1",
+                            "core_2",
+                            "core_3",
+                            "core_4",
+                            "core_5",
+                            "core_6",
+                            "core_7",
+                        ],
+                        support_primitive_roles={
+                            f"support_{idx}": "mechanism"
+                            for idx in range(1, 10)
+                        },
                     ),
                 )
             ],
@@ -257,47 +232,20 @@ def test_choose_narrative_strategy_uses_trimmed_runtime_payload(monkeypatch, tmp
         ],
         config=PipelineConfig(),
     )
-    corpus = ThematicCorpus(
-        project_id="proj",
-        axes=[
-            ThematicAxis(
-                axis_id="axis_1",
-                name="Axis",
-                description="Axis description.",
-                theme_importance_score=0.9,
-                guiding_questions=["What changed?"],
-                relevance_by_book={"b1": 1.0},
-                keywords=["state", "court"],
-            )
-        ],
-        passages_by_axis={
-            "axis_1": [
-                ExtractedPassage(
-                    passage_id="p1",
-                    book_id="b1",
-                    chunk_ids=["c1"],
-                    text="text",
-                    axis_id="axis_1",
-                )
-            ]
-        },
-    )
-    synthesis_map = SynthesisMap(
+    synthesis_map = SynthesisPrimitivesArtifact(
         project_id="proj",
         primitives_by_family={
             "epochal_turns": [
-                SynthesisPrimitive(
+                BaseSynthesisPrimitive(
                     id="et_1",
+                    family="epochal_turns",
                     title="Turn",
                     summary="A decisive turn.",
                     axis_ids=["axis_1"],
                     core_passage_ids=["p1"],
+                    support_passage_ids=[],
                     geography="Delhi",
-                    primary_actor_ids=["actor_1"],
-                    affected_actor_ids=["actor_2"],
                     actor_ids=["actor_1", "actor_2"],
-                    actor_tags=["tag"],
-                    institution_tags=["institution"],
                     narrative_importance_score=0.82,
                 )
             ]
@@ -337,7 +285,6 @@ def test_choose_narrative_strategy_uses_trimmed_runtime_payload(monkeypatch, tmp
         orchestrator._choose_narrative_strategy(
             project,
             synthesis_map,
-            corpus,
             tmp_path,
             actor_metadata,
         )
@@ -348,9 +295,8 @@ def test_choose_narrative_strategy_uses_trimmed_runtime_payload(monkeypatch, tmp
     assert "affected_actor_ids" not in primitive
     assert "actor_tags" not in primitive
     assert "institution_tags" not in primitive
-    assert "relevance_by_book" not in payload["thematic_axes"][0]
-    assert "keywords" not in payload["thematic_axes"][0]
-    assert payload["thematic_axes"][0]["guiding_questions"] == ["What changed?"]
+    assert "axis_ids" not in primitive
+    assert "thematic_axes" not in payload
     assert "sub_themes" not in payload["project"]
     assert "book_ids" not in payload["actor_metadata"]["actors"][0]
     assert "narrative_functions" not in payload["actor_metadata"]["actors"][0]

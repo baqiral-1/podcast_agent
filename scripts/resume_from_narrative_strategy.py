@@ -115,10 +115,9 @@ async def _resume_from_narrative_strategy(project_id: str) -> None:
 
     project = ThematicProject.model_validate(_load_json(project_dir / "thematic_project.json"))
     corpus = ThematicCorpus.model_validate(_load_json(project_dir / "thematic_corpus.json"))
-    _ = SynthesisPrimitivesArtifact.model_validate(
+    synthesis_primitives = SynthesisPrimitivesArtifact.model_validate(
         _load_json(project_dir / "synthesis_primitives.json")
     )
-    synthesis_map = SynthesisMap.model_validate(_load_json(project_dir / "synthesis_map.json"))
     actor_metadata = ActorMetadata.model_validate(_load_json(project_dir / "actor_metadata.json"))
 
     orchestrator._bind_run_logger(project_dir)
@@ -142,13 +141,20 @@ async def _resume_from_narrative_strategy(project_id: str) -> None:
     try:
         _, strategy_actor_metrics = await orchestrator._choose_narrative_strategy(
             project=project,
-            synthesis_map=synthesis_map,
-            corpus=corpus,
+            synthesis_map=synthesis_primitives,
             project_dir=project_dir,
             actor_metadata=actor_metadata,
         )
         actor_metrics["narrative_strategy"] = strategy_actor_metrics
         strategy = _load_persisted_strategy(project_dir)
+        synthesis_map = await orchestrator._enrich_selected_primitives(
+            project=project,
+            synthesis_primitives=synthesis_primitives,
+            strategy=strategy,
+            corpus=corpus,
+            project_dir=project_dir,
+            actor_metadata=actor_metadata,
+        )
 
         project = orchestrator._resolve_episode_count_from_strategy(project, strategy)
         _save_json(project_dir / "thematic_project.json", project)

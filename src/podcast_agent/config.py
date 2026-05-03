@@ -88,10 +88,12 @@ class LLMConfig(BaseModel):
             "passage_extraction": 480.0,
             "synthesis_primitives": 3360.0,
             "narrative_strategy": 900.0,
+            "primitive_enrichment": 900.0,
             "episode_architecture": 900.0,
             "theme_decomposition": 900.0,
             "episode_planning": 1500.0,
             "episode_writing": 1500.0,
+            "style_audit": 900.0,
             "spoken_delivery": 1200.0,
         },
         description="Per-schema timeout overrides in seconds.",
@@ -99,9 +101,11 @@ class LLMConfig(BaseModel):
     thinking_budget_tokens: dict[str, int] = Field(
         default_factory=lambda: {
             "narrative_strategy": 30000,
+            "primitive_enrichment": 20000,
             "episode_architecture": 30000,
             "episode_planning": 30000,
             "episode_writing": 30000,
+            "style_audit": 16000,
             "spoken_delivery": 30000,
             "synthesis_primitives": 30000,
             "theme_decomposition": 30000,
@@ -137,13 +141,15 @@ class LLMConfig(BaseModel):
         default_factory=lambda: {
             "chapter_summary": AgentConfig(model_name="claude-haiku-4-5", temperature=0.3, max_retry_attempts=3, concurrency_limit=48),
             "book_summary": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.3, max_retry_attempts=3, concurrency_limit=15),
-            "theme_decomposition": AgentConfig(model_name="claude-opus-4-7", temperature=0.7, max_retry_attempts=2, concurrency_limit=6),
+            "theme_decomposition": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.7, max_retry_attempts=2, concurrency_limit=6),
             "passage_extraction": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.1, max_retry_attempts=4, concurrency_limit=26),
             "synthesis_primitives": AgentConfig(model_name="claude-opus-4-7", temperature=0.8, max_retry_attempts=2, concurrency_limit=3),
             "narrative_strategy": AgentConfig(model_name="claude-opus-4-7", temperature=0.5, max_retry_attempts=2, concurrency_limit=6),
+            "primitive_enrichment": AgentConfig(model_name="claude-opus-4-7", temperature=0.4, max_retry_attempts=2, concurrency_limit=6),
             "episode_architecture": AgentConfig(model_name="claude-opus-4-7", temperature=0.5, max_retry_attempts=3, concurrency_limit=6),
             "episode_planning": AgentConfig(model_name="claude-opus-4-7", temperature=0.5, max_retry_attempts=3, concurrency_limit=9),
             "episode_writing": AgentConfig(model_name="claude-opus-4-7", temperature=0.6, max_retry_attempts=2, concurrency_limit=9),
+            "style_audit": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.2, max_retry_attempts=2, concurrency_limit=9),
             "grounding_validation": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.2, max_retry_attempts=2, concurrency_limit=6),
             "repair": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.3, max_retry_attempts=2, concurrency_limit=6),
             "spoken_delivery": AgentConfig(model_name="claude-opus-4-7", temperature=0.7, max_retry_attempts=2, concurrency_limit=9),
@@ -285,17 +291,17 @@ class PipelineRuntimeConfig(BaseModel):
     chunk_overlap_words: int = Field(default=30, ge=0)
     min_chunk_words: int = Field(default=80, ge=10)
     max_repair_attempts: int = Field(default=3, ge=0)
-    episode_architecture_concurrency: int = Field(default=6, ge=1)
-    episode_planning_concurrency: int = Field(default=6, ge=1)
-    episode_write_concurrency: int = Field(default=6, ge=1)
-    spoken_delivery_concurrency: int | None = Field(default=None, ge=1)
+    episode_architecture_concurrency: int = Field(default=8, ge=1)
+    episode_planning_concurrency: int = Field(default=8, ge=1)
+    episode_write_concurrency: int = Field(default=8, ge=1)
+    spoken_delivery_concurrency: int | None = Field(default=8, ge=1)
     tts_concurrency: int = Field(default=5, ge=1)
     llm_global_max_concurrency: int = Field(default=30, ge=1)
     audio_retry_attempts: int = Field(default=3, ge=0)
     spoken_words_per_minute: int = Field(default=145, ge=80)
     # Thematic intelligence
-    max_axes: int = Field(default=20, ge=1)
-    min_axes: int = Field(default=12, ge=1)
+    max_axes: int = Field(default=15, ge=1)
+    min_axes: int = Field(default=10, ge=1)
     passage_retrieval_percentage: float = Field(default=0.25, gt=0.0, le=1.0)
     passage_retrieval_min_per_book: int = Field(default=10, ge=1)
     passage_retrieval_max_per_book: int = Field(default=25, ge=1)
@@ -312,8 +318,8 @@ class PipelineRuntimeConfig(BaseModel):
     mmr_synthesis_lambda: float = Field(default=0.75, ge=0.0, le=1.0)
     mmr_planning_lambda: float = Field(default=0.75, ge=0.0, le=1.0)
     synthesis_axis_pct: float = Field(default=1.0, ge=0.0, le=1.0)
-    synthesis_axis_min: int = Field(default=12, ge=0)
-    synthesis_axis_max: int = Field(default=20, ge=1)
+    synthesis_axis_min: int = Field(default=10, ge=0)
+    synthesis_axis_max: int = Field(default=15, ge=1)
     synthesis_total_passage_cap: int = Field(default=600, ge=1)
     synthesis_floor_budget_fraction: float = Field(default=0.0, ge=0.0, le=1.0)
     synthesis_axis_floor_min: int = Field(default=0, ge=0)
@@ -327,12 +333,16 @@ class PipelineRuntimeConfig(BaseModel):
     synthesis_trim_next_keep_fraction: float = Field(default=0.30, gt=0.0, le=1.0)
     synthesis_trim_tail_keep_fraction: float = Field(default=0.15, gt=0.0, le=1.0)
     planning_axis_pct: float = Field(default=1.0, ge=0.0, le=1.0)
-    planning_axis_min: int = Field(default=12, ge=0)
-    planning_axis_max: int = Field(default=20, ge=1)
+    planning_axis_min: int = Field(default=10, ge=0)
+    planning_axis_max: int = Field(default=15, ge=1)
     planning_total_passage_cap: int = Field(default=300, ge=1)
     synthesis_quality_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
     passage_extraction_concurrency: int = Field(default=16, ge=1)
     spoken_chunk_max_words: int = Field(default=250, ge=50)
+    architecture_section_target_min: int = Field(default=7, ge=1)
+    architecture_section_target_max: int = Field(default=10, ge=1)
+    scene_card_target_min: int = Field(default=25, ge=1)
+    scene_card_target_max: int = Field(default=35, ge=1)
 
     @model_validator(mode="after")
     def validate_retrieval_budget_bounds(self) -> PipelineRuntimeConfig:
@@ -352,6 +362,12 @@ class PipelineRuntimeConfig(BaseModel):
             + self.synthesis_trim_next_fraction
         ) > 1.0:
             raise ValueError("synthesis trim top, mid, and next fractions must sum to <= 1.0")
+        if self.architecture_section_target_max < self.architecture_section_target_min:
+            raise ValueError(
+                "architecture_section_target_max must be >= architecture_section_target_min"
+            )
+        if self.scene_card_target_max < self.scene_card_target_min:
+            raise ValueError("scene_card_target_max must be >= scene_card_target_min")
         return self
 
 

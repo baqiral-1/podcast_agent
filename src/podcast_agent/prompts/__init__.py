@@ -10,11 +10,15 @@ from podcast_agent.prompts.instructions import (
     grounding_validation_instructions,
     narrative_strategy_instructions,
     passage_extraction_instructions,
+    primitive_enrichment_instructions,
     repair_instructions,
-    spoken_delivery_instructions,
+    section_local_spoken_delivery_instructions,
+    style_audit_instructions,
     synthesis_primitives_instructions,
     theme_decomposition_instructions,
 )
+
+spoken_delivery_instructions = section_local_spoken_delivery_instructions
 
 __all__ = [
     "book_summary_instructions",
@@ -26,8 +30,10 @@ __all__ = [
     "grounding_validation_instructions",
     "narrative_strategy_instructions",
     "passage_extraction_instructions",
+    "primitive_enrichment_instructions",
     "repair_instructions",
     "spoken_delivery_instructions",
+    "style_audit_instructions",
     "synthesis_primitives_instructions",
     "theme_decomposition_instructions",
 ]

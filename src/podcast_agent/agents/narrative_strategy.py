@@ -17,7 +17,6 @@ class NarrativeStrategyAgent(Agent):
     def build_payload(
         self,
         synthesis_map: dict,
-        thematic_axes: list[dict],
         project_metadata: dict,
         episode_count: int | None,
         actor_metadata: dict | None = None,
@@ -25,7 +24,6 @@ class NarrativeStrategyAgent(Agent):
     ) -> dict:
         payload = {
             "synthesis_map": synthesis_map,
-            "thematic_axes": thematic_axes,
             "project": project_metadata,
         }
         if actor_metadata is not None:

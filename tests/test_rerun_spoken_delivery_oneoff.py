@@ -225,33 +225,16 @@ def test_parse_args_accepts_spoken_max_retry_attempts_override(
     assert args.spoken_max_retry_attempts == 2
 
 
-def test_build_spoken_section_maps_flattened_response_to_batch_section():
+def test_build_spoken_section_maps_section_local_response():
     payload = {
         "episode_number": 1,
-        "batch_index": 2,
-        "script": {
-            "episode_number": 1,
-            "title": "Episode One",
-            "framing": {
-                "opening_image": "Image",
-                "threat_or_unresolved_action": "Threat",
-                "opening_question": "Question",
-                "handoff_scene_card_id": "scene_1",
-            },
-            "prose_sections": [
-                {
-                    "section_id": "section_1",
-                    "scene_card_ids": ["scene_1"],
-                    "movement_goal": "discover",
-                    "text": "Narration",
-                },
-                {
-                    "section_id": "section_2",
-                    "scene_card_ids": ["scene_2"],
-                    "movement_goal": "extend",
-                    "text": "More narration",
-                }
-            ],
+        "section": {
+            "section_id": "section_2",
+            "purpose": "closing",
+            "anchor": "Anchor",
+            "closure_mode": "final_answer",
+            "movement_goal": "extend",
+            "text": "More narration",
         },
         "tts_provider": "openai-compatible",
     }
@@ -273,7 +256,7 @@ def test_build_spoken_section_maps_flattened_response_to_batch_section():
 
     spoken_section = script_module._build_spoken_section(payload, result)
 
-    assert spoken_section.section_id == "spoken_batch_02"
+    assert spoken_section.section_id == "section_2"
     assert spoken_section.text == "Spoken narration"
     assert spoken_section.speech_hints.style == "measured"
     assert spoken_section.speech_hints.pronunciation_hints[0].spoken_as == "PAH-nee-puht"

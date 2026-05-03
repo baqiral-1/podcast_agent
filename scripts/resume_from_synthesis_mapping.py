@@ -136,7 +136,7 @@ async def _resume_from_synthesis_mapping(project_id: str) -> None:
 
     actor_metrics: dict[str, Any] = {}
     try:
-        synthesis_map, synthesis_actor_metrics = await orchestrator._map_synthesis(
+        synthesis_primitives, synthesis_actor_metrics = await orchestrator._map_synthesis(
             project=project,
             corpus=corpus,
             project_dir=project_dir,
@@ -146,12 +146,19 @@ async def _resume_from_synthesis_mapping(project_id: str) -> None:
 
         strategy, strategy_actor_metrics = await orchestrator._choose_narrative_strategy(
             project=project,
-            synthesis_map=synthesis_map,
-            corpus=corpus,
+            synthesis_map=synthesis_primitives,
             project_dir=project_dir,
             actor_metadata=actor_metadata,
         )
         actor_metrics["narrative_strategy"] = strategy_actor_metrics
+        synthesis_map = await orchestrator._enrich_selected_primitives(
+            project=project,
+            synthesis_primitives=synthesis_primitives,
+            strategy=strategy,
+            corpus=corpus,
+            project_dir=project_dir,
+            actor_metadata=actor_metadata,
+        )
 
         project = orchestrator._resolve_episode_count_from_strategy(project, strategy)
         _save_json(project_dir / "thematic_project.json", project)

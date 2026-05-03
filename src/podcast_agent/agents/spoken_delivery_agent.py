@@ -15,7 +15,7 @@ class SpokenDeliveryResponse(BaseModel):
 
 
 class SpokenDeliveryAgent(Agent):
-    """Rewrites contiguous episode batches for spoken delivery."""
+    """Rewrites one prose section at a time for spoken delivery."""
 
     schema_name = "spoken_delivery"
     response_model = SpokenDeliveryResponse
@@ -24,14 +24,14 @@ class SpokenDeliveryAgent(Agent):
     def build_payload(
         self,
         episode_number: int,
-        script: dict,
+        section: dict,
         max_words_per_segment: int,
         tts_provider: str,
         previous_spoken_tail: str | None = None,
     ) -> dict:
         payload = {
             "episode_number": episode_number,
-            "script": script,
+            "section": section,
             "max_words_per_segment": max_words_per_segment,
             "tts_provider": tts_provider,
         }

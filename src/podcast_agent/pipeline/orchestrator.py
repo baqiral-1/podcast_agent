@@ -35,8 +35,10 @@ from podcast_agent.agents.episode_architecture import EpisodeArchitectureAgent
 from podcast_agent.agents.narrative_strategy import NarrativeStrategyAgent
 from podcast_agent.agents.passage_extraction import PassageExtractionAgent
 from podcast_agent.agents.planning import EpisodePlanningAgent
+from podcast_agent.agents.primitive_enrichment import PrimitiveEnrichmentAgent
 from podcast_agent.agents.repair import RepairAgent
 from podcast_agent.agents.spoken_delivery_agent import SpokenDeliveryAgent
+from podcast_agent.agents.style_audit import StyleAuditAgent
 from podcast_agent.agents.synthesis_primitives import SynthesisPrimitivesAgent
 from podcast_agent.agents.theme_decomposition import ThemeDecompositionAgent
 from podcast_agent.agents.validation import GroundingValidationAgent
@@ -53,40 +55,53 @@ from podcast_agent.run_logging import RunLogger
 from podcast_agent.schemas.models import (
     AudioManifest,
     AudioSegmentResult,
-    ArchitectureSection,
     ActorMetadata,
+    BaseSynthesisPrimitive,
     BookRecord,
+    CharacterEnginePrimitive,
     Citation,
     ChapterInfo,
     ChunkingConfig,
+    CoalitionFaultLinePrimitive,
+    ContestedExplanationPrimitive,
     CoverageStats,
+    DecisionPrimitive,
     EpisodeArchitecture,
     EpisodePlan,
     EpisodeSpine,
     EpisodeScript,
+    EpochalTurnPrimitive,
     ExtractedPassage,
     GroundingReport,
+    HumanCostPrimitive,
+    IronyReversalPrimitive,
+    MoralTrapPrimitive,
     NarrativeStrategy,
     PassagePair,
     PipelineConfig,
     ProseSection,
     ProjectStatus,
+    RICH_SYNTHESIS_PRIMITIVE_FAMILIES,
     RenderManifest,
     RenderSegment,
     RepairResult,
     SceneCard,
     SceneCardDraft,
     SegmentDiff,
+    SetPieceScenePrimitive,
     SpineRelation,
+    StyleAuditResponse,
     SpokenSection,
     SpokenScript,
     StrategyEpisode,
-    SupportPrimitiveRole,
     SYNTHESIS_PRIMITIVE_FAMILIES,
+    SYNTHESIS_PRIMITIVE_TARGET_MAX_COUNTS,
     SynthesisMap,
+    SynthesisPrimitiveBase,
     SynthesisPrimitive,
     SynthesisPrimitivesArtifact,
     SynthesisTag,
+    SystemsOperatingLogicPrimitive,
     TextChunk,
     ThematicAxis,
     ThematicCorpus,
@@ -159,6 +174,45 @@ _SPOKEN_RATE_MULTIPLIER = {
 _MERGED_EPISODE_FILENAME = "episode.mp3"
 _SYNTHESIS_MERGED_NARRATIVE_MIN = 7
 _SYNTHESIS_MERGED_NARRATIVE_MAX = 9
+
+
+def _primitive_counts_by_family(
+    artifact: SynthesisPrimitivesArtifact,
+) -> dict[str, int]:
+    return {
+        family: len(artifact.primitives_by_family.get(family, []))
+        for family in SYNTHESIS_PRIMITIVE_FAMILIES
+    }
+
+
+def _trim_synthesis_primitives_by_family_caps(
+    artifact: SynthesisPrimitivesArtifact,
+    *,
+    family_max_counts: dict[str, int] | None = None,
+) -> SynthesisPrimitivesArtifact:
+    capped_counts = family_max_counts or SYNTHESIS_PRIMITIVE_TARGET_MAX_COUNTS
+    trimmed_by_family: dict[str, list[BaseSynthesisPrimitive]] = {}
+    changed = False
+    for family in SYNTHESIS_PRIMITIVE_FAMILIES:
+        items = list(artifact.primitives_by_family.get(family, []))
+        family_cap = capped_counts.get(family)
+        if family_cap is None or len(items) <= family_cap:
+            trimmed_by_family[family] = items
+            continue
+        changed = True
+        ranked_items = sorted(
+            items,
+            key=lambda primitive: (
+                -primitive.narrative_importance_score,
+                -len(primitive.core_passage_ids),
+                -len(primitive.support_passage_ids),
+                primitive.id,
+            ),
+        )
+        trimmed_by_family[family] = ranked_items[:family_cap]
+    if not changed:
+        return artifact
+    return artifact.model_copy(update={"primitives_by_family": trimmed_by_family})
 
 
 def _split_sentences(text: str) -> list[str]:
@@ -391,7 +445,7 @@ def _build_window_plan_payload(
     window_scene_cards: list[SceneCard],
     scene_payload_by_id: dict[str, dict[str, Any]],
     target_word_count: int,
-) -> dict[str, Any]:
+    ) -> dict[str, Any]:
     return {
         "episode_number": plan.episode_number,
         "framing": plan.framing.model_dump(mode="json"),
@@ -403,6 +457,14 @@ def _build_window_plan_payload(
         "dropped_support_primitive_reasons": dict(plan.dropped_support_primitive_reasons),
         "target_word_count": max(1, int(target_word_count)),
     }
+
+
+def _trim_scene_payload_for_writing(scene_payload: dict[str, Any]) -> dict[str, Any]:
+    trimmed = dict(scene_payload)
+    trimmed.pop("local_question", None)
+    trimmed.pop("state_effect", None)
+    trimmed.pop("what_becomes_legible_later", None)
+    return trimmed
 
 
 def _build_window_passages(
@@ -475,24 +537,10 @@ def _build_prior_window_continuity(
         seen_questions.add(normalized_question)
         live_unresolved_questions.append(normalized_question)
 
-    last_local_question = (last_scene.local_question or "").strip()
-    if last_local_question and last_local_question not in seen_questions:
-        if (
-            (last_scene.withhold_until or "").strip() in remaining_scene_ids
-            or bool((last_scene.what_becomes_legible_later or "").strip())
-        ):
-            seen_questions.add(last_local_question)
-            live_unresolved_questions.append(last_local_question)
-
     carry_forward_threads: list[str] = []
     if live_unresolved_questions:
         carry_forward_threads.append(
             f"Keep this tension live without restating it explicitly: {live_unresolved_questions[-1]}"
-        )
-    if (last_scene.what_becomes_legible_later or "").strip():
-        carry_forward_threads.append(
-            "Let the next window cash out this delayed legibility through its assigned scenes: "
-            f"{last_scene.what_becomes_legible_later.strip()}"
         )
     withheld_scene_id = (last_scene.withhold_until or "").strip()
     if withheld_scene_id and withheld_scene_id in remaining_scene_ids:
@@ -512,16 +560,66 @@ def _build_prior_window_continuity(
             "section_id": last_scene.section_id,
             "scene_role": last_scene.scene_role,
             "spine_relation": last_scene.spine_relation.value,
-            "state_effect": last_scene.state_effect,
-            "local_question": last_scene.local_question,
             "withhold_until": last_scene.withhold_until,
-            "what_becomes_legible_later": last_scene.what_becomes_legible_later,
             "intended_move": last_scene.intended_move,
         },
         "live_unresolved_questions": live_unresolved_questions,
         "carry_forward_threads": carry_forward_threads[:3],
         "tail_excerpt": tail_excerpt,
     }
+
+
+def _build_style_audit_sections_payload(
+    *,
+    script: EpisodeScript,
+    architecture: EpisodeArchitecture,
+) -> list[dict[str, Any]]:
+    section_meta_by_id = {
+        section.section_id: section for section in architecture.sections
+    }
+    payload_sections: list[dict[str, Any]] = []
+    for prose_section in script.prose_sections:
+        meta = section_meta_by_id.get(prose_section.section_id)
+        if meta is None:
+            continue
+        payload_sections.append(
+            {
+                "section_id": prose_section.section_id,
+                "purpose": meta.purpose.value,
+                "anchor": meta.section_anchor,
+                "closure_mode": meta.closure_mode.value if meta.closure_mode else "",
+                "text": prose_section.text,
+            }
+        )
+    return payload_sections
+
+
+def _apply_style_audit_to_script(
+    *,
+    script: EpisodeScript,
+    audit: StyleAuditResponse,
+    spoken_words_per_minute: float,
+) -> EpisodeScript:
+    edits_by_section_id = {
+        section.section_id: section for section in audit.sections
+    }
+    new_sections: list[ProseSection] = []
+    for section in script.prose_sections:
+        edit = edits_by_section_id.get(section.section_id)
+        if edit is None:
+            new_sections.append(section)
+            continue
+        new_sections.append(section.model_copy(update={"text": edit.edited_text}))
+    updated = script.model_copy(update={"prose_sections": new_sections})
+    return updated.model_copy(
+        update={
+            "total_word_count": _script_total_word_count(updated),
+            "estimated_duration_seconds": _estimate_duration_seconds_from_words(
+                _script_total_word_count(updated),
+                spoken_words_per_minute,
+            ),
+        }
+    )
 
 
 def _extract_insight_refs(text: str) -> list[str]:
@@ -1668,6 +1766,9 @@ def _build_strategy_feedback_for_merged_narratives(report: dict[str, Any]) -> di
 
 _NARRATIVE_STRATEGY_OMIT = object()
 _NARRATIVE_STRATEGY_PRIMITIVE_DROP_FIELDS = {
+    "support_passage_ids",
+    "timeframe",
+    "axis_ids",
     "affected_actor_ids",
     "actor_tags",
     "institution_tags",
@@ -1684,6 +1785,44 @@ _NARRATIVE_STRATEGY_ACTOR_KEEP_FIELDS = {
     "transformations",
     "narrative_importance_score",
 }
+
+_CONSOLIDATION_PRIMITIVE_DROP_FIELDS = {
+    "family",
+    "core_passage_ids",
+    "support_passage_ids",
+    "actor_tags",
+    "institution_tags",
+}
+
+
+def _compact_primitives_for_consolidation(
+    artifact: SynthesisPrimitivesArtifact,
+) -> dict[str, Any]:
+    primitives_by_family: dict[str, list[dict[str, Any]]] = {}
+    for family in SYNTHESIS_PRIMITIVE_FAMILIES:
+        compacted_items: list[dict[str, Any]] = []
+        for primitive in artifact.primitives_by_family.get(family, []):
+            payload = {
+                key: value
+                for key, value in primitive.model_dump(mode="json").items()
+                if key not in _CONSOLIDATION_PRIMITIVE_DROP_FIELDS
+            }
+            if "candidate_readings" in payload:
+                payload["candidate_readings"] = [
+                    {
+                        "label": reading.get("label", ""),
+                        "summary": reading.get("summary", ""),
+                    }
+                    for reading in payload["candidate_readings"]
+                ]
+            compacted_items.append(payload)
+        primitives_by_family[family] = compacted_items
+    return {
+        "project_id": artifact.project_id,
+        "primitives_by_family": primitives_by_family,
+        "quality_score": artifact.quality_score,
+        "quality_notes": list(artifact.quality_notes),
+    }
 
 
 def _compact_narrative_strategy_runtime_value(value: Any) -> Any:
@@ -1719,7 +1858,7 @@ def _compact_narrative_strategy_runtime_payload(payload: dict[str, Any]) -> dict
 
 
 def _build_narrative_strategy_synthesis_map_payload(
-    synthesis_map: SynthesisMap,
+    synthesis_map: SynthesisPrimitivesArtifact,
 ) -> dict[str, Any]:
     primitives_by_family: dict[str, list[dict[str, Any]]] = {}
     for family in SYNTHESIS_PRIMITIVE_FAMILIES:
@@ -1739,23 +1878,6 @@ def _build_narrative_strategy_synthesis_map_payload(
             "quality_notes": list(synthesis_map.quality_notes),
         }
     )
-
-
-def _build_narrative_strategy_thematic_axes_payload(
-    corpus: ThematicCorpus,
-) -> list[dict[str, Any]]:
-    return [
-        _compact_narrative_strategy_runtime_payload(
-            {
-                "axis_id": axis.axis_id,
-                "name": axis.name,
-                "description": axis.description,
-                "theme_importance_score": axis.theme_importance_score,
-                "guiding_questions": list(axis.guiding_questions),
-            }
-        )
-        for axis in corpus.axes
-    ]
 
 
 def _build_narrative_strategy_project_metadata_payload(
@@ -1795,6 +1917,184 @@ def _build_narrative_strategy_actor_metadata_payload(
             ],
         }
     )
+
+
+_ENRICHED_PRIMITIVE_MODEL_BY_FAMILY: dict[str, type[SynthesisPrimitiveBase]] = {
+    "epochal_turns": EpochalTurnPrimitive,
+    "decisions_and_nondecisions": DecisionPrimitive,
+    "set_piece_scenes": SetPieceScenePrimitive,
+    "human_costs": HumanCostPrimitive,
+    "character_engines": CharacterEnginePrimitive,
+    "coalitions_and_fault_lines": CoalitionFaultLinePrimitive,
+    "systems_and_operating_logics": SystemsOperatingLogicPrimitive,
+    "contested_explanations": ContestedExplanationPrimitive,
+    "moral_traps": MoralTrapPrimitive,
+    "ironies_and_reversals": IronyReversalPrimitive,
+}
+_PRIMITIVE_ENRICHMENT_FAMILY_CONCURRENCY = 5
+
+
+def _flatten_base_synthesis_primitives(
+    artifact: SynthesisPrimitivesArtifact,
+) -> dict[str, BaseSynthesisPrimitive]:
+    flattened: dict[str, BaseSynthesisPrimitive] = {}
+    for family in SYNTHESIS_PRIMITIVE_FAMILIES:
+        for item in artifact.primitives_by_family.get(family, []):
+            flattened[item.id] = item
+    return flattened
+
+
+def _collect_strategy_selected_primitive_ids(strategy: NarrativeStrategy) -> list[str]:
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for episode in strategy.episodes:
+        for primitive_id in episode.episode_spine.assigned_primitive_ids:
+            if not primitive_id or primitive_id in seen:
+                continue
+            seen.add(primitive_id)
+            ordered.append(primitive_id)
+    return ordered
+
+
+def _build_passage_lookup(corpus: ThematicCorpus) -> dict[str, ExtractedPassage]:
+    lookup: dict[str, ExtractedPassage] = {}
+    for passages in corpus.passages_by_axis.values():
+        for passage in passages:
+            lookup[passage.passage_id] = passage
+    return lookup
+
+
+def _build_primitive_enrichment_family_query(
+    family: str,
+    primitives: list[BaseSynthesisPrimitive],
+    actor_metadata: ActorMetadata,
+) -> str:
+    actor_name_by_id = {
+        actor.actor_id: actor.display_name.strip()
+        for actor in actor_metadata.actors
+        if actor.display_name.strip()
+    }
+    parts: list[str] = [family.replace("_", " ")]
+    for primitive in primitives:
+        parts.append(primitive.title)
+        parts.append(primitive.summary)
+        if primitive.timeframe:
+            parts.append(primitive.timeframe)
+        if primitive.geography:
+            parts.append(primitive.geography)
+        for actor_id in primitive.actor_ids:
+            if actor_name := actor_name_by_id.get(actor_id):
+                parts.append(actor_name)
+    return " ".join(part.strip() for part in parts if part and part.strip())
+
+
+def _build_primitive_enrichment_passages_by_id(
+    *,
+    family: str,
+    primitives: list[BaseSynthesisPrimitive],
+    passage_lookup: dict[str, ExtractedPassage],
+    actor_metadata: ActorMetadata,
+) -> dict[str, dict[str, Any]]:
+    if not primitives:
+        return {}
+    core_keep_fraction = 0.35
+    support_keep_fraction = core_keep_fraction / 2
+    query_text = _build_primitive_enrichment_family_query(family, primitives, actor_metadata)
+    shared_candidates: list[dict[str, Any]] = []
+    keep_fraction_by_passage_id: dict[str, float] = {}
+    core_reuse_count_by_passage_id: dict[str, int] = {}
+    support_reuse_count_by_passage_id: dict[str, int] = {}
+    seen_passage_ids: set[str] = set()
+    for primitive in primitives:
+        for passage_kind, passage_ids in (
+            ("core", primitive.core_passage_ids),
+            ("support", primitive.support_passage_ids),
+        ):
+            keep_fraction = (
+                core_keep_fraction if passage_kind == "core" else support_keep_fraction
+            )
+            for passage_id in passage_ids:
+                if not passage_id:
+                    continue
+                if passage_kind == "core":
+                    core_reuse_count_by_passage_id[passage_id] = (
+                        core_reuse_count_by_passage_id.get(passage_id, 0) + 1
+                    )
+                else:
+                    support_reuse_count_by_passage_id[passage_id] = (
+                        support_reuse_count_by_passage_id.get(passage_id, 0) + 1
+                    )
+                prior_keep_fraction = keep_fraction_by_passage_id.get(passage_id, 0.0)
+                if keep_fraction > prior_keep_fraction:
+                    keep_fraction_by_passage_id[passage_id] = keep_fraction
+                if passage_id in seen_passage_ids:
+                    continue
+                seen_passage_ids.add(passage_id)
+                passage = passage_lookup.get(passage_id)
+                if passage is None:
+                    continue
+                full_text = (
+                    passage.full_text.strip()
+                    or passage.trimmed_text.strip()
+                    or passage.text.strip()
+                )
+                if not full_text:
+                    continue
+                shared_candidates.append(
+                    {
+                        "passage_id": passage.passage_id,
+                        "book_id": passage.book_id,
+                        "chapter_ref": passage.chapter_ref,
+                        "text": full_text,
+                    }
+                )
+    if not shared_candidates:
+        return {}
+    keep_fraction_by_passage_id = {
+        passage_id: max(
+            0.01,
+            keep_fraction_by_passage_id[passage_id]
+            / max(
+                1,
+                core_reuse_count_by_passage_id.get(
+                    passage_id,
+                    support_reuse_count_by_passage_id.get(passage_id, 0),
+                ),
+            ),
+        )
+        for passage_id in keep_fraction_by_passage_id
+    }
+    _trim_candidate_texts_by_bm25_query_text(
+        query_text,
+        shared_candidates,
+        keep_fraction=core_keep_fraction,
+        keep_fraction_by_passage_id=keep_fraction_by_passage_id,
+    )
+    return {
+        str(candidate["passage_id"]): {
+            "passage_id": str(candidate["passage_id"]),
+            "book_id": str(candidate.get("book_id", "")),
+            "chapter_ref": str(candidate.get("chapter_ref", "")),
+            "text": str(candidate.get("text", "")).strip(),
+        }
+        for candidate in shared_candidates
+        if str(candidate.get("text", "")).strip()
+    }
+
+
+def _build_minimal_project_metadata_payload(project: ThematicProject) -> dict[str, Any]:
+    return {
+        "theme": project.theme,
+        "sub_themes": list(project.sub_themes),
+        "books": [
+            {
+                "book_id": book.book_id,
+                "title": book.title,
+                "author": book.author,
+            }
+            for book in project.books
+        ],
+    }
 
 
 def _build_episode_synthesis_context(
@@ -3587,7 +3887,7 @@ def _build_passage_lookup(corpus: ThematicCorpus) -> dict[str, ExtractedPassage]
     return passage_lookup
 
 
-def _primitive_passage_ids(primitive: SynthesisPrimitive) -> list[str]:
+def _primitive_passage_ids(primitive: SynthesisPrimitiveBase) -> list[str]:
     seen: set[str] = set()
     ordered: list[str] = []
     for passage_id in [*primitive.core_passage_ids, *primitive.support_passage_ids]:
@@ -3598,7 +3898,7 @@ def _primitive_passage_ids(primitive: SynthesisPrimitive) -> list[str]:
     return ordered
 
 
-def _iter_primitive_passage_refs(primitive: SynthesisPrimitive) -> list[tuple[str, str]]:
+def _iter_primitive_passage_refs(primitive: SynthesisPrimitiveBase) -> list[tuple[str, str]]:
     seen: set[str] = set()
     ordered: list[tuple[str, str]] = []
     for passage_kind, passage_ids in (
@@ -3616,7 +3916,7 @@ def _iter_primitive_passage_refs(primitive: SynthesisPrimitive) -> list[tuple[st
 def _build_episode_planning_passage_refs(
     *,
     primitive_ids_by_role: dict[str, list[str]],
-    primitive_lookup: dict[str, SynthesisPrimitive],
+    primitive_lookup: dict[str, SynthesisPrimitiveBase],
 ) -> list[dict[str, str]]:
     refs: list[dict[str, str]] = []
     for episode_role in ("core", "support", "recall"):
@@ -3649,7 +3949,7 @@ def _build_episode_planning_passage_query_texts(
     *,
     episode_query_text: str,
     passage_refs: list[dict[str, str]],
-    primitive_lookup: dict[str, SynthesisPrimitive],
+    primitive_lookup: dict[str, SynthesisPrimitiveBase],
 ) -> dict[str, str]:
     query_parts_by_passage_id: dict[str, list[str]] = {}
     seen_primitive_ids_by_passage_id: dict[str, set[str]] = {}
@@ -3747,6 +4047,28 @@ def _validate_architecture_transition(
         raise RuntimeError(
             f"Episode architecture must contain sections for episode {architecture.episode_number}."
         )
+    missing_section_anchor_ids = [
+        section.section_id
+        for section in architecture.sections
+        if not section.section_anchor.strip()
+    ]
+    if missing_section_anchor_ids:
+        raise RuntimeError(
+            "Episode architecture omitted required section_anchor values for episode "
+            f"{architecture.episode_number}: {_preview_ids(missing_section_anchor_ids)}"
+        )
+
+    missing_must_stage_beat_ids = [
+        section.section_id
+        for section in architecture.sections
+        if not section.must_stage_beats
+    ]
+    if missing_must_stage_beat_ids:
+        raise RuntimeError(
+            "Episode architecture omitted required must_stage_beats for episode "
+            f"{architecture.episode_number}: {_preview_ids(missing_must_stage_beat_ids)}"
+        )
+
     last_section_purpose = getattr(architecture.sections[-1].purpose, "value", architecture.sections[-1].purpose)
     if last_section_purpose != "closing":
         raise RuntimeError(
@@ -3807,11 +4129,13 @@ def _build_episode_architecture_realization(
         if primitive_id not in section_primitive_id_set
     ]
     warnings: list[str] = []
-    if section_count < 8 or section_count > 12:
-        warnings.append(
-            f"architecture_section_count_outside_preferred_range: {section_count} "
-            "(preferred 8-12)"
+    warnings.extend(
+        _build_architecture_section_count_warnings(
+            section_count=section_count,
+            section_target_min=7,
+            section_target_max=10,
         )
+    )
     if missing_support_primitive_ids:
         warnings.append(
             "architecture_missing_support_primitives: "
@@ -3969,8 +4293,8 @@ def _validate_plan_transition(
     return plan
 
 
-def _flatten_synthesis_primitives(synthesis_map: SynthesisMap) -> dict[str, SynthesisPrimitive]:
-    flattened: dict[str, SynthesisPrimitive] = {}
+def _flatten_synthesis_primitives(synthesis_map: SynthesisMap) -> dict[str, SynthesisPrimitiveBase]:
+    flattened: dict[str, SynthesisPrimitiveBase] = {}
     for family in SYNTHESIS_PRIMITIVE_FAMILIES:
         for item in synthesis_map.primitives_by_family.get(family, []):
             flattened[item.id] = item
@@ -4029,7 +4353,7 @@ def _build_episode_architecture_core_passages(
     driving_question: str,
     thematic_focus: str,
     episode_spine: EpisodeSpine,
-    primitive_lookup: dict[str, SynthesisPrimitive],
+    primitive_lookup: dict[str, SynthesisPrimitiveBase],
     passage_lookup: dict[str, ExtractedPassage],
 ) -> list[dict[str, Any]]:
     query_text = " ".join(
@@ -4145,6 +4469,26 @@ def _build_scene_card_count_warnings(
     return warnings
 
 
+def _build_architecture_section_count_warnings(
+    *,
+    section_count: int,
+    section_target_min: int,
+    section_target_max: int,
+) -> list[str]:
+    warnings: list[str] = []
+    if section_count < section_target_min:
+        warnings.append(
+            "architecture_section_count_below_target: "
+            f"{section_count} < {section_target_min} (target range {section_target_min}-{section_target_max})"
+        )
+    elif section_count > section_target_max:
+        warnings.append(
+            "architecture_section_count_above_target: "
+            f"{section_count} > {section_target_max} (target range {section_target_min}-{section_target_max})"
+        )
+    return warnings
+
+
 _SPINE_PRIMITIVE_FAMILIES = frozenset({"epochal_turns", "decisions_and_nondecisions"})
 _SCENE_DETAIL_PRIMITIVE_FAMILIES = frozenset({"set_piece_scenes", "telling_details"})
 _HUMAN_GROUNDING_PRIMITIVE_FAMILIES = frozenset({"human_costs", "character_engines"})
@@ -4210,7 +4554,7 @@ def _build_scene_card_primitive_warnings(
     *,
     scene_cards: list[SceneCard],
     primitive_pool_ids: set[str],
-    primitive_by_id: dict[str, SynthesisPrimitive],
+    primitive_by_id: dict[str, SynthesisPrimitiveBase],
     primitive_min: int,
     primitive_max: int,
 ) -> list[str]:
@@ -4309,9 +4653,20 @@ def _build_section_plan_realization(
         used_priority_core_passage_ids: list[str] = []
         scene_local_questions: list[str] = []
         scene_state_effects: list[str] = []
+        scene_realization_texts: list[str] = []
         for scene in section_scene_cards:
             scene_local_questions.append(scene.local_question)
             scene_state_effects.append(scene.state_effect)
+            scene_realization_texts.extend(
+                [
+                    scene.title,
+                    scene.entry_image,
+                    scene.observable_detail,
+                    scene.local_question,
+                    scene.state_effect,
+                    scene.intended_move,
+                ]
+            )
             for primitive_id in scene.primitive_ids:
                 if primitive_id not in scene_primitive_ids:
                     scene_primitive_ids.append(primitive_id)
@@ -4370,10 +4725,23 @@ def _build_section_plan_realization(
                 "section_priority_core_passages_unused: "
                 f"{section.section_id} -> {_preview_ids(unused_priority_core_passage_ids)}"
             )
+        unrealized_must_stage_beats = [
+            beat
+            for beat in section.must_stage_beats
+            if not _section_text_realized(beat, scene_realization_texts)
+        ]
+        if unrealized_must_stage_beats:
+            section_warnings.append(
+                "section_must_stage_beats_not_realized: "
+                f"{section.section_id} -> {len(unrealized_must_stage_beats)} beats"
+            )
 
         section_reports.append(
             {
                 "section_id": section.section_id,
+                "section_anchor": section.section_anchor,
+                "declared_must_stage_beats": list(section.must_stage_beats),
+                "unrealized_must_stage_beats": unrealized_must_stage_beats,
                 "declared_primitive_ids": section_primitive_ids,
                 "scene_primitive_ids": scene_primitive_ids,
                 "out_of_section_primitive_ids": out_of_section_primitive_ids,
@@ -4533,6 +4901,7 @@ class PipelineOrchestrator:
         self.passage_extraction_agent = PassageExtractionAgent(self.llm, max_retry_attempts=_retries("passage_extraction"))
         self.synthesis_primitives_agent = SynthesisPrimitivesAgent(self.llm, max_retry_attempts=_retries("synthesis_primitives"))
         self.narrative_strategy_agent = NarrativeStrategyAgent(self.llm, max_retry_attempts=_retries("narrative_strategy"))
+        self.primitive_enrichment_agent = PrimitiveEnrichmentAgent(self.llm, max_retry_attempts=_retries("primitive_enrichment"))
         self.episode_architecture_agent = EpisodeArchitectureAgent(self.llm, max_retry_attempts=_retries("episode_architecture"))
         self.episode_planning_agent = EpisodePlanningAgent(self.llm, max_retry_attempts=_retries("episode_planning"))
         self.writing_agent = WritingAgent(self.llm, max_retry_attempts=_retries("episode_writing"))
@@ -4542,6 +4911,7 @@ class PipelineOrchestrator:
         )
         self.grounding_agent = GroundingValidationAgent(self.llm, max_retry_attempts=_retries("grounding_validation"))
         self.repair_agent = RepairAgent(self.llm, max_retry_attempts=_retries("repair"))
+        self.style_audit_agent = StyleAuditAgent(self.llm, max_retry_attempts=_retries("style_audit"))
         self.spoken_delivery_agent = SpokenDeliveryAgent(self.llm, max_retry_attempts=_retries("spoken_delivery"))
 
     def _bind_run_logger(self, project_dir: Path) -> None:
@@ -4658,27 +5028,30 @@ class PipelineOrchestrator:
 
         axes, actor_metadata, actor_metrics = await self._decompose_theme(project, project_dir)
         corpus = await self._extract_passages(project, axes, project_dir)
-        synthesis_map, synthesis_actor_metrics = await self._map_synthesis(
+        synthesis_primitives, synthesis_actor_metrics = await self._map_synthesis(
             project, corpus, project_dir, actor_metadata,
         )
         actor_metrics["synthesis_primitives"] = synthesis_actor_metrics.get("primitives", {})
 
-        if synthesis_map.quality_score < pipeline_config.synthesis_quality_threshold:
+        if synthesis_primitives.quality_score < pipeline_config.synthesis_quality_threshold:
             logger.warning(
                 "Synthesis quality %.2f below threshold %.2f. "
                 "Books may lack thematic overlap for strong synthesis.",
-                synthesis_map.quality_score, pipeline_config.synthesis_quality_threshold,
+                synthesis_primitives.quality_score, pipeline_config.synthesis_quality_threshold,
             )
             self.run_logger.log(
                 "synthesis_quality_warning",
-                score=synthesis_map.quality_score,
+                score=synthesis_primitives.quality_score,
                 threshold=pipeline_config.synthesis_quality_threshold,
             )
 
         strategy, strategy_actor_metrics = await self._choose_narrative_strategy(
-            project, synthesis_map, corpus, project_dir, actor_metadata,
+            project, synthesis_primitives, project_dir, actor_metadata,
         )
         actor_metrics["narrative_strategy"] = strategy_actor_metrics
+        synthesis_map = await self._enrich_selected_primitives(
+            project, synthesis_primitives, strategy, corpus, project_dir, actor_metadata
+        )
         project = self._resolve_episode_count_from_strategy(project, strategy)
         _save_json(project_dir / "thematic_project.json", project)
 
@@ -5782,7 +6155,7 @@ class PipelineOrchestrator:
         corpus: ThematicCorpus,
         project_dir: Path,
         actor_metadata: ActorMetadata | None = None,
-    ) -> tuple[SynthesisMap, dict[str, Any]]:
+    ) -> tuple[SynthesisPrimitivesArtifact, dict[str, Any]]:
         actor_metadata = actor_metadata or ActorMetadata(project_id=project.project_id)
         async with _stage_log(
             self.run_logger, "synthesis_mapping", project_dir,
@@ -5915,15 +6288,12 @@ class PipelineOrchestrator:
                 primitives,
                 actor_metadata,
             )
+            pre_trim_counts = _primitive_counts_by_family(primitives)
+            pre_trim_total = sum(pre_trim_counts.values())
+            primitives = _trim_synthesis_primitives_by_family_caps(primitives)
+            post_trim_counts = _primitive_counts_by_family(primitives)
+            post_trim_total = sum(post_trim_counts.values())
             _save_json(project_dir / "synthesis_primitives.json", primitives)
-
-            synthesis_map = SynthesisMap(
-                project_id=project.project_id,
-                primitives_by_family=primitives.primitives_by_family,
-                quality_score=primitives.quality_score,
-                quality_notes=list(primitives.quality_notes),
-            )
-            _save_json(project_dir / "synthesis_map.json", synthesis_map)
 
             ctx["output_summary"] = {
                 "selected_axes": len(selected_axes),
@@ -5947,35 +6317,33 @@ class PipelineOrchestrator:
                     "tail_keep_fraction": project.config.synthesis_trim_tail_keep_fraction,
                 },
                 "cap_report": cap_report,
-                "primitive_counts_by_family": {
-                    family: len(synthesis_map.primitives_by_family.get(family, []))
-                    for family in SYNTHESIS_PRIMITIVE_FAMILIES
-                },
-                "quality_score": synthesis_map.quality_score,
+                "primitive_counts_by_family_pre_trim": pre_trim_counts,
+                "primitive_counts_by_family": post_trim_counts,
+                "primitive_count_pre_trim": pre_trim_total,
+                "primitive_count_post_trim": post_trim_total,
+                "quality_score": primitives.quality_score,
             }
-            return synthesis_map, {
+            return primitives, {
                 "primitives": primitive_actor_metrics,
             }
 
     async def _choose_narrative_strategy(
         self,
         project: ThematicProject,
-        synthesis_map: SynthesisMap,
-        corpus: ThematicCorpus,
+        synthesis_map: SynthesisPrimitivesArtifact,
         project_dir: Path,
         actor_metadata: ActorMetadata | None = None,
     ) -> tuple[NarrativeStrategy, dict[str, Any]]:
         actor_metadata = actor_metadata or ActorMetadata(project_id=project.project_id)
         async with _stage_log(
             self.run_logger, "narrative_strategy", project_dir,
-            primitive_count=len(_flatten_synthesis_primitives(synthesis_map)),
+            primitive_count=len(_flatten_base_synthesis_primitives(synthesis_map)),
         ) as ctx:
             payload = _compact_narrative_strategy_runtime_payload(
                 self.narrative_strategy_agent.build_payload(
                     synthesis_map=_build_narrative_strategy_synthesis_map_payload(
                         synthesis_map
                     ),
-                    thematic_axes=_build_narrative_strategy_thematic_axes_payload(corpus),
                     project_metadata=_build_narrative_strategy_project_metadata_payload(
                         project
                     ),
@@ -5999,6 +6367,146 @@ class PipelineOrchestrator:
                 "episodes": len(strategy.episodes),
             }
             return strategy, strategy_actor_metrics
+
+    async def _enrich_selected_primitives(
+        self,
+        project: ThematicProject,
+        synthesis_primitives: SynthesisPrimitivesArtifact,
+        strategy: NarrativeStrategy,
+        corpus: ThematicCorpus,
+        project_dir: Path,
+        actor_metadata: ActorMetadata | None = None,
+    ) -> SynthesisMap:
+        actor_metadata = actor_metadata or ActorMetadata(project_id=project.project_id)
+        selected_primitive_ids = _collect_strategy_selected_primitive_ids(strategy)
+        base_primitive_by_id = _flatten_base_synthesis_primitives(synthesis_primitives)
+        selected_base_primitives: list[BaseSynthesisPrimitive] = []
+        missing_primitive_ids: list[str] = []
+        for primitive_id in selected_primitive_ids:
+            primitive = base_primitive_by_id.get(primitive_id)
+            if primitive is None:
+                missing_primitive_ids.append(primitive_id)
+                continue
+            selected_base_primitives.append(primitive)
+        if missing_primitive_ids:
+            raise RuntimeError(
+                f"narrative_strategy selected unknown primitive ids: {missing_primitive_ids[:10]}"
+            )
+
+        selected_by_family: dict[str, list[BaseSynthesisPrimitive]] = {
+            family: [] for family in SYNTHESIS_PRIMITIVE_FAMILIES
+        }
+        for primitive in selected_base_primitives:
+            selected_by_family.setdefault(primitive.family, []).append(primitive)
+
+        async with _stage_log(
+            self.run_logger,
+            "primitive_enrichment",
+            project_dir,
+            selected_primitive_count=len(selected_base_primitives),
+        ) as ctx:
+            passage_lookup = _build_passage_lookup(corpus)
+            enriched_primitive_by_id: dict[str, SynthesisPrimitiveBase] = {}
+            family_sem = asyncio.Semaphore(_PRIMITIVE_ENRICHMENT_FAMILY_CONCURRENCY)
+
+            async def _enrich_family(
+                family: str,
+                family_primitives: list[BaseSynthesisPrimitive],
+            ) -> dict[str, SynthesisPrimitiveBase]:
+                async with family_sem:
+                    family_actor_ids = {
+                        actor_id
+                        for primitive in family_primitives
+                        for actor_id in primitive.actor_ids
+                        if actor_id
+                    }
+                    family_actor_metadata = select_actor_metadata_subset(
+                        actor_metadata,
+                        family_actor_ids,
+                    )
+                    payload = self.primitive_enrichment_agent.build_payload(
+                        project_id=project.project_id,
+                        family=family,
+                        base_primitives=[
+                            primitive.model_dump(mode="json")
+                            for primitive in family_primitives
+                        ],
+                        passages_by_id=_build_primitive_enrichment_passages_by_id(
+                            family=family,
+                            primitives=family_primitives,
+                            passage_lookup=passage_lookup,
+                            actor_metadata=family_actor_metadata,
+                        ),
+                        actor_metadata=_build_narrative_strategy_actor_metadata_payload(
+                            family_actor_metadata
+                        ),
+                        project_metadata=_build_minimal_project_metadata_payload(project),
+                    )
+                    enrichment = await asyncio.to_thread(
+                        self.primitive_enrichment_agent.run,
+                        payload,
+                    )
+                    delta_by_id = {
+                        item.id: item.model_dump(mode="json")
+                        for item in enrichment.enriched_primitives
+                    }
+                    primitive_model = _ENRICHED_PRIMITIVE_MODEL_BY_FAMILY[family]
+                    enriched_family: dict[str, SynthesisPrimitiveBase] = {}
+                    for primitive in family_primitives:
+                        delta = delta_by_id.get(primitive.id)
+                        if delta is None:
+                            raise RuntimeError(
+                                "primitive_enrichment omitted selected primitive "
+                                f"{primitive.id} in family {family}"
+                            )
+                        merged_payload = primitive.model_dump(mode="json")
+                        merged_payload.update(delta)
+                        enriched_family[primitive.id] = primitive_model.model_validate(
+                            merged_payload
+                        )
+                    return enriched_family
+
+            family_tasks = [
+                _enrich_family(family, family_primitives)
+                for family in RICH_SYNTHESIS_PRIMITIVE_FAMILIES
+                if (family_primitives := selected_by_family.get(family, []))
+            ]
+            for family_result in await asyncio.gather(*family_tasks):
+                enriched_primitive_by_id.update(family_result)
+
+            primitives_by_family: dict[str, list[SynthesisPrimitiveBase]] = {
+                family: [] for family in SYNTHESIS_PRIMITIVE_FAMILIES
+            }
+            for primitive in selected_base_primitives:
+                if primitive.family in RICH_SYNTHESIS_PRIMITIVE_FAMILIES:
+                    enriched = enriched_primitive_by_id.get(primitive.id)
+                    if enriched is None:
+                        raise RuntimeError(
+                            f"Missing enriched primitive for selected rich primitive {primitive.id}"
+                        )
+                    primitives_by_family[primitive.family].append(enriched)
+                    continue
+                primitives_by_family[primitive.family].append(
+                    SynthesisPrimitive.model_validate(primitive.model_dump(mode="json"))
+                )
+
+            synthesis_map = SynthesisMap(
+                project_id=project.project_id,
+                primitives_by_family=primitives_by_family,
+                quality_score=synthesis_primitives.quality_score,
+                quality_notes=list(synthesis_primitives.quality_notes),
+            )
+            _save_json(project_dir / "synthesis_map.json", synthesis_map)
+            ctx["output_summary"] = {
+                "selected_primitive_count": len(selected_base_primitives),
+                "enriched_family_count": sum(
+                    1 for family in RICH_SYNTHESIS_PRIMITIVE_FAMILIES if selected_by_family.get(family)
+                ),
+                "retained_primitive_count": sum(
+                    len(items) for items in synthesis_map.primitives_by_family.values()
+                ),
+            }
+            return synthesis_map
 
     def _resolve_episode_count_from_strategy(
         self,
@@ -6293,7 +6801,7 @@ class PipelineOrchestrator:
                     ]
                     episode_query_parts = [
                         strategy_episode.title,
-                        strategy_episode.driving_question,
+                        strategy_episode.episode_spine.listener_question,
                         strategy_episode.thematic_focus,
                     ]
                     episode_query_parts.extend(strategy_episode.unresolved_questions)
@@ -6604,11 +7112,19 @@ class PipelineOrchestrator:
             else:
                 self.run_logger.log("grounding_skipped", episode=plan.episode_number)
 
+            script = await self._style_audit_episode(
+                plan.episode_number,
+                script,
+                architecture,
+                ep_dir,
+                project_dir,
+            )
+
         if not project.config.skip_spoken_delivery:
             spoken_gate = spoken_semaphore or semaphore
             async with spoken_gate:
                 spoken = await self._rewrite_for_speech(
-                    plan.episode_number, script, project, ep_dir, project_dir,
+                    plan.episode_number, script, project, ep_dir, project_dir, architecture=architecture,
                 )
         else:
             spoken = SpokenScript(
@@ -6653,12 +7169,12 @@ class PipelineOrchestrator:
             scene_word_count_targets_lower = _compute_scene_word_count_targets(
                 plan.scene_cards,
                 plan.target_word_count,
-                130.0,
+                145.0,
             )
             scene_word_count_targets_higher = _compute_scene_word_count_targets(
                 plan.scene_cards,
                 plan.target_word_count,
-                150.0,
+                155.0,
             )
             full_episode_plan_payload = plan.model_dump(mode="json")
             scene_payload_by_id: dict[str, dict[str, Any]] = {}
@@ -6673,7 +7189,7 @@ class PipelineOrchestrator:
                 scene_payload["target_word_count_higher"] = int(
                     scene_word_count_targets_higher.get(scene_id, 0)
                 )
-                scene_payload_by_id[scene_id] = scene_payload
+                scene_payload_by_id[scene_id] = _trim_scene_payload_for_writing(scene_payload)
             writing_agent = (
                 self.writing_agent_no_citations
                 if project.config.skip_grounding
@@ -7094,47 +7610,91 @@ class PipelineOrchestrator:
         _save_json(ep_dir / "episode_script.json", current_script)
         return current_script, current_report
 
+    async def _style_audit_episode(
+        self,
+        episode_number: int,
+        script: EpisodeScript,
+        architecture: EpisodeArchitecture,
+        ep_dir: Path,
+        project_dir: Path,
+    ) -> EpisodeScript:
+        async with _stage_log(
+            self.run_logger,
+            f"style_audit_{episode_number}",
+            project_dir,
+            episode=episode_number,
+            section_count=len(script.prose_sections),
+        ) as ctx:
+            payload = self.style_audit_agent.build_payload(
+                episode_number=episode_number,
+                title=script.title,
+                sections=_build_style_audit_sections_payload(
+                    script=script,
+                    architecture=architecture,
+                ),
+            )
+            audit = await asyncio.to_thread(self.style_audit_agent.run, payload)
+            _save_json(ep_dir / "style_audit_result.json", audit)
+            audited_script = _apply_style_audit_to_script(
+                script=script,
+                audit=audit,
+                spoken_words_per_minute=float(self.settings.pipeline.spoken_words_per_minute),
+            )
+            _save_json(ep_dir / "style_audited_script.json", audited_script)
+            ctx["output_summary"] = {
+                "sections": len(audit.sections),
+                "warnings": len(audit.episode_warnings),
+                "word_delta": audited_script.total_word_count - script.total_word_count,
+            }
+            return audited_script
+
     async def _rewrite_for_speech(
         self, episode_number: int, script: EpisodeScript,
         project: ThematicProject, ep_dir: Path, project_dir: Path,
+        architecture: EpisodeArchitecture | None = None,
     ) -> SpokenScript:
-        spoken_batches = _build_spoken_delivery_batches(script.prose_sections)
         async with _stage_log(
             self.run_logger, f"spoken_delivery_{episode_number}", project_dir,
             episode=episode_number,
             section_count=len(script.prose_sections),
-            batch_count=len(spoken_batches),
+            batch_count=len(script.prose_sections),
         ) as ctx:
             rewritten_sections: list[SpokenSection] = []
-            for batch_index, batch_sections in enumerate(spoken_batches, start=1):
-                batch_word_count = sum(_section_word_count(section) for section in batch_sections)
-                batch_script = script.model_copy(
-                    update={
-                        "prose_sections": batch_sections,
-                        "total_word_count": batch_word_count,
-                        "estimated_duration_seconds": _estimate_duration_seconds_from_words(
-                            batch_word_count,
-                            float(self.settings.pipeline.spoken_words_per_minute),
-                        ),
-                    }
-                )
+            architecture_section_lookup = {
+                section.section_id: section
+                for section in (architecture.sections if architecture is not None else [])
+            }
+            previous_spoken_tail: str | None = None
+            for prose_section in script.prose_sections:
+                architecture_section = architecture_section_lookup.get(prose_section.section_id)
+                section_payload = {
+                    "section_id": prose_section.section_id,
+                    "purpose": architecture_section.purpose.value if architecture_section else "",
+                    "anchor": architecture_section.section_anchor if architecture_section else "",
+                    "closure_mode": (
+                        architecture_section.closure_mode.value
+                        if architecture_section and architecture_section.closure_mode
+                        else ""
+                    ),
+                    "movement_goal": prose_section.movement_goal,
+                    "text": prose_section.text,
+                }
                 payload = self.spoken_delivery_agent.build_payload(
                     episode_number=episode_number,
-                    script=batch_script.model_dump(mode="json"),
+                    section=section_payload,
                     max_words_per_segment=project.config.spoken_chunk_max_words,
                     tts_provider=project.config.tts_provider,
-                    previous_spoken_tail=_extract_previous_spoken_tail(rewritten_sections[-1].text)
-                    if rewritten_sections
-                    else None,
+                    previous_spoken_tail=previous_spoken_tail,
                 )
                 result = await asyncio.to_thread(self.spoken_delivery_agent.run, payload)
                 rewritten_sections.append(
                     SpokenSection(
-                        section_id=_spoken_delivery_batch_section_id(batch_index),
+                        section_id=prose_section.section_id,
                         text=result.text,
                         speech_hints=result.speech_hints,
                     )
                 )
+                previous_spoken_tail = _extract_previous_spoken_tail(result.text)
 
             spoken = SpokenScript(
                 episode_number=episode_number,
@@ -7147,7 +7707,7 @@ class PipelineOrchestrator:
 
             ctx["output_summary"] = {
                 "sections": len(spoken.sections),
-                "batch_count": len(spoken_batches),
+                "batch_count": len(spoken.sections),
             }
             return spoken
 

@@ -303,9 +303,24 @@ def _summarize_retryable_error(exc: Exception) -> dict[str, Any]:
         if data:
             summary["data_keys"] = sorted(str(key) for key in data.keys())
         raw_content = data.get("raw_content")
+        parse_error_line = data.get("parse_error_line")
+        if isinstance(parse_error_line, int):
+            summary["parse_error_line"] = parse_error_line
+        parse_error_column = data.get("parse_error_column")
+        if isinstance(parse_error_column, int):
+            summary["parse_error_column"] = parse_error_column
+        parse_error_char = data.get("parse_error_char")
+        if isinstance(parse_error_char, int):
+            summary["parse_error_char"] = parse_error_char
         if isinstance(raw_content, str):
             summary["raw_content_chars"] = len(raw_content)
             summary["raw_content_head"] = raw_content[:2000]
+            if isinstance(parse_error_char, int):
+                window_start = max(0, parse_error_char - 500)
+                window_end = min(len(raw_content), parse_error_char + 500)
+                summary["raw_content_error_window_start"] = window_start
+                summary["raw_content_error_window_end"] = window_end
+                summary["raw_content_error_window"] = raw_content[window_start:window_end]
         raw_response_type = data.get("raw_response_type")
         if raw_response_type:
             summary["raw_response_type"] = raw_response_type
@@ -731,10 +746,20 @@ class LangChainLLMClient(LLMClient):
                             }
                             for p in raw_response
                         ]
+                    parse_error_line = None
+                    parse_error_column = None
+                    parse_error_char = None
+                    if isinstance(parse_exc, json.JSONDecodeError):
+                        parse_error_line = parse_exc.lineno
+                        parse_error_column = parse_exc.colno
+                        parse_error_char = parse_exc.pos
                     raise RetryableGenerationError(
                         f"JSON parsing failed for {schema_name}: {parse_exc}",
                         data={
                             "raw_content": str(content),
+                            "parse_error_line": parse_error_line,
+                            "parse_error_column": parse_error_column,
+                            "parse_error_char": parse_error_char,
                             "raw_response_type": type(raw_response).__name__ if raw_response is not None else "none",
                             "raw_response_parts": raw_structure,
                         },

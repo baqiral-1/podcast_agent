@@ -13,14 +13,15 @@ from podcast_agent.schemas.models import (
     ActorMetadata,
     EpisodeArchitecture,
     ActorProfile,
+    BaseSynthesisPrimitive,
     BookRecord,
+    EpochalTurnPrimitive,
     NarrativeStrategy,
     PipelineConfig,
     ProjectStatus,
     SupportPrimitiveRole,
     StrategyEpisode,
     SynthesisMap,
-    SynthesisPrimitive,
     SynthesisPrimitivesArtifact,
     ThematicAxis,
     ThematicCorpus,
@@ -59,8 +60,9 @@ def _build_project_dir(tmp_path: Path) -> Path:
         description="Axis description",
         theme_importance_score=1.0,
     )
-    primitive = SynthesisPrimitive(
+    primitive = BaseSynthesisPrimitive(
         id="primitive_1",
+        family="epochal_turns",
         title="Primitive",
         summary="Primitive summary",
         axis_ids=["axis_1"],
@@ -71,9 +73,22 @@ def _build_project_dir(tmp_path: Path) -> Path:
         project_id="run_1",
         primitives_by_family={"epochal_turns": [primitive]},
     )
+    enriched_primitive = EpochalTurnPrimitive(
+        id="primitive_1",
+        family="epochal_turns",
+        title="Primitive",
+        summary="Primitive summary",
+        axis_ids=["axis_1"],
+        core_passage_ids=[],
+        actor_ids=["actor_1"],
+        before_state="The prior balance still holds.",
+        after_state="The balance breaks.",
+        change_driver="A decisive move forces the turn.",
+        irreversibility_reason="The fallout cannot be unwound quickly.",
+    )
     synthesis_map = SynthesisMap(
         project_id="run_1",
-        primitives_by_family={"epochal_turns": [primitive]},
+        primitives_by_family={"epochal_turns": [enriched_primitive]},
     )
     actor_metadata = ActorMetadata(
         project_id="run_1",
@@ -135,8 +150,7 @@ def test_resume_from_narrative_strategy_passes_actor_metadata_and_forces_skips(
             self,
             *,
             project: ThematicProject,
-            synthesis_map: SynthesisMap,
-            corpus: ThematicCorpus,
+            synthesis_map: SynthesisPrimitivesArtifact,
             project_dir: Path,
             actor_metadata: ActorMetadata,
         ) -> tuple[NarrativeStrategy, dict[str, Any]]:
@@ -150,16 +164,22 @@ def test_resume_from_narrative_strategy_passes_actor_metadata_and_forces_skips(
                     StrategyEpisode(
                         episode_number=1,
                         title="Episode",
-                        driving_question="Question?",
                         arc_summary="Arc summary",
                         episode_spine={
                             "listener_question": "Question?",
-                            "working_claim": "A working claim.",
-                            "target_end_state": "The episode lands a constrained answer.",
-                            "verdict_mode": "constrain",
-                            "primary_counterposition": "A rival interpretation remains plausible.",
-                            "core_primitive_ids": ["primitive_1"],
-                            "support_primitive_roles": {},
+                            "argument": "A working claim.",
+                            "core_primitive_ids": [
+                                "primitive_1",
+                                "core_2",
+                                "core_3",
+                                "core_4",
+                                "core_5",
+                                "core_6",
+                                "core_7",
+                            ],
+                            "support_primitive_roles": {
+                                f"support_{idx}": "mechanism" for idx in range(1, 10)
+                            },
                             "recall_primitive_ids": [],
                         },
                         actor_arc_directives=[
@@ -183,15 +203,16 @@ def test_resume_from_narrative_strategy_passes_actor_metadata_and_forces_skips(
                     "episodes": [
                         strategy.episodes[0].model_copy(
                             update={
-                                "title": "Persisted Episode",
-                                "episode_spine": strategy.episodes[0].episode_spine.model_copy(
-                                    update={
-                                        "support_primitive_roles": {
-                                            "primitive_support": SupportPrimitiveRole.MECHANISM
-                                        },
-                                        "recall_primitive_ids": ["primitive_recall"],
-                                    }
-                                ),
+                                    "title": "Persisted Episode",
+                                    "episode_spine": strategy.episodes[0].episode_spine.model_copy(
+                                        update={
+                                            "support_primitive_roles": {
+                                                **strategy.episodes[0].episode_spine.support_primitive_roles,
+                                                "primitive_support": SupportPrimitiveRole.MECHANISM,
+                                            },
+                                            "recall_primitive_ids": ["primitive_recall"],
+                                        }
+                                    ),
                             }
                         )
                     ]
@@ -199,6 +220,36 @@ def test_resume_from_narrative_strategy_passes_actor_metadata_and_forces_skips(
             )
             _write_json(project_dir / "narrative_strategy.json", persisted_strategy)
             return strategy, {"unknown_actor_ids": 0}
+
+        async def _enrich_selected_primitives(
+            self,
+            *,
+            project: ThematicProject,
+            synthesis_primitives: SynthesisPrimitivesArtifact,
+            strategy: NarrativeStrategy,
+            corpus: ThematicCorpus,
+            project_dir: Path,
+            actor_metadata: ActorMetadata,
+        ) -> SynthesisMap:
+            primitive = EpochalTurnPrimitive(
+                id="primitive_1",
+                family="epochal_turns",
+                title="Primitive",
+                summary="Primitive summary",
+                axis_ids=["axis_1"],
+                core_passage_ids=[],
+                actor_ids=["actor_1"],
+                before_state="The prior balance still holds.",
+                after_state="The balance breaks.",
+                change_driver="A decisive move forces the turn.",
+                irreversibility_reason="The fallout cannot be unwound quickly.",
+            )
+            synthesis_map = SynthesisMap(
+                project_id=project.project_id,
+                primitives_by_family={"epochal_turns": [primitive]},
+            )
+            _write_json(project_dir / "synthesis_map.json", synthesis_map)
+            return synthesis_map
 
         def _resolve_episode_count_from_strategy(
             self,
@@ -391,9 +442,12 @@ def test_resume_from_narrative_strategy_passes_actor_metadata_and_forces_skips(
     assert calls["production_actor_metadata"].actors[0].actor_id == "actor_1"
     assert calls["resolved_strategy"].episodes[0].title == "Persisted Episode"
     assert calls["planning_strategy"].episodes[0].title == "Persisted Episode"
-    assert calls["planning_strategy"].episodes[0].episode_spine.support_primitive_roles == {
-        "primitive_support": "mechanism"
-    }
+    assert (
+        calls["planning_strategy"].episodes[0].episode_spine.support_primitive_roles[
+            "primitive_support"
+        ]
+        == SupportPrimitiveRole.MECHANISM
+    )
     assert calls["planning_strategy"].episodes[0].episode_spine.recall_primitive_ids == [
         "primitive_recall"
     ]
@@ -437,8 +491,7 @@ def test_resume_from_narrative_strategy_fails_before_planning_when_persisted_str
             self,
             *,
             project: ThematicProject,
-            synthesis_map: SynthesisMap,
-            corpus: ThematicCorpus,
+            synthesis_map: SynthesisPrimitivesArtifact,
             project_dir: Path,
             actor_metadata: ActorMetadata,
         ) -> tuple[NarrativeStrategy, dict[str, Any]]:
@@ -450,16 +503,22 @@ def test_resume_from_narrative_strategy_fails_before_planning_when_persisted_str
                     StrategyEpisode(
                         episode_number=1,
                         title="Episode",
-                        driving_question="Question?",
                         arc_summary="Arc summary",
                         episode_spine={
                             "listener_question": "Question?",
-                            "working_claim": "A working claim.",
-                            "target_end_state": "The episode lands a constrained answer.",
-                            "verdict_mode": "constrain",
-                            "primary_counterposition": "A rival interpretation remains plausible.",
-                            "core_primitive_ids": ["primitive_1"],
-                            "support_primitive_roles": {},
+                            "argument": "A working claim.",
+                            "core_primitive_ids": [
+                                "primitive_1",
+                                "core_2",
+                                "core_3",
+                                "core_4",
+                                "core_5",
+                                "core_6",
+                                "core_7",
+                            ],
+                            "support_primitive_roles": {
+                                f"support_{idx}": "mechanism" for idx in range(1, 10)
+                            },
                             "recall_primitive_ids": [],
                         },
                     )
@@ -475,6 +534,36 @@ def test_resume_from_narrative_strategy_fails_before_planning_when_persisted_str
                 },
             )
             return strategy, {"unknown_actor_ids": 0}
+
+        async def _enrich_selected_primitives(
+            self,
+            *,
+            project: ThematicProject,
+            synthesis_primitives: SynthesisPrimitivesArtifact,
+            strategy: NarrativeStrategy,
+            corpus: ThematicCorpus,
+            project_dir: Path,
+            actor_metadata: ActorMetadata,
+        ) -> SynthesisMap:
+            primitive = EpochalTurnPrimitive(
+                id="primitive_1",
+                family="epochal_turns",
+                title="Primitive",
+                summary="Primitive summary",
+                axis_ids=["axis_1"],
+                core_passage_ids=[],
+                actor_ids=["actor_1"],
+                before_state="The prior balance still holds.",
+                after_state="The balance breaks.",
+                change_driver="A decisive move forces the turn.",
+                irreversibility_reason="The fallout cannot be unwound quickly.",
+            )
+            synthesis_map = SynthesisMap(
+                project_id=project.project_id,
+                primitives_by_family={"epochal_turns": [primitive]},
+            )
+            _write_json(project_dir / "synthesis_map.json", synthesis_map)
+            return synthesis_map
 
         def _resolve_episode_count_from_strategy(
             self,

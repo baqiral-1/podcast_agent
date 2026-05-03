@@ -15,9 +15,7 @@ from podcast_agent.agents.spoken_delivery_agent import SpokenDeliveryAgent
 from podcast_agent.config import Settings
 from podcast_agent.langchain.llm import build_llm_client
 from podcast_agent.pipeline.orchestrator import (
-    _build_spoken_delivery_batches,
     _save_json,
-    _spoken_delivery_batch_section_id,
 )
 from podcast_agent.schemas.models import (
     EpisodeScript,
@@ -154,17 +152,12 @@ def _similarity_ratios(
 ) -> list[float]:
     if not spoken_sections:
         return []
-    source_batches = _build_spoken_delivery_batches(
-        script.prose_sections,
-        max_batches=max(1, len(spoken_sections)),
-    )
     ratios: list[float] = []
-    for source_batch, spoken_section in zip(source_batches, spoken_sections, strict=True):
-        source_text = "\n\n".join(section.text for section in source_batch).strip()
+    for source_section, spoken_section in zip(script.prose_sections, spoken_sections, strict=True):
         ratios.append(
             difflib.SequenceMatcher(
                 None,
-                source_text,
+                source_section.text.strip(),
                 spoken_section.text,
             ).ratio()
         )
@@ -199,29 +192,31 @@ def main() -> int:
         agent.instructions = args.prompt_file.read_text(encoding="utf-8").strip()
 
     rewritten_sections: list[SpokenSection] = []
-    batches = _build_spoken_delivery_batches(episode_input.script.prose_sections)
-    for batch_index, batch_sections in enumerate(batches, start=1):
-        batch_word_count = sum(len(section.text.split()) for section in batch_sections)
-        batch_script = episode_input.script.model_copy(
-            update={
-                "prose_sections": batch_sections,
-                "total_word_count": batch_word_count,
-            }
-        )
+    previous_spoken_tail: str | None = None
+    for prose_section in episode_input.script.prose_sections:
         payload = agent.build_payload(
             episode_number=episode_input.episode_number,
-            script=batch_script.model_dump(mode="json"),
+            section={
+                "section_id": prose_section.section_id,
+                "purpose": "",
+                "anchor": "",
+                "closure_mode": "",
+                "movement_goal": prose_section.movement_goal,
+                "text": prose_section.text,
+            },
             max_words_per_segment=episode_input.pipeline_config.spoken_chunk_max_words,
             tts_provider=episode_input.tts_provider,
+            previous_spoken_tail=previous_spoken_tail,
         )
         result = agent.run(payload)
         rewritten_sections.append(
             SpokenSection(
-                section_id=_spoken_delivery_batch_section_id(batch_index),
+                section_id=prose_section.section_id,
                 text=result.text,
                 speech_hints=result.speech_hints,
             )
         )
+        previous_spoken_tail = result.text.strip() or None
     spoken_script = SpokenScript(
         episode_number=episode_input.episode_number,
         title=episode_input.script.title,

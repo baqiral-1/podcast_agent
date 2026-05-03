@@ -12,13 +12,17 @@ from podcast_agent.pipeline.orchestrator import PipelineOrchestrator, _validate_
 from podcast_agent.schemas.models import (
     ArchitectureSection,
     BookRecord,
+    CharacterEnginePrimitive,
+    EpochalTurnPrimitive,
     EpisodeArchitecture,
     EpisodePlanDraft,
+    HumanCostPrimitive,
     NarrativeStrategy,
     PipelineConfig,
+    SupportPrimitiveRole,
+    SynthesisPrimitive,
     StrategyEpisode,
     SynthesisMap,
-    SynthesisPrimitive,
     ThematicCorpus,
     ThematicProject,
     VerdictMode,
@@ -27,23 +31,19 @@ from podcast_agent.schemas.models import (
 
 
 def _strategy_episode() -> StrategyEpisode:
-    return StrategyEpisode(
+    return StrategyEpisode.model_construct(
         episode_number=1,
         title="Episode 1",
-        driving_question="What happened?",
         thematic_focus="Focus",
         arc_summary="Arc",
-        episode_spine=EpisodeSpine(
+        episode_spine=EpisodeSpine.model_construct(
             listener_question="What happened?",
-            working_claim="A working claim.",
-            target_end_state="A target state.",
-            verdict_mode=VerdictMode.CONSTRAIN,
-            primary_counterposition="A counterposition.",
+            argument="A working claim.",
             core_primitive_ids=["core_1"],
             support_primitive_roles={
-                "support_1": "mechanism",
-                "support_2": "stakes",
-                "support_3": "consequence",
+                "support_1": SupportPrimitiveRole.MECHANISM,
+                "support_2": SupportPrimitiveRole.STAKES,
+                "support_3": SupportPrimitiveRole.CONSEQUENCE,
             },
         ),
     )
@@ -54,14 +54,56 @@ def _primitive(
     title: str,
     *,
     passage_id: str,
-) -> SynthesisPrimitive:
-    return SynthesisPrimitive(
+) -> object:
+    if primitive_id.startswith("support_1"):
+        return SynthesisPrimitive(
+            id=primitive_id,
+            family="telling_details",
+            title=title,
+            summary=f"{title} summary",
+            axis_ids=["axis_1"],
+            core_passage_ids=[passage_id],
+        )
+    if primitive_id.startswith("support_2"):
+        return HumanCostPrimitive(
+            id=primitive_id,
+            family="human_costs",
+            title=title,
+            summary=f"{title} summary",
+            axis_ids=["axis_1"],
+            core_passage_ids=[passage_id],
+            actor_ids=["actor_1"],
+            affected_group="Civilians",
+            cost_type="displacement",
+            lived_consequence="Families are driven from their homes.",
+            visibility="public",
+        )
+    if primitive_id.startswith("support_3"):
+        return CharacterEnginePrimitive(
+            id=primitive_id,
+            family="character_engines",
+            title=title,
+            summary=f"{title} summary",
+            axis_ids=["axis_1"],
+            core_passage_ids=[passage_id],
+            actor_id="actor_1",
+            goal="Hold the center.",
+            fear="Losing control.",
+            constraint="Allies are unreliable.",
+            stakes="Collapse would be final.",
+        )
+    return EpochalTurnPrimitive(
         id=primitive_id,
+        family="epochal_turns",
         title=title,
         summary=f"{title} summary",
         axis_ids=["axis_1"],
         core_passage_ids=[passage_id],
         narrative_importance_score=0.8,
+        before_state="The prior balance still holds.",
+        after_state="The balance breaks.",
+        change_driver="A decisive move forces the turn.",
+        irreversibility_reason="The fallout cannot be unwound quickly.",
     )
 
 

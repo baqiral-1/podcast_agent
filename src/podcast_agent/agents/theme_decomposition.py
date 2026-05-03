@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -27,6 +28,34 @@ class ThemeDecompositionAgent(Agent):
     schema_name = "theme_decomposition"
     response_model = ThemeDecompositionResponse
     instructions = theme_decomposition_instructions()
+    _MAX_THEMES_TOUCHED = 3
+    _MAX_MAJOR_ACTORS = 3
+    _MAX_KEY_EVENTS = 2
+    _MAX_THEME_ITEM_CHARS = 64
+    _MAX_ACTOR_ITEM_CHARS = 64
+    _MAX_EVENT_ITEM_CHARS = 180
+    _WHITESPACE_RE = re.compile(r"\s+")
+
+    @classmethod
+    def _normalize_and_truncate(cls, value: str, max_chars: int) -> str:
+        normalized = cls._WHITESPACE_RE.sub(" ", value).strip()
+        if not normalized:
+            return ""
+        return normalized[:max_chars]
+
+    @classmethod
+    def _compact_string_list(
+        cls, values: list[str], max_items: int, max_chars: int,
+    ) -> list[str]:
+        compacted: list[str] = []
+        for value in values:
+            trimmed = cls._normalize_and_truncate(value, max_chars)
+            if not trimmed:
+                continue
+            compacted.append(trimmed)
+            if len(compacted) >= max_items:
+                break
+        return compacted
 
     @staticmethod
     def _compact_chapter_analysis(chapter: ChapterInfo) -> dict[str, Any] | None:
@@ -34,9 +63,21 @@ class ThemeDecompositionAgent(Agent):
         if analysis is None:
             return None
         return {
-            "themes_touched": analysis.themes_touched,
-            "major_actors": analysis.major_actors,
-            "key_events_or_arguments": analysis.key_events_or_arguments,
+            "themes_touched": ThemeDecompositionAgent._compact_string_list(
+                analysis.themes_touched,
+                ThemeDecompositionAgent._MAX_THEMES_TOUCHED,
+                ThemeDecompositionAgent._MAX_THEME_ITEM_CHARS,
+            ),
+            "major_actors": ThemeDecompositionAgent._compact_string_list(
+                analysis.major_actors,
+                ThemeDecompositionAgent._MAX_MAJOR_ACTORS,
+                ThemeDecompositionAgent._MAX_ACTOR_ITEM_CHARS,
+            ),
+            "key_events_or_arguments": ThemeDecompositionAgent._compact_string_list(
+                analysis.key_events_or_arguments,
+                ThemeDecompositionAgent._MAX_KEY_EVENTS,
+                ThemeDecompositionAgent._MAX_EVENT_ITEM_CHARS,
+            ),
         }
 
     def build_payload(
@@ -53,8 +94,6 @@ class ThemeDecompositionAgent(Agent):
             chapter_info: list[dict[str, Any]] = []
             for ch in book.chapters:
                 entry = {
-                    "chapter_id": ch.chapter_id,
-                    "title": ch.title,
                     "analysis": self._compact_chapter_analysis(ch),
                 }
                 chapter_info.append(entry)

@@ -9,6 +9,11 @@ import json
 from pathlib import Path
 from typing import Any
 
+from podcast_agent.schemas.models import (
+    RICH_SYNTHESIS_PRIMITIVE_FAMILIES,
+    SYNTHESIS_PRIMITIVE_FAMILIES,
+)
+
 CORE_ARTIFACTS = (
     "thematic_project.json",
     "thematic_axes.json",
@@ -54,6 +59,61 @@ def _escape(value: Any) -> str:
     return html.escape(str(value))
 
 
+def _collect_retained_primitive_ids(series_plan: dict[str, Any]) -> set[str]:
+    retained_ids: set[str] = set()
+    for episode in series_plan.get("episodes", []) or []:
+        for scene in episode.get("scene_cards", []) or []:
+            retained_ids.update(str(item) for item in scene.get("primitive_ids", []) or [] if item)
+            dominant_primitive_id = scene.get("dominant_primitive_id")
+            if dominant_primitive_id:
+                retained_ids.add(str(dominant_primitive_id))
+    return retained_ids
+
+
+def _render_retention_table(
+    primitives_by_family: dict[str, list[dict[str, Any]]],
+    series_plan: dict[str, Any],
+) -> str:
+    retained_ids = _collect_retained_primitive_ids(series_plan)
+    rows: list[tuple[str, int, int, float]] = []
+    for family in SYNTHESIS_PRIMITIVE_FAMILIES:
+        items = primitives_by_family.get(family, []) or []
+        primitive_ids = {str(item.get("id")) for item in items if item.get("id")}
+        total = len(primitive_ids)
+        retained = len(primitive_ids & retained_ids)
+        rate = (retained / total) if total else 0.0
+        rows.append((family, retained, total, rate))
+    rows.sort(key=lambda item: (-item[3], -item[2], item[0]))
+
+    row_html = "".join(
+        """
+        <tr>
+          <td>{family}</td>
+          <td>{retained}</td>
+          <td>{total}</td>
+          <td>{retention}</td>
+        </tr>
+        """.format(
+            family=_escape(
+                f"* {family}" if family in RICH_SYNTHESIS_PRIMITIVE_FAMILIES else family
+            ),
+            retained=retained,
+            total=total,
+            retention=_escape(f"{rate:.1%}"),
+        )
+        for family, retained, total, rate in rows
+    )
+    return """
+    <table>
+      <thead>
+        <tr><th>Family</th><th>Retained</th><th>Total</th><th>Retention</th></tr>
+      </thead>
+      <tbody>{rows}</tbody>
+    </table>
+    <p><small>* primitive enrichment family</small></p>
+    """.format(rows=row_html)
+
+
 def _render_episode_cards(run_dir: Path, strategy: dict[str, Any]) -> str:
     cards: list[str] = []
     for episode in strategy.get("episodes", []):
@@ -62,6 +122,7 @@ def _render_episode_cards(run_dir: Path, strategy: dict[str, Any]) -> str:
         spoken = _load_optional_json(ep_dir / "spoken_script.json") or {}
         episode_spine = episode.get("episode_spine", {})
         core_primitive_ids = episode_spine.get("core_primitive_ids", [])
+        listener_question = episode_spine.get("listener_question", "")
         cards.append(
             """
             <section class='card'>
@@ -73,7 +134,7 @@ def _render_episode_cards(run_dir: Path, strategy: dict[str, Any]) -> str:
             </section>
             """.format(
                 title=_escape(episode.get("title", f"Episode {episode.get('episode_number', '?')}")),
-                question=_escape(episode.get("driving_question", "")),
+                question=_escape(listener_question),
                 core_primitive_count=len(core_primitive_ids),
                 section_count=len(script.get("prose_sections", [])),
                 spoken_count=len(spoken.get("sections", [])),
@@ -101,6 +162,7 @@ def _render_html(run_dir: Path) -> str:
     )
     if not primitive_count_rows:
         primitive_count_rows = "<p>No family primitives found.</p>"
+    retention_table = _render_retention_table(primitives_by_family, series_plan)
 
     return f"""
 <!doctype html>
@@ -113,6 +175,8 @@ def _render_html(run_dir: Path) -> str:
     .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }}
     .card {{ border: 1px solid #ddd; padding: 1rem; border-radius: 10px; background: #faf8f2; }}
     code {{ background: #f0eee8; padding: 0.1rem 0.3rem; border-radius: 4px; }}
+    table {{ width: 100%; border-collapse: collapse; }}
+    th, td {{ border-bottom: 1px solid #ddd; padding: 0.4rem 0.5rem; text-align: left; }}
   </style>
 </head>
 <body>
@@ -125,6 +189,8 @@ def _render_html(run_dir: Path) -> str:
     <section class='card'><h2>Strategy</h2><p>Type: {_escape(strategy.get('strategy_type'))}</p><p>Episodes: {len(episodes)}</p></section>
     <section class='card'><h2>Planning</h2><p>Planned episodes: {len(planned_episodes)}</p></section>
   </div>
+  <h2>Primitive Retention</h2>
+  {retention_table}
   <h2>Episodes</h2>
   {_render_episode_cards(run_dir, strategy)}
 </body>

@@ -38,6 +38,7 @@ class TestLLMConfig:
         config = LLMConfig()
         assert config.resolve_model("chapter_summary") == "claude-haiku-4-5"
         assert config.resolve_model("synthesis_primitives") == "claude-opus-4-7"
+        assert config.resolve_model("theme_decomposition") == "claude-sonnet-4-6"
 
     def test_resolve_max_retry_attempts_defaults(self):
         config = LLMConfig()
@@ -114,17 +115,17 @@ class TestPipelineRuntimeConfig:
         assert config.max_chunk_words == 750
         assert config.chunk_overlap_words == 30
         assert config.max_repair_attempts == 3
-        assert config.episode_architecture_concurrency == 6
-        assert config.episode_planning_concurrency == 6
-        assert config.episode_write_concurrency == 6
-        assert config.spoken_delivery_concurrency is None
+        assert config.episode_architecture_concurrency == 8
+        assert config.episode_planning_concurrency == 8
+        assert config.episode_write_concurrency == 8
+        assert config.spoken_delivery_concurrency == 8
         assert config.tts_concurrency == 5
         assert config.spoken_words_per_minute == 145
 
     def test_thematic_defaults(self):
         config = PipelineRuntimeConfig()
-        assert config.max_axes == 20
-        assert config.min_axes == 12
+        assert config.max_axes == 15
+        assert config.min_axes == 10
         assert config.passage_retrieval_percentage == 0.25
         assert config.pre_axis_total_budget == 1500
         assert config.passage_retrieval_min_per_book == 10
@@ -134,8 +135,8 @@ class TestPipelineRuntimeConfig:
         assert config.admission_floor_per_book == 0
         assert config.retrieval_relevance_power == 2.5
         assert config.synthesis_axis_pct == 1.0
-        assert config.synthesis_axis_min == 12
-        assert config.synthesis_axis_max == 20
+        assert config.synthesis_axis_min == 10
+        assert config.synthesis_axis_max == 15
         assert config.synthesis_floor_budget_fraction == 0.0
         assert config.synthesis_axis_floor_min == 0
         assert config.synthesis_axis_floor_max == 0
@@ -148,10 +149,14 @@ class TestPipelineRuntimeConfig:
         assert config.synthesis_trim_next_keep_fraction == 0.30
         assert config.synthesis_trim_tail_keep_fraction == 0.15
         assert config.planning_axis_pct == 1.0
-        assert config.planning_axis_min == 12
-        assert config.planning_axis_max == 20
+        assert config.planning_axis_min == 10
+        assert config.planning_axis_max == 15
         assert config.synthesis_total_passage_cap == 600
         assert config.planning_total_passage_cap == 300
+        assert config.architecture_section_target_min == 7
+        assert config.architecture_section_target_max == 10
+        assert config.scene_card_target_min == 25
+        assert config.scene_card_target_max == 35
         assert config.passage_extraction_concurrency == 16
         assert config.llm_global_max_concurrency == 30
 
@@ -183,6 +188,11 @@ class TestPipelineRuntimeConfig:
             PipelineRuntimeConfig(synthesis_axis_floor_min=15, synthesis_axis_floor_max=10)
         with pytest.raises(ValueError, match="planning_axis_max"):
             PipelineRuntimeConfig(planning_axis_min=50, planning_axis_max=30)
+        with pytest.raises(ValueError, match="architecture_section_target_max"):
+            PipelineRuntimeConfig(
+                architecture_section_target_min=9,
+                architecture_section_target_max=8,
+            )
         with pytest.raises(ValueError, match="synthesis trim top, mid, and next fractions"):
             PipelineRuntimeConfig(
                 synthesis_trim_top_fraction=0.75,

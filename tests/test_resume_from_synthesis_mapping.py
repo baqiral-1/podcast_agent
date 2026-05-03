@@ -13,13 +13,15 @@ from podcast_agent.schemas.models import (
     ActorMetadata,
     EpisodeArchitecture,
     ActorProfile,
+    BaseSynthesisPrimitive,
     BookRecord,
+    EpochalTurnPrimitive,
     NarrativeStrategy,
     PipelineConfig,
     ProjectStatus,
     StrategyEpisode,
     SynthesisMap,
-    SynthesisPrimitive,
+    SynthesisPrimitivesArtifact,
     ThematicAxis,
     ThematicCorpus,
     ThematicProject,
@@ -96,16 +98,17 @@ def _build_project_dir(tmp_path: Path) -> Path:
     return project_dir
 
 
-def _build_synthesis_map() -> SynthesisMap:
-    primitive = SynthesisPrimitive(
+def _build_synthesis_primitives() -> SynthesisPrimitivesArtifact:
+    primitive = BaseSynthesisPrimitive(
         id="primitive_1",
+        family="epochal_turns",
         title="Primitive",
         summary="Primitive summary",
         axis_ids=["axis_1"],
         core_passage_ids=[],
         actor_ids=["actor_1"],
     )
-    return SynthesisMap(
+    return SynthesisPrimitivesArtifact(
         project_id="run_1",
         primitives_by_family={"epochal_turns": [primitive]},
     )
@@ -132,12 +135,12 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
             corpus: ThematicCorpus,
             project_dir: Path,
             actor_metadata: ActorMetadata,
-        ) -> tuple[SynthesisMap, dict[str, Any]]:
+        ) -> tuple[SynthesisPrimitivesArtifact, dict[str, Any]]:
             calls["order"].append("map_synthesis")
             calls["map_config"] = project.config
             calls["map_corpus"] = corpus
             calls["map_actor_metadata"] = actor_metadata
-            return _build_synthesis_map(), {
+            return _build_synthesis_primitives(), {
                 "primitives": {"unknown_actor_ids": 0},
             }
 
@@ -145,8 +148,7 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
             self,
             *,
             project: ThematicProject,
-            synthesis_map: SynthesisMap,
-            corpus: ThematicCorpus,
+            synthesis_map: SynthesisPrimitivesArtifact,
             project_dir: Path,
             actor_metadata: ActorMetadata,
         ) -> tuple[NarrativeStrategy, dict[str, Any]]:
@@ -160,22 +162,59 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
                     StrategyEpisode(
                         episode_number=1,
                         title="Episode",
-                        driving_question="Question?",
                         arc_summary="Arc summary",
                         episode_spine={
                             "listener_question": "Question?",
-                            "working_claim": "A working claim.",
-                            "target_end_state": "The episode lands a constrained answer.",
-                            "verdict_mode": "constrain",
-                            "primary_counterposition": "A rival interpretation remains plausible.",
-                            "core_primitive_ids": ["primitive_1"],
-                            "support_primitive_roles": {},
+                            "argument": "A working claim.",
+                            "core_primitive_ids": [
+                                "primitive_1",
+                                "core_2",
+                                "core_3",
+                                "core_4",
+                                "core_5",
+                                "core_6",
+                                "core_7",
+                            ],
+                            "support_primitive_roles": {
+                                f"support_{idx}": "mechanism" for idx in range(1, 10)
+                            },
                             "recall_primitive_ids": [],
                         },
                     )
                 ],
             )
             return strategy, {"unknown_actor_ids": 0}
+
+        async def _enrich_selected_primitives(
+            self,
+            *,
+            project: ThematicProject,
+            synthesis_primitives: SynthesisPrimitivesArtifact,
+            strategy: NarrativeStrategy,
+            corpus: ThematicCorpus,
+            project_dir: Path,
+            actor_metadata: ActorMetadata,
+        ) -> SynthesisMap:
+            calls["order"].append("primitive_enrichment")
+            primitive = EpochalTurnPrimitive(
+                id="primitive_1",
+                family="epochal_turns",
+                title="Primitive",
+                summary="Primitive summary",
+                axis_ids=["axis_1"],
+                core_passage_ids=[],
+                actor_ids=["actor_1"],
+                before_state="The prior balance still holds.",
+                after_state="The balance breaks.",
+                change_driver="A decisive move forces the turn.",
+                irreversibility_reason="The fallout cannot be unwound quickly.",
+            )
+            synthesis_map = SynthesisMap(
+                project_id=project.project_id,
+                primitives_by_family={"epochal_turns": [primitive]},
+            )
+            _write_json(project_dir / "synthesis_map.json", synthesis_map)
+            return synthesis_map
 
         def _resolve_episode_count_from_strategy(
             self,
@@ -367,6 +406,7 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
     assert calls["order"] == [
         "map_synthesis",
         "narrative_strategy",
+        "primitive_enrichment",
         "resolve_episode_count",
         "episode_architecture",
         "plan_series",

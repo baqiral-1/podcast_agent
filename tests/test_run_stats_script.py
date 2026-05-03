@@ -48,10 +48,23 @@ def _build_run(tmp_path: Path) -> Path:
             "project_id": "demo-run",
             "primitives_by_family": {
                 **{family: [] for family in SYNTHESIS_PRIMITIVE_FAMILIES},
-                "epochal_turns": [{"id": "et_1", "title": "Turn", "summary": "Summary", "core_passage_ids": ["p1"]}],
+                "epochal_turns": [
+                    {
+                        "id": "et_1",
+                        "family": "epochal_turns",
+                        "title": "Turn",
+                        "summary": "Summary",
+                        "core_passage_ids": ["p1"],
+                        "before_state": "Before",
+                        "after_state": "After",
+                        "change_driver": "Driver",
+                        "irreversibility_reason": "Reason",
+                    }
+                ],
                 "contested_explanations": [
                     {
                         "id": "cx_1",
+                        "family": "contested_explanations",
                         "title": "Question",
                         "summary": "Summary",
                         "core_passage_ids": ["p2"],
@@ -72,10 +85,23 @@ def _build_run(tmp_path: Path) -> Path:
             "project_id": "demo-run",
             "primitives_by_family": {
                 **{family: [] for family in SYNTHESIS_PRIMITIVE_FAMILIES},
-                "epochal_turns": [{"id": "et_1", "title": "Turn", "summary": "Summary", "core_passage_ids": ["p1"]}],
+                "epochal_turns": [
+                    {
+                        "id": "et_1",
+                        "family": "epochal_turns",
+                        "title": "Turn",
+                        "summary": "Summary",
+                        "core_passage_ids": ["p1"],
+                        "before_state": "Before",
+                        "after_state": "After",
+                        "change_driver": "Driver",
+                        "irreversibility_reason": "Reason",
+                    }
+                ],
                 "contested_explanations": [
                     {
                         "id": "cx_1",
+                        "family": "contested_explanations",
                         "title": "Question",
                         "summary": "Summary",
                         "core_passage_ids": ["p2"],
@@ -101,16 +127,12 @@ def _build_run(tmp_path: Path) -> Path:
                 {
                     "episode_number": 1,
                     "title": "Episode One",
-                    "driving_question": "Why does the order land so hard?",
                     "thematic_focus": "Opening rupture",
                     "arc_summary": "Follow the local consequences.",
                     "unresolved_questions": [],
                     "episode_spine": {
                         "listener_question": "Why does the order land so hard?",
-                        "working_claim": "Opening rupture clarifies the proposition.",
-                        "target_end_state": "The local consequences become legible.",
-                        "verdict_mode": "constrain",
-                        "primary_counterposition": "Another reading remains possible.",
+                        "argument": "Opening rupture clarifies the proposition.",
                         "core_primitive_ids": ["primitive_1"],
                         "support_primitive_roles": {},
                         "recall_primitive_ids": [],
@@ -126,7 +148,13 @@ def _build_run(tmp_path: Path) -> Path:
                 {
                     "episode_number": 1,
                     "title": "Episode One",
-                    "scene_cards": [{"scene_id": "scene_1"}],
+                    "scene_cards": [
+                        {
+                            "scene_id": "scene_1",
+                            "dominant_primitive_id": "et_1",
+                            "primitive_ids": ["et_1"],
+                        }
+                    ],
                 }
             ]
         },
@@ -178,6 +206,9 @@ def test_generate_run_stats_html(tmp_path: Path):
     assert "War on Terror" in html
     assert "epochal_turns: 1" in html
     assert "Synthesis Map" in html
+    assert "Primitive Retention" in html
+    assert "* epochal_turns" in html
+    assert "100.0%" in html
     assert "Core primitives:</strong> 1" in html
     assert "Driving question:" in html
 

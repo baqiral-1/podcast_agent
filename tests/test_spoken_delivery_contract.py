@@ -9,9 +9,15 @@ from podcast_agent.pipeline.orchestrator import (
     PipelineOrchestrator,
     _build_spoken_delivery_batches,
     _extract_previous_spoken_tail,
-    _spoken_delivery_batch_section_id,
 )
-from podcast_agent.schemas.models import BookRecord, EpisodeScript, FramingBlock, ProseSection, ThematicProject
+from podcast_agent.schemas.models import (
+    BookRecord,
+    EpisodeArchitecture,
+    EpisodeScript,
+    FramingBlock,
+    ProseSection,
+    ThematicProject,
+)
 
 
 class DummyTTSClient:
@@ -25,6 +31,52 @@ def _framing() -> FramingBlock:
         threat_or_unresolved_action="Threat",
         opening_question="Question",
         handoff_scene_card_id="scene_1",
+    )
+
+
+def _architecture() -> EpisodeArchitecture:
+    return EpisodeArchitecture.model_validate(
+        {
+            "episode_number": 1,
+            "major_turn_section_id": "section_1",
+            "sections": [
+                {
+                    "section_id": "section_1",
+                    "purpose": "opening",
+                    "anchor": "Anchor 1",
+                    "approx_runtime_minutes": 1.0,
+                    "primitive_ids": ["primitive_1"],
+                    "section_question": "Q1",
+                    "section_resolution": "R1",
+                    "entry_state": "S1",
+                    "exit_state": "S2",
+                    "transition_logic": "T1",
+                    "argument_role": "frame",
+                    "inference_mode": "scene_first",
+                    "pressure_type": "mass_political",
+                    "resolution_type": "escalation",
+                    "closure_mode": "residue",
+                },
+                {
+                    "section_id": "section_2",
+                    "purpose": "closing",
+                    "anchor": "Anchor 2",
+                    "approx_runtime_minutes": 1.0,
+                    "primitive_ids": ["primitive_1"],
+                    "section_question": "Q2",
+                    "section_resolution": "R2",
+                    "entry_state": "S2",
+                    "exit_state": "S3",
+                    "transition_logic": "T2",
+                    "depends_on_section_ids": ["section_1"],
+                    "argument_role": "close",
+                    "inference_mode": "aftermath_first",
+                    "pressure_type": "mass_political",
+                    "resolution_type": "containment",
+                    "closure_mode": "final_answer",
+                },
+            ],
+        }
     )
 
 
@@ -108,14 +160,14 @@ def test_rewrite_for_speech_passes_continuity_tail_for_later_batches(monkeypatch
     ep_dir.mkdir(parents=True, exist_ok=True)
 
     spoken = asyncio.run(
-        orchestrator._rewrite_for_speech(1, script, project, ep_dir, tmp_path)
+        orchestrator._rewrite_for_speech(1, script, project, ep_dir, tmp_path, architecture=_architecture())
     )
 
     assert len(payloads) == 2
-    assert payloads[0]["script"]["prose_sections"][0]["section_id"] == "section_1"
-    assert payloads[1]["script"]["prose_sections"][0]["section_id"] == "section_2"
-    assert len(payloads[0]["script"]["prose_sections"]) == 1
-    assert len(payloads[1]["script"]["prose_sections"]) == 1
+    assert payloads[0]["section"]["section_id"] == "section_1"
+    assert payloads[1]["section"]["section_id"] == "section_2"
+    assert payloads[0]["section"]["anchor"] == "Anchor 1"
+    assert payloads[1]["section"]["closure_mode"] == "final_answer"
     assert "batch_index" not in payloads[0]
     assert "batch_index" not in payloads[1]
     assert "batch_count" not in payloads[0]
@@ -128,13 +180,99 @@ def test_rewrite_for_speech_passes_continuity_tail_for_later_batches(monkeypatch
     )
     assert "upcoming_batches_summary" not in payloads[0]
     assert "upcoming_batches_summary" not in payloads[1]
-    assert [section.section_id for section in spoken.sections] == [
-        _spoken_delivery_batch_section_id(1),
-        _spoken_delivery_batch_section_id(2),
-    ]
+    assert [section.section_id for section in spoken.sections] == ["section_1", "section_2"]
     assert [section.text for section in spoken.sections] == [
         "spoken::First sentence. Second sentence. Third sentence. Fourth sentence. Fifth sentence.",
         "spoken::Later batch.",
+    ]
+
+
+def test_style_audit_episode_uses_section_anchor_payload(monkeypatch, tmp_path: Path) -> None:
+    heuristic = HeuristicLLMClient()
+    monkeypatch.setattr("podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic)
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.PGVectorRetrieval",
+        lambda settings, run_logger=None: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.RetrievalService",
+        lambda settings, vector_store: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.build_tts_client",
+        lambda settings: DummyTTSClient(),
+    )
+
+    orchestrator = PipelineOrchestrator()
+    payloads: list[dict] = []
+
+    def fake_style_audit_run(payload: dict):
+        payloads.append(payload)
+        return orchestrator.style_audit_agent.response_model.model_validate(
+            {
+                "episode_number": payload["episode_number"],
+                "sections": [
+                    {
+                        "section_id": "section_1",
+                        "edited_text": "Edited first section.",
+                        "edit_notes": ["Trimmed a repeated landing."],
+                    },
+                    {
+                        "section_id": "section_2",
+                        "edited_text": "Edited second section.",
+                        "edit_notes": ["Tightened the close."],
+                    },
+                ],
+                "episode_warnings": [],
+            }
+        )
+
+    orchestrator.style_audit_agent.run = fake_style_audit_run
+
+    script = EpisodeScript(
+        episode_number=1,
+        title="Episode 1",
+        framing=_framing(),
+        prose_sections=[
+            ProseSection(
+                section_id="section_1",
+                scene_card_ids=["scene_1"],
+                movement_goal="discover",
+                text="First section",
+            ),
+            ProseSection(
+                section_id="section_2",
+                scene_card_ids=["scene_2"],
+                movement_goal="discover",
+                text="Second section",
+            ),
+        ],
+    )
+    ep_dir = tmp_path / "episodes" / "1"
+    ep_dir.mkdir(parents=True, exist_ok=True)
+
+    audited_script = asyncio.run(
+        orchestrator._style_audit_episode(
+            1,
+            script,
+            _architecture(),
+            ep_dir,
+            tmp_path,
+        )
+    )
+
+    assert len(payloads) == 1
+    assert [section["section_id"] for section in payloads[0]["sections"]] == [
+        "section_1",
+        "section_2",
+    ]
+    assert [section["anchor"] for section in payloads[0]["sections"]] == [
+        "Anchor 1",
+        "Anchor 2",
+    ]
+    assert [section.text for section in audited_script.prose_sections] == [
+        "Edited first section.",
+        "Edited second section.",
     ]
 
 

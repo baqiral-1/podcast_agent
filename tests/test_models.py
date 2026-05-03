@@ -21,6 +21,8 @@ from podcast_agent.schemas.models import (
     EpisodePlan,
     EpisodePlanDraft,
     EpisodeSpine,
+    ContestedExplanationPrimitive,
+    EpochalTurnPrimitive,
     FramingBlock,
     NarrativeStrategy,
     ProseSection,
@@ -37,7 +39,7 @@ from podcast_agent.schemas.models import (
     SYNTHESIS_PRIMITIVE_FAMILIES,
     SynthesisConsolidationResult,
     SynthesisMap,
-    SynthesisPrimitive,
+    SynthesisPrimitiveBase,
     SynthesisPrimitivesArtifact,
     ThematicProject,
     PipelineConfig,
@@ -53,20 +55,26 @@ from podcast_agent.utils.actor_metadata import (
 )
 
 
-def _epochal_turn(primitive_id: str = "et_1") -> SynthesisPrimitive:
-    return SynthesisPrimitive(
+def _epochal_turn(primitive_id: str = "et_1") -> EpochalTurnPrimitive:
+    return EpochalTurnPrimitive(
         id=primitive_id,
+        family="epochal_turns",
         title="Threshold breaks",
         summary="A decision changes the field.",
         axis_ids=["axis_1"],
         core_passage_ids=["p1"],
         support_passage_ids=["p2"],
+        before_state="The prior balance still holds.",
+        after_state="A new political order is now in effect.",
+        change_driver="A decision forces the transition.",
+        irreversibility_reason="The institutions and actors cannot easily return to the old arrangement.",
     )
 
 
-def _contested_explanation(primitive_id: str = "cx_1") -> SynthesisPrimitive:
-    return SynthesisPrimitive(
+def _contested_explanation(primitive_id: str = "cx_1") -> ContestedExplanationPrimitive:
+    return ContestedExplanationPrimitive(
         id=primitive_id,
+        family="contested_explanations",
         title="Competing readings",
         summary="The evidence supports multiple paths.",
         core_passage_ids=["p1"],
@@ -85,7 +93,7 @@ def _contested_explanation(primitive_id: str = "cx_1") -> SynthesisPrimitive:
     )
 
 
-def _family_map(**overrides: list[SynthesisPrimitive]) -> dict[str, list[SynthesisPrimitive]]:
+def _family_map(**overrides: list[SynthesisPrimitiveBase]) -> dict[str, list[SynthesisPrimitiveBase]]:
     payload = {family: [] for family in SYNTHESIS_PRIMITIVE_FAMILIES}
     payload.update(overrides)
     return payload
@@ -152,10 +160,7 @@ def _episode_spine(pack_id: str = "pack_1") -> EpisodeSpine:
     }
     return EpisodeSpine(
         listener_question="Why does this decision land so hard?",
-        working_claim="This episode tests one controlling proposition.",
-        target_end_state="The listener leaves with a constrained verdict.",
-        verdict_mode=VerdictMode.CONSTRAIN,
-        primary_counterposition="A rival interpretation still pulls at the evidence.",
+        argument="This episode tests one controlling proposition.",
         core_primitive_ids=core_primitive_ids,
         support_primitive_roles=support_primitive_roles,
         recall_primitive_ids=[],
@@ -194,12 +199,14 @@ class TestThematicProject:
         assert config.synthesis_trim_next_keep_fraction == 0.30
         assert config.synthesis_trim_tail_keep_fraction == 0.15
         assert config.passage_extraction_concurrency == 16
-        assert config.episode_write_concurrency == 6
-        assert config.spoken_delivery_concurrency is None
-        assert config.min_episode_minutes == 100.0
-        assert config.max_episode_minutes == 120.0
-        assert config.scene_card_target_min == 45
-        assert config.scene_card_target_max == 55
+        assert config.episode_write_concurrency == 8
+        assert config.spoken_delivery_concurrency == 8
+        assert config.min_episode_minutes == 110.0
+        assert config.max_episode_minutes == 130.0
+        assert config.architecture_section_target_min == 7
+        assert config.architecture_section_target_max == 10
+        assert config.scene_card_target_min == 25
+        assert config.scene_card_target_max == 35
 
     def test_thematic_project_rejects_more_than_thirty_sub_themes(self):
         with pytest.raises(ValidationError, match="at most 30 entries"):
@@ -455,12 +462,8 @@ class TestSynthesisModels:
             project_id="proj",
             primitives_by_family=_family_map(
                 epochal_turns=[
-                    SynthesisPrimitive(
-                        id="et_1",
-                        title="Decision",
-                        summary="A decision lands.",
-                        core_passage_ids=["p1"],
-                        actor_tags=["Nehru", "Unknown actor"],
+                    _epochal_turn("et_1").model_copy(
+                        update={"actor_tags": ["Nehru", "Unknown actor"]}
                     )
                 ]
             ),
@@ -563,8 +566,9 @@ class TestSynthesisModels:
             )
 
     def test_contested_explanations_with_fewer_than_two_candidate_readings_are_dropped(self):
-        invalid_contested_explanation = SynthesisPrimitive(
+        invalid_contested_explanation = ContestedExplanationPrimitive(
             id="cx_invalid",
+            family="contested_explanations",
             title="Single reading",
             summary="The evidence supports only one explicit reading.",
             core_passage_ids=["p1"],
@@ -617,8 +621,9 @@ class TestSynthesisModels:
                 primitives_by_family=_family_map(
                     epochal_turns=[_epochal_turn("et_1")],
                     contested_explanations=[
-                        SynthesisPrimitive(
+                        ContestedExplanationPrimitive(
                             id="cx_invalid",
+                            family="contested_explanations",
                             title="Single reading",
                             summary="The evidence supports only one explicit reading.",
                             core_passage_ids=["p1"],
@@ -855,7 +860,6 @@ class TestNarrativeStrategy:
                 {
                     "episode_number": 1,
                     "title": "Episode 1",
-                    "driving_question": "What changed?",
                     "arc_summary": "Arc",
                     "episode_spine": _episode_spine("pack_1").model_dump(mode="json"),
                     "actor_ids": ["mahatma_gandhi"],
@@ -880,39 +884,30 @@ class TestNarrativeStrategy:
         ):
             EpisodeSpine(
                 listener_question="What changed?",
-                working_claim="A claim",
-                target_end_state="A clearer state",
-                verdict_mode=VerdictMode.CONSTRAIN,
-                primary_counterposition="Another reading",
+                argument="A claim",
                 core_primitive_ids=["pack_1", *[f"core_{idx}" for idx in range(2, 8)]],
                 support_primitive_roles=support_primitive_roles,
             )
 
     def test_episode_spine_rejects_core_primitive_count_outside_new_range(self):
-        with pytest.raises(ValidationError, match="core_primitive_ids must contain 7-10"):
+        with pytest.raises(ValidationError, match="core_primitive_ids must contain 6-9"):
             EpisodeSpine(
                 listener_question="What changed?",
-                working_claim="A claim",
-                target_end_state="A clearer state",
-                verdict_mode=VerdictMode.CONSTRAIN,
-                primary_counterposition="Another reading",
-                core_primitive_ids=[f"core_{idx}" for idx in range(1, 7)],
+                argument="A claim",
+                core_primitive_ids=[f"core_{idx}" for idx in range(1, 6)],
                 support_primitive_roles={
                     f"support_{idx}": SupportPackRole.MECHANISM for idx in range(1, 11)
                 },
             )
 
     def test_episode_spine_rejects_support_primitive_count_outside_new_range(self):
-        with pytest.raises(ValidationError, match="support_primitive_roles must contain 10-14"):
+        with pytest.raises(ValidationError, match="support_primitive_roles must contain 7-10"):
             EpisodeSpine(
                 listener_question="What changed?",
-                working_claim="A claim",
-                target_end_state="A clearer state",
-                verdict_mode=VerdictMode.CONSTRAIN,
-                primary_counterposition="Another reading",
+                argument="A claim",
                 core_primitive_ids=[f"core_{idx}" for idx in range(1, 8)],
                 support_primitive_roles={
-                    f"support_{idx}": SupportPackRole.MECHANISM for idx in range(1, 10)
+                    f"support_{idx}": SupportPackRole.MECHANISM for idx in range(1, 7)
                 },
             )
 
@@ -921,10 +916,7 @@ class TestNarrativeStrategy:
             EpisodeSpine.model_validate(
                 {
                     "listener_question": "What changed?",
-                    "working_claim": "A claim",
-                    "target_end_state": "A clearer state",
-                    "verdict_mode": "constrain",
-                    "primary_counterposition": "Another reading",
+                    "argument": "A claim",
                     "spine_pack_ids": ["pack_1"],
                     "support_pack_roles": {},
                     "allowed_recalls": [],
@@ -938,10 +930,7 @@ class TestNarrativeStrategy:
                 {
                     "episode_number": 1,
                     "listener_question": "What changed?",
-                    "working_claim": "A claim",
-                    "target_end_state": "A clearer state",
-                    "verdict_mode": "constrain",
-                    "primary_counterposition": "Another reading",
+                    "argument": "A claim",
                     "spine_pack_ids": ["pack_1"],
                     "support_pack_roles": {},
                     "allowed_recalls": [],
@@ -959,14 +948,12 @@ class TestNarrativeStrategy:
                     StrategyEpisode(
                         episode_number=1,
                         title="Episode 1",
-                        driving_question="Why begin here?",
                         arc_summary="Arc 1",
                         episode_spine=_episode_spine("pack_1"),
                     ),
                     StrategyEpisode(
                         episode_number=2,
                         title="Episode 2",
-                        driving_question="Why return?",
                         arc_summary="Arc 2",
                         episode_spine=_episode_spine("pack_1"),
                     ),
@@ -984,11 +971,10 @@ class TestNarrativeStrategy:
                     StrategyEpisode(
                         episode_number=1,
                         title="Episode 1",
-                        driving_question="Why begin here?",
                         arc_summary="Arc 1",
                         episode_spine={
                             **_episode_spine("pack_1").model_dump(mode="json"),
-                            "spine_pack_ids": [],
+                            "core_primitive_ids": [],
                         },
                     ),
                 ],
@@ -1430,6 +1416,11 @@ class TestEpisodeArchitectureModels:
                     purpose="opening" if idx == 0 else "closing" if idx == section_count - 1 else "setup",
                     approx_runtime_minutes=100.0 / section_count,
                     primitive_ids=["et_1"],
+                    section_anchor=f"Anchor {idx + 1}",
+                    must_stage_beats=[
+                        f"Beat {idx + 1}A",
+                        f"Beat {idx + 1}B",
+                    ],
                     section_question=f"Question {idx + 1}?",
                     section_resolution=f"Resolution {idx + 1}",
                     entry_state=f"Entry {idx + 1}",
@@ -1489,3 +1480,51 @@ class TestEpisodeArchitectureModels:
     def test_episode_architecture_rejects_more_than_twelve_sections(self):
         with pytest.raises(ValidationError, match="at most 12 items"):
             self._build_architecture(13)
+
+    def test_architecture_section_migrates_legacy_anchor_field(self):
+        section = ArchitectureSection.model_validate(
+            {
+                "section_id": "section_01",
+                "purpose": "opening",
+                "approx_runtime_minutes": 10.0,
+                "primitive_ids": ["et_1"],
+                "anchor": "Legacy anchor",
+                "must_stage_beats": ["Visible move", "Immediate consequence"],
+                "section_question": "Question?",
+                "section_resolution": "Resolution",
+                "entry_state": "Entry",
+                "exit_state": "Exit",
+                "transition_logic": "Transition",
+                "argument_role": "frame",
+                "inference_mode": "scene_first",
+                "pressure_type": "mass_political",
+                "resolution_type": "redefinition",
+            }
+        )
+
+        payload = section.model_dump(mode="json")
+        assert section.section_anchor == "Legacy anchor"
+        assert payload["section_anchor"] == "Legacy anchor"
+        assert "anchor" not in payload
+
+    def test_architecture_section_rejects_single_must_stage_beat_when_provided(self):
+        with pytest.raises(ValidationError, match="must_stage_beats must contain at least 2 items"):
+            ArchitectureSection.model_validate(
+                {
+                    "section_id": "section_01",
+                    "purpose": "opening",
+                    "approx_runtime_minutes": 10.0,
+                    "primitive_ids": ["et_1"],
+                    "section_anchor": "Anchor",
+                    "must_stage_beats": ["Only one beat"],
+                    "section_question": "Question?",
+                    "section_resolution": "Resolution",
+                    "entry_state": "Entry",
+                    "exit_state": "Exit",
+                    "transition_logic": "Transition",
+                    "argument_role": "frame",
+                    "inference_mode": "scene_first",
+                    "pressure_type": "mass_political",
+                    "resolution_type": "redefinition",
+                }
+            )

@@ -10,15 +10,16 @@ from typing import Any
 from podcast_agent.schemas.models import (
     ActorMetadata,
     ActorProfile,
+    BaseSynthesisPrimitive,
     EpisodeArchitecture,
     BookRecord,
+    EpochalTurnPrimitive,
     EpisodePlan,
     NarrativeStrategy,
     PipelineConfig,
     ProjectStatus,
     StrategyEpisode,
     SynthesisMap,
-    SynthesisPrimitive,
     SynthesisPrimitivesArtifact,
     ThematicAxis,
     ThematicCorpus,
@@ -180,8 +181,9 @@ def _build_project_dir(tmp_path: Path) -> Path:
         description="Axis description",
         theme_importance_score=1.0,
     )
-    primitive = SynthesisPrimitive(
+    primitive = BaseSynthesisPrimitive(
         id="primitive_1",
+        family="epochal_turns",
         title="Primitive",
         summary="Primitive summary",
         axis_ids=["axis_1"],
@@ -192,9 +194,22 @@ def _build_project_dir(tmp_path: Path) -> Path:
         project_id="run_1",
         primitives_by_family={"epochal_turns": [primitive]},
     )
+    enriched_primitive = EpochalTurnPrimitive(
+        id="primitive_1",
+        family="epochal_turns",
+        title="Primitive",
+        summary="Primitive summary",
+        axis_ids=["axis_1"],
+        core_passage_ids=[],
+        actor_ids=["actor_1"],
+        before_state="The prior balance still holds.",
+        after_state="The balance breaks.",
+        change_driver="A decisive move forces the turn.",
+        irreversibility_reason="The fallout cannot be unwound quickly.",
+    )
     synthesis_map = SynthesisMap(
         project_id="run_1",
-        primitives_by_family={"epochal_turns": [primitive]},
+        primitives_by_family={"epochal_turns": [enriched_primitive]},
     )
     actor_metadata = ActorMetadata(
         project_id="run_1",
@@ -214,16 +229,22 @@ def _build_project_dir(tmp_path: Path) -> Path:
             StrategyEpisode(
                 episode_number=1,
                 title="Episode",
-                driving_question="Question?",
                 arc_summary="Arc summary",
                 episode_spine={
                     "listener_question": "Question?",
-                    "working_claim": "A working claim.",
-                    "target_end_state": "The episode lands a constrained answer.",
-                    "verdict_mode": "constrain",
-                    "primary_counterposition": "A rival interpretation remains plausible.",
-                    "core_primitive_ids": ["primitive_1"],
-                    "support_primitive_roles": {},
+                    "argument": "A working claim.",
+                    "core_primitive_ids": [
+                        "primitive_1",
+                        "core_2",
+                        "core_3",
+                        "core_4",
+                        "core_5",
+                        "core_6",
+                        "core_7",
+                    ],
+                    "support_primitive_roles": {
+                        f"support_{idx}": "mechanism" for idx in range(1, 10)
+                    },
                     "recall_primitive_ids": [],
                 },
             )

@@ -21,7 +21,6 @@ from typing import Any, Callable
 from podcast_agent.config import Settings
 from podcast_agent.pipeline.orchestrator import (
     PipelineOrchestrator,
-    _spoken_delivery_batch_section_id,
     _save_json,
     build_render_manifest,
 )
@@ -107,7 +106,6 @@ def _collect_logged_spoken_payloads(log_path: Path) -> dict[int, list[dict[str, 
             )
         for required_field in (
             "episode_number",
-            "script",
             "max_words_per_segment",
             "tts_provider",
         ):
@@ -115,6 +113,10 @@ def _collect_logged_spoken_payloads(log_path: Path) -> dict[int, list[dict[str, 
                 raise RuntimeError(
                     f"Missing '{required_field}' in spoken payload for episode {episode_number}"
                 )
+        if "section" not in model_payload and "script" not in model_payload:
+            raise RuntimeError(
+                f"Missing 'section' or legacy 'script' in spoken payload for episode {episode_number}"
+            )
         payloads_by_episode.setdefault(episode_number, []).append(model_payload)
     return payloads_by_episode
 
@@ -262,31 +264,50 @@ def _build_spoken_section(payload: dict[str, Any], result: Any) -> SpokenSection
     if not isinstance(episode_number, int) or episode_number < 1:
         raise RuntimeError(f"Invalid episode_number in payload: {episode_number!r}")
 
-    script = EpisodeScript.model_validate(payload["script"])
-    if not script.prose_sections:
-        raise RuntimeError(
-            "Spoken delivery rerun expects at least one prose section per payload; "
-            f"episode {episode_number} payload contained {len(script.prose_sections)} sections."
-        )
+    if "section" in payload:
+        section = payload["section"]
+        if not isinstance(section, dict) or not str(section.get("section_id", "")).strip():
+            raise RuntimeError(f"Invalid section payload for episode {episode_number}")
+        section_id = str(section["section_id"])
+    else:
+        script = EpisodeScript.model_validate(payload["script"])
+        if not script.prose_sections:
+            raise RuntimeError(
+                "Spoken delivery rerun expects at least one prose section per payload; "
+                f"episode {episode_number} payload contained {len(script.prose_sections)} sections."
+            )
+        if len(script.prose_sections) != 1:
+            raise RuntimeError(
+                "Legacy spoken delivery rerun requires exactly one prose section per payload; "
+                f"episode {episode_number} payload contained {len(script.prose_sections)} sections."
+            )
+        section_id = script.prose_sections[0].section_id
     tts_provider = payload.get("tts_provider")
     if not isinstance(tts_provider, str) or not tts_provider.strip():
         raise RuntimeError(f"Invalid tts_provider in payload for episode {episode_number}")
-
-    batch_index = payload.get("batch_index")
-    if isinstance(batch_index, int) and batch_index >= 1:
-        section_id = _spoken_delivery_batch_section_id(batch_index)
-    elif len(script.prose_sections) == 1:
-        section_id = script.prose_sections[0].section_id
-    else:
-        raise RuntimeError(
-            "Spoken delivery rerun requires batch_index when a payload contains multiple prose sections; "
-            f"episode {episode_number} payload contained {len(script.prose_sections)} sections."
-        )
     return SpokenSection(
         section_id=section_id,
         text=result.text,
         speech_hints=result.speech_hints,
     )
+
+
+def _payload_section_ids(payload: dict[str, Any]) -> list[str]:
+    if "section" in payload:
+        section = payload["section"]
+        if not isinstance(section, dict):
+            raise RuntimeError(f"Invalid section payload: {section!r}")
+        section_id = str(section.get("section_id", "")).strip()
+        if not section_id:
+            raise RuntimeError("Section-local spoken payload is missing section_id")
+        return [section_id]
+    payload_script = EpisodeScript.model_validate(payload["script"])
+    if not payload_script.prose_sections:
+        raise RuntimeError(
+            "Spoken delivery rerun expects at least one prose section per payload; "
+            f"episode {payload.get('episode_number')} payload contained {len(payload_script.prose_sections)} sections."
+        )
+    return [section.section_id for section in payload_script.prose_sections]
 
 
 def _build_spoken_script(
@@ -436,12 +457,6 @@ def main() -> int:
                     raise RuntimeError(
                         f"Episode mismatch in payload for {project_id} episode {episode_number}"
                     )
-                payload_script = EpisodeScript.model_validate(payload["script"])
-                if not payload_script.prose_sections:
-                    raise RuntimeError(
-                        "Spoken delivery rerun expects at least one prose section per payload; "
-                        f"episode {episode_number} payload contained {len(payload_script.prose_sections)} sections."
-                    )
                 batch_index = payload.get("batch_index")
                 if batch_index is None:
                     batch_sort_key = payload_order
@@ -453,7 +468,7 @@ def main() -> int:
                     )
                 payload_records.append((
                     batch_sort_key,
-                    [section.section_id for section in payload_script.prose_sections],
+                    _payload_section_ids(payload),
                     payload,
                 ))
                 candidate_provider = payload.get("tts_provider")
