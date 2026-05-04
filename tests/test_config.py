@@ -153,10 +153,10 @@ class TestPipelineRuntimeConfig:
         assert config.planning_axis_max == 15
         assert config.synthesis_total_passage_cap == 450
         assert config.planning_total_passage_cap == 300
-        assert config.architecture_section_target_min == 6
-        assert config.architecture_section_target_max == 8
-        assert config.scene_card_target_min == 25
-        assert config.scene_card_target_max == 35
+        assert config.architecture_section_target_min == 9
+        assert config.architecture_section_target_max == 12
+        assert config.scene_card_target_min == 27
+        assert config.scene_card_target_max == 36
         assert config.passage_extraction_concurrency == 16
         assert config.llm_global_max_concurrency == 30
 

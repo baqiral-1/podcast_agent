@@ -30,6 +30,8 @@ from podcast_agent.schemas.models import (
     SceneActorArcBinding,
     SceneCard,
     SceneCardDraft,
+    HostMove,
+    SeriesNarratorProfile,
     SpineRelation,
     SpeechHints,
     SpokenScript,
@@ -156,7 +158,7 @@ def _episode_spine(pack_id: str = "pack_1") -> EpisodeSpine:
     core_primitive_ids = [pack_id, *[f"core_{idx}" for idx in range(2, 8)]]
     support_primitive_roles = {
         f"support_{idx}": SupportPackRole.MECHANISM if idx % 2 == 0 else SupportPackRole.TEXTURE
-        for idx in range(1, 11)
+        for idx in range(1, 8)
     }
     return EpisodeSpine(
         listener_question="Why does this decision land so hard?",
@@ -216,12 +218,12 @@ class TestThematicProject:
         assert config.passage_extraction_concurrency == 16
         assert config.episode_write_concurrency == 8
         assert config.spoken_delivery_concurrency == 8
-        assert config.min_episode_minutes == 110.0
-        assert config.max_episode_minutes == 130.0
-        assert config.architecture_section_target_min == 6
-        assert config.architecture_section_target_max == 8
-        assert config.scene_card_target_min == 25
-        assert config.scene_card_target_max == 35
+        assert config.min_episode_minutes == 90.0
+        assert config.max_episode_minutes == 105.0
+        assert config.architecture_section_target_min == 9
+        assert config.architecture_section_target_max == 12
+        assert config.scene_card_target_min == 27
+        assert config.scene_card_target_max == 36
 
     def test_thematic_project_rejects_more_than_thirty_sub_themes(self):
         with pytest.raises(ValidationError, match="at most 30 entries"):
@@ -247,6 +249,29 @@ class TestThematicProject:
             "major_actors": ["actor"],
             "key_events_or_arguments": ["event"],
         }
+
+    def test_series_narrator_profile_defaults_to_seven_host_moves(self):
+        profile = SeriesNarratorProfile()
+        assert profile.target_host_moves_per_episode == 7
+
+    @pytest.mark.parametrize(
+        ("move_type", "expected_placement"),
+        [
+            ("orient", "open"),
+            ("naming_note", "open"),
+            ("clarify", "pivot"),
+            ("contrast", "pivot"),
+            ("light_aside", "pivot"),
+            ("evaluate", "close"),
+            ("callback", "close"),
+            ("none", "close"),
+        ],
+    )
+    def test_host_move_infers_default_placement(self, move_type: str, expected_placement: str):
+        host_move = HostMove.model_validate(
+            {"move_type": move_type, "note": "A usable note.", "max_sentences": 1}
+        )
+        assert host_move.placement == expected_placement
 
 
 class TestSynthesisModels:
@@ -891,7 +916,7 @@ class TestNarrativeStrategy:
                 f"support_{idx}": (
                     SupportPackRole.MECHANISM if idx % 2 == 0 else SupportPackRole.TEXTURE
                 )
-                for idx in range(1, 10)
+                for idx in range(1, 8)
             },
         }
         with pytest.raises(
@@ -905,24 +930,24 @@ class TestNarrativeStrategy:
             )
 
     def test_episode_spine_rejects_core_primitive_count_outside_new_range(self):
-        with pytest.raises(ValidationError, match="core_primitive_ids must contain 6-9"):
+        with pytest.raises(ValidationError, match="core_primitive_ids must contain 5-7"):
             EpisodeSpine(
                 listener_question="What changed?",
                 argument="A claim",
-                core_primitive_ids=[f"core_{idx}" for idx in range(1, 6)],
+                core_primitive_ids=[f"core_{idx}" for idx in range(1, 5)],
                 support_primitive_roles={
-                    f"support_{idx}": SupportPackRole.MECHANISM for idx in range(1, 11)
+                    f"support_{idx}": SupportPackRole.MECHANISM for idx in range(1, 8)
                 },
             )
 
     def test_episode_spine_rejects_support_primitive_count_outside_new_range(self):
-        with pytest.raises(ValidationError, match="support_primitive_roles must contain 7-10"):
+        with pytest.raises(ValidationError, match="support_primitive_roles must contain 5-7"):
             EpisodeSpine(
                 listener_question="What changed?",
                 argument="A claim",
                 core_primitive_ids=[f"core_{idx}" for idx in range(1, 8)],
                 support_primitive_roles={
-                    f"support_{idx}": SupportPackRole.MECHANISM for idx in range(1, 7)
+                    f"support_{idx}": SupportPackRole.MECHANISM for idx in range(1, 5)
                 },
             )
 
@@ -1467,34 +1492,34 @@ class TestEpisodeArchitectureModels:
             architecture_notes=[],
         )
 
-    def test_episode_architecture_accepts_six_sections(self):
-        architecture = self._build_architecture(6)
-        assert len(architecture.sections) == 6
+    def test_episode_architecture_accepts_nine_sections(self):
+        architecture = self._build_architecture(9)
+        assert len(architecture.sections) == 9
 
-    def test_episode_architecture_accepts_seven_sections(self):
-        architecture = self._build_architecture(7)
-        assert len(architecture.sections) == 7
+    def test_episode_architecture_accepts_ten_sections(self):
+        architecture = self._build_architecture(10)
+        assert len(architecture.sections) == 10
 
     def test_episode_architecture_rejects_removed_target_section_count_field(self):
         with pytest.raises(ValidationError, match="target_section_count"):
             EpisodeArchitecture.model_validate(
                 {
-                    **self._build_architecture(6).model_dump(mode="json"),
+                    **self._build_architecture(9).model_dump(mode="json"),
                     "target_section_count": 6,
                 }
             )
 
-    def test_episode_architecture_accepts_eight_sections(self):
-        architecture = self._build_architecture(8)
-        assert len(architecture.sections) == 8
+    def test_episode_architecture_accepts_twelve_sections(self):
+        architecture = self._build_architecture(12)
+        assert len(architecture.sections) == 12
 
-    def test_episode_architecture_rejects_fewer_than_six_sections(self):
-        with pytest.raises(ValidationError, match="at least 6 items"):
-            self._build_architecture(5)
+    def test_episode_architecture_rejects_fewer_than_nine_sections(self):
+        with pytest.raises(ValidationError, match="at least 9 items"):
+            self._build_architecture(8)
 
-    def test_episode_architecture_rejects_more_than_eight_sections(self):
-        with pytest.raises(ValidationError, match="at most 8 items"):
-            self._build_architecture(9)
+    def test_episode_architecture_rejects_more_than_twelve_sections(self):
+        with pytest.raises(ValidationError, match="at most 12 items"):
+            self._build_architecture(13)
 
     def test_architecture_section_migrates_legacy_anchor_field(self):
         section = ArchitectureSection.model_validate(

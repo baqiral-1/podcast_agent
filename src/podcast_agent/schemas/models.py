@@ -52,6 +52,15 @@ def _validate_list_item_word_limit(
     return normalized
 
 
+def _default_host_move_placement(move_type: str) -> str:
+    normalized = str(move_type or "").strip() or "none"
+    if normalized in {"orient", "naming_note"}:
+        return "open"
+    if normalized in {"clarify", "contrast", "light_aside"}:
+        return "pivot"
+    return "close"
+
+
 # ---------------------------------------------------------------------------
 # Enums
 # ---------------------------------------------------------------------------
@@ -187,6 +196,27 @@ class ClosureMode(str, Enum):
     FINAL_ANSWER = "final_answer"
 
 
+class SceneRole(str, Enum):
+    CONTEXT_SETUP = "context_setup"
+    ACTOR_SETUP = "actor_setup"
+    ACTION = "action"
+    SHOCK = "shock"
+    CONTESTATION = "contestation"
+    REACTION = "reaction"
+    FALLOUT = "fallout"
+    IMPLICATION = "implication"
+
+
+class SceneFunction(str, Enum):
+    SCENE = "scene"
+    HINGE = "hinge"
+    MECHANISM = "mechanism"
+    TURN = "turn"
+    LANDING = "landing"
+    CALLBACK = "callback"
+    AFTERLIFE = "afterlife"
+
+
 # ---------------------------------------------------------------------------
 # 3.1 Project-Level Models
 # ---------------------------------------------------------------------------
@@ -283,15 +313,15 @@ class PipelineConfig(StrictModel):
     episode_planning_concurrency: int = Field(default=8, ge=1)
     episode_write_concurrency: int = Field(default=8, ge=1)
     spoken_delivery_concurrency: int | None = Field(default=8, ge=1)
-    architecture_section_target_min: int = Field(default=6, ge=1)
-    architecture_section_target_max: int = Field(default=8, ge=1)
+    architecture_section_target_min: int = Field(default=9, ge=1)
+    architecture_section_target_max: int = Field(default=12, ge=1)
     narrative_strategy_episode_count_min: int = Field(default=8, ge=1)
     narrative_strategy_episode_count_max: int = Field(default=12, ge=1)
-    min_episode_minutes: float = Field(default=75.0, gt=0.0)
-    max_episode_minutes: float = Field(default=95.0, gt=0.0)
+    min_episode_minutes: float = Field(default=90.0, gt=0.0)
+    max_episode_minutes: float = Field(default=105.0, gt=0.0)
     duration_shortfall_policy: Literal["warn"] = "warn"
-    scene_card_target_min: int = Field(default=18, ge=1)
-    scene_card_target_max: int = Field(default=26, ge=1)
+    scene_card_target_min: int = Field(default=27, ge=1)
+    scene_card_target_max: int = Field(default=36, ge=1)
     scene_card_target_policy: Literal["warn"] = "warn"
     scene_card_primitives_min: int = Field(default=1, ge=0)
     scene_card_primitives_max: int = Field(default=2, ge=1)
@@ -911,25 +941,25 @@ SYNTHESIS_PRIMITIVE_FAMILIES: tuple[str, ...] = (
 )
 #
 # These prompt-time family ranges are retention-informed soft targets.
-# They preserve family-level flexibility while nudging the prompt toward a
-# slightly larger retained primitive pool.
+# They preserve family-level flexibility while shifting more budget into
+# epochal turns from the wider retained-pool baseline.
 #
 SYNTHESIS_PRIMITIVE_TARGET_RANGES: dict[str, tuple[int, int]] = {
-    "epochal_turns": (24, 29),
-    "decisions_and_nondecisions": (23, 28),
-    "set_piece_scenes": (17, 26),
-    "telling_details": (5, 9),
-    "human_costs": (15, 19),
-    "character_engines": (13, 20),
-    "coalitions_and_fault_lines": (9, 13),
-    "systems_and_operating_logics": (10, 15),
-    "misreadings_and_fantasies": (6, 9),
-    "contested_explanations": (5, 8),
-    "perspective_windows": (3, 6),
-    "moral_traps": (5, 8),
-    "afterlives": (6, 10),
-    "recurring_images_and_symbols": (3, 6),
-    "ironies_and_reversals": (11, 14),
+    "epochal_turns": (30, 38),
+    "decisions_and_nondecisions": (25, 32),
+    "set_piece_scenes": (18, 31),
+    "telling_details": (4, 8),
+    "human_costs": (17, 22),
+    "character_engines": (14, 22),
+    "coalitions_and_fault_lines": (11, 16),
+    "systems_and_operating_logics": (12, 18),
+    "misreadings_and_fantasies": (5, 8),
+    "contested_explanations": (4, 7),
+    "perspective_windows": (2, 5),
+    "moral_traps": (4, 7),
+    "afterlives": (5, 10),
+    "recurring_images_and_symbols": (2, 5),
+    "ironies_and_reversals": (10, 13),
 }
 SYNTHESIS_PRIMITIVE_TARGET_MAX_COUNTS: dict[str, int] = {
     family: upper_bound
@@ -1042,10 +1072,10 @@ class EpisodeSpine(StrictModel):
         self.core_primitive_ids = deduped_core_primitive_ids
         if not self.core_primitive_ids:
             raise ValueError("core_primitive_ids must contain at least one primitive id")
-        if len(self.core_primitive_ids) < 4 or len(self.core_primitive_ids) > 9:
-            raise ValueError("core_primitive_ids must contain 4-9 primitive ids")
-        if len(self.support_primitive_roles) < 4 or len(self.support_primitive_roles) > 10:
-            raise ValueError("support_primitive_roles must contain 4-10 primitive ids")
+        if len(self.core_primitive_ids) < 5 or len(self.core_primitive_ids) > 7:
+            raise ValueError("core_primitive_ids must contain 5-7 primitive ids")
+        if len(self.support_primitive_roles) < 5 or len(self.support_primitive_roles) > 7:
+            raise ValueError("support_primitive_roles must contain 5-7 primitive ids")
 
         overlap = sorted(set(self.core_primitive_ids).intersection(self.support_primitive_roles))
         if overlap:
@@ -1497,7 +1527,7 @@ class SeriesNarratorProfile(StrictModel):
             "teaser_hype",
         ]
     )
-    target_host_moves_per_episode: int = Field(default=5, ge=0, le=12)
+    target_host_moves_per_episode: int = Field(default=7, ge=0, le=12)
 
 
 class NarrativeStrategy(StrictModel):
@@ -1616,7 +1646,7 @@ class EpisodeArchitecture(StrictModel):
     major_turn_section_id: str = Field(min_length=1)
     allowed_recurring_primitive_ids: list[str] = Field(default_factory=list)
     forbidden_redundancies: list[str] = Field(default_factory=list)
-    sections: list[ArchitectureSection] = Field(default_factory=list, min_length=6, max_length=8)
+    sections: list[ArchitectureSection] = Field(default_factory=list, min_length=9, max_length=12)
     architecture_notes: list[str] = Field(default_factory=list)
 
     @model_validator(mode="before")
@@ -1702,13 +1732,29 @@ class HostMove(StrictModel):
     ] = "none"
     note: str = ""
     max_sentences: Literal[1, 2] = 1
+    placement: Literal["open", "pivot", "close"] = "close"
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_host_move(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        cleaned = dict(data)
+        move_type = str(cleaned.get("move_type", "none") or "none").strip() or "none"
+        cleaned["move_type"] = move_type
+        cleaned["note"] = str(cleaned.get("note", "") or "").strip()
+        placement = str(cleaned.get("placement", "") or "").strip()
+        if not placement:
+            cleaned["placement"] = _default_host_move_placement(move_type)
+        return cleaned
 
 
 class _SceneCardBase(StrictModel):
     scene_id: str = Field(default_factory=lambda: f"scene_{new_id()[:8]}")
     section_id: str = Field(min_length=1)
     title: str = Field(min_length=1)
-    scene_role: str = Field(min_length=1)
+    scene_role: SceneRole
+    scene_function: SceneFunction
     beat_change: str = Field(
         min_length=1,
         validation_alias=AliasChoices("beat_change", "state_effect"),
@@ -1726,8 +1772,6 @@ class _SceneCardBase(StrictModel):
 
     @model_validator(mode="after")
     def validate_card_shape(self) -> "_SceneCardBase":
-        if not self.scene_role.strip():
-            raise ValueError("scene_role must not be blank")
         deduped_facts: list[str] = []
         seen_facts: set[str] = set()
         for fact in self.must_land_facts:
@@ -1740,6 +1784,36 @@ class _SceneCardBase(StrictModel):
         return self
 
 
+_LEGACY_SCENE_ROLE_TO_ROLE_FUNCTION: dict[str, tuple[str, str | None]] = {
+    "setup": (SceneRole.CONTEXT_SETUP.value, SceneFunction.SCENE.value),
+    "shock": (SceneRole.SHOCK.value, SceneFunction.SCENE.value),
+    "action": (SceneRole.ACTION.value, SceneFunction.SCENE.value),
+    "consequence": (SceneRole.FALLOUT.value, SceneFunction.SCENE.value),
+    "reaction": (SceneRole.REACTION.value, SceneFunction.SCENE.value),
+    "contestation": (SceneRole.CONTESTATION.value, SceneFunction.SCENE.value),
+    "synthesis": (SceneRole.IMPLICATION.value, SceneFunction.LANDING.value),
+    "process": (SceneRole.ACTION.value, SceneFunction.MECHANISM.value),
+    "perspective shift": (SceneRole.IMPLICATION.value, SceneFunction.CALLBACK.value),
+    "perspective_shift": (SceneRole.IMPLICATION.value, SceneFunction.CALLBACK.value),
+    "reveal": (SceneRole.IMPLICATION.value, SceneFunction.HINGE.value),
+    "reversal": (SceneRole.SHOCK.value, SceneFunction.TURN.value),
+    "stage_choice": (SceneRole.ACTION.value, SceneFunction.HINGE.value),
+    "turn": (SceneRole.SHOCK.value, SceneFunction.TURN.value),
+    "closing": (SceneRole.IMPLICATION.value, SceneFunction.LANDING.value),
+}
+
+_SCENE_FUNCTION_DEFAULT_BY_ROLE: dict[str, str] = {
+    SceneRole.CONTEXT_SETUP.value: SceneFunction.SCENE.value,
+    SceneRole.ACTOR_SETUP.value: SceneFunction.SCENE.value,
+    SceneRole.ACTION.value: SceneFunction.SCENE.value,
+    SceneRole.SHOCK.value: SceneFunction.SCENE.value,
+    SceneRole.CONTESTATION.value: SceneFunction.SCENE.value,
+    SceneRole.REACTION.value: SceneFunction.SCENE.value,
+    SceneRole.FALLOUT.value: SceneFunction.SCENE.value,
+    SceneRole.IMPLICATION.value: SceneFunction.LANDING.value,
+}
+
+
 def _migrate_legacy_scene_card(data: Any) -> Any:
     if not isinstance(data, dict):
         return data
@@ -1749,11 +1823,20 @@ def _migrate_legacy_scene_card(data: Any) -> Any:
     cleaned.pop("dominant_primitive_id", None)
     cleaned.pop("primitive_ids", None)
     cleaned.pop("spine_relation", None)
-    role = cleaned.get("scene_role")
-    if role == "process":
-        cleaned["scene_role"] = "action"
-    elif role == "perspective shift":
-        cleaned["scene_role"] = "perspective_shift"
+    role = str(cleaned.get("scene_role", "") or "").strip()
+    if role:
+        normalized_role, default_function = _LEGACY_SCENE_ROLE_TO_ROLE_FUNCTION.get(
+            role,
+            (role, None),
+        )
+        cleaned["scene_role"] = normalized_role
+        if not str(cleaned.get("scene_function", "") or "").strip() and default_function:
+            cleaned["scene_function"] = default_function
+    if not str(cleaned.get("scene_function", "") or "").strip():
+        normalized_role = str(cleaned.get("scene_role", "") or "").strip()
+        default_function = _SCENE_FUNCTION_DEFAULT_BY_ROLE.get(normalized_role)
+        if default_function:
+            cleaned["scene_function"] = default_function
     if "beat_change" not in cleaned and cleaned.get("state_effect"):
         cleaned["beat_change"] = cleaned["state_effect"]
     cleaned.pop("state_effect", None)
@@ -1765,7 +1848,18 @@ def _migrate_legacy_scene_card(data: Any) -> Any:
             actor.pop("arc_bindings", None)
     host_move = cleaned.get("host_move")
     if not isinstance(host_move, dict):
-        cleaned["host_move"] = {"move_type": "none", "note": "", "max_sentences": 1}
+        cleaned["host_move"] = {
+            "move_type": "none",
+            "note": "",
+            "max_sentences": 1,
+            "placement": "close",
+        }
+    else:
+        normalized_host_move = dict(host_move)
+        move_type = str(normalized_host_move.get("move_type", "none") or "none").strip() or "none"
+        if not str(normalized_host_move.get("placement", "") or "").strip():
+            normalized_host_move["placement"] = _default_host_move_placement(move_type)
+        cleaned["host_move"] = normalized_host_move
     return cleaned
 
 

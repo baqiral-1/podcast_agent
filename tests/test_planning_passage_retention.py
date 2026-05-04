@@ -63,7 +63,7 @@ def _support_primitive_roles(
 ) -> dict[str, SupportPrimitiveRole]:
     roles: dict[str, SupportPrimitiveRole] = {
         f"{prefix}_{idx}": SupportPrimitiveRole.MECHANISM
-        for idx in range(1, 10)
+        for idx in range(1, 7)
     }
     if overrides:
         roles.update(overrides)
@@ -431,14 +431,11 @@ def test_build_episode_architecture_realization_reports_omitted_support_and_reca
         "support_4",
         "support_5",
         "support_6",
-        "support_7",
-        "support_8",
-        "support_9",
     ]
     assert realization["missing_recall_primitive_ids"] == ["recall_1"]
     assert realization["warning_count"] == 3
     assert (
-        "architecture_section_count_below_target: 4 < 6 (target range 6-8)"
+        "architecture_section_count_below_target: 4 < 9 (target range 9-12)"
         in realization["warnings"]
     )
 

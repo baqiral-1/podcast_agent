@@ -57,6 +57,7 @@ class WritingAgent(Agent):
         episode_target_word_count_lower: int | None = None,
         episode_target_word_count_higher: int | None = None,
         skip_grounding: bool = False,
+        host_policy: dict | None = None,
         actor_metadata: dict | None = None,
         writing_feedback: str | None = None,
         prior_window_continuity: dict | None = None,
@@ -70,6 +71,8 @@ class WritingAgent(Agent):
             "books": book_metadata,
             "skip_grounding": skip_grounding,
         }
+        if host_policy is not None:
+            payload["host_policy"] = host_policy
         if actor_metadata is not None:
             payload["actor_metadata"] = actor_metadata
         if writing_feedback:

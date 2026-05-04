@@ -21,6 +21,7 @@ class EpisodePlanningAgent(Agent):
         synthesis_map: dict,
         project_metadata: dict,
         available_passages: list[dict],
+        host_policy: dict | None = None,
         actor_metadata: dict | None = None,
         planning_feedback: dict | None = None,
     ) -> dict:
@@ -31,6 +32,8 @@ class EpisodePlanningAgent(Agent):
             "project": project_metadata,
             "available_passages": available_passages,
         }
+        if host_policy is not None:
+            payload["host_policy"] = host_policy
         if actor_metadata is not None:
             payload["actor_metadata"] = actor_metadata
         if planning_feedback is not None:

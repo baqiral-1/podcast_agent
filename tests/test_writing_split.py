@@ -33,7 +33,7 @@ def _core_primitive_ids() -> list[str]:
 
 
 def _support_primitive_roles() -> dict[str, str]:
-    return {f"support_{idx}": "mechanism" for idx in range(1, 10)}
+    return {f"support_{idx}": "mechanism" for idx in range(1, 8)}
 
 
 def _strategy_episode() -> StrategyEpisode:
@@ -379,6 +379,7 @@ def test_write_episode_splits_large_episode_into_two_sequential_parts(
         "scene_id",
         "section_id",
         "scene_role",
+        "scene_function",
         "spine_relation",
         "withhold_until",
         "intended_move",

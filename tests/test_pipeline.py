@@ -101,7 +101,7 @@ def _episode_spine(
         core_primitive_ids.append(f"core_{len(core_primitive_ids) + 1}")
     merged_support_roles = dict(support_pack_roles or {})
     next_support_idx = 1
-    while len(merged_support_roles) < 10:
+    while len(merged_support_roles) < 7:
         support_id = f"support_{next_support_idx}"
         next_support_idx += 1
         if support_id in core_primitive_ids or support_id in merged_support_roles:

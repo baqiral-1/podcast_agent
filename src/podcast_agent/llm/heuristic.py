@@ -539,21 +539,21 @@ class HeuristicLLMClient(LLMClient):
                 else f"What does episode {idx + 1} newly reveal?"
             )
             core_start = idx * 13
-            core_ids = primitive_ids[core_start:core_start + 4]
-            if len(core_ids) < 4:
-                core_ids = primitive_ids[:4]
-            support_candidates = primitive_ids[core_start + 4:core_start + 14]
+            core_ids = primitive_ids[core_start:core_start + 5]
+            if len(core_ids) < 5:
+                core_ids = primitive_ids[:5]
+            support_candidates = primitive_ids[core_start + 5:core_start + 15]
             support_ids = [
                 primitive_id
                 for primitive_id in support_candidates
                 if primitive_id not in core_ids
-            ][:4]
-            if len(support_ids) < 4:
+            ][:5]
+            if len(support_ids) < 5:
                 support_ids = [
                     primitive_id
                     for primitive_id in primitive_ids
                     if primitive_id not in core_ids
-                ][:4]
+                ][:5]
             episodes.append(
                 {
                     "episode_number": idx + 1,
@@ -666,7 +666,12 @@ class HeuristicLLMClient(LLMClient):
                     "actors": [],
                     "passage_ids": passage_ids,
                     "estimated_duration_seconds": 120 if is_closing else default_duration,
-                    "host_move": {"move_type": "none", "note": "", "max_sentences": 1},
+                    "host_move": {
+                        "move_type": "none",
+                        "note": "",
+                        "max_sentences": 1,
+                        "placement": "close",
+                    },
                 }
             )
         return {

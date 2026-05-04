@@ -106,7 +106,7 @@ def _build_project_dir(tmp_path: Path) -> Path:
                         "core_7",
                     ],
                     "support_primitive_roles": {
-                        f"support_{idx}": "mechanism" for idx in range(1, 10)
+                        f"support_{idx}": "mechanism" for idx in range(1, 7)
                     }
                     | {"primitive_support": "mechanism"},
                     "recall_primitive_ids": ["primitive_recall"],
@@ -263,15 +263,72 @@ def _episode_architecture() -> EpisodeArchitecture:
             },
             {
                 "section_id": "section_6",
+                "purpose": "setup",
+                "approx_runtime_minutes": 0.25,
+                "primitive_ids": ["primitive_1"],
+                "section_question": "Question?",
+                "section_resolution": "Step six.",
+                "entry_state": "Resolve",
+                "exit_state": "Refine",
+                "transition_logic": "Press tighter.",
+                "depends_on_section_ids": ["section_5"],
+                "sets_up_section_ids": ["section_7"],
+                "argument_role": "establish_mechanism",
+                "inference_mode": "mechanism_first",
+                "recurrence_role": "none",
+                "pressure_type": "mass_political",
+                "resolution_type": "escalation",
+                "closure_level": "low",
+            },
+            {
+                "section_id": "section_7",
+                "purpose": "setup",
+                "approx_runtime_minutes": 0.125,
+                "primitive_ids": ["primitive_1"],
+                "section_question": "Question?",
+                "section_resolution": "Step seven.",
+                "entry_state": "Refine",
+                "exit_state": "Stage close",
+                "transition_logic": "Set up the close.",
+                "depends_on_section_ids": ["section_6"],
+                "sets_up_section_ids": ["section_8"],
+                "argument_role": "establish_mechanism",
+                "inference_mode": "mechanism_first",
+                "recurrence_role": "none",
+                "pressure_type": "mass_political",
+                "resolution_type": "escalation",
+                "closure_level": "low",
+            },
+            {
+                "section_id": "section_8",
+                "purpose": "setup",
+                "approx_runtime_minutes": 0.125,
+                "primitive_ids": ["primitive_1"],
+                "section_question": "Question?",
+                "section_resolution": "Stage the close.",
+                "entry_state": "Stage close",
+                "exit_state": "End",
+                "transition_logic": "Hand off to the ending.",
+                "depends_on_section_ids": ["section_7"],
+                "sets_up_section_ids": ["section_9"],
+                "argument_role": "establish_mechanism",
+                "inference_mode": "mechanism_first",
+                "recurrence_role": "none",
+                "pressure_type": "mass_political",
+                "resolution_type": "escalation",
+                "closure_level": "low",
+            },
+            {
+                "section_id": "section_9",
                 "purpose": "closing",
                 "approx_runtime_minutes": 0.25,
                 "primitive_ids": ["primitive_1"],
                 "section_question": "Question?",
                 "section_resolution": "Resolved.",
-                "entry_state": "Resolve",
+                "entry_state": "End",
                 "exit_state": "End",
                 "transition_logic": "Close the loop.",
-                "depends_on_section_ids": ["section_5"],
+                "depends_on_section_ids": ["section_8"],
                 "sets_up_section_ids": [],
                 "argument_role": "close",
                 "inference_mode": "aftermath_first",
@@ -454,7 +511,7 @@ def test_resume_from_primitive_enrichment_uses_persisted_strategy_and_artifacts(
     assert calls["planning_strategy"].episodes[0].episode_spine.recall_primitive_ids == [
         "primitive_recall"
     ]
-    assert calls["planning_architectures"][0].runtime_minutes == 1.5
+    assert calls["planning_architectures"][0].runtime_minutes == 2.0
     assert calls["enrichment_actor_metadata"].actors[0].actor_id == "actor_1"
     assert calls["architecture_actor_metadata"].actors[0].actor_id == "actor_1"
     assert calls["planning_actor_metadata"].actors[0].actor_id == "actor_1"

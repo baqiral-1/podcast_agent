@@ -210,7 +210,7 @@ def test_choose_narrative_strategy_uses_trimmed_runtime_payload(monkeypatch, tmp
                         ],
                         support_primitive_roles={
                             f"support_{idx}": "mechanism"
-                            for idx in range(1, 10)
+                            for idx in range(1, 8)
                         },
                     ),
                 )

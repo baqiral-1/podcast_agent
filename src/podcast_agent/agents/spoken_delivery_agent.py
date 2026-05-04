@@ -42,6 +42,7 @@ class SpokenDeliveryAgent(Agent):
         script: dict,
         max_words_per_segment: int,
         tts_provider: str,
+        host_policy: dict | None = None,
         previous_spoken_tail: str | None = None,
     ) -> dict:
         payload = {
@@ -50,6 +51,8 @@ class SpokenDeliveryAgent(Agent):
             "max_words_per_segment": max_words_per_segment,
             "tts_provider": tts_provider,
         }
+        if host_policy is not None:
+            payload["host_policy"] = host_policy
         prose_sections = list(script.get("prose_sections", []) or [])
         if len(prose_sections) == 1:
             payload["section"] = prose_sections[0]

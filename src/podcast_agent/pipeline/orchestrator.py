@@ -87,6 +87,7 @@ from podcast_agent.schemas.models import (
     RepairResult,
     SceneCard,
     SceneCardDraft,
+    SeriesNarratorProfile,
     SegmentDiff,
     SetPieceScenePrimitive,
     SpineRelation,
@@ -234,6 +235,21 @@ def _spoken_delivery_batch_section_id(index: int) -> str:
 
 def _section_word_count(section: ProseSection) -> int:
     return len(section.text.split())
+
+
+def _project_scene_word_count(
+    scene: SceneCardDraft | SceneCard,
+    *,
+    words_per_minute: float,
+) -> int:
+    return max(
+        1,
+        int(
+            round(
+                (float(scene.estimated_duration_seconds) * float(words_per_minute)) / 60.0
+            )
+        ),
+    )
 
 
 def _score_spoken_delivery_batch_partition(
@@ -484,6 +500,7 @@ def _build_writer_scene_brief(scene_payload: dict[str, Any]) -> dict[str, Any]:
         "section_id": scene_payload.get("section_id"),
         "title": scene_payload.get("title", ""),
         "scene_role": scene_payload.get("scene_role", ""),
+        "scene_function": scene_payload.get("scene_function", ""),
         "entry_image": scene_payload.get("entry_image", ""),
         "observable_detail": scene_payload.get("observable_detail", ""),
         "beat_change": beat_change,
@@ -496,8 +513,54 @@ def _build_writer_scene_brief(scene_payload: dict[str, Any]) -> dict[str, Any]:
         "target_word_count_lower": int(scene_payload.get("target_word_count_lower", 0) or 0),
         "target_word_count_higher": int(scene_payload.get("target_word_count_higher", 0) or 0),
         "withhold_until": scene_payload.get("withhold_until"),
-        "host_move": scene_payload.get("host_move") or {"move_type": "none", "note": "", "max_sentences": 1},
+        "host_move": scene_payload.get("host_move") or {
+            "move_type": "none",
+            "note": "",
+            "max_sentences": 1,
+            "placement": "close",
+        },
     }
+
+
+def _build_host_policy_payload(narrator_profile: SeriesNarratorProfile) -> dict[str, Any]:
+    return {
+        "presence_mode": narrator_profile.presence_mode,
+        "baseline_tone": narrator_profile.baseline_tone,
+        "allowed_moves": list(narrator_profile.allowed_moves),
+        "forbidden_moves": list(narrator_profile.forbidden_moves),
+        "target_host_moves_per_episode": narrator_profile.target_host_moves_per_episode,
+        "target_policy": "soft_target",
+        "scene_shaping_rule": (
+            "Host moves should shape the scene's opening, pivot, or landing without "
+            "turning the scene into standalone commentary."
+        ),
+        "pronoun_policy": {
+            "allow_first_person_singular": False,
+            "allow_first_person_plural_only_for": [
+                "handoff",
+                "callback",
+                "closing",
+            ],
+        },
+        "density_policy": {
+            "prefer_sharper_phrasing_over_more_moves": True,
+            "prefer_hinges_over_routine_explanation": True,
+            "default_max_sentences": 1,
+        },
+    }
+
+
+def _build_host_moves_by_section(
+    plan: EpisodePlan | None,
+) -> dict[str, list[dict[str, Any]]]:
+    host_moves_by_section: dict[str, list[dict[str, Any]]] = {}
+    if plan is None:
+        return host_moves_by_section
+    for scene in plan.scene_cards:
+        host_moves_by_section.setdefault(scene.section_id, []).append(
+            scene.host_move.model_dump(mode="json")
+        )
+    return host_moves_by_section
 
 
 def _build_window_passages(
@@ -592,6 +655,7 @@ def _build_prior_window_continuity(
             "scene_id": last_scene.scene_id,
             "section_id": last_scene.section_id,
             "scene_role": last_scene.scene_role,
+            "scene_function": last_scene.scene_function,
             "spine_relation": "",
             "withhold_until": last_scene.withhold_until,
             "intended_move": last_scene.beat_change,
@@ -611,23 +675,64 @@ def _build_style_audit_sections_payload(
     section_meta_by_id = {
         section.section_id: section for section in architecture.sections
     }
-    host_moves_by_section: dict[str, list[dict[str, Any]]] = {}
+    host_moves_by_section = _build_host_moves_by_section(plan)
+    scene_cards_by_section: dict[str, list[SceneCard]] = {}
     if plan is not None:
         for scene in plan.scene_cards:
-            host_moves_by_section.setdefault(scene.section_id, []).append(
-                scene.host_move.model_dump(mode="json")
-            )
+            scene_cards_by_section.setdefault(scene.section_id, []).append(scene)
     payload_sections: list[dict[str, Any]] = []
     for prose_section in script.prose_sections:
         meta = section_meta_by_id.get(prose_section.section_id)
         if meta is None:
             continue
+        section_scene_cards = scene_cards_by_section.get(prose_section.section_id, [])
         payload_sections.append(
             {
                 "section_id": prose_section.section_id,
                 "purpose": meta.purpose.value,
                 "anchor": meta.section_anchor,
                 "closure_mode": meta.closure_mode.value if meta.closure_mode else "",
+                "scene_card_count": len(section_scene_cards),
+                "projected_word_count": sum(
+                    _project_scene_word_count(scene, words_per_minute=145.0)
+                    for scene in section_scene_cards
+                ),
+                "structural_card_count": sum(
+                    1 for scene in section_scene_cards if _is_structural_scene_card(scene)
+                ),
+                "host_moves": host_moves_by_section.get(prose_section.section_id, []),
+                "text": prose_section.text,
+            }
+        )
+    return payload_sections
+
+
+def _build_spoken_delivery_sections_payload(
+    *,
+    script: EpisodeScript,
+    architecture: EpisodeArchitecture | None,
+    plan: EpisodePlan | None = None,
+) -> list[dict[str, Any]]:
+    architecture_section_lookup = {
+        section.section_id: section
+        for section in (architecture.sections if architecture is not None else [])
+    }
+    host_moves_by_section = _build_host_moves_by_section(plan)
+    payload_sections: list[dict[str, Any]] = []
+    for prose_section in script.prose_sections:
+        architecture_section = architecture_section_lookup.get(prose_section.section_id)
+        payload_sections.append(
+            {
+                "section_id": prose_section.section_id,
+                "purpose": architecture_section.purpose.value if architecture_section else "",
+                "anchor": architecture_section.section_anchor if architecture_section else "",
+                "closure_mode": (
+                    architecture_section.closure_mode.value
+                    if architecture_section and architecture_section.closure_mode
+                    else ""
+                ),
+                "movement_goal": prose_section.movement_goal,
+                "scene_card_ids": list(prose_section.scene_card_ids),
                 "host_moves": host_moves_by_section.get(prose_section.section_id, []),
                 "text": prose_section.text,
             }
@@ -3291,13 +3396,14 @@ _PACK_ROLE_SPILLOVER_WEIGHTS: dict[str, float] = {
 _DEFAULT_PACK_WEIGHT = 1.00
 
 _SCENE_ROLE_WEIGHTS: dict[str, float] = {
+    "context_setup": 0.95,
+    "actor_setup": 1.00,
     "shock": 1.20,
     "action": 1.10,
-    "consequence": 1.10,
+    "fallout": 1.10,
     "contestation": 1.05,
-    "synthesis": 1.05,
     "reaction": 1.00,
-    "setup": 0.95,
+    "implication": 1.05,
     "reversal": 1.10,
     "reveal": 1.05,
     "stage_choice": 1.05,
@@ -3339,9 +3445,19 @@ _NO_ACTOR_BOUNDS_MULT_BY_BUCKET: dict[str, tuple[float, float]] = {
     "mid": (0.45, 0.90),
     "action": (0.60, 1.20),
 }
-_ARGUMENT_ROLES: frozenset[str] = frozenset({"synthesis", "perspective_shift"})
+_ARGUMENT_SCENE_FUNCTIONS: frozenset[str] = frozenset(
+    {"mechanism", "landing", "callback", "afterlife"}
+)
+_ARGUMENT_ROLES: frozenset[str] = frozenset({"implication", "perspective_shift"})
 _ACTION_BUCKET_ROLES: frozenset[str] = frozenset(
-    {"shock", "action", "consequence", "reveal", "reversal", "stage_choice"}
+    {"shock", "action", "fallout", "reveal", "reversal", "stage_choice"}
+)
+_STRUCTURAL_SCENE_FUNCTIONS: frozenset[str] = frozenset(
+    {"mechanism", "turn", "landing", "callback", "afterlife"}
+)
+_GROUNDING_SCENE_FUNCTIONS: frozenset[str] = frozenset({"scene", "hinge"})
+_GROUNDING_SCENE_ROLES: frozenset[str] = frozenset(
+    {"actor_setup", "action", "shock", "reaction", "fallout"}
 )
 
 _WRITING_WORD_OVERRUN_WARNING_RATIO = 1.08
@@ -3559,10 +3675,129 @@ def _scene_host_intensity(scene: SceneCardDraft | SceneCard) -> str:
     return "standard"
 
 
-def _no_actor_bucket(role: str) -> str:
-    if role in _ARGUMENT_ROLES:
+_HOST_MOVE_META_NOTE_PATTERNS = (
+    "hand the listener forward",
+    "name the mechanism",
+    "call it ",
+    "the pattern is",
+    "what we are seeing",
+    "read this as",
+)
+_HOST_MOVE_LOW_YIELD_ROLES = {"context_setup", "actor_setup", "action", "shock", "reaction"}
+
+
+def _host_move_note_looks_meta(note: str) -> bool:
+    normalized = " ".join(str(note or "").lower().split())
+    return any(pattern in normalized for pattern in _HOST_MOVE_META_NOTE_PATTERNS)
+
+
+def _host_move_allows_two_sentences(
+    *,
+    scene: SceneCardDraft | SceneCard,
+    closing_section_id: str | None,
+) -> bool:
+    if scene.section_id == closing_section_id:
+        return True
+    return scene.host_move.move_type in {"evaluate", "callback"}
+
+
+def _build_host_move_plan_diagnostics(
+    *,
+    scene_cards: list[SceneCardDraft | SceneCard],
+    architecture: EpisodeArchitecture,
+    narrator_profile: SeriesNarratorProfile,
+) -> tuple[dict[str, Any], list[str]]:
+    counts_by_type: dict[str, int] = {}
+    counts_by_placement: dict[str, int] = {}
+    max_sentences_counts: dict[str, int] = {"1": 0, "2": 0}
+    meta_note_scene_ids: list[str] = []
+    misconfigured_two_sentence_scene_ids: list[str] = []
+    closing_section_id = architecture.sections[-1].section_id if architecture.sections else None
+    closing_section_host_move_scene_ids: list[str] = []
+    low_yield_host_move_scene_ids: list[str] = []
+    callback_scene_ids: list[str] = []
+    first_person_plural_note_scene_ids: list[str] = []
+    host_move_scene_count = 0
+
+    for scene in scene_cards:
+        host_move = scene.host_move
+        if host_move.move_type == "none":
+            continue
+        host_move_scene_count += 1
+        counts_by_type[host_move.move_type] = counts_by_type.get(host_move.move_type, 0) + 1
+        counts_by_placement[host_move.placement] = counts_by_placement.get(host_move.placement, 0) + 1
+        max_sentences_counts[str(host_move.max_sentences)] = (
+            max_sentences_counts.get(str(host_move.max_sentences), 0) + 1
+        )
+        normalized_note = " ".join(host_move.note.lower().split())
+        if normalized_note and re.search(r"\b(we|our|us)\b", normalized_note):
+            first_person_plural_note_scene_ids.append(scene.scene_id)
+        if _host_move_note_looks_meta(host_move.note):
+            meta_note_scene_ids.append(scene.scene_id)
+        if host_move.max_sentences == 2 and not _host_move_allows_two_sentences(
+            scene=scene,
+            closing_section_id=closing_section_id,
+        ):
+            misconfigured_two_sentence_scene_ids.append(scene.scene_id)
+        if scene.section_id == closing_section_id:
+            closing_section_host_move_scene_ids.append(scene.scene_id)
+        if scene.scene_role in _HOST_MOVE_LOW_YIELD_ROLES:
+            low_yield_host_move_scene_ids.append(scene.scene_id)
+        if host_move.move_type == "callback":
+            callback_scene_ids.append(scene.scene_id)
+
+    warnings: list[str] = []
+    if meta_note_scene_ids:
+        warnings.append(
+            "host_move_meta_notes_detected: "
+            f"{_preview_ids(meta_note_scene_ids)}"
+        )
+    if misconfigured_two_sentence_scene_ids:
+        warnings.append(
+            "host_move_two_sentence_out_of_place: "
+            f"{_preview_ids(misconfigured_two_sentence_scene_ids)}"
+        )
+    if (
+        host_move_scene_count > narrator_profile.target_host_moves_per_episode
+        and len(low_yield_host_move_scene_ids)
+        >= max(1, host_move_scene_count - narrator_profile.target_host_moves_per_episode)
+    ):
+        warnings.append(
+            "weak_host_target_fill: extra host moves are clustering in low-yield scene roles "
+            f"({_preview_ids(low_yield_host_move_scene_ids)})"
+        )
+    if (
+        callback_scene_ids
+        and len(callback_scene_ids) >= 4
+        and len(callback_scene_ids) / max(1, host_move_scene_count) > 0.5
+    ):
+        warnings.append(
+            "host_move_callback_heavy: callbacks dominate planned host moves "
+            f"({_preview_ids(callback_scene_ids)})"
+        )
+
+    diagnostics = {
+        "target_host_moves_per_episode": narrator_profile.target_host_moves_per_episode,
+        "target_policy": "soft_target",
+        "host_move_scene_count": host_move_scene_count,
+        "counts_by_type": counts_by_type,
+        "counts_by_placement": counts_by_placement,
+        "max_sentences_counts": max_sentences_counts,
+        "closing_section_host_move_scene_ids": closing_section_host_move_scene_ids,
+        "meta_note_scene_ids": meta_note_scene_ids,
+        "low_yield_host_move_scene_ids": low_yield_host_move_scene_ids,
+        "callback_scene_ids": callback_scene_ids,
+        "first_person_plural_note_scene_ids": first_person_plural_note_scene_ids,
+        "warning_count": len(warnings),
+        "warnings": warnings,
+    }
+    return diagnostics, warnings
+
+
+def _no_actor_bucket(scene: SceneCardDraft | SceneCard) -> str:
+    if scene.scene_function in _ARGUMENT_SCENE_FUNCTIONS or scene.scene_role in _ARGUMENT_ROLES:
         return "argument"
-    if role in _ACTION_BUCKET_ROLES:
+    if scene.scene_function == "turn" or scene.scene_role in _ACTION_BUCKET_ROLES:
         return "action"
     return "mid"
 
@@ -3574,7 +3809,7 @@ def _scene_duration_bounds(
 ) -> tuple[float, float]:
     presence = _scene_max_presence(scene)
     if presence == "none":
-        bucket = _no_actor_bucket(scene.scene_role)
+        bucket = _no_actor_bucket(scene)
         lower_mult, upper_mult = _NO_ACTOR_BOUNDS_MULT_BY_BUCKET[bucket]
     else:
         binding = _scene_host_intensity(scene)
@@ -4193,8 +4428,8 @@ def _build_episode_architecture_realization(
     warnings.extend(
         _build_architecture_section_count_warnings(
             section_count=section_count,
-            section_target_min=6,
-            section_target_max=8,
+            section_target_min=7,
+            section_target_max=10,
         )
     )
     if missing_support_primitive_ids:
@@ -4521,6 +4756,92 @@ def _build_architecture_section_count_warnings(
     return warnings
 
 
+def _is_structural_scene_card(scene: SceneCardDraft | SceneCard) -> bool:
+    return scene.scene_function in _STRUCTURAL_SCENE_FUNCTIONS
+
+
+def _is_human_grounding_scene_card(scene: SceneCardDraft | SceneCard) -> bool:
+    return (
+        scene.scene_function in _GROUNDING_SCENE_FUNCTIONS
+        and scene.scene_role in _GROUNDING_SCENE_ROLES
+        and bool(scene.actors)
+        and bool((scene.entry_image or "").strip())
+        and bool((scene.observable_detail or "").strip())
+    )
+
+
+def _build_scene_function_counts(
+    scene_cards: list[SceneCardDraft | SceneCard],
+) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for scene in scene_cards:
+        counts[scene.scene_function] = counts.get(scene.scene_function, 0) + 1
+    return counts
+
+
+def _build_structural_card_concreteness_warnings(
+    *,
+    scene_cards: list[SceneCardDraft | SceneCard],
+) -> list[str]:
+    missing_entry_image = [
+        scene.scene_id
+        for scene in scene_cards
+        if _is_structural_scene_card(scene) and not (scene.entry_image or "").strip()
+    ]
+    missing_observable_detail = [
+        scene.scene_id
+        for scene in scene_cards
+        if _is_structural_scene_card(scene) and not (scene.observable_detail or "").strip()
+    ]
+    warnings: list[str] = []
+    if missing_entry_image:
+        warnings.append(
+            "structural_card_missing_entry_image: "
+            f"{_preview_ids(missing_entry_image)}"
+        )
+    if missing_observable_detail:
+        warnings.append(
+            "structural_card_missing_observable_detail: "
+            f"{_preview_ids(missing_observable_detail)}"
+        )
+    return warnings
+
+
+def _build_human_grounding_warnings(
+    *,
+    scene_cards: list[SceneCardDraft | SceneCard],
+) -> tuple[dict[str, Any], list[str]]:
+    structural_scene_ids = [
+        scene.scene_id for scene in scene_cards if _is_structural_scene_card(scene)
+    ]
+    grounding_scene_ids = [
+        scene.scene_id for scene in scene_cards if _is_human_grounding_scene_card(scene)
+    ]
+    structural_scene_count = len(structural_scene_ids)
+    scene_card_count = len(scene_cards)
+    structural_scene_ratio = (
+        structural_scene_count / max(1, scene_card_count)
+    )
+    structurally_heavy = (
+        structural_scene_count >= 6 or structural_scene_ratio >= 0.30
+    )
+    warnings: list[str] = []
+    if structurally_heavy and not grounding_scene_ids:
+        warnings.append(
+            "structurally_heavy_episode_missing_human_grounding: "
+            f"{structural_scene_count}/{scene_card_count} structural cards and no grounding card"
+        )
+    diagnostics = {
+        "scene_card_count": scene_card_count,
+        "structural_scene_count": structural_scene_count,
+        "structural_scene_ratio": structural_scene_ratio,
+        "structurally_heavy": structurally_heavy,
+        "grounding_scene_count": len(grounding_scene_ids),
+        "grounding_scene_ids": grounding_scene_ids,
+    }
+    return diagnostics, warnings
+
+
 _SPINE_PRIMITIVE_FAMILIES = frozenset({"epochal_turns", "decisions_and_nondecisions"})
 _SCENE_DETAIL_PRIMITIVE_FAMILIES = frozenset({"set_piece_scenes", "telling_details"})
 _HUMAN_GROUNDING_PRIMITIVE_FAMILIES = frozenset({"human_costs", "character_engines"})
@@ -4631,6 +4952,59 @@ def _normalize_section_text_tokens(text: str) -> set[str]:
     }
 
 
+def _build_host_move_text_diagnostics(
+    *,
+    text_by_section_id: dict[str, str],
+    plan: EpisodePlan | None,
+) -> dict[str, Any]:
+    if plan is None:
+        return {
+            "planned_host_move_count": 0,
+            "approx_realized_host_move_count": 0,
+            "approx_unrealized_scene_ids": [],
+            "sections_with_first_person_plural": [],
+            "scene_trace": [],
+        }
+
+    scene_trace: list[dict[str, Any]] = []
+    approx_realized_scene_ids: list[str] = []
+    approx_unrealized_scene_ids: list[str] = []
+    sections_with_first_person_plural: set[str] = set()
+    for scene in plan.scene_cards:
+        if scene.host_move.move_type == "none":
+            continue
+        section_text = text_by_section_id.get(scene.section_id, "")
+        if re.search(r"\b(we|our|us)\b", section_text.lower()):
+            sections_with_first_person_plural.add(scene.section_id)
+        note_tokens = _normalize_section_text_tokens(scene.host_move.note)
+        section_tokens = _normalize_section_text_tokens(section_text)
+        approx_realized = not note_tokens or bool(note_tokens & section_tokens)
+        if approx_realized:
+            approx_realized_scene_ids.append(scene.scene_id)
+        else:
+            approx_unrealized_scene_ids.append(scene.scene_id)
+        scene_trace.append(
+            {
+                "scene_id": scene.scene_id,
+                "section_id": scene.section_id,
+                "move_type": scene.host_move.move_type,
+                "placement": scene.host_move.placement,
+                "max_sentences": scene.host_move.max_sentences,
+                "approx_realized": approx_realized,
+                "first_person_plural_present": scene.section_id in sections_with_first_person_plural,
+            }
+        )
+
+    return {
+        "planned_host_move_count": len(scene_trace),
+        "approx_realized_host_move_count": len(approx_realized_scene_ids),
+        "approx_realized_scene_ids": approx_realized_scene_ids,
+        "approx_unrealized_scene_ids": approx_unrealized_scene_ids,
+        "sections_with_first_person_plural": sorted(sections_with_first_person_plural),
+        "scene_trace": scene_trace,
+    }
+
+
 def _section_text_realized(target_text: str, observed_texts: list[str]) -> bool:
     target_tokens = _normalize_section_text_tokens(target_text)
     if not target_tokens:
@@ -4645,6 +5019,7 @@ def _build_section_plan_realization(
     *,
     episode: EpisodeArchitecture,
     scene_cards: list[SceneCardDraft | SceneCard],
+    words_per_minute: float = 145.0,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     scenes_by_section: dict[str, list[SceneCardDraft | SceneCard]] = {
         section.section_id: [] for section in episode.sections
@@ -4657,6 +5032,14 @@ def _build_section_plan_realization(
     all_warnings: list[str] = []
     for section in episode.sections:
         section_scene_cards = scenes_by_section.get(section.section_id, [])
+        scene_card_count = len(section_scene_cards)
+        projected_word_count = sum(
+            _project_scene_word_count(scene, words_per_minute=words_per_minute)
+            for scene in section_scene_cards
+        )
+        structural_card_count = sum(
+            1 for scene in section_scene_cards if _is_structural_scene_card(scene)
+        )
         used_priority_core_passage_ids: list[str] = []
         scene_realization_texts: list[str] = []
         for scene in section_scene_cards:
@@ -4711,11 +5094,24 @@ def _build_section_plan_realization(
                 "section_must_stage_beats_not_realized: "
                 f"{section.section_id} -> {len(unrealized_must_stage_beats)} beats"
             )
+        if scene_card_count >= 5:
+            section_warnings.append(
+                "section_scene_card_load_high: "
+                f"{section.section_id} -> {scene_card_count} cards"
+            )
+        if projected_word_count > 2200:
+            section_warnings.append(
+                "section_projected_word_count_high: "
+                f"{section.section_id} -> {projected_word_count} projected words"
+            )
 
         section_reports.append(
             {
                 "section_id": section.section_id,
                 "section_anchor": section.section_anchor,
+                "scene_card_count": scene_card_count,
+                "projected_word_count": projected_word_count,
+                "structural_card_count": structural_card_count,
                 "declared_must_stage_beats": list(section.must_stage_beats),
                 "unrealized_must_stage_beats": unrealized_must_stage_beats,
                 "used_priority_core_passage_ids": used_priority_core_passage_ids,
@@ -4798,6 +5194,7 @@ def _build_spine_plan_diagnostics(
                 "scene_id": scene.scene_id,
                 "beat_change": scene.beat_change,
                 "host_move_type": scene.host_move.move_type,
+                "host_move_placement": scene.host_move.placement,
                 "counts_toward_spine_dominance": _scene_counts_toward_spine(
                     scene,
                     strategy_episode,
@@ -5035,6 +5432,7 @@ class PipelineOrchestrator:
                 or pipeline_config.episode_write_concurrency,
             )
         )
+        host_policy = _build_host_policy_payload(strategy.narrator_profile)
         strategy_episode_by_number = {
             episode.episode_number: episode
             for episode in strategy.episodes
@@ -5052,6 +5450,7 @@ class PipelineOrchestrator:
                 corpus,
                 actor_metadata,
                 project_dir,
+                host_policy,
                 sem,
                 spoken_sem,
             )
@@ -6699,6 +7098,7 @@ class PipelineOrchestrator:
                 "min_episode_minutes": project.config.min_episode_minutes,
                 "max_episode_minutes": project.config.max_episode_minutes,
             }
+            host_policy = _build_host_policy_payload(strategy.narrator_profile)
             planning_sem = asyncio.Semaphore(max(1, project.config.episode_planning_concurrency))
             ordered_episodes = [
                 (
@@ -6796,6 +7196,7 @@ class PipelineOrchestrator:
                             synthesis_map=episode_synthesis_map_payload,
                             project_metadata=project_metadata,
                             available_passages=available_passages,
+                            host_policy=host_policy,
                             actor_metadata=compact_episode_actor_metadata,
                             planning_feedback=planning_feedback,
                         )
@@ -6840,6 +7241,11 @@ class PipelineOrchestrator:
                         strategy_episode=strategy_episode,
                         plan=plan_draft,
                     )
+                    host_move_diagnostics, host_move_warnings = _build_host_move_plan_diagnostics(
+                        scene_cards=plan_draft.scene_cards,
+                        architecture=episode,
+                        narrator_profile=strategy.narrator_profile,
+                    )
                     scene_card_count_warnings = _build_scene_card_count_warnings(
                         scene_card_count=len(plan_draft.scene_cards),
                         scene_card_target_min=project.config.scene_card_target_min,
@@ -6861,13 +7267,41 @@ class PipelineOrchestrator:
                         _build_section_plan_realization(
                             episode=episode,
                             scene_cards=plan_draft.scene_cards,
+                            words_per_minute=float(self.settings.pipeline.spoken_words_per_minute),
                         )
                     )
+                    structural_card_concreteness_warnings = (
+                        _build_structural_card_concreteness_warnings(
+                            scene_cards=plan_draft.scene_cards,
+                        )
+                    )
+                    human_grounding_diagnostics, human_grounding_warnings = (
+                        _build_human_grounding_warnings(
+                            scene_cards=plan_draft.scene_cards,
+                        )
+                    )
+                    scene_function_counts = _build_scene_function_counts(
+                        plan_draft.scene_cards
+                    )
+                    scene_role_counts: dict[str, int] = {}
+                    for scene in plan_draft.scene_cards:
+                        scene_role_counts[scene.scene_role] = (
+                            scene_role_counts.get(scene.scene_role, 0) + 1
+                        )
+                    section_load_warnings = [
+                        warning
+                        for warning in section_planning_warnings
+                        if warning.startswith("section_scene_card_load_high")
+                        or warning.startswith("section_projected_word_count_high")
+                    ]
                     planning_warnings = (
                         scene_card_count_warnings
                         + scene_card_primitive_warnings
                         + scene_card_family_warnings
+                        + structural_card_concreteness_warnings
+                        + human_grounding_warnings
                         + section_planning_warnings
+                        + host_move_warnings
                     )
                     for warning in planning_warnings:
                         logger.warning(
@@ -6900,13 +7334,20 @@ class PipelineOrchestrator:
                         "scene_card_count_warnings": scene_card_count_warnings,
                         "scene_card_primitive_warnings": scene_card_primitive_warnings,
                         "scene_card_family_warnings": scene_card_family_warnings,
+                        "structural_card_concreteness_warnings": structural_card_concreteness_warnings,
+                        "human_grounding_warnings": human_grounding_warnings,
+                        "section_load_warnings": section_load_warnings,
                         "section_realization": section_realization_reports,
                         "scene_card_warning_count": len(planning_warnings),
+                        "scene_role_counts": scene_role_counts,
+                        "scene_function_counts": scene_function_counts,
+                        "human_grounding_diagnostics": human_grounding_diagnostics,
                         "section_count": len(episode.sections),
                         "core_primitive_count": len(strategy_episode.episode_spine.core_primitive_ids),
                         "covered_core_primitive_count": len(strategy_episode.episode_spine.core_primitive_ids),
                         "missing_core_primitive_ids": [],
                         "spine_diagnostics": spine_diagnostics,
+                        "host_move_diagnostics": host_move_diagnostics,
                         "actor_link_metrics": actor_link_metrics,
                         "allocated_duration_seconds": sum(
                             scene.estimated_duration_seconds
@@ -7040,6 +7481,7 @@ class PipelineOrchestrator:
         corpus: ThematicCorpus,
         actor_metadata: ActorMetadata,
         project_dir: Path,
+        host_policy: dict[str, Any],
         semaphore: asyncio.Semaphore,
         spoken_semaphore: asyncio.Semaphore | None = None,
     ) -> tuple[int, SpokenScript]:
@@ -7048,7 +7490,7 @@ class PipelineOrchestrator:
             ep_dir.mkdir(parents=True, exist_ok=True)
 
             script = await self._write_episode(
-                plan, strategy_episode, architecture, project, corpus, ep_dir, project_dir, actor_metadata,
+                plan, strategy_episode, architecture, project, corpus, ep_dir, project_dir, actor_metadata, host_policy,
             )
 
             if not project.config.skip_grounding:
@@ -7070,6 +7512,7 @@ class PipelineOrchestrator:
                 ep_dir,
                 project_dir,
                 plan=plan,
+                host_policy=host_policy,
             )
 
         if not project.config.skip_spoken_delivery:
@@ -7077,6 +7520,7 @@ class PipelineOrchestrator:
             async with spoken_gate:
                 spoken = await self._rewrite_for_speech(
                     plan.episode_number, script, project, ep_dir, project_dir, architecture=architecture,
+                    plan=plan, host_policy=host_policy,
                 )
         else:
             spoken = SpokenScript(
@@ -7099,6 +7543,7 @@ class PipelineOrchestrator:
         architecture: EpisodeArchitecture, project: ThematicProject,
         corpus: ThematicCorpus, ep_dir: Path, project_dir: Path,
         actor_metadata: ActorMetadata | None = None,
+        host_policy: dict[str, Any] | None = None,
     ) -> EpisodeScript:
         actor_metadata = actor_metadata or ActorMetadata(project_id=project.project_id)
         async with _stage_log(
@@ -7234,6 +7679,7 @@ class PipelineOrchestrator:
                                 episode_target_word_count_lower=part_target_word_count_lower,
                                 episode_target_word_count_higher=part_target_word_count_higher,
                                 skip_grounding=project.config.skip_grounding,
+                                host_policy=host_policy,
                                 actor_metadata=window_actor_metadata,
                                 writing_feedback=writing_feedback_by_part.get(part_number),
                                 prior_window_continuity=prior_window_continuity,
@@ -7570,6 +8016,7 @@ class PipelineOrchestrator:
         ep_dir: Path,
         project_dir: Path,
         plan: EpisodePlan | None = None,
+        host_policy: dict[str, Any] | None = None,
     ) -> EpisodeScript:
         async with _stage_log(
             self.run_logger,
@@ -7586,6 +8033,7 @@ class PipelineOrchestrator:
                     architecture=architecture,
                     plan=plan,
                 ),
+                host_policy=host_policy,
             )
             audit = await asyncio.to_thread(self.style_audit_agent.run, payload)
             _save_json(ep_dir / "style_audit_result.json", audit)
@@ -7595,10 +8043,23 @@ class PipelineOrchestrator:
                 spoken_words_per_minute=float(self.settings.pipeline.spoken_words_per_minute),
             )
             _save_json(ep_dir / "style_audited_script.json", audited_script)
+            host_move_text_diagnostics = _build_host_move_text_diagnostics(
+                text_by_section_id={
+                    section.section_id: section.text
+                    for section in audited_script.prose_sections
+                },
+                plan=plan,
+            )
+            _save_json(
+                ep_dir / "host_move_script_diagnostics.json",
+                host_move_text_diagnostics,
+            )
             ctx["output_summary"] = {
                 "sections": len(audit.sections),
                 "warnings": len(audit.episode_warnings),
                 "word_delta": audited_script.total_word_count - script.total_word_count,
+                "planned_host_moves": host_move_text_diagnostics["planned_host_move_count"],
+                "approx_realized_host_moves": host_move_text_diagnostics["approx_realized_host_move_count"],
             }
             return audited_script
 
@@ -7606,6 +8067,8 @@ class PipelineOrchestrator:
         self, episode_number: int, script: EpisodeScript,
         project: ThematicProject, ep_dir: Path, project_dir: Path,
         architecture: EpisodeArchitecture | None = None,
+        plan: EpisodePlan | None = None,
+        host_policy: dict[str, Any] | None = None,
     ) -> SpokenScript:
         batches = _build_spoken_delivery_batches(script.prose_sections)
         async with _stage_log(
@@ -7615,30 +8078,21 @@ class PipelineOrchestrator:
             batch_count=len(batches),
         ) as ctx:
             rewritten_sections: list[SpokenSection] = []
-            architecture_section_lookup = {
-                section.section_id: section
-                for section in (architecture.sections if architecture is not None else [])
+            section_payload_by_id = {
+                section_payload["section_id"]: section_payload
+                for section_payload in _build_spoken_delivery_sections_payload(
+                    script=script,
+                    architecture=architecture,
+                    plan=plan,
+                )
             }
             previous_spoken_tail: str | None = None
             for prose_batch in batches:
-                batch_sections: list[dict[str, Any]] = []
-                for prose_section in prose_batch:
-                    architecture_section = architecture_section_lookup.get(prose_section.section_id)
-                    batch_sections.append(
-                        {
-                            "section_id": prose_section.section_id,
-                            "purpose": architecture_section.purpose.value if architecture_section else "",
-                            "anchor": architecture_section.section_anchor if architecture_section else "",
-                            "closure_mode": (
-                                architecture_section.closure_mode.value
-                                if architecture_section and architecture_section.closure_mode
-                                else ""
-                            ),
-                            "movement_goal": prose_section.movement_goal,
-                            "scene_card_ids": list(prose_section.scene_card_ids),
-                            "text": prose_section.text,
-                        }
-                    )
+                batch_sections = [
+                    section_payload_by_id[prose_section.section_id]
+                    for prose_section in prose_batch
+                    if prose_section.section_id in section_payload_by_id
+                ]
                 script_payload = {
                     "framing": script.framing.model_dump(mode="json"),
                     "prose_sections": batch_sections,
@@ -7648,6 +8102,7 @@ class PipelineOrchestrator:
                     script=script_payload,
                     max_words_per_segment=project.config.spoken_chunk_max_words,
                     tts_provider=project.config.tts_provider,
+                    host_policy=host_policy,
                     previous_spoken_tail=previous_spoken_tail,
                 )
                 result = await asyncio.to_thread(self.spoken_delivery_agent.run, payload)
@@ -7679,10 +8134,23 @@ class PipelineOrchestrator:
                 tts_provider=project.config.tts_provider,
             )
             _save_json(ep_dir / "spoken_script.json", spoken)
+            spoken_host_move_diagnostics = _build_host_move_text_diagnostics(
+                text_by_section_id={
+                    section.section_id: section.text
+                    for section in spoken.sections
+                },
+                plan=plan,
+            )
+            _save_json(
+                ep_dir / "spoken_host_move_diagnostics.json",
+                spoken_host_move_diagnostics,
+            )
 
             ctx["output_summary"] = {
                 "sections": len(spoken.sections),
                 "batch_count": len(spoken.sections),
+                "planned_host_moves": spoken_host_move_diagnostics["planned_host_move_count"],
+                "approx_realized_host_moves": spoken_host_move_diagnostics["approx_realized_host_move_count"],
             }
             return spoken
 
