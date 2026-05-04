@@ -8,7 +8,11 @@ from pathlib import Path
 from typing import Any
 
 from podcast_agent.config import Settings
-from podcast_agent.pipeline.orchestrator import PipelineOrchestrator, _save_json
+from podcast_agent.pipeline.orchestrator import (
+    PipelineOrchestrator,
+    _build_host_policy_payload,
+    _save_json,
+)
 from podcast_agent.schemas.models import (
     ActorMetadata,
     EpisodeArchitecture,
@@ -26,7 +30,6 @@ STRICT_TRACKED_FILES = (
     "thematic_axes.json",
     "thematic_corpus.json",
     "synthesis_primitives.json",
-    "synthesis_map.json",
     "actor_metadata.json",
 )
 
@@ -35,7 +38,11 @@ def _load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _load_persisted_strategy(project_dir: Path) -> NarrativeStrategy:
+def _load_persisted_strategy(
+    project_dir: Path,
+    *,
+    expected: NarrativeStrategy | None = None,
+) -> NarrativeStrategy:
     strategy_path = project_dir / "narrative_strategy.json"
     strategy = NarrativeStrategy.model_validate(_load_json(strategy_path))
     if not strategy.episodes:
@@ -47,10 +54,27 @@ def _load_persisted_strategy(project_dir: Path) -> NarrativeStrategy:
             raise RuntimeError(
                 "Persisted narrative_strategy.json contains an episode without episode_spine."
             )
+    if expected is not None:
+        if len(strategy.episodes) != len(expected.episodes):
+            raise RuntimeError(
+                "Persisted narrative_strategy.json does not match the freshly generated "
+                "episode count."
+            )
+        persisted_numbers = [episode.episode_number for episode in strategy.episodes]
+        expected_numbers = [episode.episode_number for episode in expected.episodes]
+        if persisted_numbers != expected_numbers:
+            raise RuntimeError(
+                "Persisted narrative_strategy.json does not match the freshly generated "
+                f"episode numbers ({persisted_numbers} != {expected_numbers})."
+            )
     return strategy
 
 
-def _load_persisted_architectures(project_dir: Path) -> list[EpisodeArchitecture]:
+def _load_persisted_architectures(
+    project_dir: Path,
+    *,
+    expected: list[EpisodeArchitecture] | None = None,
+) -> list[EpisodeArchitecture]:
     architecture_path = project_dir / "episode_architectures.json"
     payload = _load_json(architecture_path)
     architectures_payload = payload.get("episodes")
@@ -58,10 +82,26 @@ def _load_persisted_architectures(project_dir: Path) -> list[EpisodeArchitecture
         raise RuntimeError(
             "Persisted episode_architectures.json must contain a top-level 'episodes' list."
         )
-    return [
+    architectures = [
         EpisodeArchitecture.model_validate(architecture)
         for architecture in architectures_payload
     ]
+    if expected is not None:
+        if len(architectures) != len(expected):
+            raise RuntimeError(
+                "Persisted episode architectures do not match the freshly generated "
+                "episode count."
+            )
+        persisted_numbers = [
+            architecture.episode_number for architecture in architectures
+        ]
+        expected_numbers = [architecture.episode_number for architecture in expected]
+        if persisted_numbers != expected_numbers:
+            raise RuntimeError(
+                "Persisted episode architectures do not match the freshly generated "
+                f"episode numbers ({persisted_numbers} != {expected_numbers})."
+            )
+    return architectures
 
 
 def _snapshot_file(path: Path) -> dict[str, Any]:
@@ -113,12 +153,18 @@ async def _resume_from_narrative_strategy(project_id: str) -> None:
 
     strict_snapshots = _capture_snapshots(project_dir)
 
-    project = ThematicProject.model_validate(_load_json(project_dir / "thematic_project.json"))
-    corpus = ThematicCorpus.model_validate(_load_json(project_dir / "thematic_corpus.json"))
+    project = ThematicProject.model_validate(
+        _load_json(project_dir / "thematic_project.json")
+    )
+    corpus = ThematicCorpus.model_validate(
+        _load_json(project_dir / "thematic_corpus.json")
+    )
     synthesis_primitives = SynthesisPrimitivesArtifact.model_validate(
         _load_json(project_dir / "synthesis_primitives.json")
     )
-    actor_metadata = ActorMetadata.model_validate(_load_json(project_dir / "actor_metadata.json"))
+    actor_metadata = ActorMetadata.model_validate(
+        _load_json(project_dir / "actor_metadata.json")
+    )
 
     orchestrator._bind_run_logger(project_dir)
 
@@ -139,14 +185,17 @@ async def _resume_from_narrative_strategy(project_id: str) -> None:
 
     actor_metrics: dict[str, Any] = {}
     try:
-        _, strategy_actor_metrics = await orchestrator._choose_narrative_strategy(
+        (
+            strategy,
+            strategy_actor_metrics,
+        ) = await orchestrator._choose_narrative_strategy(
             project=project,
             synthesis_map=synthesis_primitives,
             project_dir=project_dir,
             actor_metadata=actor_metadata,
         )
         actor_metrics["narrative_strategy"] = strategy_actor_metrics
-        strategy = _load_persisted_strategy(project_dir)
+        _load_persisted_strategy(project_dir, expected=strategy)
         synthesis_map = await orchestrator._enrich_selected_primitives(
             project=project,
             synthesis_primitives=synthesis_primitives,
@@ -159,7 +208,10 @@ async def _resume_from_narrative_strategy(project_id: str) -> None:
         project = orchestrator._resolve_episode_count_from_strategy(project, strategy)
         _save_json(project_dir / "thematic_project.json", project)
 
-        episode_architectures, architecture_actor_metrics = await orchestrator._build_episode_architectures(
+        (
+            episode_architectures,
+            architecture_actor_metrics,
+        ) = await orchestrator._build_episode_architectures(
             project=project,
             synthesis_map=synthesis_map,
             strategy=strategy,
@@ -168,8 +220,8 @@ async def _resume_from_narrative_strategy(project_id: str) -> None:
             actor_metadata=actor_metadata,
         )
         actor_metrics["episode_architecture"] = architecture_actor_metrics
-        persisted_architectures = _load_persisted_architectures(project_dir)
-        if len(persisted_architectures) != project.episode_count:
+        _load_persisted_architectures(project_dir, expected=episode_architectures)
+        if len(episode_architectures) != project.episode_count:
             raise RuntimeError(
                 "Persisted episode architectures do not match the resolved episode count."
             )
@@ -181,7 +233,7 @@ async def _resume_from_narrative_strategy(project_id: str) -> None:
             project=project,
             synthesis_map=synthesis_map,
             strategy=strategy,
-            episode_architectures=persisted_architectures,
+            episode_architectures=episode_architectures,
             corpus=corpus,
             project_dir=project_dir,
             actor_metadata=actor_metadata,
@@ -199,15 +251,25 @@ async def _resume_from_narrative_strategy(project_id: str) -> None:
                 or project.config.episode_write_concurrency,
             )
         )
+        host_policy = _build_host_policy_payload(strategy.narrator_profile)
         ep_tasks = [
             orchestrator._produce_episode(
                 plan,
-                next(item for item in strategy.episodes if item.episode_number == plan.episode_number),
-                next(item for item in persisted_architectures if item.episode_number == plan.episode_number),
+                next(
+                    item
+                    for item in strategy.episodes
+                    if item.episode_number == plan.episode_number
+                ),
+                next(
+                    item
+                    for item in episode_architectures
+                    if item.episode_number == plan.episode_number
+                ),
                 project,
                 corpus,
                 actor_metadata,
                 project_dir,
+                host_policy,
                 sem,
                 spoken_sem,
             )

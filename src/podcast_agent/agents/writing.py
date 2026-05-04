@@ -12,9 +12,10 @@ from podcast_agent.prompts import (
 from podcast_agent.schemas.models import Citation
 
 
-class SceneProse(BaseModel):
+class SectionProse(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    scene_card_id: str
+    section_id: str
+    scene_card_ids: list[str]
     movement_goal: str
     text: str
     citations: list[Citation] = Field(default_factory=list)
@@ -23,12 +24,13 @@ class SceneProse(BaseModel):
 
 class EpisodeWritingResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    scene_prose: list[SceneProse] = Field(default_factory=list)
+    prose_sections: list[SectionProse] = Field(default_factory=list)
 
 
-class SceneProseNoCitations(BaseModel):
+class SectionProseNoCitations(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    scene_card_id: str
+    section_id: str
+    scene_card_ids: list[str]
     movement_goal: str
     text: str
     source_book_ids: list[str] = Field(default_factory=list)
@@ -36,11 +38,11 @@ class SceneProseNoCitations(BaseModel):
 
 class EpisodeWritingNoCitationsResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    scene_prose: list[SceneProseNoCitations] = Field(default_factory=list)
+    prose_sections: list[SectionProseNoCitations] = Field(default_factory=list)
 
 
 class WritingAgent(Agent):
-    """Drafts scene-level prose from ordered scene cards."""
+    """Drafts section-level prose from ordered scene cards."""
 
     schema_name = "episode_writing"
     response_model = EpisodeWritingResponse
@@ -87,7 +89,7 @@ class WritingAgent(Agent):
 
 
 class WritingAgentNoCitations(WritingAgent):
-    """Drafts scene-level prose without citation requirements."""
+    """Drafts section-level prose without citation requirements."""
 
     schema_name = "episode_writing"
     response_model = EpisodeWritingNoCitationsResponse

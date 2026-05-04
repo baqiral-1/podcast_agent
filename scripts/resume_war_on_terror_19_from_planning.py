@@ -6,7 +6,11 @@ from pathlib import Path
 from typing import Any
 
 from podcast_agent.config import Settings
-from podcast_agent.pipeline.orchestrator import PipelineOrchestrator, _save_json
+from podcast_agent.pipeline.orchestrator import (
+    PipelineOrchestrator,
+    _build_host_policy_payload,
+    _save_json,
+)
 from podcast_agent.schemas.models import (
     ActorMetadata,
     EpisodeArchitecture,
@@ -34,10 +38,21 @@ async def main() -> None:
     if not project_dir.exists():
         raise RuntimeError(f"Run directory does not exist: {project_dir}")
 
-    project = ThematicProject.model_validate(_load_json(project_dir / "thematic_project.json"))
-    corpus = ThematicCorpus.model_validate(_load_json(project_dir / "thematic_corpus.json"))
-    synthesis_map = SynthesisMap.model_validate(_load_json(project_dir / "synthesis_map.json"))
-    strategy = NarrativeStrategy.model_validate(_load_json(project_dir / "narrative_strategy.json"))
+    project = ThematicProject.model_validate(
+        _load_json(project_dir / "thematic_project.json")
+    )
+    corpus = ThematicCorpus.model_validate(
+        _load_json(project_dir / "thematic_corpus.json")
+    )
+    synthesis_map = SynthesisMap.model_validate(
+        _load_json(project_dir / "synthesis_map.json")
+    )
+    strategy = NarrativeStrategy.model_validate(
+        _load_json(project_dir / "narrative_strategy.json")
+    )
+    actor_metadata = ActorMetadata.model_validate(
+        _load_json(project_dir / "actor_metadata.json")
+    )
 
     forced_config = project.config.model_copy(
         update={
@@ -45,12 +60,17 @@ async def main() -> None:
             "skip_audio": True,
         }
     )
-    project = project.model_copy(update={"config": forced_config, "status": ProjectStatus.PLANNING})
+    project = project.model_copy(
+        update={"config": forced_config, "status": ProjectStatus.PLANNING}
+    )
     _save_json(project_dir / "thematic_project.json", project)
 
     episode_plans_payload = _load_json(project_dir / "series_plan.json")
     if isinstance(episode_plans_payload, dict) and "episodes" in episode_plans_payload:
-        episode_plans = [EpisodePlan.model_validate(item) for item in episode_plans_payload["episodes"]]
+        episode_plans = [
+            EpisodePlan.model_validate(item)
+            for item in episode_plans_payload["episodes"]
+        ]
     else:
         architecture_payload = _load_json(project_dir / "episode_architectures.json")
         episode_architectures = [
@@ -64,6 +84,7 @@ async def main() -> None:
             episode_architectures=episode_architectures,
             corpus=corpus,
             project_dir=project_dir,
+            actor_metadata=actor_metadata,
         )
 
     project = project.model_copy(update={"status": ProjectStatus.PRODUCING})
@@ -78,10 +99,14 @@ async def main() -> None:
         ]
     }
     strategy_by_number = {
-        episode.episode_number: episode
-        for episode in strategy.episodes
+        episode.episode_number: episode for episode in strategy.episodes
     }
     sem = asyncio.Semaphore(project.config.episode_write_concurrency)
+    spoken_sem = asyncio.Semaphore(
+        project.config.spoken_delivery_concurrency
+        or project.config.episode_write_concurrency
+    )
+    host_policy = _build_host_policy_payload(strategy.narrator_profile)
     ep_tasks = [
         orchestrator._produce_episode(
             plan,
@@ -89,9 +114,11 @@ async def main() -> None:
             architecture_by_number[plan.episode_number],
             project,
             corpus,
-            ActorMetadata(project_id=project.project_id),
+            actor_metadata,
             project_dir,
+            host_policy,
             sem,
+            spoken_sem,
         )
         for plan in episode_plans
     ]

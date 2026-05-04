@@ -250,9 +250,11 @@ class TestThematicProject:
             "key_events_or_arguments": ["event"],
         }
 
-    def test_series_narrator_profile_defaults_to_seven_host_moves(self):
+    def test_series_narrator_profile_defaults_to_five_host_moves(self):
         profile = SeriesNarratorProfile()
-        assert profile.target_host_moves_per_episode == 7
+        assert profile.target_host_moves_per_episode == 5
+        assert profile.analysis_mode == "hybrid"
+        assert profile.analysis_density == "medium"
 
     @pytest.mark.parametrize(
         ("move_type", "expected_placement"),

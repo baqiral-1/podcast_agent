@@ -8,7 +8,11 @@ from pathlib import Path
 from typing import Any
 
 from podcast_agent.config import Settings
-from podcast_agent.pipeline.orchestrator import PipelineOrchestrator, _save_json
+from podcast_agent.pipeline.orchestrator import (
+    PipelineOrchestrator,
+    _build_host_policy_payload,
+    _save_json,
+)
 from podcast_agent.schemas.models import (
     ActorMetadata,
     EpisodeArchitecture,
@@ -86,14 +90,24 @@ async def _resume_from_episode_architecture(project_id: str) -> None:
 
     strict_snapshots = _capture_snapshots(project_dir)
 
-    project = ThematicProject.model_validate(_load_json(project_dir / "thematic_project.json"))
-    corpus = ThematicCorpus.model_validate(_load_json(project_dir / "thematic_corpus.json"))
+    project = ThematicProject.model_validate(
+        _load_json(project_dir / "thematic_project.json")
+    )
+    corpus = ThematicCorpus.model_validate(
+        _load_json(project_dir / "thematic_corpus.json")
+    )
     _ = SynthesisPrimitivesArtifact.model_validate(
         _load_json(project_dir / "synthesis_primitives.json")
     )
-    synthesis_map = SynthesisMap.model_validate(_load_json(project_dir / "synthesis_map.json"))
-    strategy = NarrativeStrategy.model_validate(_load_json(project_dir / "narrative_strategy.json"))
-    actor_metadata = ActorMetadata.model_validate(_load_json(project_dir / "actor_metadata.json"))
+    synthesis_map = SynthesisMap.model_validate(
+        _load_json(project_dir / "synthesis_map.json")
+    )
+    strategy = NarrativeStrategy.model_validate(
+        _load_json(project_dir / "narrative_strategy.json")
+    )
+    actor_metadata = ActorMetadata.model_validate(
+        _load_json(project_dir / "actor_metadata.json")
+    )
     architecture_payload = _load_json(project_dir / "episode_architectures.json")
     episode_architectures = [
         EpisodeArchitecture.model_validate(item)
@@ -150,15 +164,25 @@ async def _resume_from_episode_architecture(project_id: str) -> None:
             or project.config.episode_write_concurrency,
         )
     )
+    host_policy = _build_host_policy_payload(strategy.narrator_profile)
     ep_tasks = [
         orchestrator._produce_episode(
             plan,
-            next(item for item in strategy.episodes if item.episode_number == plan.episode_number),
-            next(item for item in episode_architectures if item.episode_number == plan.episode_number),
+            next(
+                item
+                for item in strategy.episodes
+                if item.episode_number == plan.episode_number
+            ),
+            next(
+                item
+                for item in episode_architectures
+                if item.episode_number == plan.episode_number
+            ),
             project,
             corpus,
             actor_metadata,
             project_dir,
+            host_policy,
             sem,
             spoken_sem,
         )
@@ -184,7 +208,9 @@ async def _resume_from_episode_architecture(project_id: str) -> None:
     )
     actor_metrics = {
         "episode_planning": planning_actor_metrics,
-        "writing": orchestrator._build_writing_actor_metrics(project_dir, spoken_scripts),
+        "writing": orchestrator._build_writing_actor_metrics(
+            project_dir, spoken_scripts
+        ),
     }
     orchestrator._write_actor_metadata_metrics(
         project_dir=project_dir,
@@ -222,7 +248,9 @@ async def _resume_from_episode_architecture(project_id: str) -> None:
         project = project.model_copy(update={"status": ProjectStatus.FAILED})
         _save_json(project_dir / "thematic_project.json", project)
         details = production_errors + audio_errors
-        raise RuntimeError("Resume failed after episode architecture: " + "; ".join(details))
+        raise RuntimeError(
+            "Resume failed after episode architecture: " + "; ".join(details)
+        )
 
     _verify_snapshots_unchanged(project_dir=project_dir, before=strict_snapshots)
 

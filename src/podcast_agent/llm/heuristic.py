@@ -373,6 +373,10 @@ class HeuristicLLMClient(LLMClient):
                 "concrete_detail": "A concrete detail crystallizes the turn.",
                 "host_lens": "The pressure is now visible.",
                 "carry_forward": "The residue shapes what follows.",
+                "quote_anchor": "",
+                "plain_gloss": "The narrator can say plainly what this changes.",
+                "listener_confusion": "",
+                "authorial_move": "causal_compression",
             }
             if family == "epochal_turns":
                 delta.update(
@@ -502,7 +506,7 @@ class HeuristicLLMClient(LLMClient):
                     }
                 )
             else:
-                continue
+                delta.update({"narration_hooks": hooks})
             enriched_primitives.append(delta)
         return {
             "project_id": payload.get("project_id", "project"),
@@ -562,6 +566,15 @@ class HeuristicLLMClient(LLMClient):
                     "arc_summary": f"Episode {idx + 1} follows a single listener-facing pressure line.",
                     "unresolved_questions": [],
                     "actor_arc_directives": [],
+                    "authorial_contract": {
+                        "analysis_weight": "medium",
+                        "priority_moves": ["causal_compression"],
+                        "governing_lenses": [
+                            "The episode tightens one governing pressure line."
+                        ],
+                        "must_clarify_terms": [],
+                        "must_clarify_institutions": [],
+                    },
                     "episode_spine": {
                         "listener_problem": listener_problem,
                         "episode_answer": "Selected primitives carry the episode's answer.",
@@ -582,6 +595,33 @@ class HeuristicLLMClient(LLMClient):
             "series_arc": "Books converge on shared themes.",
             "episode_arc_outline": [f"Episode {idx + 1}" for idx in range(recommended_episode_count)],
             "recommended_episode_count": recommended_episode_count,
+            "narrator_profile": {
+                "presence_mode": "visible_host",
+                "baseline_tone": "plainspoken",
+                "allowed_moves": [
+                    "orient",
+                    "clarify",
+                    "evaluate",
+                    "contrast",
+                    "callback",
+                    "light_aside",
+                    "naming_note",
+                ],
+                "forbidden_moves": [
+                    "unsupported_psychology",
+                    "cheap_joke",
+                    "fake_banter",
+                    "teaser_hype",
+                ],
+                "target_host_moves_per_episode": 5,
+                "analysis_mode": "hybrid",
+                "analysis_density": "medium",
+                "quote_gloss_preference": "allow",
+                "clarifier_tolerance": "medium",
+                "comparative_aside_tolerance": "light",
+                "wit_ceiling": "dry",
+                "target_authorial_passages_per_episode": 3,
+            },
             "episodes": episodes,
         }
 
@@ -623,6 +663,30 @@ class HeuristicLLMClient(LLMClient):
                     "recurrence_role": "plant" if idx == 0 else "payoff" if idx == section_count - 1 else "deepen",
                     "closure_mode": "final_answer" if idx == section_count - 1 else "residue",
                     "priority_core_passage_ids": [],
+                    "analysis_goal": (
+                        "Cash out the main pressure line in plain terms."
+                        if idx in (1, section_count - 1)
+                        else ""
+                    ),
+                    "key_terms": [],
+                    "authorial_passages": (
+                        [
+                            {
+                                "passage_id": f"ap_{idx + 1:02d}",
+                                "mode": "causal_compression",
+                                "placement": "mid" if idx != section_count - 1 else "close",
+                                "claim": "The narrator briefly compresses what the section proves.",
+                                "source_primitive_ids": local_primitive_ids,
+                                "source_passage_ids": [],
+                                "quote_anchor": "",
+                                "gloss_seed": "Say plainly what changes here.",
+                                "must_name_terms": [],
+                                "budget_sentences": 3,
+                            }
+                        ]
+                        if idx in (1, section_count - 1)
+                        else []
+                    ),
                 }
             )
         return {
@@ -696,22 +760,54 @@ class HeuristicLLMClient(LLMClient):
     def _generate_episode_writing(self, payload: PromptPayload) -> dict[str, Any]:
         plan = payload.get("plan", {})
         scene_cards = plan.get("scene_cards", [])
-        scene_card_ids = [
-            str(scene.get("scene_id"))
-            for scene in scene_cards
-            if isinstance(scene, dict) and scene.get("scene_id")
-        ] or ["scene_01"]
-        return {
-            "scene_prose": [
+        prose_sections: list[dict[str, Any]] = []
+        current_section_id: str | None = None
+        current_scene_ids: list[str] = []
+        for scene in scene_cards:
+            if not isinstance(scene, dict):
+                continue
+            section_id = str(scene.get("section_id", "") or "")
+            scene_id = str(scene.get("scene_id", "") or "")
+            if not section_id or not scene_id:
+                continue
+            if current_section_id is not None and section_id != current_section_id:
+                prose_sections.append(
+                    {
+                        "section_id": current_section_id,
+                        "scene_card_ids": list(current_scene_ids),
+                        "movement_goal": "discover",
+                        "text": "Heuristic narration content.",
+                        "citations": [],
+                        "source_book_ids": [],
+                    }
+                )
+                current_scene_ids = []
+            current_section_id = section_id
+            current_scene_ids.append(scene_id)
+        if current_section_id is not None:
+            prose_sections.append(
                 {
-                    "scene_card_id": scene_id,
+                    "section_id": current_section_id,
+                    "scene_card_ids": list(current_scene_ids),
                     "movement_goal": "discover",
                     "text": "Heuristic narration content.",
                     "citations": [],
                     "source_book_ids": [],
                 }
-                for scene_id in scene_card_ids
-            ],
+            )
+        if not prose_sections:
+            prose_sections = [
+                {
+                    "section_id": "section_01",
+                    "scene_card_ids": ["scene_01"],
+                    "movement_goal": "discover",
+                    "text": "Heuristic narration content.",
+                    "citations": [],
+                    "source_book_ids": [],
+                }
+            ]
+        return {
+            "prose_sections": prose_sections,
         }
 
     def _generate_grounding_validation(self, payload: PromptPayload) -> dict[str, Any]:

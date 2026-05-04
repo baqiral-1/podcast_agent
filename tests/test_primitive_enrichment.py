@@ -44,6 +44,29 @@ def _hooks() -> dict[str, str]:
     }
 
 
+def _generic_narration_only_result(
+    orchestrator: PipelineOrchestrator,
+    payload: dict[str, Any],
+) -> Any:
+    family = str(payload["family"])
+    return orchestrator.primitive_enrichment_agent.response_model_for_family(
+        family
+    ).model_validate(
+        {
+            "project_id": "proj",
+            "family": family,
+            "enriched_primitives": [
+                {
+                    "id": primitive["id"],
+                    "family": family,
+                    "narration_hooks": _hooks(),
+                }
+                for primitive in payload["base_primitives"]
+            ],
+        }
+    )
+
+
 def _long_phrase(prefix: str, count: int) -> str:
     return " ".join([prefix, *[f"word{i}" for i in range(count - 1)]])
 
@@ -68,10 +91,12 @@ def test_enrich_selected_primitives_merges_rich_fields_and_reuses_shared_core_pa
     )
 
     orchestrator = PipelineOrchestrator()
-    captured: dict[str, Any] = {}
+    captured_payloads: list[dict[str, Any]] = []
 
     def fake_run(payload: dict[str, Any]) -> Any:
-        captured["payload"] = payload
+        captured_payloads.append(payload)
+        if payload["family"] == "telling_details":
+            return _generic_narration_only_result(orchestrator, payload)
         return orchestrator.primitive_enrichment_agent.response_model.model_validate(
             {
                 "project_id": "proj",
@@ -259,7 +284,7 @@ def test_enrich_selected_primitives_merges_rich_fields_and_reuses_shared_core_pa
         )
     )
 
-    payload = captured["payload"]
+    payload = next(item for item in captured_payloads if item["family"] == "epochal_turns")
     assert payload["family"] == "epochal_turns"
     assert payload["base_primitives"][0]["id"] == "et_1"
     assert set(payload["evidence_by_primitive_id"]) == {"et_1"}
@@ -326,6 +351,8 @@ def test_enrich_selected_primitives_accepts_overlong_set_piece_scene_fields_afte
     concrete_detail = _long_phrase("detail", 26)
 
     def fake_run(payload: dict[str, Any]) -> Any:
+        if payload["family"] == "telling_details":
+            return _generic_narration_only_result(orchestrator, payload)
         return orchestrator.primitive_enrichment_agent.response_model_for_family(
             "set_piece_scenes"
         ).model_validate(
@@ -425,7 +452,7 @@ def test_enrich_selected_primitives_accepts_overlong_set_piece_scene_fields_afte
                         core_passage_ids=["p1"],
                         actor_ids=[],
                     )
-                    for idx in range(1, 8)
+                    for idx in range(1, 10)
                 ],
             },
         )
@@ -441,12 +468,13 @@ def test_enrich_selected_primitives_accepts_overlong_set_piece_scene_fields_afte
                 episode_spine={
                     "listener_question": "Question?",
                     "argument": "Claim",
-                    "core_primitive_ids": ["sp_1", "td_1", "td_2", "td_3"],
+                    "core_primitive_ids": ["sp_1", "td_1", "td_2", "td_3", "td_4"],
                     "support_primitive_roles": {
-                        "td_4": "mechanism",
-                        "td_5": "texture",
-                        "td_6": "stakes",
-                        "td_7": "consequence",
+                        "td_5": "mechanism",
+                        "td_6": "texture",
+                        "td_7": "stakes",
+                        "td_8": "consequence",
+                        "td_9": "texture",
                     },
                     "recall_primitive_ids": [],
                 },
@@ -638,6 +666,8 @@ def test_enrich_selected_primitives_runs_family_batches_concurrently_with_cap(
             seen_families.append(family)
         time.sleep(0.1)
         try:
+            if family == "telling_details":
+                return _generic_narration_only_result(orchestrator, payload)
             delta = {
                 "id": payload["base_primitives"][0]["id"],
                 "family": family,
@@ -843,7 +873,7 @@ def test_enrich_selected_primitives_runs_family_batches_concurrently_with_cap(
     )
 
     assert isinstance(synthesis_map, SynthesisMap)
-    assert sorted(seen_families) == sorted(family_delta_payloads)
+    assert sorted(seen_families) == sorted([*family_delta_payloads, "telling_details"])
     assert max_active == 5
 
 
@@ -898,6 +928,8 @@ def test_enrich_selected_primitives_preserves_new_structured_fields(
                     "narration_hooks": _hooks(),
                 }
             )
+        elif family == "telling_details":
+            return _generic_narration_only_result(orchestrator, payload)
         else:
             raise AssertionError(f"Unexpected family {family}")
         return orchestrator.primitive_enrichment_agent.response_model_for_family(
@@ -1062,6 +1094,254 @@ def test_enrich_selected_primitives_preserves_new_structured_fields(
     ]
 
 
+def test_enrich_selected_primitives_retries_family_when_selected_primitive_is_omitted(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    heuristic = HeuristicLLMClient()
+    monkeypatch.setattr("podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic)
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.PGVectorRetrieval",
+        lambda settings, run_logger=None: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.RetrievalService",
+        lambda settings, vector_store: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.build_tts_client",
+        lambda settings: DummyTTSClient(),
+    )
+    monkeypatch.setattr("podcast_agent.agents.primitive_enrichment.time.sleep", lambda _seconds: None)
+
+    orchestrator = PipelineOrchestrator()
+    call_counts: dict[str, int] = {}
+
+    def fake_generate_json(**kwargs: Any) -> Any:
+        payload = kwargs["payload"]
+        family = str(payload["family"])
+        call_counts[family] = call_counts.get(family, 0) + 1
+        if family == "systems_and_operating_logics":
+            if call_counts[family] == 1:
+                assert "enrichment_feedback" not in payload
+                enriched_primitives = [
+                    {
+                        "id": "sys_1",
+                        "family": family,
+                        "system_name": "Court patronage",
+                        "operating_chain": [
+                            "Orders move downward through loyal intermediaries.",
+                            "Provincial actors translate orders into local pressure.",
+                        ],
+                        "inputs": ["orders"],
+                        "outputs": ["compliance"],
+                        "where_it_shows_up": "Officials enforce it face to face.",
+                        "failure_mode": "The chain distorts when local incentives diverge.",
+                        "narration_hooks": _hooks(),
+                    }
+                ]
+            else:
+                feedback = payload["enrichment_feedback"]
+                assert feedback["issue"] == "missing_selected_primitives"
+                assert feedback["missing_primitive_ids"] == ["sys_2"]
+                enriched_primitives = [
+                    {
+                        "id": "sys_1",
+                        "family": family,
+                        "system_name": "Court patronage",
+                        "operating_chain": [
+                            "Orders move downward through loyal intermediaries.",
+                            "Provincial actors translate orders into local pressure.",
+                        ],
+                        "inputs": ["orders"],
+                        "outputs": ["compliance"],
+                        "where_it_shows_up": "Officials enforce it face to face.",
+                        "failure_mode": "The chain distorts when local incentives diverge.",
+                        "narration_hooks": _hooks(),
+                    },
+                    {
+                        "id": "sys_2",
+                        "family": family,
+                        "system_name": "Ritualized protest cadence",
+                        "operating_chain": [
+                            "Mourning days set the protest calendar.",
+                            "Security violence seeds the next observance.",
+                        ],
+                        "inputs": ["mourning networks"],
+                        "outputs": ["repeat mobilization"],
+                        "where_it_shows_up": "Crowds reassemble on each fortieth day.",
+                        "failure_mode": "The chain breaks if repression stops producing martyrs.",
+                        "narration_hooks": _hooks(),
+                    },
+                ]
+        elif family == "telling_details":
+            return orchestrator.primitive_enrichment_agent.response_model_for_family(
+                family
+            ).model_validate(
+                {
+                    "project_id": "proj",
+                    "family": family,
+                    "enriched_primitives": [
+                        {
+                            "id": primitive["id"],
+                            "family": family,
+                            "narration_hooks": _hooks(),
+                        }
+                        for primitive in payload["base_primitives"]
+                    ],
+                }
+            )
+        else:
+            raise AssertionError(f"Unexpected family {family}")
+
+        return orchestrator.primitive_enrichment_agent.response_model_for_family(
+            family
+        ).model_validate(
+            {
+                "project_id": "proj",
+                "family": family,
+                "enriched_primitives": enriched_primitives,
+            }
+        )
+
+    orchestrator.primitive_enrichment_agent.llm.generate_json = fake_generate_json
+
+    project = ThematicProject(
+        project_id="proj",
+        theme="Theme",
+        books=[
+            BookRecord(
+                book_id="b1",
+                title="Book",
+                author="Author",
+                source_path="book.txt",
+                source_type="text",
+            )
+        ],
+        config=PipelineConfig(),
+    )
+    corpus = ThematicCorpus(
+        project_id="proj",
+        axes=[
+            ThematicAxis(
+                axis_id="axis_1",
+                name="Axis",
+                description="Axis description",
+                theme_importance_score=1.0,
+            )
+        ],
+        passages_by_axis={
+            "axis_1": [
+                ExtractedPassage(
+                    passage_id="p1",
+                    book_id="b1",
+                    chunk_ids=["c1"],
+                    text="A passage with enough detail to support selected primitives.",
+                    full_text="A passage with enough detail to support selected primitives.",
+                    chapter_ref="ch. 1",
+                    axis_id="axis_1",
+                )
+            ]
+        },
+    )
+    actor_metadata = ActorMetadata(project_id="proj")
+    synthesis_primitives = SynthesisPrimitivesArtifact(
+        project_id="proj",
+        primitives_by_family={
+            "systems_and_operating_logics": [
+                BaseSynthesisPrimitive(
+                    id="sys_1",
+                    family="systems_and_operating_logics",
+                    title="System One",
+                    summary="The first operating chain.",
+                    axis_ids=["axis_1"],
+                    core_passage_ids=["p1"],
+                    actor_ids=[],
+                ),
+                BaseSynthesisPrimitive(
+                    id="sys_2",
+                    family="systems_and_operating_logics",
+                    title="System Two",
+                    summary="The second operating chain.",
+                    axis_ids=["axis_1"],
+                    core_passage_ids=["p1"],
+                    actor_ids=[],
+                ),
+            ],
+            "telling_details": [
+                BaseSynthesisPrimitive(
+                    id=f"core_{idx}",
+                    family="telling_details",
+                    title=f"Core {idx}",
+                    summary="Extra selected primitive.",
+                    axis_ids=["axis_1"],
+                    core_passage_ids=["p1"],
+                    actor_ids=[],
+                )
+                for idx in range(2, 7)
+            ]
+            + [
+                BaseSynthesisPrimitive(
+                    id=f"support_{idx}",
+                    family="telling_details",
+                    title=f"Support {idx}",
+                    summary="Support primitive.",
+                    axis_ids=["axis_1"],
+                    core_passage_ids=["p1"],
+                    actor_ids=[],
+                )
+                for idx in range(1, 8)
+            ],
+        },
+    )
+    strategy = NarrativeStrategy(
+        strategy_type="chronological",
+        justification="Test",
+        series_arc="Arc",
+        episodes=[
+            StrategyEpisode(
+                episode_number=1,
+                title="Episode 1",
+                arc_summary="Arc",
+                episode_spine={
+                    "listener_question": "Question?",
+                    "argument": "Claim",
+                    "core_primitive_ids": [
+                        "sys_1",
+                        "sys_2",
+                        "core_2",
+                        "core_3",
+                        "core_4",
+                        "core_5",
+                    ],
+                    "support_primitive_roles": {
+                        f"support_{idx}": "mechanism"
+                        for idx in range(1, 8)
+                    },
+                    "recall_primitive_ids": [],
+                },
+            )
+        ],
+    )
+
+    synthesis_map = asyncio.run(
+        orchestrator._enrich_selected_primitives(
+            project,
+            synthesis_primitives,
+            strategy,
+            corpus,
+            tmp_path,
+            actor_metadata,
+        )
+    )
+
+    assert call_counts["systems_and_operating_logics"] == 2
+    assert [item.id for item in synthesis_map.primitives_by_family["systems_and_operating_logics"]] == [
+        "sys_1",
+        "sys_2",
+    ]
+
+
 def test_enrich_selected_primitives_allows_null_character_engine_actor(
     monkeypatch,
     tmp_path: Path,
@@ -1085,6 +1365,8 @@ def test_enrich_selected_primitives_allows_null_character_engine_actor(
 
     def fake_run(payload: dict[str, Any]) -> Any:
         family = str(payload["family"])
+        if family == "telling_details":
+            return _generic_narration_only_result(orchestrator, payload)
         if family != "character_engines":
             raise AssertionError(f"Unexpected family {family}")
         return orchestrator.primitive_enrichment_agent.response_model_for_family(

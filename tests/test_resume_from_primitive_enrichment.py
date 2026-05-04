@@ -150,7 +150,9 @@ def _build_project_dir(tmp_path: Path) -> Path:
     )
     corpus = ThematicCorpus(project_id="run_1", axes=[axis])
 
-    _write_json(project_dir / "thematic_axes.json", {"axes": [axis.model_dump(mode="json")]})
+    _write_json(
+        project_dir / "thematic_axes.json", {"axes": [axis.model_dump(mode="json")]}
+    )
     _write_json(project_dir / "thematic_project.json", project)
     _write_json(project_dir / "thematic_corpus.json", corpus)
     _write_json(project_dir / "synthesis_primitives.json", primitives)
@@ -345,7 +347,10 @@ def _episode_architecture() -> EpisodeArchitecture:
         major_turn_section_id=payload["major_turn_section_id"],
         allowed_recurring_primitive_ids=payload["allowed_recurring_primitive_ids"],
         forbidden_redundancies=payload["forbidden_redundancies"],
-        sections=[ArchitectureSection.model_validate(section) for section in payload["sections"]],
+        sections=[
+            ArchitectureSection.model_validate(section)
+            for section in payload["sections"]
+        ],
         architecture_notes=payload["architecture_notes"],
     )
 
@@ -454,6 +459,7 @@ def test_resume_from_primitive_enrichment_uses_persisted_strategy_and_artifacts(
             corpus: ThematicCorpus,
             actor_metadata: ActorMetadata,
             project_dir: Path,
+            host_policy: dict[str, Any],
             semaphore: asyncio.Semaphore,
             spoken_semaphore: asyncio.Semaphore | None = None,
         ) -> tuple[int, Any]:
@@ -461,7 +467,10 @@ def test_resume_from_primitive_enrichment_uses_persisted_strategy_and_artifacts(
             calls["production_architecture"] = architecture
             calls["production_actor_metadata"] = actor_metadata
             calls["production_config"] = project.config
-            return plan.episode_number, SimpleNamespace(episode_number=plan.episode_number)
+            calls["host_policy"] = host_policy
+            return plan.episode_number, SimpleNamespace(
+                episode_number=plan.episode_number
+            )
 
         def _write_passage_utilization(self, **kwargs: Any) -> None:
             calls["passage_utilization"] = kwargs
@@ -503,14 +512,14 @@ def test_resume_from_primitive_enrichment_uses_persisted_strategy_and_artifacts(
     assert calls["resolved_strategy"].episodes[0].title == "Persisted Episode"
     assert calls["planning_strategy"].episodes[0].title == "Persisted Episode"
     assert (
-        calls["planning_strategy"].episodes[0].episode_spine.support_primitive_roles[
-            "primitive_support"
-        ]
+        calls["planning_strategy"]
+        .episodes[0]
+        .episode_spine.support_primitive_roles["primitive_support"]
         == SupportPrimitiveRole.MECHANISM
     )
-    assert calls["planning_strategy"].episodes[0].episode_spine.recall_primitive_ids == [
-        "primitive_recall"
-    ]
+    assert calls["planning_strategy"].episodes[
+        0
+    ].episode_spine.recall_primitive_ids == ["primitive_recall"]
     assert calls["planning_architectures"][0].runtime_minutes == 2.0
     assert calls["enrichment_actor_metadata"].actors[0].actor_id == "actor_1"
     assert calls["architecture_actor_metadata"].actors[0].actor_id == "actor_1"
@@ -518,6 +527,8 @@ def test_resume_from_primitive_enrichment_uses_persisted_strategy_and_artifacts(
     assert calls["production_actor_metadata"].actors[0].actor_id == "actor_1"
     assert calls["production_strategy_episode"].title == "Persisted Episode"
     assert calls["production_architecture"].episode_number == 1
+    assert "authorial_policy" in calls["host_policy"]
+    assert calls["host_policy"]["authorial_policy"]["host_moves_are_secondary"] is True
     assert calls["enrichment_config"].skip_grounding is True
     assert calls["enrichment_config"].skip_audio is True
     assert calls["enrichment_config"].skip_spoken_delivery is False

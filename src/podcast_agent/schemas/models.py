@@ -663,12 +663,36 @@ class NarrationHooks(StrictModel):
     concrete_detail: str = Field(min_length=1)
     host_lens: str = Field(min_length=1)
     carry_forward: str = Field(min_length=1)
+    quote_anchor: str = ""
+    plain_gloss: str = ""
+    listener_confusion: str = ""
+    authorial_move: Literal[
+        "none",
+        "quote_then_gloss",
+        "doctrinal_unpack",
+        "institutional_clarifier",
+        "causal_compression",
+        "comparative_aside",
+        "verdict_landing",
+    ] = "none"
 
 
 class EnrichmentNarrationHooks(StrictModel):
     concrete_detail: str = Field(min_length=1)
     host_lens: str = Field(min_length=1)
     carry_forward: str = Field(min_length=1)
+    quote_anchor: str = ""
+    plain_gloss: str = ""
+    listener_confusion: str = ""
+    authorial_move: Literal[
+        "none",
+        "quote_then_gloss",
+        "doctrinal_unpack",
+        "institutional_clarifier",
+        "causal_compression",
+        "comparative_aside",
+        "verdict_landing",
+    ] = "none"
 
 
 class CandidateReading(StrictModel):
@@ -713,6 +737,7 @@ class SynthesisPrimitive(SynthesisPrimitiveBase):
         "afterlives",
         "recurring_images_and_symbols",
     ]
+    narration_hooks: NarrationHooks | None = None
 
 
 class EpochalTurnPrimitive(SynthesisPrimitiveBase):
@@ -1304,6 +1329,17 @@ class IronyReversalPrimitiveDelta(PrimitiveEnrichmentDeltaBase):
     narration_hooks: EnrichmentNarrationHooks
 
 
+class GenericNarrationOnlyPrimitiveDelta(PrimitiveEnrichmentDeltaBase):
+    family: Literal[
+        "telling_details",
+        "misreadings_and_fantasies",
+        "perspective_windows",
+        "afterlives",
+        "recurring_images_and_symbols",
+    ]
+    narration_hooks: EnrichmentNarrationHooks
+
+
 AnyPrimitiveEnrichmentDelta = Annotated[
     EpochalTurnPrimitiveDelta
     | DecisionPrimitiveDelta
@@ -1314,7 +1350,8 @@ AnyPrimitiveEnrichmentDelta = Annotated[
     | SystemsOperatingLogicPrimitiveDelta
     | ContestedExplanationPrimitiveDelta
     | MoralTrapPrimitiveDelta
-    | IronyReversalPrimitiveDelta,
+    | IronyReversalPrimitiveDelta
+    | GenericNarrationOnlyPrimitiveDelta,
     Field(discriminator="family"),
 ]
 
@@ -1326,8 +1363,11 @@ class PrimitiveEnrichmentArtifact(StrictModel):
 
     @model_validator(mode="after")
     def validate_family_alignment(self) -> "PrimitiveEnrichmentArtifact":
-        if self.family not in RICH_SYNTHESIS_PRIMITIVE_FAMILY_SET:
-            raise ValueError(f"primitive enrichment family must be one of {sorted(RICH_SYNTHESIS_PRIMITIVE_FAMILY_SET)}")
+        if self.family not in SYNTHESIS_PRIMITIVE_FAMILY_SET:
+            raise ValueError(
+                "primitive enrichment family must be one of "
+                f"{sorted(SYNTHESIS_PRIMITIVE_FAMILY_SET)}"
+            )
         for item in self.enriched_primitives:
             if item.family != self.family:
                 raise ValueError(
@@ -1343,10 +1383,10 @@ class PrimitiveEnrichmentArtifactBase(StrictModel):
 
     @model_validator(mode="after")
     def validate_family_alignment(self) -> "PrimitiveEnrichmentArtifactBase":
-        if self.family not in RICH_SYNTHESIS_PRIMITIVE_FAMILY_SET:
+        if self.family not in SYNTHESIS_PRIMITIVE_FAMILY_SET:
             raise ValueError(
                 "primitive enrichment family must be one of "
-                f"{sorted(RICH_SYNTHESIS_PRIMITIVE_FAMILY_SET)}"
+                f"{sorted(SYNTHESIS_PRIMITIVE_FAMILY_SET)}"
             )
         for item in self.enriched_primitives:
             if item.family != self.family:
@@ -1406,6 +1446,19 @@ class IronyReversalEnrichmentArtifact(PrimitiveEnrichmentArtifactBase):
     enriched_primitives: list[IronyReversalPrimitiveDelta] = Field(default_factory=list)
 
 
+class GenericNarrationOnlyEnrichmentArtifact(PrimitiveEnrichmentArtifactBase):
+    family: Literal[
+        "telling_details",
+        "misreadings_and_fantasies",
+        "perspective_windows",
+        "afterlives",
+        "recurring_images_and_symbols",
+    ]
+    enriched_primitives: list[GenericNarrationOnlyPrimitiveDelta] = Field(
+        default_factory=list
+    )
+
+
 PRIMITIVE_ENRICHMENT_ARTIFACT_MODEL_BY_FAMILY: dict[
     str, type[PrimitiveEnrichmentArtifactBase]
 ] = {
@@ -1419,6 +1472,11 @@ PRIMITIVE_ENRICHMENT_ARTIFACT_MODEL_BY_FAMILY: dict[
     "contested_explanations": ContestedExplanationEnrichmentArtifact,
     "moral_traps": MoralTrapEnrichmentArtifact,
     "ironies_and_reversals": IronyReversalEnrichmentArtifact,
+    "telling_details": GenericNarrationOnlyEnrichmentArtifact,
+    "misreadings_and_fantasies": GenericNarrationOnlyEnrichmentArtifact,
+    "perspective_windows": GenericNarrationOnlyEnrichmentArtifact,
+    "afterlives": GenericNarrationOnlyEnrichmentArtifact,
+    "recurring_images_and_symbols": GenericNarrationOnlyEnrichmentArtifact,
 }
 
 
@@ -1483,6 +1541,23 @@ class ActorArcDirective(StrictModel):
         return self
 
 
+class EpisodeAuthorialContract(StrictModel):
+    analysis_weight: Literal["light", "medium", "heavy"] = "medium"
+    priority_moves: list[
+        Literal[
+            "quote_then_gloss",
+            "doctrinal_unpack",
+            "institutional_clarifier",
+            "causal_compression",
+            "comparative_aside",
+            "verdict_landing",
+        ]
+    ] = Field(default_factory=list, max_length=3)
+    governing_lenses: list[str] = Field(default_factory=list, max_length=3)
+    must_clarify_terms: list[str] = Field(default_factory=list, max_length=4)
+    must_clarify_institutions: list[str] = Field(default_factory=list, max_length=4)
+
+
 class StrategyEpisode(StrictModel):
     episode_number: int = Field(ge=1)
     title: str = Field(min_length=1)
@@ -1491,6 +1566,9 @@ class StrategyEpisode(StrictModel):
     unresolved_questions: list[str] = Field(default_factory=list)
     episode_spine: EpisodeSpine
     actor_arc_directives: list[ActorArcDirective] = Field(default_factory=list, max_length=4)
+    authorial_contract: EpisodeAuthorialContract = Field(
+        default_factory=EpisodeAuthorialContract
+    )
 
 
 class SeriesNarratorProfile(StrictModel):
@@ -1527,7 +1605,14 @@ class SeriesNarratorProfile(StrictModel):
             "teaser_hype",
         ]
     )
-    target_host_moves_per_episode: int = Field(default=7, ge=0, le=12)
+    target_host_moves_per_episode: int = Field(default=5, ge=0, le=12)
+    analysis_mode: Literal["scene_led", "hybrid", "analysis_forward"] = "hybrid"
+    analysis_density: Literal["light", "medium", "high"] = "medium"
+    quote_gloss_preference: Literal["avoid", "allow", "prefer"] = "allow"
+    clarifier_tolerance: Literal["low", "medium", "high"] = "medium"
+    comparative_aside_tolerance: Literal["none", "light", "medium"] = "light"
+    wit_ceiling: Literal["none", "dry", "wry"] = "dry"
+    target_authorial_passages_per_episode: int = Field(default=3, ge=0, le=6)
 
 
 class NarrativeStrategy(StrictModel):
@@ -1563,6 +1648,26 @@ class FramingBlock(StrictModel):
     preview: str | None = None
 
 
+class AuthorialPassage(StrictModel):
+    passage_id: str = Field(min_length=1)
+    mode: Literal[
+        "quote_then_gloss",
+        "doctrinal_unpack",
+        "institutional_clarifier",
+        "causal_compression",
+        "comparative_aside",
+        "verdict_landing",
+    ]
+    placement: Literal["open", "mid", "close"] = "mid"
+    claim: str = Field(min_length=1)
+    source_primitive_ids: list[str] = Field(default_factory=list, min_length=1, max_length=3)
+    source_passage_ids: list[str] = Field(default_factory=list, max_length=4)
+    quote_anchor: str = ""
+    gloss_seed: str = ""
+    must_name_terms: list[str] = Field(default_factory=list, max_length=4)
+    budget_sentences: Literal[2, 3, 4, 5] = 3
+
+
 class ArchitectureSection(StrictModel):
     section_id: str = Field(min_length=1)
     purpose: SectionPurpose
@@ -1590,6 +1695,9 @@ class ArchitectureSection(StrictModel):
     recurrence_role: RecurrenceRole = RecurrenceRole.NONE
     closure_mode: ClosureMode | None = None
     priority_core_passage_ids: list[str] = Field(default_factory=list)
+    analysis_goal: str = ""
+    key_terms: list[str] = Field(default_factory=list, max_length=6)
+    authorial_passages: list[AuthorialPassage] = Field(default_factory=list, max_length=2)
 
     @model_validator(mode="before")
     @classmethod

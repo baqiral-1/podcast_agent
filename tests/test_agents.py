@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from podcast_agent.agents.book_summary import BookSummaryAgent
 from podcast_agent.agents.chapter_summary import ChapterSummaryAgent, ChapterSummaryResponse
 from podcast_agent.agents.episode_architecture import EpisodeArchitectureAgent
@@ -546,6 +548,146 @@ class TestRedesignedAgents:
             }
         ]
 
+    def test_primitive_enrichment_run_retries_when_selected_primitive_is_missing(self):
+        llm = _mock_llm()
+        llm.generate_json.side_effect = [
+            HumanCostEnrichmentArtifact.model_validate(
+                {
+                    "project_id": "proj",
+                    "family": "human_costs",
+                    "enriched_primitives": [
+                        {
+                            "id": "hc_1",
+                            "family": "human_costs",
+                            "actor_ids": [],
+                            "affected_group": "camp followers",
+                            "cost_type": "displacement",
+                            "concrete_marker": "Families carry bedding into the road.",
+                            "lived_consequence": "Households lose shelter and income.",
+                            "who_saw_it": "plain to witnesses but politically deniable",
+                            "narration_hooks": _hooks(),
+                        }
+                    ],
+                }
+            ),
+            HumanCostEnrichmentArtifact.model_validate(
+                {
+                    "project_id": "proj",
+                    "family": "human_costs",
+                    "enriched_primitives": [
+                        {
+                            "id": "hc_1",
+                            "family": "human_costs",
+                            "actor_ids": [],
+                            "affected_group": "camp followers",
+                            "cost_type": "displacement",
+                            "concrete_marker": "Families carry bedding into the road.",
+                            "lived_consequence": "Households lose shelter and income.",
+                            "who_saw_it": "plain to witnesses but politically deniable",
+                            "narration_hooks": _hooks(),
+                        },
+                        {
+                            "id": "hc_2",
+                            "family": "human_costs",
+                            "actor_ids": [],
+                            "affected_group": "market families",
+                            "cost_type": "flight",
+                            "concrete_marker": "Neighbors flee with carts before dawn.",
+                            "lived_consequence": "Households scatter and lose protection.",
+                            "who_saw_it": "visible in the streets and easy to deny from court",
+                            "narration_hooks": _hooks(),
+                        },
+                    ],
+                }
+            ),
+        ]
+        agent = PrimitiveEnrichmentAgent(llm, max_retry_attempts=2)
+
+        with patch("podcast_agent.agents.primitive_enrichment.time.sleep", return_value=None):
+            result = agent.run(
+                {
+                    "project_id": "proj",
+                    "family": "human_costs",
+                    "base_primitives": [
+                        {"id": "hc_1", "family": "human_costs", "actor_ids": []},
+                        {"id": "hc_2", "family": "human_costs", "actor_ids": []},
+                    ],
+                    "evidence_by_primitive_id": {},
+                }
+            )
+
+        assert isinstance(result, HumanCostEnrichmentArtifact)
+        first_kwargs = llm.generate_json.call_args_list[0].kwargs
+        second_kwargs = llm.generate_json.call_args_list[1].kwargs
+        assert "enrichment_feedback" not in first_kwargs["payload"]
+        feedback = second_kwargs["payload"]["enrichment_feedback"]
+        assert feedback["issue"] == "missing_selected_primitives"
+        assert feedback["family"] == "human_costs"
+        assert feedback["missing_primitive_ids"] == ["hc_2"]
+        assert feedback["expected_primitive_ids"] == ["hc_1", "hc_2"]
+        assert feedback["returned_primitive_ids"] == ["hc_1"]
+
+    def test_primitive_enrichment_run_raises_after_missing_primitive_retry_exhaustion(self):
+        llm = _mock_llm()
+        llm.generate_json.side_effect = [
+            HumanCostEnrichmentArtifact.model_validate(
+                {
+                    "project_id": "proj",
+                    "family": "human_costs",
+                    "enriched_primitives": [
+                        {
+                            "id": "hc_1",
+                            "family": "human_costs",
+                            "actor_ids": [],
+                            "affected_group": "camp followers",
+                            "cost_type": "displacement",
+                            "concrete_marker": "Families carry bedding into the road.",
+                            "lived_consequence": "Households lose shelter and income.",
+                            "who_saw_it": "plain to witnesses but politically deniable",
+                            "narration_hooks": _hooks(),
+                        }
+                    ],
+                }
+            ),
+            HumanCostEnrichmentArtifact.model_validate(
+                {
+                    "project_id": "proj",
+                    "family": "human_costs",
+                    "enriched_primitives": [
+                        {
+                            "id": "hc_1",
+                            "family": "human_costs",
+                            "actor_ids": [],
+                            "affected_group": "camp followers",
+                            "cost_type": "displacement",
+                            "concrete_marker": "Families carry bedding into the road.",
+                            "lived_consequence": "Households lose shelter and income.",
+                            "who_saw_it": "plain to witnesses but politically deniable",
+                            "narration_hooks": _hooks(),
+                        }
+                    ],
+                }
+            ),
+        ]
+        agent = PrimitiveEnrichmentAgent(llm, max_retry_attempts=2)
+
+        with patch("podcast_agent.agents.primitive_enrichment.time.sleep", return_value=None):
+            with pytest.raises(
+                RetryableGenerationError,
+                match="primitive_enrichment omitted selected primitives",
+            ):
+                agent.run(
+                    {
+                        "project_id": "proj",
+                        "family": "human_costs",
+                        "base_primitives": [
+                            {"id": "hc_1", "family": "human_costs", "actor_ids": []},
+                            {"id": "hc_2", "family": "human_costs", "actor_ids": []},
+                        ],
+                        "evidence_by_primitive_id": {},
+                    }
+                )
+
     def test_primitive_enrichment_transient_retry_does_not_add_feedback(self):
         llm = _mock_llm()
         llm.generate_json.side_effect = [
@@ -703,8 +845,10 @@ class TestRedesignedAgents:
         assert "When `prior_window_continuity` is present, use it only to maintain local continuity across the split." in agent.instructions
         assert "`prior_window_continuity` is reference-only." in agent.instructions
         assert "target ranges already encode narrative importance" in agent.instructions
-        assert "Write one prose item for each input `plan.scene_cards[]` item." in agent.instructions
-        assert "Return one output item per input scene card" in agent.instructions
+        assert "Return one prose section per contiguous section window in the input plan." in agent.instructions
+        assert "Return one output item per input section" in agent.instructions
+        assert "`architecture.sections[].analysis_goal`, `key_terms`, and" in agent.instructions
+        assert "In planned `authorial_passages`, you may quote then gloss" in agent.instructions
         assert "Target 8-12 prose sections for the episode" not in agent.instructions
         assert "`entry_image`" in agent.instructions
         assert "`action`: show named actors doing concrete things" in agent.instructions
@@ -717,9 +861,10 @@ class TestRedesignedAgents:
     def test_writing_response_allows_teaser_line(self):
         response = WritingAgent(_mock_llm()).response_model.model_validate(
             {
-                "scene_prose": [
+                "prose_sections": [
                     {
-                        "scene_card_id": "scene_1",
+                        "section_id": "section_1",
+                        "scene_card_ids": ["scene_1"],
                         "movement_goal": "discover",
                         "text": "The scene lands.\n\nNext time: another story begins.",
                     }
@@ -727,14 +872,15 @@ class TestRedesignedAgents:
             }
         )
 
-        assert response.scene_prose[0].scene_card_id == "scene_1"
+        assert response.prose_sections[0].scene_card_ids == ["scene_1"]
 
     def test_writing_response_allows_ordinary_next_time_phrase(self):
         response = WritingAgent(_mock_llm()).response_model.model_validate(
             {
-                "scene_prose": [
+                "prose_sections": [
                     {
-                        "scene_card_id": "scene_1",
+                        "section_id": "section_1",
+                        "scene_card_ids": ["scene_1"],
                         "movement_goal": "discover",
                         "text": "But the next time you hear the official story, remember the archive.",
                     }
@@ -742,7 +888,7 @@ class TestRedesignedAgents:
             }
         )
 
-        assert response.scene_prose[0].scene_card_id == "scene_1"
+        assert response.prose_sections[0].scene_card_ids == ["scene_1"]
 
     def test_writing_agent_no_citations_instructions_and_schema(self):
         agent = WritingAgentNoCitations(_mock_llm())
@@ -780,8 +926,8 @@ class TestRedesignedAgents:
         assert "next-episode teaser copy" not in agent.instructions
         assert "`plan.framing.preview` is rendered separately" not in agent.instructions
         assert "Target total narration for this call within" in agent.instructions
-        assert "Write one prose item for each input scene card." in agent.instructions
-        assert "Return one output item per input scene card" in agent.instructions
+        assert "Return one prose section per contiguous section window in the input plan." in agent.instructions
+        assert "Return one output item per input section" in agent.instructions
         assert "Aim to deliver the episode in 8-12 prose sections" not in agent.instructions
         assert "Optional `actor_metadata`" in agent.instructions
         assert "Passages are evidence." in agent.instructions
@@ -803,13 +949,15 @@ class TestRedesignedAgents:
         assert "Do not output standalone transitions." in agent.instructions
         assert "Realize a planned host move as one distinct audible line or clause" in agent.instructions
         assert "Let host-marked scenes feel slightly more authored, but not more analytical." in agent.instructions
+        assert "Planned `authorial_passages` may be more explanatory" in agent.instructions
 
     def test_writing_no_citations_response_allows_teaser_line(self):
         response = WritingAgentNoCitations(_mock_llm()).response_model.model_validate(
             {
-                "scene_prose": [
+                "prose_sections": [
                     {
-                        "scene_card_id": "scene_1",
+                        "section_id": "section_1",
+                        "scene_card_ids": ["scene_1"],
                         "movement_goal": "discover",
                         "text": "The scene lands.\n\nIn the next episode, another story begins.",
                         "source_book_ids": ["b1"],
@@ -818,7 +966,7 @@ class TestRedesignedAgents:
             }
         )
 
-        assert response.scene_prose[0].scene_card_id == "scene_1"
+        assert response.prose_sections[0].scene_card_ids == ["scene_1"]
 
     def test_grounding_validation_agent_payload(self):
         agent = GroundingValidationAgent(_mock_llm())
@@ -868,6 +1016,7 @@ class TestRedesignedAgents:
         assert "turn one already-written batch of episode prose into spoken narration" in agent.instructions
         assert "INPUT" in agent.instructions
         assert "`script.prose_sections[].host_moves` are host-guidance control signals." in agent.instructions
+        assert "`script.prose_sections[].analysis_goal`, `key_terms`, and `authorial_passages`" in agent.instructions
         assert "`host_policy`" in agent.instructions
         assert "TRANSFORMATION MANDATE" in agent.instructions
         assert "Be faithful to the content. Do not be faithful to the delivery mechanism." in agent.instructions

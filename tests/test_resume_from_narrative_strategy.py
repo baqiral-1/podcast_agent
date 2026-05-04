@@ -123,7 +123,9 @@ def _build_project_dir(tmp_path: Path) -> Path:
     )
     corpus = ThematicCorpus(project_id="run_1", axes=[axis])
 
-    _write_json(project_dir / "thematic_axes.json", {"axes": [axis.model_dump(mode="json")]})
+    _write_json(
+        project_dir / "thematic_axes.json", {"axes": [axis.model_dump(mode="json")]}
+    )
     _write_json(project_dir / "thematic_project.json", project)
     _write_json(project_dir / "thematic_corpus.json", corpus)
     _write_json(project_dir / "synthesis_primitives.json", primitives)
@@ -204,23 +206,27 @@ def test_resume_from_narrative_strategy_passes_actor_metadata_and_forces_skips(
                     "episodes": [
                         strategy.episodes[0].model_copy(
                             update={
-                                    "title": "Persisted Episode",
-                                    "episode_spine": strategy.episodes[0].episode_spine.model_copy(
-                                        update={
-                                            "support_primitive_roles": {
-                                                **{
-                                                    key: value
-                                                    for idx, (key, value) in enumerate(
-                                                        strategy.episodes[0].episode_spine.support_primitive_roles.items(),
-                                                        start=1,
-                                                    )
-                                                    if idx <= 6
-                                                },
-                                                "primitive_support": SupportPrimitiveRole.MECHANISM,
+                                "title": "Persisted Episode",
+                                "episode_spine": strategy.episodes[
+                                    0
+                                ].episode_spine.model_copy(
+                                    update={
+                                        "support_primitive_roles": {
+                                            **{
+                                                key: value
+                                                for idx, (key, value) in enumerate(
+                                                    strategy.episodes[
+                                                        0
+                                                    ].episode_spine.support_primitive_roles.items(),
+                                                    start=1,
+                                                )
+                                                if idx <= 6
                                             },
-                                            "recall_primitive_ids": ["primitive_recall"],
-                                        }
-                                    ),
+                                            "primitive_support": SupportPrimitiveRole.MECHANISM,
+                                        },
+                                        "recall_primitive_ids": ["primitive_recall"],
+                                    }
+                                ),
                             }
                         )
                     ]
@@ -303,186 +309,186 @@ def test_resume_from_narrative_strategy_passes_actor_metadata_and_forces_skips(
                 sections=[
                     ArchitectureSection.model_validate(section)
                     for section in [
-                    {
-                        "section_id": "section_01",
-                        "purpose": "opening",
-                        "approx_runtime_minutes": 10.0,
-                        "primitive_ids": ["primitive_1"],
-                        "section_question": "Q1?",
-                        "section_resolution": "R1",
-                        "entry_state": "E1",
-                        "exit_state": "X1",
-                        "transition_logic": "T1",
-                        "depends_on_section_ids": [],
-                        "sets_up_section_ids": ["section_02"],
-                        "argument_role": "frame",
-                        "inference_mode": "scene_first",
-                        "recurrence_role": "plant",
-                        "pressure_type": "mass_political",
-                        "resolution_type": "escalation",
-                        "closure_level": "low",
-                        "priority_core_passage_ids": [],
-                    },
-                    {
-                        "section_id": "section_02",
-                        "purpose": "setup",
-                        "approx_runtime_minutes": 10.0,
-                        "primitive_ids": ["primitive_1"],
-                        "section_question": "Q2?",
-                        "section_resolution": "R2",
-                        "entry_state": "E2",
-                        "exit_state": "X2",
-                        "transition_logic": "T2",
-                        "depends_on_section_ids": ["section_01"],
-                        "sets_up_section_ids": ["section_03"],
-                        "argument_role": "establish_mechanism",
-                        "inference_mode": "mechanism_first",
-                        "recurrence_role": "deepen",
-                        "pressure_type": "mass_political",
-                        "resolution_type": "escalation",
-                        "closure_level": "low",
-                        "priority_core_passage_ids": [],
-                    },
-                    {
-                        "section_id": "section_03",
-                        "purpose": "turn",
-                        "approx_runtime_minutes": 12.5,
-                        "primitive_ids": ["primitive_1"],
-                        "section_question": "Q3?",
-                        "section_resolution": "R3",
-                        "entry_state": "E3",
-                        "exit_state": "X3",
-                        "transition_logic": "T3",
-                        "depends_on_section_ids": ["section_02"],
-                        "sets_up_section_ids": ["section_04"],
-                        "argument_role": "test_viability",
-                        "inference_mode": "contrast_first",
-                        "recurrence_role": "deepen",
-                        "pressure_type": "mass_political",
-                        "resolution_type": "reversal",
-                        "closure_level": "medium",
-                        "priority_core_passage_ids": [],
-                    },
-                    {
-                        "section_id": "section_04",
-                        "purpose": "setup",
-                        "approx_runtime_minutes": 12.5,
-                        "primitive_ids": ["primitive_1"],
-                        "section_question": "Q4?",
-                        "section_resolution": "R4",
-                        "entry_state": "E4",
-                        "exit_state": "X4",
-                        "transition_logic": "T4",
-                        "depends_on_section_ids": ["section_03"],
-                        "sets_up_section_ids": ["section_05"],
-                        "argument_role": "establish_mechanism",
-                        "inference_mode": "mechanism_first",
-                        "recurrence_role": "deepen",
-                        "pressure_type": "mass_political",
-                        "resolution_type": "escalation",
-                        "closure_level": "low",
-                        "priority_core_passage_ids": [],
-                    },
-                    {
-                        "section_id": "section_05",
-                        "purpose": "setup",
-                        "approx_runtime_minutes": 10.0,
-                        "primitive_ids": ["primitive_1"],
-                        "section_question": "Q5?",
-                        "section_resolution": "R5",
-                        "entry_state": "E5",
-                        "exit_state": "X5",
-                        "transition_logic": "T5",
-                        "depends_on_section_ids": ["section_04"],
-                        "sets_up_section_ids": ["section_06"],
-                        "argument_role": "establish_mechanism",
-                        "inference_mode": "mechanism_first",
-                        "recurrence_role": "deepen",
-                        "pressure_type": "mass_political",
-                        "resolution_type": "escalation",
-                        "closure_level": "low",
-                        "priority_core_passage_ids": [],
-                    },
-                    {
-                        "section_id": "section_06",
-                        "purpose": "setup",
-                        "approx_runtime_minutes": 10.0,
-                        "primitive_ids": ["primitive_1"],
-                        "section_question": "Q6?",
-                        "section_resolution": "R6",
-                        "entry_state": "E6",
-                        "exit_state": "X6",
-                        "transition_logic": "T6",
-                        "depends_on_section_ids": ["section_05"],
-                        "sets_up_section_ids": ["section_07"],
-                        "argument_role": "establish_mechanism",
-                        "inference_mode": "mechanism_first",
-                        "recurrence_role": "deepen",
-                        "pressure_type": "mass_political",
-                        "resolution_type": "escalation",
-                        "closure_level": "low",
-                        "priority_core_passage_ids": [],
-                    },
-                    {
-                        "section_id": "section_07",
-                        "purpose": "setup",
-                        "approx_runtime_minutes": 7.5,
-                        "primitive_ids": ["primitive_1"],
-                        "section_question": "Q7?",
-                        "section_resolution": "R7",
-                        "entry_state": "E7",
-                        "exit_state": "X7",
-                        "transition_logic": "T7",
-                        "depends_on_section_ids": ["section_06"],
-                        "sets_up_section_ids": ["section_08"],
-                        "argument_role": "establish_mechanism",
-                        "inference_mode": "mechanism_first",
-                        "recurrence_role": "deepen",
-                        "pressure_type": "mass_political",
-                        "resolution_type": "escalation",
-                        "closure_level": "low",
-                        "priority_core_passage_ids": [],
-                    },
-                    {
-                        "section_id": "section_08",
-                        "purpose": "setup",
-                        "approx_runtime_minutes": 7.5,
-                        "primitive_ids": ["primitive_1"],
-                        "section_question": "Q8?",
-                        "section_resolution": "R8",
-                        "entry_state": "E8",
-                        "exit_state": "X8",
-                        "transition_logic": "T8",
-                        "depends_on_section_ids": ["section_07"],
-                        "sets_up_section_ids": ["section_09"],
-                        "argument_role": "establish_mechanism",
-                        "inference_mode": "mechanism_first",
-                        "recurrence_role": "deepen",
-                        "pressure_type": "mass_political",
-                        "resolution_type": "escalation",
-                        "closure_level": "low",
-                        "priority_core_passage_ids": [],
-                    },
-                    {
-                        "section_id": "section_09",
-                        "purpose": "closing",
-                        "approx_runtime_minutes": 10.0,
-                        "primitive_ids": ["primitive_1"],
-                        "section_question": "Q9?",
-                        "section_resolution": "R9",
-                        "entry_state": "E9",
-                        "exit_state": "X9",
-                        "transition_logic": "T9",
-                        "depends_on_section_ids": ["section_08"],
-                        "sets_up_section_ids": [],
-                        "argument_role": "close",
-                        "inference_mode": "aftermath_first",
-                        "recurrence_role": "payoff",
-                        "pressure_type": "mass_political",
-                        "resolution_type": "containment",
-                        "closure_level": "high",
-                        "priority_core_passage_ids": [],
-                    },
+                        {
+                            "section_id": "section_01",
+                            "purpose": "opening",
+                            "approx_runtime_minutes": 10.0,
+                            "primitive_ids": ["primitive_1"],
+                            "section_question": "Q1?",
+                            "section_resolution": "R1",
+                            "entry_state": "E1",
+                            "exit_state": "X1",
+                            "transition_logic": "T1",
+                            "depends_on_section_ids": [],
+                            "sets_up_section_ids": ["section_02"],
+                            "argument_role": "frame",
+                            "inference_mode": "scene_first",
+                            "recurrence_role": "plant",
+                            "pressure_type": "mass_political",
+                            "resolution_type": "escalation",
+                            "closure_level": "low",
+                            "priority_core_passage_ids": [],
+                        },
+                        {
+                            "section_id": "section_02",
+                            "purpose": "setup",
+                            "approx_runtime_minutes": 10.0,
+                            "primitive_ids": ["primitive_1"],
+                            "section_question": "Q2?",
+                            "section_resolution": "R2",
+                            "entry_state": "E2",
+                            "exit_state": "X2",
+                            "transition_logic": "T2",
+                            "depends_on_section_ids": ["section_01"],
+                            "sets_up_section_ids": ["section_03"],
+                            "argument_role": "establish_mechanism",
+                            "inference_mode": "mechanism_first",
+                            "recurrence_role": "deepen",
+                            "pressure_type": "mass_political",
+                            "resolution_type": "escalation",
+                            "closure_level": "low",
+                            "priority_core_passage_ids": [],
+                        },
+                        {
+                            "section_id": "section_03",
+                            "purpose": "turn",
+                            "approx_runtime_minutes": 12.5,
+                            "primitive_ids": ["primitive_1"],
+                            "section_question": "Q3?",
+                            "section_resolution": "R3",
+                            "entry_state": "E3",
+                            "exit_state": "X3",
+                            "transition_logic": "T3",
+                            "depends_on_section_ids": ["section_02"],
+                            "sets_up_section_ids": ["section_04"],
+                            "argument_role": "test_viability",
+                            "inference_mode": "contrast_first",
+                            "recurrence_role": "deepen",
+                            "pressure_type": "mass_political",
+                            "resolution_type": "reversal",
+                            "closure_level": "medium",
+                            "priority_core_passage_ids": [],
+                        },
+                        {
+                            "section_id": "section_04",
+                            "purpose": "setup",
+                            "approx_runtime_minutes": 12.5,
+                            "primitive_ids": ["primitive_1"],
+                            "section_question": "Q4?",
+                            "section_resolution": "R4",
+                            "entry_state": "E4",
+                            "exit_state": "X4",
+                            "transition_logic": "T4",
+                            "depends_on_section_ids": ["section_03"],
+                            "sets_up_section_ids": ["section_05"],
+                            "argument_role": "establish_mechanism",
+                            "inference_mode": "mechanism_first",
+                            "recurrence_role": "deepen",
+                            "pressure_type": "mass_political",
+                            "resolution_type": "escalation",
+                            "closure_level": "low",
+                            "priority_core_passage_ids": [],
+                        },
+                        {
+                            "section_id": "section_05",
+                            "purpose": "setup",
+                            "approx_runtime_minutes": 10.0,
+                            "primitive_ids": ["primitive_1"],
+                            "section_question": "Q5?",
+                            "section_resolution": "R5",
+                            "entry_state": "E5",
+                            "exit_state": "X5",
+                            "transition_logic": "T5",
+                            "depends_on_section_ids": ["section_04"],
+                            "sets_up_section_ids": ["section_06"],
+                            "argument_role": "establish_mechanism",
+                            "inference_mode": "mechanism_first",
+                            "recurrence_role": "deepen",
+                            "pressure_type": "mass_political",
+                            "resolution_type": "escalation",
+                            "closure_level": "low",
+                            "priority_core_passage_ids": [],
+                        },
+                        {
+                            "section_id": "section_06",
+                            "purpose": "setup",
+                            "approx_runtime_minutes": 10.0,
+                            "primitive_ids": ["primitive_1"],
+                            "section_question": "Q6?",
+                            "section_resolution": "R6",
+                            "entry_state": "E6",
+                            "exit_state": "X6",
+                            "transition_logic": "T6",
+                            "depends_on_section_ids": ["section_05"],
+                            "sets_up_section_ids": ["section_07"],
+                            "argument_role": "establish_mechanism",
+                            "inference_mode": "mechanism_first",
+                            "recurrence_role": "deepen",
+                            "pressure_type": "mass_political",
+                            "resolution_type": "escalation",
+                            "closure_level": "low",
+                            "priority_core_passage_ids": [],
+                        },
+                        {
+                            "section_id": "section_07",
+                            "purpose": "setup",
+                            "approx_runtime_minutes": 7.5,
+                            "primitive_ids": ["primitive_1"],
+                            "section_question": "Q7?",
+                            "section_resolution": "R7",
+                            "entry_state": "E7",
+                            "exit_state": "X7",
+                            "transition_logic": "T7",
+                            "depends_on_section_ids": ["section_06"],
+                            "sets_up_section_ids": ["section_08"],
+                            "argument_role": "establish_mechanism",
+                            "inference_mode": "mechanism_first",
+                            "recurrence_role": "deepen",
+                            "pressure_type": "mass_political",
+                            "resolution_type": "escalation",
+                            "closure_level": "low",
+                            "priority_core_passage_ids": [],
+                        },
+                        {
+                            "section_id": "section_08",
+                            "purpose": "setup",
+                            "approx_runtime_minutes": 7.5,
+                            "primitive_ids": ["primitive_1"],
+                            "section_question": "Q8?",
+                            "section_resolution": "R8",
+                            "entry_state": "E8",
+                            "exit_state": "X8",
+                            "transition_logic": "T8",
+                            "depends_on_section_ids": ["section_07"],
+                            "sets_up_section_ids": ["section_09"],
+                            "argument_role": "establish_mechanism",
+                            "inference_mode": "mechanism_first",
+                            "recurrence_role": "deepen",
+                            "pressure_type": "mass_political",
+                            "resolution_type": "escalation",
+                            "closure_level": "low",
+                            "priority_core_passage_ids": [],
+                        },
+                        {
+                            "section_id": "section_09",
+                            "purpose": "closing",
+                            "approx_runtime_minutes": 10.0,
+                            "primitive_ids": ["primitive_1"],
+                            "section_question": "Q9?",
+                            "section_resolution": "R9",
+                            "entry_state": "E9",
+                            "exit_state": "X9",
+                            "transition_logic": "T9",
+                            "depends_on_section_ids": ["section_08"],
+                            "sets_up_section_ids": [],
+                            "argument_role": "close",
+                            "inference_mode": "aftermath_first",
+                            "recurrence_role": "payoff",
+                            "pressure_type": "mass_political",
+                            "resolution_type": "containment",
+                            "closure_level": "high",
+                            "priority_core_passage_ids": [],
+                        },
                     ]
                 ],
                 architecture_notes=[],
@@ -502,6 +508,7 @@ def test_resume_from_narrative_strategy_passes_actor_metadata_and_forces_skips(
             corpus: ThematicCorpus,
             actor_metadata: ActorMetadata,
             project_dir: Path,
+            host_policy: dict[str, Any],
             semaphore: asyncio.Semaphore,
             spoken_semaphore: asyncio.Semaphore | None = None,
         ) -> tuple[int, Any]:
@@ -509,7 +516,10 @@ def test_resume_from_narrative_strategy_passes_actor_metadata_and_forces_skips(
             calls["production_config"] = project.config
             calls["production_strategy_episode"] = strategy_episode
             calls["production_architecture"] = architecture
-            return plan.episode_number, SimpleNamespace(episode_number=plan.episode_number)
+            calls["host_policy"] = host_policy
+            return plan.episode_number, SimpleNamespace(
+                episode_number=plan.episode_number
+            )
 
         def _write_passage_utilization(self, **kwargs: Any) -> None:
             calls["passage_utilization"] = kwargs
@@ -551,20 +561,13 @@ def test_resume_from_narrative_strategy_passes_actor_metadata_and_forces_skips(
     assert calls["architecture_actor_metadata"].actors[0].actor_id == "actor_1"
     assert calls["planning_actor_metadata"].actors[0].actor_id == "actor_1"
     assert calls["production_actor_metadata"].actors[0].actor_id == "actor_1"
-    assert calls["resolved_strategy"].episodes[0].title == "Persisted Episode"
-    assert calls["planning_strategy"].episodes[0].title == "Persisted Episode"
-    assert (
-        calls["planning_strategy"].episodes[0].episode_spine.support_primitive_roles[
-            "primitive_support"
-        ]
-        == SupportPrimitiveRole.MECHANISM
-    )
-    assert calls["planning_strategy"].episodes[0].episode_spine.recall_primitive_ids == [
-        "primitive_recall"
-    ]
+    assert calls["resolved_strategy"].episodes[0].title == "Episode"
+    assert calls["planning_strategy"].episodes[0].title == "Episode"
     assert calls["planning_architectures"][0].runtime_minutes == 90.0
-    assert calls["production_strategy_episode"].title == "Persisted Episode"
+    assert calls["production_strategy_episode"].title == "Episode"
     assert calls["production_architecture"].episode_number == 1
+    assert "authorial_policy" in calls["host_policy"]
+    assert calls["host_policy"]["authorial_policy"]["host_moves_are_secondary"] is True
     assert calls["narrative_config"].skip_grounding is True
     assert calls["narrative_config"].skip_audio is True
     assert calls["narrative_config"].skip_spoken_delivery is False

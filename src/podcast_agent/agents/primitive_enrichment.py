@@ -15,21 +15,21 @@ from podcast_agent.prompts import primitive_enrichment_instructions
 from podcast_agent.schemas.models import (
     PRIMITIVE_ENRICHMENT_ARTIFACT_MODEL_BY_FAMILY,
     PrimitiveEnrichmentArtifact,
-    RICH_SYNTHESIS_PRIMITIVE_FAMILY_SET,
+    SYNTHESIS_PRIMITIVE_FAMILY_SET,
 )
 
 logger = logging.getLogger(__name__)
 
 
 class PrimitiveEnrichmentAgent(Agent):
-    """Enriches selected rich-family primitives after narrative strategy."""
+    """Enriches selected retained primitives after narrative strategy."""
 
     schema_name = "primitive_enrichment"
     response_model = PrimitiveEnrichmentArtifact
     instructions = primitive_enrichment_instructions()
 
     def instructions_for_family(self, family: str) -> str:
-        if family not in RICH_SYNTHESIS_PRIMITIVE_FAMILY_SET:
+        if family not in SYNTHESIS_PRIMITIVE_FAMILY_SET:
             raise ValueError(
                 f"Unknown primitive enrichment family: {family}"
             )
@@ -43,17 +43,18 @@ class PrimitiveEnrichmentAgent(Agent):
 
     def run(self, payload: dict) -> BaseModel:
         family = str(payload.get("family", "")).strip()
-        if family not in RICH_SYNTHESIS_PRIMITIVE_FAMILY_SET:
+        if family not in SYNTHESIS_PRIMITIVE_FAMILY_SET:
             raise ValueError(f"Unknown primitive enrichment family: {family or '<missing>'}")
 
         instructions = self.instructions_for_family(family)
         response_model = self.response_model_for_family(family)
+        expected_primitive_ids = self._expected_primitive_ids(payload)
         last_exc: Exception | None = None
         retry_payload = dict(payload)
         for attempt in range(1, self.max_retry_attempts + 1):
             with llm_semaphore_for(self.schema_name):
                 try:
-                    return self.llm.generate_json(
+                    result = self.llm.generate_json(
                         schema_name=self.schema_name,
                         instructions=instructions,
                         payload=retry_payload,
@@ -61,6 +62,12 @@ class PrimitiveEnrichmentAgent(Agent):
                         attempt=attempt,
                         max_attempts=self.max_retry_attempts,
                     )
+                    self._validate_selected_primitives_present(
+                        result=result,
+                        family=family,
+                        expected_primitive_ids=expected_primitive_ids,
+                    )
+                    return result
                 except (TransientLLMError, RetryableGenerationError) as exc:
                     last_exc = exc
                     if isinstance(exc, RetryableGenerationError):
@@ -101,6 +108,7 @@ class PrimitiveEnrichmentAgent(Agent):
         base_primitives: list[dict],
         evidence_by_primitive_id: dict[str, dict[str, list[dict[str, str]]]],
         actor_metadata: dict | None = None,
+        narrator_profile: dict | None = None,
         enrichment_feedback: dict | None = None,
     ) -> dict:
         payload = {
@@ -111,9 +119,60 @@ class PrimitiveEnrichmentAgent(Agent):
         }
         if actor_metadata is not None:
             payload["actor_metadata"] = actor_metadata
+        if narrator_profile is not None:
+            payload["narrator_profile"] = narrator_profile
         if enrichment_feedback is not None:
             payload["enrichment_feedback"] = enrichment_feedback
         return payload
+
+    def _expected_primitive_ids(self, payload: dict[str, Any]) -> list[str]:
+        base_primitives = payload.get("base_primitives")
+        if not isinstance(base_primitives, list):
+            return []
+
+        expected_ids: list[str] = []
+        for primitive in base_primitives:
+            if not isinstance(primitive, dict):
+                continue
+            primitive_id = primitive.get("id")
+            if isinstance(primitive_id, str) and primitive_id.strip():
+                expected_ids.append(primitive_id.strip())
+        return expected_ids
+
+    def _validate_selected_primitives_present(
+        self,
+        *,
+        result: BaseModel,
+        family: str,
+        expected_primitive_ids: list[str],
+    ) -> None:
+        if not expected_primitive_ids:
+            return
+
+        enriched_primitives = getattr(result, "enriched_primitives", [])
+        returned_primitive_ids = [
+            item.id.strip()
+            for item in enriched_primitives
+            if isinstance(getattr(item, "id", None), str) and item.id.strip()
+        ]
+        missing_primitive_ids = [
+            primitive_id
+            for primitive_id in expected_primitive_ids
+            if primitive_id not in returned_primitive_ids
+        ]
+        if not missing_primitive_ids:
+            return
+
+        raise RetryableGenerationError(
+            "primitive_enrichment omitted selected primitives",
+            data={
+                "issue": "missing_selected_primitives",
+                "family": family,
+                "missing_primitive_ids": missing_primitive_ids,
+                "expected_primitive_ids": expected_primitive_ids,
+                "returned_primitive_ids": returned_primitive_ids,
+            },
+        )
 
     def _build_enrichment_feedback(
         self,
@@ -121,6 +180,38 @@ class PrimitiveEnrichmentAgent(Agent):
         family: str,
         exc: RetryableGenerationError,
     ) -> dict[str, Any] | None:
+        issue = exc.data.get("issue")
+        if issue == "missing_selected_primitives":
+            missing_primitive_ids = exc.data.get("missing_primitive_ids")
+            expected_primitive_ids = exc.data.get("expected_primitive_ids")
+            returned_primitive_ids = exc.data.get("returned_primitive_ids")
+            if not isinstance(missing_primitive_ids, list) or not missing_primitive_ids:
+                return None
+            return {
+                "issue": "missing_selected_primitives",
+                "family": family,
+                "missing_primitive_ids": [
+                    primitive_id
+                    for primitive_id in missing_primitive_ids
+                    if isinstance(primitive_id, str) and primitive_id.strip()
+                ],
+                "expected_primitive_ids": [
+                    primitive_id
+                    for primitive_id in expected_primitive_ids or []
+                    if isinstance(primitive_id, str) and primitive_id.strip()
+                ],
+                "returned_primitive_ids": [
+                    primitive_id
+                    for primitive_id in returned_primitive_ids or []
+                    if isinstance(primitive_id, str) and primitive_id.strip()
+                ],
+                "instruction": (
+                    "Return exactly one enriched delta for every selected primitive in the batch. "
+                    "Preserve all valid unaffected deltas, and add the missing primitive ids without "
+                    "changing family, order, or the underlying claims."
+                ),
+            }
+
         cause = exc.__cause__
         if not isinstance(cause, ValidationError):
             return None

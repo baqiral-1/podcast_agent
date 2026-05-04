@@ -47,12 +47,14 @@ from podcast_agent.schemas.models import (
     ActorMetadata,
     ActorProfile,
     ActorRelationship,
+    ArchitectureSection,
     BookRecord,
     CandidateReading,
     EvidencePack,
     EpisodeScript,
     EpisodePlan,
     EpisodeSpine,
+    EpisodeArchitecture,
     ExtractedPassage,
     FramingBlock,
     NarrativeStrategy,
@@ -141,9 +143,11 @@ def _scene_card(
     *,
     scene_role: str = "action",
     actors: list[SceneActor] | None = None,
+    section_id: str = "section_1",
 ) -> SceneCard:
     return SceneCard(
         scene_id=scene_id,
+        section_id=section_id,
         title=scene_id,
         scene_role=scene_role,
         dominant_pack_id=pack_id,
@@ -157,6 +161,73 @@ def _scene_card(
         actors=list(actors or []),
         estimated_duration_seconds=120,
     )
+
+
+def _episode_architecture_for_scene_cards(scene_cards: list[SceneCard]) -> EpisodeArchitecture:
+    ordered_section_ids: list[str] = []
+    for scene in scene_cards:
+        if scene.section_id not in ordered_section_ids:
+            ordered_section_ids.append(scene.section_id)
+    sections = []
+    for idx, section_id in enumerate(ordered_section_ids, start=1):
+        purpose = "closing" if idx == len(ordered_section_ids) else ("opening" if idx == 1 else "setup")
+        sections.append(
+            ArchitectureSection.model_validate(
+                {
+                    "section_id": section_id,
+                    "purpose": purpose,
+                    "approx_runtime_minutes": 1.0,
+                    "primitive_ids": ["pack_1"],
+                    "section_anchor": f"Anchor for {section_id}",
+                    "must_stage_beats": [f"Beat A {section_id}", f"Beat B {section_id}"],
+                    "listener_tension": f"Tension for {section_id}",
+                    "section_turn": f"Turn for {section_id}",
+                    "transition_logic": f"Transition for {section_id}",
+                    "depends_on_section_ids": [ordered_section_ids[idx - 2]] if idx > 1 else [],
+                    "sets_up_section_ids": [ordered_section_ids[idx]] if idx < len(ordered_section_ids) else [],
+                    "recurrence_role": "none",
+                    "priority_core_passage_ids": [],
+                }
+            )
+        )
+    return EpisodeArchitecture.model_construct(
+        episode_number=1,
+        major_turn_section_id=ordered_section_ids[min(len(ordered_section_ids), 2) - 1],
+        allowed_recurring_primitive_ids=[],
+        forbidden_redundancies=[],
+        sections=sections,
+        architecture_notes=[],
+    )
+
+
+def _writing_prose_sections_from_payload(
+    payload: dict,
+    *,
+    renamed_scene_ids_by_section: dict[str, list[str]] | None = None,
+    text_prefix: str = "Draft text.",
+) -> list[dict[str, object]]:
+    renamed_scene_ids_by_section = renamed_scene_ids_by_section or {}
+    sections: list[dict[str, object]] = []
+    for section in payload["architecture"]["sections"]:
+        section_id = section["section_id"]
+        section_scene_ids = renamed_scene_ids_by_section.get(
+            section_id,
+            [
+                scene["scene_id"]
+                for scene in payload["plan"]["scene_cards"]
+                if scene["section_id"] == section_id
+            ],
+        )
+        sections.append(
+            {
+                "section_id": section_id,
+                "scene_card_ids": section_scene_ids,
+                "movement_goal": "discover",
+                "text": " ".join(text_prefix for _ in section_scene_ids).strip(),
+                "source_book_ids": [],
+            }
+        )
+    return sections
 
 
 def _scene_actor(
@@ -1616,9 +1687,10 @@ def test_write_episode_passes_full_text_to_writing_agent(monkeypatch, tmp_path):
         captured["payload"] = payload
         return orchestrator.writing_agent.response_model.model_validate(
             {
-                "scene_prose": [
+                "prose_sections": [
                     {
-                        "scene_card_id": "scene_1",
+                        "section_id": "section_1",
+                        "scene_card_ids": ["scene_1"],
                         "movement_goal": "discover",
                         "text": "Draft text.",
                     }
@@ -1646,6 +1718,7 @@ def test_write_episode_passes_full_text_to_writing_agent(monkeypatch, tmp_path):
             "scene_cards": [
                 {
                     "scene_id": "scene_1",
+                    "section_id": "section_1",
                     "title": "Scene 1",
                     "scene_role": "setup",
                     "dominant_pack_id": "pack_1",
@@ -1664,6 +1737,8 @@ def test_write_episode_passes_full_text_to_writing_agent(monkeypatch, tmp_path):
             "target_word_count": 18900,
         }
     )
+    strategy_episode = _strategy_episode("pack_1")
+    architecture = _episode_architecture_for_scene_cards(plan.scene_cards)
     corpus = ThematicCorpus(
         project_id="proj",
         passages_by_axis={
@@ -1680,7 +1755,11 @@ def test_write_episode_passes_full_text_to_writing_agent(monkeypatch, tmp_path):
         },
     )
     ep_dir = tmp_path / "episodes" / "1"
-    asyncio.run(orchestrator._write_episode(plan, project, corpus, ep_dir, tmp_path))
+    asyncio.run(
+        orchestrator._write_episode(
+            plan, strategy_episode, architecture, project, corpus, ep_dir, tmp_path
+        )
+    )
 
     payload = captured["payload"]
     assert payload["passages"][0]["text"] == "Full text evidence for writing."
@@ -1711,15 +1790,7 @@ def test_write_episode_uses_single_writing_call_for_many_scene_cards(monkeypatch
         captured_payloads.append(payload)
         return orchestrator.writing_agent.response_model.model_validate(
             {
-                "scene_prose": [
-                    {
-                        "scene_card_id": scene["scene_id"],
-                        "movement_goal": "discover",
-                        "text": "Draft text.",
-                        "source_book_ids": [],
-                    }
-                    for scene in payload["plan"]["scene_cards"]
-                ]
+                "prose_sections": _writing_prose_sections_from_payload(payload)
             }
         )
 
@@ -1747,6 +1818,7 @@ def test_write_episode_uses_single_writing_call_for_many_scene_cards(monkeypatch
             "scene_cards": [
                 {
                     "scene_id": f"scene_{idx}",
+                    "section_id": f"section_{idx}",
                     "title": f"Scene {idx}",
                     "scene_role": "setup",
                     "dominant_pack_id": f"pack_{idx}",
@@ -1766,6 +1838,8 @@ def test_write_episode_uses_single_writing_call_for_many_scene_cards(monkeypatch
             "target_word_count": 18900,
         }
     )
+    strategy_episode = _strategy_episode("pack_1", "pack_2", "pack_3")
+    architecture = _episode_architecture_for_scene_cards(plan.scene_cards)
     corpus = ThematicCorpus(
         project_id="proj",
         passages_by_axis={
@@ -1783,7 +1857,11 @@ def test_write_episode_uses_single_writing_call_for_many_scene_cards(monkeypatch
         },
     )
     ep_dir = tmp_path / "episodes" / "1"
-    asyncio.run(orchestrator._write_episode(plan, project, corpus, ep_dir, tmp_path))
+    asyncio.run(
+        orchestrator._write_episode(
+            plan, strategy_episode, architecture, project, corpus, ep_dir, tmp_path
+        )
+    )
 
     assert len(captured_payloads) == 1
     payload = captured_payloads[0]
@@ -1824,15 +1902,7 @@ def test_write_episode_payload_uses_unequal_scene_duration_targets(monkeypatch, 
         captured["payload"] = payload
         return orchestrator.writing_agent.response_model.model_validate(
             {
-                "scene_prose": [
-                    {
-                        "scene_card_id": scene["scene_id"],
-                        "movement_goal": "discover",
-                        "text": "Draft text.",
-                        "source_book_ids": [],
-                    }
-                    for scene in payload["plan"]["scene_cards"]
-                ]
+                "prose_sections": _writing_prose_sections_from_payload(payload)
             }
         )
 
@@ -1859,6 +1929,7 @@ def test_write_episode_payload_uses_unequal_scene_duration_targets(monkeypatch, 
             "scene_cards": [
                 {
                     "scene_id": "scene_anchor",
+                    "section_id": "section_1",
                     "title": "Anchor scene",
                     "scene_role": "setup",
                     "dominant_pack_id": "pack_1",
@@ -1874,6 +1945,7 @@ def test_write_episode_payload_uses_unequal_scene_duration_targets(monkeypatch, 
                 },
                 {
                     "scene_id": "scene_context",
+                    "section_id": "section_2",
                     "title": "Context scene",
                     "scene_role": "action",
                     "dominant_pack_id": "pack_1",
@@ -1892,6 +1964,8 @@ def test_write_episode_payload_uses_unequal_scene_duration_targets(monkeypatch, 
             "target_word_count": 18900,
         }
     )
+    strategy_episode = _strategy_episode("pack_1")
+    architecture = _episode_architecture_for_scene_cards(plan.scene_cards)
     corpus = ThematicCorpus(
         project_id="proj",
         passages_by_axis={
@@ -1917,7 +1991,11 @@ def test_write_episode_payload_uses_unequal_scene_duration_targets(monkeypatch, 
     )
     ep_dir = tmp_path / "episodes" / "1"
 
-    asyncio.run(orchestrator._write_episode(plan, project, corpus, ep_dir, tmp_path))
+    asyncio.run(
+        orchestrator._write_episode(
+            plan, strategy_episode, architecture, project, corpus, ep_dir, tmp_path
+        )
+    )
 
     scene_targets = {
         scene["scene_id"]: (
@@ -1968,9 +2046,10 @@ def test_write_episode_uses_no_citation_agent_when_skip_grounding(monkeypatch, t
         captured["payload"] = payload
         return orchestrator.writing_agent_no_citations.response_model.model_validate(
             {
-                "scene_prose": [
+                "prose_sections": [
                     {
-                        "scene_card_id": "scene_1",
+                        "section_id": "section_1",
+                        "scene_card_ids": ["scene_1"],
                         "movement_goal": "discover",
                         "text": " ".join(["word"] * 800),
                         "source_book_ids": ["b1"],
@@ -2001,6 +2080,7 @@ def test_write_episode_uses_no_citation_agent_when_skip_grounding(monkeypatch, t
             "scene_cards": [
                 {
                     "scene_id": "scene_1",
+                    "section_id": "section_1",
                     "title": "Scene 1",
                     "scene_role": "setup",
                     "dominant_pack_id": "pack_1",
@@ -2019,6 +2099,8 @@ def test_write_episode_uses_no_citation_agent_when_skip_grounding(monkeypatch, t
             "target_word_count": 18900,
         }
     )
+    strategy_episode = _strategy_episode("pack_1")
+    architecture = _episode_architecture_for_scene_cards(plan.scene_cards)
     corpus = ThematicCorpus(
         project_id="proj",
         passages_by_axis={
@@ -2035,7 +2117,11 @@ def test_write_episode_uses_no_citation_agent_when_skip_grounding(monkeypatch, t
         },
     )
     ep_dir = tmp_path / "episodes" / "1"
-    script = asyncio.run(orchestrator._write_episode(plan, project, corpus, ep_dir, tmp_path))
+    script = asyncio.run(
+        orchestrator._write_episode(
+            plan, strategy_episode, architecture, project, corpus, ep_dir, tmp_path
+        )
+    )
 
     payload = captured["payload"]
     assert payload["skip_grounding"] is True
@@ -2094,9 +2180,10 @@ def test_write_episode_retries_on_scene_id_contract_failure(monkeypatch, tmp_pat
         if len(captured_payloads) == 1:
             return orchestrator.writing_agent.response_model.model_validate(
                 {
-                    "scene_prose": [
+                    "prose_sections": [
                         {
-                            "scene_card_id": "scene_renamed",
+                            "section_id": "section_1",
+                            "scene_card_ids": ["scene_renamed"],
                             "movement_goal": "discover",
                             "text": "Draft text.",
                             "source_book_ids": [],
@@ -2106,9 +2193,10 @@ def test_write_episode_retries_on_scene_id_contract_failure(monkeypatch, tmp_pat
             )
         return orchestrator.writing_agent.response_model.model_validate(
             {
-                "scene_prose": [
+                "prose_sections": [
                     {
-                        "scene_card_id": "scene_1",
+                        "section_id": "section_1",
+                        "scene_card_ids": ["scene_1"],
                         "movement_goal": "discover",
                         "text": "Draft text.",
                         "source_book_ids": [],
@@ -2137,6 +2225,7 @@ def test_write_episode_retries_on_scene_id_contract_failure(monkeypatch, tmp_pat
             "scene_cards": [
                 {
                     "scene_id": "scene_1",
+                    "section_id": "section_1",
                     "title": "Scene 1",
                     "scene_role": "setup",
                     "dominant_pack_id": "pack_1",
@@ -2155,6 +2244,8 @@ def test_write_episode_retries_on_scene_id_contract_failure(monkeypatch, tmp_pat
             "target_word_count": 18900,
         }
     )
+    strategy_episode = _strategy_episode("pack_1")
+    architecture = _episode_architecture_for_scene_cards(plan.scene_cards)
     corpus = ThematicCorpus(
         project_id="proj",
         passages_by_axis={
@@ -2172,7 +2263,11 @@ def test_write_episode_retries_on_scene_id_contract_failure(monkeypatch, tmp_pat
     )
     ep_dir = tmp_path / "episodes" / "1"
 
-    script = asyncio.run(orchestrator._write_episode(plan, project, corpus, ep_dir, tmp_path))
+    script = asyncio.run(
+        orchestrator._write_episode(
+            plan, strategy_episode, architecture, project, corpus, ep_dir, tmp_path
+        )
+    )
 
     assert len(captured_payloads) == 2
     assert "writing_feedback" not in captured_payloads[0]
@@ -2213,9 +2308,10 @@ def test_write_episode_raises_after_retry_exhaustion_on_scene_id_contract_failur
         call_count += 1
         return orchestrator.writing_agent.response_model.model_validate(
             {
-                "scene_prose": [
+                "prose_sections": [
                     {
-                        "scene_card_id": "scene_renamed",
+                        "section_id": "section_1",
+                        "scene_card_ids": ["scene_renamed"],
                         "movement_goal": "discover",
                         "text": "Draft text.",
                         "source_book_ids": [],
@@ -2244,6 +2340,7 @@ def test_write_episode_raises_after_retry_exhaustion_on_scene_id_contract_failur
             "scene_cards": [
                 {
                     "scene_id": "scene_1",
+                    "section_id": "section_1",
                     "title": "Scene 1",
                     "scene_role": "setup",
                     "dominant_pack_id": "pack_1",
@@ -2262,6 +2359,8 @@ def test_write_episode_raises_after_retry_exhaustion_on_scene_id_contract_failur
             "target_word_count": 18900,
         }
     )
+    strategy_episode = _strategy_episode("pack_1")
+    architecture = _episode_architecture_for_scene_cards(plan.scene_cards)
     corpus = ThematicCorpus(
         project_id="proj",
         passages_by_axis={
@@ -2281,9 +2380,13 @@ def test_write_episode_raises_after_retry_exhaustion_on_scene_id_contract_failur
 
     with pytest.raises(
         RuntimeError,
-        match="expected \\['scene_1'\\], received \\['scene_renamed'\\]",
+        match="expected .*scene_1.*received .*scene_renamed",
     ):
-        asyncio.run(orchestrator._write_episode(plan, project, corpus, ep_dir, tmp_path))
+        asyncio.run(
+            orchestrator._write_episode(
+                plan, strategy_episode, architecture, project, corpus, ep_dir, tmp_path
+            )
+        )
 
     assert call_count == orchestrator.writing_agent.max_retry_attempts
     assert not (ep_dir / "episode_script.json").exists()

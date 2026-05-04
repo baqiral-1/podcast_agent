@@ -313,14 +313,19 @@ def test_write_episode_splits_large_episode_into_two_sequential_parts(
         captured_payloads.append(payload)
         return orchestrator.writing_agent.response_model.model_validate(
             {
-                "scene_prose": [
+                "prose_sections": [
                     {
-                        "scene_card_id": scene["scene_id"],
+                        "section_id": section["section_id"],
+                        "scene_card_ids": [scene["scene_id"] for scene in payload["plan"]["scene_cards"] if scene["section_id"] == section["section_id"]],
                         "movement_goal": "discover",
-                        "text": f"Draft for {scene['scene_id']}.",
+                        "text": " ".join(
+                            f"Draft for {scene['scene_id']}."
+                            for scene in payload["plan"]["scene_cards"]
+                            if scene["section_id"] == section["section_id"]
+                        ),
                         "source_book_ids": ["book_1"],
                     }
-                    for scene in payload["plan"]["scene_cards"]
+                    for section in payload["architecture"]["sections"]
                 ]
             }
         )
@@ -417,19 +422,42 @@ def test_write_episode_retries_failed_second_part_from_start(
 
     def fake_writing_run(payload: dict):
         captured_payloads.append(payload)
-        scene_ids = [scene["scene_id"] for scene in payload["plan"]["scene_cards"]]
         if len(captured_payloads) == 2:
-            scene_ids = ["scene_renamed", "scene_4"]
+            return orchestrator.writing_agent.response_model.model_validate(
+                {
+                    "prose_sections": [
+                        {
+                            "section_id": "section_3",
+                            "scene_card_ids": ["scene_renamed"],
+                            "movement_goal": "discover",
+                            "text": "Draft for scene_renamed.",
+                            "source_book_ids": ["book_1"],
+                        },
+                        {
+                            "section_id": "section_4",
+                            "scene_card_ids": ["scene_4"],
+                            "movement_goal": "discover",
+                            "text": "Draft for scene_4.",
+                            "source_book_ids": ["book_1"],
+                        },
+                    ]
+                }
+            )
         return orchestrator.writing_agent.response_model.model_validate(
             {
-                "scene_prose": [
+                "prose_sections": [
                     {
-                        "scene_card_id": scene_id,
+                        "section_id": section["section_id"],
+                        "scene_card_ids": [scene["scene_id"] for scene in payload["plan"]["scene_cards"] if scene["section_id"] == section["section_id"]],
                         "movement_goal": "discover",
-                        "text": f"Draft for {scene_id}.",
+                        "text": " ".join(
+                            f"Draft for {scene['scene_id']}."
+                            for scene in payload["plan"]["scene_cards"]
+                            if scene["section_id"] == section["section_id"]
+                        ),
                         "source_book_ids": ["book_1"],
                     }
-                    for scene_id in scene_ids
+                    for section in payload["architecture"]["sections"]
                 ]
             }
         )

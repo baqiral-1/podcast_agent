@@ -20,6 +20,7 @@ class EpisodeArchitectureAgent(Agent):
         synthesis_map: dict,
         project_metadata: dict,
         core_passages: list[dict],
+        narrator_profile: dict | None = None,
         actor_metadata: dict | None = None,
         architecture_feedback: dict | None = None,
     ) -> dict:
@@ -29,6 +30,8 @@ class EpisodeArchitectureAgent(Agent):
             "project": project_metadata,
             "core_passages": core_passages,
         }
+        if narrator_profile is not None:
+            payload["narrator_profile"] = narrator_profile
         if actor_metadata is not None:
             payload["actor_metadata"] = actor_metadata
         if architecture_feedback is not None:

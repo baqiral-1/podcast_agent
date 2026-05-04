@@ -409,13 +409,9 @@ def _split_episode_writing_windows(
         and ordered_section_ids.get(scene_cards[boundary_index - 1].section_id, -1)
         < ordered_section_ids.get(scene_cards[boundary_index].section_id, -1)
     ]
-    all_boundaries = list(range(1, len(scene_cards)))
-
     for candidates in (
         [idx for idx in section_boundaries if _is_substantial(idx)],
-        [idx for idx in all_boundaries if _is_substantial(idx)],
         section_boundaries,
-        all_boundaries,
     ):
         if not candidates:
             continue
@@ -546,6 +542,19 @@ def _build_host_policy_payload(narrator_profile: SeriesNarratorProfile) -> dict[
             "prefer_sharper_phrasing_over_more_moves": True,
             "prefer_hinges_over_routine_explanation": True,
             "default_max_sentences": 1,
+        },
+        "authorial_policy": {
+            "analysis_mode": narrator_profile.analysis_mode,
+            "analysis_density": narrator_profile.analysis_density,
+            "quote_gloss_preference": narrator_profile.quote_gloss_preference,
+            "clarifier_tolerance": narrator_profile.clarifier_tolerance,
+            "comparative_aside_tolerance": narrator_profile.comparative_aside_tolerance,
+            "wit_ceiling": narrator_profile.wit_ceiling,
+            "target_authorial_passages_per_episode": (
+                narrator_profile.target_authorial_passages_per_episode
+            ),
+            "section_authorial_passages_are_primary_exposition": True,
+            "host_moves_are_secondary": True,
         },
     }
 
@@ -701,6 +710,12 @@ def _build_style_audit_sections_payload(
                     1 for scene in section_scene_cards if _is_structural_scene_card(scene)
                 ),
                 "host_moves": host_moves_by_section.get(prose_section.section_id, []),
+                "analysis_goal": meta.analysis_goal,
+                "key_terms": list(meta.key_terms),
+                "authorial_passages": [
+                    passage.model_dump(mode="json")
+                    for passage in meta.authorial_passages
+                ],
                 "text": prose_section.text,
             }
         )
@@ -734,7 +749,59 @@ def _build_spoken_delivery_sections_payload(
                 "movement_goal": prose_section.movement_goal,
                 "scene_card_ids": list(prose_section.scene_card_ids),
                 "host_moves": host_moves_by_section.get(prose_section.section_id, []),
+                "analysis_goal": (
+                    architecture_section.analysis_goal if architecture_section else ""
+                ),
+                "key_terms": (
+                    list(architecture_section.key_terms)
+                    if architecture_section is not None
+                    else []
+                ),
+                "authorial_passages": (
+                    [
+                        passage.model_dump(mode="json")
+                        for passage in architecture_section.authorial_passages
+                    ]
+                    if architecture_section is not None
+                    else []
+                ),
                 "text": prose_section.text,
+            }
+        )
+    return payload_sections
+
+
+def _build_script_sections_payload(
+    *,
+    script: EpisodeScript,
+    architecture: EpisodeArchitecture | None = None,
+) -> list[dict[str, Any]]:
+    architecture_section_lookup = {
+        section.section_id: section
+        for section in (architecture.sections if architecture is not None else [])
+    }
+    payload_sections: list[dict[str, Any]] = []
+    for prose_section in script.prose_sections:
+        architecture_section = architecture_section_lookup.get(prose_section.section_id)
+        payload_sections.append(
+            {
+                **prose_section.model_dump(mode="json"),
+                "analysis_goal": (
+                    architecture_section.analysis_goal if architecture_section else ""
+                ),
+                "key_terms": (
+                    list(architecture_section.key_terms)
+                    if architecture_section is not None
+                    else []
+                ),
+                "authorial_passages": (
+                    [
+                        passage.model_dump(mode="json")
+                        for passage in architecture_section.authorial_passages
+                    ]
+                    if architecture_section is not None
+                    else []
+                ),
             }
         )
     return payload_sections
@@ -1913,11 +1980,9 @@ def _build_strategy_feedback_for_merged_narratives(report: dict[str, Any]) -> di
 _NARRATIVE_STRATEGY_OMIT = object()
 _NARRATIVE_STRATEGY_PRIMITIVE_DROP_FIELDS = {
     "support_passage_ids",
-    "timeframe",
     "axis_ids",
     "affected_actor_ids",
     "actor_tags",
-    "institution_tags",
 }
 _NARRATIVE_STRATEGY_ACTOR_KEEP_FIELDS = {
     "actor_id",
@@ -2077,12 +2142,17 @@ _ENRICHED_PRIMITIVE_MODEL_BY_FAMILY: dict[str, type[SynthesisPrimitiveBase]] = {
     "epochal_turns": EpochalTurnPrimitive,
     "decisions_and_nondecisions": DecisionPrimitive,
     "set_piece_scenes": SetPieceScenePrimitive,
+    "telling_details": SynthesisPrimitive,
     "human_costs": HumanCostPrimitive,
     "character_engines": CharacterEnginePrimitive,
     "coalitions_and_fault_lines": CoalitionFaultLinePrimitive,
     "systems_and_operating_logics": SystemsOperatingLogicPrimitive,
+    "misreadings_and_fantasies": SynthesisPrimitive,
     "contested_explanations": ContestedExplanationPrimitive,
+    "perspective_windows": SynthesisPrimitive,
     "moral_traps": MoralTrapPrimitive,
+    "afterlives": SynthesisPrimitive,
+    "recurring_images_and_symbols": SynthesisPrimitive,
     "ironies_and_reversals": IronyReversalPrimitive,
 }
 _PRIMITIVE_ENRICHMENT_FAMILY_CONCURRENCY = 5
@@ -3937,135 +4007,94 @@ def _allocate_scene_durations(
 
 
 def _writing_result_word_count(result: Any) -> int:
-    prose_sections = getattr(result, "scene_prose", []) or []
+    prose_sections = getattr(result, "prose_sections", []) or []
     return sum(
         len((getattr(section, "text", "") or "").split())
         for section in prose_sections
     )
 
 
-def _normalize_writing_scene_outputs(
+def _normalize_writing_section_outputs(
     *,
     result: Any,
+    architecture: EpisodeArchitecture,
     scene_cards: list[SceneCard],
     episode_number: int,
     skip_grounding: bool,
 ) -> list[dict[str, Any]]:
-    scene_outputs = getattr(result, "scene_prose", []) or []
-    expected_scene_ids = [scene.scene_id for scene in scene_cards]
-    returned_scene_ids = [
-        str(getattr(scene_output, "scene_card_id", "") or "")
-        for scene_output in scene_outputs
+    prose_sections = getattr(result, "prose_sections", []) or []
+    expected_sections: list[tuple[str, list[str]]] = []
+    current_section_id: str | None = None
+    current_scene_ids: list[str] = []
+    for scene in scene_cards:
+        if current_section_id is not None and scene.section_id != current_section_id:
+            expected_sections.append((current_section_id, list(current_scene_ids)))
+            current_scene_ids = []
+        current_section_id = scene.section_id
+        current_scene_ids.append(scene.scene_id)
+    if current_section_id is not None:
+        expected_sections.append((current_section_id, list(current_scene_ids)))
+
+    returned_sections = [
+        (
+            str(getattr(section_output, "section_id", "") or ""),
+            [str(scene_id) for scene_id in list(getattr(section_output, "scene_card_ids", []) or [])],
+        )
+        for section_output in prose_sections
     ]
-    if returned_scene_ids != expected_scene_ids:
+    if returned_sections != expected_sections:
         raise ComplianceViolationError(
-            "Episode writing must return exactly one scene output per planned scene, in order "
-            f"(episode {episode_number}); expected {expected_scene_ids}, received {returned_scene_ids}.",
+            "Episode writing must return exactly one prose section per planned section window, with exact scene_card_ids in order "
+            f"(episode {episode_number}); expected {expected_sections}, received {returned_sections}.",
             data={
                 "episode_number": episode_number,
-                "expected_scene_ids": expected_scene_ids,
-                "returned_scene_ids": returned_scene_ids,
+                "expected_sections": expected_sections,
+                "returned_sections": returned_sections,
+                "failed_part_number": None,
             },
         )
 
     normalized: list[dict[str, Any]] = []
-    for scene_output in scene_outputs:
+    for section_output in prose_sections:
+        section_id = str(section_output.section_id)
         payload = {
-            "scene_card_id": str(scene_output.scene_card_id),
-            "movement_goal": str(scene_output.movement_goal),
-            "text": str(scene_output.text),
-            "source_book_ids": list(getattr(scene_output, "source_book_ids", []) or []),
+            "section_id": section_id,
+            "scene_card_ids": [
+                str(scene_id)
+                for scene_id in list(getattr(section_output, "scene_card_ids", []) or [])
+            ],
+            "movement_goal": str(section_output.movement_goal),
+            "text": str(section_output.text),
+            "source_book_ids": list(getattr(section_output, "source_book_ids", []) or []),
         }
         if skip_grounding:
             payload["citations"] = []
         else:
             payload["citations"] = [
                 Citation.model_validate(citation.model_dump(mode="json"))
-                for citation in getattr(scene_output, "citations", []) or []
+                for citation in getattr(section_output, "citations", []) or []
             ]
         normalized.append(payload)
     return normalized
 
 
-def _merge_scene_outputs_into_sections(
-    *,
-    plan: EpisodePlan,
-    scene_outputs: list[dict[str, Any]],
-) -> list[ProseSection]:
-    output_by_scene_id = {
-        str(scene_output["scene_card_id"]): scene_output
-        for scene_output in scene_outputs
-    }
-    merged_sections: list[ProseSection] = []
-    current_section_id: str | None = None
-    current_scene_ids: list[str] = []
-    current_texts: list[str] = []
-    current_citations: list[Any] = []
-    current_source_book_ids: list[str] = []
-    current_movement_goal: str = ""
-
-    def flush_current_section() -> None:
-        nonlocal current_section_id, current_scene_ids, current_texts
-        nonlocal current_citations, current_source_book_ids, current_movement_goal
-        if current_section_id is None:
-            return
-        deduped_source_book_ids = list(dict.fromkeys(current_source_book_ids))
-        merged_sections.append(
-            ProseSection.model_validate(
-                {
-                    "section_id": current_section_id,
-                    "scene_card_ids": list(current_scene_ids),
-                    "movement_goal": current_movement_goal or "continue",
-                    "text": "\n\n".join(text for text in current_texts if text).strip(),
-                    "citations": list(current_citations),
-                    "source_book_ids": deduped_source_book_ids,
-                }
-            )
-        )
-        current_section_id = None
-        current_scene_ids = []
-        current_texts = []
-        current_citations = []
-        current_source_book_ids = []
-        current_movement_goal = ""
-
-    for scene in plan.scene_cards:
-        section_id = scene.section_id
-        scene_output = output_by_scene_id[scene.scene_id]
-        if current_section_id is not None and section_id != current_section_id:
-            flush_current_section()
-        if current_section_id is None:
-            current_section_id = section_id
-            current_movement_goal = str(scene_output.get("movement_goal", "") or "")
-        current_scene_ids.append(scene.scene_id)
-        current_texts.append(str(scene_output.get("text", "") or ""))
-        current_citations.extend(scene_output.get("citations", []) or [])
-        current_source_book_ids.extend(
-            str(book_id)
-            for book_id in (scene_output.get("source_book_ids", []) or [])
-            if book_id
-        )
-    flush_current_section()
-    return merged_sections
-
-
 def _build_writing_retry_feedback(exc: ComplianceViolationError) -> str:
     data = exc.data or {}
-    expected_scene_ids = data.get("expected_scene_ids")
-    returned_scene_ids = data.get("returned_scene_ids")
+    expected_sections = data.get("expected_sections")
+    returned_sections = data.get("returned_sections")
     feedback_lines = [
         "Retry feedback:",
         str(exc),
     ]
-    if expected_scene_ids and returned_scene_ids:
+    if expected_sections and returned_sections:
         feedback_lines.extend(
             [
-                f"Expected scene_card_id sequence: {expected_scene_ids}",
-                f"Returned scene_card_id sequence: {returned_scene_ids}",
+                f"Expected section sequence: {expected_sections}",
+                f"Returned section sequence: {returned_sections}",
             ]
         )
     feedback_lines.append(
-        "Return exactly one output item per input scene card, in order, without omitting, duplicating, reordering, or renaming any scene_card_id."
+        "Return exactly one prose section per input section, preserving section_id order and exact scene_card_ids."
     )
     return "\n".join(feedback_lines)
 
@@ -6803,6 +6832,7 @@ class PipelineOrchestrator:
                         actor_metadata=_build_primitive_enrichment_actor_metadata_payload(
                             family_actor_metadata
                         ),
+                        narrator_profile=strategy.narrator_profile.model_dump(mode="json"),
                     )
                     enrichment = await asyncio.to_thread(
                         self.primitive_enrichment_agent.run,
@@ -6830,7 +6860,7 @@ class PipelineOrchestrator:
 
             family_tasks = [
                 _enrich_family(family, family_primitives)
-                for family in RICH_SYNTHESIS_PRIMITIVE_FAMILIES
+                for family in SYNTHESIS_PRIMITIVE_FAMILIES
                 if (family_primitives := selected_by_family.get(family, []))
             ]
             for family_result in await asyncio.gather(*family_tasks):
@@ -6840,17 +6870,12 @@ class PipelineOrchestrator:
                 family: [] for family in SYNTHESIS_PRIMITIVE_FAMILIES
             }
             for primitive in selected_base_primitives:
-                if primitive.family in RICH_SYNTHESIS_PRIMITIVE_FAMILIES:
-                    enriched = enriched_primitive_by_id.get(primitive.id)
-                    if enriched is None:
-                        raise RuntimeError(
-                            f"Missing enriched primitive for selected rich primitive {primitive.id}"
-                        )
-                    primitives_by_family[primitive.family].append(enriched)
-                    continue
-                primitives_by_family[primitive.family].append(
-                    SynthesisPrimitive.model_validate(primitive.model_dump(mode="json"))
-                )
+                enriched = enriched_primitive_by_id.get(primitive.id)
+                if enriched is None:
+                    raise RuntimeError(
+                        f"Missing enriched primitive for selected primitive {primitive.id}"
+                    )
+                primitives_by_family[primitive.family].append(enriched)
 
             synthesis_map = SynthesisMap(
                 project_id=project.project_id,
@@ -6862,7 +6887,7 @@ class PipelineOrchestrator:
             ctx["output_summary"] = {
                 "selected_primitive_count": len(selected_base_primitives),
                 "enriched_family_count": sum(
-                    1 for family in RICH_SYNTHESIS_PRIMITIVE_FAMILIES if selected_by_family.get(family)
+                    1 for family in SYNTHESIS_PRIMITIVE_FAMILIES if selected_by_family.get(family)
                 ),
                 "retained_primitive_count": sum(
                     len(items) for items in synthesis_map.primitives_by_family.values()
@@ -6997,6 +7022,7 @@ class PipelineOrchestrator:
                         synthesis_map=episode_synthesis_map_payload,
                         project_metadata=project_metadata,
                         core_passages=core_passages,
+                        narrator_profile=strategy.narrator_profile.model_dump(mode="json"),
                         actor_metadata=compact_actor_metadata(episode_actor_metadata),
                     )
                     architecture = await asyncio.to_thread(self.episode_architecture_agent.run, payload)
@@ -7495,11 +7521,12 @@ class PipelineOrchestrator:
 
             if not project.config.skip_grounding:
                 report = await self._validate_grounding(
-                    plan.episode_number, script, corpus, ep_dir, project_dir,
+                    plan.episode_number, script, corpus, ep_dir, project_dir, architecture=architecture,
                 )
                 if report.overall_status != "PASSED":
                     script, report = await self._repair_loop(
                         plan.episode_number, script, report, corpus, ep_dir,
+                        architecture,
                         project_dir, max_attempts=project.config.max_repair_attempts,
                     )
             else:
@@ -7613,7 +7640,7 @@ class PipelineOrchestrator:
             for attempt in range(1, max_attempts + 1):
                 try:
                     actual_word_count = 0
-                    normalized_scene_outputs: list[dict[str, Any]] = []
+                    normalized_section_outputs: list[dict[str, Any]] = []
                     prior_window_continuity: dict[str, Any] | None = None
                     for part_number, window_scene_cards in enumerate(writing_windows, start=1):
                         part_target_word_count_lower = sum(
@@ -7687,17 +7714,25 @@ class PipelineOrchestrator:
                             result = await asyncio.to_thread(writing_agent.run, payload)
                             part_word_count = _writing_result_word_count(result)
                             actual_word_count += part_word_count
-                            normalized_window_outputs = _normalize_writing_scene_outputs(
-                                result=result,
-                                scene_cards=window_scene_cards,
-                                episode_number=plan.episode_number,
-                                skip_grounding=project.config.skip_grounding,
-                            )
+                            try:
+                                normalized_window_outputs = _normalize_writing_section_outputs(
+                                    result=result,
+                                    architecture=architecture,
+                                    scene_cards=window_scene_cards,
+                                    episode_number=plan.episode_number,
+                                    skip_grounding=project.config.skip_grounding,
+                                )
+                            except ComplianceViolationError as exc:
+                                exc.data = {
+                                    **(exc.data or {}),
+                                    "failed_part_number": part_number,
+                                }
+                                raise
                             part_ctx["output_summary"] = {
                                 "words": part_word_count,
-                                "scene_count": len(normalized_window_outputs),
+                                "section_count": len(normalized_window_outputs),
                             }
-                        normalized_scene_outputs.extend(normalized_window_outputs)
+                        normalized_section_outputs.extend(normalized_window_outputs)
                         if part_number < len(writing_windows):
                             remaining_scene_ids = {
                                 scene.scene_id
@@ -7710,10 +7745,10 @@ class PipelineOrchestrator:
                                 strategy_episode=strategy_episode,
                                 remaining_scene_ids=remaining_scene_ids,
                             )
-                    normalized_sections = _merge_scene_outputs_into_sections(
-                        plan=plan,
-                        scene_outputs=normalized_scene_outputs,
-                    )
+                    normalized_sections = [
+                        ProseSection.model_validate(section_output)
+                        for section_output in normalized_section_outputs
+                    ]
                     script = EpisodeScript(
                         episode_number=plan.episode_number,
                         title=strategy_episode.title,
@@ -7747,15 +7782,8 @@ class PipelineOrchestrator:
                     if attempt >= max_attempts:
                         raise contract_exc from exc
                     backoff = min(2 ** (attempt - 1), 16) + (time.monotonic() % 1)
-                    failed_scene_ids = list((contract_exc.data or {}).get("expected_scene_ids") or [])
-                    failed_part_number = next(
-                        (
-                            part_number
-                            for part_number, window_scene_cards in enumerate(writing_windows, start=1)
-                            if failed_scene_ids
-                            and [scene.scene_id for scene in window_scene_cards] == failed_scene_ids
-                        ),
-                        len(writing_windows),
+                    failed_part_number = int(
+                        (contract_exc.data or {}).get("failed_part_number") or len(writing_windows)
                     )
                     writing_feedback_by_part[failed_part_number] = _build_writing_retry_feedback(contract_exc)
                     self.run_logger.log(
@@ -7773,15 +7801,8 @@ class PipelineOrchestrator:
                     if attempt >= max_attempts:
                         raise
                     backoff = min(2 ** (attempt - 1), 16) + (time.monotonic() % 1)
-                    failed_scene_ids = list((exc.data or {}).get("expected_scene_ids") or [])
-                    failed_part_number = next(
-                        (
-                            part_number
-                            for part_number, window_scene_cards in enumerate(writing_windows, start=1)
-                            if failed_scene_ids
-                            and [scene.scene_id for scene in window_scene_cards] == failed_scene_ids
-                        ),
-                        len(writing_windows),
+                    failed_part_number = int(
+                        (exc.data or {}).get("failed_part_number") or len(writing_windows)
                     )
                     writing_feedback_by_part[failed_part_number] = _build_writing_retry_feedback(exc)
                     self.run_logger.log(
@@ -7846,6 +7867,7 @@ class PipelineOrchestrator:
     async def _validate_grounding(
         self, episode_number: int, script: EpisodeScript,
         corpus: ThematicCorpus, ep_dir: Path, project_dir: Path,
+        architecture: EpisodeArchitecture | None = None,
     ) -> GroundingReport:
         async with _stage_log(
             self.run_logger, f"grounding_{episode_number}", project_dir,
@@ -7862,7 +7884,13 @@ class PipelineOrchestrator:
 
             payload = self.grounding_agent.build_payload(
                 episode_number=episode_number,
-                script=script.model_dump(mode="json"),
+                script={
+                    **script.model_dump(mode="json"),
+                    "prose_sections": _build_script_sections_payload(
+                        script=script,
+                        architecture=architecture,
+                    ),
+                },
                 passages=passage_lookup,
             )
             report = await asyncio.to_thread(self.grounding_agent.run, payload)
@@ -7880,7 +7908,8 @@ class PipelineOrchestrator:
     async def _repair_loop(
         self, episode_number: int, script: EpisodeScript,
         report: GroundingReport, corpus: ThematicCorpus,
-        ep_dir: Path, project_dir: Path, max_attempts: int = 3,
+        ep_dir: Path, architecture: EpisodeArchitecture,
+        project_dir: Path, max_attempts: int = 3,
     ) -> tuple[EpisodeScript, GroundingReport]:
         current_script = script
         current_report = report
@@ -7913,9 +7942,12 @@ class PipelineOrchestrator:
                 failing_unit_ids = {claim.text_unit_id for claim in failing_claims}
                 failing_unit_ids.update(flag.text_unit_id for flag in current_report.fairness_flags)
                 failing_sections = [
-                    section.model_dump(mode="json")
-                    for section in current_script.prose_sections
-                    if section.section_id in failing_unit_ids
+                    section
+                    for section in _build_script_sections_payload(
+                        script=current_script,
+                        architecture=architecture,
+                    )
+                    if section["section_id"] in failing_unit_ids
                 ]
                 failure_reasons = [
                     {
@@ -7969,7 +8001,7 @@ class PipelineOrchestrator:
                     }
                 )
                 new_report = await self._validate_grounding(
-                    episode_number, new_script, corpus, ep_dir, project_dir,
+                    episode_number, new_script, corpus, ep_dir, project_dir, architecture=architecture,
                 )
 
                 remaining = len([
