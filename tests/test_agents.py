@@ -33,6 +33,14 @@ def _mock_llm() -> MagicMock:
     return MagicMock()
 
 
+def _hooks() -> dict[str, str]:
+    return {
+        "concrete_detail": "A concrete detail lands.",
+        "host_lens": "The pressure is visible.",
+        "carry_forward": "The residue lingers.",
+    }
+
+
 class TestCoreAgents:
     def test_chapter_summary_agent_payload(self):
         agent = ChapterSummaryAgent(_mock_llm())
@@ -218,15 +226,15 @@ class TestRedesignedAgents:
         assert payload["synthesis_feedback"]["issue"] == "thin_grounding"
         assert "PRIORITY RULES (govern everything below)" in agent.instructions
         assert "passages_by_axis: evidence grouped by axis" in agent.instructions
-        assert "epochal_turns (28–33)" in agent.instructions
-        assert "decisions_and_nondecisions (26–31)" in agent.instructions
-        assert "telling_details (7–10)" in agent.instructions
-        assert "character_engines (15–21)" in agent.instructions
-        assert "perspective_windows (5–7)" in agent.instructions
-        assert "moral_traps (6–9)" in agent.instructions
-        assert "afterlives (7–12)" in agent.instructions
-        assert "recurring_images_and_symbols (5–7)" in agent.instructions
-        assert "ironies_and_reversals (13–15)" in agent.instructions
+        assert "epochal_turns (24–29)" in agent.instructions
+        assert "decisions_and_nondecisions (23–28)" in agent.instructions
+        assert "telling_details (5–9)" in agent.instructions
+        assert "character_engines (13–20)" in agent.instructions
+        assert "perspective_windows (3–6)" in agent.instructions
+        assert "moral_traps (5–8)" in agent.instructions
+        assert "afterlives (6–10)" in agent.instructions
+        assert "recurring_images_and_symbols (3–6)" in agent.instructions
+        assert "ironies_and_reversals (11–14)" in agent.instructions
         assert "worlds_in_collision" not in agent.instructions
         assert "Score every primitive on 0.0–1.0" in agent.instructions
         assert "Score every primitive on 0.0–1.0 using five distinct questions:" in agent.instructions
@@ -237,20 +245,29 @@ class TestRedesignedAgents:
             synthesis_map={"primitives_by_family": {"epochal_turns": []}},
             project_metadata={"theme": "War on terror"},
             episode_count=3,
+            recommended_episode_count_min=8,
+            recommended_episode_count_max=12,
             actor_metadata={"actors": [{"actor_id": "actor_1"}]},
             strategy_feedback={"issue": "cluster_home_collision"},
         )
         assert agent.schema_name == "narrative_strategy"
         assert payload["actor_metadata"]["actors"][0]["actor_id"] == "actor_1"
         assert payload["requested_episode_count"] == 3
+        assert payload["recommended_episode_count_min"] == 8
+        assert payload["recommended_episode_count_max"] == 12
         assert payload["strategy_feedback"]["issue"] == "cluster_home_collision"
         assert "Turn the primitive synthesis map into a series structure." in agent.instructions
-        assert "Otherwise, produce between 7 and 10 episodes." in agent.instructions
+        assert "`recommended_episode_count_min`" in agent.instructions
+        assert "`recommended_episode_count_max`" in agent.instructions
+        assert (
+            "Otherwise, produce between `recommended_episode_count_min` and "
+            "`recommended_episode_count_max` episodes, inclusive."
+        ) in agent.instructions
         assert "`core_primitive_ids`" in agent.instructions
         assert "`support_primitive_roles`" in agent.instructions
         assert "`recall_primitive_ids`" in agent.instructions
-        assert "`core_primitive_ids` must contain 6-9 primitives." in agent.instructions
-        assert "`support_primitive_roles` must contain 7-10 primitives." in agent.instructions
+        assert "`core_primitive_ids` must contain 4-6 primitives." in agent.instructions
+        assert "`support_primitive_roles` must contain 4-6 primitives." in agent.instructions
         assert "`actor_arc_directives` must contain only the 2-4 actors" in agent.instructions
         assert "`arc_threads`" in agent.instructions
         assert "`arc_type`" in agent.instructions
@@ -269,18 +286,24 @@ class TestRedesignedAgents:
             project_id="proj",
             family="epochal_turns",
             base_primitives=[{"id": "et_1", "family": "epochal_turns"}],
-            passages_by_id={"p1": {"passage_id": "p1", "text": "Text"}},
+            evidence_by_primitive_id={
+                "et_1": {
+                    "core_passages": [{"passage_id": "p1", "text": "Text"}],
+                    "support_passages": [],
+                }
+            },
             actor_metadata={"actors": [{"actor_id": "actor_1"}]},
-            project_metadata={"theme": "War on terror"},
         )
         assert agent.schema_name == "primitive_enrichment"
         assert payload["family"] == "epochal_turns"
-        assert payload["passages_by_id"]["p1"]["text"] == "Text"
+        assert payload["evidence_by_primitive_id"]["et_1"]["core_passages"][0]["text"] == "Text"
         assert "primitive_ids_by_role" not in payload
+        assert "project" not in payload
         instructions = agent.instructions_for_family("epochal_turns")
         assert "`base_primitives`" in instructions
-        assert "`passages_by_id`" in instructions
-        assert "deduped trimmed core and support passage evidence" in instructions
+        assert "`evidence_by_primitive_id`" in instructions
+        assert "primitive-scoped trimmed evidence with `core_passages` and `support_passages`" in instructions
+        assert "`actor_metadata` (optional): slim canonical actor context with `one_line_role`" in instructions
         assert "Goal:" in instructions
         assert "INPUT AND AUTHORITY" in instructions
         assert "Authority order:" in instructions
@@ -298,9 +321,9 @@ class TestRedesignedAgents:
         assert "Treat core passages as decisive evidence." in instructions
         assert "Multiple primitives may share a passage." in instructions
         assert "You are enriching epochal-turn primitives." in instructions
-        assert "Return these fields for every selected primitive: `before_state`, `after_state`, `change_driver`, `irreversibility_reason`" in instructions
+        assert "Return these fields for every selected primitive: `before_state`, `after_state`, `change_driver`, `proof_of_change`, `why_no_return`, `narration_hooks`" in instructions
         assert "A strong epochal turn marks a genuine break in the rules of the story" in instructions
-        assert "`before_state` and `after_state` must form a real contrast" in instructions
+        assert "`proof_of_change` gives the concrete sign that made the turn undeniable" in instructions
         assert "Do not upgrade ordinary escalation, battle intensity, or local drama into an epochal break" in instructions
         assert "primitive_ids_by_role" not in instructions
         assert "rich family" not in instructions
@@ -317,15 +340,15 @@ class TestRedesignedAgents:
         assert "FAILURE AND AMBIGUITY HANDLING" in instructions
         assert "SELF-CHECK BEFORE RETURNING" in instructions
         assert "You are enriching human-cost primitives." in instructions
-        assert "Return these fields for every selected primitive: `actor_ids`, `affected_group`, `cost_type`, `lived_consequence`, `visibility`" in instructions
+        assert "Return these fields for every selected primitive: `actor_ids`, `affected_group`, `cost_type`, `concrete_marker`, `lived_consequence`, `who_saw_it`, `narration_hooks`" in instructions
         assert "A strong human-cost primitive makes the harm land on a concrete group in lived terms" in instructions
-        assert "`affected_group` names who absorbs the harm; `lived_consequence` names what that harm feels like in lived terms." in instructions
+        assert "`concrete_marker` is the most speakable physical or social sign of that harm." in instructions
         assert "Leave `actor_ids` empty when the harm is diffuse" in instructions
         assert "Do not invent actor linkage just to satisfy schema pressure." in instructions
         assert "If the evidence only supports generalized hardship" in instructions
         assert "primitive_ids_by_role" not in instructions
-        assert "`character_engines`: `actor_id`, `goal`, `fear`, `constraint`, `stakes`" not in instructions
-        assert "`systems_and_operating_logics`: `system_name`, `mechanism`, `inputs`" not in instructions
+        assert "`character_engines`: `actor_id`, `goal`, `pressure_box`, `risk_if_it_breaks`" not in instructions
+        assert "`systems_and_operating_logics`: `system_name`, `operating_chain`, `inputs`" not in instructions
         assert "rich family" not in instructions
         assert "requested `family`" not in instructions
         assert "family-specific fields" not in instructions
@@ -337,9 +360,9 @@ class TestRedesignedAgents:
         instructions = agent.instructions_for_family("systems_and_operating_logics")
 
         assert "You are enriching systems and operating-logics primitives." in instructions
-        assert "Return these fields for every selected primitive: `system_name`, `mechanism`, `mechanism_steps`, `inputs`, `outputs`, `failure_mode`" in instructions
+        assert "Return these fields for every selected primitive: `system_name`, `operating_chain`, `inputs`, `outputs`, `where_it_shows_up`, `failure_mode`, `narration_hooks`" in instructions
         assert "A strong systems primitive describes a concrete operating chain" in instructions
-        assert "`mechanism` is the one-line summary of the chain; `mechanism_steps` should give 2-4 short ordered concrete steps inside that chain." in instructions
+        assert "`operating_chain` should give 2-4 short ordered concrete steps inside the chain." in instructions
         assert "Describe a real operating chain, not abstract thesis prose." in instructions
         assert "Bad pattern: 'The political system processes pressure through institutions.'" in instructions
         assert "If the passage only shows one bottleneck or one distorted channel" in instructions
@@ -350,11 +373,11 @@ class TestRedesignedAgents:
         agent = PrimitiveEnrichmentAgent(_mock_llm())
 
         coalition = agent.instructions_for_family("coalitions_and_fault_lines")
-        assert "Return these fields for every selected primitive: `actor_ids`, `alignment_type`, `coalition_phase`, `coalition`, `shared_interest`, `fault_line`, `stress_point`" in coalition
+        assert "Return these fields for every selected primitive: `actor_ids`, `alignment_type`, `coalition_phase`, `alignment_shape`, `alignment_basis`, `fracture_trigger`, `narration_hooks`" in coalition
         assert "`alignment_type` classifies the kind of alignment: tactical, strategic, institutional, or situational." in coalition
         assert "`coalition_phase` says whether the evidence shows the coalition forming, holding, fracturing, or breaking." in coalition
         assert "A strong coalition primitive shows why actors align" in coalition
-        assert "`shared_interest` is the practical reason the alignment holds" in coalition
+        assert "`alignment_basis` is the practical reason it holds for now." in coalition
         assert "Do not confuse simple coexistence, shared enemies, or momentary simultaneity with a meaningful coalition." in coalition
         assert "If the evidence only supports a narrow tactical alignment" in coalition
 
@@ -374,7 +397,7 @@ class TestRedesignedAgents:
         assert "If the evidence gives atmosphere and consequence but no clear hinge moment" in scene
 
         decision = agent.instructions_for_family("decisions_and_nondecisions")
-        assert "Return these fields for every selected primitive: `actor_ids`, `decision_question`, `decision_mode`, `options_considered`, `immediate_consequence`" in decision
+        assert "Return these fields for every selected primitive: `actor_ids`, `decision_trigger`, `decision_question`, `decision_mode`, `options_considered`, `next_result`, `narration_hooks`" in decision
         assert "`decision_question` should name the live hinge the actor is resolving" in decision
         assert "`enrichment_feedback` (optional): retry feedback" in decision
 
@@ -384,7 +407,12 @@ class TestRedesignedAgents:
             project_id="proj",
             family="human_costs",
             base_primitives=[{"id": "hc_1", "family": "human_costs"}],
-            passages_by_id={"p1": {"passage_id": "p1", "text": "Text"}},
+            evidence_by_primitive_id={
+                "hc_1": {
+                    "core_passages": [{"passage_id": "p1", "text": "Text"}],
+                    "support_passages": [],
+                }
+            },
             enrichment_feedback={"issue": "schema_validation_failed"},
         )
 
@@ -403,8 +431,10 @@ class TestRedesignedAgents:
                         "actor_ids": [],
                         "affected_group": "camp followers",
                         "cost_type": "displacement",
+                        "concrete_marker": "Families carry bedding into the road.",
                         "lived_consequence": "Households lose shelter and income.",
-                        "visibility": "plain to witnesses but politically deniable",
+                        "who_saw_it": "plain to witnesses but politically deniable",
+                        "narration_hooks": _hooks(),
                     }
                 ],
             }
@@ -416,7 +446,7 @@ class TestRedesignedAgents:
                 "project_id": "proj",
                 "family": "human_costs",
                 "base_primitives": [{"id": "hc_1", "family": "human_costs", "actor_ids": []}],
-                "passages_by_id": {},
+                "evidence_by_primitive_id": {},
             }
         )
 
@@ -424,9 +454,9 @@ class TestRedesignedAgents:
         kwargs = llm.generate_json.call_args.kwargs
         assert kwargs["response_model"] is HumanCostEnrichmentArtifact
         assert "You are enriching human-cost primitives." in kwargs["instructions"]
-        assert "Return these fields for every selected primitive: `actor_ids`, `affected_group`, `cost_type`, `lived_consequence`, `visibility`" in kwargs["instructions"]
+        assert "Return these fields for every selected primitive: `actor_ids`, `affected_group`, `cost_type`, `concrete_marker`, `lived_consequence`, `who_saw_it`, `narration_hooks`" in kwargs["instructions"]
         assert "Leave `actor_ids` empty when the harm is diffuse" in kwargs["instructions"]
-        assert "`character_engines`: `actor_id`, `goal`, `fear`, `constraint`, `stakes`" not in kwargs["instructions"]
+        assert "`character_engines`: `actor_id`, `goal`, `pressure_box`, `risk_if_it_breaks`" not in kwargs["instructions"]
 
     def test_primitive_enrichment_run_passes_feedback_to_retry_attempt(self):
         llm = _mock_llm()
@@ -438,11 +468,13 @@ class TestRedesignedAgents:
                     "id": "dn_1",
                     "family": "decisions_and_nondecisions",
                     "actor_ids": ["actor_1"],
+                    "decision_trigger": "Fresh pressure forces a move.",
                     "decision_question": "Should the court move now?",
                     "decision_mode": "decision",
                     "options_considered": ["advance", "delay"],
-                    "immediate_consequence": "The move forces the next confrontation.",
+                    "next_result": "The move forces the next confrontation.",
                     "decision_query": "",
+                    "narration_hooks": _hooks(),
                 }
             ],
         }
@@ -471,10 +503,12 @@ class TestRedesignedAgents:
                             "id": "dn_1",
                             "family": "decisions_and_nondecisions",
                             "actor_ids": ["actor_1"],
+                            "decision_trigger": "Fresh pressure forces a move.",
                             "decision_question": "Should the court move now?",
                             "decision_mode": "decision",
                             "options_considered": ["advance", "delay"],
-                            "immediate_consequence": "The move forces the next confrontation.",
+                            "next_result": "The move forces the next confrontation.",
+                            "narration_hooks": _hooks(),
                         }
                     ],
                 }
@@ -488,7 +522,7 @@ class TestRedesignedAgents:
                     "project_id": "proj",
                     "family": "decisions_and_nondecisions",
                     "base_primitives": [{"id": "dn_1", "family": "decisions_and_nondecisions", "actor_ids": []}],
-                    "passages_by_id": {},
+                    "evidence_by_primitive_id": {},
                 }
             )
 
@@ -523,8 +557,10 @@ class TestRedesignedAgents:
                             "actor_ids": [],
                             "affected_group": "camp followers",
                             "cost_type": "displacement",
+                            "concrete_marker": "Families carry bedding into the road.",
                             "lived_consequence": "Households lose shelter and income.",
-                            "visibility": "plain to witnesses but politically deniable",
+                            "who_saw_it": "plain to witnesses but politically deniable",
+                            "narration_hooks": _hooks(),
                         }
                     ],
                 }
@@ -538,7 +574,7 @@ class TestRedesignedAgents:
                     "project_id": "proj",
                     "family": "human_costs",
                     "base_primitives": [{"id": "hc_1", "family": "human_costs", "actor_ids": []}],
-                    "passages_by_id": {},
+                    "evidence_by_primitive_id": {},
                 }
             )
 
@@ -880,28 +916,42 @@ class TestHeuristicClient:
             agent.build_payload(
                 synthesis_map={
                     "primitives_by_family": {
-                        "epochal_turns": [{"id": f"primitive_{idx}"} for idx in range(1, 7)]
+                        "epochal_turns": [{"id": f"primitive_{idx}"} for idx in range(1, 8)]
                     }
                 },
                 project_metadata={"theme": "War on terror"},
-                episode_count=6,
+                episode_count=7,
+                recommended_episode_count_min=8,
+                recommended_episode_count_max=12,
             )
         )
-        assert result.recommended_episode_count == 6
+        assert result.recommended_episode_count == 7
         assert result.episodes[0].episode_spine.core_primitive_ids == [
             "primitive_1",
             "primitive_2",
             "primitive_3",
             "primitive_4",
-            "primitive_5",
-            "primitive_6",
         ]
         assert list(result.episodes[0].episode_spine.support_primitive_roles.keys()) == [
-            "primitive_007",
+            "primitive_5",
+            "primitive_6",
+            "primitive_7",
             "primitive_008",
-            "primitive_009",
-            "primitive_010",
-            "primitive_011",
-            "primitive_012",
-            "primitive_013",
         ]
+
+    def test_narrative_strategy_agent_run_uses_payload_min_when_no_override(self):
+        agent = NarrativeStrategyAgent(HeuristicLLMClient())
+        result = agent.run(
+            agent.build_payload(
+                synthesis_map={
+                    "primitives_by_family": {
+                        "epochal_turns": [{"id": f"primitive_{idx}"} for idx in range(1, 8)]
+                    }
+                },
+                project_metadata={"theme": "War on terror"},
+                episode_count=None,
+                recommended_episode_count_min=8,
+                recommended_episode_count_max=12,
+            )
+        )
+        assert result.recommended_episode_count == 8

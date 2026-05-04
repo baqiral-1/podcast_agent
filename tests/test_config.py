@@ -144,17 +144,17 @@ class TestPipelineRuntimeConfig:
         assert config.synthesis_trim_top_fraction == 0.10
         assert config.synthesis_trim_mid_fraction == 0.20
         assert config.synthesis_trim_next_fraction == 0.0
-        assert config.synthesis_trim_top_keep_fraction == 0.35
-        assert config.synthesis_trim_mid_keep_fraction == 0.25
-        assert config.synthesis_trim_next_keep_fraction == 0.30
-        assert config.synthesis_trim_tail_keep_fraction == 0.15
+        assert config.synthesis_trim_top_keep_fraction == 0.375
+        assert config.synthesis_trim_mid_keep_fraction == 0.275
+        assert config.synthesis_trim_next_keep_fraction == 0.325
+        assert config.synthesis_trim_tail_keep_fraction == 0.175
         assert config.planning_axis_pct == 1.0
         assert config.planning_axis_min == 10
         assert config.planning_axis_max == 15
-        assert config.synthesis_total_passage_cap == 600
+        assert config.synthesis_total_passage_cap == 450
         assert config.planning_total_passage_cap == 300
-        assert config.architecture_section_target_min == 7
-        assert config.architecture_section_target_max == 10
+        assert config.architecture_section_target_min == 6
+        assert config.architecture_section_target_max == 8
         assert config.scene_card_target_min == 25
         assert config.scene_card_target_max == 35
         assert config.passage_extraction_concurrency == 16

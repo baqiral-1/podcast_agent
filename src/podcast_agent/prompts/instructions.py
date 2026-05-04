@@ -390,44 +390,55 @@ _PRIMITIVE_ENRICHMENT_PROMPT_CONTEXT: dict[str, dict[str, object]] = {
     "epochal_turns": {
         "type_label": "epochal-turn primitives",
         "task_line": "You are enriching epochal-turn primitives.",
-        "required_fields": "`before_state`, `after_state`, `change_driver`, `irreversibility_reason`",
+        "required_fields": "`before_state`, `after_state`, `change_driver`, `proof_of_change`, `why_no_return`, `narration_hooks`",
         "good_looks_like": [
             "A strong epochal turn marks a genuine break in the rules of the story, not just an important event inside the existing order.",
-            "The best outputs make the prior equilibrium, the new equilibrium, and the reason reversal is hard all legible in separate moves.",
+            "The best outputs make the prior order, the new order, the proof that the break landed, and the reason return failed all legible in separate moves.",
         ],
         "field_distinctions": [
-            "`before_state` and `after_state` must form a real contrast, not two versions of 'things changed.'",
-            "`change_driver` should name what forces the transition; `irreversibility_reason` should explain why the old arrangement cannot simply be restored.",
-            "`irreversibility_reason` should explain why the turn could not simply be unwound, not just restate that it mattered.",
+            "`before_state` names the old order, not setup chronology.",
+            "`after_state` names the new order, not later downstream history.",
+            "`change_driver` identifies the hinge cause that forces the transition.",
+            "`proof_of_change` gives the concrete sign that made the turn undeniable to actors on the ground.",
+            "`why_no_return` explains why the old arrangement could not simply be restored.",
+            "`narration_hooks.concrete_detail` gives the most speakable detail, image, gesture, or phrase in the evidence.",
+            "`narration_hooks.host_lens` gives a narrow, evidence-grounded orienting angle a narrator could use.",
+            "`narration_hooks.carry_forward` gives the residue this turn leaves for later scenes or episodes.",
         ],
         "failure_modes": [
             "Do not upgrade ordinary escalation, battle intensity, or local drama into an epochal break unless the evidence shows a real shift in the governing situation.",
-            "Bad pattern: `change_driver` says the empire weakens and `irreversibility_reason` says the empire becomes weak.",
+            "Bad pattern: `change_driver` says the empire weakens and `why_no_return` says the empire becomes weak.",
+            "Do not let `proof_of_change` turn into a second `after_state` sentence.",
         ],
         "stay_narrow": [
             "If the passage only shows acceleration inside an existing trajectory, describe that acceleration narrowly rather than declaring a new era.",
         ],
         "self_check": [
             "Did you identify a real rule-changing break rather than a merely important episode?",
+            "Do `before_state`, `after_state`, `proof_of_change`, and `why_no_return` do different jobs?",
         ],
     },
     "decisions_and_nondecisions": {
         "type_label": "decision and nondecision primitives",
         "task_line": "You are enriching decision and nondecision primitives.",
-        "required_fields": "`actor_ids`, `decision_question`, `decision_mode`, `options_considered`, `immediate_consequence`",
+        "required_fields": "`actor_ids`, `decision_trigger`, `decision_question`, `decision_mode`, `options_considered`, `next_result`, `narration_hooks`",
         "good_looks_like": [
-            "A strong output names who faced the choice, what live question they were resolving, what kind of choice structure it was, what options were live, and what changed immediately after.",
+            "A strong output names who faced the choice, what forced the hinge, what live question they were resolving, what options were live, and what changed next.",
             "The best outputs distinguish active choice from refusal, delay, drift, or failure to decide.",
         ],
         "field_distinctions": [
+            "`decision_trigger` is the immediate pressure or event that forces the hinge now.",
             "`decision_question` should name the live hinge the actor is resolving, not a historian's retrospective thesis about the entire episode.",
-            "Distinguish active decision, refusal, delay, and drift carefully.",
-            "`options_considered` should capture the real available paths visible in the evidence, not a historian's full menu of hypothetical alternatives.",
-            "`immediate_consequence` must be immediate, not a long downstream chain.",
+            "`decision_mode` must distinguish active decision, refusal, delay, and nondecision carefully.",
+            "`options_considered` should be 2-4 short live options visible in the evidence, not a historian's full menu of hypotheticals.",
+            "`next_result` must be the first visible consequence, not a long downstream chain.",
             "Use `actor_ids` when canonical actors clearly own or carry the choice; leave `actor_ids` empty when the choice remains institutionally or structurally attributed in the evidence.",
+            "`narration_hooks.concrete_detail` should name the most speakable detail attached to the choice point.",
+            "`narration_hooks.host_lens` should help the narrator orient the listener to why this hinge matters now.",
+            "`narration_hooks.carry_forward` should capture what this decision leaves in motion.",
         ],
         "failure_modes": [
-            "Do not collapse later regime consequences, wars, or dynastic outcomes into `immediate_consequence`.",
+            "Do not collapse later regime consequences, wars, or dynastic outcomes into `next_result`.",
             "Bad pattern: a ruler hesitates, but the output labels it as a fully executed decision because the later outcome was dramatic.",
             "Do not invent actor linkage just to make the primitive feel more personalized.",
         ],
@@ -436,90 +447,103 @@ _PRIMITIVE_ENRICHMENT_PROMPT_CONTEXT: dict[str, dict[str, object]] = {
         ],
         "self_check": [
             "Does `decision_mode` match what the actor actually did or failed to do?",
+            "Are `decision_trigger`, `decision_question`, `options_considered`, and `next_result` functionally distinct?",
         ],
     },
     "set_piece_scenes": {
         "type_label": "set-piece scene primitives",
         "task_line": "You are enriching set-piece scene primitives.",
-        "required_fields": "`actor_ids`, `scene_anchor`, `scene_outcome`, `location`",
+        "required_fields": "`actor_ids`, `scene_anchor`, `hinge_action`, `scene_outcome`, `location`, `narration_hooks`",
         "good_looks_like": [
-            "A strong set-piece scene is playable: you can picture where the pressure concentrates, what hinge action defines the scene, and what visible result lands by the end.",
+            "A strong set-piece scene is playable: you can picture the setup, the visible turning act, and the landed result.",
             "The best outputs feel stageable, not like a chapter summary cut into fragments.",
         ],
         "field_distinctions": [
-            "`scene_anchor` should name the playable hinge of the scene.",
+            "`scene_anchor` should name the setup image or where pressure concentrates before the turn.",
+            "`hinge_action` should name the visible turning act.",
             "`scene_outcome` should name the visible result, not the whole later history.",
             "`location` should identify where the scene materially happens, not the larger region unless the evidence stays broad.",
             "Use `actor_ids` when canonical actors materially anchor the scene; leave `actor_ids` empty when the scene is principally event-, crowd-, or place-anchored in the evidence.",
+            "`narration_hooks.concrete_detail` should give the most speakable detail in the scene.",
+            "`narration_hooks.host_lens` should help the narrator orient the listener without turning the scene into commentary.",
+            "`narration_hooks.carry_forward` should name what residue this scene leaves behind.",
         ],
         "failure_modes": [
             "Do not turn broad chronology, campaign background, or multi-month drift into a pseudo-scene.",
-            "Bad pattern: `scene_anchor` says the empire faces crisis and `scene_outcome` says the crisis continues.",
+            "Bad pattern: `scene_anchor` says the empire faces crisis, `hinge_action` is vague, and `scene_outcome` just says the crisis continues.",
         ],
         "stay_narrow": [
             "If the evidence gives atmosphere and consequence but no clear hinge moment, keep the scene anchor tightly framed around what the passage actually stages.",
         ],
         "self_check": [
-            "Could a listener picture a single scene hinge, rather than a whole chapter's chronology?",
+            "Could a listener picture setup, act, and result distinctly?",
         ],
     },
     "human_costs": {
         "type_label": "human-cost primitives",
         "task_line": "You are enriching human-cost primitives.",
-        "required_fields": "`actor_ids`, `affected_group`, `cost_type`, `lived_consequence`, `visibility`",
+        "required_fields": "`actor_ids`, `affected_group`, `cost_type`, `concrete_marker`, `lived_consequence`, `who_saw_it`, `narration_hooks`",
         "good_looks_like": [
             "A strong human-cost primitive makes the harm land on a concrete group in lived terms rather than describing suffering at the level of abstract social damage.",
             "The best outputs distinguish who is hurt, what kind of harm it is, how it is experienced, and who can or cannot ignore it.",
         ],
         "field_distinctions": [
+            "`affected_group` names who absorbs the harm.",
             "`cost_type` is the category of harm; `lived_consequence` is how that harm lands in lived terms.",
-            "`visibility` is about who could see, acknowledge, or ignore the cost.",
-            "`affected_group` names who absorbs the harm; `lived_consequence` names what that harm feels like in lived terms.",
+            "`concrete_marker` is the most speakable physical or social sign of that harm.",
+            "`who_saw_it` is about what was public, buried, deniable, or legible only later.",
             "Use `actor_ids` when a canonical actor clearly causes, directs, personifies, or administers the harm.",
             "Leave `actor_ids` empty when the harm is diffuse, structural, collective, or not cleanly attributable to canonical actors.",
+            "`narration_hooks.concrete_detail` should not duplicate `concrete_marker`; it should sharpen the same harm from another speakable angle when possible.",
+            "`narration_hooks.host_lens` should help a narrator frame the human meaning without moralizing beyond the evidence.",
+            "`narration_hooks.carry_forward` should name the residue the harm leaves in later political or social life.",
         ],
         "failure_modes": [
             "Do not invent actor linkage just to satisfy schema pressure.",
-            "Do not let `affected_group` and `lived_consequence` collapse into the same sentence in slightly different words.",
+            "Do not let `affected_group`, `concrete_marker`, and `lived_consequence` collapse into the same sentence in slightly different words.",
         ],
         "stay_narrow": [
             "If the evidence only supports generalized hardship, keep the claim specific to what is actually described instead of inferring a broader social totality.",
         ],
         "self_check": [
             "Does the output show the cost as lived experience rather than abstract commentary?",
+            "Is `who_saw_it` about visibility and denial, not a second harm description?",
         ],
     },
     "character_engines": {
         "type_label": "character-engine primitives",
         "task_line": "You are enriching character-engine primitives.",
-        "required_fields": "`actor_id`, `goal`, `fear`, `constraint`, `stakes`",
+        "required_fields": "`actor_id`, `goal`, `pressure_box`, `risk_if_it_breaks`, `tell`, `narration_hooks`",
         "good_looks_like": [
-            "A strong character engine makes one actor's operating pressure legible through distinct objective, threat, limitation, and consequence.",
+            "A strong character engine makes one actor's operating pressure legible through distinct objective, compression, risk, and observable pattern.",
             "The best outputs help explain why the actor keeps moving as they do without inventing private psychology.",
         ],
         "field_distinctions": [
             "Use `actor_id` when one canonical actor clearly carries the pressure profile; return `null` when the evidence supports the pressure but not a clean canonical actor mapping.",
             "`goal` is what the actor is trying to secure, gain, prove, protect, or avoid.",
-            "`fear` is what the actor most needs not to happen.",
-            "`constraint` is the limiting condition, not the same thing as the goal or fear.",
-            "`stakes` is what changes for the actor if the effort succeeds or fails.",
+            "`pressure_box` is the combined trap, squeeze, or limiting box the actor is operating inside.",
+            "`risk_if_it_breaks` is what the actor loses if the engine fails or the pressure snaps.",
+            "`tell` is the observable behavior, phrase, reflex, or self-justifying pattern that makes the engine legible in scenes.",
+            "`narration_hooks.concrete_detail` should give the best speakable detail attached to the pressure profile.",
+            "`narration_hooks.host_lens` should help the narrator explain the engine cleanly without pretending to know private interiority.",
+            "`narration_hooks.carry_forward` should identify what this engine keeps pushing into later scenes.",
         ],
         "failure_modes": [
-            "Bad pattern: all four fields say 'retain power' in slightly different words.",
-            "Better pattern: distinct objective, threat, limitation, and consequence.",
+            "Bad pattern: `goal`, `pressure_box`, and `risk_if_it_breaks` all say 'retain power' in slightly different words.",
+            "Better pattern: distinct objective, trap, consequence, and tell.",
             "Do not turn general biography into pressure unless the evidence shows it operating in this moment.",
         ],
         "stay_narrow": [
-            "If the evidence only supports one clear pressure, keep the other fields restrained instead of inventing a fully rounded interior profile.",
+            "If the evidence only supports one clear pressure, keep the rest restrained instead of inventing a fully rounded interior profile.",
         ],
         "self_check": [
-            "Are `goal`, `fear`, `constraint`, and `stakes` functionally different?",
+            "Are `goal`, `pressure_box`, `risk_if_it_breaks`, and `tell` functionally different?",
         ],
     },
     "coalitions_and_fault_lines": {
         "type_label": "coalition and fault-line primitives",
         "task_line": "You are enriching coalition and fault-line primitives.",
-        "required_fields": "`actor_ids`, `alignment_type`, `coalition_phase`, `coalition`, `shared_interest`, `fault_line`, `stress_point`",
+        "required_fields": "`actor_ids`, `alignment_type`, `coalition_phase`, `alignment_shape`, `alignment_basis`, `fracture_trigger`, `narration_hooks`",
         "good_looks_like": [
             "A strong coalition primitive shows why actors align, what holds them together for now, what contradiction sits underneath, and where that contradiction starts to bite.",
             "The best outputs distinguish durable shared interest from opportunistic overlap.",
@@ -528,34 +552,43 @@ _PRIMITIVE_ENRICHMENT_PROMPT_CONTEXT: dict[str, dict[str, object]] = {
             "`alignment_type` classifies the kind of alignment: tactical, strategic, institutional, or situational.",
             "`coalition_phase` says whether the evidence shows the coalition forming, holding, fracturing, or breaking.",
             "Do not invent a coalition if the evidence only shows temporary alignment, parallel incentives, or one-off overlap.",
-            "`shared_interest` is the practical reason the alignment holds; `fault_line` is the deeper contradiction that makes the alignment unstable.",
-            "`fault_line` is the deep contradiction; `stress_point` is where it becomes active.",
+            "`alignment_shape` says what the alignment actually is.",
+            "`alignment_basis` is the practical reason it holds for now.",
+            "`fracture_trigger` is the condition, event, or contradiction that activates the break.",
             "Leave `actor_ids` empty when the alignment is real but the evidence does not support a clean canonical actor set.",
+            "`narration_hooks.concrete_detail` should give the best speakable sign of the alignment or its strain.",
+            "`narration_hooks.host_lens` should help the narrator explain what kind of alliance this is without inflating it.",
+            "`narration_hooks.carry_forward` should name the later stress or residue the alignment leaves behind.",
         ],
         "failure_modes": [
             "Do not confuse simple coexistence, shared enemies, or momentary simultaneity with a meaningful coalition.",
-            "Bad pattern: `shared_interest` says both sides want order, `fault_line` says they disagree, and `stress_point` just repeats that disagreement.",
+            "Bad pattern: `alignment_basis` says both sides want order and `fracture_trigger` just repeats that they disagree.",
         ],
         "stay_narrow": [
             "If the evidence only supports a narrow tactical alignment, keep the coalition limited to that alignment rather than implying a deeper political bloc.",
         ],
         "self_check": [
-            "Did you identify a real fault line and the moment or condition that activates it?",
+            "Did you identify a real alignment basis and a distinct fracture trigger?",
         ],
     },
     "systems_and_operating_logics": {
         "type_label": "systems and operating-logics primitives",
         "task_line": "You are enriching systems and operating-logics primitives.",
-        "required_fields": "`system_name`, `mechanism`, `mechanism_steps`, `inputs`, `outputs`, `failure_mode`",
+        "required_fields": "`system_name`, `operating_chain`, `inputs`, `outputs`, `where_it_shows_up`, `failure_mode`, `narration_hooks`",
         "good_looks_like": [
             "A strong systems primitive describes a concrete operating chain: something goes in, something moves through specific channels, something comes out, and something breaks or distorts under pressure.",
             "The best outputs describe machinery that historical actors could actually experience, manipulate, or suffer from.",
         ],
         "field_distinctions": [
             "Describe a real operating chain, not abstract thesis prose.",
-            "`mechanism` is the one-line summary of the chain; `mechanism_steps` should give 2-4 short ordered concrete steps inside that chain.",
-            "`inputs` and `outputs` should be concrete, historically legible items or effects.",
+            "`system_name` should name the actual system, not an entire civilization-sized order.",
+            "`operating_chain` should give 2-4 short ordered concrete steps inside the chain.",
+            "`inputs` and `outputs` should be concrete, historically legible items or effects, not abstractions.",
+            "`where_it_shows_up` should identify where a listener would actually see this system work.",
             "`failure_mode` should say how the system distorts, stalls, breaks, or backfires.",
+            "`narration_hooks.concrete_detail` should give the best speakable sign of the system in action.",
+            "`narration_hooks.host_lens` should help the narrator orient the listener to the operating logic without thesis prose.",
+            "`narration_hooks.carry_forward` should name what later residue this system leaves behind.",
         ],
         "failure_modes": [
             "Bad pattern: 'The political system processes pressure through institutions.'",
@@ -563,24 +596,31 @@ _PRIMITIVE_ENRICHMENT_PROMPT_CONTEXT: dict[str, dict[str, object]] = {
             "Do not use ideology or atmosphere alone as a system unless the evidence shows an operating chain.",
         ],
         "stay_narrow": [
-            "If the passage only shows one bottleneck or one distorted channel, describe that mechanism specifically instead of naming an entire civilization-sized system.",
+            "If the passage only shows one bottleneck or one distorted channel, describe that chain specifically instead of naming an entire civilization-sized system.",
         ],
         "self_check": [
-            "Is the mechanism concrete rather than abstract filler?",
+            "Is the operating chain concrete rather than abstract filler?",
+            "Could a planner stage `where_it_shows_up` without inventing new evidence?",
         ],
     },
     "contested_explanations": {
         "type_label": "contested-explanation primitives",
         "task_line": "You are enriching contested-explanation primitives.",
-        "required_fields": "`candidate_readings` with at least two genuinely competing readings",
+        "required_fields": "`candidate_readings` with at least two genuinely competing readings, plus `narration_hooks`",
         "good_looks_like": [
             "A strong contested explanation sets two real explanations against each other, not two tones of the same explanation.",
             "The best outputs make clear what each reading emphasizes, what each downplays, and why both remain plausible from the supplied evidence.",
         ],
         "field_distinctions": [
             "The readings must disagree in interpretation, causality, emphasis, or explanatory weight.",
+            "Each reading's `claim` states the explanation itself.",
+            "Each reading's `emphasizes` says what evidence, cause, or logic it weights heavily.",
+            "Each reading's `downplays` says what it minimizes or treats as secondary.",
+            "Each reading's `support_passage_ids` should point only to passages that really support that reading.",
             "Do not return two phrasings of the same reading.",
-            "Each reading should rest on a meaningfully different evidentiary emphasis, causal weighting, or explanatory center of gravity, even if some passage ids overlap.",
+            "`narration_hooks.concrete_detail` should give the best speakable detail that keeps the dispute grounded.",
+            "`narration_hooks.host_lens` should help the narrator name the dispute cleanly without deciding it prematurely.",
+            "`narration_hooks.carry_forward` should name why this dispute matters later.",
         ],
         "failure_modes": [
             "Bad pattern: one reading says leaders miscalculated; the other says leaders made a mistaken calculation.",
@@ -591,12 +631,13 @@ _PRIMITIVE_ENRICHMENT_PROMPT_CONTEXT: dict[str, dict[str, object]] = {
         ],
         "self_check": [
             "Do the candidate readings genuinely disagree?",
+            "Does each reading specify `claim`, `emphasizes`, and `downplays` distinctly?",
         ],
     },
     "moral_traps": {
         "type_label": "moral-trap primitives",
         "task_line": "You are enriching moral-trap primitives.",
-        "required_fields": "`actor_ids`, `competing_obligations`, `compromised_options`, `no_clean_exit_reason`",
+        "required_fields": "`actor_ids`, `competing_obligations`, `compromised_options`, `trap_structure`, `narration_hooks`",
         "good_looks_like": [
             "A strong moral-trap primitive shows an actor bound by real duties or loyalties, with available actions that each violate something serious.",
             "The best outputs make the trap structural, not just emotionally difficult.",
@@ -605,8 +646,12 @@ _PRIMITIVE_ENRICHMENT_PROMPT_CONTEXT: dict[str, dict[str, object]] = {
             "`competing_obligations` should be actual obligations, loyalties, or duties.",
             "`compromised_options` should be live available actions, not abstract values or retrospective judgments.",
             "`compromised_options` should be actions available to the actor, not abstract values.",
-            "Do not let `competing_obligations` and `compromised_options` collapse into the same list in different wording.",
+            "`trap_structure` should explain why every live move damages something binding.",
             "Leave `actor_ids` empty when the trap is structurally real but not cleanly attributable to canonical actors in the supplied evidence.",
+            "Do not let `competing_obligations` and `compromised_options` collapse into the same list in different wording.",
+            "`narration_hooks.concrete_detail` should give the best speakable sign of the trap on the ground.",
+            "`narration_hooks.host_lens` should help the narrator frame why there is no clean path without moral inflation.",
+            "`narration_hooks.carry_forward` should name the later residue the trap leaves behind.",
         ],
         "failure_modes": [
             "Do not confuse a hard preference, policy disagreement, or sad outcome with a moral trap unless all available paths are compromised.",
@@ -617,12 +662,13 @@ _PRIMITIVE_ENRICHMENT_PROMPT_CONTEXT: dict[str, dict[str, object]] = {
         ],
         "self_check": [
             "Would every available move force the actor to violate or damage something they are bound to protect?",
+            "Is `trap_structure` explaining the structure of compromise rather than repeating the options list?",
         ],
     },
     "ironies_and_reversals": {
         "type_label": "irony and reversal primitives",
         "task_line": "You are enriching irony and reversal primitives.",
-        "required_fields": "`actor_ids`, `expected_outcome`, `actual_outcome`, `reversal_driver`",
+        "required_fields": "`actor_ids`, `expected_outcome`, `actual_outcome`, `flip_cause`, `narration_hooks`",
         "good_looks_like": [
             "A strong irony or reversal shows actors aiming at one result and producing a meaningfully inverted result through a visible mechanism.",
             "The best outputs capture backfire, inversion, or cruel flip, not just ordinary disappointment.",
@@ -630,8 +676,11 @@ _PRIMITIVE_ENRICHMENT_PROMPT_CONTEXT: dict[str, dict[str, object]] = {
         "field_distinctions": [
             "`expected_outcome` should be what actors plausibly aimed for or assumed.",
             "`actual_outcome` should materially invert or undercut that expectation.",
-            "`reversal_driver` should identify why the result flipped.",
+            "`flip_cause` should identify why the result flipped.",
             "Leave `actor_ids` empty when the reversal is clear but the evidence does not support a stable canonical actor set.",
+            "`narration_hooks.concrete_detail` should give the best speakable sign of the backfire.",
+            "`narration_hooks.host_lens` should help the narrator frame the inversion cleanly.",
+            "`narration_hooks.carry_forward` should name the residue the reversal leaves behind.",
         ],
         "failure_modes": [
             "Do not label every failed plan a reversal; the result should land opposite to or corrosively undercut the intended effect.",
@@ -642,6 +691,7 @@ _PRIMITIVE_ENRICHMENT_PROMPT_CONTEXT: dict[str, dict[str, object]] = {
         ],
         "self_check": [
             "Is the result genuinely inverted or backfiring, rather than merely weaker than hoped?",
+            "Do `expected_outcome`, `actual_outcome`, and `flip_cause` form a real reversal rather than a simple setback?",
         ],
     },
 }
@@ -717,16 +767,14 @@ def primitive_enrichment_instructions(family: str | None = None) -> str:
         - `project_id`
         - `family`: fixed output-shape value for this batch
         - `base_primitives`: only the selected primitives for this batch
-        - `passages_by_id`: deduped trimmed core and support passage evidence keyed by passage_id
-        - `actor_metadata` (optional): compact canonical actor context
-        - `project` (optional): compact project metadata
+        - `evidence_by_primitive_id`: primitive-scoped trimmed evidence with `core_passages` and `support_passages`
+        - `actor_metadata` (optional): slim canonical actor context with `one_line_role`
         - `enrichment_feedback` (optional): retry feedback; if present, correct the named schema issue exactly and keep all other valid output unchanged
 
         Authority order:
-        1. `passages_by_id`
+        1. each primitive's `core_passages` and `support_passages` under `evidence_by_primitive_id`
         2. each primitive's existing `title`, `summary`, passage ids, and context fields
         3. `actor_metadata` for canonical ids and compact actor context
-        4. `project` only as weak framing context
 
         If these conflict, preserve the supplied primitive claim and the passage evidence.
 
@@ -734,8 +782,8 @@ def primitive_enrichment_instructions(family: str | None = None) -> str:
         - Return only deltas: `id`, `family`, and the required fields below.
         - Do not add new primitives, merge primitives, split primitives, change type,
           or replace the primitive's underlying claim.
-        - Ground every enriched field in the provided passages. Do not invent
-          passage ids or outside evidence.
+        - Ground every enriched field in the primitive's provided evidence bundle.
+          Do not invent passage ids or outside evidence.
         - Treat core passages as decisive evidence. Support passages may sharpen
           or contextualize a claim, but they should not override the primitive's
           underlying claim.
@@ -752,11 +800,14 @@ def primitive_enrichment_instructions(family: str | None = None) -> str:
         - Avoid generic abstraction drift. Do not hide weak evidence behind vague
           nouns such as `mechanism`, `system`, `logic`, `pressure`, `constraint`,
           or `stakes` unless you make them historically concrete.
+        - Keep fields short. Do not turn any field into a mini-summary of the whole chapter.
+        - `narration_hooks` are planning affordances, not script lines. Keep them
+          compact, concrete, and reusable.
 
         WORKING METHOD
         - First identify what the base primitive is already claiming.
-        - Then identify which parts of the supplied passages actually justify the
-          missing enriched fields for that primitive.
+        - Then identify which parts of that primitive's evidence bundle actually
+          justify the missing enriched fields for that primitive.
         - Fill only what the evidence can carry.
         - If two enriched fields risk collapsing into the same sentence in different
           words, separate them by function rather than paraphrasing.
@@ -769,9 +820,11 @@ def primitive_enrichment_instructions(family: str | None = None) -> str:
         - If the evidence supports only part of the enriched shape, still return the
           narrowest valid formulation for every required field rather than escalating
           into a different claim.
-        - Do not use project-level framing to over-resolve local ambiguity.
+        - Do not over-resolve local ambiguity by importing wider series framing.
         - Do not smuggle episode planning, thesis language, or retrospective omniscience
           into the enriched fields.
+        - Do not let any field become a paragraph, a chapter summary, or a second version
+          of another field.
 
         OUTPUT CONTRACT
         Return a JSON object with:
@@ -812,14 +865,19 @@ def narrative_strategy_instructions() -> str:
         - `project`: project metadata, runtime bounds, book metadata
         - `actor_metadata` (optional): canonical actor context
         - `requested_episode_count` (optional): hard episode-count constraint
+        - `recommended_episode_count_min`: lower bound when no explicit count is requested
+        - `recommended_episode_count_max`: upper bound when no explicit count is requested
         - `strategy_feedback` (optional): retry feedback from the orchestrator
 
         EPISODE COUNT
         - If `requested_episode_count` is present, treat it as binding.
-        - Otherwise, produce between 7 and 10 episodes.
+        - Otherwise, produce between `recommended_episode_count_min` and `recommended_episode_count_max` episodes, inclusive.
 
         PRIORITY RULES
         - Every episode must have exactly one `episode_spine`.
+        - `listener_problem` is the listener-facing problem the episode carries.
+        - `episode_answer` is the concise answer the episode earns.
+        - `pressure_line` is the live pressure or contradiction the listener should feel while moving through the episode.
         - `core_primitive_ids` are the binding episode contract.
         - Support primitives must be typed with exactly one role each:
           `stakes`, `mechanism`, `counterpressure`, `consequence`, or `texture`.
@@ -934,16 +992,17 @@ def narrative_strategy_instructions() -> str:
 
         EPISODE SPINE
         Each `episode_spine` only includes:
-        - `listener_question`
-        - `argument`
+        - `listener_problem`
+        - `episode_answer`
+        - `pressure_line`
         - `core_primitive_ids`
         - `support_primitive_roles`
         - `recall_primitive_ids`
 
         EPISODE SPINE RULES
-        - `core_primitive_ids` must contain 6-9 primitives.
+        - `core_primitive_ids` must contain 4-6 primitives.
         - At least two core primitives must come from `epochal_turns` or `decisions_and_nondecisions`.
-        - `support_primitive_roles` must contain 7-10 primitives.
+        - `support_primitive_roles` must contain 4-6 primitives.
         - Each support primitive gets exactly one support role.
         - Support primitives cannot also appear in the core.
         - `recall_primitive_ids` are optional and must contain at most 2 primitives.
@@ -952,10 +1011,11 @@ def narrative_strategy_instructions() -> str:
         - Do not stack multiple support primitives that rely on the same passage cluster or perform the same argumentative job unless the core claim truly needs that density.
 
         STRATEGY RULES
-        - `listener_question` should name the episode's actual listener problem.
-        - `argument` should state the controlling proposition the episode will prove.
+        - `listener_problem` should name the episode's actual listener problem.
+        - `episode_answer` should say what becomes clear by the end rather than what each scene must prove.
+        - `pressure_line` should be short, concrete, and live enough to carry an oral narrative.
         - Allow later recalls only when explicitly justified.
-        - Fail rather than auto-rescoping if no dominant proposition can be formed.
+        - Fail rather than auto-rescoping if no dominant listener problem can be formed.
         - Do not use later payoff material to artificially prop up an earlier weak episode unless recall or consequence logic clearly justifies it.
 
         ACTOR ARC DIRECTIVES
@@ -1003,10 +1063,9 @@ def episode_planning_instructions() -> str:
         You are the `episode_planning` stage of a historical podcast pipeline.
 
         Your job: turn one episode architecture into a framing block plus a sequence
-        of concrete, playable scene cards. The architecture's section topology,
-        `episode_spine`, and selected primitives are binding structure. You are
-        giving that architecture scene-level shape, not reconsidering proposition
-        selection.
+        of concrete, playable scene cards. The architecture's section topology and
+        `episode_spine` are binding structure. You are giving that architecture
+        scene-level shape, not reconsidering proposition selection.
 
         ==============================================================================
         INPUT PAYLOAD
@@ -1032,9 +1091,8 @@ def episode_planning_instructions() -> str:
         YOU OWN:
         - Framing block (opening image, threat, opening question, handoff target).
         - Scene cards: count, ordering within sections, titles, scene roles,
-          durations, `dominant_primitive_id` per card, primitive selection within the
-          section's allowed set, evidence selection, scene actors, actor arc
-          bindings, state effects.
+          durations, evidence selection, scene actors, lean beat changes,
+          must-land facts, and sparse host-move permissions.
         - The `dropped_support_primitive_reasons` register.
 
         OUTPUT: only `episode_number`, `framing`, `scene_cards`, and
@@ -1048,7 +1106,7 @@ def episode_planning_instructions() -> str:
         - `threat_or_unresolved_action` — keeps the episode in motion; something not
           yet resolved.
         - `opening_question` — should create curiosity in the same territory as
-          `strategy_episode.episode_spine.listener_question`. Do not paraphrase it.
+          `strategy_episode.episode_spine.listener_problem`. Do not paraphrase it.
         - `handoff_scene_card_id` — must point to a real scene card you produce.
         - The framing should orient the listener without pre-explaining the episode.
           Do not preview the thesis, the turn, or the closing.
@@ -1057,7 +1115,7 @@ def episode_planning_instructions() -> str:
         SCENE CARDS — STRUCTURE
         ==============================================================================
         COUNTS
-        - Target 28–36 scene cards for a full-length episode.
+        - Target 18–26 scene cards for a full-length episode.
         - Expand into playable micro-scenes. Do not collapse long stretches into one
           card.
 
@@ -1068,7 +1126,7 @@ def episode_planning_instructions() -> str:
         - Treat `architecture.section_anchor` as the section-local opening handle.
           It is distinct from the episode framing `opening_image`.
         - Treat each section as a binding local brief: its scenes must collectively
-          realize that section's `section_question`, `section_resolution`,
+          realize that section's `listener_tension`, `section_turn`,
           `transition_logic`, and every item in `must_stage_beats`.
         - Build each section through accumulation. The section's first scene must
           not state the section's resolution.
@@ -1091,54 +1149,42 @@ def episode_planning_instructions() -> str:
           `section_id`                  one architecture section
           `title`                       short, concrete card title
           `scene_role`                  canonical or non-canonical (see below)
-          `primitive_ids`               1–2 primitives, drawn ONLY from this scene's
-                                        section `primitive_ids`
-          `dominant_primitive_id`       must be one of the scene's `primitive_ids`
-          `spine_relation`              one of: spine_advance, set_stakes,
-                                        supply_mechanism, apply_counterpressure,
-                                        show_consequence, turn, texture_support
-          `state_effect`                short, concrete statement of what is newly
-                                        in play by scene end
+          `beat_change`                 short operational statement of what materially
+                                        changes in this beat
+          `must_land_facts`             2–5 non-negotiable concrete facts, names,
+                                        decisions, or consequences
           `estimated_duration_seconds`  integer; you allocate
           `passage_ids`                 enough evidence to support later writing
 
         Optional scene-level fields:
-          actors[], entry_image, observable_detail, local_question, timeframe,
-          location, withhold_until, what_becomes_legible_later, intended_move
+          actors[], entry_image, observable_detail, timeframe,
+          location, withhold_until, host_move
 
         CANONICAL `scene_role` VALUES:
           setup, shock, action, consequence, reaction, contestation, synthesis
         Non-canonical non-empty values are allowed when they fit the episode's
         internal logic better.
 
-        ⚠️ NAME COLLISION (read carefully):
-          - The scene card's top-level `scene_role` describes the WHOLE scene's job.
-          - `actors[].arc_bindings[].scene_role` describes an ACTOR's role inside the
-            scene and uses a different enum entirely (`driver`, `blocked`,
-            `counterforce`, `subject`).
-          These are two different fields with the same name and different enums.
-          Do not mix them.
+        HOST MOVES
+        - A host move is a sparse narrator permission layered onto an ordinary scene,
+          not a standalone host scene.
+        - Use `host_move.move_type = none` unless the listener genuinely needs
+          orientation, clarification, contrast, evaluation, callback, a naming
+          note, or one light aside.
 
         ==============================================================================
         SCENE CARDS — DURATION ALLOCATION
         ==============================================================================
         Allocate duration so the proposition chain carries the runtime.
 
-        Classify a scene by its `dominant_primitive_id` relative to
-        `strategy_episode.episode_spine`:
-        - core-led: `dominant_primitive_id` is in `core_primitive_ids`
-        - recall-led: `dominant_primitive_id` is in `recall_primitive_ids`
-        - support-led: otherwise, including primitives listed in
-          `support_primitive_roles`
+        Classify a scene by what it does for the listener:
+        - opens pressure
+        - sharpens pressure
+        - redirects pressure
+        - lands a consequence
+        - carries a turn
 
-        Target runtime proportions:
-          core-led scenes        ~60–70% of total runtime
-          support-led scenes     ~30–35%
-          recall-led scenes      ≤5%
-
-        If a primitive is not clearly classified in the inputs, treat it as support.
-
-        The `closing` scene's ≤120s cap is in addition to these proportions.
+        The `closing` scene's ≤120s cap still applies.
 
         ==============================================================================
         SCENE CONSTRUCTION CRAFT
@@ -1195,11 +1241,9 @@ def episode_planning_instructions() -> str:
         PRIMITIVES AND EVIDENCE
         ==============================================================================
         SOURCING
-        - `primitive_ids` per scene must come ONLY from that scene's architecture
-          section `primitive_ids`. Do not pull primitives across section boundaries.
-        - `available_passages` only include primitives that the architecture put
-          inside a section. If architecture omitted a support or recall primitive,
-          you cannot use its passages here.
+        - Ground every scene in the provided `passage_ids`.
+        - Use architecture `primitive_ids` only as planning context. Do not emit
+          per-scene primitive bookkeeping.
 
         PRIORITY
         - When a section has `priority_core_passage_ids`, prefer those passages
@@ -1211,13 +1255,14 @@ def episode_planning_instructions() -> str:
         - Use `human_costs` and `character_engines` to keep scenes from going
           purely abstract or institutional.
         - When a primitive has richer typed fields, use them directly:
-          `scene_anchor`/`scene_outcome`/`location` for scene entry and payoff,
-          `decision_question` for choice framing,
-          `goal`/`fear`/`constraint` for actor pressure,
-          `affected_group`/`lived_consequence` for consequence scenes,
-          `alignment_type`/`coalition_phase`/`fault_line` for contestation shape,
-          `mechanism_steps` for mechanism staging,
+          `scene_anchor`/`hinge_action`/`scene_outcome`/`location` for scene entry and payoff,
+          `decision_trigger`/`decision_question`/`next_result` for choice framing,
+          `goal`/`pressure_box`/`tell` for actor pressure,
+          `concrete_marker`/`lived_consequence` for consequence scenes,
+          `alignment_type`/`coalition_phase`/`fracture_trigger` for contestation shape,
+          `operating_chain`/`where_it_shows_up` for mechanism staging,
           `expected_outcome`/`actual_outcome` for reversal beats.
+        - Prefer `narration_hooks.concrete_detail` for `observable_detail` when present.
         - `systems_and_operating_logics`, `coalitions_and_fault_lines`, and
           `contested_explanations` should usually support a scene anchored in
           something concrete, not become the whole scene by themselves.
@@ -1225,11 +1270,8 @@ def episode_planning_instructions() -> str:
           and closings when the evidence supports recurrence.
 
         DISTRIBUTION
-        - Do not distribute primitives evenly by default.
-        - No primitive should dominate the episode.
-        - Reuse is allowed for continuity, but vary the function across reuses.
-        - Every primitive in `strategy_episode.episode_spine.core_primitive_ids`
-          must appear in at least one scene card.
+        - Do not distribute scenes evenly by default.
+        - Do not overload one scene with too many required facts. Split beats instead.
 
         DROPPING SUPPORT PRIMITIVES
         - A support primitive may be dropped only if it remains available inside
@@ -1238,9 +1280,9 @@ def episode_planning_instructions() -> str:
           `dropped_support_primitive_reasons`.
 
         ==============================================================================
-        STATE EFFECT (state_effect)
+        BEAT CHANGE (beat_change)
         ==============================================================================
-        `state_effect` is what's NEWLY IN PLAY by the scene's end: a fact, pressure,
+        `beat_change` is what's NEWLY IN PLAY by the scene's end: a fact, pressure,
         contradiction, alignment, loss, risk, or consequence the next scene can
         pick up.
 
@@ -1268,33 +1310,8 @@ def episode_planning_instructions() -> str:
           actor_id
           affiliation
           presence
-          arc_bindings[]
 
-        ARC BINDINGS — where they live
-        - `arc_bindings[]` belongs inside an `actors[]` item, not at scene top level.
-
-        ARC BINDINGS — when to create them
-        Create an `actors[].arc_bindings[]` entry only if one of these `scene_use`
-        operations genuinely applies:
-          introduce        first time this thread enters the episode
-          develop          thread moves forward in the same direction
-          complicate       new pressure or contradiction enters the thread
-          stage_choice     actor faces a decision the thread turns on
-          show_consequence prior choice or pressure produces visible result
-          pay_off          a setup from earlier closes or resolves
-          avoid            scene intentionally withholds the thread under pressure
-
-        Do NOT bind an actor just because they're named in the evidence.
-
-        ARC BINDING RULES
-        - Reference `thread_id` from
-          `strategy_episode.actor_arc_directives[].arc_threads[]`.
-        - `scene_role`: `driver`, `blocked`, `counterforce`, or `subject`
-          (this is the actor's role in the scene, NOT the card's `scene_role`).
-        - `weight`: optional; `light`, `standard`, or `strong`.
-        - At most two `arc_bindings` per actor per scene.
-        - When an actor recurs across scenes, vary the `scene_use`. Do not bind
-          the same operation each time.
+        Keep actor data lean. Do not emit scene-level actor arc bookkeeping.
 
         ==============================================================================
         FAILURE MODES — DO NOT PRODUCE
@@ -1310,10 +1327,10 @@ def episode_planning_instructions() -> str:
            actor thread, or argument that should have been its own section.
 
         4. The transition-handrail scene. A scene whose only job is to bridge two
-           other scenes ("Meanwhile, in the capital...") with no `state_effect` of
+           other scenes ("Meanwhile, in the capital...") with no `beat_change` of
            its own.
 
-        5. The disguised paragraph. A scene card whose `state_effect` reads like
+        5. The disguised paragraph. A scene card whose `beat_change` reads like
            finished narration ("the listener now sees that...") rather than what is
            in play.
 
@@ -1328,13 +1345,11 @@ def episode_planning_instructions() -> str:
            scenes, every primitive gets equal coverage, every actor appears in
            roughly the same number of scenes. Episodes have shape; plans should too.
 
-        9. The boundary-crossed primitive. A scene drawing `primitive_ids` from a
-           section it doesn't belong to. This is a structural break, not a creative
-           choice.
+        9. The overloaded fact-dump. A scene card carrying too many must-land facts
+           to remain narratable.
 
-        10. The arc-binding-on-mention. Every actor named in evidence gets an
-            `arc_bindings` entry. Bind only when one of the seven `scene_use`
-            operations actually applies.
+        10. The fake host scene. A scene whose only job is to let the narrator step
+            outside the history instead of braiding host guidance into an ordinary beat.
 
         ==============================================================================
         OUTPUT
@@ -1402,13 +1417,14 @@ def episode_architecture_instructions() -> str:
         - `priority_core_passage_ids` may only come from the provided
           `core_passages`; use them lightly.
         - When richer primitive fields are present, use them to sharpen section
-          design: `before_state`/`after_state` for turn placement,
-          `decision_question` for hinge-choice sections,
-          `scene_anchor`/`scene_outcome` for openings and exits,
-          `alignment_type`/`coalition_phase`/`fault_line` for fracture sections,
-          `mechanism_steps` for mechanism sections,
-          `lived_consequence` for consequence sections,
+          design: `before_state`/`after_state`/`proof_of_change` for turn placement,
+          `decision_trigger`/`decision_question` for hinge-choice sections,
+          `scene_anchor`/`hinge_action`/`scene_outcome` for openings and exits,
+          `alignment_type`/`coalition_phase`/`fracture_trigger` for fracture sections,
+          `operating_chain`/`where_it_shows_up` for mechanism sections,
+          `concrete_marker`/`lived_consequence` for consequence sections,
           `expected_outcome`/`actual_outcome` for reversal and payoff sections.
+        - Use `narration_hooks.carry_forward` for callback and residue planning when it helps.
 
         Each section must specify:
         - `section_id`
@@ -1417,19 +1433,12 @@ def episode_architecture_instructions() -> str:
         - `must_stage_beats`
         - `approx_runtime_minutes`
         - `primitive_ids`
-        - `section_question`
-        - `section_resolution`
-        - `entry_state`
-        - `exit_state`
+        - `listener_tension`
+        - `section_turn`
         - `transition_logic`
         - `depends_on_section_ids`
         - `sets_up_section_ids`
-        - `argument_role`
-        - `inference_mode`
         - `recurrence_role`
-        - `pressure_type`
-        - `resolution_type`
-        - `closure_level`
         - `closure_mode`
         - `priority_core_passage_ids`
 
@@ -1507,7 +1516,7 @@ def episode_writing_instructions() -> str:
             Writing guidance:
             - Draft all `plan.scene_cards` in order.
             - Write one prose item for each input `plan.scene_cards[]` item.
-            - Keep `strategy_episode.episode_spine.listener_question` as the rhetorical anchor.
+            - Keep `strategy_episode.episode_spine.listener_problem` as the rhetorical anchor.
             - Preserve the full `strategy_episode.episode_spine` contract.
             - Preserve the binding `architecture.sections` order and the section-level
               transitions they specify.
@@ -1515,17 +1524,17 @@ def episode_writing_instructions() -> str:
             - Use support and recall primitives only in service of those core primitives.
             - Preserve `strategy_episode.unresolved_questions` as live tensions when unresolved.
             - Keep framing commitments visible (`plan.framing`) without exposing outline mechanics.
-            - Use each card's `entry_image`, `scene_role`, `spine_relation`,
-              `intended_move`, and passage-supported concrete detail.
+            - Use each card's `entry_image`, `scene_role`, `beat_change`,
+              `must_land_facts`, `host_move`, and passage-supported concrete detail.
             - Start each scene's prose from the card's concrete `entry_image`
               or a passage-supported equivalent.
             - Respect `withhold_until` and delayed-legibility dynamics.
-            - Keep claims grounded in each card's `primitive_ids` and `passage_ids`.
+            - Keep claims grounded in each card's `must_land_facts` and `passage_ids`.
             - Treat `plan.target_word_count` as episode-level pacing guidance.
             - Importance has already been converted into the per-scene and episode
               word-count budgets. Treat those budgets as binding.
             - If evidence exceeds the budget, select only the details needed for
-              the scene's `intended_move`.
+              the scene's `beat_change` and `must_land_facts`.
             - Target total narration for this call within `episode_target_word_count_lower..episode_target_word_count_higher`.
             - Treat each card's `target_word_count_lower` and `target_word_count_higher` as a pacing range:
               - allocate narration so the card lands within its target range
@@ -1536,7 +1545,6 @@ def episode_writing_instructions() -> str:
             - Use optional `passages[].chapter_context` when available to preserve chapter-level tensions and causal shifts.
             - When `prior_window_continuity` is present, use it only to maintain local continuity across the split. It is not factual authority, not a substitute for the provided passages, and not permission to restate or re-narrate the previous window.
             - `prior_window_continuity` is reference-only. In any conflict, follow the current window's `plan.scene_cards`, `architecture`, `strategy_episode`, and `passages`.
-            {{actor_arc_realization_guidance}}
             - Do not invent unsupported private thoughts, emotions, dialogue, or secret motives.
             - Follow scene-role intent:
               - `setup`: establish concrete situation and stakes
@@ -1546,7 +1554,7 @@ def episode_writing_instructions() -> str:
               - `reaction`: show adaptation or counter-move
               - `contestation`: stage genuine disagreement
               - `synthesis`: integrate strands without over-resolving
-              - for non-canonical labels, infer intent from `intended_move` and neighboring cards
+              - for non-canonical labels, infer intent from `beat_change`, `must_land_facts`, and neighboring cards
             - Use citations only through structured `citations`; do not insert inline citation markers into prose.
             - Return one output item per input scene card; do not merge, split,
               omit, duplicate, reorder, or rename scene outputs.
@@ -1559,12 +1567,11 @@ def episode_writing_instructions() -> str:
               "Which brings us to," "Now let the clock run," "The pattern is,"
               or single-sentence paragraphs whose only job is to mark a turn.
             - Do not invent facts, chronology, quotations, or source claims not supported by the provided passages.
-            - Do not introduce new primary analytical claims that are outside the assigned scene cards and primitives.
+            - Do not introduce new primary analytical claims that are outside the assigned scene cards and their grounded facts.
             - Do not introduce a new load-bearing question, a second ending, or a support-thread takeover.
             """
         )
         .strip()
-        .replace("{{actor_arc_realization_guidance}}", _actor_arc_realization_guidance())
     )
 
 
@@ -1603,9 +1610,9 @@ def episode_writing_no_citations_instructions() -> str:
         - Do not invent facts, chronology, quotations, dialogue, motives, private thoughts, emotions, sensory details, atmosphere, or causal links.
         - Atmosphere is allowed only from concrete passage-supported details.
         - `strategy_episode.episode_spine.core_primitive_ids` are the episode's load-bearing material; support and recall remain subordinate.
-        - Do not introduce primary analytical claims outside planned scene cards and their primitives.
+        - Do not introduce primary analytical claims outside planned scene cards and their grounded facts.
         - `skip_grounding` is true: be especially conservative because no later grounding repair will run.
-        - Keep `strategy_episode.episode_spine.listener_question`, unresolved questions, framing, and `intended_move` as internal control signals, not visible prose.
+        - Keep `strategy_episode.episode_spine.listener_problem`, unresolved questions, and framing as internal control signals unless a planned `host_move` makes brief listener guidance necessary.
         - Preserve structure in substance, not by naming the structure on the page.
         - Adjacent scene outputs in the same section may be joined later into continuous prose. Write them as consecutive beats, not self-contained essays.
         - When `prior_window_continuity` is present, use it only to maintain local continuity across the split. Treat it as reference-only guidance for handoff, pacing, and continuity. Do not treat it as source evidence, do not copy it mechanically, and do not let it override the current window's scene cards, passages, architecture, or spine contract.
@@ -1613,10 +1620,9 @@ def episode_writing_no_citations_instructions() -> str:
 
         PER-SCENE PROCEDURE
         For each card:
-        1. Read `entry_image`, `scene_role`, `intended_move`, `primitive_ids`, and `passage_ids`.
+        1. Read `entry_image`, `scene_role`, `beat_change`, `must_land_facts`, `host_move`, and `passage_ids`.
         2. Open from the concrete `entry_image` or a passage-supported equivalent, then execute the scene role.
-        3. Resolve actor arc bindings where passage support allows it.
-        4. Use passages to reconstruct events, decisions, pressure, and immediate consequences.
+        3. Use passages to reconstruct events, decisions, pressure, and immediate consequences.
         5. Use optional `passages[].chapter_context` only when present.
         6. Respect `withhold_until`: do not reveal the withheld fact, interpretation, consequence, or resolution early, including through obvious foreshadowing.
         7. Stay within the card's target range. The budget already encodes narrative importance.
@@ -1635,16 +1641,7 @@ def episode_writing_no_citations_instructions() -> str:
         - `reaction`: show adaptation or counter-move
         - `contestation`: stage genuine disagreement
         - `synthesis`: integrate strands without over-resolving
-        - For other labels, infer intent from `intended_move` and neighboring cards.
-
-        ACTOR ARCS
-        - Resolve each scene actor `arc_bindings[].thread_id` against `strategy_episode.actor_arc_directives[].arc_threads[]`.
-        - Use arc thread `premise`, `pressure`, `movement`, and `resolution` as narrative guidance only, never evidence.
-        - Treat actor metadata as guidance only. Passage evidence wins if actor metadata and passages conflict. Do not cite actor metadata.
-        - Use `arc_bindings[].scene_use` as the actor arc operation for the scene only when passages support it: `introduce`: establish the actor's episode function; `develop`; `complicate`; `stage_choice`; `show_consequence`; `pay_off`; or `avoid`: keep the actor present without foregrounding the arc.
-        - Use `arc_bindings[].weight` to scale narrative attention only when supported.
-        - If unsupported, omit the arc movement and narrate only the actor's factual role.
-        - Do not restate the same actor function across appearances; show movement, changed tension, or resolution.
+        - For other labels, infer intent from `beat_change`, `must_land_facts`, and neighboring cards.
 
         FRAMING
         - Let the driving question accumulate through scene selection, contrast, and consequence.
@@ -1655,7 +1652,7 @@ def episode_writing_no_citations_instructions() -> str:
         PACING
         - Importance has already been converted into the per-scene and episode word-count budgets. Treat those budgets as binding.
         - Do not expand because evidence is dense, the cluster is important, or actor arcs are interesting.
-        - If evidence exceeds the budget, select only the details needed for the scene's `intended_move`.
+        - If evidence exceeds the budget, select only the details needed for the scene's `beat_change` and `must_land_facts`.
         - Target total narration for this call within `episode_target_word_count_lower..episode_target_word_count_higher`.
         - Keep each card within its `target_word_count_lower..target_word_count_higher`.
         - These target ranges already encode narrative importance; do not rebalance them.
@@ -1689,7 +1686,7 @@ def episode_writing_no_citations_instructions() -> str:
         - Do not expose scaffolding: no outline labels, no "in this scene," no repeated signposting, and no meta-transitions.
         - Do not output standalone transitions.
         - Do not use section-opening handrails such as "That is X" "Which brings us to" "Now let the clock run" "The pattern is" whose only job is to mark a turn.
-        - Do not narrate the architecture or the conceptual frame. No visible paraphrases of `local_question`, `state_effect`, `argument`, `what_becomes_legible_later`, unresolved-question framing, or equivalent planning fields.
+        - Do not narrate the architecture or the conceptual frame. No visible paraphrases of `listener_tension`, `section_turn`, `episode_answer`, `pressure_line`, unresolved-question framing, or equivalent planning fields.
         - Do not announce the point instead of producing it. Avoid moves like: "This matters because", "The point is", "What this shows", "The episode treats X as", "This is the working concept", "Read that sentence slowly", "The honest answer is", or equivalent narrator-nudge phrasing.
         - Do not tell the reader what to notice when the scene already makes it legible.
         - Do not convert every strong image into an abstract explanation on the next line.
@@ -1702,7 +1699,7 @@ def episode_writing_no_citations_instructions() -> str:
         SELF-CHECK
         - Did any interior scene end in a neat verdict the next scene could have carried instead?
         - Did any consecutive scenes in the same section restart the same frame or explanation?
-        - Did any sentence paraphrase `local_question`, `state_effect`, `argument`, or framing instead of dramatizing it?
+        - Did any sentence paraphrase `beat_change`, `episode_answer`, `pressure_line`, or framing instead of dramatizing it?
         - Does the draft still feel like narration when read straight through, rather than a sequence of argumentative scene capsules?
         """
     ).strip()
@@ -1912,7 +1909,7 @@ def spoken_delivery_instructions() -> str:
         7. Draft from that regrouped order, not from the source sentences.
 
         CONTINUITY
-        `script.prose_sections` contains the full current batch. Rewrite all of it into one continuous spoken passage in `text`.
+        `script.prose_sections` contains the full current batch. Rewrite all of it section by section for the ear while preserving continuity across the batch.
 
         If `previous_spoken_tail` is present, continue rather than restart. Do not manufacture a new cold open. Do not repeat or paraphrase the previous tail unless the same material is also present in the current batch.
 
@@ -2018,12 +2015,16 @@ def spoken_delivery_instructions() -> str:
         OUTPUT
         Return only valid JSON matching expected_schema exactly.
         Return only valid JSON matching `expected_schema` exactly.
-        Return exactly two top-level keys:
+        Return one rewritten item per input `script.prose_sections[]`, in the same order.
+        Return exactly one top-level key:
+        - `sections`
+
+        Each `sections[]` item must include:
+        - `section_id`
         - `text`
         - `speech_hints`
 
-        No wrapper keys.
-        No extra fields.
+        No extra wrapper keys.
         No markdown.
         No commentary.
 
@@ -2204,12 +2205,16 @@ def section_local_spoken_delivery_instructions() -> str:
 
         OUTPUT
         Return only valid JSON matching `expected_schema` exactly.
-        Return exactly two top-level keys:
+        Return one rewritten item per input `script.prose_sections[]`, in the same order.
+        Return exactly one top-level key:
+        - `sections`
+
+        Each `sections[]` item must include:
+        - `section_id`
         - `text`
         - `speech_hints`
 
-        No wrapper keys.
-        No extra fields.
+        No extra wrapper keys.
         No markdown.
         No commentary.
 
@@ -2239,7 +2244,7 @@ def style_audit_instructions() -> str:
         You are not adding research.
         You are not changing chronology, argument, or section order.
 
-        Your job is to remove prose patterns that make the script sound like pipeline output instead of finished narration.
+        Your job is to remove prose patterns that make the script sound like pipeline output instead of finished narration, while preserving planned host guidance when it is doing real listener work.
 
         INPUT
         You will receive:
@@ -2252,11 +2257,12 @@ def style_audit_instructions() -> str:
         - `purpose`
         - `anchor`
         - `closure_mode`
+        - `host_moves`
         - `text`
 
         PRIORITY RULES
         - `sections[].text` is the factual source of truth for this stage.
-        - `purpose`, `anchor`, and `closure_mode` are control signals, not evidence.
+        - `purpose`, `anchor`, `closure_mode`, and `host_moves` are control signals, not evidence.
         - Preserve facts, chronology, names, dates, quotations, uncertainty, and core claims.
         - Keep every section id and section order unchanged.
         - Do not merge sections.
@@ -2282,12 +2288,14 @@ def style_audit_instructions() -> str:
         - Tighten endings so only `closure_mode = final_answer` gets the strongest explicit landing.
         - Shorten over-explained interpretive lines when the scene already carries the point.
         - Prefer deletion to paraphrase when both preserve meaning.
+        - Preserve a planned host move when it offers earned orientation, clarification, evaluation, contrast, callback, naming support, or one light aside.
 
         NOT ALLOWED
         - No new facts.
         - No new chronology.
         - No new quotations.
         - No new framing language not already supported by the text.
+        - Do not delete valid host guidance just because it resembles a handrail.
         - No section merging or splitting.
         - No rewriting that changes the meaning of a contested claim.
 

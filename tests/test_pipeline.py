@@ -959,16 +959,16 @@ def test_resolve_synthesis_bm25_keep_fraction_by_passage_uses_relevance_tiers():
         "next_tier_passages": 0,
         "tail_tier_passages": 7,
     }
-    assert keep_fraction_by_passage_id["p1"] == 0.40
-    assert keep_fraction_by_passage_id["p2"] == 0.30
-    assert keep_fraction_by_passage_id["p3"] == 0.30
-    assert keep_fraction_by_passage_id["p4"] == 0.20
-    assert keep_fraction_by_passage_id["p5"] == 0.20
-    assert keep_fraction_by_passage_id["p6"] == 0.20
-    assert keep_fraction_by_passage_id["p7"] == 0.20
-    assert keep_fraction_by_passage_id["p8"] == 0.20
-    assert keep_fraction_by_passage_id["p9"] == 0.20
-    assert keep_fraction_by_passage_id["p10"] == 0.20
+    assert keep_fraction_by_passage_id["p1"] == 0.375
+    assert keep_fraction_by_passage_id["p2"] == 0.275
+    assert keep_fraction_by_passage_id["p3"] == 0.275
+    assert keep_fraction_by_passage_id["p4"] == 0.175
+    assert keep_fraction_by_passage_id["p5"] == 0.175
+    assert keep_fraction_by_passage_id["p6"] == 0.175
+    assert keep_fraction_by_passage_id["p7"] == 0.175
+    assert keep_fraction_by_passage_id["p8"] == 0.175
+    assert keep_fraction_by_passage_id["p9"] == 0.175
+    assert keep_fraction_by_passage_id["p10"] == 0.175
 
 
 def test_allocate_synthesis_passages_by_axis_uses_dynamic_floor_global_refill_and_exact_dedupe():

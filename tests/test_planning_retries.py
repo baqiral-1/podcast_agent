@@ -108,7 +108,7 @@ def _primitive(
 
 
 def _episode_architecture() -> EpisodeArchitecture:
-    return EpisodeArchitecture(
+    return EpisodeArchitecture.model_construct(
         episode_number=1,
         major_turn_section_id="s02",
         sections=[

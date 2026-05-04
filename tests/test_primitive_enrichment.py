@@ -10,11 +10,12 @@ from typing import Any
 from podcast_agent.llm.heuristic import HeuristicLLMClient
 from podcast_agent.pipeline.orchestrator import (
     PipelineOrchestrator,
-    _build_primitive_enrichment_passages_by_id,
+    _build_primitive_enrichment_evidence_by_primitive_id,
     _split_sentences,
 )
 from podcast_agent.schemas.models import (
     ActorMetadata,
+    ActorRelationship,
     ActorProfile,
     BaseSynthesisPrimitive,
     BookRecord,
@@ -33,6 +34,18 @@ from podcast_agent.schemas.models import (
 class DummyTTSClient:
     def set_run_logger(self, _logger) -> None:
         return None
+
+
+def _hooks() -> dict[str, str]:
+    return {
+        "concrete_detail": "A concrete detail lands.",
+        "host_lens": "The pressure is visible.",
+        "carry_forward": "The residue lingers.",
+    }
+
+
+def _long_phrase(prefix: str, count: int) -> str:
+    return " ".join([prefix, *[f"word{i}" for i in range(count - 1)]])
 
 
 def test_enrich_selected_primitives_merges_rich_fields_and_reuses_shared_core_passages(
@@ -70,7 +83,9 @@ def test_enrich_selected_primitives_merges_rich_fields_and_reuses_shared_core_pa
                         "before_state": "Before",
                         "after_state": "After",
                         "change_driver": "Driver",
-                        "irreversibility_reason": "Reason",
+                        "proof_of_change": "The break is undeniable.",
+                        "why_no_return": "Reason",
+                        "narration_hooks": _hooks(),
                     }
                 ],
             }
@@ -132,7 +147,21 @@ def test_enrich_selected_primitives_merges_rich_fields_and_reuses_shared_core_pa
                 actor_id="actor_1",
                 display_name="Actor One",
                 actor_type="person",
-            )
+            ),
+            ActorProfile(
+                actor_id="actor_2",
+                display_name="Actor Two",
+                actor_type="person",
+            ),
+        ],
+        relationships=[
+            ActorRelationship(
+                source_actor_id="actor_1",
+                target_actor_id="actor_2",
+                relationship_type="pressures",
+                description="Actor One pressures Actor Two.",
+                confidence="high",
+            ),
         ],
     )
     synthesis_primitives = SynthesisPrimitivesArtifact(
@@ -148,7 +177,7 @@ def test_enrich_selected_primitives_merges_rich_fields_and_reuses_shared_core_pa
                     core_passage_ids=["p1"],
                     support_passage_ids=["p2"],
                     geography="Delhi",
-                    actor_ids=["actor_1"],
+                    actor_ids=["actor_1", "actor_2"],
                 )
             ],
             "telling_details": [
@@ -233,7 +262,33 @@ def test_enrich_selected_primitives_merges_rich_fields_and_reuses_shared_core_pa
     payload = captured["payload"]
     assert payload["family"] == "epochal_turns"
     assert payload["base_primitives"][0]["id"] == "et_1"
-    assert set(payload["passages_by_id"]) == {"p1", "p2"}
+    assert set(payload["evidence_by_primitive_id"]) == {"et_1"}
+    assert [
+        item["passage_id"]
+        for item in payload["evidence_by_primitive_id"]["et_1"]["core_passages"]
+    ] == ["p1"]
+    assert [
+        item["passage_id"]
+        for item in payload["evidence_by_primitive_id"]["et_1"]["support_passages"]
+    ] == ["p2"]
+    assert payload["actor_metadata"] == {
+        "actors": [
+            {
+                "actor_id": "actor_1",
+                "display_name": "Actor One",
+                "aliases": [],
+                "actor_type": "person",
+                "one_line_role": "person",
+            },
+            {
+                "actor_id": "actor_2",
+                "display_name": "Actor Two",
+                "aliases": [],
+                "actor_type": "person",
+                "one_line_role": "person",
+            },
+        ]
+    }
     assert "primitive_ids_by_role" not in payload
 
     assert isinstance(synthesis_map, SynthesisMap)
@@ -244,7 +299,181 @@ def test_enrich_selected_primitives_merges_rich_fields_and_reuses_shared_core_pa
     assert epochal.after_state == "After"
 
 
-def test_primitive_enrichment_passages_include_support_and_trim_with_core_precedence() -> None:
+def test_enrich_selected_primitives_accepts_overlong_set_piece_scene_fields_after_merge(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    heuristic = HeuristicLLMClient()
+    monkeypatch.setattr("podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic)
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.PGVectorRetrieval",
+        lambda settings, run_logger=None: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.RetrievalService",
+        lambda settings, vector_store: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.build_tts_client",
+        lambda settings: DummyTTSClient(),
+    )
+
+    orchestrator = PipelineOrchestrator()
+    scene_anchor = _long_phrase("anchor", 22)
+    hinge_action = _long_phrase("hinge", 21)
+    scene_outcome = _long_phrase("outcome", 23)
+    location = _long_phrase("location", 18)
+    concrete_detail = _long_phrase("detail", 26)
+
+    def fake_run(payload: dict[str, Any]) -> Any:
+        return orchestrator.primitive_enrichment_agent.response_model_for_family(
+            "set_piece_scenes"
+        ).model_validate(
+            {
+                "project_id": "proj",
+                "family": "set_piece_scenes",
+                "enriched_primitives": [
+                    {
+                        "id": "sp_1",
+                        "family": "set_piece_scenes",
+                        "actor_ids": ["actor_1"],
+                        "scene_anchor": scene_anchor,
+                        "hinge_action": hinge_action,
+                        "scene_outcome": scene_outcome,
+                        "location": location,
+                        "narration_hooks": {
+                            "concrete_detail": concrete_detail,
+                            "host_lens": _long_phrase("lens", 35),
+                            "carry_forward": _long_phrase("carry", 37),
+                        },
+                    }
+                ],
+            }
+        )
+
+    orchestrator.primitive_enrichment_agent.run = fake_run
+
+    project = ThematicProject(
+        project_id="proj",
+        theme="Theme",
+        books=[
+            BookRecord(
+                book_id="b1",
+                title="Book",
+                author="Author",
+                source_path="book.txt",
+                source_type="text",
+            )
+        ],
+        config=PipelineConfig(),
+    )
+    corpus = ThematicCorpus(
+        project_id="proj",
+        axes=[
+            ThematicAxis(
+                axis_id="axis_1",
+                name="Axis",
+                description="Axis description",
+                theme_importance_score=1.0,
+            )
+        ],
+        passages_by_axis={
+            "axis_1": [
+                ExtractedPassage(
+                    passage_id="p1",
+                    book_id="b1",
+                    chunk_ids=["c1"],
+                    text="A passage with enough scene detail to support a long-form enriched scene.",
+                    full_text="A passage with enough scene detail to support a long-form enriched scene.",
+                    chapter_ref="ch. 1",
+                    axis_id="axis_1",
+                )
+            ]
+        },
+    )
+    actor_metadata = ActorMetadata(
+        project_id="proj",
+        actors=[
+            ActorProfile(
+                actor_id="actor_1",
+                display_name="Actor One",
+                actor_type="person",
+            )
+        ],
+    )
+    synthesis_primitives = SynthesisPrimitivesArtifact(
+        project_id="proj",
+        primitives_by_family={
+            "set_piece_scenes": [
+                BaseSynthesisPrimitive(
+                    id="sp_1",
+                    family="set_piece_scenes",
+                    title="Scene",
+                    summary="A public confrontation shifts visibly.",
+                    axis_ids=["axis_1"],
+                    core_passage_ids=["p1"],
+                    actor_ids=["actor_1"],
+                )
+            ],
+                "telling_details": [
+                    BaseSynthesisPrimitive(
+                        id=f"td_{idx}",
+                        family="telling_details",
+                        title=f"Detail {idx}",
+                    summary="Selected filler primitive.",
+                    axis_ids=["axis_1"],
+                        core_passage_ids=["p1"],
+                        actor_ids=[],
+                    )
+                    for idx in range(1, 8)
+                ],
+            },
+        )
+    strategy = NarrativeStrategy(
+        strategy_type="chronological",
+        justification="Test",
+        series_arc="Arc",
+        episodes=[
+            StrategyEpisode(
+                episode_number=1,
+                title="Episode 1",
+                arc_summary="Arc",
+                episode_spine={
+                    "listener_question": "Question?",
+                    "argument": "Claim",
+                    "core_primitive_ids": ["sp_1", "td_1", "td_2", "td_3"],
+                    "support_primitive_roles": {
+                        "td_4": "mechanism",
+                        "td_5": "texture",
+                        "td_6": "stakes",
+                        "td_7": "consequence",
+                    },
+                    "recall_primitive_ids": [],
+                },
+            )
+        ],
+    )
+
+    synthesis_map = asyncio.run(
+        orchestrator._enrich_selected_primitives(
+            project,
+            synthesis_primitives,
+            strategy,
+            corpus,
+            tmp_path,
+            actor_metadata,
+        )
+    )
+
+    enriched = synthesis_map.primitives_by_family["set_piece_scenes"][0]
+    assert enriched.scene_anchor == scene_anchor
+    assert enriched.hinge_action == hinge_action
+    assert enriched.scene_outcome == scene_outcome
+    assert enriched.location == location
+    assert enriched.narration_hooks.concrete_detail == concrete_detail
+
+
+def test_primitive_enrichment_evidence_is_primitive_scoped_with_core_support_and_trim() -> None:
     actor_metadata = ActorMetadata(
         project_id="proj",
         actors=[
@@ -300,16 +529,25 @@ def test_primitive_enrichment_passages_include_support_and_trim_with_core_preced
         ),
     }
 
-    passages_by_id = _build_primitive_enrichment_passages_by_id(
+    evidence_by_primitive_id = _build_primitive_enrichment_evidence_by_primitive_id(
         family="epochal_turns",
         primitives=primitives,
         passage_lookup=passage_lookup,
         actor_metadata=actor_metadata,
     )
 
-    assert set(passages_by_id) == {"p1", "p2"}
-    assert len(_split_sentences(passages_by_id["p1"]["text"])) == 2
-    assert len(_split_sentences(passages_by_id["p2"]["text"])) == 1
+    assert set(evidence_by_primitive_id) == {"et_1", "et_2"}
+
+    et_1 = evidence_by_primitive_id["et_1"]
+    assert [item["passage_id"] for item in et_1["core_passages"]] == ["p1"]
+    assert [item["passage_id"] for item in et_1["support_passages"]] == ["p2"]
+    assert len(_split_sentences(et_1["core_passages"][0]["text"])) == 2
+    assert len(_split_sentences(et_1["support_passages"][0]["text"])) == 1
+
+    et_2 = evidence_by_primitive_id["et_2"]
+    assert [item["passage_id"] for item in et_2["core_passages"]] == []
+    assert [item["passage_id"] for item in et_2["support_passages"]] == ["p1"]
+    assert len(_split_sentences(et_2["support_passages"][0]["text"])) == 1
 
 
 def test_enrich_selected_primitives_runs_family_batches_concurrently_with_cap(
@@ -342,43 +580,52 @@ def test_enrich_selected_primitives_runs_family_batches_concurrently_with_cap(
             "before_state": "Before",
             "after_state": "After",
             "change_driver": "Driver",
-            "irreversibility_reason": "Reason",
+            "proof_of_change": "The break is undeniable.",
+            "why_no_return": "Reason",
+            "narration_hooks": _hooks(),
         },
         "decisions_and_nondecisions": {
             "actor_ids": ["actor_1"],
+            "decision_trigger": "The pressure spikes now.",
             "decision_question": "Should the ruler strike now or hold back?",
             "decision_mode": "decision",
             "options_considered": ["Act now", "Wait"],
-            "immediate_consequence": "The choice redirects the next move.",
+            "next_result": "The choice redirects the next move.",
+            "narration_hooks": _hooks(),
         },
         "set_piece_scenes": {
             "actor_ids": ["actor_1"],
             "scene_anchor": "A public confrontation turns the room.",
+            "hinge_action": "The first move breaks the standoff.",
             "scene_outcome": "The visible result hardens the next phase.",
             "location": "Delhi",
+            "narration_hooks": _hooks(),
         },
         "human_costs": {
             "actor_ids": [],
             "affected_group": "Urban households",
             "cost_type": "displacement",
+            "concrete_marker": "Families carry bundles into the road.",
             "lived_consequence": "Families lose shelter and local protection.",
-            "visibility": "Visible on the ground and easy to ignore from above.",
+            "who_saw_it": "Visible on the ground and easy to ignore from above.",
+            "narration_hooks": _hooks(),
         },
         "character_engines": {
             "actor_id": "actor_1",
             "goal": "Hold a fragile position.",
-            "fear": "Losing command and legitimacy.",
-            "constraint": "Rivals and institutions narrow the path.",
-            "stakes": "Status and survival both depend on the outcome.",
+            "pressure_box": "Rivals and institutions narrow the path.",
+            "risk_if_it_breaks": "Status and survival both depend on the outcome.",
+            "tell": "He keeps insisting the gamble will work.",
+            "narration_hooks": _hooks(),
         },
         "coalitions_and_fault_lines": {
             "actor_ids": ["actor_1"],
             "alignment_type": "tactical",
             "coalition_phase": "holding",
-            "coalition": "A tactical alignment of convenience.",
-            "shared_interest": "Each side needs the other temporarily.",
-            "fault_line": "Their longer-term aims diverge sharply.",
-            "stress_point": "Pressure rises once immediate danger recedes.",
+            "alignment_shape": "A tactical alignment of convenience.",
+            "alignment_basis": "Each side needs the other temporarily.",
+            "fracture_trigger": "Pressure rises once immediate danger recedes.",
+            "narration_hooks": _hooks(),
         },
     }
 
@@ -628,24 +875,27 @@ def test_enrich_selected_primitives_preserves_new_structured_fields(
             delta.update(
                 {
                     "actor_ids": ["actor_1"],
+                    "decision_trigger": "The next crisis arrives.",
                     "decision_question": "Should the ruler force a confrontation now?",
                     "decision_mode": "decision",
                     "options_considered": ["Force the move", "Delay the confrontation"],
-                    "immediate_consequence": "The court reorients around the choice.",
+                    "next_result": "The court reorients around the choice.",
+                    "narration_hooks": _hooks(),
                 }
             )
         elif family == "systems_and_operating_logics":
             delta.update(
                 {
                     "system_name": "Court patronage",
-                    "mechanism": "Orders and incentives move through patronage channels.",
-                    "mechanism_steps": [
+                    "operating_chain": [
                         "Orders move downward through loyal intermediaries.",
                         "Provincial actors translate orders into local pressure.",
                     ],
                     "inputs": ["orders"],
                     "outputs": ["compliance"],
+                    "where_it_shows_up": "Officials enforce it face to face.",
                     "failure_mode": "The chain distorts when local incentives diverge.",
+                    "narration_hooks": _hooks(),
                 }
             )
         else:
@@ -806,7 +1056,7 @@ def test_enrich_selected_primitives_preserves_new_structured_fields(
     assert decision.decision_question == "Should the ruler force a confrontation now?"
 
     system = synthesis_map.primitives_by_family["systems_and_operating_logics"][0]
-    assert system.mechanism_steps == [
+    assert system.operating_chain == [
         "Orders move downward through loyal intermediaries.",
         "Provincial actors translate orders into local pressure.",
     ]
@@ -849,9 +1099,10 @@ def test_enrich_selected_primitives_allows_null_character_engine_actor(
                         "family": family,
                         "actor_id": None,
                         "goal": "Hold a fragile position.",
-                        "fear": "Public loss of legitimacy.",
-                        "constraint": "The institutions around the actor are unstable.",
-                        "stakes": "Failure would dissolve the faction's leverage.",
+                        "pressure_box": "The institutions around the actor are unstable.",
+                        "risk_if_it_breaks": "Failure would dissolve the faction's leverage.",
+                        "tell": "The actor keeps returning to the same justification.",
+                        "narration_hooks": _hooks(),
                     }
                 ],
             }

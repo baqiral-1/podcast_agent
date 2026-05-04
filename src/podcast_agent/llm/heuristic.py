@@ -369,23 +369,32 @@ class HeuristicLLMClient(LLMClient):
             scoped_actor_ids = actor_ids[:2] or ["actor_001"]
             primary_actor_id = scoped_actor_ids[0]
             delta: dict[str, Any] = {"id": primitive_id, "family": family}
+            hooks = {
+                "concrete_detail": "A concrete detail crystallizes the turn.",
+                "host_lens": "The pressure is now visible.",
+                "carry_forward": "The residue shapes what follows.",
+            }
             if family == "epochal_turns":
                 delta.update(
                     {
                         "before_state": "The old balance still holds.",
                         "after_state": "A new political reality is now in force.",
                         "change_driver": "A decisive turn forces the transition.",
-                        "irreversibility_reason": "The institutional and political costs cannot be unwound quickly.",
+                        "why_no_return": "The institutional and political costs cannot be unwound quickly.",
+                        "proof_of_change": "The new balance becomes publicly undeniable.",
+                        "narration_hooks": hooks,
                     }
                 )
             elif family == "decisions_and_nondecisions":
                 delta.update(
                     {
                         "actor_ids": scoped_actor_ids,
+                        "decision_trigger": "A fresh shock forces the actor to choose.",
                         "decision_question": "Should the actor force a move now or hold back?",
                         "decision_mode": "decision",
                         "options_considered": ["Act immediately.", "Hold position and wait."],
-                        "immediate_consequence": "The choice redirects the next phase of events.",
+                        "next_result": "The choice redirects the next phase of events.",
+                        "narration_hooks": hooks,
                     }
                 )
             elif family == "set_piece_scenes":
@@ -393,8 +402,10 @@ class HeuristicLLMClient(LLMClient):
                     {
                         "actor_ids": scoped_actor_ids,
                         "scene_anchor": "A public confrontation concentrates pressure in one place.",
+                        "hinge_action": "One visible move breaks the standoff.",
                         "scene_outcome": "The confrontation makes the next turn unavoidable.",
                         "location": "capital",
+                        "narration_hooks": hooks,
                     }
                 )
             elif family == "human_costs":
@@ -403,8 +414,10 @@ class HeuristicLLMClient(LLMClient):
                         "actor_ids": scoped_actor_ids,
                         "affected_group": "ordinary families near the center of events",
                         "cost_type": "displacement and fear",
+                        "concrete_marker": "Households carry loss into the street.",
                         "lived_consequence": "People closest to the rupture absorb the damage first.",
-                        "visibility": "public but unevenly acknowledged",
+                        "who_saw_it": "public but unevenly acknowledged",
+                        "narration_hooks": hooks,
                     }
                 )
             elif family == "character_engines":
@@ -412,9 +425,10 @@ class HeuristicLLMClient(LLMClient):
                     {
                         "actor_id": primary_actor_id,
                         "goal": "Protect a fragile position.",
-                        "fear": "Losing legitimacy and control.",
-                        "constraint": "Institutions and rivals narrow the available choices.",
-                        "stakes": "The actor's status and safety both depend on the outcome.",
+                        "pressure_box": "Institutions, rivals, and fear narrow the available choices.",
+                        "risk_if_it_breaks": "The actor's status and safety both depend on the outcome.",
+                        "tell": "The actor keeps justifying the same risky move.",
+                        "narration_hooks": hooks,
                     }
                 )
             elif family == "coalitions_and_fault_lines":
@@ -423,24 +437,25 @@ class HeuristicLLMClient(LLMClient):
                         "actor_ids": scoped_actor_ids,
                         "alignment_type": "tactical",
                         "coalition_phase": "holding",
-                        "coalition": "A temporary alliance of convenience.",
-                        "shared_interest": "Each side needs the other for the moment.",
-                        "fault_line": "Their long-term aims still diverge sharply.",
-                        "stress_point": "The alliance weakens when pressure rises.",
+                        "alignment_shape": "A temporary alliance of convenience.",
+                        "alignment_basis": "Each side needs the other for the moment.",
+                        "fracture_trigger": "The alliance weakens when pressure rises.",
+                        "narration_hooks": hooks,
                     }
                 )
             elif family == "systems_and_operating_logics":
                 delta.update(
                     {
                         "system_name": "A coercive political-administrative machine",
-                        "mechanism": "Resources, information, and fear move through the same channels.",
-                        "mechanism_steps": [
+                        "operating_chain": [
                             "Orders move downward through patronage and command.",
                             "Local intermediaries translate pressure into compliance.",
                         ],
                         "inputs": ["orders", "money"],
                         "outputs": ["compliance", "distortion"],
+                        "where_it_shows_up": "Officials and intermediaries enforce it face to face.",
                         "failure_mode": "The system becomes brittle when pressure outruns coordination.",
+                        "narration_hooks": hooks,
                     }
                 )
             elif family == "contested_explanations":
@@ -450,15 +465,20 @@ class HeuristicLLMClient(LLMClient):
                         "candidate_readings": [
                             {
                                 "label": "reading_a",
-                                "summary": "A cautious interpretation of the evidence.",
+                                "claim": "A cautious interpretation of the evidence.",
+                                "emphasizes": "institutional caution",
+                                "downplays": "short-term opportunism",
                                 "support_passage_ids": base_passage_ids[:1],
                             },
                             {
                                 "label": "reading_b",
-                                "summary": "A competing interpretation that remains plausible.",
+                                "claim": "A competing interpretation that remains plausible.",
+                                "emphasizes": "short-term opportunism",
+                                "downplays": "institutional caution",
                                 "support_passage_ids": base_passage_ids[:1],
                             },
-                        ]
+                        ],
+                        "narration_hooks": hooks,
                     }
                 )
             elif family == "moral_traps":
@@ -467,7 +487,8 @@ class HeuristicLLMClient(LLMClient):
                         "actor_ids": scoped_actor_ids,
                         "competing_obligations": ["Protect allies.", "Preserve institutional order."],
                         "compromised_options": ["Act and deepen the damage.", "Wait and allow the damage to spread."],
-                        "no_clean_exit_reason": "Every plausible move imposes a visible cost.",
+                        "trap_structure": "Every plausible move imposes a visible cost.",
+                        "narration_hooks": hooks,
                     }
                 )
             elif family == "ironies_and_reversals":
@@ -476,7 +497,8 @@ class HeuristicLLMClient(LLMClient):
                         "actor_ids": scoped_actor_ids,
                         "expected_outcome": "The move should stabilize the situation.",
                         "actual_outcome": "It instead accelerates the breakdown.",
-                        "reversal_driver": "The same tactic triggers the opposite effect under pressure.",
+                        "flip_cause": "The same tactic triggers the opposite effect under pressure.",
+                        "narration_hooks": hooks,
                     }
                 )
             else:
@@ -490,6 +512,10 @@ class HeuristicLLMClient(LLMClient):
 
     def _generate_narrative_strategy(self, payload: PromptPayload) -> dict[str, Any]:
         requested_episode_count = payload.get("requested_episode_count")
+        recommended_episode_count_min = int(payload.get("recommended_episode_count_min", 8))
+        recommended_episode_count_max = int(payload.get("recommended_episode_count_max", 12))
+        if recommended_episode_count_max < recommended_episode_count_min:
+            recommended_episode_count_max = recommended_episode_count_min
         synthesis_map = payload.get("synthesis_map", {})
         primitive_ids = []
         for family_items in (synthesis_map.get("primitives_by_family", {}) or {}).values():
@@ -502,43 +528,44 @@ class HeuristicLLMClient(LLMClient):
         while len(primitive_ids) < 96:
             primitive_ids.append(f"primitive_{len(primitive_ids) + 1:03d}")
         if requested_episode_count is None:
-            recommended_episode_count = 6
+            recommended_episode_count = recommended_episode_count_min
         else:
-            recommended_episode_count = max(6, min(10, int(requested_episode_count)))
+            recommended_episode_count = int(requested_episode_count)
         episodes = []
         for idx in range(recommended_episode_count):
-            listener_question = (
+            listener_problem = (
                 "What local turn best explains the series?"
                 if idx == 0
                 else f"What does episode {idx + 1} newly reveal?"
             )
             core_start = idx * 13
-            core_ids = primitive_ids[core_start:core_start + 6]
-            if len(core_ids) < 6:
-                core_ids = primitive_ids[:6]
-            support_candidates = primitive_ids[core_start + 6:core_start + 19]
+            core_ids = primitive_ids[core_start:core_start + 4]
+            if len(core_ids) < 4:
+                core_ids = primitive_ids[:4]
+            support_candidates = primitive_ids[core_start + 4:core_start + 14]
             support_ids = [
                 primitive_id
                 for primitive_id in support_candidates
                 if primitive_id not in core_ids
-            ][:7]
-            if len(support_ids) < 7:
+            ][:4]
+            if len(support_ids) < 4:
                 support_ids = [
                     primitive_id
                     for primitive_id in primitive_ids
                     if primitive_id not in core_ids
-                ][:7]
+                ][:4]
             episodes.append(
                 {
                     "episode_number": idx + 1,
                     "title": f"Episode {idx + 1}",
                     "thematic_focus": "Heuristic focus",
-                    "arc_summary": f"Episode {idx + 1} follows a single proposition spine.",
+                    "arc_summary": f"Episode {idx + 1} follows a single listener-facing pressure line.",
                     "unresolved_questions": [],
                     "actor_arc_directives": [],
                     "episode_spine": {
-                        "listener_question": listener_question,
-                        "argument": "Selected primitives carry the controlling proposition.",
+                        "listener_problem": listener_problem,
+                        "episode_answer": "Selected primitives carry the episode's answer.",
+                        "pressure_line": "The listener should feel one pressure line tightening across the episode.",
                         "core_primitive_ids": core_ids,
                         "support_primitive_roles": {
                             primitive_id: "mechanism"
@@ -567,7 +594,7 @@ class HeuristicLLMClient(LLMClient):
         section_count = min(8, max(6, len(primitive_ids))) if primitive_ids else 6
         closing_minutes = 2.0
         non_closing_count = max(1, section_count - 1)
-        non_closing_minutes = max(1.0, (110.0 - closing_minutes) / non_closing_count)
+        non_closing_minutes = max(1.0, (85.0 - closing_minutes) / non_closing_count)
         sections = []
         for idx in range(section_count):
             section_id = f"section_{idx + 1:02d}"
@@ -588,19 +615,12 @@ class HeuristicLLMClient(LLMClient):
                         f"Stage the visible move that defines section {idx + 1}.",
                         f"Show the immediate consequence that makes section {idx + 1} matter.",
                     ],
-                    "section_question": f"What does section {idx + 1} make newly visible?",
-                    "section_resolution": f"Section {idx + 1} advances the heuristic argument.",
-                    "entry_state": "The listener is carrying forward the prior section's uncertainty.",
-                    "exit_state": "The listener leaves with a clearer local understanding.",
+                    "listener_tension": f"What pressure does section {idx + 1} put on the listener?",
+                    "section_turn": f"Section {idx + 1} changes the listener's understanding.",
                     "transition_logic": "Move by clarifying the next structural pressure.",
                     "depends_on_section_ids": [f"section_{idx:02d}"] if idx > 0 else [],
                     "sets_up_section_ids": [f"section_{idx + 2:02d}"] if idx < section_count - 1 else [],
-                    "argument_role": "frame" if idx == 0 else "close" if idx == section_count - 1 else "establish_mechanism",
-                    "inference_mode": "scene_first" if idx == 0 else "mechanism_first",
                     "recurrence_role": "plant" if idx == 0 else "payoff" if idx == section_count - 1 else "deepen",
-                    "pressure_type": "mass_political",
-                    "resolution_type": "escalation" if idx < section_count - 1 else "containment",
-                    "closure_level": "high" if idx == section_count - 1 else "low",
                     "closure_mode": "final_answer" if idx == section_count - 1 else "residue",
                     "priority_core_passage_ids": [],
                 }
@@ -624,37 +644,29 @@ class HeuristicLLMClient(LLMClient):
             str(passage.get("passage_id", uuid4().hex))
             for passage in available_passages[:3]
         ]
-        dominant_primitive_id = "primitive_001"
-        if episode_spine:
-            dominant_primitive_id = str(
-                (episode_spine.get("core_primitive_ids") or ["primitive_001"])[0]
-            )
         sections = architecture.get("sections") or [{"section_id": "section_01"}]
         scene_cards = []
         default_duration = 180
-        for idx in range(28):
+        for idx in range(18):
             source_section = sections[min(idx, len(sections) - 1)]
             section_id = str(source_section.get("section_id", "section_01"))
-            is_closing = idx == 27
+            is_closing = idx == 17
             scene_cards.append(
                 {
                     "scene_id": f"scene_{idx + 1:02d}",
                     "section_id": section_id if not is_closing else str(sections[-1].get("section_id", section_id)),
                     "title": f"Heuristic scene {idx + 1}",
                     "scene_role": "setup" if idx == 0 else "consequence" if is_closing else "action",
-                    "dominant_primitive_id": dominant_primitive_id,
-                    "spine_relation": "set_stakes" if idx == 0 else "show_consequence" if is_closing else "spine_advance",
-                    "state_effect": "The listener understands what the proposition is testing." if idx == 0 else "The listener carries the argument forward." if not is_closing else "The listener leaves with a constrained conclusion.",
+                    "beat_change": "The listener enters the episode's opening pressure." if idx == 0 else "The next beat changes the situation in a concrete way." if not is_closing else "The closing beat leaves a constrained answer in view.",
+                    "must_land_facts": ["A concrete change becomes visible in the beat."],
                     "entry_image": "A concrete opening image." if idx == 0 else "A grounded detail keeps the scene moving.",
-                    "local_question": "What changes here?",
                     "observable_detail": "A visible consequence lands in the scene.",
-                    "intended_move": "Move the listener into the next discovery step.",
                     "timeframe": None,
                     "location": None,
                     "actors": [],
-                    "primitive_ids": [dominant_primitive_id],
                     "passage_ids": passage_ids,
                     "estimated_duration_seconds": 120 if is_closing else default_duration,
+                    "host_move": {"move_type": "none", "note": "", "max_sentences": 1},
                 }
             )
         return {
@@ -665,7 +677,7 @@ class HeuristicLLMClient(LLMClient):
                 "opening_question": (
                     (
                         strategy_episode.get("episode_spine", {}) or {}
-                    ).get("listener_question", "What changes here?")
+                    ).get("listener_problem", "What changes here?")
                     or "What changes here?"
                 ),
                 "handoff_scene_card_id": "scene_01",
@@ -712,20 +724,26 @@ class HeuristicLLMClient(LLMClient):
         return {"repaired_sections": []}
 
     def _generate_spoken_delivery(self, payload: PromptPayload) -> dict[str, Any]:
-        section = payload.get("section", {})
-        text = str(section.get("text", "")).strip()
+        script = payload.get("script", {})
+        prose_sections = list(script.get("prose_sections", []) or [])
         return {
-            "text": text or "Spoken delivery text.",
-            "speech_hints": {
-                "style": "neutral",
-                "intensity": "none",
-                "pause_before_ms": 300,
-                "pause_after_ms": 300,
-                "pace": "normal",
-                "pronunciation_hints": [],
-                "emphasis_targets": [],
-                "render_strategy": "plain",
-            },
+            "sections": [
+                {
+                    "section_id": str(section.get("section_id", f"section_{idx + 1}")),
+                    "text": str(section.get("text", "")).strip() or "Spoken delivery text.",
+                    "speech_hints": {
+                        "style": "neutral",
+                        "intensity": "none",
+                        "pause_before_ms": 300,
+                        "pause_after_ms": 300,
+                        "pace": "normal",
+                        "pronunciation_hints": [],
+                        "emphasis_targets": [],
+                        "render_strategy": "plain",
+                    },
+                }
+                for idx, section in enumerate(prose_sections)
+            ],
         }
 
     def _generate_style_audit(self, payload: PromptPayload) -> dict[str, Any]:

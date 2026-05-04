@@ -23,6 +23,35 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+_WORD_RE = re.compile(r"\S+")
+
+
+def _word_count(value: str) -> int:
+    return len(_WORD_RE.findall(str(value or "").strip()))
+
+
+def _validate_max_words(value: str, *, max_words: int, field_name: str) -> str:
+    text = str(value or "").strip()
+    if text and _word_count(text) > max_words:
+        raise ValueError(f"{field_name} must be at most {max_words} words")
+    return text
+
+
+def _validate_list_item_word_limit(
+    values: list[str],
+    *,
+    max_words: int,
+    field_name: str,
+) -> list[str]:
+    normalized = [str(value or "").strip() for value in values]
+    for item in normalized:
+        if item and _word_count(item) > max_words:
+            raise ValueError(
+                f"each {field_name} entry must be at most {max_words} words"
+            )
+    return normalized
+
+
 # ---------------------------------------------------------------------------
 # Enums
 # ---------------------------------------------------------------------------
@@ -230,7 +259,7 @@ class PipelineConfig(StrictModel):
     synthesis_axis_pct: float = Field(default=1.0, ge=0.0, le=1.0)
     synthesis_axis_min: int = Field(default=10, ge=0)
     synthesis_axis_max: int = Field(default=15, ge=1)
-    synthesis_total_passage_cap: int = Field(default=600, ge=1)
+    synthesis_total_passage_cap: int = Field(default=450, ge=1)
     synthesis_floor_budget_fraction: float = Field(default=0.0, ge=0.0, le=1.0)
     synthesis_axis_floor_min: int = Field(default=0, ge=0)
     synthesis_axis_floor_max: int = Field(default=0, ge=0)
@@ -238,10 +267,10 @@ class PipelineConfig(StrictModel):
     synthesis_trim_top_fraction: float = Field(default=0.10, ge=0.0, le=1.0)
     synthesis_trim_mid_fraction: float = Field(default=0.20, ge=0.0, le=1.0)
     synthesis_trim_next_fraction: float = Field(default=0.0, ge=0.0, le=1.0)
-    synthesis_trim_top_keep_fraction: float = Field(default=0.35, gt=0.0, le=1.0)
-    synthesis_trim_mid_keep_fraction: float = Field(default=0.25, gt=0.0, le=1.0)
-    synthesis_trim_next_keep_fraction: float = Field(default=0.30, gt=0.0, le=1.0)
-    synthesis_trim_tail_keep_fraction: float = Field(default=0.15, gt=0.0, le=1.0)
+    synthesis_trim_top_keep_fraction: float = Field(default=0.375, gt=0.0, le=1.0)
+    synthesis_trim_mid_keep_fraction: float = Field(default=0.275, gt=0.0, le=1.0)
+    synthesis_trim_next_keep_fraction: float = Field(default=0.325, gt=0.0, le=1.0)
+    synthesis_trim_tail_keep_fraction: float = Field(default=0.175, gt=0.0, le=1.0)
     planning_axis_pct: float = Field(default=1.0, ge=0.0, le=1.0)
     planning_axis_min: int = Field(default=10, ge=0)
     planning_axis_max: int = Field(default=15, ge=1)
@@ -254,13 +283,15 @@ class PipelineConfig(StrictModel):
     episode_planning_concurrency: int = Field(default=8, ge=1)
     episode_write_concurrency: int = Field(default=8, ge=1)
     spoken_delivery_concurrency: int | None = Field(default=8, ge=1)
-    architecture_section_target_min: int = Field(default=7, ge=1)
-    architecture_section_target_max: int = Field(default=10, ge=1)
-    min_episode_minutes: float = Field(default=110.0, gt=0.0)
-    max_episode_minutes: float = Field(default=130.0, gt=0.0)
+    architecture_section_target_min: int = Field(default=6, ge=1)
+    architecture_section_target_max: int = Field(default=8, ge=1)
+    narrative_strategy_episode_count_min: int = Field(default=8, ge=1)
+    narrative_strategy_episode_count_max: int = Field(default=12, ge=1)
+    min_episode_minutes: float = Field(default=75.0, gt=0.0)
+    max_episode_minutes: float = Field(default=95.0, gt=0.0)
     duration_shortfall_policy: Literal["warn"] = "warn"
-    scene_card_target_min: int = Field(default=25, ge=1)
-    scene_card_target_max: int = Field(default=35, ge=1)
+    scene_card_target_min: int = Field(default=18, ge=1)
+    scene_card_target_max: int = Field(default=26, ge=1)
     scene_card_target_policy: Literal["warn"] = "warn"
     scene_card_primitives_min: int = Field(default=1, ge=0)
     scene_card_primitives_max: int = Field(default=2, ge=1)
@@ -298,6 +329,14 @@ class PipelineConfig(StrictModel):
             raise ValueError(
                 "architecture_section_target_max must be >= architecture_section_target_min"
             )
+        if (
+            self.narrative_strategy_episode_count_max
+            < self.narrative_strategy_episode_count_min
+        ):
+            raise ValueError(
+                "narrative_strategy_episode_count_max must be >= "
+                "narrative_strategy_episode_count_min"
+            )
         if self.scene_card_target_max < self.scene_card_target_min:
             raise ValueError("scene_card_target_max must be >= scene_card_target_min")
         if self.scene_card_primitives_max < self.scene_card_primitives_min:
@@ -314,7 +353,7 @@ class ThematicProject(StrictModel):
     sub_themes: list[str] = Field(default_factory=list, max_length=30)
     books: list[BookRecord] = Field(default_factory=list)
     requested_episode_count: int | None = Field(default=None, ge=1)
-    recommended_episode_count: int | None = Field(default=None, ge=6, le=10)
+    recommended_episode_count: int | None = Field(default=None, ge=1)
     episode_count: int = Field(default=3, ge=1)
     config: PipelineConfig = Field(default_factory=PipelineConfig)
     created_at: datetime = Field(default_factory=utc_now)
@@ -590,10 +629,48 @@ class BaseSynthesisPrimitive(StrictModel):
         return combined
 
 
+class NarrationHooks(StrictModel):
+    concrete_detail: str = Field(min_length=1)
+    host_lens: str = Field(min_length=1)
+    carry_forward: str = Field(min_length=1)
+
+
+class EnrichmentNarrationHooks(StrictModel):
+    concrete_detail: str = Field(min_length=1)
+    host_lens: str = Field(min_length=1)
+    carry_forward: str = Field(min_length=1)
+
+
 class CandidateReading(StrictModel):
     label: str = Field(min_length=1)
-    summary: str = Field(min_length=1)
+    claim: str = Field(
+        min_length=1,
+        validation_alias=AliasChoices("claim", "summary"),
+        serialization_alias="claim",
+    )
+    emphasizes: str = ""
+    downplays: str = ""
     support_passage_ids: list[str] = Field(default_factory=list)
+
+    @property
+    def summary(self) -> str:
+        return self.claim
+
+
+class EnrichmentCandidateReading(StrictModel):
+    label: str = Field(min_length=1)
+    claim: str = Field(
+        min_length=1,
+        validation_alias=AliasChoices("claim", "summary"),
+        serialization_alias="claim",
+    )
+    emphasizes: str = ""
+    downplays: str = ""
+    support_passage_ids: list[str] = Field(default_factory=list)
+
+    @property
+    def summary(self) -> str:
+        return self.claim
 
 
 class SynthesisPrimitive(SynthesisPrimitiveBase):
@@ -613,24 +690,46 @@ class EpochalTurnPrimitive(SynthesisPrimitiveBase):
     before_state: str = Field(min_length=1)
     after_state: str = Field(min_length=1)
     change_driver: str = Field(min_length=1)
-    irreversibility_reason: str = Field(min_length=1)
+    why_no_return: str = Field(
+        min_length=1,
+        validation_alias=AliasChoices("why_no_return", "irreversibility_reason"),
+        serialization_alias="why_no_return",
+    )
+    proof_of_change: str = ""
+    narration_hooks: NarrationHooks | None = None
+
+    @property
+    def irreversibility_reason(self) -> str:
+        return self.why_no_return
 
 
 class DecisionPrimitive(SynthesisPrimitiveBase):
     family: Literal["decisions_and_nondecisions"]
     actor_ids: list[str] = Field(default_factory=list)
+    decision_trigger: str = ""
     decision_question: str = Field(min_length=1)
     decision_mode: Literal["decision", "refusal", "delay", "nondecision"]
     options_considered: list[str] = Field(default_factory=list, min_length=1)
-    immediate_consequence: str = Field(min_length=1)
+    next_result: str = Field(
+        min_length=1,
+        validation_alias=AliasChoices("next_result", "immediate_consequence"),
+        serialization_alias="next_result",
+    )
+    narration_hooks: NarrationHooks | None = None
+
+    @property
+    def immediate_consequence(self) -> str:
+        return self.next_result
 
 
 class SetPieceScenePrimitive(SynthesisPrimitiveBase):
     family: Literal["set_piece_scenes"]
     actor_ids: list[str] = Field(default_factory=list)
     scene_anchor: str = Field(min_length=1)
+    hinge_action: str = ""
     scene_outcome: str = Field(min_length=1)
     location: str = Field(min_length=1)
+    narration_hooks: NarrationHooks | None = None
 
 
 class HumanCostPrimitive(SynthesisPrimitiveBase):
@@ -638,17 +737,47 @@ class HumanCostPrimitive(SynthesisPrimitiveBase):
     actor_ids: list[str] = Field(default_factory=list)
     affected_group: str = Field(min_length=1)
     cost_type: str = Field(min_length=1)
+    concrete_marker: str = ""
     lived_consequence: str = Field(min_length=1)
-    visibility: str = Field(min_length=1)
+    who_saw_it: str = Field(
+        min_length=1,
+        validation_alias=AliasChoices("who_saw_it", "visibility"),
+        serialization_alias="who_saw_it",
+    )
+    narration_hooks: NarrationHooks | None = None
+
+    @property
+    def visibility(self) -> str:
+        return self.who_saw_it
 
 
 class CharacterEnginePrimitive(SynthesisPrimitiveBase):
     family: Literal["character_engines"]
     actor_id: str | None = None
     goal: str = Field(min_length=1)
-    fear: str = Field(min_length=1)
-    constraint: str = Field(min_length=1)
-    stakes: str = Field(min_length=1)
+    pressure_box: str = Field(min_length=1)
+    risk_if_it_breaks: str = Field(min_length=1)
+    tell: str = ""
+    narration_hooks: NarrationHooks | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def map_legacy_character_engine_fields(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        payload = dict(data)
+        if not payload.get("pressure_box"):
+            legacy_parts = [
+                str(payload.get("constraint", "")).strip(),
+                str(payload.get("fear", "")).strip(),
+            ]
+            payload["pressure_box"] = "; ".join(part for part in legacy_parts if part)
+        if not payload.get("risk_if_it_breaks"):
+            payload["risk_if_it_breaks"] = str(payload.get("stakes", "")).strip()
+        payload.pop("fear", None)
+        payload.pop("constraint", None)
+        payload.pop("stakes", None)
+        return payload
 
 
 class CoalitionFaultLinePrimitive(SynthesisPrimitiveBase):
@@ -656,25 +785,61 @@ class CoalitionFaultLinePrimitive(SynthesisPrimitiveBase):
     actor_ids: list[str] = Field(default_factory=list)
     alignment_type: AlignmentType
     coalition_phase: CoalitionPhase
-    coalition: str = Field(min_length=1)
-    shared_interest: str = Field(min_length=1)
-    fault_line: str = Field(min_length=1)
-    stress_point: str = Field(min_length=1)
+    alignment_shape: str = Field(min_length=1)
+    alignment_basis: str = Field(min_length=1)
+    fracture_trigger: str = Field(min_length=1)
+    narration_hooks: NarrationHooks | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def map_legacy_coalition_fields(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        payload = dict(data)
+        payload.setdefault("alignment_shape", str(payload.get("coalition", "")).strip())
+        payload.setdefault("alignment_basis", str(payload.get("shared_interest", "")).strip())
+        trigger = str(payload.get("stress_point", "")).strip() or str(payload.get("fault_line", "")).strip()
+        payload.setdefault("fracture_trigger", trigger)
+        payload.pop("coalition", None)
+        payload.pop("shared_interest", None)
+        payload.pop("fault_line", None)
+        payload.pop("stress_point", None)
+        return payload
 
 
 class SystemsOperatingLogicPrimitive(SynthesisPrimitiveBase):
     family: Literal["systems_and_operating_logics"]
     system_name: str = Field(min_length=1)
-    mechanism: str = Field(min_length=1)
-    mechanism_steps: list[str] = Field(default_factory=list, min_length=2)
+    operating_chain: list[str] = Field(
+        default_factory=list,
+        min_length=2,
+        validation_alias=AliasChoices("operating_chain", "mechanism_steps"),
+        serialization_alias="operating_chain",
+    )
     inputs: list[str] = Field(default_factory=list, min_length=1)
     outputs: list[str] = Field(default_factory=list, min_length=1)
+    where_it_shows_up: str = ""
     failure_mode: str = Field(min_length=1)
+    narration_hooks: NarrationHooks | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def drop_legacy_system_fields(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        payload = dict(data)
+        payload.pop("mechanism", None)
+        return payload
+
+    @property
+    def mechanism_steps(self) -> list[str]:
+        return list(self.operating_chain)
 
 
 class ContestedExplanationPrimitive(SynthesisPrimitiveBase):
     family: Literal["contested_explanations"]
     candidate_readings: list[CandidateReading]
+    narration_hooks: NarrationHooks | None = None
 
 
 class MoralTrapPrimitive(SynthesisPrimitiveBase):
@@ -682,7 +847,16 @@ class MoralTrapPrimitive(SynthesisPrimitiveBase):
     actor_ids: list[str] = Field(default_factory=list)
     competing_obligations: list[str] = Field(default_factory=list, min_length=1)
     compromised_options: list[str] = Field(default_factory=list, min_length=1)
-    no_clean_exit_reason: str = Field(min_length=1)
+    trap_structure: str = Field(
+        min_length=1,
+        validation_alias=AliasChoices("trap_structure", "no_clean_exit_reason"),
+        serialization_alias="trap_structure",
+    )
+    narration_hooks: NarrationHooks | None = None
+
+    @property
+    def no_clean_exit_reason(self) -> str:
+        return self.trap_structure
 
 
 class IronyReversalPrimitive(SynthesisPrimitiveBase):
@@ -690,7 +864,16 @@ class IronyReversalPrimitive(SynthesisPrimitiveBase):
     actor_ids: list[str] = Field(default_factory=list)
     expected_outcome: str = Field(min_length=1)
     actual_outcome: str = Field(min_length=1)
-    reversal_driver: str = Field(min_length=1)
+    flip_cause: str = Field(
+        min_length=1,
+        validation_alias=AliasChoices("flip_cause", "reversal_driver"),
+        serialization_alias="flip_cause",
+    )
+    narration_hooks: NarrationHooks | None = None
+
+    @property
+    def reversal_driver(self) -> str:
+        return self.flip_cause
 
 
 AnySynthesisPrimitive = Annotated[
@@ -727,26 +910,26 @@ SYNTHESIS_PRIMITIVE_FAMILIES: tuple[str, ...] = (
     "ironies_and_reversals",
 )
 #
-# These prompt-time family ranges are intentionally mild and retention-informed.
-# Higher-retention families get a small upward nudge; lower-retention families
-# are trimmed back modestly without removing coverage from the synthesis pool.
+# These prompt-time family ranges are retention-informed soft targets.
+# They preserve family-level flexibility while nudging the prompt toward a
+# slightly larger retained primitive pool.
 #
 SYNTHESIS_PRIMITIVE_TARGET_RANGES: dict[str, tuple[int, int]] = {
-    "epochal_turns": (28, 33),
-    "decisions_and_nondecisions": (26, 31),
-    "set_piece_scenes": (21, 29),
-    "telling_details": (7, 10),
-    "human_costs": (18, 20),
-    "character_engines": (15, 21),
-    "coalitions_and_fault_lines": (11, 14),
-    "systems_and_operating_logics": (12, 17),
-    "misreadings_and_fantasies": (7, 9),
-    "contested_explanations": (6, 8),
-    "perspective_windows": (5, 7),
-    "moral_traps": (6, 9),
-    "afterlives": (7, 12),
-    "recurring_images_and_symbols": (5, 7),
-    "ironies_and_reversals": (13, 15),
+    "epochal_turns": (24, 29),
+    "decisions_and_nondecisions": (23, 28),
+    "set_piece_scenes": (17, 26),
+    "telling_details": (5, 9),
+    "human_costs": (15, 19),
+    "character_engines": (13, 20),
+    "coalitions_and_fault_lines": (9, 13),
+    "systems_and_operating_logics": (10, 15),
+    "misreadings_and_fantasies": (6, 9),
+    "contested_explanations": (5, 8),
+    "perspective_windows": (3, 6),
+    "moral_traps": (5, 8),
+    "afterlives": (6, 10),
+    "recurring_images_and_symbols": (3, 6),
+    "ironies_and_reversals": (11, 14),
 }
 SYNTHESIS_PRIMITIVE_TARGET_MAX_COUNTS: dict[str, int] = {
     family: upper_bound
@@ -821,14 +1004,34 @@ def _drop_invalid_contested_explanations(
 
 
 class EpisodeSpine(StrictModel):
-    listener_question: str = Field(min_length=1)
-    argument: str = Field(min_length=1)
+    listener_problem: str = Field(
+        min_length=1,
+        validation_alias=AliasChoices("listener_problem", "listener_question"),
+        serialization_alias="listener_problem",
+    )
+    episode_answer: str = Field(
+        min_length=1,
+        validation_alias=AliasChoices("episode_answer", "argument"),
+        serialization_alias="episode_answer",
+    )
+    pressure_line: str = ""
     core_primitive_ids: list[str] = Field(min_length=1)
     support_primitive_roles: dict[str, SupportPrimitiveRole] = Field(default_factory=dict)
     recall_primitive_ids: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_spine(self) -> "EpisodeSpine":
+        self.listener_problem = str(self.listener_problem or "").strip()
+        self.episode_answer = str(self.episode_answer or "").strip()
+        self.pressure_line = str(self.pressure_line or "").strip()
+        if not self.pressure_line:
+            self.pressure_line = self.episode_answer
+        if not self.listener_problem:
+            raise ValueError("listener_problem must not be blank")
+        if not self.episode_answer:
+            raise ValueError("episode_answer must not be blank")
+        if not self.pressure_line:
+            raise ValueError("pressure_line must not be blank")
         seen_primitive_ids: set[str] = set()
         deduped_core_primitive_ids: list[str] = []
         for primitive_id in self.core_primitive_ids:
@@ -839,10 +1042,10 @@ class EpisodeSpine(StrictModel):
         self.core_primitive_ids = deduped_core_primitive_ids
         if not self.core_primitive_ids:
             raise ValueError("core_primitive_ids must contain at least one primitive id")
-        if len(self.core_primitive_ids) < 6 or len(self.core_primitive_ids) > 9:
-            raise ValueError("core_primitive_ids must contain 6-9 primitive ids")
-        if len(self.support_primitive_roles) < 7 or len(self.support_primitive_roles) > 10:
-            raise ValueError("support_primitive_roles must contain 7-10 primitive ids")
+        if len(self.core_primitive_ids) < 4 or len(self.core_primitive_ids) > 9:
+            raise ValueError("core_primitive_ids must contain 4-9 primitive ids")
+        if len(self.support_primitive_roles) < 4 or len(self.support_primitive_roles) > 10:
+            raise ValueError("support_primitive_roles must contain 4-10 primitive ids")
 
         overlap = sorted(set(self.core_primitive_ids).intersection(self.support_primitive_roles))
         if overlap:
@@ -865,6 +1068,8 @@ class EpisodeSpine(StrictModel):
             seen_recall_ids.add(primitive_id)
             recall_primitive_ids.append(primitive_id)
         self.recall_primitive_ids = recall_primitive_ids
+        if len(self.recall_primitive_ids) > 2:
+            raise ValueError("recall_primitive_ids must contain at most 2 primitive ids")
         return self
 
     @property
@@ -910,24 +1115,38 @@ class EpochalTurnPrimitiveDelta(PrimitiveEnrichmentDeltaBase):
     before_state: str = Field(min_length=1)
     after_state: str = Field(min_length=1)
     change_driver: str = Field(min_length=1)
-    irreversibility_reason: str = Field(min_length=1)
+    why_no_return: str = Field(
+        min_length=1,
+        validation_alias=AliasChoices("why_no_return", "irreversibility_reason"),
+        serialization_alias="why_no_return",
+    )
+    proof_of_change: str = Field(min_length=1)
+    narration_hooks: EnrichmentNarrationHooks
 
 
 class DecisionPrimitiveDelta(PrimitiveEnrichmentDeltaBase):
     family: Literal["decisions_and_nondecisions"]
     actor_ids: list[str] = Field(default_factory=list)
+    decision_trigger: str = Field(min_length=1)
     decision_question: str = Field(min_length=1)
     decision_mode: Literal["decision", "refusal", "delay", "nondecision"]
     options_considered: list[str] = Field(default_factory=list, min_length=1)
-    immediate_consequence: str = Field(min_length=1)
+    next_result: str = Field(
+        min_length=1,
+        validation_alias=AliasChoices("next_result", "immediate_consequence"),
+        serialization_alias="next_result",
+    )
+    narration_hooks: EnrichmentNarrationHooks
 
 
 class SetPieceScenePrimitiveDelta(PrimitiveEnrichmentDeltaBase):
     family: Literal["set_piece_scenes"]
     actor_ids: list[str] = Field(default_factory=list)
     scene_anchor: str = Field(min_length=1)
+    hinge_action: str = Field(min_length=1)
     scene_outcome: str = Field(min_length=1)
     location: str = Field(min_length=1)
+    narration_hooks: EnrichmentNarrationHooks
 
 
 class HumanCostPrimitiveDelta(PrimitiveEnrichmentDeltaBase):
@@ -935,43 +1154,98 @@ class HumanCostPrimitiveDelta(PrimitiveEnrichmentDeltaBase):
     actor_ids: list[str] = Field(default_factory=list)
     affected_group: str = Field(min_length=1)
     cost_type: str = Field(min_length=1)
+    concrete_marker: str = Field(min_length=1)
     lived_consequence: str = Field(min_length=1)
-    visibility: str = Field(min_length=1)
+    who_saw_it: str = Field(
+        min_length=1,
+        validation_alias=AliasChoices("who_saw_it", "visibility"),
+        serialization_alias="who_saw_it",
+    )
+    narration_hooks: EnrichmentNarrationHooks
 
 
 class CharacterEnginePrimitiveDelta(PrimitiveEnrichmentDeltaBase):
     family: Literal["character_engines"]
     actor_id: str | None = None
     goal: str = Field(min_length=1)
-    fear: str = Field(min_length=1)
-    constraint: str = Field(min_length=1)
-    stakes: str = Field(min_length=1)
+    pressure_box: str = Field(min_length=1)
+    risk_if_it_breaks: str = Field(min_length=1)
+    tell: str = Field(min_length=1)
+    narration_hooks: EnrichmentNarrationHooks
 
+    @model_validator(mode="before")
+    @classmethod
+    def map_legacy_character_engine_delta_fields(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        payload = dict(data)
+        if not payload.get("pressure_box"):
+            legacy_parts = [
+                str(payload.get("constraint", "")).strip(),
+                str(payload.get("fear", "")).strip(),
+            ]
+            payload["pressure_box"] = "; ".join(part for part in legacy_parts if part)
+        if not payload.get("risk_if_it_breaks"):
+            payload["risk_if_it_breaks"] = str(payload.get("stakes", "")).strip()
+        payload.pop("fear", None)
+        payload.pop("constraint", None)
+        payload.pop("stakes", None)
+        return payload
 
 class CoalitionFaultLinePrimitiveDelta(PrimitiveEnrichmentDeltaBase):
     family: Literal["coalitions_and_fault_lines"]
     actor_ids: list[str] = Field(default_factory=list)
     alignment_type: AlignmentType
     coalition_phase: CoalitionPhase
-    coalition: str = Field(min_length=1)
-    shared_interest: str = Field(min_length=1)
-    fault_line: str = Field(min_length=1)
-    stress_point: str = Field(min_length=1)
+    alignment_shape: str = Field(min_length=1)
+    alignment_basis: str = Field(min_length=1)
+    fracture_trigger: str = Field(min_length=1)
+    narration_hooks: EnrichmentNarrationHooks
 
+    @model_validator(mode="before")
+    @classmethod
+    def map_legacy_coalition_delta_fields(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        payload = dict(data)
+        payload.setdefault("alignment_shape", str(payload.get("coalition", "")).strip())
+        payload.setdefault("alignment_basis", str(payload.get("shared_interest", "")).strip())
+        trigger = str(payload.get("stress_point", "")).strip() or str(payload.get("fault_line", "")).strip()
+        payload.setdefault("fracture_trigger", trigger)
+        payload.pop("coalition", None)
+        payload.pop("shared_interest", None)
+        payload.pop("fault_line", None)
+        payload.pop("stress_point", None)
+        return payload
 
 class SystemsOperatingLogicPrimitiveDelta(PrimitiveEnrichmentDeltaBase):
     family: Literal["systems_and_operating_logics"]
     system_name: str = Field(min_length=1)
-    mechanism: str = Field(min_length=1)
-    mechanism_steps: list[str] = Field(default_factory=list, min_length=2)
+    operating_chain: list[str] = Field(
+        default_factory=list,
+        min_length=2,
+        validation_alias=AliasChoices("operating_chain", "mechanism_steps"),
+        serialization_alias="operating_chain",
+    )
     inputs: list[str] = Field(default_factory=list, min_length=1)
     outputs: list[str] = Field(default_factory=list, min_length=1)
+    where_it_shows_up: str = Field(min_length=1)
     failure_mode: str = Field(min_length=1)
+    narration_hooks: EnrichmentNarrationHooks
 
+    @model_validator(mode="before")
+    @classmethod
+    def drop_legacy_system_delta_fields(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        payload = dict(data)
+        payload.pop("mechanism", None)
+        return payload
 
 class ContestedExplanationPrimitiveDelta(PrimitiveEnrichmentDeltaBase):
     family: Literal["contested_explanations"]
-    candidate_readings: list[CandidateReading]
+    candidate_readings: list[EnrichmentCandidateReading]
+    narration_hooks: EnrichmentNarrationHooks
 
 
 class MoralTrapPrimitiveDelta(PrimitiveEnrichmentDeltaBase):
@@ -979,7 +1253,12 @@ class MoralTrapPrimitiveDelta(PrimitiveEnrichmentDeltaBase):
     actor_ids: list[str] = Field(default_factory=list)
     competing_obligations: list[str] = Field(default_factory=list, min_length=1)
     compromised_options: list[str] = Field(default_factory=list, min_length=1)
-    no_clean_exit_reason: str = Field(min_length=1)
+    trap_structure: str = Field(
+        min_length=1,
+        validation_alias=AliasChoices("trap_structure", "no_clean_exit_reason"),
+        serialization_alias="trap_structure",
+    )
+    narration_hooks: EnrichmentNarrationHooks
 
 
 class IronyReversalPrimitiveDelta(PrimitiveEnrichmentDeltaBase):
@@ -987,7 +1266,12 @@ class IronyReversalPrimitiveDelta(PrimitiveEnrichmentDeltaBase):
     actor_ids: list[str] = Field(default_factory=list)
     expected_outcome: str = Field(min_length=1)
     actual_outcome: str = Field(min_length=1)
-    reversal_driver: str = Field(min_length=1)
+    flip_cause: str = Field(
+        min_length=1,
+        validation_alias=AliasChoices("flip_cause", "reversal_driver"),
+        serialization_alias="flip_cause",
+    )
+    narration_hooks: EnrichmentNarrationHooks
 
 
 AnyPrimitiveEnrichmentDelta = Annotated[
@@ -1179,6 +1463,43 @@ class StrategyEpisode(StrictModel):
     actor_arc_directives: list[ActorArcDirective] = Field(default_factory=list, max_length=4)
 
 
+class SeriesNarratorProfile(StrictModel):
+    presence_mode: Literal["visible_host"] = "visible_host"
+    baseline_tone: Literal["dry", "plainspoken", "wry", "grave"] = "plainspoken"
+    allowed_moves: list[
+        Literal[
+            "orient",
+            "clarify",
+            "evaluate",
+            "contrast",
+            "callback",
+            "light_aside",
+            "naming_note",
+        ]
+    ] = Field(
+        default_factory=lambda: [
+            "orient",
+            "clarify",
+            "evaluate",
+            "contrast",
+            "callback",
+            "light_aside",
+            "naming_note",
+        ]
+    )
+    forbidden_moves: list[
+        Literal["unsupported_psychology", "cheap_joke", "fake_banter", "teaser_hype"]
+    ] = Field(
+        default_factory=lambda: [
+            "unsupported_psychology",
+            "cheap_joke",
+            "fake_banter",
+            "teaser_hype",
+        ]
+    )
+    target_host_moves_per_episode: int = Field(default=5, ge=0, le=12)
+
+
 class NarrativeStrategy(StrictModel):
     strategy_type: Literal[
         "thesis_driven", "debate", "chronological", "convergence", "mosaic"
@@ -1186,7 +1507,8 @@ class NarrativeStrategy(StrictModel):
     justification: str = Field(min_length=1)
     series_arc: str = Field(min_length=1)
     episode_arc_outline: list[str] = Field(default_factory=list)
-    recommended_episode_count: int | None = Field(default=None, ge=6, le=10)
+    recommended_episode_count: int | None = Field(default=None, ge=1)
+    narrator_profile: SeriesNarratorProfile = Field(default_factory=SeriesNarratorProfile)
     episodes: list[StrategyEpisode] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -1222,21 +1544,40 @@ class ArchitectureSection(StrictModel):
         serialization_alias="section_anchor",
     )
     must_stage_beats: list[str] = Field(default_factory=list, max_length=4)
-    section_question: str = Field(min_length=1)
-    section_resolution: str = Field(min_length=1)
-    entry_state: str = Field(min_length=1)
-    exit_state: str = Field(min_length=1)
+    listener_tension: str = Field(
+        min_length=1,
+        validation_alias=AliasChoices("listener_tension", "section_question"),
+        serialization_alias="listener_tension",
+    )
+    section_turn: str = Field(
+        min_length=1,
+        validation_alias=AliasChoices("section_turn", "section_resolution"),
+        serialization_alias="section_turn",
+    )
     transition_logic: str = Field(min_length=1)
     depends_on_section_ids: list[str] = Field(default_factory=list)
     sets_up_section_ids: list[str] = Field(default_factory=list)
-    argument_role: ArgumentRole
-    inference_mode: InferenceMode
     recurrence_role: RecurrenceRole = RecurrenceRole.NONE
-    pressure_type: PressureType
-    resolution_type: ResolutionType
-    closure_level: ClosureLevel = ClosureLevel.LOW
     closure_mode: ClosureMode | None = None
     priority_core_passage_ids: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def drop_legacy_fields(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        cleaned = dict(data)
+        for legacy_field in (
+            "entry_state",
+            "exit_state",
+            "argument_role",
+            "inference_mode",
+            "pressure_type",
+            "resolution_type",
+            "closure_level",
+        ):
+            cleaned.pop(legacy_field, None)
+        return cleaned
 
     @field_validator("section_anchor")
     @classmethod
@@ -1265,8 +1606,6 @@ class ArchitectureSection(StrictModel):
             self.closure_mode = ClosureMode.FINAL_ANSWER
         elif self.purpose == SectionPurpose.TURN:
             self.closure_mode = ClosureMode.TURN
-        elif self.closure_level in {ClosureLevel.MEDIUM, ClosureLevel.HIGH}:
-            self.closure_mode = ClosureMode.PARTIAL_ANSWER
         else:
             self.closure_mode = ClosureMode.RESIDUE
         return self
@@ -1277,7 +1616,7 @@ class EpisodeArchitecture(StrictModel):
     major_turn_section_id: str = Field(min_length=1)
     allowed_recurring_primitive_ids: list[str] = Field(default_factory=list)
     forbidden_redundancies: list[str] = Field(default_factory=list)
-    sections: list[ArchitectureSection] = Field(default_factory=list, min_length=1, max_length=12)
+    sections: list[ArchitectureSection] = Field(default_factory=list, min_length=6, max_length=8)
     architecture_notes: list[str] = Field(default_factory=list)
 
     @model_validator(mode="before")
@@ -1326,7 +1665,16 @@ class EpisodeArchitecture(StrictModel):
         return self
 
 
+class SceneActor(StrictModel):
+    name: str = Field(min_length=1)
+    actor_id: str | None = None
+    affiliation: str | None = None
+    presence: Literal["primary", "secondary", "background"] = "secondary"
+
+
 class SceneActorArcBinding(StrictModel):
+    """Deprecated compatibility model retained for legacy imports and fixtures."""
+
     thread_id: str = Field(min_length=1)
     scene_role: Literal["driver", "blocked", "counterforce", "subject"]
     scene_use: Literal[
@@ -1341,12 +1689,19 @@ class SceneActorArcBinding(StrictModel):
     weight: Literal["light", "standard", "strong"] = "standard"
 
 
-class SceneActor(StrictModel):
-    name: str = Field(min_length=1)
-    actor_id: str | None = None
-    affiliation: str | None = None
-    presence: Literal["primary", "secondary", "background"] = "secondary"
-    arc_bindings: list[SceneActorArcBinding] = Field(default_factory=list, max_length=2)
+class HostMove(StrictModel):
+    move_type: Literal[
+        "none",
+        "orient",
+        "clarify",
+        "evaluate",
+        "contrast",
+        "callback",
+        "light_aside",
+        "naming_note",
+    ] = "none"
+    note: str = ""
+    max_sentences: Literal[1, 2] = 1
 
 
 class _SceneCardBase(StrictModel):
@@ -1354,29 +1709,34 @@ class _SceneCardBase(StrictModel):
     section_id: str = Field(min_length=1)
     title: str = Field(min_length=1)
     scene_role: str = Field(min_length=1)
-    dominant_primitive_id: str | None = None
-    spine_relation: SpineRelation
-    state_effect: str = Field(min_length=1)
+    beat_change: str = Field(
+        min_length=1,
+        validation_alias=AliasChoices("beat_change", "state_effect"),
+        serialization_alias="beat_change",
+    )
+    must_land_facts: list[str] = Field(default_factory=list)
     entry_image: str = ""
-    local_question: str = ""
     observable_detail: str = ""
     withhold_until: str | None = None
-    what_becomes_legible_later: str | None = None
-    intended_move: str = ""
     timeframe: str | None = None
     location: str | None = None
     actors: list[SceneActor] = Field(default_factory=list, max_length=4)
-    primitive_ids: list[str] = Field(default_factory=list)
     passage_ids: list[str] = Field(default_factory=list)
+    host_move: HostMove = Field(default_factory=HostMove)
 
     @model_validator(mode="after")
     def validate_card_shape(self) -> "_SceneCardBase":
         if not self.scene_role.strip():
             raise ValueError("scene_role must not be blank")
-        if not self.dominant_primitive_id:
-            raise ValueError("scene cards require dominant_primitive_id")
-        if self.dominant_primitive_id not in self.primitive_ids:
-            raise ValueError("dominant_primitive_id must appear in primitive_ids")
+        deduped_facts: list[str] = []
+        seen_facts: set[str] = set()
+        for fact in self.must_land_facts:
+            normalized = str(fact or "").strip()
+            if not normalized or normalized in seen_facts:
+                continue
+            seen_facts.add(normalized)
+            deduped_facts.append(normalized)
+        self.must_land_facts = deduped_facts
         return self
 
 
@@ -1385,14 +1745,27 @@ def _migrate_legacy_scene_card(data: Any) -> Any:
         return data
     cleaned = dict(data)
     cleaned.pop("coverage_depth", None)
-    dominant_pack_id = cleaned.pop("dominant_pack_id", None)
-    if dominant_pack_id and "dominant_primitive_id" not in cleaned:
-        cleaned["dominant_primitive_id"] = dominant_pack_id
+    cleaned.pop("dominant_pack_id", None)
+    cleaned.pop("dominant_primitive_id", None)
+    cleaned.pop("primitive_ids", None)
+    cleaned.pop("spine_relation", None)
     role = cleaned.get("scene_role")
     if role == "process":
         cleaned["scene_role"] = "action"
     elif role == "perspective shift":
         cleaned["scene_role"] = "perspective_shift"
+    if "beat_change" not in cleaned and cleaned.get("state_effect"):
+        cleaned["beat_change"] = cleaned["state_effect"]
+    cleaned.pop("state_effect", None)
+    cleaned.pop("local_question", None)
+    cleaned.pop("what_becomes_legible_later", None)
+    cleaned.pop("intended_move", None)
+    for actor in cleaned.get("actors", []) or []:
+        if isinstance(actor, dict):
+            actor.pop("arc_bindings", None)
+    host_move = cleaned.get("host_move")
+    if not isinstance(host_move, dict):
+        cleaned["host_move"] = {"move_type": "none", "note": "", "max_sentences": 1}
     return cleaned
 
 

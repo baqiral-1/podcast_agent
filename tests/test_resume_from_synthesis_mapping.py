@@ -11,10 +11,11 @@ import pytest
 
 from podcast_agent.schemas.models import (
     ActorMetadata,
-    EpisodeArchitecture,
     ActorProfile,
+    ArchitectureSection,
     BaseSynthesisPrimitive,
     BookRecord,
+    EpisodeArchitecture,
     EpochalTurnPrimitive,
     NarrativeStrategy,
     PipelineConfig,
@@ -253,12 +254,14 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
         ) -> tuple[list[EpisodeArchitecture], dict[str, Any]]:
             calls["order"].append("episode_architecture")
             calls["architecture_actor_metadata"] = actor_metadata
-            architecture = EpisodeArchitecture(
+            architecture = EpisodeArchitecture.model_construct(
                 episode_number=1,
                 major_turn_section_id="section_03",
                 allowed_recurring_primitive_ids=["primitive_1"],
                 forbidden_redundancies=[],
                 sections=[
+                    ArchitectureSection.model_validate(section)
+                    for section in [
                     {
                         "section_id": "section_01",
                         "purpose": "opening",
@@ -339,6 +342,7 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
                         "closure_level": "high",
                         "priority_core_passage_ids": [],
                     },
+                    ]
                 ],
                 architecture_notes=[],
             )

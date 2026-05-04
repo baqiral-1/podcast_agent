@@ -291,6 +291,8 @@ def test_choose_narrative_strategy_uses_trimmed_runtime_payload(monkeypatch, tmp
     )
 
     payload = captured["payload"]
+    assert payload["recommended_episode_count_min"] == 8
+    assert payload["recommended_episode_count_max"] == 12
     primitive = payload["synthesis_map"]["primitives_by_family"]["epochal_turns"][0]
     assert "affected_actor_ids" not in primitive
     assert "actor_tags" not in primitive

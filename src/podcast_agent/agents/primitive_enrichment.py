@@ -99,21 +99,18 @@ class PrimitiveEnrichmentAgent(Agent):
         project_id: str,
         family: str,
         base_primitives: list[dict],
-        passages_by_id: dict[str, dict],
+        evidence_by_primitive_id: dict[str, dict[str, list[dict[str, str]]]],
         actor_metadata: dict | None = None,
-        project_metadata: dict | None = None,
         enrichment_feedback: dict | None = None,
     ) -> dict:
         payload = {
             "project_id": project_id,
             "family": family,
             "base_primitives": base_primitives,
-            "passages_by_id": passages_by_id,
+            "evidence_by_primitive_id": evidence_by_primitive_id,
         }
         if actor_metadata is not None:
             payload["actor_metadata"] = actor_metadata
-        if project_metadata is not None:
-            payload["project"] = project_metadata
         if enrichment_feedback is not None:
             payload["enrichment_feedback"] = enrichment_feedback
         return payload

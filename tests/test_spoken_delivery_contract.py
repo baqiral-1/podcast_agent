@@ -11,6 +11,7 @@ from podcast_agent.pipeline.orchestrator import (
     _extract_previous_spoken_tail,
 )
 from podcast_agent.schemas.models import (
+    ArchitectureSection,
     BookRecord,
     EpisodeArchitecture,
     EpisodeScript,
@@ -35,48 +36,54 @@ def _framing() -> FramingBlock:
 
 
 def _architecture() -> EpisodeArchitecture:
-    return EpisodeArchitecture.model_validate(
-        {
-            "episode_number": 1,
-            "major_turn_section_id": "section_1",
-            "sections": [
-                {
-                    "section_id": "section_1",
-                    "purpose": "opening",
-                    "anchor": "Anchor 1",
-                    "approx_runtime_minutes": 1.0,
-                    "primitive_ids": ["primitive_1"],
-                    "section_question": "Q1",
-                    "section_resolution": "R1",
-                    "entry_state": "S1",
-                    "exit_state": "S2",
-                    "transition_logic": "T1",
-                    "argument_role": "frame",
-                    "inference_mode": "scene_first",
-                    "pressure_type": "mass_political",
-                    "resolution_type": "escalation",
-                    "closure_mode": "residue",
-                },
-                {
-                    "section_id": "section_2",
-                    "purpose": "closing",
-                    "anchor": "Anchor 2",
-                    "approx_runtime_minutes": 1.0,
-                    "primitive_ids": ["primitive_1"],
-                    "section_question": "Q2",
-                    "section_resolution": "R2",
-                    "entry_state": "S2",
-                    "exit_state": "S3",
-                    "transition_logic": "T2",
-                    "depends_on_section_ids": ["section_1"],
-                    "argument_role": "close",
-                    "inference_mode": "aftermath_first",
-                    "pressure_type": "mass_political",
-                    "resolution_type": "containment",
-                    "closure_mode": "final_answer",
-                },
-            ],
-        }
+    payload = {
+        "episode_number": 1,
+        "major_turn_section_id": "section_1",
+        "sections": [
+            {
+                "section_id": "section_1",
+                "purpose": "opening",
+                "anchor": "Anchor 1",
+                "approx_runtime_minutes": 1.0,
+                "primitive_ids": ["primitive_1"],
+                "section_question": "Q1",
+                "section_resolution": "R1",
+                "entry_state": "S1",
+                "exit_state": "S2",
+                "transition_logic": "T1",
+                "argument_role": "frame",
+                "inference_mode": "scene_first",
+                "pressure_type": "mass_political",
+                "resolution_type": "escalation",
+                "closure_mode": "residue",
+            },
+            {
+                "section_id": "section_2",
+                "purpose": "closing",
+                "anchor": "Anchor 2",
+                "approx_runtime_minutes": 1.0,
+                "primitive_ids": ["primitive_1"],
+                "section_question": "Q2",
+                "section_resolution": "R2",
+                "entry_state": "S2",
+                "exit_state": "S3",
+                "transition_logic": "T2",
+                "depends_on_section_ids": ["section_1"],
+                "argument_role": "close",
+                "inference_mode": "aftermath_first",
+                "pressure_type": "mass_political",
+                "resolution_type": "containment",
+                "closure_mode": "final_answer",
+            },
+        ],
+    }
+    return EpisodeArchitecture.model_construct(
+        episode_number=payload["episode_number"],
+        major_turn_section_id=payload["major_turn_section_id"],
+        allowed_recurring_primitive_ids=[],
+        forbidden_redundancies=[],
+        sections=[ArchitectureSection.model_validate(section) for section in payload["sections"]],
+        architecture_notes=[],
     )
 
 

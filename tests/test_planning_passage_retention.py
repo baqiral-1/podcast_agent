@@ -247,7 +247,7 @@ def _episode_architecture(
         )
         for section in sections
     ]
-    return EpisodeArchitecture(
+    return EpisodeArchitecture.model_construct(
         episode_number=1,
         major_turn_section_id=normalized_sections[min(2, len(normalized_sections) - 1)].section_id,
         allowed_recurring_primitive_ids=list(allowed_recurring_primitive_ids or []),
@@ -438,7 +438,7 @@ def test_build_episode_architecture_realization_reports_omitted_support_and_reca
     assert realization["missing_recall_primitive_ids"] == ["recall_1"]
     assert realization["warning_count"] == 3
     assert (
-        "architecture_section_count_below_target: 4 < 7 (target range 7-10)"
+        "architecture_section_count_below_target: 4 < 6 (target range 6-8)"
         in realization["warnings"]
     )
 
@@ -935,7 +935,7 @@ def test_build_section_plan_realization_reports_unrealized_must_stage_beats() ->
 
 def test_validate_architecture_transition_rejects_missing_section_seed_fields() -> None:
     strategy_episode = _strategy_episode()
-    architecture = EpisodeArchitecture(
+    architecture = EpisodeArchitecture.model_construct(
         episode_number=1,
         major_turn_section_id="section_02",
         sections=[

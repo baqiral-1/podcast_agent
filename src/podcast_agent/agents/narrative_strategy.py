@@ -19,12 +19,16 @@ class NarrativeStrategyAgent(Agent):
         synthesis_map: dict,
         project_metadata: dict,
         episode_count: int | None,
+        recommended_episode_count_min: int,
+        recommended_episode_count_max: int,
         actor_metadata: dict | None = None,
         strategy_feedback: dict | None = None,
     ) -> dict:
         payload = {
             "synthesis_map": synthesis_map,
             "project": project_metadata,
+            "recommended_episode_count_min": recommended_episode_count_min,
+            "recommended_episode_count_max": recommended_episode_count_max,
         }
         if actor_metadata is not None:
             payload["actor_metadata"] = actor_metadata

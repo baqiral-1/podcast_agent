@@ -168,13 +168,28 @@ def _episode_spine(pack_id: str = "pack_1") -> EpisodeSpine:
 
 
 class TestThematicProject:
-    def test_recommended_episode_count_accepts_new_bounds(self):
-        project = ThematicProject(theme="War on terror", recommended_episode_count=6)
-        assert project.recommended_episode_count == 6
+    def test_recommended_episode_count_is_range_agnostic(self):
+        project = ThematicProject(theme="War on terror", recommended_episode_count=7)
+        assert project.recommended_episode_count == 7
 
-    def test_recommended_episode_count_rejects_old_lower_bound(self):
+        project = ThematicProject(theme="War on terror", recommended_episode_count=13)
+        assert project.recommended_episode_count == 13
+
+    def test_recommended_episode_count_rejects_zero(self):
         with pytest.raises(ValidationError):
-            ThematicProject(theme="War on terror", recommended_episode_count=5)
+            ThematicProject(theme="War on terror", recommended_episode_count=0)
+
+    def test_pipeline_config_exposes_narrative_strategy_episode_count_defaults(self):
+        config = PipelineConfig()
+        assert config.narrative_strategy_episode_count_min == 8
+        assert config.narrative_strategy_episode_count_max == 12
+
+    def test_pipeline_config_rejects_narrative_strategy_episode_count_bound_inversion(self):
+        with pytest.raises(ValidationError, match="narrative_strategy_episode_count_max"):
+            PipelineConfig(
+                narrative_strategy_episode_count_min=12,
+                narrative_strategy_episode_count_max=8,
+            )
 
     def test_pipeline_config_rejects_scene_card_bound_inversion(self):
         with pytest.raises(ValidationError, match="scene_card_target_max"):
@@ -184,9 +199,9 @@ class TestThematicProject:
         with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
             PipelineConfig(scene_batch_min_cards=1)
 
-    def test_pipeline_config_defaults_synthesis_cap_to_600(self):
+    def test_pipeline_config_defaults_synthesis_cap_to_450(self):
         config = PipelineConfig()
-        assert config.synthesis_total_passage_cap == 600
+        assert config.synthesis_total_passage_cap == 450
         assert config.synthesis_floor_budget_fraction == 0.0
         assert config.synthesis_axis_floor_min == 0
         assert config.synthesis_axis_floor_max == 0
@@ -194,17 +209,17 @@ class TestThematicProject:
         assert config.synthesis_trim_top_fraction == 0.10
         assert config.synthesis_trim_mid_fraction == 0.20
         assert config.synthesis_trim_next_fraction == 0.0
-        assert config.synthesis_trim_top_keep_fraction == 0.35
-        assert config.synthesis_trim_mid_keep_fraction == 0.25
-        assert config.synthesis_trim_next_keep_fraction == 0.30
-        assert config.synthesis_trim_tail_keep_fraction == 0.15
+        assert config.synthesis_trim_top_keep_fraction == 0.375
+        assert config.synthesis_trim_mid_keep_fraction == 0.275
+        assert config.synthesis_trim_next_keep_fraction == 0.325
+        assert config.synthesis_trim_tail_keep_fraction == 0.175
         assert config.passage_extraction_concurrency == 16
         assert config.episode_write_concurrency == 8
         assert config.spoken_delivery_concurrency == 8
         assert config.min_episode_minutes == 110.0
         assert config.max_episode_minutes == 130.0
-        assert config.architecture_section_target_min == 7
-        assert config.architecture_section_target_max == 10
+        assert config.architecture_section_target_min == 6
+        assert config.architecture_section_target_max == 8
         assert config.scene_card_target_min == 25
         assert config.scene_card_target_max == 35
 
@@ -1452,34 +1467,34 @@ class TestEpisodeArchitectureModels:
             architecture_notes=[],
         )
 
-    def test_episode_architecture_accepts_nine_sections(self):
-        architecture = self._build_architecture(9)
-        assert len(architecture.sections) == 9
+    def test_episode_architecture_accepts_six_sections(self):
+        architecture = self._build_architecture(6)
+        assert len(architecture.sections) == 6
 
-    def test_episode_architecture_accepts_ten_sections(self):
-        architecture = self._build_architecture(10)
-        assert len(architecture.sections) == 10
+    def test_episode_architecture_accepts_seven_sections(self):
+        architecture = self._build_architecture(7)
+        assert len(architecture.sections) == 7
 
     def test_episode_architecture_rejects_removed_target_section_count_field(self):
         with pytest.raises(ValidationError, match="target_section_count"):
             EpisodeArchitecture.model_validate(
                 {
-                    **self._build_architecture(9).model_dump(mode="json"),
-                    "target_section_count": 9,
+                    **self._build_architecture(6).model_dump(mode="json"),
+                    "target_section_count": 6,
                 }
             )
 
-    def test_episode_architecture_accepts_eleven_sections(self):
-        architecture = self._build_architecture(11)
-        assert len(architecture.sections) == 11
+    def test_episode_architecture_accepts_eight_sections(self):
+        architecture = self._build_architecture(8)
+        assert len(architecture.sections) == 8
 
-    def test_episode_architecture_accepts_twelve_sections(self):
-        architecture = self._build_architecture(12)
-        assert len(architecture.sections) == 12
+    def test_episode_architecture_rejects_fewer_than_six_sections(self):
+        with pytest.raises(ValidationError, match="at least 6 items"):
+            self._build_architecture(5)
 
-    def test_episode_architecture_rejects_more_than_twelve_sections(self):
-        with pytest.raises(ValidationError, match="at most 12 items"):
-            self._build_architecture(13)
+    def test_episode_architecture_rejects_more_than_eight_sections(self):
+        with pytest.raises(ValidationError, match="at most 8 items"):
+            self._build_architecture(9)
 
     def test_architecture_section_migrates_legacy_anchor_field(self):
         section = ArchitectureSection.model_validate(

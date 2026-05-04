@@ -433,22 +433,7 @@ def clean_scene_actor_links(
                         metrics["fuzzy_scene_actor_matches"] += 1
                     else:
                         metrics["exact_scene_actor_matches"] += 1
-            update = {"actor_id": actor_id}
-            if actor_id:
-                valid_thread_ids = thread_ids_by_actor.get(actor_id, set())
-                filtered_bindings = []
-                seen_thread_ids: set[str] = set()
-                for binding in actor.arc_bindings:
-                    if valid_thread_ids and binding.thread_id not in valid_thread_ids:
-                        metrics["unknown_actor_arc_thread_ids"] += 1
-                        continue
-                    if binding.thread_id not in seen_thread_ids:
-                        filtered_bindings.append(binding)
-                        seen_thread_ids.add(binding.thread_id)
-                update["arc_bindings"] = filtered_bindings
-            else:
-                update["arc_bindings"] = []
-            cleaned_actors.append(actor.model_copy(update=update))
+            cleaned_actors.append(actor.model_copy(update={"actor_id": actor_id}))
         cleaned_scenes.append(scene.model_copy(update={"actors": cleaned_actors}))
 
     return plan.model_copy(
