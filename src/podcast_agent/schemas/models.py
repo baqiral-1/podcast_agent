@@ -8,7 +8,14 @@ from enum import Enum
 from typing import Annotated, Any, Literal
 from uuid import uuid4
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 
 def utc_now() -> datetime:
@@ -52,15 +59,6 @@ def _validate_list_item_word_limit(
     return normalized
 
 
-def _default_host_move_placement(move_type: str) -> str:
-    normalized = str(move_type or "").strip() or "none"
-    if normalized in {"orient", "naming_note"}:
-        return "open"
-    if normalized in {"clarify", "contrast", "light_aside"}:
-        return "pivot"
-    return "close"
-
-
 # ---------------------------------------------------------------------------
 # Enums
 # ---------------------------------------------------------------------------
@@ -74,6 +72,11 @@ class ProjectStatus(str, Enum):
     PRODUCING = "producing"
     COMPLETE = "complete"
     FAILED = "failed"
+
+
+class PodcastMode(str, Enum):
+    FULL = "full"
+    MINIFIED = "minified"
 
 
 class SynthesisTag(str, Enum):
@@ -249,11 +252,7 @@ class ChapterAnalysis(StrictModel):
         }
         if not legacy_fields.intersection(data):
             return data
-        return {
-            key: value
-            for key, value in data.items()
-            if key not in legacy_fields
-        }
+        return {key: value for key, value in data.items() if key not in legacy_fields}
 
 
 class BookRecord(StrictModel):
@@ -269,8 +268,9 @@ class BookRecord(StrictModel):
 
 
 class PipelineConfig(StrictModel):
-    max_axes: int = Field(default=15, ge=1)
-    min_axes: int = Field(default=10, ge=1)
+    podcast_mode: PodcastMode = PodcastMode.FULL
+    max_axes: int = Field(default=20, ge=1)
+    min_axes: int = Field(default=12, ge=1)
     passage_retrieval_percentage: float = Field(default=0.25, gt=0.0, le=1.0)
     passage_retrieval_min_per_book: int = Field(default=10, ge=1)
     passage_retrieval_max_per_book: int = Field(default=25, ge=1)
@@ -287,8 +287,8 @@ class PipelineConfig(StrictModel):
     mmr_synthesis_lambda: float = Field(default=0.75, ge=0.0, le=1.0)
     mmr_planning_lambda: float = Field(default=0.75, ge=0.0, le=1.0)
     synthesis_axis_pct: float = Field(default=1.0, ge=0.0, le=1.0)
-    synthesis_axis_min: int = Field(default=10, ge=0)
-    synthesis_axis_max: int = Field(default=15, ge=1)
+    synthesis_axis_min: int = Field(default=12, ge=0)
+    synthesis_axis_max: int = Field(default=20, ge=1)
     synthesis_total_passage_cap: int = Field(default=450, ge=1)
     synthesis_floor_budget_fraction: float = Field(default=0.0, ge=0.0, le=1.0)
     synthesis_axis_floor_min: int = Field(default=0, ge=0)
@@ -315,13 +315,18 @@ class PipelineConfig(StrictModel):
     spoken_delivery_concurrency: int | None = Field(default=8, ge=1)
     architecture_section_target_min: int = Field(default=9, ge=1)
     architecture_section_target_max: int = Field(default=12, ge=1)
+    episode_spine_core_primitive_target_min: int = Field(default=5, ge=1)
+    episode_spine_core_primitive_target_max: int = Field(default=7, ge=1)
+    episode_spine_support_primitive_target_min: int = Field(default=5, ge=1)
+    episode_spine_support_primitive_target_max: int = Field(default=7, ge=1)
+    episode_spine_recall_primitive_target_max: int = Field(default=2, ge=0)
     narrative_strategy_episode_count_min: int = Field(default=8, ge=1)
     narrative_strategy_episode_count_max: int = Field(default=12, ge=1)
     min_episode_minutes: float = Field(default=90.0, gt=0.0)
     max_episode_minutes: float = Field(default=105.0, gt=0.0)
     duration_shortfall_policy: Literal["warn"] = "warn"
-    scene_card_target_min: int = Field(default=27, ge=1)
-    scene_card_target_max: int = Field(default=36, ge=1)
+    scene_card_target_min: int = Field(default=32, ge=1)
+    scene_card_target_max: int = Field(default=40, ge=1)
     scene_card_target_policy: Literal["warn"] = "warn"
     scene_card_primitives_min: int = Field(default=1, ge=0)
     scene_card_primitives_max: int = Field(default=2, ge=1)
@@ -346,7 +351,9 @@ class PipelineConfig(StrictModel):
         if self.synthesis_axis_max < self.synthesis_axis_min:
             raise ValueError("synthesis_axis_max must be >= synthesis_axis_min")
         if self.synthesis_axis_floor_max < self.synthesis_axis_floor_min:
-            raise ValueError("synthesis_axis_floor_max must be >= synthesis_axis_floor_min")
+            raise ValueError(
+                "synthesis_axis_floor_max must be >= synthesis_axis_floor_min"
+            )
         if self.planning_axis_max < self.planning_axis_min:
             raise ValueError("planning_axis_max must be >= planning_axis_min")
         if (
@@ -354,10 +361,32 @@ class PipelineConfig(StrictModel):
             + self.synthesis_trim_mid_fraction
             + self.synthesis_trim_next_fraction
         ) > 1.0:
-            raise ValueError("synthesis trim top, mid, and next fractions must sum to <= 1.0")
+            raise ValueError(
+                "synthesis trim top, mid, and next fractions must sum to <= 1.0"
+            )
         if self.architecture_section_target_max < self.architecture_section_target_min:
             raise ValueError(
                 "architecture_section_target_max must be >= architecture_section_target_min"
+            )
+        if (
+            self.episode_spine_core_primitive_target_max
+            < self.episode_spine_core_primitive_target_min
+        ):
+            raise ValueError(
+                "episode_spine_core_primitive_target_max must be >= "
+                "episode_spine_core_primitive_target_min"
+            )
+        if (
+            self.episode_spine_support_primitive_target_max
+            < self.episode_spine_support_primitive_target_min
+        ):
+            raise ValueError(
+                "episode_spine_support_primitive_target_max must be >= "
+                "episode_spine_support_primitive_target_min"
+            )
+        if self.episode_spine_recall_primitive_target_max > 2:
+            raise ValueError(
+                "episode_spine_recall_primitive_target_max must be <= 2"
             )
         if (
             self.narrative_strategy_episode_count_max
@@ -370,10 +399,121 @@ class PipelineConfig(StrictModel):
         if self.scene_card_target_max < self.scene_card_target_min:
             raise ValueError("scene_card_target_max must be >= scene_card_target_min")
         if self.scene_card_primitives_max < self.scene_card_primitives_min:
-            raise ValueError("scene_card_primitives_max must be >= scene_card_primitives_min")
+            raise ValueError(
+                "scene_card_primitives_max must be >= scene_card_primitives_min"
+            )
         if self.max_episode_minutes < self.min_episode_minutes:
             raise ValueError("max_episode_minutes must be >= min_episode_minutes")
         return self
+
+
+def _divide_range_floor(
+    lower_bound: int,
+    upper_bound: int,
+    *,
+    minimum_floor: int = 0,
+) -> tuple[int, int]:
+    reduced_lower = max(minimum_floor, lower_bound // 3)
+    reduced_upper = max(minimum_floor, upper_bound // 3)
+    return reduced_lower, max(reduced_lower, reduced_upper)
+
+
+FULL_SYNTHESIS_PRIMITIVE_TARGET_RANGES: dict[str, tuple[int, int]] = {
+    "epochal_turns": (30, 38),
+    "decisions_and_nondecisions": (25, 32),
+    "set_piece_scenes": (18, 31),
+    "telling_details": (4, 8),
+    "human_costs": (17, 22),
+    "character_engines": (14, 22),
+    "coalitions_and_fault_lines": (11, 16),
+    "systems_and_operating_logics": (12, 18),
+    "misreadings_and_fantasies": (5, 8),
+    "contested_explanations": (4, 7),
+    "perspective_windows": (2, 5),
+    "moral_traps": (4, 7),
+    "afterlives": (5, 10),
+    "recurring_images_and_symbols": (2, 5),
+    "ironies_and_reversals": (10, 13),
+}
+MINIFIED_SYNTHESIS_PRIMITIVE_TARGET_RANGES: dict[str, tuple[int, int]] = {
+    family: _divide_range_floor(lower_bound, upper_bound)
+    for family, (
+        lower_bound,
+        upper_bound,
+    ) in FULL_SYNTHESIS_PRIMITIVE_TARGET_RANGES.items()
+}
+
+
+def synthesis_primitive_target_ranges_for_mode(
+    mode: PodcastMode | str,
+) -> dict[str, tuple[int, int]]:
+    if PodcastMode(mode) == PodcastMode.MINIFIED:
+        source = MINIFIED_SYNTHESIS_PRIMITIVE_TARGET_RANGES
+    else:
+        source = FULL_SYNTHESIS_PRIMITIVE_TARGET_RANGES
+    return dict(source)
+
+
+def synthesis_primitive_target_max_counts_for_mode(
+    mode: PodcastMode | str,
+) -> dict[str, int]:
+    return {
+        family: upper_bound
+        for family, (
+            _lower_bound,
+            upper_bound,
+        ) in synthesis_primitive_target_ranges_for_mode(mode).items()
+    }
+
+
+def resolve_pipeline_config_for_mode(config: "PipelineConfig") -> "PipelineConfig":
+    mode = PodcastMode(config.podcast_mode)
+    if mode == PodcastMode.MINIFIED:
+        updates = {
+            "podcast_mode": mode,
+            "min_axes": 4,
+            "max_axes": 6,
+            "pre_axis_total_budget": 500,
+            "synthesis_axis_min": 4,
+            "synthesis_axis_max": 6,
+            "episode_spine_core_primitive_target_min": 2,
+            "episode_spine_core_primitive_target_max": 4,
+            "episode_spine_support_primitive_target_min": 2,
+            "episode_spine_support_primitive_target_max": 4,
+            "episode_spine_recall_primitive_target_max": 1,
+            "narrative_strategy_episode_count_min": 2,
+            "narrative_strategy_episode_count_max": 4,
+            "architecture_section_target_min": 6,
+            "architecture_section_target_max": 8,
+            "min_episode_minutes": 54.0,
+            "max_episode_minutes": 63.0,
+            "scene_card_target_min": 21,
+            "scene_card_target_max": 26,
+            "synthesis_total_passage_cap": 200,
+        }
+    else:
+        updates = {
+            "podcast_mode": mode,
+            "min_axes": 12,
+            "max_axes": 20,
+            "synthesis_axis_min": 12,
+            "synthesis_axis_max": 20,
+            "episode_spine_core_primitive_target_min": 5,
+            "episode_spine_core_primitive_target_max": 7,
+            "episode_spine_support_primitive_target_min": 5,
+            "episode_spine_support_primitive_target_max": 7,
+            "episode_spine_recall_primitive_target_max": 2,
+            "narrative_strategy_episode_count_min": 8,
+            "narrative_strategy_episode_count_max": 12,
+            "architecture_section_target_min": 9,
+            "architecture_section_target_max": 12,
+            "min_episode_minutes": 90.0,
+            "max_episode_minutes": 105.0,
+            "scene_card_target_min": 32,
+            "scene_card_target_max": 40,
+            "synthesis_total_passage_cap": 450,
+        }
+    return config.model_copy(update=updates)
 
 
 class ThematicProject(StrictModel):
@@ -852,8 +992,13 @@ class CoalitionFaultLinePrimitive(SynthesisPrimitiveBase):
             return data
         payload = dict(data)
         payload.setdefault("alignment_shape", str(payload.get("coalition", "")).strip())
-        payload.setdefault("alignment_basis", str(payload.get("shared_interest", "")).strip())
-        trigger = str(payload.get("stress_point", "")).strip() or str(payload.get("fault_line", "")).strip()
+        payload.setdefault(
+            "alignment_basis", str(payload.get("shared_interest", "")).strip()
+        )
+        trigger = (
+            str(payload.get("stress_point", "")).strip()
+            or str(payload.get("fault_line", "")).strip()
+        )
         payload.setdefault("fracture_trigger", trigger)
         payload.pop("coalition", None)
         payload.pop("shared_interest", None)
@@ -969,27 +1114,10 @@ SYNTHESIS_PRIMITIVE_FAMILIES: tuple[str, ...] = (
 # They preserve family-level flexibility while shifting more budget into
 # epochal turns from the wider retained-pool baseline.
 #
-SYNTHESIS_PRIMITIVE_TARGET_RANGES: dict[str, tuple[int, int]] = {
-    "epochal_turns": (30, 38),
-    "decisions_and_nondecisions": (25, 32),
-    "set_piece_scenes": (18, 31),
-    "telling_details": (4, 8),
-    "human_costs": (17, 22),
-    "character_engines": (14, 22),
-    "coalitions_and_fault_lines": (11, 16),
-    "systems_and_operating_logics": (12, 18),
-    "misreadings_and_fantasies": (5, 8),
-    "contested_explanations": (4, 7),
-    "perspective_windows": (2, 5),
-    "moral_traps": (4, 7),
-    "afterlives": (5, 10),
-    "recurring_images_and_symbols": (2, 5),
-    "ironies_and_reversals": (10, 13),
-}
-SYNTHESIS_PRIMITIVE_TARGET_MAX_COUNTS: dict[str, int] = {
-    family: upper_bound
-    for family, (_lower_bound, upper_bound) in SYNTHESIS_PRIMITIVE_TARGET_RANGES.items()
-}
+SYNTHESIS_PRIMITIVE_TARGET_RANGES = FULL_SYNTHESIS_PRIMITIVE_TARGET_RANGES
+SYNTHESIS_PRIMITIVE_TARGET_MAX_COUNTS = synthesis_primitive_target_max_counts_for_mode(
+    PodcastMode.FULL
+)
 SYNTHESIS_PRIMITIVE_FAMILY_SET = set(SYNTHESIS_PRIMITIVE_FAMILIES)
 RICH_SYNTHESIS_PRIMITIVE_FAMILIES: tuple[str, ...] = (
     "epochal_turns",
@@ -1071,7 +1199,9 @@ class EpisodeSpine(StrictModel):
     )
     pressure_line: str = ""
     core_primitive_ids: list[str] = Field(min_length=1)
-    support_primitive_roles: dict[str, SupportPrimitiveRole] = Field(default_factory=dict)
+    support_primitive_roles: dict[str, SupportPrimitiveRole] = Field(
+        default_factory=dict
+    )
     recall_primitive_ids: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -1096,13 +1226,20 @@ class EpisodeSpine(StrictModel):
             deduped_core_primitive_ids.append(primitive_id)
         self.core_primitive_ids = deduped_core_primitive_ids
         if not self.core_primitive_ids:
-            raise ValueError("core_primitive_ids must contain at least one primitive id")
-        if len(self.core_primitive_ids) < 5 or len(self.core_primitive_ids) > 7:
-            raise ValueError("core_primitive_ids must contain 5-7 primitive ids")
-        if len(self.support_primitive_roles) < 5 or len(self.support_primitive_roles) > 7:
-            raise ValueError("support_primitive_roles must contain 5-7 primitive ids")
+            raise ValueError(
+                "core_primitive_ids must contain at least one primitive id"
+            )
+        if len(self.core_primitive_ids) < 2 or len(self.core_primitive_ids) > 7:
+            raise ValueError("core_primitive_ids must contain 2-7 primitive ids")
+        if (
+            len(self.support_primitive_roles) < 2
+            or len(self.support_primitive_roles) > 7
+        ):
+            raise ValueError("support_primitive_roles must contain 2-7 primitive ids")
 
-        overlap = sorted(set(self.core_primitive_ids).intersection(self.support_primitive_roles))
+        overlap = sorted(
+            set(self.core_primitive_ids).intersection(self.support_primitive_roles)
+        )
         if overlap:
             raise ValueError(
                 f"support primitives cannot also appear in core_primitive_ids: {overlap}"
@@ -1124,7 +1261,9 @@ class EpisodeSpine(StrictModel):
             recall_primitive_ids.append(primitive_id)
         self.recall_primitive_ids = recall_primitive_ids
         if len(self.recall_primitive_ids) > 2:
-            raise ValueError("recall_primitive_ids must contain at most 2 primitive ids")
+            raise ValueError(
+                "recall_primitive_ids must contain at most 2 primitive ids"
+            )
         return self
 
     @property
@@ -1143,9 +1282,41 @@ class EpisodeSpine(StrictModel):
         return ordered
 
 
+def validate_episode_spine_targets(
+    spine: EpisodeSpine,
+    *,
+    core_target_min: int,
+    core_target_max: int,
+    support_target_min: int,
+    support_target_max: int,
+    recall_target_max: int,
+) -> None:
+    core_count = len(spine.core_primitive_ids)
+    if core_count < core_target_min or core_count > core_target_max:
+        raise ValueError(
+            "core_primitive_ids must contain "
+            f"{core_target_min}-{core_target_max} primitive ids"
+        )
+    support_count = len(spine.support_primitive_roles)
+    if support_count < support_target_min or support_count > support_target_max:
+        raise ValueError(
+            "support_primitive_roles must contain "
+            f"{support_target_min}-{support_target_max} primitive ids"
+        )
+    recall_count = len(spine.recall_primitive_ids)
+    if recall_count > recall_target_max:
+        primitive_label = "primitive id" if recall_target_max == 1 else "primitive ids"
+        raise ValueError(
+            "recall_primitive_ids must contain at most "
+            f"{recall_target_max} {primitive_label}"
+        )
+
+
 class SynthesisPrimitivesArtifact(StrictModel):
     project_id: str
-    primitives_by_family: dict[str, list[BaseSynthesisPrimitive]] = Field(default_factory=dict)
+    primitives_by_family: dict[str, list[BaseSynthesisPrimitive]] = Field(
+        default_factory=dict
+    )
     quality_score: float = Field(default=0.0, ge=0.0, le=1.0)
     quality_notes: list[str] = Field(default_factory=list)
 
@@ -1155,7 +1326,9 @@ class SynthesisPrimitivesArtifact(StrictModel):
             self.primitives_by_family,
             mapping_name="primitives_by_family",
         )
-        _validate_family_bucket_alignment(normalized, mapping_name="primitives_by_family")
+        _validate_family_bucket_alignment(
+            normalized, mapping_name="primitives_by_family"
+        )
         self.primitives_by_family = normalized
         return self
 
@@ -1247,6 +1420,7 @@ class CharacterEnginePrimitiveDelta(PrimitiveEnrichmentDeltaBase):
         payload.pop("stakes", None)
         return payload
 
+
 class CoalitionFaultLinePrimitiveDelta(PrimitiveEnrichmentDeltaBase):
     family: Literal["coalitions_and_fault_lines"]
     actor_ids: list[str] = Field(default_factory=list)
@@ -1264,14 +1438,20 @@ class CoalitionFaultLinePrimitiveDelta(PrimitiveEnrichmentDeltaBase):
             return data
         payload = dict(data)
         payload.setdefault("alignment_shape", str(payload.get("coalition", "")).strip())
-        payload.setdefault("alignment_basis", str(payload.get("shared_interest", "")).strip())
-        trigger = str(payload.get("stress_point", "")).strip() or str(payload.get("fault_line", "")).strip()
+        payload.setdefault(
+            "alignment_basis", str(payload.get("shared_interest", "")).strip()
+        )
+        trigger = (
+            str(payload.get("stress_point", "")).strip()
+            or str(payload.get("fault_line", "")).strip()
+        )
         payload.setdefault("fracture_trigger", trigger)
         payload.pop("coalition", None)
         payload.pop("shared_interest", None)
         payload.pop("fault_line", None)
         payload.pop("stress_point", None)
         return payload
+
 
 class SystemsOperatingLogicPrimitiveDelta(PrimitiveEnrichmentDeltaBase):
     family: Literal["systems_and_operating_logics"]
@@ -1296,6 +1476,7 @@ class SystemsOperatingLogicPrimitiveDelta(PrimitiveEnrichmentDeltaBase):
         payload = dict(data)
         payload.pop("mechanism", None)
         return payload
+
 
 class ContestedExplanationPrimitiveDelta(PrimitiveEnrichmentDeltaBase):
     family: Literal["contested_explanations"]
@@ -1379,7 +1560,9 @@ class PrimitiveEnrichmentArtifact(StrictModel):
 class PrimitiveEnrichmentArtifactBase(StrictModel):
     project_id: str
     family: str = Field(min_length=1)
-    enriched_primitives: list[PrimitiveEnrichmentDeltaBase] = Field(default_factory=list)
+    enriched_primitives: list[PrimitiveEnrichmentDeltaBase] = Field(
+        default_factory=list
+    )
 
     @model_validator(mode="after")
     def validate_family_alignment(self) -> "PrimitiveEnrichmentArtifactBase":
@@ -1418,22 +1601,30 @@ class HumanCostEnrichmentArtifact(PrimitiveEnrichmentArtifactBase):
 
 class CharacterEngineEnrichmentArtifact(PrimitiveEnrichmentArtifactBase):
     family: Literal["character_engines"]
-    enriched_primitives: list[CharacterEnginePrimitiveDelta] = Field(default_factory=list)
+    enriched_primitives: list[CharacterEnginePrimitiveDelta] = Field(
+        default_factory=list
+    )
 
 
 class CoalitionFaultLineEnrichmentArtifact(PrimitiveEnrichmentArtifactBase):
     family: Literal["coalitions_and_fault_lines"]
-    enriched_primitives: list[CoalitionFaultLinePrimitiveDelta] = Field(default_factory=list)
+    enriched_primitives: list[CoalitionFaultLinePrimitiveDelta] = Field(
+        default_factory=list
+    )
 
 
 class SystemsOperatingLogicEnrichmentArtifact(PrimitiveEnrichmentArtifactBase):
     family: Literal["systems_and_operating_logics"]
-    enriched_primitives: list[SystemsOperatingLogicPrimitiveDelta] = Field(default_factory=list)
+    enriched_primitives: list[SystemsOperatingLogicPrimitiveDelta] = Field(
+        default_factory=list
+    )
 
 
 class ContestedExplanationEnrichmentArtifact(PrimitiveEnrichmentArtifactBase):
     family: Literal["contested_explanations"]
-    enriched_primitives: list[ContestedExplanationPrimitiveDelta] = Field(default_factory=list)
+    enriched_primitives: list[ContestedExplanationPrimitiveDelta] = Field(
+        default_factory=list
+    )
 
 
 class MoralTrapEnrichmentArtifact(PrimitiveEnrichmentArtifactBase):
@@ -1482,7 +1673,9 @@ PRIMITIVE_ENRICHMENT_ARTIFACT_MODEL_BY_FAMILY: dict[
 
 class SynthesisMap(StrictModel):
     project_id: str
-    primitives_by_family: dict[str, list[AnySynthesisPrimitive]] = Field(default_factory=dict)
+    primitives_by_family: dict[str, list[AnySynthesisPrimitive]] = Field(
+        default_factory=dict
+    )
     quality_score: float = Field(default=0.0, ge=0.0, le=1.0)
     quality_notes: list[str] = Field(default_factory=list)
 
@@ -1499,9 +1692,12 @@ class SynthesisMap(StrictModel):
             self.primitives_by_family,
             mapping_name="primitives_by_family",
         )
-        _validate_family_bucket_alignment(normalized, mapping_name="primitives_by_family")
+        _validate_family_bucket_alignment(
+            normalized, mapping_name="primitives_by_family"
+        )
         self.primitives_by_family = _drop_invalid_contested_explanations(normalized)
         return self
+
 
 # ---------------------------------------------------------------------------
 # 3.5 Episode Planning Models
@@ -1531,7 +1727,9 @@ class ActorArcThread(StrictModel):
 
 class ActorArcDirective(StrictModel):
     actor_id: str = Field(min_length=1)
-    arc_threads: list[ActorArcThread] = Field(default_factory=list, min_length=1, max_length=8)
+    arc_threads: list[ActorArcThread] = Field(
+        default_factory=list, min_length=1, max_length=8
+    )
 
     @model_validator(mode="after")
     def validate_unique_thread_ids(self) -> "ActorArcDirective":
@@ -1556,6 +1754,24 @@ class EpisodeAuthorialContract(StrictModel):
     governing_lenses: list[str] = Field(default_factory=list, max_length=3)
     must_clarify_terms: list[str] = Field(default_factory=list, max_length=4)
     must_clarify_institutions: list[str] = Field(default_factory=list, max_length=4)
+    introduce_explanation_item_ids: list[str] = Field(
+        default_factory=list, max_length=4
+    )
+    remind_explanation_item_ids: list[str] = Field(default_factory=list, max_length=4)
+    callback_obligations: list[str] = Field(default_factory=list, max_length=3)
+
+
+class SeriesExplanationItem(StrictModel):
+    item_id: str = Field(min_length=1)
+    label: str = Field(min_length=1)
+    aliases: list[str] = Field(default_factory=list, max_length=4)
+    kind: Literal["term", "institution"]
+    importance: Literal["foundational", "episode_core"]
+    introduction_episode_number: int = Field(ge=1)
+    first_definition_depth: Literal["concise", "full"] = "full"
+    preferred_plain_gloss: str = Field(min_length=1)
+    later_episode_policy: Literal["mention_only", "brief_reminder"] = "brief_reminder"
+    max_reminder_sentences: Literal[1, 2] = 1
 
 
 class StrategyEpisode(StrictModel):
@@ -1565,7 +1781,9 @@ class StrategyEpisode(StrictModel):
     arc_summary: str = Field(min_length=1)
     unresolved_questions: list[str] = Field(default_factory=list)
     episode_spine: EpisodeSpine
-    actor_arc_directives: list[ActorArcDirective] = Field(default_factory=list, max_length=4)
+    actor_arc_directives: list[ActorArcDirective] = Field(
+        default_factory=list, max_length=4
+    )
     authorial_contract: EpisodeAuthorialContract = Field(
         default_factory=EpisodeAuthorialContract
     )
@@ -1605,14 +1823,29 @@ class SeriesNarratorProfile(StrictModel):
             "teaser_hype",
         ]
     )
-    target_host_moves_per_episode: int = Field(default=5, ge=0, le=12)
+    target_full_phase_scene_coverage_min: float = Field(default=0.60, ge=0.0, le=1.0)
+    target_full_phase_scene_coverage_target: float = Field(
+        default=0.75, ge=0.0, le=1.0
+    )
     analysis_mode: Literal["scene_led", "hybrid", "analysis_forward"] = "hybrid"
     analysis_density: Literal["light", "medium", "high"] = "medium"
     quote_gloss_preference: Literal["avoid", "allow", "prefer"] = "allow"
     clarifier_tolerance: Literal["low", "medium", "high"] = "medium"
     comparative_aside_tolerance: Literal["none", "light", "medium"] = "light"
     wit_ceiling: Literal["none", "dry", "wry"] = "dry"
-    target_authorial_passages_per_episode: int = Field(default=3, ge=0, le=6)
+    target_authorial_passages_per_episode: int = Field(default=16, ge=0, le=24)
+
+    @model_validator(mode="after")
+    def validate_coverage_targets(self) -> "SeriesNarratorProfile":
+        if (
+            self.target_full_phase_scene_coverage_target
+            < self.target_full_phase_scene_coverage_min
+        ):
+            raise ValueError(
+                "target_full_phase_scene_coverage_target must be greater than or "
+                "equal to target_full_phase_scene_coverage_min"
+            )
+        return self
 
 
 class NarrativeStrategy(StrictModel):
@@ -1623,19 +1856,47 @@ class NarrativeStrategy(StrictModel):
     series_arc: str = Field(min_length=1)
     episode_arc_outline: list[str] = Field(default_factory=list)
     recommended_episode_count: int | None = Field(default=None, ge=1)
-    narrator_profile: SeriesNarratorProfile = Field(default_factory=SeriesNarratorProfile)
+    narrator_profile: SeriesNarratorProfile = Field(
+        default_factory=SeriesNarratorProfile
+    )
+    series_explanation_registry: list[SeriesExplanationItem] = Field(
+        default_factory=list, max_length=12
+    )
     episodes: list[StrategyEpisode] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_strategy(self) -> "NarrativeStrategy":
         episode_numbers = [episode.episode_number for episode in self.episodes]
         if len(episode_numbers) != len(set(episode_numbers)):
-            raise ValueError("episodes must not contain duplicate episode_number values")
-        if self.episode_arc_outline and len(self.episode_arc_outline) != len(self.episodes):
-            raise ValueError("episode_arc_outline must align with episodes when provided")
+            raise ValueError(
+                "episodes must not contain duplicate episode_number values"
+            )
+        if self.episode_arc_outline and len(self.episode_arc_outline) != len(
+            self.episodes
+        ):
+            raise ValueError(
+                "episode_arc_outline must align with episodes when provided"
+            )
         if self.recommended_episode_count is not None and self.episodes:
             if self.recommended_episode_count != len(self.episodes):
-                raise ValueError("recommended_episode_count must match the number of episodes")
+                raise ValueError(
+                    "recommended_episode_count must match the number of episodes"
+                )
+        registry_ids = [item.item_id for item in self.series_explanation_registry]
+        if len(registry_ids) != len(set(registry_ids)):
+            raise ValueError(
+                "series_explanation_registry must not contain duplicate item_id values"
+            )
+        if self.episodes and self.series_explanation_registry:
+            valid_episode_numbers = {
+                episode.episode_number for episode in self.episodes
+            }
+            for item in self.series_explanation_registry:
+                if item.introduction_episode_number not in valid_episode_numbers:
+                    raise ValueError(
+                        "series_explanation_registry introduction_episode_number "
+                        "must reference an existing episode"
+                    )
         return self
 
 
@@ -1660,12 +1921,50 @@ class AuthorialPassage(StrictModel):
     ]
     placement: Literal["open", "mid", "close"] = "mid"
     claim: str = Field(min_length=1)
-    source_primitive_ids: list[str] = Field(default_factory=list, min_length=1, max_length=3)
+    source_primitive_ids: list[str] = Field(
+        default_factory=list, min_length=1, max_length=3
+    )
     source_passage_ids: list[str] = Field(default_factory=list, max_length=4)
     quote_anchor: str = ""
     gloss_seed: str = ""
     must_name_terms: list[str] = Field(default_factory=list, max_length=4)
     budget_sentences: Literal[2, 3, 4, 5] = 3
+
+
+class TermExplanationPlan(StrictModel):
+    item_id: str = Field(min_length=1)
+    stage: Literal["define", "payoff", "reminder"]
+    delivery_zone: Literal["open", "mid", "close"] = "mid"
+    plain_gloss_seed: str = ""
+    must_survive_style_audit: bool = True
+
+
+class HostPresenceBeat(StrictModel):
+    kind: Literal[
+        "orientation",
+        "clarify",
+        "contrast",
+        "evaluate",
+        "callback",
+        "term_reminder",
+        "light_aside",
+        "naming_note",
+    ]
+    placement: Literal["open", "pivot", "close"]
+    seed: str = Field(min_length=1)
+    scope: Literal["beat", "scene"] = "scene"
+    address_mode: Literal["implicit", "we", "you"] = "implicit"
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_legacy_kind(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        cleaned = dict(data)
+        kind = str(cleaned.get("kind", "") or "").strip()
+        if kind == "term_reminder":
+            cleaned["kind"] = "clarify"
+        return cleaned
 
 
 class ArchitectureSection(StrictModel):
@@ -1697,7 +1996,15 @@ class ArchitectureSection(StrictModel):
     priority_core_passage_ids: list[str] = Field(default_factory=list)
     analysis_goal: str = ""
     key_terms: list[str] = Field(default_factory=list, max_length=6)
-    authorial_passages: list[AuthorialPassage] = Field(default_factory=list, max_length=2)
+    authorial_passages: list[AuthorialPassage] = Field(
+        default_factory=list, max_length=4
+    )
+    term_explanations: list[TermExplanationPlan] = Field(
+        default_factory=list, max_length=4
+    )
+    host_presence_beats: list[HostPresenceBeat] = Field(
+        default_factory=list, max_length=6
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -1754,7 +2061,9 @@ class EpisodeArchitecture(StrictModel):
     major_turn_section_id: str = Field(min_length=1)
     allowed_recurring_primitive_ids: list[str] = Field(default_factory=list)
     forbidden_redundancies: list[str] = Field(default_factory=list)
-    sections: list[ArchitectureSection] = Field(default_factory=list, min_length=9, max_length=12)
+    sections: list[ArchitectureSection] = Field(
+        default_factory=list, min_length=6, max_length=12
+    )
     architecture_notes: list[str] = Field(default_factory=list)
 
     @model_validator(mode="before")
@@ -1783,9 +2092,14 @@ class EpisodeArchitecture(StrictModel):
         if self.major_turn_section_id not in section_by_id:
             raise ValueError("major_turn_section_id must reference an existing section")
 
-        section_indices = {section_id: idx for idx, section_id in enumerate(ordered_section_ids)}
+        section_indices = {
+            section_id: idx for idx, section_id in enumerate(ordered_section_ids)
+        }
         for section in self.sections:
-            for dependency_id in [*section.depends_on_section_ids, *section.sets_up_section_ids]:
+            for dependency_id in [
+                *section.depends_on_section_ids,
+                *section.sets_up_section_ids,
+            ]:
                 if dependency_id not in section_by_id:
                     raise ValueError(
                         f"section dependency references unknown section_id: {dependency_id}"
@@ -1794,13 +2108,29 @@ class EpisodeArchitecture(StrictModel):
                 section_indices[dependency_id] >= section_indices[section.section_id]
                 for dependency_id in section.depends_on_section_ids
             ):
-                raise ValueError("depends_on_section_ids must reference earlier sections")
+                raise ValueError(
+                    "depends_on_section_ids must reference earlier sections"
+                )
             if any(
                 section_indices[next_id] <= section_indices[section.section_id]
                 for next_id in section.sets_up_section_ids
             ):
                 raise ValueError("sets_up_section_ids must reference later sections")
         return self
+
+
+def validate_episode_architecture_targets(
+    architecture: EpisodeArchitecture,
+    *,
+    section_target_min: int,
+    section_target_max: int,
+) -> None:
+    section_count = len(architecture.sections)
+    if section_count < section_target_min or section_count > section_target_max:
+        raise ValueError(
+            "sections must contain "
+            f"{section_target_min}-{section_target_max} items"
+        )
 
 
 class SceneActor(StrictModel):
@@ -1827,9 +2157,8 @@ class SceneActorArcBinding(StrictModel):
     weight: Literal["light", "standard", "strong"] = "standard"
 
 
-class HostMove(StrictModel):
+class HostMoveCue(StrictModel):
     move_type: Literal[
-        "none",
         "orient",
         "clarify",
         "evaluate",
@@ -1837,10 +2166,10 @@ class HostMove(StrictModel):
         "callback",
         "light_aside",
         "naming_note",
-    ] = "none"
+    ]
     note: str = ""
-    max_sentences: Literal[1, 2] = 1
-    placement: Literal["open", "pivot", "close"] = "close"
+    surface_mode: Literal["woven", "distinct", "mixed"] = "mixed"
+    address_mode: Literal["implicit", "we", "you"] = "implicit"
 
     @model_validator(mode="before")
     @classmethod
@@ -1848,13 +2177,34 @@ class HostMove(StrictModel):
         if not isinstance(data, dict):
             return data
         cleaned = dict(data)
-        move_type = str(cleaned.get("move_type", "none") or "none").strip() or "none"
+        move_type = str(cleaned.get("move_type", "") or "").strip()
+        if not move_type:
+            raise ValueError("host move cues must include move_type")
         cleaned["move_type"] = move_type
         cleaned["note"] = str(cleaned.get("note", "") or "").strip()
-        placement = str(cleaned.get("placement", "") or "").strip()
-        if not placement:
-            cleaned["placement"] = _default_host_move_placement(move_type)
+        cleaned["surface_mode"] = (
+            str(cleaned.get("surface_mode", "mixed") or "mixed").strip() or "mixed"
+        )
+        cleaned["address_mode"] = (
+            str(cleaned.get("address_mode", "implicit") or "implicit").strip()
+            or "implicit"
+        )
         return cleaned
+
+
+class HostMovesByPhase(StrictModel):
+    open: list[HostMoveCue] = Field(default_factory=list, max_length=2)
+    pivot: list[HostMoveCue] = Field(default_factory=list, max_length=2)
+    close: list[HostMoveCue] = Field(default_factory=list, max_length=2)
+
+    @model_validator(mode="after")
+    def validate_non_empty(self) -> "HostMovesByPhase":
+        populated_phase_count = sum(
+            1 for cues in (self.open, self.pivot, self.close) if cues
+        )
+        if populated_phase_count == 0:
+            raise ValueError("host_moves must populate at least one phase bucket")
+        return self
 
 
 class _SceneCardBase(StrictModel):
@@ -1876,7 +2226,7 @@ class _SceneCardBase(StrictModel):
     location: str | None = None
     actors: list[SceneActor] = Field(default_factory=list, max_length=4)
     passage_ids: list[str] = Field(default_factory=list)
-    host_move: HostMove = Field(default_factory=HostMove)
+    host_moves: HostMovesByPhase
 
     @model_validator(mode="after")
     def validate_card_shape(self) -> "_SceneCardBase":
@@ -1938,7 +2288,10 @@ def _migrate_legacy_scene_card(data: Any) -> Any:
             (role, None),
         )
         cleaned["scene_role"] = normalized_role
-        if not str(cleaned.get("scene_function", "") or "").strip() and default_function:
+        if (
+            not str(cleaned.get("scene_function", "") or "").strip()
+            and default_function
+        ):
             cleaned["scene_function"] = default_function
     if not str(cleaned.get("scene_function", "") or "").strip():
         normalized_role = str(cleaned.get("scene_role", "") or "").strip()
@@ -1954,20 +2307,11 @@ def _migrate_legacy_scene_card(data: Any) -> Any:
     for actor in cleaned.get("actors", []) or []:
         if isinstance(actor, dict):
             actor.pop("arc_bindings", None)
-    host_move = cleaned.get("host_move")
-    if not isinstance(host_move, dict):
-        cleaned["host_move"] = {
-            "move_type": "none",
-            "note": "",
-            "max_sentences": 1,
-            "placement": "close",
-        }
-    else:
-        normalized_host_move = dict(host_move)
-        move_type = str(normalized_host_move.get("move_type", "none") or "none").strip() or "none"
-        if not str(normalized_host_move.get("placement", "") or "").strip():
-            normalized_host_move["placement"] = _default_host_move_placement(move_type)
-        cleaned["host_move"] = normalized_host_move
+    if "host_move" in cleaned:
+        raise ValueError("scene cards must use host_moves; legacy host_move is not supported")
+    host_moves = cleaned.get("host_moves")
+    if not isinstance(host_moves, dict):
+        raise ValueError("scene cards must include host_moves")
     return cleaned
 
 
@@ -2001,7 +2345,9 @@ class EpisodePlanDraft(StrictModel):
         if len(scene_ids) != len(set(scene_ids)):
             raise ValueError("scene_cards must use unique scene_id values")
         if self.framing.handoff_scene_card_id not in set(scene_ids):
-            raise ValueError("framing.handoff_scene_card_id must reference an existing scene card")
+            raise ValueError(
+                "framing.handoff_scene_card_id must reference an existing scene card"
+            )
         return self
 
 
@@ -2116,7 +2462,9 @@ class SpeechHints(StrictModel):
     pause_after_ms: int = Field(default=300, ge=0, le=2000)
     pronunciation_hints: list[PronunciationHint] = Field(default_factory=list)
     emphasis_targets: list[str] = Field(default_factory=list)
-    render_strategy: Literal["plain", "isolate_phrase", "split_sentences", "slow_clause"] = "plain"
+    render_strategy: Literal[
+        "plain", "isolate_phrase", "split_sentences", "slow_clause"
+    ] = "plain"
 
 
 class SpokenSection(StrictModel):

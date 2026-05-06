@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from podcast_agent.agents.base import Agent
 from podcast_agent.prompts import narrative_strategy_instructions
-from podcast_agent.schemas.models import NarrativeStrategy
+from podcast_agent.schemas.models import (
+    NarrativeStrategy,
+    validate_episode_spine_targets,
+)
 
 
 class NarrativeStrategyAgent(Agent):
@@ -13,6 +16,54 @@ class NarrativeStrategyAgent(Agent):
     schema_name = "narrative_strategy"
     response_model = NarrativeStrategy
     instructions = narrative_strategy_instructions()
+
+    @staticmethod
+    def _primitive_target_bounds(payload: dict) -> tuple[int, int, int, int, int]:
+        project = payload.get("project")
+        if not isinstance(project, dict):
+            return 5, 7, 5, 7, 2
+        return (
+            int(project.get("episode_spine_core_primitive_target_min", 5)),
+            int(project.get("episode_spine_core_primitive_target_max", 7)),
+            int(project.get("episode_spine_support_primitive_target_min", 5)),
+            int(project.get("episode_spine_support_primitive_target_max", 7)),
+            int(project.get("episode_spine_recall_primitive_target_max", 2)),
+        )
+
+    def build_instructions(self, payload: dict) -> str:
+        (
+            core_target_min,
+            core_target_max,
+            support_target_min,
+            support_target_max,
+            recall_target_max,
+        ) = self._primitive_target_bounds(payload)
+        return narrative_strategy_instructions(
+            core_primitive_target_min=core_target_min,
+            core_primitive_target_max=core_target_max,
+            support_primitive_target_min=support_target_min,
+            support_primitive_target_max=support_target_max,
+            recall_primitive_target_max=recall_target_max,
+        )
+
+    def validate_result(self, result: NarrativeStrategy, payload: dict) -> NarrativeStrategy:
+        (
+            core_target_min,
+            core_target_max,
+            support_target_min,
+            support_target_max,
+            recall_target_max,
+        ) = self._primitive_target_bounds(payload)
+        for episode in result.episodes:
+            validate_episode_spine_targets(
+                episode.episode_spine,
+                core_target_min=core_target_min,
+                core_target_max=core_target_max,
+                support_target_min=support_target_min,
+                support_target_max=support_target_max,
+                recall_target_max=recall_target_max,
+            )
+        return result
 
     def build_payload(
         self,

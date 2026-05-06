@@ -8,7 +8,11 @@ from abc import ABC, abstractmethod
 
 from pydantic import BaseModel
 
-from podcast_agent.langchain.runnables import RetryableGenerationError, TransientLLMError
+from podcast_agent.langchain.runnables import (
+    RetryableGenerationError,
+    TransientLLMError,
+    is_transient_error,
+)
 from podcast_agent.llm.base import LLMClient
 from podcast_agent.llm.concurrency import llm_semaphore_for
 
@@ -47,20 +51,32 @@ class Agent(ABC):
             error_message=str(exc),
         )
 
+    def build_instructions(self, payload: dict) -> str:
+        """Construct the instructions sent to the LLM."""
+
+        return self.instructions
+
+    def validate_result(self, result: BaseModel, payload: dict) -> BaseModel:
+        """Apply any post-parse validation that depends on runtime payload."""
+
+        return result
+
     def run(self, payload: dict) -> BaseModel:
         """Execute the agent with retry and concurrency gating."""
         last_exc: Exception | None = None
+        instructions = self.build_instructions(payload)
         for attempt in range(1, self.max_retry_attempts + 1):
             with llm_semaphore_for(self.schema_name):
                 try:
-                    return self.llm.generate_json(
+                    result = self.llm.generate_json(
                         schema_name=self.schema_name,
-                        instructions=self.instructions,
+                        instructions=instructions,
                         payload=payload,
                         response_model=self.response_model,
                         attempt=attempt,
                         max_attempts=self.max_retry_attempts,
                     )
+                    return self.validate_result(result, payload)
                 except (TransientLLMError, RetryableGenerationError) as exc:
                     last_exc = exc
                     if attempt < self.max_retry_attempts:
@@ -77,8 +93,24 @@ class Agent(ABC):
                         )
                         time.sleep(backoff)
                     continue
-                except Exception:
-                    raise
+                except Exception as exc:
+                    if not is_transient_error(exc):
+                        raise
+                    last_exc = exc
+                    if attempt < self.max_retry_attempts:
+                        backoff = min(2 ** (attempt - 1), 16) + (time.monotonic() % 1)
+                        self._log_retry_scheduled(
+                            attempt=attempt,
+                            backoff=backoff,
+                            exc=exc,
+                        )
+                        logger.warning(
+                            "Agent %s attempt %d/%d failed (%s: %s), retrying in %.1fs",
+                            self.schema_name, attempt, self.max_retry_attempts,
+                            type(exc).__name__, exc, backoff,
+                        )
+                        time.sleep(backoff)
+                    continue
         raise last_exc  # type: ignore[misc]
 
     @abstractmethod

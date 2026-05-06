@@ -43,10 +43,16 @@ class LLMConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     llm_provider: str = Field(
-        default_factory=lambda: os.getenv("LLM_PROVIDER") or os.getenv("LLM_TYPE") or "anthropic"
+        default_factory=lambda: (
+            os.getenv("LLM_PROVIDER") or os.getenv("LLM_TYPE") or "anthropic"
+        )
     )
-    provider: str = Field(default_factory=lambda: os.getenv("LLM_PROVIDER", "anthropic"))
-    model_name: str = Field(default_factory=lambda: os.getenv("LLM_MODEL_NAME", "claude-opus-4-7"))
+    provider: str = Field(
+        default_factory=lambda: os.getenv("LLM_PROVIDER", "anthropic")
+    )
+    model_name: str = Field(
+        default_factory=lambda: os.getenv("LLM_MODEL_NAME", "claude-opus-4-7")
+    )
     model_overrides: dict[str, str] = Field(
         default_factory=dict,
         description="Per-schema model overrides keyed by schema_name.",
@@ -61,11 +67,17 @@ class LLMConfig(BaseModel):
     )
     api_key: str | None = Field(default_factory=lambda: os.getenv("OPENAI_API_KEY"))
     base_url: str = Field(
-        default_factory=lambda: os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+        default_factory=lambda: os.getenv(
+            "OPENAI_BASE_URL", "https://api.openai.com/v1"
+        ),
     )
-    anthropic_api_key: str | None = Field(default_factory=lambda: os.getenv("ANTHROPIC_API_KEY"))
+    anthropic_api_key: str | None = Field(
+        default_factory=lambda: os.getenv("ANTHROPIC_API_KEY")
+    )
     anthropic_base_url: str = Field(
-        default_factory=lambda: os.getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com"),
+        default_factory=lambda: os.getenv(
+            "ANTHROPIC_BASE_URL", "https://api.anthropic.com"
+        ),
     )
     anthropic_max_tokens: int = Field(
         default_factory=lambda: int(os.getenv("ANTHROPIC_MAX_TOKENS", "100000")), ge=1
@@ -80,7 +92,9 @@ class LLMConfig(BaseModel):
         default_factory=lambda: _env_bool("ANTHROPIC_PROMPT_CACHING_ENABLED", True)
     )
     anthropic_prompt_caching_auto_fallback: bool = Field(
-        default_factory=lambda: _env_bool("ANTHROPIC_PROMPT_CACHING_AUTO_FALLBACK", True)
+        default_factory=lambda: _env_bool(
+            "ANTHROPIC_PROMPT_CACHING_AUTO_FALLBACK", True
+        )
     )
     timeout_seconds: float = Field(default=600.0, gt=0.0)
     timeout_seconds_overrides: dict[str, float] = Field(
@@ -139,20 +153,90 @@ class LLMConfig(BaseModel):
     # Per-agent configuration keyed by agent schema_name
     agent_configs: dict[str, AgentConfig] = Field(
         default_factory=lambda: {
-            "chapter_summary": AgentConfig(model_name="claude-haiku-4-5", temperature=0.3, max_retry_attempts=3, concurrency_limit=48),
-            "book_summary": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.3, max_retry_attempts=3, concurrency_limit=15),
-            "theme_decomposition": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.7, max_retry_attempts=2, concurrency_limit=6),
-            "passage_extraction": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.1, max_retry_attempts=4, concurrency_limit=26),
-            "synthesis_primitives": AgentConfig(model_name="claude-opus-4-7", temperature=0.8, max_retry_attempts=2, concurrency_limit=3),
-            "narrative_strategy": AgentConfig(model_name="claude-opus-4-7", temperature=0.5, max_retry_attempts=2, concurrency_limit=6),
-            "primitive_enrichment": AgentConfig(model_name="claude-opus-4-7", temperature=0.4, max_retry_attempts=2, concurrency_limit=6),
-            "episode_architecture": AgentConfig(model_name="claude-opus-4-7", temperature=0.5, max_retry_attempts=3, concurrency_limit=6),
-            "episode_planning": AgentConfig(model_name="claude-opus-4-7", temperature=0.5, max_retry_attempts=3, concurrency_limit=9),
-            "episode_writing": AgentConfig(model_name="claude-opus-4-7", temperature=0.6, max_retry_attempts=2, concurrency_limit=9),
-            "style_audit": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.2, max_retry_attempts=2, concurrency_limit=9),
-            "grounding_validation": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.2, max_retry_attempts=2, concurrency_limit=6),
-            "repair": AgentConfig(model_name="claude-sonnet-4-6", temperature=0.3, max_retry_attempts=2, concurrency_limit=6),
-            "spoken_delivery": AgentConfig(model_name="claude-opus-4-7", temperature=0.7, max_retry_attempts=2, concurrency_limit=9),
+            "chapter_summary": AgentConfig(
+                model_name="claude-haiku-4-5",
+                temperature=0.3,
+                max_retry_attempts=3,
+                concurrency_limit=48,
+            ),
+            "book_summary": AgentConfig(
+                model_name="claude-sonnet-4-6",
+                temperature=0.3,
+                max_retry_attempts=3,
+                concurrency_limit=15,
+            ),
+            "theme_decomposition": AgentConfig(
+                model_name="claude-sonnet-4-6",
+                temperature=0.7,
+                max_retry_attempts=2,
+                concurrency_limit=6,
+            ),
+            "passage_extraction": AgentConfig(
+                model_name="claude-sonnet-4-6",
+                temperature=0.1,
+                max_retry_attempts=4,
+                concurrency_limit=26,
+            ),
+            "synthesis_primitives": AgentConfig(
+                model_name="claude-opus-4-7",
+                temperature=0.8,
+                max_retry_attempts=2,
+                concurrency_limit=3,
+            ),
+            "narrative_strategy": AgentConfig(
+                model_name="claude-opus-4-7",
+                temperature=0.5,
+                max_retry_attempts=2,
+                concurrency_limit=6,
+            ),
+            "primitive_enrichment": AgentConfig(
+                model_name="claude-opus-4-7",
+                temperature=0.4,
+                max_retry_attempts=2,
+                concurrency_limit=6,
+            ),
+            "episode_architecture": AgentConfig(
+                model_name="claude-opus-4-7",
+                temperature=0.5,
+                max_retry_attempts=3,
+                concurrency_limit=6,
+            ),
+            "episode_planning": AgentConfig(
+                model_name="claude-opus-4-7",
+                temperature=0.5,
+                max_retry_attempts=3,
+                concurrency_limit=9,
+            ),
+            "episode_writing": AgentConfig(
+                model_name="claude-opus-4-7",
+                temperature=0.6,
+                max_retry_attempts=2,
+                concurrency_limit=9,
+            ),
+            "style_audit": AgentConfig(
+                model_name="claude-sonnet-4-6",
+                temperature=0.2,
+                max_retry_attempts=2,
+                concurrency_limit=9,
+            ),
+            "grounding_validation": AgentConfig(
+                model_name="claude-sonnet-4-6",
+                temperature=0.2,
+                max_retry_attempts=2,
+                concurrency_limit=6,
+            ),
+            "repair": AgentConfig(
+                model_name="claude-sonnet-4-6",
+                temperature=0.3,
+                max_retry_attempts=2,
+                concurrency_limit=6,
+            ),
+            "spoken_delivery": AgentConfig(
+                model_name="claude-opus-4-7",
+                temperature=0.7,
+                max_retry_attempts=2,
+                concurrency_limit=9,
+            ),
         },
         description="Per-agent LLM config overrides keyed by schema_name.",
     )
@@ -300,8 +384,8 @@ class PipelineRuntimeConfig(BaseModel):
     audio_retry_attempts: int = Field(default=3, ge=0)
     spoken_words_per_minute: int = Field(default=145, ge=80)
     # Thematic intelligence
-    max_axes: int = Field(default=15, ge=1)
-    min_axes: int = Field(default=10, ge=1)
+    max_axes: int = Field(default=20, ge=1)
+    min_axes: int = Field(default=12, ge=1)
     passage_retrieval_percentage: float = Field(default=0.25, gt=0.0, le=1.0)
     passage_retrieval_min_per_book: int = Field(default=10, ge=1)
     passage_retrieval_max_per_book: int = Field(default=25, ge=1)
@@ -318,8 +402,8 @@ class PipelineRuntimeConfig(BaseModel):
     mmr_synthesis_lambda: float = Field(default=0.75, ge=0.0, le=1.0)
     mmr_planning_lambda: float = Field(default=0.75, ge=0.0, le=1.0)
     synthesis_axis_pct: float = Field(default=1.0, ge=0.0, le=1.0)
-    synthesis_axis_min: int = Field(default=10, ge=0)
-    synthesis_axis_max: int = Field(default=15, ge=1)
+    synthesis_axis_min: int = Field(default=12, ge=0)
+    synthesis_axis_max: int = Field(default=20, ge=1)
     synthesis_total_passage_cap: int = Field(default=450, ge=1)
     synthesis_floor_budget_fraction: float = Field(default=0.0, ge=0.0, le=1.0)
     synthesis_axis_floor_min: int = Field(default=0, ge=0)
@@ -341,8 +425,8 @@ class PipelineRuntimeConfig(BaseModel):
     spoken_chunk_max_words: int = Field(default=250, ge=50)
     architecture_section_target_min: int = Field(default=9, ge=1)
     architecture_section_target_max: int = Field(default=12, ge=1)
-    scene_card_target_min: int = Field(default=27, ge=1)
-    scene_card_target_max: int = Field(default=36, ge=1)
+    scene_card_target_min: int = Field(default=32, ge=1)
+    scene_card_target_max: int = Field(default=40, ge=1)
 
     @model_validator(mode="after")
     def validate_retrieval_budget_bounds(self) -> PipelineRuntimeConfig:
@@ -353,7 +437,9 @@ class PipelineRuntimeConfig(BaseModel):
         if self.synthesis_axis_max < self.synthesis_axis_min:
             raise ValueError("synthesis_axis_max must be >= synthesis_axis_min")
         if self.synthesis_axis_floor_max < self.synthesis_axis_floor_min:
-            raise ValueError("synthesis_axis_floor_max must be >= synthesis_axis_floor_min")
+            raise ValueError(
+                "synthesis_axis_floor_max must be >= synthesis_axis_floor_min"
+            )
         if self.planning_axis_max < self.planning_axis_min:
             raise ValueError("planning_axis_max must be >= planning_axis_min")
         if (
@@ -361,7 +447,9 @@ class PipelineRuntimeConfig(BaseModel):
             + self.synthesis_trim_mid_fraction
             + self.synthesis_trim_next_fraction
         ) > 1.0:
-            raise ValueError("synthesis trim top, mid, and next fractions must sum to <= 1.0")
+            raise ValueError(
+                "synthesis trim top, mid, and next fractions must sum to <= 1.0"
+            )
         if self.architecture_section_target_max < self.architecture_section_target_min:
             raise ValueError(
                 "architecture_section_target_max must be >= architecture_section_target_min"
@@ -374,16 +462,23 @@ class PipelineRuntimeConfig(BaseModel):
 class EmbeddingsConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    provider: str = Field(default_factory=lambda: os.getenv("EMBEDDINGS_PROVIDER", "openai"))
+    provider: str = Field(
+        default_factory=lambda: os.getenv("EMBEDDINGS_PROVIDER", "openai")
+    )
     model_name: str = Field(
-        default_factory=lambda: os.getenv("EMBEDDINGS_MODEL_NAME", "text-embedding-3-small")
+        default_factory=lambda: os.getenv(
+            "EMBEDDINGS_MODEL_NAME", "text-embedding-3-small"
+        )
     )
     dimensions: int | None = Field(
         default_factory=lambda: int(os.getenv("EMBEDDINGS_DIMENSIONS", "0")) or None
     )
-    batch_size: int = Field(default_factory=lambda: int(os.getenv("EMBEDDINGS_BATCH_SIZE", "100")), ge=1)
+    batch_size: int = Field(
+        default_factory=lambda: int(os.getenv("EMBEDDINGS_BATCH_SIZE", "100")), ge=1
+    )
     timeout_seconds: float = Field(
-        default_factory=lambda: float(os.getenv("EMBEDDINGS_TIMEOUT_SECONDS", "60.0")), gt=0.0
+        default_factory=lambda: float(os.getenv("EMBEDDINGS_TIMEOUT_SECONDS", "60.0")),
+        gt=0.0,
     )
 
 
@@ -391,7 +486,9 @@ class RetrievalConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     collection_name: str = Field(
-        default_factory=lambda: os.getenv("RETRIEVAL_COLLECTION_NAME", "podcast_agent_chunks")
+        default_factory=lambda: os.getenv(
+            "RETRIEVAL_COLLECTION_NAME", "podcast_agent_chunks"
+        )
     )
     oversample_factor: int = Field(
         default_factory=lambda: int(os.getenv("RETRIEVAL_OVERSAMPLE_FACTOR", "3")), ge=1
@@ -404,16 +501,21 @@ class RetrievalConfig(BaseModel):
 class LangChainConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    cache_backend: str = Field(default_factory=lambda: os.getenv("LANGCHAIN_CACHE_BACKEND", "sqlite"))
+    cache_backend: str = Field(
+        default_factory=lambda: os.getenv("LANGCHAIN_CACHE_BACKEND", "sqlite")
+    )
     cache_path: str = Field(
         default_factory=lambda: os.getenv(
-            "LANGCHAIN_CACHE_PATH", str(Path(".podcast_agent") / "langchain_cache.sqlite")
+            "LANGCHAIN_CACHE_PATH",
+            str(Path(".podcast_agent") / "langchain_cache.sqlite"),
         )
     )
     cache_redis_url: str | None = Field(
         default_factory=lambda: os.getenv("LANGCHAIN_CACHE_REDIS_URL")
     )
-    cache_enabled: bool = Field(default_factory=lambda: _env_bool("LANGCHAIN_CACHE_ENABLED", True))
+    cache_enabled: bool = Field(
+        default_factory=lambda: _env_bool("LANGCHAIN_CACHE_ENABLED", True)
+    )
 
 
 class Settings(BaseModel):

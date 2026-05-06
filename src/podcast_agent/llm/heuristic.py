@@ -61,7 +61,9 @@ class HeuristicLLMClient(LLMClient):
                 )
             raise
 
-    def _generate_default(self, schema_name: str, payload: PromptPayload) -> dict[str, Any]:
+    def _generate_default(
+        self, schema_name: str, payload: PromptPayload
+    ) -> dict[str, Any]:
         raise ValueError(f"No heuristic generator for schema '{schema_name}'.")
 
     def _generate_chapter_summary(self, payload: PromptPayload) -> dict[str, Any]:
@@ -88,10 +90,11 @@ class HeuristicLLMClient(LLMClient):
         book_ids = [b.get("book_id", f"b{i}") for i, b in enumerate(books)]
         relevance = {bid: 0.7 for bid in book_ids}
         axis_label = str(payload.get("theme", "unknown"))
+        axis_count_min = int(payload.get("axis_count_min", 12))
         actors = self._generate_actor_metadata_actors(books)
         actor_ids = [actor["actor_id"] for actor in actors]
         axes = []
-        for idx in range(1, 11):
+        for idx in range(1, axis_count_min + 1):
             importance = max(0.0, 1.0 - ((idx - 1) * 0.06))
             axes.append(
                 {
@@ -118,7 +121,9 @@ class HeuristicLLMClient(LLMClient):
             },
         }
 
-    def _generate_actor_metadata_actors(self, books: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _generate_actor_metadata_actors(
+        self, books: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
         actors: list[dict[str, Any]] = []
         seen: set[str] = set()
         for book in books:
@@ -158,7 +163,9 @@ class HeuristicLLMClient(LLMClient):
                             "transformations": [],
                             "uncertainty_notes": "",
                             "evidence_confidence": "medium",
-                            "narrative_importance_score": max(0.1, 1.0 - (len(actors) * 0.03)),
+                            "narrative_importance_score": max(
+                                0.1, 1.0 - (len(actors) * 0.03)
+                            ),
                         }
                     )
                     if len(actors) >= 20:
@@ -171,7 +178,15 @@ class HeuristicLLMClient(LLMClient):
                     "aliases": [],
                     "actor_type": "other",
                     "description": "Heuristic fallback actor for local runs.",
-                    "book_ids": book_ids if (book_ids := [str(book.get("book_id", "")) for book in books if book.get("book_id")]) else [],
+                    "book_ids": book_ids
+                    if (
+                        book_ids := [
+                            str(book.get("book_id", ""))
+                            for book in books
+                            if book.get("book_id")
+                        ]
+                    )
+                    else [],
                     "chapter_refs": [],
                     "narrative_functions": ["other"],
                     "goals_or_motivational_pressures": [],
@@ -255,7 +270,10 @@ class HeuristicLLMClient(LLMClient):
     def _generate_synthesis_primitives(self, payload: PromptPayload) -> dict[str, Any]:
         passages_by_axis = payload.get("passages_by_axis", {})
         axis_ids = list(passages_by_axis.keys()) or ["axis_01"]
-        passage_ids = self._collect_passage_ids(passages_by_axis) or [uuid4().hex, uuid4().hex]
+        passage_ids = self._collect_passage_ids(passages_by_axis) or [
+            uuid4().hex,
+            uuid4().hex,
+        ]
         actor_metadata = payload.get("actor_metadata", {}) or {}
         actor_ids = [
             str(actor.get("actor_id", ""))
@@ -396,7 +414,10 @@ class HeuristicLLMClient(LLMClient):
                         "decision_trigger": "A fresh shock forces the actor to choose.",
                         "decision_question": "Should the actor force a move now or hold back?",
                         "decision_mode": "decision",
-                        "options_considered": ["Act immediately.", "Hold position and wait."],
+                        "options_considered": [
+                            "Act immediately.",
+                            "Hold position and wait.",
+                        ],
                         "next_result": "The choice redirects the next phase of events.",
                         "narration_hooks": hooks,
                     }
@@ -489,8 +510,14 @@ class HeuristicLLMClient(LLMClient):
                 delta.update(
                     {
                         "actor_ids": scoped_actor_ids,
-                        "competing_obligations": ["Protect allies.", "Preserve institutional order."],
-                        "compromised_options": ["Act and deepen the damage.", "Wait and allow the damage to spread."],
+                        "competing_obligations": [
+                            "Protect allies.",
+                            "Preserve institutional order.",
+                        ],
+                        "compromised_options": [
+                            "Act and deepen the damage.",
+                            "Wait and allow the damage to spread.",
+                        ],
                         "trap_structure": "Every plausible move imposes a visible cost.",
                         "narration_hooks": hooks,
                     }
@@ -516,13 +543,28 @@ class HeuristicLLMClient(LLMClient):
 
     def _generate_narrative_strategy(self, payload: PromptPayload) -> dict[str, Any]:
         requested_episode_count = payload.get("requested_episode_count")
-        recommended_episode_count_min = int(payload.get("recommended_episode_count_min", 8))
-        recommended_episode_count_max = int(payload.get("recommended_episode_count_max", 12))
+        recommended_episode_count_min = int(
+            payload.get("recommended_episode_count_min", 8)
+        )
+        recommended_episode_count_max = int(
+            payload.get("recommended_episode_count_max", 12)
+        )
         if recommended_episode_count_max < recommended_episode_count_min:
             recommended_episode_count_max = recommended_episode_count_min
+        project = payload.get("project", {})
+        if not isinstance(project, dict):
+            project = {}
+        core_target_min = int(
+            project.get("episode_spine_core_primitive_target_min", 5)
+        )
+        support_target_min = int(
+            project.get("episode_spine_support_primitive_target_min", 5)
+        )
         synthesis_map = payload.get("synthesis_map", {})
         primitive_ids = []
-        for family_items in (synthesis_map.get("primitives_by_family", {}) or {}).values():
+        for family_items in (
+            synthesis_map.get("primitives_by_family", {}) or {}
+        ).values():
             for item in family_items:
                 primitive_id = str(item.get("id", ""))
                 if primitive_id:
@@ -543,21 +585,23 @@ class HeuristicLLMClient(LLMClient):
                 else f"What does episode {idx + 1} newly reveal?"
             )
             core_start = idx * 13
-            core_ids = primitive_ids[core_start:core_start + 5]
-            if len(core_ids) < 5:
-                core_ids = primitive_ids[:5]
-            support_candidates = primitive_ids[core_start + 5:core_start + 15]
+            core_ids = primitive_ids[core_start : core_start + core_target_min]
+            if len(core_ids) < core_target_min:
+                core_ids = primitive_ids[:core_target_min]
+            support_candidates = primitive_ids[
+                core_start + core_target_min : core_start + core_target_min + 10
+            ]
             support_ids = [
                 primitive_id
                 for primitive_id in support_candidates
                 if primitive_id not in core_ids
-            ][:5]
-            if len(support_ids) < 5:
+            ][:support_target_min]
+            if len(support_ids) < support_target_min:
                 support_ids = [
                     primitive_id
                     for primitive_id in primitive_ids
                     if primitive_id not in core_ids
-                ][:5]
+                ][:support_target_min]
             episodes.append(
                 {
                     "episode_number": idx + 1,
@@ -593,7 +637,9 @@ class HeuristicLLMClient(LLMClient):
             "strategy_type": "convergence",
             "justification": "Heuristic: defaulting to convergence strategy.",
             "series_arc": "Books converge on shared themes.",
-            "episode_arc_outline": [f"Episode {idx + 1}" for idx in range(recommended_episode_count)],
+            "episode_arc_outline": [
+                f"Episode {idx + 1}" for idx in range(recommended_episode_count)
+            ],
             "recommended_episode_count": recommended_episode_count,
             "narrator_profile": {
                 "presence_mode": "visible_host",
@@ -613,14 +659,15 @@ class HeuristicLLMClient(LLMClient):
                     "fake_banter",
                     "teaser_hype",
                 ],
-                "target_host_moves_per_episode": 5,
+                "target_full_phase_scene_coverage_min": 0.60,
+                "target_full_phase_scene_coverage_target": 0.75,
                 "analysis_mode": "hybrid",
                 "analysis_density": "medium",
                 "quote_gloss_preference": "allow",
                 "clarifier_tolerance": "medium",
                 "comparative_aside_tolerance": "light",
                 "wit_ceiling": "dry",
-                "target_authorial_passages_per_episode": 3,
+                "target_authorial_passages_per_episode": 16,
             },
             "episodes": episodes,
         }
@@ -628,13 +675,27 @@ class HeuristicLLMClient(LLMClient):
     def _generate_episode_architecture(self, payload: PromptPayload) -> dict[str, Any]:
         episode = payload.get("episode", {})
         episode_spine = episode.get("episode_spine", {})
+        project = payload.get("project", {})
+        if not isinstance(project, dict):
+            project = {}
         primitive_ids = list(episode_spine.get("assigned_primitive_ids") or [])
         if not primitive_ids:
-            primitive_ids = list(episode_spine.get("core_primitive_ids") or ["primitive_001"])
-        section_count = min(8, max(6, len(primitive_ids))) if primitive_ids else 6
+            primitive_ids = list(
+                episode_spine.get("core_primitive_ids") or ["primitive_001"]
+            )
+        section_target_min = int(project.get("architecture_section_target_min", 9))
+        section_target_max = int(project.get("architecture_section_target_max", 12))
+        section_count = (
+            min(section_target_max, max(section_target_min, len(primitive_ids)))
+            if primitive_ids
+            else section_target_min
+        )
         closing_minutes = 2.0
         non_closing_count = max(1, section_count - 1)
-        non_closing_minutes = max(1.0, (85.0 - closing_minutes) / non_closing_count)
+        target_runtime_minutes = float(project.get("min_episode_minutes", 90.0))
+        non_closing_minutes = max(
+            1.0, (target_runtime_minutes - closing_minutes) / non_closing_count
+        )
         sections = []
         for idx in range(section_count):
             section_id = f"section_{idx + 1:02d}"
@@ -644,11 +705,11 @@ class HeuristicLLMClient(LLMClient):
                 {
                     "section_id": section_id,
                     "purpose": (
-                        "opening"
-                        if idx == 0
-                        else "closing" if is_closing else "setup"
+                        "opening" if idx == 0 else "closing" if is_closing else "setup"
                     ),
-                    "approx_runtime_minutes": closing_minutes if is_closing else non_closing_minutes,
+                    "approx_runtime_minutes": closing_minutes
+                    if is_closing
+                    else non_closing_minutes,
                     "primitive_ids": local_primitive_ids,
                     "section_anchor": "A concrete section anchor keeps the listener oriented.",
                     "must_stage_beats": [
@@ -659,9 +720,17 @@ class HeuristicLLMClient(LLMClient):
                     "section_turn": f"Section {idx + 1} changes the listener's understanding.",
                     "transition_logic": "Move by clarifying the next structural pressure.",
                     "depends_on_section_ids": [f"section_{idx:02d}"] if idx > 0 else [],
-                    "sets_up_section_ids": [f"section_{idx + 2:02d}"] if idx < section_count - 1 else [],
-                    "recurrence_role": "plant" if idx == 0 else "payoff" if idx == section_count - 1 else "deepen",
-                    "closure_mode": "final_answer" if idx == section_count - 1 else "residue",
+                    "sets_up_section_ids": [f"section_{idx + 2:02d}"]
+                    if idx < section_count - 1
+                    else [],
+                    "recurrence_role": "plant"
+                    if idx == 0
+                    else "payoff"
+                    if idx == section_count - 1
+                    else "deepen",
+                    "closure_mode": "final_answer"
+                    if idx == section_count - 1
+                    else "residue",
                     "priority_core_passage_ids": [],
                     "analysis_goal": (
                         "Cash out the main pressure line in plain terms."
@@ -674,7 +743,9 @@ class HeuristicLLMClient(LLMClient):
                             {
                                 "passage_id": f"ap_{idx + 1:02d}",
                                 "mode": "causal_compression",
-                                "placement": "mid" if idx != section_count - 1 else "close",
+                                "placement": "mid"
+                                if idx != section_count - 1
+                                else "close",
                                 "claim": "The narrator briefly compresses what the section proves.",
                                 "source_primitive_ids": local_primitive_ids,
                                 "source_passage_ids": [],
@@ -701,8 +772,10 @@ class HeuristicLLMClient(LLMClient):
     def _generate_episode_planning(self, payload: PromptPayload) -> dict[str, Any]:
         architecture = payload.get("architecture", {})
         strategy_episode = payload.get("strategy_episode", {})
+        project = payload.get("project", {})
+        if not isinstance(project, dict):
+            project = {}
         episode_number = int(architecture.get("episode_number", 1))
-        episode_spine = strategy_episode.get("episode_spine", {})
         available_passages = payload.get("available_passages", [])
         passage_ids = [
             str(passage.get("passage_id", uuid4().hex))
@@ -711,30 +784,72 @@ class HeuristicLLMClient(LLMClient):
         sections = architecture.get("sections") or [{"section_id": "section_01"}]
         scene_cards = []
         default_duration = 180
-        for idx in range(18):
+        scene_card_target_min = int(project.get("scene_card_target_min", 32))
+        scene_card_target_max = int(project.get("scene_card_target_max", 40))
+        scene_count = min(
+            scene_card_target_max,
+            max(scene_card_target_min, len(sections)),
+        )
+        for idx in range(scene_count):
             source_section = sections[min(idx, len(sections) - 1)]
             section_id = str(source_section.get("section_id", "section_01"))
-            is_closing = idx == 17
+            is_closing = idx == scene_count - 1
             scene_cards.append(
                 {
                     "scene_id": f"scene_{idx + 1:02d}",
-                    "section_id": section_id if not is_closing else str(sections[-1].get("section_id", section_id)),
+                    "section_id": section_id
+                    if not is_closing
+                    else str(sections[-1].get("section_id", section_id)),
                     "title": f"Heuristic scene {idx + 1}",
-                    "scene_role": "setup" if idx == 0 else "consequence" if is_closing else "action",
-                    "beat_change": "The listener enters the episode's opening pressure." if idx == 0 else "The next beat changes the situation in a concrete way." if not is_closing else "The closing beat leaves a constrained answer in view.",
-                    "must_land_facts": ["A concrete change becomes visible in the beat."],
-                    "entry_image": "A concrete opening image." if idx == 0 else "A grounded detail keeps the scene moving.",
+                    "scene_role": "setup"
+                    if idx == 0
+                    else "consequence"
+                    if is_closing
+                    else "action",
+                    "beat_change": "The listener enters the episode's opening pressure."
+                    if idx == 0
+                    else "The next beat changes the situation in a concrete way."
+                    if not is_closing
+                    else "The closing beat leaves a constrained answer in view.",
+                    "must_land_facts": [
+                        "A concrete change becomes visible in the beat."
+                    ],
+                    "entry_image": "A concrete opening image."
+                    if idx == 0
+                    else "A grounded detail keeps the scene moving.",
                     "observable_detail": "A visible consequence lands in the scene.",
                     "timeframe": None,
                     "location": None,
                     "actors": [],
                     "passage_ids": passage_ids,
-                    "estimated_duration_seconds": 120 if is_closing else default_duration,
-                    "host_move": {
-                        "move_type": "none",
-                        "note": "",
-                        "max_sentences": 1,
-                        "placement": "close",
+                    "estimated_duration_seconds": 120
+                    if is_closing
+                    else default_duration,
+                    "host_moves": {
+                        "open": [
+                            {
+                                "move_type": "orient",
+                                "note": "Open by telling the listener what pressure is entering the room first.",
+                                "surface_mode": "woven",
+                                "address_mode": "implicit",
+                            }
+                        ],
+                        "pivot": [
+                            {
+                                "move_type": "clarify",
+                                "note": "Make the governing pressure more legible once the concrete material lands.",
+                                "surface_mode": "woven",
+                                "address_mode": "implicit",
+                            }
+                        ],
+                        "close": [
+                            {
+                                "move_type": "evaluate",
+                                "note": "Leave the beat with a clear residue or consequence.",
+                                "surface_mode": "mixed",
+                                "address_mode": "implicit",
+                            }
+                        ],
                     },
                 }
             )
@@ -744,9 +859,9 @@ class HeuristicLLMClient(LLMClient):
                 "opening_image": "A listener-facing opening image.",
                 "threat_or_unresolved_action": "A threat remains active as the episode starts.",
                 "opening_question": (
-                    (
-                        strategy_episode.get("episode_spine", {}) or {}
-                    ).get("listener_problem", "What changes here?")
+                    (strategy_episode.get("episode_spine", {}) or {}).get(
+                        "listener_problem", "What changes here?"
+                    )
                     or "What changes here?"
                 ),
                 "handoff_scene_card_id": "scene_01",
@@ -831,7 +946,8 @@ class HeuristicLLMClient(LLMClient):
             "sections": [
                 {
                     "section_id": str(section.get("section_id", f"section_{idx + 1}")),
-                    "text": str(section.get("text", "")).strip() or "Spoken delivery text.",
+                    "text": str(section.get("text", "")).strip()
+                    or "Spoken delivery text.",
                     "speech_hints": {
                         "style": "neutral",
                         "intensity": "none",
@@ -854,7 +970,8 @@ class HeuristicLLMClient(LLMClient):
             "sections": [
                 {
                     "section_id": str(section.get("section_id", f"section_{idx + 1}")),
-                    "edited_text": str(section.get("text", "")).strip() or "Audited text.",
+                    "edited_text": str(section.get("text", "")).strip()
+                    or "Audited text.",
                     "edit_notes": [],
                 }
                 for idx, section in enumerate(sections)

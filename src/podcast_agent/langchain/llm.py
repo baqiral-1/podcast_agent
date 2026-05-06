@@ -852,6 +852,20 @@ class LangChainLLMClient(LLMClient):
                 )
             raise
         except Exception as exc:
+            if is_transient_error(exc):
+                if self.run_logger is not None:
+                    self.run_logger.log(
+                        "llm_retryable_error",
+                        request_uuid=request_uuid,
+                        client="langchain",
+                        schema_name=schema_name,
+                        attempt=attempt,
+                        max_attempts=max_attempts,
+                        will_retry=attempt < max_attempts,
+                        error_type=type(exc).__name__,
+                        error_message=str(exc),
+                    )
+                raise TransientLLMError(str(exc)) from exc
             if self.run_logger is not None:
                 self.run_logger.log(
                     "llm_error",
@@ -865,8 +879,6 @@ class LangChainLLMClient(LLMClient):
                     instructions=system_text,
                     payload=user_text,
                 )
-            if is_transient_error(exc):
-                raise TransientLLMError(str(exc)) from exc
             raise
 
 

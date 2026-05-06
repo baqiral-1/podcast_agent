@@ -14,6 +14,15 @@ class EpisodePlanningAgent(Agent):
     response_model = EpisodePlanDraft
     instructions = episode_planning_instructions()
 
+    def build_instructions(self, payload: dict) -> str:
+        project = payload.get("project")
+        if not isinstance(project, dict):
+            return self.instructions
+        return episode_planning_instructions(
+            scene_card_target_min=int(project.get("scene_card_target_min", 32)),
+            scene_card_target_max=int(project.get("scene_card_target_max", 40)),
+        )
+
     def build_payload(
         self,
         strategy_episode: dict,

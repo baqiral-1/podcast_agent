@@ -5,7 +5,12 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from podcast_agent.config import AgentConfig, LLMConfig, PipelineRuntimeConfig, TTSConfig
+from podcast_agent.config import (
+    AgentConfig,
+    LLMConfig,
+    PipelineRuntimeConfig,
+    TTSConfig,
+)
 
 
 class TestLLMConfig:
@@ -76,8 +81,12 @@ class TestLLMConfig:
     def test_resolve_anthropic_thinking_effort_defaults_from_legacy_budgets(self):
         config = LLMConfig()
         assert config.resolve_anthropic_thinking_effort("episode_writing") == "xhigh"
-        assert config.resolve_anthropic_thinking_effort("theme_decomposition") == "xhigh"
-        assert config.resolve_anthropic_thinking_effort("synthesis_primitives") == "xhigh"
+        assert (
+            config.resolve_anthropic_thinking_effort("theme_decomposition") == "xhigh"
+        )
+        assert (
+            config.resolve_anthropic_thinking_effort("synthesis_primitives") == "xhigh"
+        )
         assert config.resolve_anthropic_thinking_effort("chapter_summary") is None
 
     def test_resolve_anthropic_thinking_effort_prefers_explicit_override(self):
@@ -124,8 +133,8 @@ class TestPipelineRuntimeConfig:
 
     def test_thematic_defaults(self):
         config = PipelineRuntimeConfig()
-        assert config.max_axes == 15
-        assert config.min_axes == 10
+        assert config.max_axes == 20
+        assert config.min_axes == 12
         assert config.passage_retrieval_percentage == 0.25
         assert config.pre_axis_total_budget == 1500
         assert config.passage_retrieval_min_per_book == 10
@@ -135,8 +144,8 @@ class TestPipelineRuntimeConfig:
         assert config.admission_floor_per_book == 0
         assert config.retrieval_relevance_power == 2.5
         assert config.synthesis_axis_pct == 1.0
-        assert config.synthesis_axis_min == 10
-        assert config.synthesis_axis_max == 15
+        assert config.synthesis_axis_min == 12
+        assert config.synthesis_axis_max == 20
         assert config.synthesis_floor_budget_fraction == 0.0
         assert config.synthesis_axis_floor_min == 0
         assert config.synthesis_axis_floor_max == 0
@@ -155,8 +164,8 @@ class TestPipelineRuntimeConfig:
         assert config.planning_total_passage_cap == 300
         assert config.architecture_section_target_min == 9
         assert config.architecture_section_target_max == 12
-        assert config.scene_card_target_min == 27
-        assert config.scene_card_target_max == 36
+        assert config.scene_card_target_min == 32
+        assert config.scene_card_target_max == 40
         assert config.passage_extraction_concurrency == 16
         assert config.llm_global_max_concurrency == 30
 
@@ -185,7 +194,9 @@ class TestPipelineRuntimeConfig:
         with pytest.raises(ValueError, match="synthesis_axis_max"):
             PipelineRuntimeConfig(synthesis_axis_min=40, synthesis_axis_max=20)
         with pytest.raises(ValueError, match="synthesis_axis_floor_max"):
-            PipelineRuntimeConfig(synthesis_axis_floor_min=15, synthesis_axis_floor_max=10)
+            PipelineRuntimeConfig(
+                synthesis_axis_floor_min=15, synthesis_axis_floor_max=10
+            )
         with pytest.raises(ValueError, match="planning_axis_max"):
             PipelineRuntimeConfig(planning_axis_min=50, planning_axis_max=30)
         with pytest.raises(ValueError, match="architecture_section_target_max"):
@@ -193,7 +204,9 @@ class TestPipelineRuntimeConfig:
                 architecture_section_target_min=9,
                 architecture_section_target_max=8,
             )
-        with pytest.raises(ValueError, match="synthesis trim top, mid, and next fractions"):
+        with pytest.raises(
+            ValueError, match="synthesis trim top, mid, and next fractions"
+        ):
             PipelineRuntimeConfig(
                 synthesis_trim_top_fraction=0.75,
                 synthesis_trim_mid_fraction=0.15,

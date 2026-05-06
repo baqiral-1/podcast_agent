@@ -8,6 +8,8 @@ import pytest
 
 from podcast_agent.pipeline.orchestrator import (
     PipelineOrchestrator,
+    _build_host_move_plan_diagnostics,
+    _build_host_move_text_diagnostics,
     _build_episode_architecture_realization,
     _build_episode_architecture_core_passages,
     _build_section_plan_realization,
@@ -31,6 +33,8 @@ from podcast_agent.schemas.models import (
     PipelineConfig,
     SceneCard,
     StrategyEpisode,
+    SeriesExplanationItem,
+    SeriesNarratorProfile,
     SupportPrimitiveRole,
     SynthesisPrimitive,
     SynthesisPrimitiveBase,
@@ -38,8 +42,21 @@ from podcast_agent.schemas.models import (
     SynthesisMap,
     ThematicCorpus,
     ThematicProject,
-    VerdictMode,
+    resolve_pipeline_config_for_mode,
 )
+
+
+def _host_moves_payload() -> dict[str, list[dict[str, str]]]:
+    return {
+        "open": [
+            {
+                "move_type": "orient",
+                "note": "Set the listener's footing before the scene turns.",
+            }
+        ],
+        "pivot": [],
+        "close": [],
+    }
 
 
 class _StubLLM:
@@ -62,8 +79,7 @@ def _support_primitive_roles(
     overrides: dict[str, SupportPrimitiveRole] | None = None,
 ) -> dict[str, SupportPrimitiveRole]:
     roles: dict[str, SupportPrimitiveRole] = {
-        f"{prefix}_{idx}": SupportPrimitiveRole.MECHANISM
-        for idx in range(1, 7)
+        f"{prefix}_{idx}": SupportPrimitiveRole.MECHANISM for idx in range(1, 7)
     }
     if overrides:
         roles.update(overrides)
@@ -164,6 +180,10 @@ def _planning_response(
 ) -> object:
     architecture = payload["architecture"]
     strategy_episode = payload["strategy_episode"]
+    episode_spine = strategy_episode.get("episode_spine", {})
+    opening_question = episode_spine.get("listener_question") or episode_spine.get(
+        "listener_problem"
+    )
     section_ids = [section["section_id"] for section in architecture["sections"]]
     return orchestrator.episode_planning_agent.response_model.model_validate(
         {
@@ -171,7 +191,7 @@ def _planning_response(
             "framing": {
                 "opening_image": "Image",
                 "threat_or_unresolved_action": "Threat",
-                "opening_question": strategy_episode["episode_spine"]["listener_question"],
+                "opening_question": opening_question or "Question?",
                 "handoff_scene_card_id": "scene_1",
             },
             "scene_cards": [
@@ -188,6 +208,7 @@ def _planning_response(
                     "observable_detail": "Detail",
                     "intended_move": "Move",
                     "passage_ids": ["p_core"],
+                    "host_moves": _host_moves_payload(),
                     "primitive_ids": list(
                         architecture["sections"][idx]["primitive_ids"]
                     ),
@@ -238,18 +259,24 @@ def _episode_architecture(
     normalized_sections = [
         section.model_copy(
             update={
-                "section_anchor": section.section_anchor or f"Anchor for {section.section_id}",
-                "must_stage_beats": list(section.must_stage_beats or [
-                    f"{section.section_id} beat one",
-                    f"{section.section_id} beat two",
-                ]),
+                "section_anchor": section.section_anchor
+                or f"Anchor for {section.section_id}",
+                "must_stage_beats": list(
+                    section.must_stage_beats
+                    or [
+                        f"{section.section_id} beat one",
+                        f"{section.section_id} beat two",
+                    ]
+                ),
             }
         )
         for section in sections
     ]
     return EpisodeArchitecture.model_construct(
         episode_number=1,
-        major_turn_section_id=normalized_sections[min(2, len(normalized_sections) - 1)].section_id,
+        major_turn_section_id=normalized_sections[
+            min(2, len(normalized_sections) - 1)
+        ].section_id,
         allowed_recurring_primitive_ids=list(allowed_recurring_primitive_ids or []),
         forbidden_redundancies=[],
         sections=normalized_sections,
@@ -331,19 +358,21 @@ def test_build_episode_planning_passage_refs_preserves_order_and_provenance() ->
     ]
 
 
-def test_build_episode_architecture_realization_reports_omitted_support_and_recall() -> None:
+def test_build_episode_architecture_realization_reports_omitted_support_and_recall() -> (
+    None
+):
     strategy_episode = _strategy_episode(
         support_primitive_roles=_support_primitive_roles(),
         recall_primitive_ids=["recall_1"],
     )
     architecture = _episode_architecture(
         sections=[
-                ArchitectureSection(
-                    section_id="section_01",
-                    purpose="opening",
-                    approx_runtime_minutes=20.0,
-                    primitive_ids=_core_primitive_ids(),
-                    section_question="Q1?",
+            ArchitectureSection(
+                section_id="section_01",
+                purpose="opening",
+                approx_runtime_minutes=20.0,
+                primitive_ids=_core_primitive_ids(),
+                section_question="Q1?",
                 section_resolution="R1",
                 entry_state="E1",
                 exit_state="X1",
@@ -420,6 +449,7 @@ def test_build_episode_architecture_realization_reports_omitted_support_and_reca
     realization = _build_episode_architecture_realization(
         strategy_episode=strategy_episode,
         architecture=architecture,
+        pipeline_config=resolve_pipeline_config_for_mode(PipelineConfig()),
     )
 
     assert realization["section_primitive_ids"] == _core_primitive_ids()
@@ -433,21 +463,33 @@ def test_build_episode_architecture_realization_reports_omitted_support_and_reca
         "support_6",
     ]
     assert realization["missing_recall_primitive_ids"] == ["recall_1"]
-    assert realization["warning_count"] == 3
+    assert realization["warning_count"] == 4
     assert (
         "architecture_section_count_below_target: 4 < 9 (target range 9-12)"
         in realization["warnings"]
     )
+    assert any(
+        warning.startswith("host_presence_density_below_target:")
+        for warning in realization["warnings"]
+    )
 
 
-def test_build_episode_architecture_realization_skips_section_count_warning_inside_preferred_range() -> None:
+def test_build_episode_architecture_realization_skips_section_count_warning_inside_preferred_range() -> (
+    None
+):
     sections = []
-    for idx in range(8):
+    section_count = 9
+    closing_idx = section_count - 1
+    for idx in range(section_count):
         section_id = f"section_{idx + 1:02d}"
         sections.append(
             ArchitectureSection(
                 section_id=section_id,
-                purpose="opening" if idx == 0 else "closing" if idx == 7 else "setup",
+                purpose="opening"
+                if idx == 0
+                else "closing"
+                if idx == closing_idx
+                else "setup",
                 approx_runtime_minutes=15.0,
                 primitive_ids=["core_1"],
                 section_question=f"Q{idx + 1}?",
@@ -456,13 +498,23 @@ def test_build_episode_architecture_realization_skips_section_count_warning_insi
                 exit_state=f"X{idx + 1}",
                 transition_logic=f"T{idx + 1}",
                 depends_on_section_ids=[f"section_{idx:02d}"] if idx > 0 else [],
-                sets_up_section_ids=[f"section_{idx + 2:02d}"] if idx < 7 else [],
-                argument_role="frame" if idx == 0 else "close" if idx == 7 else "establish_mechanism",
+                sets_up_section_ids=[f"section_{idx + 2:02d}"]
+                if idx < closing_idx
+                else [],
+                argument_role="frame"
+                if idx == 0
+                else "close"
+                if idx == closing_idx
+                else "establish_mechanism",
                 inference_mode="scene_first" if idx == 0 else "mechanism_first",
-                recurrence_role="plant" if idx == 0 else "payoff" if idx == 7 else "deepen",
+                recurrence_role="plant"
+                if idx == 0
+                else "payoff"
+                if idx == closing_idx
+                else "deepen",
                 pressure_type="mass_political",
-                resolution_type="containment" if idx == 7 else "escalation",
-                closure_level="high" if idx == 7 else "low",
+                resolution_type="containment" if idx == closing_idx else "escalation",
+                closure_level="high" if idx == closing_idx else "low",
             )
         )
     architecture = _episode_architecture(sections=sections)
@@ -470,12 +522,342 @@ def test_build_episode_architecture_realization_skips_section_count_warning_insi
     realization = _build_episode_architecture_realization(
         strategy_episode=_strategy_episode(),
         architecture=architecture,
+        pipeline_config=resolve_pipeline_config_for_mode(PipelineConfig()),
     )
 
     assert not any(
         warning.startswith("architecture_section_count_")
         for warning in realization["warnings"]
     )
+
+
+def test_build_episode_architecture_realization_warns_for_missing_payoff_and_low_budget() -> (
+    None
+):
+    strategy_episode = _strategy_episode()
+    strategy_episode = strategy_episode.model_copy(
+        update={
+            "authorial_contract": strategy_episode.authorial_contract.model_copy(
+                update={
+                    "introduce_explanation_item_ids": ["taqlid"],
+                    "remind_explanation_item_ids": ["marjaiya"],
+                }
+            )
+        }
+    )
+    architecture = _episode_architecture(
+        sections=[
+            ArchitectureSection(
+                section_id="section_01",
+                purpose="opening",
+                approx_runtime_minutes=8.5,
+                primitive_ids=["core_1", "core_2", "core_3", "core_4"],
+                section_question="Q1?",
+                section_resolution="R1",
+                entry_state="E1",
+                exit_state="X1",
+                transition_logic="T1",
+                depends_on_section_ids=[],
+                sets_up_section_ids=["section_02"],
+                argument_role="frame",
+                inference_mode="scene_first",
+                recurrence_role="plant",
+                pressure_type="mass_political",
+                resolution_type="escalation",
+                closure_level="low",
+                key_terms=["taqlid", "marjaiya", "ijtihad", "khums"],
+                term_explanations=[
+                    {
+                        "item_id": "taqlid",
+                        "stage": "define",
+                        "plain_gloss_seed": "follow a recognized jurist",
+                    },
+                    {
+                        "item_id": "marjaiya",
+                        "stage": "define",
+                        "plain_gloss_seed": "clerical ranking",
+                    },
+                ],
+                host_presence_beats=[
+                    {
+                        "kind": "orientation",
+                        "placement": "open",
+                        "seed": "Set the scene.",
+                    },
+                    {
+                        "kind": "callback",
+                        "placement": "close",
+                        "seed": "Return to the earlier pressure.",
+                    },
+                ],
+            ),
+            ArchitectureSection(
+                section_id="section_02",
+                purpose="closing",
+                approx_runtime_minutes=2.0,
+                primitive_ids=["core_1"],
+                section_question="Q2?",
+                section_resolution="R2",
+                entry_state="E2",
+                exit_state="X2",
+                transition_logic="T2",
+                depends_on_section_ids=["section_01"],
+                sets_up_section_ids=[],
+                argument_role="close",
+                inference_mode="aftermath_first",
+                recurrence_role="payoff",
+                pressure_type="moral",
+                resolution_type="containment",
+                closure_level="high",
+                term_explanations=[
+                    {
+                        "item_id": "marjaiya",
+                        "stage": "define",
+                        "plain_gloss_seed": "clerical ranking",
+                    }
+                ],
+                host_presence_beats=[
+                    {
+                        "kind": "callback",
+                        "placement": "close",
+                        "seed": "Return to the earlier pressure.",
+                    }
+                ],
+            ),
+        ],
+    )
+
+    realization = _build_episode_architecture_realization(
+        strategy_episode=strategy_episode,
+        architecture=architecture,
+        pipeline_config=resolve_pipeline_config_for_mode(PipelineConfig()),
+        narrator_profile=SeriesNarratorProfile(),
+        primitive_lookup={
+            "core_1": _primitive("core_1", family="epochal_turns"),
+            "core_2": _primitive("core_2", family="systems_and_operating_logics"),
+            "core_3": _primitive("core_3", family="afterlives"),
+            "core_4": _primitive("core_4", family="afterlives"),
+        },
+        series_explanation_registry=[
+            SeriesExplanationItem(
+                item_id="taqlid",
+                label="taqlid",
+                kind="term",
+                importance="foundational",
+                introduction_episode_number=1,
+                preferred_plain_gloss="follow a recognized jurist",
+            ),
+            SeriesExplanationItem(
+                item_id="marjaiya",
+                label="marja'iya",
+                kind="institution",
+                importance="foundational",
+                introduction_episode_number=1,
+                preferred_plain_gloss="clerical ranking",
+            ),
+        ],
+    )
+
+    assert "authored_passage_budget_below_target: 0/16" in realization["warnings"]
+    assert "foundational_item_missing_payoff: taqlid" in realization["warnings"]
+    assert "reminder_item_redefined: marjaiya" in realization["warnings"]
+    assert any(
+        warning.startswith("missing_human_grounding_support_family:")
+        for warning in realization["warnings"]
+    )
+    assert any(
+        warning.startswith("explanation_section_overloaded:")
+        for warning in realization["warnings"]
+    )
+
+
+def test_build_host_move_plan_diagnostics_warns_on_disallowed_move_type() -> None:
+    architecture = _episode_architecture(
+        sections=[
+            ArchitectureSection(
+                section_id="section_01",
+                purpose="closing",
+                approx_runtime_minutes=2.0,
+                primitive_ids=["core_1"],
+                section_question="Q1?",
+                section_resolution="R1",
+                entry_state="E1",
+                exit_state="X1",
+                transition_logic="T1",
+                depends_on_section_ids=[],
+                sets_up_section_ids=[],
+                argument_role="close",
+                inference_mode="scene_first",
+                recurrence_role="payoff",
+                pressure_type="moral",
+                resolution_type="containment",
+                closure_level="high",
+            )
+        ]
+    )
+    scene = SceneCard.model_validate(
+        {
+            "scene_id": "scene_1",
+            "section_id": architecture.sections[0].section_id,
+            "title": "Scene 1",
+            "scene_role": "context_setup",
+            "scene_function": "scene",
+            "beat_change": "The opening condition becomes visible.",
+            "passage_ids": ["p1"],
+            "estimated_duration_seconds": 60,
+            "host_moves": {
+                "open": [],
+                "pivot": [
+                    {
+                        "move_type": "light_aside",
+                        "note": "A dry aside sharpens the mismatch.",
+                    }
+                ],
+                "close": [],
+            },
+        }
+    )
+
+    diagnostics, warnings = _build_host_move_plan_diagnostics(
+        scene_cards=[scene],
+        architecture=architecture,
+        narrator_profile=SeriesNarratorProfile(allowed_moves=["orient", "clarify"]),
+    )
+
+    assert "host_move_allowed_move_mismatch: scene_1" in warnings
+    assert diagnostics["disallowed_move_scene_ids"] == ["scene_1"]
+
+
+def test_build_host_move_plan_diagnostics_warns_on_low_coverage() -> None:
+    architecture = _episode_architecture(
+        sections=[
+            ArchitectureSection(
+                section_id="section_01",
+                purpose="setup",
+                approx_runtime_minutes=2.0,
+                primitive_ids=["core_1"],
+                section_question="Q1?",
+                section_resolution="R1",
+                entry_state="E1",
+                exit_state="X1",
+                transition_logic="T1",
+                depends_on_section_ids=[],
+                sets_up_section_ids=[],
+                argument_role="frame",
+                inference_mode="scene_first",
+                recurrence_role="plant",
+                pressure_type="moral",
+                resolution_type="containment",
+                closure_level="medium",
+            )
+        ]
+    )
+    scenes = [
+        SceneCard.model_validate(
+            {
+                "scene_id": f"scene_{idx}",
+                "section_id": architecture.sections[0].section_id,
+                "title": f"Scene {idx}",
+                "scene_role": "action",
+                "scene_function": "scene",
+                "beat_change": "Something visible changes.",
+                "passage_ids": [f"p{idx}"],
+                "estimated_duration_seconds": 60,
+                "host_moves": (
+                    {
+                        "open": [
+                            {
+                                "move_type": "orient",
+                                "note": "Set the listener's footing first.",
+                            }
+                        ],
+                        "pivot": [
+                            {
+                                "move_type": "clarify" if idx == 1 else "contrast",
+                                "note": "Guide the listener through the mechanism."
+                                if idx == 1
+                                else "Sharpen what the visible change rules out.",
+                            }
+                        ],
+                        "close": [
+                            {
+                                "move_type": "evaluate",
+                                "note": "Leave the consequence hanging at the edge of the beat.",
+                            }
+                        ],
+                    }
+                    if idx == 1
+                    else {
+                        "open": [
+                            {
+                                "move_type": "orient",
+                                "note": "Set the listener's footing first.",
+                            }
+                        ],
+                        "pivot": [],
+                        "close": [],
+                    }
+                ),
+            }
+        )
+        for idx in range(1, 5)
+    ]
+
+    diagnostics, warnings = _build_host_move_plan_diagnostics(
+        scene_cards=scenes,
+        architecture=architecture,
+        narrator_profile=SeriesNarratorProfile(),
+    )
+
+    assert any(
+        warning.startswith("host_full_phase_coverage_below_min:") for warning in warnings
+    )
+    assert diagnostics["full_phase_scene_coverage"] == pytest.approx(0.25)
+
+
+def test_build_host_move_text_diagnostics_warns_on_scene_collapse() -> None:
+    plan = SimpleNamespace(
+        scene_cards=[
+            SceneCard.model_validate(
+                {
+                    "scene_id": f"scene_{idx}",
+                    "section_id": "section_01",
+                    "title": f"Scene {idx}",
+                    "scene_role": "action",
+                    "scene_function": "scene",
+                    "beat_change": "Something visible changes.",
+                    "passage_ids": [f"p{idx}"],
+                    "estimated_duration_seconds": 60,
+                    "host_moves": {
+                        "open": [
+                            {
+                                "move_type": "orient",
+                                "note": "Tell the listener what pressure is arriving.",
+                            }
+                        ],
+                        "pivot": [
+                            {
+                                "move_type": "clarify",
+                                "note": "Guide the listener through the mechanism.",
+                            }
+                        ],
+                        "close": [],
+                    },
+                }
+            )
+            for idx in range(1, 4)
+        ]
+    )
+
+    diagnostics = _build_host_move_text_diagnostics(
+        text_by_section_id={
+            "section_01": "The crowd enters the square. Soldiers line the street."
+        },
+        plan=plan,
+    )
+
+    assert diagnostics["section_host_cue_counts"]["section_01"] == 0
+    assert diagnostics["sections_with_host_phase_collapse"] == ["section_01"]
 
 
 def test_build_episode_architecture_core_passages_uses_full_text_bm25_trim() -> None:
@@ -543,19 +925,27 @@ def test_build_episode_architectures_uses_only_strategy_actor_directives(
         captured_payload.update(payload)
         return _episode_architecture(
             sections=[
-                    ArchitectureSection(
-                        section_id=f"section_0{idx}",
-                        purpose="opening" if idx == 1 else ("turn" if idx == 3 else ("closing" if idx == 4 else "setup")),
-                        approx_runtime_minutes=22.5,
-                        primitive_ids=_core_primitive_ids() if idx == 1 else ["core_1"],
-                        section_question=f"Q{idx}?",
+                ArchitectureSection(
+                    section_id=f"section_0{idx}",
+                    purpose="opening"
+                    if idx == 1
+                    else ("turn" if idx == 3 else ("closing" if idx == 4 else "setup")),
+                    approx_runtime_minutes=22.5,
+                    primitive_ids=_core_primitive_ids() if idx == 1 else ["core_1"],
+                    section_question=f"Q{idx}?",
                     section_resolution=f"R{idx}",
                     entry_state=f"E{idx}",
                     exit_state=f"X{idx}",
                     transition_logic=f"T{idx}",
-                    depends_on_section_ids=[] if idx == 1 else [f"section_0{idx-1}"],
-                    sets_up_section_ids=[] if idx == 4 else [f"section_0{idx+1}"],
-                    argument_role="frame" if idx == 1 else ("test_viability" if idx == 3 else ("close" if idx == 4 else "establish_mechanism")),
+                    depends_on_section_ids=[] if idx == 1 else [f"section_0{idx - 1}"],
+                    sets_up_section_ids=[] if idx == 4 else [f"section_0{idx + 1}"],
+                    argument_role="frame"
+                    if idx == 1
+                    else (
+                        "test_viability"
+                        if idx == 3
+                        else ("close" if idx == 4 else "establish_mechanism")
+                    ),
                     inference_mode="scene_first",
                     recurrence_role="none",
                     pressure_type="mass_political",
@@ -655,13 +1045,15 @@ def test_build_episode_architectures_uses_only_strategy_actor_directives(
         )
     )
 
-    assert [actor["actor_id"] for actor in captured_payload["actor_metadata"]["actors"]] == [
-        "actor_strategy"
-    ]
+    assert [
+        actor["actor_id"] for actor in captured_payload["actor_metadata"]["actors"]
+    ] == ["actor_strategy"]
     assert architectures[0].episode_number == 1
 
 
-def test_build_section_plan_realization_reports_section_drift_and_unused_priority_passages() -> None:
+def test_build_section_plan_realization_reports_section_drift_and_unused_priority_passages() -> (
+    None
+):
     episode = _episode_architecture(
         sections=[
             ArchitectureSection(
@@ -758,6 +1150,7 @@ def test_build_section_plan_realization_reports_section_drift_and_unused_priorit
             intended_move="Move",
             primitive_ids=["support_1"],
             passage_ids=["p_other"],
+            host_moves=_host_moves_payload(),
             estimated_duration_seconds=60,
         ),
         SceneCard(
@@ -774,6 +1167,7 @@ def test_build_section_plan_realization_reports_section_drift_and_unused_priorit
             intended_move="Move",
             primitive_ids=["support_1"],
             passage_ids=["p_support"],
+            host_moves=_host_moves_payload(),
             estimated_duration_seconds=60,
         ),
         SceneCard(
@@ -790,6 +1184,7 @@ def test_build_section_plan_realization_reports_section_drift_and_unused_priorit
             intended_move="Move",
             primitive_ids=["core_1"],
             passage_ids=["p_core"],
+            host_moves=_host_moves_payload(),
             estimated_duration_seconds=60,
         ),
         SceneCard(
@@ -806,6 +1201,7 @@ def test_build_section_plan_realization_reports_section_drift_and_unused_priorit
             intended_move="Move",
             primitive_ids=["core_1"],
             passage_ids=["p_core"],
+            host_moves=_host_moves_payload(),
             estimated_duration_seconds=60,
         ),
     ]
@@ -816,16 +1212,15 @@ def test_build_section_plan_realization_reports_section_drift_and_unused_priorit
     )
 
     first_section = section_reports[0]
-    assert first_section["declared_primitive_ids"] == ["core_1"]
-    assert first_section["scene_primitive_ids"] == ["support_1"]
-    assert first_section["out_of_section_primitive_ids"] == ["support_1"]
+    assert first_section["section_id"] == "section_01"
+    assert first_section["scene_card_count"] == 1
     assert first_section["used_priority_core_passage_ids"] == []
     assert first_section["unused_priority_core_passage_ids"] == ["p_core"]
-    assert "scene_primitive_outside_section: section_01 -> support_1" in warnings
-    assert "dominant_primitive_outside_section: section_01 -> support_1" in warnings
-    assert "section_question_not_realized: section_01" in warnings
-    assert "section_resolution_not_realized: section_01" in warnings
     assert "section_priority_core_passages_unused: section_01 -> p_core" in warnings
+    assert any(
+        warning.startswith("section_must_stage_beats_not_realized: section_01")
+        for warning in warnings
+    )
 
 
 def test_build_section_plan_realization_reports_unrealized_must_stage_beats() -> None:
@@ -896,6 +1291,7 @@ def test_build_section_plan_realization_reports_unrealized_must_stage_beats() ->
             intended_move="Show the message arriving.",
             primitive_ids=["core_1"],
             passage_ids=["p_core"],
+            host_moves=_host_moves_payload(),
             estimated_duration_seconds=60,
         ),
         SceneCard(
@@ -912,6 +1308,7 @@ def test_build_section_plan_realization_reports_unrealized_must_stage_beats() ->
             intended_move="Show the aftermath.",
             primitive_ids=["core_1"],
             passage_ids=["p_core"],
+            host_moves=_host_moves_payload(),
             estimated_duration_seconds=60,
         ),
     ]
@@ -924,10 +1321,7 @@ def test_build_section_plan_realization_reports_unrealized_must_stage_beats() ->
     assert section_reports[0]["unrealized_must_stage_beats"] == [
         "The minister burns the decree in silence."
     ]
-    assert (
-        "section_must_stage_beats_not_realized: section_01 -> 1 beats"
-        in warnings
-    )
+    assert "section_must_stage_beats_not_realized: section_01 -> 1 beats" in warnings
 
 
 def test_validate_architecture_transition_rejects_missing_section_seed_fields() -> None:
@@ -995,6 +1389,7 @@ def test_validate_architecture_transition_rejects_missing_section_seed_fields() 
             strategy_episode=strategy_episode,
             architecture=anchored_architecture,
         )
+
 
 def test_plan_series_trims_core_support_and_recall_by_passage_role(
     monkeypatch: pytest.MonkeyPatch,
@@ -1153,25 +1548,25 @@ def test_plan_series_trims_core_support_and_recall_by_passage_role(
                 ),
             ],
             "systems_and_operating_logics": [
-                    _primitive(
-                        "support_1",
-                        core_passage_ids=["p_support"],
-                        support_passage_ids=["p_support_support"],
-                        family="systems_and_operating_logics",
-                    ),
-                    _primitive(
-                        "support_omitted_1",
-                        core_passage_ids=["p_omitted"],
-                        family="systems_and_operating_logics",
-                    ),
-                ],
-                "afterlives": [
-                    _primitive(
-                        "recall_1",
-                        support_passage_ids=["p_recall"],
-                        family="afterlives",
-                    ),
-                ],
+                _primitive(
+                    "support_1",
+                    core_passage_ids=["p_support"],
+                    support_passage_ids=["p_support_support"],
+                    family="systems_and_operating_logics",
+                ),
+                _primitive(
+                    "support_omitted_1",
+                    core_passage_ids=["p_omitted"],
+                    family="systems_and_operating_logics",
+                ),
+            ],
+            "afterlives": [
+                _primitive(
+                    "recall_1",
+                    support_passage_ids=["p_recall"],
+                    family="afterlives",
+                ),
+            ],
         },
     )
     corpus = ThematicCorpus(
@@ -1281,10 +1676,7 @@ def test_plan_series_trims_core_support_and_recall_by_passage_role(
     )
     episode_report = realization_payload["episodes"][0]
     assert "section_realization" in episode_report
-    assert episode_report["section_realization"][1]["declared_primitive_ids"] == [
-        "core_1",
-        "support_1",
-    ]
+    assert episode_report["section_realization"][1]["scene_card_count"] == 1
 
 
 def test_plan_series_uses_primitive_aware_queries_for_reused_passages(
@@ -1349,12 +1741,12 @@ def test_plan_series_uses_primitive_aware_queries_for_reused_passages(
     )
     architecture = _episode_architecture(
         sections=[
-                ArchitectureSection(
-                    section_id="section_01",
-                    purpose="opening",
-                    approx_runtime_minutes=20.0,
-                    primitive_ids=[*_core_primitive_ids(), "support_1"],
-                    section_question="Q1?",
+            ArchitectureSection(
+                section_id="section_01",
+                purpose="opening",
+                approx_runtime_minutes=20.0,
+                primitive_ids=[*_core_primitive_ids(), "support_1"],
+                section_question="Q1?",
                 section_resolution="R1",
                 entry_state="E1",
                 exit_state="X1",
@@ -1368,65 +1760,65 @@ def test_plan_series_uses_primitive_aware_queries_for_reused_passages(
                 resolution_type="escalation",
                 closure_level="low",
             ),
-                ArchitectureSection(
-                    section_id="section_02",
-                    purpose="setup",
-                    approx_runtime_minutes=10.0,
-                    primitive_ids=["core_1"],
-                    section_question="Q2?",
-                    section_resolution="R2",
-                    entry_state="E2",
-                    exit_state="X2",
-                    transition_logic="T2",
-                    depends_on_section_ids=["section_01"],
-                    sets_up_section_ids=["section_03"],
-                    argument_role="establish_mechanism",
-                    inference_mode="scene_first",
-                    recurrence_role="deepen",
-                    pressure_type="constitutional",
-                    resolution_type="escalation",
-                    closure_level="low",
-                ),
-                ArchitectureSection(
-                    section_id="section_03",
-                    purpose="turn",
-                    approx_runtime_minutes=10.0,
-                    primitive_ids=["core_1"],
-                    section_question="Q3?",
-                    section_resolution="R3",
-                    entry_state="E3",
-                    exit_state="X3",
-                    transition_logic="T3",
-                    depends_on_section_ids=["section_02"],
-                    sets_up_section_ids=["section_04"],
-                    argument_role="test_viability",
-                    inference_mode="scene_first",
-                    recurrence_role="deepen",
-                    pressure_type="communal",
-                    resolution_type="reversal",
-                    closure_level="medium",
-                ),
-                ArchitectureSection(
-                    section_id="section_04",
-                    purpose="closing",
-                    approx_runtime_minutes=10.0,
-                    primitive_ids=["core_1"],
-                    section_question="Q4?",
-                    section_resolution="R4",
-                    entry_state="E4",
-                    exit_state="X4",
-                    transition_logic="T4",
-                    depends_on_section_ids=["section_03"],
-                    sets_up_section_ids=[],
-                    argument_role="close",
-                    inference_mode="scene_first",
-                    recurrence_role="payoff",
-                    pressure_type="moral",
-                    resolution_type="containment",
-                    closure_level="high",
-                ),
-            ]
-        )
+            ArchitectureSection(
+                section_id="section_02",
+                purpose="setup",
+                approx_runtime_minutes=10.0,
+                primitive_ids=["core_1"],
+                section_question="Q2?",
+                section_resolution="R2",
+                entry_state="E2",
+                exit_state="X2",
+                transition_logic="T2",
+                depends_on_section_ids=["section_01"],
+                sets_up_section_ids=["section_03"],
+                argument_role="establish_mechanism",
+                inference_mode="scene_first",
+                recurrence_role="deepen",
+                pressure_type="constitutional",
+                resolution_type="escalation",
+                closure_level="low",
+            ),
+            ArchitectureSection(
+                section_id="section_03",
+                purpose="turn",
+                approx_runtime_minutes=10.0,
+                primitive_ids=["core_1"],
+                section_question="Q3?",
+                section_resolution="R3",
+                entry_state="E3",
+                exit_state="X3",
+                transition_logic="T3",
+                depends_on_section_ids=["section_02"],
+                sets_up_section_ids=["section_04"],
+                argument_role="test_viability",
+                inference_mode="scene_first",
+                recurrence_role="deepen",
+                pressure_type="communal",
+                resolution_type="reversal",
+                closure_level="medium",
+            ),
+            ArchitectureSection(
+                section_id="section_04",
+                purpose="closing",
+                approx_runtime_minutes=10.0,
+                primitive_ids=["core_1"],
+                section_question="Q4?",
+                section_resolution="R4",
+                entry_state="E4",
+                exit_state="X4",
+                transition_logic="T4",
+                depends_on_section_ids=["section_03"],
+                sets_up_section_ids=[],
+                argument_role="close",
+                inference_mode="scene_first",
+                recurrence_role="payoff",
+                pressure_type="moral",
+                resolution_type="containment",
+                closure_level="high",
+            ),
+        ]
+    )
     synthesis_map = SynthesisMap(
         project_id="proj",
         primitives_by_family={

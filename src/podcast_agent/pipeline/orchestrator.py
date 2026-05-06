@@ -37,7 +37,10 @@ from podcast_agent.agents.passage_extraction import PassageExtractionAgent
 from podcast_agent.agents.planning import EpisodePlanningAgent
 from podcast_agent.agents.primitive_enrichment import PrimitiveEnrichmentAgent
 from podcast_agent.agents.repair import RepairAgent
-from podcast_agent.agents.spoken_delivery_agent import SpokenDeliveryAgent, SpokenDeliveryBatchSection
+from podcast_agent.agents.spoken_delivery_agent import (
+    SpokenDeliveryAgent,
+    SpokenDeliveryBatchSection,
+)
 from podcast_agent.agents.style_audit import StyleAuditAgent
 from podcast_agent.agents.synthesis_primitives import SynthesisPrimitivesAgent
 from podcast_agent.agents.theme_decomposition import ThemeDecompositionAgent
@@ -85,9 +88,11 @@ from podcast_agent.schemas.models import (
     RenderManifest,
     RenderSegment,
     RepairResult,
+    resolve_pipeline_config_for_mode,
     SceneCard,
     SceneCardDraft,
     SeriesNarratorProfile,
+    SeriesExplanationItem,
     SegmentDiff,
     SetPieceScenePrimitive,
     SpineRelation,
@@ -96,7 +101,6 @@ from podcast_agent.schemas.models import (
     SpokenScript,
     StrategyEpisode,
     SYNTHESIS_PRIMITIVE_FAMILIES,
-    SYNTHESIS_PRIMITIVE_TARGET_MAX_COUNTS,
     SynthesisMap,
     SynthesisPrimitiveBase,
     SynthesisPrimitive,
@@ -107,6 +111,8 @@ from podcast_agent.schemas.models import (
     ThematicAxis,
     ThematicCorpus,
     ThematicProject,
+    synthesis_primitive_target_max_counts_for_mode,
+    synthesis_primitive_target_ranges_for_mode,
 )
 from podcast_agent.tts.openai_compatible import (
     build_tts_client,
@@ -191,7 +197,9 @@ def _trim_synthesis_primitives_by_family_caps(
     *,
     family_max_counts: dict[str, int] | None = None,
 ) -> SynthesisPrimitivesArtifact:
-    capped_counts = family_max_counts or SYNTHESIS_PRIMITIVE_TARGET_MAX_COUNTS
+    capped_counts = family_max_counts or synthesis_primitive_target_max_counts_for_mode(
+        "full"
+    )
     trimmed_by_family: dict[str, list[BaseSynthesisPrimitive]] = {}
     changed = False
     for family in SYNTHESIS_PRIMITIVE_FAMILIES:
@@ -246,7 +254,8 @@ def _project_scene_word_count(
         1,
         int(
             round(
-                (float(scene.estimated_duration_seconds) * float(words_per_minute)) / 60.0
+                (float(scene.estimated_duration_seconds) * float(words_per_minute))
+                / 60.0
             )
         ),
     )
@@ -297,10 +306,7 @@ def _build_spoken_delivery_batches(
         return [list(sections)]
 
     boundaries = (0, *best_cut_points, len(sections))
-    return [
-        list(sections[start:end])
-        for start, end in zip(boundaries, boundaries[1:])
-    ]
+    return [list(sections[start:end]) for start, end in zip(boundaries, boundaries[1:])]
 
 
 _SENTENCE_TAIL_RE = re.compile(r'.*?[.!?](?:["\')\]]+)?(?=\s|$)', re.DOTALL)
@@ -384,7 +390,9 @@ def _split_episode_writing_windows(
         for section in architecture.sections
         if section.section_id in scene_section_ids
     ]
-    ordered_section_ids = {section_id: idx for idx, section_id in enumerate(section_order)}
+    ordered_section_ids = {
+        section_id: idx for idx, section_id in enumerate(section_order)
+    }
 
     def _boundary_key(boundary_index: int) -> tuple[float, float, int]:
         left_words = prefix_targets[boundary_index]
@@ -405,7 +413,8 @@ def _split_episode_writing_windows(
     section_boundaries = [
         boundary_index
         for boundary_index in range(1, len(scene_cards))
-        if scene_cards[boundary_index - 1].section_id != scene_cards[boundary_index].section_id
+        if scene_cards[boundary_index - 1].section_id
+        != scene_cards[boundary_index].section_id
         and ordered_section_ids.get(scene_cards[boundary_index - 1].section_id, -1)
         < ordered_section_ids.get(scene_cards[boundary_index].section_id, -1)
     ]
@@ -447,7 +456,9 @@ def _build_window_architecture_payload(
     architecture_payload = architecture.model_dump(mode="json")
     architecture_payload["sections"] = filtered_sections
     if filtered_sections and architecture.major_turn_section_id not in section_id_set:
-        architecture_payload["major_turn_section_id"] = filtered_sections[-1]["section_id"]
+        architecture_payload["major_turn_section_id"] = filtered_sections[-1][
+            "section_id"
+        ]
     return architecture_payload
 
 
@@ -457,7 +468,7 @@ def _build_window_plan_payload(
     window_scene_cards: list[SceneCard],
     scene_payload_by_id: dict[str, dict[str, Any]],
     target_word_count: int,
-    ) -> dict[str, Any]:
+) -> dict[str, Any]:
     return {
         "episode_number": plan.episode_number,
         "framing": plan.framing.model_dump(mode="json"),
@@ -466,7 +477,9 @@ def _build_window_plan_payload(
             for scene in window_scene_cards
             if scene.scene_id in scene_payload_by_id
         ],
-        "dropped_support_primitive_reasons": dict(plan.dropped_support_primitive_reasons),
+        "dropped_support_primitive_reasons": dict(
+            plan.dropped_support_primitive_reasons
+        ),
         "target_word_count": max(1, int(target_word_count)),
     }
 
@@ -506,29 +519,40 @@ def _build_writer_scene_brief(scene_payload: dict[str, Any]) -> dict[str, Any]:
         "location": scene_payload.get("location"),
         "actors": actors,
         "passage_ids": list(scene_payload.get("passage_ids", []) or []),
-        "target_word_count_lower": int(scene_payload.get("target_word_count_lower", 0) or 0),
-        "target_word_count_higher": int(scene_payload.get("target_word_count_higher", 0) or 0),
+        "target_word_count_lower": int(
+            scene_payload.get("target_word_count_lower", 0) or 0
+        ),
+        "target_word_count_higher": int(
+            scene_payload.get("target_word_count_higher", 0) or 0
+        ),
         "withhold_until": scene_payload.get("withhold_until"),
-        "host_move": scene_payload.get("host_move") or {
-            "move_type": "none",
-            "note": "",
-            "max_sentences": 1,
-            "placement": "close",
+        "host_moves": scene_payload.get("host_moves")
+        or {
+            "open": [],
+            "pivot": [],
+            "close": [],
         },
     }
 
 
-def _build_host_policy_payload(narrator_profile: SeriesNarratorProfile) -> dict[str, Any]:
+def _build_host_policy_payload(
+    narrator_profile: SeriesNarratorProfile,
+) -> dict[str, Any]:
     return {
         "presence_mode": narrator_profile.presence_mode,
         "baseline_tone": narrator_profile.baseline_tone,
         "allowed_moves": list(narrator_profile.allowed_moves),
         "forbidden_moves": list(narrator_profile.forbidden_moves),
-        "target_host_moves_per_episode": narrator_profile.target_host_moves_per_episode,
-        "target_policy": "soft_target",
+        "target_full_phase_scene_coverage_min": (
+            narrator_profile.target_full_phase_scene_coverage_min
+        ),
+        "target_full_phase_scene_coverage_target": (
+            narrator_profile.target_full_phase_scene_coverage_target
+        ),
+        "target_policy": "full_phase_scene_coverage",
         "scene_shaping_rule": (
-            "Host moves should shape the scene's opening, pivot, or landing without "
-            "turning the scene into standalone commentary."
+            "Host moves should shape each scene's entry, pivot, and residue "
+            "without turning the scene into standalone commentary."
         ),
         "pronoun_policy": {
             "allow_first_person_singular": False,
@@ -536,12 +560,16 @@ def _build_host_policy_payload(narrator_profile: SeriesNarratorProfile) -> dict[
                 "handoff",
                 "callback",
                 "closing",
+                "clarify",
+                "reorientation",
+                "evaluation",
             ],
+            "allow_second_person_guidance": True,
         },
         "density_policy": {
-            "prefer_sharper_phrasing_over_more_moves": True,
-            "prefer_hinges_over_routine_explanation": True,
-            "default_max_sentences": 1,
+            "prefer_full_phase_scene_shaping": True,
+            "prefer_host_guidance_on_most_cards": True,
+            "allow_light_scenes_to_use_one_or_two_phases": True,
         },
         "authorial_policy": {
             "analysis_mode": narrator_profile.analysis_mode,
@@ -553,10 +581,52 @@ def _build_host_policy_payload(narrator_profile: SeriesNarratorProfile) -> dict[
             "target_authorial_passages_per_episode": (
                 narrator_profile.target_authorial_passages_per_episode
             ),
-            "section_authorial_passages_are_primary_exposition": True,
-            "host_moves_are_secondary": True,
+            "authorial_passages_are_primary_exposition": True,
+            "host_moves_are_primary_scene_shaping": True,
+            "host_moves_are_secondary_exposition": True,
         },
     }
+
+
+def _build_episode_explanation_registry_payload(
+    *,
+    strategy_episode: StrategyEpisode | None,
+    architecture: EpisodeArchitecture | None,
+    series_explanation_registry: list[Any] | None,
+) -> list[dict[str, Any]]:
+    if not series_explanation_registry:
+        return []
+    referenced_item_ids: set[str] = set()
+    if strategy_episode is not None:
+        referenced_item_ids.update(
+            item_id
+            for item_id in strategy_episode.authorial_contract.introduce_explanation_item_ids
+            if item_id
+        )
+        referenced_item_ids.update(
+            item_id
+            for item_id in strategy_episode.authorial_contract.remind_explanation_item_ids
+            if item_id
+        )
+    if architecture is not None:
+        for section in architecture.sections:
+            referenced_item_ids.update(
+                item_id
+                for item_id in (
+                    explanation.item_id for explanation in section.term_explanations
+                )
+                if item_id
+            )
+    filtered_items: list[dict[str, Any]] = []
+    for item in series_explanation_registry:
+        item_id = getattr(item, "item_id", None)
+        if item_id not in referenced_item_ids:
+            continue
+        if hasattr(item, "model_dump"):
+            filtered_items.append(item.model_dump(mode="json"))
+        elif isinstance(item, dict):
+            filtered_items.append(dict(item))
+    return filtered_items
 
 
 def _build_host_moves_by_section(
@@ -567,7 +637,10 @@ def _build_host_moves_by_section(
         return host_moves_by_section
     for scene in plan.scene_cards:
         host_moves_by_section.setdefault(scene.section_id, []).append(
-            scene.host_move.model_dump(mode="json")
+            {
+                "scene_id": scene.scene_id,
+                "host_moves": scene.host_moves.model_dump(mode="json"),
+            }
         )
     return host_moves_by_section
 
@@ -707,7 +780,9 @@ def _build_style_audit_sections_payload(
                     for scene in section_scene_cards
                 ),
                 "structural_card_count": sum(
-                    1 for scene in section_scene_cards if _is_structural_scene_card(scene)
+                    1
+                    for scene in section_scene_cards
+                    if _is_structural_scene_card(scene)
                 ),
                 "host_moves": host_moves_by_section.get(prose_section.section_id, []),
                 "analysis_goal": meta.analysis_goal,
@@ -715,6 +790,13 @@ def _build_style_audit_sections_payload(
                 "authorial_passages": [
                     passage.model_dump(mode="json")
                     for passage in meta.authorial_passages
+                ],
+                "term_explanations": [
+                    explanation.model_dump(mode="json")
+                    for explanation in meta.term_explanations
+                ],
+                "host_presence_beats": [
+                    beat.model_dump(mode="json") for beat in meta.host_presence_beats
                 ],
                 "text": prose_section.text,
             }
@@ -739,8 +821,12 @@ def _build_spoken_delivery_sections_payload(
         payload_sections.append(
             {
                 "section_id": prose_section.section_id,
-                "purpose": architecture_section.purpose.value if architecture_section else "",
-                "anchor": architecture_section.section_anchor if architecture_section else "",
+                "purpose": architecture_section.purpose.value
+                if architecture_section
+                else "",
+                "anchor": architecture_section.section_anchor
+                if architecture_section
+                else "",
                 "closure_mode": (
                     architecture_section.closure_mode.value
                     if architecture_section and architecture_section.closure_mode
@@ -761,6 +847,22 @@ def _build_spoken_delivery_sections_payload(
                     [
                         passage.model_dump(mode="json")
                         for passage in architecture_section.authorial_passages
+                    ]
+                    if architecture_section is not None
+                    else []
+                ),
+                "term_explanations": (
+                    [
+                        explanation.model_dump(mode="json")
+                        for explanation in architecture_section.term_explanations
+                    ]
+                    if architecture_section is not None
+                    else []
+                ),
+                "host_presence_beats": (
+                    [
+                        beat.model_dump(mode="json")
+                        for beat in architecture_section.host_presence_beats
                     ]
                     if architecture_section is not None
                     else []
@@ -802,6 +904,22 @@ def _build_script_sections_payload(
                     if architecture_section is not None
                     else []
                 ),
+                "term_explanations": (
+                    [
+                        explanation.model_dump(mode="json")
+                        for explanation in architecture_section.term_explanations
+                    ]
+                    if architecture_section is not None
+                    else []
+                ),
+                "host_presence_beats": (
+                    [
+                        beat.model_dump(mode="json")
+                        for beat in architecture_section.host_presence_beats
+                    ]
+                    if architecture_section is not None
+                    else []
+                ),
             }
         )
     return payload_sections
@@ -813,9 +931,7 @@ def _apply_style_audit_to_script(
     audit: StyleAuditResponse,
     spoken_words_per_minute: float,
 ) -> EpisodeScript:
-    edits_by_section_id = {
-        section.section_id: section for section in audit.sections
-    }
+    edits_by_section_id = {section.section_id: section for section in audit.sections}
     new_sections: list[ProseSection] = []
     for section in script.prose_sections:
         edit = edits_by_section_id.get(section.section_id)
@@ -866,11 +982,17 @@ def _normalize_beat_insight_linkage(
                 continue
             seen_existing.add(insight_id)
             existing_ids.append(insight_id)
-        missing_ids = [insight_id for insight_id in referenced_ids if insight_id not in seen_existing]
+        missing_ids = [
+            insight_id
+            for insight_id in referenced_ids
+            if insight_id not in seen_existing
+        ]
         missing_total += len(missing_ids)
         if missing_ids:
             injected_total += len(missing_ids)
-            adjusted.append(beat.model_copy(update={"insight_ids": [*existing_ids, *missing_ids]}))
+            adjusted.append(
+                beat.model_copy(update={"insight_ids": [*existing_ids, *missing_ids]})
+            )
         elif len(existing_ids) != len(beat.insight_ids):
             adjusted.append(beat.model_copy(update={"insight_ids": existing_ids}))
         else:
@@ -1005,7 +1127,9 @@ def _trim_candidate_texts_by_bm25_query_text(
         passage_id = str(cand.get("passage_id", ""))
         passage_keep_fraction = keep_fraction
         if keep_fraction_by_passage_id is not None and passage_id:
-            passage_keep_fraction = keep_fraction_by_passage_id.get(passage_id, keep_fraction)
+            passage_keep_fraction = keep_fraction_by_passage_id.get(
+                passage_id, keep_fraction
+            )
         passage_keep_fraction = _clamp(float(passage_keep_fraction), 0.0, 1.0)
         if passage_keep_fraction <= 0:
             continue
@@ -1023,7 +1147,9 @@ def _trim_candidate_texts_by_bm25_query_text(
             score = _bm25_score(tokens, query_terms, idf, avg_len)
             scored.append((score, idx, sentence, len(sentence.split())))
         scored.sort(key=lambda item: (-item[0], item[1]))
-        word_budget = max(1, math.floor(len(cand.get("text", "").split()) * passage_keep_fraction))
+        word_budget = max(
+            1, math.floor(len(cand.get("text", "").split()) * passage_keep_fraction)
+        )
         selected: list[tuple[float, int, str, int]] = []
         selected_word_count = 0
         for item in scored:
@@ -1160,7 +1286,7 @@ def _compute_weighted_admitted_budgets(
     weights: dict[str, float] = {}
     for book_id in book_ids:
         relevance = max(0.0, float(relevance_by_book.get(book_id, 0.0)))
-        relevance_factor = relevance ** relevance_power if relevance_power > 0 else 1.0
+        relevance_factor = relevance**relevance_power if relevance_power > 0 else 1.0
         weights[book_id] = relevance_factor
 
     total_weight = sum(weights.values())
@@ -1288,7 +1414,7 @@ def _normalize_axis_importance_weights(
     normalized: dict[str, float] = {}
     for axis in axes:
         scaled = (raw_by_axis[axis.axis_id] - raw_min) / span
-        shaped = scaled ** exponent if exponent > 0 else 1.0
+        shaped = scaled**exponent if exponent > 0 else 1.0
         normalized[axis.axis_id] = lo + ((hi - lo) * shaped)
     return normalized
 
@@ -1330,7 +1456,9 @@ def _compute_stage_axis_target_count(
     return max(0, min(target, max(0, axis_total)))
 
 
-def _passage_similarity_tokens(passage: ExtractedPassage, *, max_chars: int = 1200) -> set[str]:
+def _passage_similarity_tokens(
+    passage: ExtractedPassage, *, max_chars: int = 1200
+) -> set[str]:
     text = (passage.trimmed_text or passage.full_text or passage.text or "")[:max_chars]
     return set(_tokenize(text))
 
@@ -1359,7 +1487,12 @@ def _select_mmr_passages(
     if top_n >= len(passages):
         return sorted(
             passages,
-            key=lambda p: (-base_score_fn(p), -p.relevance_score, -p.quotability_score, p.passage_id),
+            key=lambda p: (
+                -base_score_fn(p),
+                -p.relevance_score,
+                -p.quotability_score,
+                p.passage_id,
+            ),
         )
 
     lambda_weight = _clamp(lambda_weight, 0.0, 1.0)
@@ -1367,9 +1500,7 @@ def _select_mmr_passages(
     token_sets = [_passage_similarity_tokens(passage) for passage in passages]
     base_scores = [base_score_fn(passage) for passage in passages]
     source_groups = [
-        source_group_fn(passage)
-        if source_group_fn is not None
-        else None
+        source_group_fn(passage) if source_group_fn is not None else None
         for passage in passages
     ]
     similarity_matrix: list[list[float]] = [[0.0] * len(passages) for _ in passages]
@@ -1387,14 +1518,14 @@ def _select_mmr_passages(
         best_idx = max(
             candidates,
             key=lambda idx: (
-                (
-                    lambda_weight * base_scores[idx]
-                ) - (
+                (lambda_weight * base_scores[idx])
+                - (
                     (1.0 - lambda_weight)
                     * max(
                         max_similarity_to_selected[idx],
                         source_penalty_weight
-                        if source_groups[idx] is not None and source_groups[idx] in selected_source_groups
+                        if source_groups[idx] is not None
+                        and source_groups[idx] in selected_source_groups
                         else 0.0,
                     )
                 ),
@@ -1428,8 +1559,60 @@ def _build_compact_chapter_projection(chapter: ChapterInfo) -> dict[str, Any]:
         "title": chapter.title,
     }
     analysis = chapter.analysis
-    payload["analysis"] = analysis.model_dump(mode="json") if analysis is not None else None
+    payload["analysis"] = (
+        analysis.model_dump(mode="json") if analysis is not None else None
+    )
     return payload
+
+
+def _build_narrative_strategy_warnings(
+    *,
+    strategy: NarrativeStrategy,
+    requested_episode_count: int | None,
+) -> list[str]:
+    warnings: list[str] = []
+    narrator_profile = strategy.narrator_profile
+    if (
+        narrator_profile.presence_mode == "visible_host"
+        and narrator_profile.baseline_tone == "grave"
+    ):
+        warnings.append(
+            "visible_host_grave_tone_mismatch: visible_host should usually stay plainspoken unless the material truly demands graver surface phrasing."
+        )
+    if (
+        narrator_profile.wit_ceiling in {"dry", "wry"}
+        and "light_aside" not in narrator_profile.allowed_moves
+    ):
+        warnings.append(
+            "allowed_moves_missing_light_aside_for_non_none_wit: narrator_profile allows wit but omits light_aside."
+        )
+    if (
+        requested_episode_count is not None
+        and requested_episode_count <= 5
+        and narrator_profile.target_authorial_passages_per_episode < 6
+    ):
+        warnings.append(
+            "authored_passage_target_low_for_runtime: compressed season still needs a higher authored passage budget for full-length episodes."
+        )
+    return warnings
+
+
+def _build_enrichment_gloss_warnings(
+    primitives: list[SynthesisPrimitiveBase],
+) -> list[str]:
+    warnings: list[str] = []
+    for primitive in primitives:
+        narration_hooks = getattr(primitive, "narration_hooks", None)
+        if narration_hooks is None:
+            continue
+        authorial_move = getattr(narration_hooks, "authorial_move", "none") or "none"
+        plain_gloss = str(getattr(narration_hooks, "plain_gloss", "") or "").strip()
+        if authorial_move != "none" and not plain_gloss:
+            warnings.append(
+                "enrichment_missing_plain_gloss: "
+                f"{primitive.id} ({primitive.family}) carries authorial_move={authorial_move} without a usable spoken gloss."
+            )
+    return warnings
 
 
 def _build_chapter_context(chapter: ChapterInfo | None) -> dict[str, Any] | None:
@@ -1446,7 +1629,9 @@ def _build_chapter_context(chapter: ChapterInfo | None) -> dict[str, Any] | None
     return context
 
 
-def _build_chapter_lookup(books: list[BookRecord]) -> dict[tuple[str, str], ChapterInfo]:
+def _build_chapter_lookup(
+    books: list[BookRecord],
+) -> dict[tuple[str, str], ChapterInfo]:
     lookup: dict[tuple[str, str], ChapterInfo] = {}
     for book in books:
         for chapter in book.chapters:
@@ -1476,7 +1661,9 @@ def _build_flat_planning_passage_payload(
                 if passage.passage_id in selected_insight_passage_ids:
                     payload["full_text"] = _resolve_writing_passage_text(passage)
                 else:
-                    payload["summary_text"] = passage.trimmed_text.strip() or passage.text
+                    payload["summary_text"] = (
+                        passage.trimmed_text.strip() or passage.text
+                    )
                 by_id[passage.passage_id] = payload
                 ordered_ids.append(passage.passage_id)
                 continue
@@ -1547,7 +1734,9 @@ def _prioritize_cross_book_pairs(pairs: list[PassagePair]) -> list[PassagePair]:
 
 
 def _combined_synthesis_passage_score(passage: ExtractedPassage) -> float:
-    return (0.7 * float(passage.relevance_score)) + (0.3 * float(passage.quotability_score))
+    return (0.7 * float(passage.relevance_score)) + (
+        0.3 * float(passage.quotability_score)
+    )
 
 
 def _synthesis_source_key(
@@ -1618,7 +1807,9 @@ def _allocate_synthesis_passages_by_axis(
             "duplicate_source_keys_detected_final": 0,
         }
     cap = max(0, int(total_cap))
-    axis_order = sorted(axes, key=lambda axis: (-axis.theme_importance_score, axis.axis_id))
+    axis_order = sorted(
+        axes, key=lambda axis: (-axis.theme_importance_score, axis.axis_id)
+    )
     axis_ids = [axis.axis_id for axis in axis_order]
     weights = _normalize_axis_importance_weights(
         axes=axis_order,
@@ -1642,7 +1833,9 @@ def _allocate_synthesis_passages_by_axis(
         for axis_id in axis_ids
     }
 
-    selected_by_axis: dict[str, list[ExtractedPassage]] = {axis_id: [] for axis_id in axis_ids}
+    selected_by_axis: dict[str, list[ExtractedPassage]] = {
+        axis_id: [] for axis_id in axis_ids
+    }
     used_source_keys: set[tuple[str, tuple[str, ...]] | tuple[str, str]] = set()
     duplicate_source_candidates_skipped = 0
     for axis_id in axis_ids:
@@ -1657,10 +1850,11 @@ def _allocate_synthesis_passages_by_axis(
             used_source_keys.add(source_key)
 
     per_axis_counts_before_refill = {
-        axis_id: len(selected_by_axis[axis_id])
-        for axis_id in axis_ids
+        axis_id: len(selected_by_axis[axis_id]) for axis_id in axis_ids
     }
-    remaining_slots = max(0, cap - sum(len(items) for items in selected_by_axis.values()))
+    remaining_slots = max(
+        0, cap - sum(len(items) for items in selected_by_axis.values())
+    )
     global_refill_added_count = 0
     ceiling_blocked_candidate_count = 0
     fallback_fill_count = 0
@@ -1670,17 +1864,19 @@ def _allocate_synthesis_passages_by_axis(
             source_key = _synthesis_source_key(passage)
             if source_key in used_source_keys:
                 continue
-            refill_pool.append((
+            refill_pool.append(
                 (
-                    -(1 if passage.passage_id in cross_pair_ids else 0),
-                    -_combined_synthesis_passage_score(passage),
-                    -passage.relevance_score,
-                    -passage.quotability_score,
-                    passage.passage_id,
-                ),
-                axis_id,
-                passage,
-            ))
+                    (
+                        -(1 if passage.passage_id in cross_pair_ids else 0),
+                        -_combined_synthesis_passage_score(passage),
+                        -passage.relevance_score,
+                        -passage.quotability_score,
+                        passage.passage_id,
+                    ),
+                    axis_id,
+                    passage,
+                )
+            )
     refill_pool.sort(key=lambda item: (item[0], item[1]))
     for _, axis_id, passage in refill_pool:
         if remaining_slots <= 0:
@@ -1714,7 +1910,9 @@ def _allocate_synthesis_passages_by_axis(
     for axis_id, passages in selected_by_axis.items():
         for passage in passages:
             passage_axes.setdefault(passage.passage_id, []).append(axis_id)
-            source_key_axes.setdefault(_synthesis_source_key(passage), []).append(axis_id)
+            source_key_axes.setdefault(_synthesis_source_key(passage), []).append(
+                axis_id
+            )
     duplicate_passage_ids = {
         passage_id: axes_for_passage
         for passage_id, axes_for_passage in passage_axes.items()
@@ -1740,7 +1938,9 @@ def _allocate_synthesis_passages_by_axis(
         "total_cap": cap,
         "axis_order": axis_ids,
         "axis_quota_by_axis": {axis_id: axis_floor for axis_id in axis_ids},
-        "axis_weight_by_axis": {axis_id: round(float(weights.get(axis_id, 0.0)), 6) for axis_id in axis_ids},
+        "axis_weight_by_axis": {
+            axis_id: round(float(weights.get(axis_id, 0.0)), 6) for axis_id in axis_ids
+        },
         "selected_axis_count": len(axis_ids),
         "fair_share": round(float(fair_share), 6),
         "axis_floor": axis_floor,
@@ -1749,8 +1949,7 @@ def _allocate_synthesis_passages_by_axis(
         "axis_ceiling_by_axis": {axis_id: axis_ceiling for axis_id in axis_ids},
         "per_axis_counts_before_refill": per_axis_counts_before_refill,
         "per_axis_counts_after_refill": {
-            axis_id: len(selected_by_axis[axis_id])
-            for axis_id in axis_ids
+            axis_id: len(selected_by_axis[axis_id]) for axis_id in axis_ids
         },
         "selected_passage_ids_by_axis": {
             axis_id: [passage.passage_id for passage in selected_by_axis[axis_id]]
@@ -1789,7 +1988,9 @@ def _select_episode_planning_passages(
             key = _chunk_key(passage)
             chunk_axes.setdefault(key, set()).add(axis_id)
 
-    selected_by_axis: dict[str, list[ExtractedPassage]] = {axis_id: [] for axis_id in assigned_axis_ids}
+    selected_by_axis: dict[str, list[ExtractedPassage]] = {
+        axis_id: [] for axis_id in assigned_axis_ids
+    }
     for axis_id in assigned_axis_ids:
         insight_passages: list[ExtractedPassage] = []
         supporting_pool: list[ExtractedPassage] = []
@@ -1839,7 +2040,9 @@ def _select_episode_planning_passages(
     return selected_by_axis
 
 
-def _build_merged_narrative_catalog(synthesis_map: SynthesisMap) -> list[dict[str, Any]]:
+def _build_merged_narrative_catalog(
+    synthesis_map: SynthesisMap,
+) -> list[dict[str, Any]]:
     return [
         {
             "merged_narrative_id": f"merged_narrative_{idx + 1:03d}",
@@ -1878,7 +2081,9 @@ def _evaluate_synthesis_merged_narrative_count(
     }
 
 
-def _build_synthesis_feedback_for_merged_narrative_count(report: dict[str, Any]) -> dict[str, Any]:
+def _build_synthesis_feedback_for_merged_narrative_count(
+    report: dict[str, Any],
+) -> dict[str, Any]:
     return {
         "issue": "merged_narrative_count_out_of_range",
         "observed_count": report["count"],
@@ -1905,9 +2110,13 @@ def _evaluate_strategy_merged_narrative_assignments(
         expected_count = 1 if merged_available else 0
         if merged_available:
             is_ok = assigned_id in valid_ids
-            invalid_assigned_id = assigned_id if assigned_id and assigned_id not in valid_ids else None
+            invalid_assigned_id = (
+                assigned_id if assigned_id and assigned_id not in valid_ids else None
+            )
             if assigned_id in valid_ids:
-                episode_numbers_by_id.setdefault(assigned_id, []).append(assignment.episode_number)
+                episode_numbers_by_id.setdefault(assigned_id, []).append(
+                    assignment.episode_number
+                )
         else:
             is_ok = assigned_id is None
             invalid_assigned_id = assigned_id
@@ -1927,7 +2136,9 @@ def _evaluate_strategy_merged_narrative_assignments(
             "merged_narrative_id": merged_narrative_id,
             "episode_numbers": sorted(episode_numbers),
         }
-        for merged_narrative_id, episode_numbers in sorted(episode_numbers_by_id.items())
+        for merged_narrative_id, episode_numbers in sorted(
+            episode_numbers_by_id.items()
+        )
         if len(episode_numbers) > 1
     ]
     duplicate_id_set = {item["merged_narrative_id"] for item in duplicate_groups}
@@ -1952,7 +2163,9 @@ def _evaluate_strategy_merged_narrative_assignments(
     }
 
 
-def _build_strategy_feedback_for_merged_narratives(report: dict[str, Any]) -> dict[str, Any]:
+def _build_strategy_feedback_for_merged_narratives(
+    report: dict[str, Any],
+) -> dict[str, Any]:
     return {
         "issue": "episode_merged_narrative_assignment",
         "merged_available": report["merged_available"],
@@ -2068,7 +2281,9 @@ def _compact_narrative_strategy_runtime_value(value: Any) -> Any:
     return value
 
 
-def _compact_narrative_strategy_runtime_payload(payload: dict[str, Any]) -> dict[str, Any]:
+def _compact_narrative_strategy_runtime_payload(
+    payload: dict[str, Any],
+) -> dict[str, Any]:
     compacted = _compact_narrative_strategy_runtime_value(payload)
     if compacted is _NARRATIVE_STRATEGY_OMIT:
         return {}
@@ -2104,6 +2319,7 @@ def _build_narrative_strategy_project_metadata_payload(
 ) -> dict[str, Any]:
     return _compact_narrative_strategy_runtime_payload(
         {
+            "podcast_mode": project.config.podcast_mode.value,
             "theme": project.theme,
             "sub_themes": list(project.sub_themes),
             "book_count": len(project.books),
@@ -2115,6 +2331,21 @@ def _build_narrative_strategy_project_metadata_payload(
                 }
                 for book in project.books
             ],
+            "episode_spine_core_primitive_target_min": (
+                project.config.episode_spine_core_primitive_target_min
+            ),
+            "episode_spine_core_primitive_target_max": (
+                project.config.episode_spine_core_primitive_target_max
+            ),
+            "episode_spine_support_primitive_target_min": (
+                project.config.episode_spine_support_primitive_target_min
+            ),
+            "episode_spine_support_primitive_target_max": (
+                project.config.episode_spine_support_primitive_target_max
+            ),
+            "episode_spine_recall_primitive_target_max": (
+                project.config.episode_spine_recall_primitive_target_max
+            ),
             "min_episode_minutes": project.config.min_episode_minutes,
             "max_episode_minutes": project.config.max_episode_minutes,
         }
@@ -2381,7 +2612,9 @@ def _build_episode_synthesis_context(
     selected_threads = [
         thread
         for thread in synthesis_map.narrative_threads
-        if any(insight_id in assignment.insight_ids for insight_id in thread.insight_ids)
+        if any(
+            insight_id in assignment.insight_ids for insight_id in thread.insight_ids
+        )
     ]
     return EpisodeSynthesisContext(
         insights=selected_insights,
@@ -2399,9 +2632,7 @@ def _evaluate_episode_plan_insight_realization(
     plan: EpisodePlan,
 ) -> dict[str, Any]:
     planned_passage_ids = {
-        passage_id
-        for beat in plan.beats
-        for passage_id in beat.passage_ids
+        passage_id for beat in plan.beats for passage_id in beat.passage_ids
     }
     results: list[dict[str, Any]] = []
     for insight in selected_insights:
@@ -2423,7 +2654,9 @@ def _evaluate_episode_plan_insight_realization(
                 "expected_min": expected_min,
                 "assigned_passage_count": len(insight.passage_ids),
                 "realized_passage_ids": realized_passage_ids,
-                "missing_passage_ids": sorted(set(insight.passage_ids) - planned_passage_ids),
+                "missing_passage_ids": sorted(
+                    set(insight.passage_ids) - planned_passage_ids
+                ),
             }
         )
     weak_or_zero = [item for item in results if item["status"] in {"weak", "zero"}]
@@ -2444,9 +2677,7 @@ def _evaluate_episode_plan_merged_narrative_realization(
     plan: EpisodePlan,
 ) -> dict[str, Any]:
     planned_passage_ids = {
-        passage_id
-        for beat in plan.beats
-        for passage_id in beat.passage_ids
+        passage_id for beat in plan.beats for passage_id in beat.passage_ids
     }
     results: list[dict[str, Any]] = []
     for merged in synthesis_context.merged_narratives:
@@ -2504,8 +2735,10 @@ def _evaluate_episode_plan_realization(
         "episode_number": assignment.episode_number,
         "title": assignment.title,
         "insight_ids": insight_realization["insight_ids"],
-        "has_issues": insight_realization["has_issues"] or merged_realization["has_issues"],
-        "problem_count": insight_realization["problem_count"] + merged_realization["problem_count"],
+        "has_issues": insight_realization["has_issues"]
+        or merged_realization["has_issues"],
+        "problem_count": insight_realization["problem_count"]
+        + merged_realization["problem_count"],
         "insight_problem_count": insight_realization["problem_count"],
         "merged_narrative_problem_count": merged_realization["problem_count"],
         "insights": insight_realization["insights"],
@@ -2597,7 +2830,9 @@ def _clamp(value: float, minimum: float, maximum: float) -> float:
     return max(minimum, min(maximum, value))
 
 
-def _resolve_axis_relevance(axis: ThematicAxis, book_ids: list[str]) -> dict[str, float]:
+def _resolve_axis_relevance(
+    axis: ThematicAxis, book_ids: list[str]
+) -> dict[str, float]:
     relevance: dict[str, float] = {}
     total = 0.0
     for book_id in book_ids:
@@ -2619,18 +2854,12 @@ def _resolve_book_size_shares(
         return {}
     if basis != "total_words":
         raise ValueError(f"Unsupported retrieval size basis '{basis}'")
-    raw_values = {
-        book.book_id: max(0.0, float(book.total_words))
-        for book in books
-    }
+    raw_values = {book.book_id: max(0.0, float(book.total_words)) for book in books}
     total = sum(raw_values.values())
     if total <= 0:
         even = 1.0 / len(books)
         return {book.book_id: even for book in books}
-    return {
-        book.book_id: (raw_values.get(book.book_id, 0.0) / total)
-        for book in books
-    }
+    return {book.book_id: (raw_values.get(book.book_id, 0.0) / total) for book in books}
 
 
 def _compute_passage_utilization(
@@ -2676,23 +2905,33 @@ def _compute_passage_utilization(
             "retained_count": len(axis_retained),
             "planned_count": len(axis_retained & planned_ids),
             "cited_count": len(axis_retained & cited_ids),
-            "plan_utilization_ratio": _ratio(len(axis_retained & planned_ids), len(axis_retained)),
-            "citation_utilization_ratio": _ratio(len(axis_retained & cited_ids), len(axis_retained)),
+            "plan_utilization_ratio": _ratio(
+                len(axis_retained & planned_ids), len(axis_retained)
+            ),
+            "citation_utilization_ratio": _ratio(
+                len(axis_retained & cited_ids), len(axis_retained)
+            ),
         }
 
     per_book: dict[str, Any] = {}
     for book in books:
         book_retained = {
-            pid for pid in retained_ids
-            if passage_by_id.get(pid) is not None and passage_by_id[pid].book_id == book.book_id
+            pid
+            for pid in retained_ids
+            if passage_by_id.get(pid) is not None
+            and passage_by_id[pid].book_id == book.book_id
         }
         per_book[book.book_id] = {
             "title": book.title,
             "retained_count": len(book_retained),
             "planned_count": len(book_retained & planned_ids),
             "cited_count": len(book_retained & cited_ids),
-            "plan_utilization_ratio": _ratio(len(book_retained & planned_ids), len(book_retained)),
-            "citation_utilization_ratio": _ratio(len(book_retained & cited_ids), len(book_retained)),
+            "plan_utilization_ratio": _ratio(
+                len(book_retained & planned_ids), len(book_retained)
+            ),
+            "citation_utilization_ratio": _ratio(
+                len(book_retained & cited_ids), len(book_retained)
+            ),
         }
 
     return {
@@ -2715,14 +2954,9 @@ def _evaluate_episode_script_plan_alignment(
     min_cross_reference_coverage: float = _CROSS_REFERENCE_MIN_COVERAGE,
     max_book_balance_abs_drift: float = _BOOK_BALANCE_MAX_ABS_DRIFT,
 ) -> dict[str, Any]:
-    beat_passages_by_id = {
-        beat.beat_id: set(beat.passage_ids)
-        for beat in plan.beats
-    }
+    beat_passages_by_id = {beat.beat_id: set(beat.passage_ids) for beat in plan.beats}
     beat_scene_by_id = {
-        beat.beat_id: beat.scene_id
-        for beat in plan.beats
-        if beat.scene_id
+        beat.beat_id: beat.scene_id for beat in plan.beats if beat.scene_id
     }
 
     observed_passage_ids: set[str] = set()
@@ -2764,18 +2998,21 @@ def _evaluate_episode_script_plan_alignment(
                 "expected_min": expected_min,
                 "assigned_passage_count": len(assigned_passage_ids),
                 "realized_passage_ids": realized_passage_ids,
-                "missing_passage_ids": sorted(assigned_passage_ids - observed_passage_ids),
+                "missing_passage_ids": sorted(
+                    assigned_passage_ids - observed_passage_ids
+                ),
             }
         )
     insight_issues = [
-        item for item in insight_results
-        if item["status"] in {"weak", "zero"}
+        item for item in insight_results if item["status"] in {"weak", "zero"}
     ]
 
     planned_pairs = {
         tuple(sorted((item.from_book_id, item.to_book_id)))
         for item in plan.cross_references
-        if item.from_book_id and item.to_book_id and item.from_book_id != item.to_book_id
+        if item.from_book_id
+        and item.to_book_id
+        and item.from_book_id != item.to_book_id
     }
     observed_pairs: set[tuple[str, str]] = set()
     for segment in script.segments:
@@ -2786,11 +3023,7 @@ def _evaluate_episode_script_plan_alignment(
             for jdx in range(idx + 1, len(ordered_books)):
                 observed_pairs.add((ordered_books[idx], ordered_books[jdx]))
     global_citation_books = sorted(
-        {
-            citation.book_id
-            for citation in script.citations
-            if citation.book_id
-        }
+        {citation.book_id for citation in script.citations if citation.book_id}
     )
     for idx in range(len(global_citation_books)):
         for jdx in range(idx + 1, len(global_citation_books)):
@@ -2799,9 +3032,7 @@ def _evaluate_episode_script_plan_alignment(
     covered_pairs = sorted(planned_pairs & observed_pairs)
     planned_pair_count = len(planned_pairs)
     coverage_ratio = (
-        len(covered_pairs) / planned_pair_count
-        if planned_pair_count > 0
-        else 1.0
+        len(covered_pairs) / planned_pair_count if planned_pair_count > 0 else 1.0
     )
     cross_reference_has_issues = (
         planned_pair_count > 0 and coverage_ratio < min_cross_reference_coverage
@@ -2847,8 +3078,7 @@ def _evaluate_episode_script_plan_alignment(
     planned_scene_id_set = set(planned_scene_ids)
     observed_scene_id_set = {scene_id for scene_id in observed_scene_ids if scene_id}
     covered_scene_ids = [
-        scene_id for scene_id in planned_scene_ids
-        if scene_id in observed_scene_id_set
+        scene_id for scene_id in planned_scene_ids if scene_id in observed_scene_id_set
     ]
     collapsed_observed_scene_order: list[str] = []
     previous_scene_id: str | None = None
@@ -2858,7 +3088,8 @@ def _evaluate_episode_script_plan_alignment(
         collapsed_observed_scene_order.append(scene_id)
         previous_scene_id = scene_id
     unexpected_scene_ids = [
-        scene_id for scene_id in collapsed_observed_scene_order
+        scene_id
+        for scene_id in collapsed_observed_scene_order
         if scene_id not in planned_scene_id_set
     ]
     planned_scene_index = {
@@ -2871,13 +3102,12 @@ def _evaluate_episode_script_plan_alignment(
     ]
     scene_order_preserved = observed_scene_indices == sorted(observed_scene_indices)
     scene_coverage_ratio = (
-        len(covered_scene_ids) / len(planned_scene_ids)
-        if planned_scene_ids
-        else 1.0
+        len(covered_scene_ids) / len(planned_scene_ids) if planned_scene_ids else 1.0
     )
     anchor_scene_ids = [scene_id for scene_id in plan.anchor_scene_ids if scene_id]
     missing_anchor_scene_ids = [
-        scene_id for scene_id in anchor_scene_ids
+        scene_id
+        for scene_id in anchor_scene_ids
         if scene_id not in observed_scene_id_set
     ]
     scene_structure_has_issues = bool(planned_scene_ids) and (
@@ -2904,7 +3134,8 @@ def _evaluate_episode_script_plan_alignment(
                 len(anchor_scene_ids) - len(missing_anchor_scene_ids)
             ),
             "missing_scene_ids": [
-                scene_id for scene_id in planned_scene_ids
+                scene_id
+                for scene_id in planned_scene_ids
                 if scene_id not in observed_scene_id_set
             ],
             "missing_anchor_scene_ids": missing_anchor_scene_ids,
@@ -2918,8 +3149,7 @@ def _evaluate_episode_script_plan_alignment(
             "coverage_ratio": round(coverage_ratio, 4),
             "minimum_coverage": min_cross_reference_coverage,
             "missing_pairs": [
-                {"book_ids": [a, b]}
-                for a, b in sorted(planned_pairs - observed_pairs)
+                {"book_ids": [a, b]} for a, b in sorted(planned_pairs - observed_pairs)
             ],
         },
         "book_balance": {
@@ -2932,8 +3162,7 @@ def _evaluate_episode_script_plan_alignment(
                 for book_id, share in plan.book_balance.items()
             },
             "observed_balance": {
-                book_id: round(share, 4)
-                for book_id, share in observed_balance.items()
+                book_id: round(share, 4) for book_id, share in observed_balance.items()
             },
             "drift_by_book": drift_by_book,
             "max_abs_drift": round(max_abs_drift, 4),
@@ -2961,7 +3190,9 @@ def _evaluate_episode_script_plan_alignment(
 
 
 @asynccontextmanager
-async def _stage_log(run_logger: RunLogger, stage_name: str, project_dir: Path, **input_summary):
+async def _stage_log(
+    run_logger: RunLogger, stage_name: str, project_dir: Path, **input_summary
+):
     """Log stage start/end with timing and save input/output artifacts."""
     stage_dir = project_dir / "stage_artifacts" / stage_name
     stage_dir.mkdir(parents=True, exist_ok=True)
@@ -3097,7 +3328,9 @@ def _supports_segment_tts_instructions(
     return supports_openai_tts_instructions(tts_model_name)
 
 
-def _normalize_tts_instruction_text(text: str | None, *, max_chars: int | None = None) -> str | None:
+def _normalize_tts_instruction_text(
+    text: str | None, *, max_chars: int | None = None
+) -> str | None:
     if not text:
         return None
     normalized = _WHITESPACE_RE.sub(" ", text).strip()
@@ -3134,7 +3367,11 @@ def _segment_hint_degradations(
     if _supports_segment_tts_instructions(tts_provider, tts_model_name):
         return []
     degradations: list[str] = []
-    if hints.style != "neutral" or hints.intensity != "none" or hints.render_strategy == "slow_clause":
+    if (
+        hints.style != "neutral"
+        or hints.intensity != "none"
+        or hints.render_strategy == "slow_clause"
+    ):
         degradations.append("segment_instructions_not_supported")
     if hints.pronunciation_hints:
         degradations.append("pronunciation_hints_not_supported")
@@ -3157,9 +3394,9 @@ def _split_render_text(text: str, hints: SpeechHints) -> list[tuple[str | None, 
             if match is None:
                 continue
             parts: list[tuple[str | None, str]] = []
-            before = clean_text[:match.start()].strip()
-            focus = clean_text[match.start():match.end()].strip()
-            after = clean_text[match.end():].strip()
+            before = clean_text[: match.start()].strip()
+            focus = clean_text[match.start() : match.end()].strip()
+            after = clean_text[match.end() :].strip()
             if before:
                 parts.append((None, before))
             if focus:
@@ -3190,10 +3427,14 @@ def _build_segment_tts_instructions(
     if hints.intensity != "none":
         overlay.append(f"Use {hints.intensity} vocal emphasis where it feels natural.")
     if hints.render_strategy == "slow_clause":
-        overlay.append("Linger slightly on the most reflective clause without sounding theatrical.")
+        overlay.append(
+            "Linger slightly on the most reflective clause without sounding theatrical."
+        )
 
-    targets = emphasis_targets if emphasis_targets is not None else (
-        [focus_phrase] if focus_phrase else hints.emphasis_targets[:3]
+    targets = (
+        emphasis_targets
+        if emphasis_targets is not None
+        else ([focus_phrase] if focus_phrase else hints.emphasis_targets[:3])
     )
     if targets:
         stress = hints.intensity if hints.intensity != "none" else "light"
@@ -3233,7 +3474,9 @@ def _render_segments_for_spoken_segment(
 
     text_parts = _split_render_text(segment.text, hints)
     degradations = _segment_hint_degradations(hints, tts_provider, tts_model_name)
-    supports_instructions = _supports_segment_tts_instructions(tts_provider, tts_model_name)
+    supports_instructions = _supports_segment_tts_instructions(
+        tts_provider, tts_model_name
+    )
     render_segments: list[RenderSegment] = []
 
     for idx, (focus_phrase, part_text) in enumerate(text_parts, start=1):
@@ -3261,7 +3504,9 @@ def _render_segments_for_spoken_segment(
         is_single_part = len(text_parts) == 1
         render_segments.append(
             RenderSegment(
-                segment_id=segment.segment_id if is_single_part else f"{segment.segment_id}_{idx}",
+                segment_id=segment.segment_id
+                if is_single_part
+                else f"{segment.segment_id}_{idx}",
                 text=piece_text,
                 voice_id=voice_id,
                 speed=render_speed,
@@ -3396,7 +3641,9 @@ def _script_total_word_count(script: EpisodeScript) -> int:
     return sum(len(text.split()) for _, text in _script_text_units(script))
 
 
-def _estimate_duration_seconds_from_words(word_count: int, words_per_minute: float) -> int:
+def _estimate_duration_seconds_from_words(
+    word_count: int, words_per_minute: float
+) -> int:
     if words_per_minute <= 0:
         return 0
     return int((float(word_count) / float(words_per_minute)) * 60)
@@ -3439,10 +3686,7 @@ def _compute_scene_word_count_targets(
     for idx in ranked_indices[:remainder]:
         floor_targets[idx] += 1
 
-    return {
-        scene.scene_id: floor_targets[idx]
-        for idx, scene in enumerate(scene_cards)
-    }
+    return {scene.scene_id: floor_targets[idx] for idx, scene in enumerate(scene_cards)}
 
 
 _PACK_ROLE_WEIGHTS: dict[str, float] = {
@@ -3603,9 +3847,7 @@ def _bounded_weighted_allocation(
         if not changed:
             for idx in active:
                 allocations[idx] = (
-                    remaining_total
-                    * positive_weights[idx]
-                    / active_weight
+                    remaining_total * positive_weights[idx] / active_weight
                 )
             remaining_total = 0.0
             break
@@ -3737,10 +3979,36 @@ def _scene_max_presence(scene: SceneCardDraft | SceneCard) -> str:
     return best
 
 
+_HOST_MOVE_PHASE_ORDER = ("open", "pivot", "close")
+
+
+def _iter_host_move_cues(
+    scene: SceneCardDraft | SceneCard,
+) -> list[tuple[str, Any]]:
+    cues: list[tuple[str, Any]] = []
+    for phase in _HOST_MOVE_PHASE_ORDER:
+        for cue in getattr(scene.host_moves, phase):
+            cues.append((phase, cue))
+    return cues
+
+
+def _scene_host_phase_bucket_count(scene: SceneCardDraft | SceneCard) -> int:
+    return sum(
+        1 for phase in _HOST_MOVE_PHASE_ORDER if getattr(scene.host_moves, phase)
+    )
+
+
+def _scene_has_full_host_phase_coverage(scene: SceneCardDraft | SceneCard) -> bool:
+    return _scene_host_phase_bucket_count(scene) == len(_HOST_MOVE_PHASE_ORDER)
+
+
 def _scene_host_intensity(scene: SceneCardDraft | SceneCard) -> str:
-    if scene.host_move.move_type == "light_aside":
+    move_types = {cue.move_type for _, cue in _iter_host_move_cues(scene)}
+    if not move_types:
+        return "none"
+    if move_types == {"light_aside"}:
         return "light"
-    if scene.host_move.move_type in {"orient", "clarify", "naming_note", "none"}:
+    if move_types.issubset({"orient", "clarify", "naming_note", "light_aside"}):
         return "none"
     return "standard"
 
@@ -3753,22 +4021,18 @@ _HOST_MOVE_META_NOTE_PATTERNS = (
     "what we are seeing",
     "read this as",
 )
-_HOST_MOVE_LOW_YIELD_ROLES = {"context_setup", "actor_setup", "action", "shock", "reaction"}
+_HOST_MOVE_LOW_YIELD_ROLES = {
+    "context_setup",
+    "actor_setup",
+    "action",
+    "shock",
+    "reaction",
+}
 
 
 def _host_move_note_looks_meta(note: str) -> bool:
     normalized = " ".join(str(note or "").lower().split())
     return any(pattern in normalized for pattern in _HOST_MOVE_META_NOTE_PATTERNS)
-
-
-def _host_move_allows_two_sentences(
-    *,
-    scene: SceneCardDraft | SceneCard,
-    closing_section_id: str | None,
-) -> bool:
-    if scene.section_id == closing_section_id:
-        return True
-    return scene.host_move.move_type in {"evaluate", "callback"}
 
 
 def _build_host_move_plan_diagnostics(
@@ -3778,86 +4042,123 @@ def _build_host_move_plan_diagnostics(
     narrator_profile: SeriesNarratorProfile,
 ) -> tuple[dict[str, Any], list[str]]:
     counts_by_type: dict[str, int] = {}
-    counts_by_placement: dict[str, int] = {}
-    max_sentences_counts: dict[str, int] = {"1": 0, "2": 0}
-    meta_note_scene_ids: list[str] = []
-    misconfigured_two_sentence_scene_ids: list[str] = []
-    closing_section_id = architecture.sections[-1].section_id if architecture.sections else None
-    closing_section_host_move_scene_ids: list[str] = []
-    low_yield_host_move_scene_ids: list[str] = []
-    callback_scene_ids: list[str] = []
+    counts_by_phase: dict[str, int] = {phase: 0 for phase in _HOST_MOVE_PHASE_ORDER}
+    meta_note_phase_ids: list[str] = []
     first_person_plural_note_scene_ids: list[str] = []
-    host_move_scene_count = 0
+    disallowed_move_scene_ids: list[str] = []
+    personalized_scene_ids: list[str] = []
+    scenes_with_1_phase: list[str] = []
+    scenes_with_2_phases: list[str] = []
+    scenes_with_3_phases: list[str] = []
+    full_phase_scene_ids: list[str] = []
+    total_host_phase_count = 0
+    allowed_moves = set(narrator_profile.allowed_moves)
 
     for scene in scene_cards:
-        host_move = scene.host_move
-        if host_move.move_type == "none":
-            continue
-        host_move_scene_count += 1
-        counts_by_type[host_move.move_type] = counts_by_type.get(host_move.move_type, 0) + 1
-        counts_by_placement[host_move.placement] = counts_by_placement.get(host_move.placement, 0) + 1
-        max_sentences_counts[str(host_move.max_sentences)] = (
-            max_sentences_counts.get(str(host_move.max_sentences), 0) + 1
-        )
-        normalized_note = " ".join(host_move.note.lower().split())
-        if normalized_note and re.search(r"\b(we|our|us)\b", normalized_note):
+        phase_bucket_count = _scene_host_phase_bucket_count(scene)
+        if phase_bucket_count == 1:
+            scenes_with_1_phase.append(scene.scene_id)
+        elif phase_bucket_count == 2:
+            scenes_with_2_phases.append(scene.scene_id)
+        elif phase_bucket_count == 3:
+            scenes_with_3_phases.append(scene.scene_id)
+            full_phase_scene_ids.append(scene.scene_id)
+
+        scene_is_personalized = False
+        scene_has_first_person_plural_note = False
+        scene_has_disallowed_move = False
+        for phase, cue in _iter_host_move_cues(scene):
+            total_host_phase_count += 1
+            counts_by_phase[phase] = counts_by_phase.get(phase, 0) + 1
+            counts_by_type[cue.move_type] = counts_by_type.get(cue.move_type, 0) + 1
+            normalized_note = " ".join(cue.note.lower().split())
+            if normalized_note and re.search(r"\b(we|our|us)\b", normalized_note):
+                scene_has_first_person_plural_note = True
+            if cue.address_mode in {"we", "you"}:
+                scene_is_personalized = True
+            if cue.move_type not in allowed_moves:
+                scene_has_disallowed_move = True
+            if _host_move_note_looks_meta(cue.note):
+                meta_note_phase_ids.append(f"{scene.scene_id}:{phase}")
+        if scene_has_first_person_plural_note:
             first_person_plural_note_scene_ids.append(scene.scene_id)
-        if _host_move_note_looks_meta(host_move.note):
-            meta_note_scene_ids.append(scene.scene_id)
-        if host_move.max_sentences == 2 and not _host_move_allows_two_sentences(
-            scene=scene,
-            closing_section_id=closing_section_id,
-        ):
-            misconfigured_two_sentence_scene_ids.append(scene.scene_id)
-        if scene.section_id == closing_section_id:
-            closing_section_host_move_scene_ids.append(scene.scene_id)
-        if scene.scene_role in _HOST_MOVE_LOW_YIELD_ROLES:
-            low_yield_host_move_scene_ids.append(scene.scene_id)
-        if host_move.move_type == "callback":
-            callback_scene_ids.append(scene.scene_id)
+        if scene_is_personalized:
+            personalized_scene_ids.append(scene.scene_id)
+        if scene_has_disallowed_move:
+            disallowed_move_scene_ids.append(scene.scene_id)
 
     warnings: list[str] = []
-    if meta_note_scene_ids:
+    scene_card_count = len(scene_cards)
+    full_phase_scene_count = len(full_phase_scene_ids)
+    full_phase_scene_coverage = full_phase_scene_count / max(1, scene_card_count)
+    if meta_note_phase_ids:
         warnings.append(
-            "host_move_meta_notes_detected: "
-            f"{_preview_ids(meta_note_scene_ids)}"
+            f"host_phase_meta_notes_detected: {_preview_ids(meta_note_phase_ids)}"
         )
-    if misconfigured_two_sentence_scene_ids:
+    if disallowed_move_scene_ids:
         warnings.append(
-            "host_move_two_sentence_out_of_place: "
-            f"{_preview_ids(misconfigured_two_sentence_scene_ids)}"
-        )
-    if (
-        host_move_scene_count > narrator_profile.target_host_moves_per_episode
-        and len(low_yield_host_move_scene_ids)
-        >= max(1, host_move_scene_count - narrator_profile.target_host_moves_per_episode)
-    ):
-        warnings.append(
-            "weak_host_target_fill: extra host moves are clustering in low-yield scene roles "
-            f"({_preview_ids(low_yield_host_move_scene_ids)})"
+            "host_move_allowed_move_mismatch: "
+            f"{_preview_ids(disallowed_move_scene_ids)}"
         )
     if (
-        callback_scene_ids
-        and len(callback_scene_ids) >= 4
-        and len(callback_scene_ids) / max(1, host_move_scene_count) > 0.5
+        full_phase_scene_coverage
+        < narrator_profile.target_full_phase_scene_coverage_min
     ):
         warnings.append(
-            "host_move_callback_heavy: callbacks dominate planned host moves "
-            f"({_preview_ids(callback_scene_ids)})"
+            "host_full_phase_coverage_below_min: "
+            f"{full_phase_scene_count}/{scene_card_count} "
+            f"({full_phase_scene_coverage:.2f} < "
+            f"{narrator_profile.target_full_phase_scene_coverage_min:.2f})"
+        )
+    orient_callback_count = counts_by_type.get("orient", 0) + counts_by_type.get(
+        "callback", 0
+    )
+    total_cue_count = sum(counts_by_type.values())
+    if total_cue_count and orient_callback_count / total_cue_count > 0.5:
+        warnings.append(
+            "host_move_monotone_distribution: "
+            f"orient={counts_by_type.get('orient', 0)} "
+            f"callback={counts_by_type.get('callback', 0)} "
+            f"clarify={counts_by_type.get('clarify', 0)} "
+            f"contrast={counts_by_type.get('contrast', 0)} "
+            f"evaluate={counts_by_type.get('evaluate', 0)} "
+            f"naming_note={counts_by_type.get('naming_note', 0)}"
+        )
+    host_shaped_scene_count = (
+        len(scenes_with_1_phase) + len(scenes_with_2_phases) + len(scenes_with_3_phases)
+    )
+    if host_shaped_scene_count and len(personalized_scene_ids) < max(
+        1, int(host_shaped_scene_count * 0.2)
+    ):
+        warnings.append(
+            "host_move_underpersonalized: "
+            f"{len(personalized_scene_ids)}/{host_shaped_scene_count} host-shaped "
+            "scenes use explicit `we` or `you` address"
         )
 
     diagnostics = {
-        "target_host_moves_per_episode": narrator_profile.target_host_moves_per_episode,
-        "target_policy": "soft_target",
-        "host_move_scene_count": host_move_scene_count,
+        "target_full_phase_scene_coverage_min": (
+            narrator_profile.target_full_phase_scene_coverage_min
+        ),
+        "target_full_phase_scene_coverage_target": (
+            narrator_profile.target_full_phase_scene_coverage_target
+        ),
+        "target_policy": "full_phase_scene_coverage",
+        "scene_card_count": scene_card_count,
+        "host_shaped_scene_count": host_shaped_scene_count,
+        "full_phase_scene_count": full_phase_scene_count,
+        "full_phase_scene_coverage": full_phase_scene_coverage,
+        "total_host_phase_count": total_host_phase_count,
         "counts_by_type": counts_by_type,
-        "counts_by_placement": counts_by_placement,
-        "max_sentences_counts": max_sentences_counts,
-        "closing_section_host_move_scene_ids": closing_section_host_move_scene_ids,
-        "meta_note_scene_ids": meta_note_scene_ids,
-        "low_yield_host_move_scene_ids": low_yield_host_move_scene_ids,
-        "callback_scene_ids": callback_scene_ids,
+        "counts_by_phase": counts_by_phase,
+        "scenes_with_1_phase_count": len(scenes_with_1_phase),
+        "scenes_with_2_phases_count": len(scenes_with_2_phases),
+        "scenes_with_3_phases_count": len(scenes_with_3_phases),
+        "full_phase_scene_ids": full_phase_scene_ids,
+        "meta_note_phase_ids": meta_note_phase_ids,
         "first_person_plural_note_scene_ids": first_person_plural_note_scene_ids,
+        "personalized_scene_ids": personalized_scene_ids,
+        "disallowed_move_scene_ids": disallowed_move_scene_ids,
         "warning_count": len(warnings),
         "warnings": warnings,
     }
@@ -3865,7 +4166,10 @@ def _build_host_move_plan_diagnostics(
 
 
 def _no_actor_bucket(scene: SceneCardDraft | SceneCard) -> str:
-    if scene.scene_function in _ARGUMENT_SCENE_FUNCTIONS or scene.scene_role in _ARGUMENT_ROLES:
+    if (
+        scene.scene_function in _ARGUMENT_SCENE_FUNCTIONS
+        or scene.scene_role in _ARGUMENT_ROLES
+    ):
         return "argument"
     if scene.scene_function == "turn" or scene.scene_role in _ACTION_BUCKET_ROLES:
         return "action"
@@ -3952,7 +4256,9 @@ def _allocate_scene_durations(
         bounds=occurrence_bounds,
         overflow_weights=occurrence_spillover_weights,
     )
-    occurrence_seconds_by_id = dict(zip(occurrence_ids, occurrence_allocations, strict=True))
+    occurrence_seconds_by_id = dict(
+        zip(occurrence_ids, occurrence_allocations, strict=True)
+    )
 
     raw_scene_seconds_by_index: dict[int, float] = {}
     for occurrence_id in occurrence_ids:
@@ -3962,8 +4268,7 @@ def _allocate_scene_durations(
             if (_scene_occurrence_id(scene) or "__unassigned__") == occurrence_id
         ]
         scene_weights = [
-            _scene_importance_weight(scene)
-            for _, scene in occurrence_scene_entries
+            _scene_importance_weight(scene) for _, scene in occurrence_scene_entries
         ]
         scene_bounds = [
             _scene_duration_bounds(scene, strategy_episode, avg_sec)
@@ -3982,8 +4287,7 @@ def _allocate_scene_durations(
             raw_scene_seconds_by_index[idx] = seconds
 
     raw_scene_seconds = [
-        raw_scene_seconds_by_index[idx]
-        for idx in range(len(scene_cards))
+        raw_scene_seconds_by_index[idx] for idx in range(len(scene_cards))
     ]
 
     rounded_scene_seconds = _round_allocations_to_total(
@@ -4009,8 +4313,7 @@ def _allocate_scene_durations(
 def _writing_result_word_count(result: Any) -> int:
     prose_sections = getattr(result, "prose_sections", []) or []
     return sum(
-        len((getattr(section, "text", "") or "").split())
-        for section in prose_sections
+        len((getattr(section, "text", "") or "").split()) for section in prose_sections
     )
 
 
@@ -4038,7 +4341,12 @@ def _normalize_writing_section_outputs(
     returned_sections = [
         (
             str(getattr(section_output, "section_id", "") or ""),
-            [str(scene_id) for scene_id in list(getattr(section_output, "scene_card_ids", []) or [])],
+            [
+                str(scene_id)
+                for scene_id in list(
+                    getattr(section_output, "scene_card_ids", []) or []
+                )
+            ],
         )
         for section_output in prose_sections
     ]
@@ -4061,11 +4369,15 @@ def _normalize_writing_section_outputs(
             "section_id": section_id,
             "scene_card_ids": [
                 str(scene_id)
-                for scene_id in list(getattr(section_output, "scene_card_ids", []) or [])
+                for scene_id in list(
+                    getattr(section_output, "scene_card_ids", []) or []
+                )
             ],
             "movement_goal": str(section_output.movement_goal),
             "text": str(section_output.text),
-            "source_book_ids": list(getattr(section_output, "source_book_ids", []) or []),
+            "source_book_ids": list(
+                getattr(section_output, "source_book_ids", []) or []
+            ),
         }
         if skip_grounding:
             payload["citations"] = []
@@ -4099,7 +4411,9 @@ def _build_writing_retry_feedback(exc: ComplianceViolationError) -> str:
     return "\n".join(feedback_lines)
 
 
-_ENDING_MARKER_RE = re.compile(r"\b(?:in the end|ultimately|finally|the verdict)\b", re.IGNORECASE)
+_ENDING_MARKER_RE = re.compile(
+    r"\b(?:in the end|ultimately|finally|the verdict)\b", re.IGNORECASE
+)
 _QUESTION_SENTENCE_RE = re.compile(r"[^?]+\?")
 
 
@@ -4140,8 +4454,12 @@ def _build_spine_script_diagnostics(
         sentence.strip().lower() != driving_problem
         for sentence in question_sentences[1:]
     )
-    last_section_scene_ids = script.prose_sections[-1].scene_card_ids if script.prose_sections else []
-    ending_alignment_pass = bool(last_section_scene_ids and last_section_scene_ids[-1] == expected_scene_ids[-1])
+    last_section_scene_ids = (
+        script.prose_sections[-1].scene_card_ids if script.prose_sections else []
+    )
+    ending_alignment_pass = bool(
+        last_section_scene_ids and last_section_scene_ids[-1] == expected_scene_ids[-1]
+    )
     second_ending_detected = len(ending_marker_sections) > 1
     return {
         "scene_order_preserved": scene_order_preserved,
@@ -4160,7 +4478,10 @@ def _build_spine_script_diagnostics(
                 ("new_load_bearing_question", new_load_bearing_question_detected),
                 ("second_ending", second_ending_detected),
                 ("ending_displacement", not ending_alignment_pass),
-                ("multi_proposition_episode", new_load_bearing_question_detected and second_ending_detected),
+                (
+                    "multi_proposition_episode",
+                    new_load_bearing_question_detected and second_ending_detected,
+                ),
             ]
             if enabled
         ],
@@ -4223,7 +4544,9 @@ def _primitive_passage_ids(primitive: SynthesisPrimitiveBase) -> list[str]:
     return ordered
 
 
-def _iter_primitive_passage_refs(primitive: SynthesisPrimitiveBase) -> list[tuple[str, str]]:
+def _iter_primitive_passage_refs(
+    primitive: SynthesisPrimitiveBase,
+) -> list[tuple[str, str]]:
     seen: set[str] = set()
     ordered: list[tuple[str, str]] = []
     for passage_kind, passage_ids in (
@@ -4284,11 +4607,15 @@ def _build_episode_planning_passage_query_texts(
         primitive = primitive_lookup.get(primitive_id)
         if primitive is None:
             continue
-        seen_primitive_ids = seen_primitive_ids_by_passage_id.setdefault(passage_id, set())
+        seen_primitive_ids = seen_primitive_ids_by_passage_id.setdefault(
+            passage_id, set()
+        )
         if primitive_id in seen_primitive_ids:
             continue
         seen_primitive_ids.add(primitive_id)
-        query_parts = query_parts_by_passage_id.setdefault(passage_id, [episode_query_text])
+        query_parts = query_parts_by_passage_id.setdefault(
+            passage_id, [episode_query_text]
+        )
         query_parts.append(primitive.title)
         query_parts.append(primitive.summary)
         if primitive.timeframe:
@@ -4296,7 +4623,9 @@ def _build_episode_planning_passage_query_texts(
         if primitive.geography:
             query_parts.append(primitive.geography)
     return {
-        passage_id: " ".join(part.strip() for part in parts if part and part.strip()).strip()
+        passage_id: " ".join(
+            part.strip() for part in parts if part and part.strip()
+        ).strip()
         for passage_id, parts in query_parts_by_passage_id.items()
     }
 
@@ -4394,7 +4723,9 @@ def _validate_architecture_transition(
             f"{architecture.episode_number}: {_preview_ids(missing_must_stage_beat_ids)}"
         )
 
-    last_section_purpose = getattr(architecture.sections[-1].purpose, "value", architecture.sections[-1].purpose)
+    last_section_purpose = getattr(
+        architecture.sections[-1].purpose, "value", architecture.sections[-1].purpose
+    )
     if last_section_purpose != "closing":
         raise RuntimeError(
             "Episode architecture must end with a closing section for episode "
@@ -4431,13 +4762,23 @@ def _build_episode_architecture_realization(
     *,
     strategy_episode: StrategyEpisode,
     architecture: EpisodeArchitecture,
+    pipeline_config: PipelineConfig,
+    narrator_profile: SeriesNarratorProfile | None = None,
+    primitive_lookup: dict[str, SynthesisPrimitiveBase] | None = None,
+    series_explanation_registry: list[SeriesExplanationItem] | None = None,
 ) -> dict[str, Any]:
     section_count = len(architecture.sections)
     section_primitive_ids = _ordered_architecture_primitive_ids(architecture)
     section_primitive_id_set = set(section_primitive_ids)
-    selected_core_primitive_ids = list(strategy_episode.episode_spine.core_primitive_ids)
-    selected_support_primitive_ids = list(strategy_episode.episode_spine.support_primitive_roles.keys())
-    selected_recall_primitive_ids = list(strategy_episode.episode_spine.recall_primitive_ids)
+    selected_core_primitive_ids = list(
+        strategy_episode.episode_spine.core_primitive_ids
+    )
+    selected_support_primitive_ids = list(
+        strategy_episode.episode_spine.support_primitive_roles.keys()
+    )
+    selected_recall_primitive_ids = list(
+        strategy_episode.episode_spine.recall_primitive_ids
+    )
     missing_core_primitive_ids = [
         primitive_id
         for primitive_id in selected_core_primitive_ids
@@ -4457,8 +4798,8 @@ def _build_episode_architecture_realization(
     warnings.extend(
         _build_architecture_section_count_warnings(
             section_count=section_count,
-            section_target_min=7,
-            section_target_max=10,
+            section_target_min=pipeline_config.architecture_section_target_min,
+            section_target_max=pipeline_config.architecture_section_target_max,
         )
     )
     if missing_support_primitive_ids:
@@ -4471,6 +4812,147 @@ def _build_episode_architecture_realization(
             "architecture_missing_recall_primitives: "
             f"{_preview_ids(missing_recall_primitive_ids)}"
         )
+    target_authorial_passages = (
+        narrator_profile.target_authorial_passages_per_episode
+        if narrator_profile is not None
+        else None
+    )
+    authorial_passage_count = sum(
+        len(section.authorial_passages) for section in architecture.sections
+    )
+    if (
+        target_authorial_passages is not None
+        and authorial_passage_count < target_authorial_passages
+    ):
+        warnings.append(
+            "authored_passage_budget_below_target: "
+            f"{authorial_passage_count}/{target_authorial_passages}"
+        )
+
+    registry_by_id = {
+        item.item_id: item for item in (series_explanation_registry or [])
+    }
+    missing_payoff_item_ids: list[str] = []
+    for item_id in strategy_episode.authorial_contract.introduce_explanation_item_ids:
+        registry_item = registry_by_id.get(item_id)
+        if registry_item is None or registry_item.importance != "foundational":
+            continue
+        stages = {
+            plan.stage
+            for section in architecture.sections
+            for plan in section.term_explanations
+            if plan.item_id == item_id
+        }
+        if "define" in stages and "payoff" not in stages:
+            missing_payoff_item_ids.append(item_id)
+    if missing_payoff_item_ids:
+        warnings.append(
+            f"foundational_item_missing_payoff: {_preview_ids(missing_payoff_item_ids)}"
+        )
+
+    reminder_redefined_item_ids = [
+        item_id
+        for item_id in strategy_episode.authorial_contract.remind_explanation_item_ids
+        if any(
+            plan.item_id == item_id and plan.stage == "define"
+            for section in architecture.sections
+            for plan in section.term_explanations
+        )
+    ]
+    if reminder_redefined_item_ids:
+        warnings.append(
+            f"reminder_item_redefined: {_preview_ids(reminder_redefined_item_ids)}"
+        )
+
+    host_presence_counts: dict[str, int] = {}
+    host_presence_counts_by_section: dict[str, int] = {}
+    for section in architecture.sections:
+        host_presence_counts_by_section[section.section_id] = len(
+            section.host_presence_beats
+        )
+        for beat in section.host_presence_beats:
+            host_presence_counts[beat.kind] = host_presence_counts.get(beat.kind, 0) + 1
+    underdense_host_presence_sections = [
+        section_id
+        for section_id, count in host_presence_counts_by_section.items()
+        if count < 3
+    ]
+    overdense_host_presence_sections = [
+        section_id
+        for section_id, count in host_presence_counts_by_section.items()
+        if count > 6
+    ]
+    if underdense_host_presence_sections:
+        warnings.append(
+            "host_presence_density_below_target: "
+            f"{_preview_ids(underdense_host_presence_sections)}"
+        )
+    if overdense_host_presence_sections:
+        warnings.append(
+            "host_presence_density_above_target: "
+            f"{_preview_ids(overdense_host_presence_sections)}"
+        )
+    callback_orientation_count = host_presence_counts.get(
+        "callback", 0
+    ) + host_presence_counts.get("orientation", 0)
+    active_host_presence_count = sum(host_presence_counts.values())
+    if active_host_presence_count and callback_orientation_count >= max(
+        2, active_host_presence_count - 1
+    ):
+        warnings.append(
+            "host_presence_skewed_to_orientation_callback: "
+            f"orientation={host_presence_counts.get('orientation', 0)} "
+            f"callback={host_presence_counts.get('callback', 0)} "
+            f"clarify={host_presence_counts.get('clarify', 0)} "
+            f"contrast={host_presence_counts.get('contrast', 0)} "
+            f"evaluate={host_presence_counts.get('evaluate', 0)}"
+        )
+
+    human_grounding_families = {
+        "human_costs",
+        "character_engines",
+        "perspective_windows",
+        "set_piece_scenes",
+    }
+    if primitive_lookup:
+        sectioned_families = {
+            primitive_lookup[primitive_id].family
+            for primitive_id in section_primitive_id_set
+            if primitive_id in primitive_lookup
+        }
+        if not sectioned_families.intersection(human_grounding_families):
+            warnings.append(
+                "missing_human_grounding_support_family: "
+                "episode sections omit human-cost, character, perspective, or set-piece grounding."
+            )
+
+    overloaded_section_ids = [
+        section.section_id
+        for section in architecture.sections
+        if (
+            (
+                any(
+                    plan.stage in {"define", "payoff"}
+                    for plan in section.term_explanations
+                )
+                and section.approx_runtime_minutes >= 8.0
+            )
+            or (
+                len(section.key_terms) >= 4
+                and len(section.authorial_passages) <= 1
+                and len(section.term_explanations) >= 2
+            )
+            or (
+                len(section.primitive_ids) >= 4
+                and len(section.authorial_passages) <= 1
+                and section.analysis_goal
+            )
+        )
+    ]
+    if overloaded_section_ids:
+        warnings.append(
+            f"explanation_section_overloaded: {_preview_ids(overloaded_section_ids)}"
+        )
     return {
         "episode_number": architecture.episode_number,
         "selected_core_primitive_ids": selected_core_primitive_ids,
@@ -4480,6 +4962,10 @@ def _build_episode_architecture_realization(
         "missing_core_primitive_ids": missing_core_primitive_ids,
         "missing_support_primitive_ids": missing_support_primitive_ids,
         "missing_recall_primitive_ids": missing_recall_primitive_ids,
+        "target_authorial_passages_per_episode": target_authorial_passages,
+        "authorial_passage_count": authorial_passage_count,
+        "host_presence_counts": host_presence_counts,
+        "host_presence_counts_by_section": host_presence_counts_by_section,
         "warning_count": len(warnings),
         "warnings": warnings,
     }
@@ -4517,10 +5003,11 @@ def _validate_plan_transition(
         )
 
     section_order = {
-        section.section_id: idx
-        for idx, section in enumerate(architecture.sections)
+        section.section_id: idx for idx, section in enumerate(architecture.sections)
     }
-    scene_counts_by_section = {section.section_id: 0 for section in architecture.sections}
+    scene_counts_by_section = {
+        section.section_id: 0 for section in architecture.sections
+    }
     highest_section_index = -1
     invalid_section_ids: list[str] = []
     multi_turn_sections: list[str] = []
@@ -4589,7 +5076,9 @@ def _validate_plan_transition(
     return plan
 
 
-def _flatten_synthesis_primitives(synthesis_map: SynthesisMap) -> dict[str, SynthesisPrimitiveBase]:
+def _flatten_synthesis_primitives(
+    synthesis_map: SynthesisMap,
+) -> dict[str, SynthesisPrimitiveBase]:
     flattened: dict[str, SynthesisPrimitiveBase] = {}
     for family in SYNTHESIS_PRIMITIVE_FAMILIES:
         for item in synthesis_map.primitives_by_family.get(family, []):
@@ -4653,7 +5142,9 @@ def _build_episode_architecture_core_passages(
     passage_lookup: dict[str, ExtractedPassage],
 ) -> list[dict[str, Any]]:
     query_text = " ".join(
-        part.strip() for part in (driving_question, thematic_focus) if part and part.strip()
+        part.strip()
+        for part in (driving_question, thematic_focus)
+        if part and part.strip()
     )
     payload: list[dict[str, Any]] = []
     seen_passage_ids: set[str] = set()
@@ -4725,14 +5216,16 @@ def _actor_linkage_counts(
     scenes = [scene for plan in episode_plans for scene in plan.scene_cards]
     return {
         "primitive_count": len(primitives),
-        "actor_linked_primitive_count": sum(1 for primitive in primitives if primitive.actor_ids),
+        "actor_linked_primitive_count": sum(
+            1 for primitive in primitives if primitive.actor_ids
+        ),
         "episode_count": len(strategy.episodes),
-        "actor_linked_episode_count": sum(1 for episode in strategy.episodes if episode.actor_arc_directives),
+        "actor_linked_episode_count": sum(
+            1 for episode in strategy.episodes if episode.actor_arc_directives
+        ),
         "scene_count": len(scenes),
         "actor_linked_scene_count": sum(
-            1
-            for scene in scenes
-            if any(actor.actor_id for actor in scene.actors)
+            1 for scene in scenes if any(actor.actor_id for actor in scene.actors)
         ),
     }
 
@@ -4820,13 +5313,13 @@ def _build_structural_card_concreteness_warnings(
     missing_observable_detail = [
         scene.scene_id
         for scene in scene_cards
-        if _is_structural_scene_card(scene) and not (scene.observable_detail or "").strip()
+        if _is_structural_scene_card(scene)
+        and not (scene.observable_detail or "").strip()
     ]
     warnings: list[str] = []
     if missing_entry_image:
         warnings.append(
-            "structural_card_missing_entry_image: "
-            f"{_preview_ids(missing_entry_image)}"
+            f"structural_card_missing_entry_image: {_preview_ids(missing_entry_image)}"
         )
     if missing_observable_detail:
         warnings.append(
@@ -4848,12 +5341,8 @@ def _build_human_grounding_warnings(
     ]
     structural_scene_count = len(structural_scene_ids)
     scene_card_count = len(scene_cards)
-    structural_scene_ratio = (
-        structural_scene_count / max(1, scene_card_count)
-    )
-    structurally_heavy = (
-        structural_scene_count >= 6 or structural_scene_ratio >= 0.30
-    )
+    structural_scene_ratio = structural_scene_count / max(1, scene_card_count)
+    structurally_heavy = structural_scene_count >= 6 or structural_scene_ratio >= 0.30
     warnings: list[str] = []
     if structurally_heavy and not grounding_scene_ids:
         warnings.append(
@@ -4880,7 +5369,9 @@ _SYSTEM_CONTEXT_PRIMITIVE_FAMILIES = frozenset(
         "coalitions_and_fault_lines",
     }
 )
-_RECURRENCE_PRIMITIVE_FAMILIES = frozenset({"afterlives", "recurring_images_and_symbols"})
+_RECURRENCE_PRIMITIVE_FAMILIES = frozenset(
+    {"afterlives", "recurring_images_and_symbols"}
+)
 
 
 def _build_scene_card_family_warnings(
@@ -4920,10 +5411,12 @@ def _build_scene_card_family_warnings(
             "coalitions_and_fault_lines"
         )
 
-    support_primitive_count = len(strategy_episode.episode_spine.support_primitive_roles) + len(
-        strategy_episode.episode_spine.recall_primitive_ids
-    )
-    if support_primitive_count >= 1 and families_present.isdisjoint(_RECURRENCE_PRIMITIVE_FAMILIES):
+    support_primitive_count = len(
+        strategy_episode.episode_spine.support_primitive_roles
+    ) + len(strategy_episode.episode_spine.recall_primitive_ids)
+    if support_primitive_count >= 1 and families_present.isdisjoint(
+        _RECURRENCE_PRIMITIVE_FAMILIES
+    ):
         warnings.append(
             "primitive_family_missing_recurrence: "
             "support-heavy episode primitive pool lacks afterlives/"
@@ -4952,33 +5445,38 @@ def _build_scene_card_primitive_warnings(
             f"{len(overloaded_cards)} scenes exceed lean fact density "
             f"({_preview_ids(overloaded_cards)})"
         )
-    host_move_scene_ids = [scene.scene_id for scene in scene_cards if scene.host_move.move_type != "none"]
+    host_move_scene_ids = [
+        scene.scene_id for scene in scene_cards if _scene_host_phase_bucket_count(scene)
+    ]
     if not host_move_scene_ids:
         warnings.append(
-            "host_voice_absent: no scene cards carry a planned host move"
-        )
-    consecutive_host_moves = 0
-    max_consecutive_host_moves = 0
-    for scene in scene_cards:
-        if scene.host_move.move_type == "none":
-            consecutive_host_moves = 0
-            continue
-        consecutive_host_moves += 1
-        max_consecutive_host_moves = max(max_consecutive_host_moves, consecutive_host_moves)
-    if max_consecutive_host_moves > 2:
-        warnings.append(
-            "host_voice_overused: more than two consecutive scenes carry host moves"
+            "host_voice_absent: no scene cards carry planned host phase shaping"
         )
     return warnings
 
 
 def _normalize_section_text_tokens(text: str) -> set[str]:
     normalized = re.sub(r"[^a-z0-9]+", " ", (text or "").lower())
-    return {
-        token
-        for token in normalized.split()
-        if len(token) >= 4
-    }
+    return {token for token in normalized.split() if len(token) >= 4}
+
+
+_HOST_CUE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\b(follow|notice|hold|remember)\b", re.IGNORECASE),
+    re.compile(r"\b(we|our|us|you|your)\b", re.IGNORECASE),
+    re.compile(r"\b(in plain english|what this means|in practice)\b", re.IGNORECASE),
+    re.compile(r"\b(the problem|the point|which meant|that left)\b", re.IGNORECASE),
+)
+
+
+def _count_host_cue_clusters(text: str) -> int:
+    sentences = re.split(r"(?<=[.!?])\s+", str(text or "").strip())
+    count = 0
+    for sentence in sentences:
+        if not sentence:
+            continue
+        if any(pattern.search(sentence) for pattern in _HOST_CUE_PATTERNS):
+            count += 1
+    return count
 
 
 def _build_host_move_text_diagnostics(
@@ -4988,49 +5486,74 @@ def _build_host_move_text_diagnostics(
 ) -> dict[str, Any]:
     if plan is None:
         return {
-            "planned_host_move_count": 0,
-            "approx_realized_host_move_count": 0,
-            "approx_unrealized_scene_ids": [],
+            "planned_host_phase_count": 0,
+            "approx_realized_host_phase_count": 0,
+            "approx_unrealized_phase_ids": [],
             "sections_with_first_person_plural": [],
-            "scene_trace": [],
+            "section_host_cue_counts": {},
+            "sections_with_host_phase_collapse": [],
+            "phase_trace": [],
         }
 
-    scene_trace: list[dict[str, Any]] = []
-    approx_realized_scene_ids: list[str] = []
-    approx_unrealized_scene_ids: list[str] = []
+    phase_trace: list[dict[str, Any]] = []
+    approx_realized_phase_ids: list[str] = []
+    approx_unrealized_phase_ids: list[str] = []
     sections_with_first_person_plural: set[str] = set()
+    phase_counts_by_section: dict[str, int] = {}
     for scene in plan.scene_cards:
-        if scene.host_move.move_type == "none":
-            continue
         section_text = text_by_section_id.get(scene.section_id, "")
         if re.search(r"\b(we|our|us)\b", section_text.lower()):
             sections_with_first_person_plural.add(scene.section_id)
-        note_tokens = _normalize_section_text_tokens(scene.host_move.note)
         section_tokens = _normalize_section_text_tokens(section_text)
-        approx_realized = not note_tokens or bool(note_tokens & section_tokens)
-        if approx_realized:
-            approx_realized_scene_ids.append(scene.scene_id)
-        else:
-            approx_unrealized_scene_ids.append(scene.scene_id)
-        scene_trace.append(
-            {
-                "scene_id": scene.scene_id,
-                "section_id": scene.section_id,
-                "move_type": scene.host_move.move_type,
-                "placement": scene.host_move.placement,
-                "max_sentences": scene.host_move.max_sentences,
-                "approx_realized": approx_realized,
-                "first_person_plural_present": scene.section_id in sections_with_first_person_plural,
-            }
-        )
+        for phase in _HOST_MOVE_PHASE_ORDER:
+            phase_cues = getattr(scene.host_moves, phase)
+            if not phase_cues:
+                continue
+            phase_counts_by_section[scene.section_id] = (
+                phase_counts_by_section.get(scene.section_id, 0) + 1
+            )
+            phase_note = " ".join(cue.note for cue in phase_cues if cue.note)
+            note_tokens = _normalize_section_text_tokens(phase_note)
+            approx_realized = not note_tokens or bool(note_tokens & section_tokens)
+            phase_id = f"{scene.scene_id}:{phase}"
+            if approx_realized:
+                approx_realized_phase_ids.append(phase_id)
+            else:
+                approx_unrealized_phase_ids.append(phase_id)
+            phase_trace.append(
+                {
+                    "scene_id": scene.scene_id,
+                    "section_id": scene.section_id,
+                    "phase": phase,
+                    "cue_count": len(phase_cues),
+                    "move_types": [cue.move_type for cue in phase_cues],
+                    "host_note": phase_note,
+                    "address_modes": [cue.address_mode for cue in phase_cues],
+                    "approx_realized": approx_realized,
+                    "first_person_plural_present": scene.section_id
+                    in sections_with_first_person_plural,
+                }
+            )
+
+    section_host_cue_counts = {
+        section_id: _count_host_cue_clusters(text)
+        for section_id, text in text_by_section_id.items()
+    }
+    sections_with_host_phase_collapse = sorted(
+        section_id
+        for section_id, count in phase_counts_by_section.items()
+        if count >= 4 and section_host_cue_counts.get(section_id, 0) <= 2
+    )
 
     return {
-        "planned_host_move_count": len(scene_trace),
-        "approx_realized_host_move_count": len(approx_realized_scene_ids),
-        "approx_realized_scene_ids": approx_realized_scene_ids,
-        "approx_unrealized_scene_ids": approx_unrealized_scene_ids,
+        "planned_host_phase_count": len(phase_trace),
+        "approx_realized_host_phase_count": len(approx_realized_phase_ids),
+        "approx_realized_phase_ids": approx_realized_phase_ids,
+        "approx_unrealized_phase_ids": approx_unrealized_phase_ids,
         "sections_with_first_person_plural": sorted(sections_with_first_person_plural),
-        "scene_trace": scene_trace,
+        "section_host_cue_counts": section_host_cue_counts,
+        "sections_with_host_phase_collapse": sections_with_host_phase_collapse,
+        "phase_trace": phase_trace,
     }
 
 
@@ -5100,9 +5623,7 @@ def _build_section_plan_realization(
             section.section_turn,
             scene_realization_texts,
         ):
-            section_warnings.append(
-                f"section_turn_not_realized: {section.section_id}"
-            )
+            section_warnings.append(f"section_turn_not_realized: {section.section_id}")
         unused_priority_core_passage_ids = [
             passage_id
             for passage_id in section.priority_core_passage_ids
@@ -5173,31 +5694,27 @@ def _build_spine_plan_diagnostics(
         if _scene_counts_toward_spine(scene, strategy_episode)
     ]
     scene_share = (
-        len(spine_scene_cards) / total_scene_count
-        if total_scene_count
-        else 0.0
+        len(spine_scene_cards) / total_scene_count if total_scene_count else 0.0
     )
 
-    total_word_weight = sum(max(1, len(scene.beat_change.split())) for scene in scene_cards)
+    total_word_weight = sum(
+        max(1, len(scene.beat_change.split())) for scene in scene_cards
+    )
     spine_word_weight = sum(
-        max(1, len(scene.beat_change.split()))
-        for scene in spine_scene_cards
+        max(1, len(scene.beat_change.split())) for scene in spine_scene_cards
     )
-    word_share = (
-        spine_word_weight / total_word_weight
-        if total_word_weight
-        else 0.0
-    )
+    word_share = spine_word_weight / total_word_weight if total_word_weight else 0.0
 
     support_scene_count = total_scene_count - len(spine_scene_cards)
     last_scene = scene_cards[-1] if scene_cards else None
     ending_alignment_pass = bool(
-        last_scene
-        and _scene_counts_toward_spine(last_scene, strategy_episode)
+        last_scene and _scene_counts_toward_spine(last_scene, strategy_episode)
     )
     dropped_support_primitive_reasons = dict(plan.dropped_support_primitive_reasons)
     dropped_support_primitive_ids = list(dropped_support_primitive_reasons)
-    support_takeover_detected = support_scene_count > max(1, int(math.floor(total_scene_count * 0.35)))
+    support_takeover_detected = support_scene_count > max(
+        1, int(math.floor(total_scene_count * 0.35))
+    )
     secondary_chain_detected = support_scene_count >= max(2, len(spine_scene_cards))
     diagnostics = {
         "core_scene_share": round(scene_share, 4),
@@ -5208,7 +5725,9 @@ def _build_spine_plan_diagnostics(
         "recall_takeover_detected": False,
         "new_load_bearing_question_detected": False,
         "second_ending_detected": False,
-        "host_move_count": sum(1 for scene in scene_cards if scene.host_move.move_type != "none"),
+        "host_phase_count": sum(
+            _scene_host_phase_bucket_count(scene) for scene in scene_cards
+        ),
         "spine_drift_detected": (
             scene_share < 0.60
             or word_share < 0.60
@@ -5222,8 +5741,12 @@ def _build_spine_plan_diagnostics(
             {
                 "scene_id": scene.scene_id,
                 "beat_change": scene.beat_change,
-                "host_move_type": scene.host_move.move_type,
-                "host_move_placement": scene.host_move.placement,
+                "host_phase_bucket_count": _scene_host_phase_bucket_count(scene),
+                "host_move_types_by_phase": {
+                    phase: [cue.move_type for cue in getattr(scene.host_moves, phase)]
+                    for phase in _HOST_MOVE_PHASE_ORDER
+                    if getattr(scene.host_moves, phase)
+                },
                 "counts_toward_spine_dominance": _scene_counts_toward_spine(
                     scene,
                     strategy_episode,
@@ -5279,24 +5802,50 @@ class PipelineOrchestrator:
         def _retries(name: str) -> int:
             return self.settings.llm.resolve_max_retry_attempts(name)
 
-        self.chapter_summary_agent = ChapterSummaryAgent(self.llm, max_retry_attempts=_retries("chapter_summary"))
-        self.book_summary_agent = BookSummaryAgent(self.llm, max_retry_attempts=_retries("book_summary"))
-        self.theme_decomposition_agent = ThemeDecompositionAgent(self.llm, max_retry_attempts=_retries("theme_decomposition"))
-        self.passage_extraction_agent = PassageExtractionAgent(self.llm, max_retry_attempts=_retries("passage_extraction"))
-        self.synthesis_primitives_agent = SynthesisPrimitivesAgent(self.llm, max_retry_attempts=_retries("synthesis_primitives"))
-        self.narrative_strategy_agent = NarrativeStrategyAgent(self.llm, max_retry_attempts=_retries("narrative_strategy"))
-        self.primitive_enrichment_agent = PrimitiveEnrichmentAgent(self.llm, max_retry_attempts=_retries("primitive_enrichment"))
-        self.episode_architecture_agent = EpisodeArchitectureAgent(self.llm, max_retry_attempts=_retries("episode_architecture"))
-        self.episode_planning_agent = EpisodePlanningAgent(self.llm, max_retry_attempts=_retries("episode_planning"))
-        self.writing_agent = WritingAgent(self.llm, max_retry_attempts=_retries("episode_writing"))
+        self.chapter_summary_agent = ChapterSummaryAgent(
+            self.llm, max_retry_attempts=_retries("chapter_summary")
+        )
+        self.book_summary_agent = BookSummaryAgent(
+            self.llm, max_retry_attempts=_retries("book_summary")
+        )
+        self.theme_decomposition_agent = ThemeDecompositionAgent(
+            self.llm, max_retry_attempts=_retries("theme_decomposition")
+        )
+        self.passage_extraction_agent = PassageExtractionAgent(
+            self.llm, max_retry_attempts=_retries("passage_extraction")
+        )
+        self.synthesis_primitives_agent = SynthesisPrimitivesAgent(
+            self.llm, max_retry_attempts=_retries("synthesis_primitives")
+        )
+        self.narrative_strategy_agent = NarrativeStrategyAgent(
+            self.llm, max_retry_attempts=_retries("narrative_strategy")
+        )
+        self.primitive_enrichment_agent = PrimitiveEnrichmentAgent(
+            self.llm, max_retry_attempts=_retries("primitive_enrichment")
+        )
+        self.episode_architecture_agent = EpisodeArchitectureAgent(
+            self.llm, max_retry_attempts=_retries("episode_architecture")
+        )
+        self.episode_planning_agent = EpisodePlanningAgent(
+            self.llm, max_retry_attempts=_retries("episode_planning")
+        )
+        self.writing_agent = WritingAgent(
+            self.llm, max_retry_attempts=_retries("episode_writing")
+        )
         self.writing_agent_no_citations = WritingAgentNoCitations(
             self.llm,
             max_retry_attempts=_retries("episode_writing"),
         )
-        self.grounding_agent = GroundingValidationAgent(self.llm, max_retry_attempts=_retries("grounding_validation"))
+        self.grounding_agent = GroundingValidationAgent(
+            self.llm, max_retry_attempts=_retries("grounding_validation")
+        )
         self.repair_agent = RepairAgent(self.llm, max_retry_attempts=_retries("repair"))
-        self.style_audit_agent = StyleAuditAgent(self.llm, max_retry_attempts=_retries("style_audit"))
-        self.spoken_delivery_agent = SpokenDeliveryAgent(self.llm, max_retry_attempts=_retries("spoken_delivery"))
+        self.style_audit_agent = StyleAuditAgent(
+            self.llm, max_retry_attempts=_retries("style_audit")
+        )
+        self.spoken_delivery_agent = SpokenDeliveryAgent(
+            self.llm, max_retry_attempts=_retries("spoken_delivery")
+        )
 
     def _bind_run_logger(self, project_dir: Path) -> None:
         if self.run_logger.artifact_root != project_dir.parent:
@@ -5321,7 +5870,7 @@ class PipelineOrchestrator:
         authors: list[str] | None = None,
         project_id: str | None = None,
     ) -> ThematicProject:
-        pipeline_config = config or PipelineConfig()
+        pipeline_config = resolve_pipeline_config_for_mode(config or PipelineConfig())
         project_id = project_id or uuid4().hex
         project_dir = self.settings.pipeline.artifact_root / project_id
 
@@ -5336,6 +5885,7 @@ class PipelineOrchestrator:
             episode_count=episode_count,
             requested_episode_count=episode_count,
             book_count=len(source_paths),
+            podcast_mode=pipeline_config.podcast_mode.value,
             skip_grounding=pipeline_config.skip_grounding,
             skip_spoken_delivery=pipeline_config.skip_spoken_delivery,
             database_configured=database_configured,
@@ -5396,10 +5946,12 @@ class PipelineOrchestrator:
                 f"Only {len(successful_books)} books ingested successfully. Minimum 2 required."
             )
 
-        project = project.model_copy(update={
-            "books": successful_books,
-            "status": ProjectStatus.ANALYZING,
-        })
+        project = project.model_copy(
+            update={
+                "books": successful_books,
+                "status": ProjectStatus.ANALYZING,
+            }
+        )
         _save_json(project_dir / "thematic_project.json", project)
         self.run_logger.log(
             "convergence_barrier",
@@ -5410,18 +5962,29 @@ class PipelineOrchestrator:
         # Phase 2: Thematic Intelligence (sequential)
         logger.info("Phase 2: Thematic Intelligence")
 
-        axes, actor_metadata, actor_metrics = await self._decompose_theme(project, project_dir)
+        axes, actor_metadata, actor_metrics = await self._decompose_theme(
+            project, project_dir
+        )
         corpus = await self._extract_passages(project, axes, project_dir)
         synthesis_primitives, synthesis_actor_metrics = await self._map_synthesis(
-            project, corpus, project_dir, actor_metadata,
+            project,
+            corpus,
+            project_dir,
+            actor_metadata,
         )
-        actor_metrics["synthesis_primitives"] = synthesis_actor_metrics.get("primitives", {})
+        actor_metrics["synthesis_primitives"] = synthesis_actor_metrics.get(
+            "primitives", {}
+        )
 
-        if synthesis_primitives.quality_score < pipeline_config.synthesis_quality_threshold:
+        if (
+            synthesis_primitives.quality_score
+            < pipeline_config.synthesis_quality_threshold
+        ):
             logger.warning(
                 "Synthesis quality %.2f below threshold %.2f. "
                 "Books may lack thematic overlap for strong synthesis.",
-                synthesis_primitives.quality_score, pipeline_config.synthesis_quality_threshold,
+                synthesis_primitives.quality_score,
+                pipeline_config.synthesis_quality_threshold,
             )
             self.run_logger.log(
                 "synthesis_quality_warning",
@@ -5430,7 +5993,10 @@ class PipelineOrchestrator:
             )
 
         strategy, strategy_actor_metrics = await self._choose_narrative_strategy(
-            project, synthesis_primitives, project_dir, actor_metadata,
+            project,
+            synthesis_primitives,
+            project_dir,
+            actor_metadata,
         )
         actor_metrics["narrative_strategy"] = strategy_actor_metrics
         synthesis_map = await self._enrich_selected_primitives(
@@ -5440,12 +6006,26 @@ class PipelineOrchestrator:
         _save_json(project_dir / "thematic_project.json", project)
 
         project = project.model_copy(update={"status": ProjectStatus.PLANNING})
-        episode_architectures, architecture_actor_metrics = await self._build_episode_architectures(
-            project, synthesis_map, strategy, corpus, project_dir, actor_metadata,
+        (
+            episode_architectures,
+            architecture_actor_metrics,
+        ) = await self._build_episode_architectures(
+            project,
+            synthesis_map,
+            strategy,
+            corpus,
+            project_dir,
+            actor_metadata,
         )
         actor_metrics["episode_architecture"] = architecture_actor_metrics
         episode_plans, planning_actor_metrics = await self._plan_series(
-            project, synthesis_map, strategy, episode_architectures, corpus, project_dir, actor_metadata,
+            project,
+            synthesis_map,
+            strategy,
+            episode_architectures,
+            corpus,
+            project_dir,
+            actor_metadata,
         )
         actor_metrics["episode_planning"] = planning_actor_metrics
 
@@ -5463,12 +6043,10 @@ class PipelineOrchestrator:
         )
         host_policy = _build_host_policy_payload(strategy.narrator_profile)
         strategy_episode_by_number = {
-            episode.episode_number: episode
-            for episode in strategy.episodes
+            episode.episode_number: episode for episode in strategy.episodes
         }
         architecture_by_number = {
-            episode.episode_number: episode
-            for episode in episode_architectures
+            episode.episode_number: episode for episode in episode_architectures
         }
         ep_tasks = [
             self._produce_episode(
@@ -5482,6 +6060,7 @@ class PipelineOrchestrator:
                 host_policy,
                 sem,
                 spoken_sem,
+                strategy.series_explanation_registry,
             )
             for plan in episode_plans
         ]
@@ -5501,7 +6080,9 @@ class PipelineOrchestrator:
             project_dir=project_dir,
             episode_numbers=[episode_number for episode_number, _ in spoken_scripts],
         )
-        actor_metrics["writing"] = self._build_writing_actor_metrics(project_dir, spoken_scripts)
+        actor_metrics["writing"] = self._build_writing_actor_metrics(
+            project_dir, spoken_scripts
+        )
         self._write_actor_metadata_metrics(
             project_dir=project_dir,
             actor_metadata=actor_metadata,
@@ -5541,12 +6122,18 @@ class PipelineOrchestrator:
 
         episodes_dir = project_dir / "episodes"
         if not episodes_dir.exists() or not episodes_dir.is_dir():
-            raise RuntimeError(f"Run directory does not contain episodes/: {project_dir}")
+            raise RuntimeError(
+                f"Run directory does not contain episodes/: {project_dir}"
+            )
 
         self._bind_run_logger(project_dir)
 
         episode_dirs = sorted(
-            [path for path in episodes_dir.iterdir() if path.is_dir() and path.name.isdigit()],
+            [
+                path
+                for path in episodes_dir.iterdir()
+                if path.is_dir() and path.name.isdigit()
+            ],
             key=lambda path: int(path.name),
         )
         if not episode_dirs:
@@ -5563,13 +6150,18 @@ class PipelineOrchestrator:
                 skipped_episodes.append(episode_number)
 
         if not manifests:
-            raise RuntimeError(f"No render_manifest.json files found under {episodes_dir}")
+            raise RuntimeError(
+                f"No render_manifest.json files found under {episodes_dir}"
+            )
 
         self._ensure_ffmpeg_available()
         semaphore = asyncio.Semaphore(self.settings.pipeline.tts_concurrency)
         tasks = [
             self._render_existing_episode_audio(
-                episode_number, manifest_path, project_dir, semaphore,
+                episode_number,
+                manifest_path,
+                project_dir,
+                semaphore,
             )
             for episode_number, manifest_path in manifests
         ]
@@ -5578,7 +6170,9 @@ class PipelineOrchestrator:
         succeeded = 0
         failed = 0
         failures: list[str] = []
-        for episode_number, result in zip((ep for ep, _ in manifests), results, strict=True):
+        for episode_number, result in zip(
+            (ep for ep, _ in manifests), results, strict=True
+        ):
             if isinstance(result, Exception):
                 failed += 1
                 failures.append(f"episode {episode_number}: {result}")
@@ -5619,8 +6213,12 @@ class PipelineOrchestrator:
         book_dir = project_dir / "books" / book_id
 
         async with _stage_log(
-            self.run_logger, f"ingest_book_{book_id[:8]}", project_dir,
-            book_id=book_id, title=title, path=source_path,
+            self.run_logger,
+            f"ingest_book_{book_id[:8]}",
+            project_dir,
+            book_id=book_id,
+            title=title,
+            path=source_path,
         ) as ctx:
             # Stage 1: Read source
             raw_text = await asyncio.to_thread(read_source_text, path)
@@ -5630,8 +6228,11 @@ class PipelineOrchestrator:
                 source_type = "txt"
 
             book_record = BookRecord(
-                book_id=book_id, title=title, author=author,
-                source_path=source_path, source_type=source_type,
+                book_id=book_id,
+                title=title,
+                author=author,
+                source_path=source_path,
+                source_type=source_type,
                 total_words=total_words,
             )
 
@@ -5666,8 +6267,11 @@ class PipelineOrchestrator:
             await asyncio.to_thread(self.vector_store.index_chunks, chunks, project_id)
 
             ctx["output_summary"] = {
-                "book_id": book_id, "title": title,
-                "chapters": len(chapters), "chunks": len(chunks), "words": total_words,
+                "book_id": book_id,
+                "title": title,
+                "chapters": len(chapters),
+                "chunks": len(chunks),
+                "words": total_words,
             }
             return book_record
 
@@ -5682,8 +6286,11 @@ class PipelineOrchestrator:
         theme_elaboration: str | None = None,
     ) -> list[ChapterInfo]:
         async with _stage_log(
-            self.run_logger, f"structure_{book_record.book_id[:8]}", project_dir,
-            book_id=book_record.book_id, text_length=len(raw_text),
+            self.run_logger,
+            f"structure_{book_record.book_id[:8]}",
+            project_dir,
+            book_id=book_record.book_id,
+            text_length=len(raw_text),
         ) as ctx:
             chapters = extract_chapters_from_source(raw_text)
             summary_tasks = []
@@ -5699,18 +6306,25 @@ class PipelineOrchestrator:
                     chapter_title=chapter.title,
                     chapter_text=chapter_text,
                 )
-                summary_tasks.append(asyncio.to_thread(self.chapter_summary_agent.run, payload))
+                summary_tasks.append(
+                    asyncio.to_thread(self.chapter_summary_agent.run, payload)
+                )
 
             summaries = await asyncio.gather(*summary_tasks)
             updated: list[ChapterInfo] = []
             for chapter, summary in zip(chapters, summaries, strict=True):
-                updated.append(chapter.model_copy(update={
-                    "analysis": summary.analysis,
-                }))
+                updated.append(
+                    chapter.model_copy(
+                        update={
+                            "analysis": summary.analysis,
+                        }
+                    )
+                )
             chapters = updated
 
             ctx["output_summary"] = {
-                "chapter_count": len(chapters), "windows_processed": 0,
+                "chapter_count": len(chapters),
+                "windows_processed": 0,
             }
             return chapters
 
@@ -5719,38 +6333,49 @@ class PipelineOrchestrator:
     # -----------------------------------------------------------------------
 
     async def _decompose_theme(
-        self, project: ThematicProject, project_dir: Path,
+        self,
+        project: ThematicProject,
+        project_dir: Path,
     ) -> tuple[list[ThematicAxis], ActorMetadata, dict[str, Any]]:
         async with _stage_log(
-            self.run_logger, "theme_decomposition", project_dir,
-            theme=project.theme, sub_themes=project.sub_themes, book_count=len(project.books),
+            self.run_logger,
+            "theme_decomposition",
+            project_dir,
+            theme=project.theme,
+            sub_themes=project.sub_themes,
+            book_count=len(project.books),
         ) as ctx:
             summary_payloads: list[tuple[str, dict[str, Any]]] = []
             for book in project.books:
                 chapter_info = [
-                    _build_compact_chapter_projection(ch)
-                    for ch in book.chapters
+                    _build_compact_chapter_projection(ch) for ch in book.chapters
                 ]
-                summary_payloads.append((
-                    book.book_id,
-                    self.book_summary_agent.build_payload(
-                        theme=project.theme,
-                        sub_themes=project.sub_themes,
-                        theme_elaboration=project.theme_elaboration,
-                        book_id=book.book_id,
-                        title=book.title,
-                        author=book.author,
-                        chapters=chapter_info,
-                    ),
-                ))
+                summary_payloads.append(
+                    (
+                        book.book_id,
+                        self.book_summary_agent.build_payload(
+                            theme=project.theme,
+                            sub_themes=project.sub_themes,
+                            theme_elaboration=project.theme_elaboration,
+                            book_id=book.book_id,
+                            title=book.title,
+                            author=book.author,
+                            chapters=chapter_info,
+                        ),
+                    )
+                )
 
-            summary_results = await asyncio.gather(*[
-                asyncio.to_thread(self.book_summary_agent.run, payload)
-                for _, payload in summary_payloads
-            ])
+            summary_results = await asyncio.gather(
+                *[
+                    asyncio.to_thread(self.book_summary_agent.run, payload)
+                    for _, payload in summary_payloads
+                ]
+            )
             book_summaries = {
                 book_id: result.summary
-                for (book_id, _), result in zip(summary_payloads, summary_results, strict=True)
+                for (book_id, _), result in zip(
+                    summary_payloads, summary_results, strict=True
+                )
             }
 
             payload = self.theme_decomposition_agent.build_payload(
@@ -5758,6 +6383,8 @@ class PipelineOrchestrator:
                 sub_themes=project.sub_themes,
                 theme_elaboration=project.theme_elaboration,
                 books=project.books,
+                axis_count_min=project.config.min_axes,
+                axis_count_max=project.config.max_axes,
                 book_summaries=book_summaries,
             )
             expected_book_ids = [book.book_id for book in project.books]
@@ -5766,7 +6393,9 @@ class PipelineOrchestrator:
             actor_metadata = ActorMetadata(project_id=project.project_id)
             actor_metrics: dict[str, Any] = {}
             for attempt in range(1, max_attempts + 1):
-                result = await asyncio.to_thread(self.theme_decomposition_agent.run, payload)
+                result = await asyncio.to_thread(
+                    self.theme_decomposition_agent.run, payload
+                )
                 axes = result.axes
                 actor_metadata, actor_metrics = sanitize_actor_metadata_payload(
                     result.actor_metadata,
@@ -5777,15 +6406,18 @@ class PipelineOrchestrator:
                 for axis in axes:
                     provided_book_ids = set(axis.relevance_by_book.keys())
                     missing_book_ids = [
-                        book_id for book_id in expected_book_ids
+                        book_id
+                        for book_id in expected_book_ids
                         if book_id not in provided_book_ids
                     ]
                     if missing_book_ids:
-                        missing_by_axis.append({
-                            "axis_id": axis.axis_id,
-                            "axis_name": axis.name,
-                            "missing_book_ids": missing_book_ids,
-                        })
+                        missing_by_axis.append(
+                            {
+                                "axis_id": axis.axis_id,
+                                "axis_name": axis.name,
+                                "missing_book_ids": missing_book_ids,
+                            }
+                        )
 
                 if not missing_by_axis and actor_metadata.actors:
                     break
@@ -5821,13 +6453,16 @@ class PipelineOrchestrator:
                 )
 
             valid_axes = [
-                a for a in axes
+                a
+                for a in axes
                 if sum(1 for s in a.relevance_by_book.values() if s >= 0.3) >= 2
             ]
 
             if len(valid_axes) < project.config.min_axes:
                 valid_axis_ids = {axis.axis_id for axis in valid_axes}
-                fallback_axes = [axis for axis in axes if axis.axis_id not in valid_axis_ids]
+                fallback_axes = [
+                    axis for axis in axes if axis.axis_id not in valid_axis_ids
+                ]
                 padded_axes = valid_axes + fallback_axes
                 logger.warning(
                     "Only %d valid axes (min %d). Padding with %d fallback axes from %d total.",
@@ -5838,11 +6473,15 @@ class PipelineOrchestrator:
                 )
                 valid_axes = padded_axes
 
-            valid_axes = valid_axes[:project.config.max_axes]
-            valid_axes, axis_actor_metrics = clean_axis_actor_ids(valid_axes, actor_metadata)
+            valid_axes = valid_axes[: project.config.max_axes]
+            valid_axes, axis_actor_metrics = clean_axis_actor_ids(
+                valid_axes, actor_metadata
+            )
             actor_metrics.update(axis_actor_metrics)
-            _save_json(project_dir / "thematic_axes.json",
-                        {"axes": [a.model_dump(mode="json") for a in valid_axes]})
+            _save_json(
+                project_dir / "thematic_axes.json",
+                {"axes": [a.model_dump(mode="json") for a in valid_axes]},
+            )
             _save_json(project_dir / "actor_metadata.json", actor_metadata)
 
             ctx["output_summary"] = {
@@ -5856,11 +6495,17 @@ class PipelineOrchestrator:
             return valid_axes, actor_metadata, actor_metrics
 
     async def _extract_passages(
-        self, project: ThematicProject, axes: list[ThematicAxis], project_dir: Path,
+        self,
+        project: ThematicProject,
+        axes: list[ThematicAxis],
+        project_dir: Path,
     ) -> ThematicCorpus:
         async with _stage_log(
-            self.run_logger, "passage_extraction", project_dir,
-            axis_count=len(axes), book_count=len(project.books),
+            self.run_logger,
+            "passage_extraction",
+            project_dir,
+            axis_count=len(axes),
+            book_count=len(project.books),
         ) as ctx:
             if not self.vector_store.enabled:
                 self.run_logger.log(
@@ -5872,7 +6517,9 @@ class PipelineOrchestrator:
             book_by_id = {book.book_id: book for book in project.books}
             retrieval_depth_by_book = {
                 book_id: _compute_passage_retrieval_budget(
-                    chunk_count=book_by_id.get(book_id).chunk_count if book_by_id.get(book_id) else 0,
+                    chunk_count=book_by_id.get(book_id).chunk_count
+                    if book_by_id.get(book_id)
+                    else 0,
                     percentage=project.config.passage_retrieval_percentage,
                     min_per_book=project.config.passage_retrieval_min_per_book,
                     max_per_book=project.config.passage_retrieval_max_per_book,
@@ -5882,7 +6529,9 @@ class PipelineOrchestrator:
             book_size_share_by_book = _resolve_book_size_shares(
                 project.books,
             )
-            axis_candidate_budget_target = max(1, project.config.axis_candidate_target_total)
+            axis_candidate_budget_target = max(
+                1, project.config.axis_candidate_target_total
+            )
             pre_axis_weight_by_axis = _normalize_axis_importance_weights(
                 axes=axes,
                 power=project.config.pre_axis_relevance_power,
@@ -5897,7 +6546,13 @@ class PipelineOrchestrator:
             )
             max_log_per_book = max(
                 100,
-                max((info["per_book_budget"] for info in retrieval_depth_by_book.values()), default=0),
+                max(
+                    (
+                        info["per_book_budget"]
+                        for info in retrieval_depth_by_book.values()
+                    ),
+                    default=0,
+                ),
             )
             all_passages_by_axis: dict[str, list[ExtractedPassage]] = {}
             all_cross_pairs: list[PassagePair] = []
@@ -5951,7 +6606,9 @@ class PipelineOrchestrator:
                     id_counts: dict[str, int] = {}
                     for pid in result_ids:
                         id_counts[pid] = id_counts.get(pid, 0) + 1
-                    duplicate_ids = [pid for pid, count in id_counts.items() if count > 1]
+                    duplicate_ids = [
+                        pid for pid, count in id_counts.items() if count > 1
+                    ]
                     extra_ids = [pid for pid in id_counts if pid not in candidate_by_id]
                     unique_ids = [pid for pid in candidate_ids if pid in id_counts]
                     unique_count = len(unique_ids)
@@ -5990,7 +6647,10 @@ class PipelineOrchestrator:
 
                 scores_by_id = {}
                 for score in result.passages:
-                    if score.passage_id in candidate_by_id and score.passage_id not in scores_by_id:
+                    if (
+                        score.passage_id in candidate_by_id
+                        and score.passage_id not in scores_by_id
+                    ):
                         scores_by_id[score.passage_id] = score
                 trimmed_text_by_id = {
                     candidate["passage_id"]: candidate["text"]
@@ -6001,7 +6661,9 @@ class PipelineOrchestrator:
                     score = scores_by_id.get(candidate["passage_id"])
                     if score is None:
                         continue
-                    trimmed_text = trimmed_text_by_id.get(candidate["passage_id"], candidate["text"])
+                    trimmed_text = trimmed_text_by_id.get(
+                        candidate["passage_id"], candidate["text"]
+                    )
                     rehydrated_passages.append(
                         ExtractedPassage(
                             passage_id=score.passage_id,
@@ -6009,7 +6671,9 @@ class PipelineOrchestrator:
                             chunk_ids=candidate["chunk_ids"],
                             text=trimmed_text,
                             trimmed_text=trimmed_text,
-                            full_text=candidate_full_text_by_id.get(candidate["passage_id"], ""),
+                            full_text=candidate_full_text_by_id.get(
+                                candidate["passage_id"], ""
+                            ),
                             chapter_ref=candidate.get("chapter_ref", ""),
                             axis_id=candidate.get("axis_id", axis.axis_id),
                             secondary_axes=candidate.get("secondary_axes", []),
@@ -6026,7 +6690,9 @@ class PipelineOrchestrator:
                     and pair.relationship
                     not in {SynthesisTag.AGREES_WITH, SynthesisTag.EXTENDS}
                 ]
-                passage_book_by_id = {p.passage_id: p.book_id for p in rehydrated_passages}
+                passage_book_by_id = {
+                    p.passage_id: p.book_id for p in rehydrated_passages
+                }
                 validated_pairs: list[PassagePair] = []
                 dropped_missing_id_pairs: list[dict[str, str]] = []
                 dropped_same_book_pairs: list[dict[str, str]] = []
@@ -6095,7 +6761,14 @@ class PipelineOrchestrator:
                     "admitted_by_book": admitted_by_book,
                     "retained_count": len(retained_passages),
                 }
-                return axis.axis_id, retained_passages, retained_pairs, candidate_count, cross_pair_validation, axis_policy
+                return (
+                    axis.axis_id,
+                    retained_passages,
+                    retained_pairs,
+                    candidate_count,
+                    cross_pair_validation,
+                    axis_policy,
+                )
 
             def _process_axis(
                 axis: ThematicAxis,
@@ -6103,13 +6776,19 @@ class PipelineOrchestrator:
                 axis_priority_rank: int,
             ) -> DeferredAxisWork:
                 hits_by_book = self.retrieval.retrieve_for_axis(
-                    axis=axis, project_id=project.project_id,
+                    axis=axis,
+                    project_id=project.project_id,
                     book_ids=book_ids,
                     k_per_book=max_log_per_book,
                 )
 
                 axis_candidate_budget_effective = min(
-                    max(1, pre_axis_budget_by_axis.get(axis.axis_id, axis_candidate_budget_target)),
+                    max(
+                        1,
+                        pre_axis_budget_by_axis.get(
+                            axis.axis_id, axis_candidate_budget_target
+                        ),
+                    ),
                     sum(len(hits_by_book.get(bid, [])) for bid in book_ids),
                 )
                 retrieval_log: dict[str, Any] = {
@@ -6120,9 +6799,13 @@ class PipelineOrchestrator:
                     "axis_candidate_budget_target": axis_candidate_budget_target,
                     "axis_candidate_budget_effective": axis_candidate_budget_effective,
                     "axis_candidate_budget": axis_candidate_budget_effective,
-                    "pre_axis_budget": pre_axis_budget_by_axis.get(axis.axis_id, axis_candidate_budget_target),
+                    "pre_axis_budget": pre_axis_budget_by_axis.get(
+                        axis.axis_id, axis_candidate_budget_target
+                    ),
                     "axis_importance_score": axis.theme_importance_score,
-                    "axis_importance_weight": pre_axis_weight_by_axis.get(axis.axis_id, 1.0),
+                    "axis_importance_weight": pre_axis_weight_by_axis.get(
+                        axis.axis_id, 1.0
+                    ),
                     "pre_axis_total_budget": project.config.pre_axis_total_budget,
                     "budget_strategy": "axis_importance_weighted_pre_budget",
                     "passage_retrieval_percentage": project.config.passage_retrieval_percentage,
@@ -6145,9 +6828,15 @@ class PipelineOrchestrator:
                         "book_id": bid,
                         "title": book.title if book else "Unknown",
                         "author": book.author if book else "Unknown",
-                        "chunk_count": retrieval_depth_by_book.get(bid, {}).get("chunk_count", 0),
-                        "percentage_budget": retrieval_depth_by_book.get(bid, {}).get("percentage_budget", 0),
-                        "retrieval_depth_budget": retrieval_depth_by_book.get(bid, {}).get("per_book_budget", 0),
+                        "chunk_count": retrieval_depth_by_book.get(bid, {}).get(
+                            "chunk_count", 0
+                        ),
+                        "percentage_budget": retrieval_depth_by_book.get(bid, {}).get(
+                            "percentage_budget", 0
+                        ),
+                        "retrieval_depth_budget": retrieval_depth_by_book.get(
+                            bid, {}
+                        ).get("per_book_budget", 0),
                         "candidates": [],
                     }
                     for rank, hit in enumerate(hits, start=1):
@@ -6182,14 +6871,16 @@ class PipelineOrchestrator:
                         if denom <= 0:
                             confidence = 1.0
                         else:
-                            confidence = _clamp((max_score - raw_score) / denom, 0.0, 1.0)
+                            confidence = _clamp(
+                                (max_score - raw_score) / denom, 0.0, 1.0
+                            )
                         row["retrieval_confidence"] = confidence
                         row["priority"] = confidence
                         confidences.append(confidence)
                     confidences.sort(reverse=True)
                     top_n = min(10, len(confidences))
-                    retrieval_signal_by_book[bid] = (
-                        sum(confidences[:top_n]) / max(1, top_n)
+                    retrieval_signal_by_book[bid] = sum(confidences[:top_n]) / max(
+                        1, top_n
                     )
 
                 retrieval_log["retrieval_signal_by_book"] = retrieval_signal_by_book
@@ -6201,14 +6892,14 @@ class PipelineOrchestrator:
                 query_terms = _bm25_query_terms(axis_query_text)
 
                 all_rows = [
-                    row
-                    for bid in book_ids
-                    for row in rows_by_book.get(bid, [])
+                    row for bid in book_ids for row in rows_by_book.get(bid, [])
                 ]
                 all_tokens = [_tokenize(row["hit"].text) for row in all_rows]
                 idf, avg_len = _bm25_idf_and_avg_len(all_tokens)
 
-                book_entry_by_id = {entry["book_id"]: entry for entry in retrieval_log["books"]}
+                book_entry_by_id = {
+                    entry["book_id"]: entry for entry in retrieval_log["books"]
+                }
                 for bid in book_ids:
                     book_entry = book_entry_by_id.get(bid)
                     if book_entry is None:
@@ -6252,36 +6943,51 @@ class PipelineOrchestrator:
                     for row in rows_by_book.get(bid, []):
                         hit = row["hit"]
                         used = id(row) in selected_row_ids
-                        book_entry["candidates"].append({
-                            "rank": row["rank"],
-                            "used": used,
-                            "global_priority": round(float(row["priority"]), 8),
-                            "retrieval_confidence": round(float(row["retrieval_confidence"]), 8),
-                            "bm25_score": round(float(row.get("bm25_score", 0.0)), 8),
-                            "selection_phase": row["selection_phase"] if used else None,
-                            "chapter_penalty": 0.0,
-                            "selection_score": round(float(row["selection_score"]), 8) if used else None,
-                            "chunk_id": hit.chunk_id,
-                            "chapter_id": hit.chapter_id,
-                            "score": hit.score,
-                            "text": hit.text,
-                            "metadata": hit.metadata,
-                        })
+                        book_entry["candidates"].append(
+                            {
+                                "rank": row["rank"],
+                                "used": used,
+                                "global_priority": round(float(row["priority"]), 8),
+                                "retrieval_confidence": round(
+                                    float(row["retrieval_confidence"]), 8
+                                ),
+                                "bm25_score": round(
+                                    float(row.get("bm25_score", 0.0)), 8
+                                ),
+                                "selection_phase": row["selection_phase"]
+                                if used
+                                else None,
+                                "chapter_penalty": 0.0,
+                                "selection_score": round(
+                                    float(row["selection_score"]), 8
+                                )
+                                if used
+                                else None,
+                                "chunk_id": hit.chunk_id,
+                                "chapter_id": hit.chapter_id,
+                                "score": hit.score,
+                                "text": hit.text,
+                                "metadata": hit.metadata,
+                            }
+                        )
                         if not used:
                             continue
-                        candidates.append({
-                            "passage_id": uuid4().hex,
-                            "book_id": bid,
-                            "chunk_ids": [hit.chunk_id],
-                            "text": hit.text,
-                            "chapter_ref": hit.metadata.get("chapter_id", ""),
-                            "axis_id": axis.axis_id,
-                            "author": row["author"],
-                            "title": row["title"],
-                        })
+                        candidates.append(
+                            {
+                                "passage_id": uuid4().hex,
+                                "book_id": bid,
+                                "chunk_ids": [hit.chunk_id],
+                                "text": hit.text,
+                                "chapter_ref": hit.metadata.get("chapter_id", ""),
+                                "axis_id": axis.axis_id,
+                                "author": row["author"],
+                                "title": row["title"],
+                            }
+                        )
 
                 retrieval_log["retrieval_depth_by_book"] = {
-                    bid: info["per_book_budget"] for bid, info in retrieval_depth_by_book.items()
+                    bid: info["per_book_budget"]
+                    for bid, info in retrieval_depth_by_book.items()
                 }
 
                 _save_json(
@@ -6304,8 +7010,12 @@ class PipelineOrchestrator:
                         "axis_candidate_budget": axis_candidate_budget_effective,
                         "pre_axis_budget": retrieval_log["pre_axis_budget"],
                         "axis_importance_score": axis.theme_importance_score,
-                        "axis_importance_weight": retrieval_log["axis_importance_weight"],
-                        "retrieval_depth_by_book": retrieval_log["retrieval_depth_by_book"],
+                        "axis_importance_weight": retrieval_log[
+                            "axis_importance_weight"
+                        ],
+                        "retrieval_depth_by_book": retrieval_log[
+                            "retrieval_depth_by_book"
+                        ],
                         "admitted_by_book": admitted_by_book,
                         "retained_count": 0,
                     }
@@ -6344,7 +7054,8 @@ class PipelineOrchestrator:
                 )
 
                 payload = self.passage_extraction_agent.build_payload(
-                    axis_id=axis.axis_id, axis_name=axis.name,
+                    axis_id=axis.axis_id,
+                    axis_name=axis.name,
                     axis_description=axis.description,
                     candidate_passages=prompt_candidates,
                 )
@@ -6382,7 +7093,9 @@ class PipelineOrchestrator:
                     deferred_work.append((axis_id, deferred_fn))
 
             if deferred_work:
-                extraction_sem = asyncio.Semaphore(max(1, project.config.passage_extraction_concurrency))
+                extraction_sem = asyncio.Semaphore(
+                    max(1, project.config.passage_extraction_concurrency)
+                )
 
                 async def _run_deferred(
                     axis_id: str,
@@ -6408,7 +7121,14 @@ class PipelineOrchestrator:
             ]
 
             cross_pair_validation_by_axis: dict[str, dict[str, Any]] = {}
-            for axis_id, top_passages, cross_pairs, candidate_count, cross_pair_validation, axis_policy in results:
+            for (
+                axis_id,
+                top_passages,
+                cross_pairs,
+                candidate_count,
+                cross_pair_validation,
+                axis_policy,
+            ) in results:
                 candidate_counts_by_axis[axis_id] = candidate_count
                 all_passages_by_axis[axis_id] = top_passages
                 all_cross_pairs.extend(cross_pairs)
@@ -6416,7 +7136,11 @@ class PipelineOrchestrator:
                 axis_policy_by_axis[axis_id] = axis_policy
 
             # ---- Retrieval metrics ----
-            retrieval_metrics: dict[str, Any] = {"per_axis": {}, "per_book": {}, "summary": {}}
+            retrieval_metrics: dict[str, Any] = {
+                "per_axis": {},
+                "per_book": {},
+                "summary": {},
+            }
 
             for axis in axes:
                 axis_passages = all_passages_by_axis.get(axis.axis_id, [])
@@ -6424,7 +7148,9 @@ class PipelineOrchestrator:
                 quotability_scores = [p.quotability_score for p in axis_passages]
                 books_represented = list(set(p.book_id for p in axis_passages))
                 full_text_count = sum(1 for p in axis_passages if p.full_text.strip())
-                trimmed_text_count = sum(1 for p in axis_passages if p.trimmed_text.strip())
+                trimmed_text_count = sum(
+                    1 for p in axis_passages if p.trimmed_text.strip()
+                )
                 full_trim_ratio = round(
                     full_text_count / max(1, len(axis_passages)),
                     3,
@@ -6439,11 +7165,17 @@ class PipelineOrchestrator:
                     "trimmed_text_count": trimmed_text_count,
                     "full_text_coverage_ratio": full_trim_ratio,
                     "selection_policy": axis_policy_by_axis.get(axis.axis_id, {}),
-                    "avg_relevance_score": round(sum(relevance_scores) / max(1, len(relevance_scores)), 3),
-                    "avg_quotability_score": round(sum(quotability_scores) / max(1, len(quotability_scores)), 3),
+                    "avg_relevance_score": round(
+                        sum(relevance_scores) / max(1, len(relevance_scores)), 3
+                    ),
+                    "avg_quotability_score": round(
+                        sum(quotability_scores) / max(1, len(quotability_scores)), 3
+                    ),
                     "relevance_distribution": {
                         "above_0.8": sum(1 for s in relevance_scores if s >= 0.8),
-                        "0.5_to_0.8": sum(1 for s in relevance_scores if 0.5 <= s < 0.8),
+                        "0.5_to_0.8": sum(
+                            1 for s in relevance_scores if 0.5 <= s < 0.8
+                        ),
                         "below_0.5": sum(1 for s in relevance_scores if s < 0.5),
                     },
                     "books_represented": books_represented,
@@ -6461,8 +7193,10 @@ class PipelineOrchestrator:
 
             for book in project.books:
                 book_passages = [
-                    p for passages in all_passages_by_axis.values()
-                    for p in passages if p.book_id == book.book_id
+                    p
+                    for passages in all_passages_by_axis.values()
+                    for p in passages
+                    if p.book_id == book.book_id
                 ]
                 axis_admitted_shares = [
                     float(policy.get("admitted_by_book", {}).get(book.book_id, 0))
@@ -6479,15 +7213,20 @@ class PipelineOrchestrator:
                     "title": book.title,
                     "total_passages": len(book_passages),
                     "axes_with_passages": sum(
-                        1 for passages in all_passages_by_axis.values()
+                        1
+                        for passages in all_passages_by_axis.values()
                         if any(p.book_id == book.book_id for p in passages)
                     ),
                     "avg_relevance": round(
-                        sum(p.relevance_score for p in book_passages) / max(1, len(book_passages)), 3
+                        sum(p.relevance_score for p in book_passages)
+                        / max(1, len(book_passages)),
+                        3,
                     ),
                     "size_share": round(size_share, 4),
                     "avg_axis_admitted_share": round(avg_admitted_share, 4),
-                    "admitted_minus_size_share": round(avg_admitted_share - size_share, 4),
+                    "admitted_minus_size_share": round(
+                        avg_admitted_share - size_share, 4
+                    ),
                 }
 
             cross_pair_counts: dict[str, int] = {}
@@ -6514,16 +7253,19 @@ class PipelineOrchestrator:
                     for passages in all_passages_by_axis.values()
                 )
                 axes_covered = sum(
-                    1 for passages in all_passages_by_axis.values()
+                    1
+                    for passages in all_passages_by_axis.values()
                     if any(p.book_id == book.book_id for p in passages)
                 )
                 book_coverage[book.book_id] = CoverageStats(
-                    total_passages=total, axes_covered=axes_covered,
+                    total_passages=total,
+                    axes_covered=axes_covered,
                     coverage_ratio=axes_covered / max(1, len(axes)),
                 )
 
             corpus = ThematicCorpus(
-                project_id=project.project_id, axes=axes,
+                project_id=project.project_id,
+                axes=axes,
                 passages_by_axis=all_passages_by_axis,
                 cross_book_pairs=all_cross_pairs,
                 book_coverage=book_coverage,
@@ -6544,8 +7286,11 @@ class PipelineOrchestrator:
     ) -> tuple[SynthesisPrimitivesArtifact, dict[str, Any]]:
         actor_metadata = actor_metadata or ActorMetadata(project_id=project.project_id)
         async with _stage_log(
-            self.run_logger, "synthesis_mapping", project_dir,
-            axis_count=len(corpus.axes), total_passages=corpus.total_passages,
+            self.run_logger,
+            "synthesis_mapping",
+            project_dir,
+            axis_count=len(corpus.axes),
+            total_passages=corpus.total_passages,
         ) as ctx:
             selected_axis_count = _compute_stage_axis_target_count(
                 axis_total=len(corpus.axes),
@@ -6573,19 +7318,21 @@ class PipelineOrchestrator:
                 if pair.axis_id in selected_axis_ids
                 for passage_id in (pair.passage_a_id, pair.passage_b_id)
             }
-            synthesis_passages_by_axis, cap_report = _allocate_synthesis_passages_by_axis(
-                axes=selected_axes,
-                passages_by_axis={
-                    axis.axis_id: corpus.passages_by_axis.get(axis.axis_id, [])
-                    for axis in selected_axes
-                },
-                total_cap=synthesis_total_cap,
-                importance_power=project.config.pre_axis_relevance_power,
-                cross_pair_ids=cross_pair_ids,
-                floor_budget_fraction=project.config.synthesis_floor_budget_fraction,
-                axis_floor_min=project.config.synthesis_axis_floor_min,
-                axis_floor_max=project.config.synthesis_axis_floor_max,
-                axis_ceiling_multiplier=project.config.synthesis_axis_ceiling_multiplier,
+            synthesis_passages_by_axis, cap_report = (
+                _allocate_synthesis_passages_by_axis(
+                    axes=selected_axes,
+                    passages_by_axis={
+                        axis.axis_id: corpus.passages_by_axis.get(axis.axis_id, [])
+                        for axis in selected_axes
+                    },
+                    total_cap=synthesis_total_cap,
+                    importance_power=project.config.pre_axis_relevance_power,
+                    cross_pair_ids=cross_pair_ids,
+                    floor_budget_fraction=project.config.synthesis_floor_budget_fraction,
+                    axis_floor_min=project.config.synthesis_axis_floor_min,
+                    axis_floor_max=project.config.synthesis_axis_floor_max,
+                    axis_ceiling_multiplier=project.config.synthesis_axis_ceiling_multiplier,
+                )
             )
 
             axes_summary = [
@@ -6622,7 +7369,9 @@ class PipelineOrchestrator:
                         )
                     )
                     for key, value in passage_tier_counts.items():
-                        synthesis_trim_tiers[key] = synthesis_trim_tiers.get(key, 0) + int(value)
+                        synthesis_trim_tiers[key] = synthesis_trim_tiers.get(
+                            key, 0
+                        ) + int(value)
                     _trim_candidate_texts_by_bm25(
                         axis,
                         prompt_passages,
@@ -6630,8 +7379,7 @@ class PipelineOrchestrator:
                         keep_fraction_by_passage_id=synthesis_keep_fraction_by_passage_id,
                     )
                 trimmed_text_by_id = {
-                    item["passage_id"]: item["text"]
-                    for item in prompt_passages
+                    item["passage_id"]: item["text"] for item in prompt_passages
                 }
                 book_groups: dict[str, list[dict[str, Any]]] = {}
                 for passage in passages:
@@ -6664,26 +7412,40 @@ class PipelineOrchestrator:
             ]
 
             primitives_payload = self.synthesis_primitives_agent.build_payload(
-                project_id=project.project_id, axes_summary=axes_summary,
-                passages_by_axis=passages_summary, cross_book_pairs=cross_pairs,
+                project_id=project.project_id,
+                axes_summary=axes_summary,
+                passages_by_axis=passages_summary,
+                cross_book_pairs=cross_pairs,
                 book_metadata=book_metadata,
+                primitive_target_ranges=synthesis_primitive_target_ranges_for_mode(
+                    project.config.podcast_mode
+                ),
                 actor_metadata=compact_actor_registry(actor_metadata),
             )
-            primitives = await asyncio.to_thread(self.synthesis_primitives_agent.run, primitives_payload)
+            primitives = await asyncio.to_thread(
+                self.synthesis_primitives_agent.run, primitives_payload
+            )
             primitives, primitive_actor_metrics = clean_synthesis_primitive_actor_links(
                 primitives,
                 actor_metadata,
             )
             pre_trim_counts = _primitive_counts_by_family(primitives)
             pre_trim_total = sum(pre_trim_counts.values())
-            primitives = _trim_synthesis_primitives_by_family_caps(primitives)
+            primitives = _trim_synthesis_primitives_by_family_caps(
+                primitives,
+                family_max_counts=synthesis_primitive_target_max_counts_for_mode(
+                    project.config.podcast_mode
+                ),
+            )
             post_trim_counts = _primitive_counts_by_family(primitives)
             post_trim_total = sum(post_trim_counts.values())
             _save_json(project_dir / "synthesis_primitives.json", primitives)
 
             ctx["output_summary"] = {
                 "selected_axes": len(selected_axes),
-                "selected_passages": sum(len(items) for items in synthesis_passages_by_axis.values()),
+                "selected_passages": sum(
+                    len(items) for items in synthesis_passages_by_axis.values()
+                ),
                 "synthesis_cap": synthesis_total_cap,
                 "synthesis_trim_tiers": synthesis_trim_tiers,
                 "synthesis_trim_keep_fractions": {
@@ -6722,7 +7484,9 @@ class PipelineOrchestrator:
     ) -> tuple[NarrativeStrategy, dict[str, Any]]:
         actor_metadata = actor_metadata or ActorMetadata(project_id=project.project_id)
         async with _stage_log(
-            self.run_logger, "narrative_strategy", project_dir,
+            self.run_logger,
+            "narrative_strategy",
+            project_dir,
             primitive_count=len(_flatten_base_synthesis_primitives(synthesis_map)),
         ) as ctx:
             payload = _compact_narrative_strategy_runtime_payload(
@@ -6745,18 +7509,27 @@ class PipelineOrchestrator:
                     ),
                 )
             )
-            strategy = await asyncio.to_thread(self.narrative_strategy_agent.run, payload)
+            strategy = await asyncio.to_thread(
+                self.narrative_strategy_agent.run, payload
+            )
             cleaned_episodes, strategy_actor_metrics = clean_strategy_actor_links(
                 strategy.episodes,
                 actor_metadata,
             )
             strategy = strategy.model_copy(update={"episodes": cleaned_episodes})
             _save_json(project_dir / "narrative_strategy.json", strategy)
+            strategy_warnings = _build_narrative_strategy_warnings(
+                strategy=strategy,
+                requested_episode_count=project.requested_episode_count,
+            )
+            for warning in strategy_warnings:
+                logger.warning("narrative_strategy_warning %s", warning)
 
             ctx["output_summary"] = {
                 "strategy": strategy.strategy_type,
                 "recommended_episode_count": strategy.recommended_episode_count,
                 "episodes": len(strategy.episodes),
+                "warning_count": len(strategy_warnings),
             }
             return strategy, strategy_actor_metrics
 
@@ -6832,7 +7605,9 @@ class PipelineOrchestrator:
                         actor_metadata=_build_primitive_enrichment_actor_metadata_payload(
                             family_actor_metadata
                         ),
-                        narrator_profile=strategy.narrator_profile.model_dump(mode="json"),
+                        narrator_profile=strategy.narrator_profile.model_dump(
+                            mode="json"
+                        ),
                     )
                     enrichment = await asyncio.to_thread(
                         self.primitive_enrichment_agent.run,
@@ -6877,21 +7652,33 @@ class PipelineOrchestrator:
                     )
                 primitives_by_family[primitive.family].append(enriched)
 
+            gloss_warnings = _build_enrichment_gloss_warnings(
+                [item for items in primitives_by_family.values() for item in items]
+            )
+            for warning in gloss_warnings:
+                logger.warning("%s", warning)
+
             synthesis_map = SynthesisMap(
                 project_id=project.project_id,
                 primitives_by_family=primitives_by_family,
                 quality_score=synthesis_primitives.quality_score,
-                quality_notes=list(synthesis_primitives.quality_notes),
+                quality_notes=[
+                    *list(synthesis_primitives.quality_notes),
+                    *gloss_warnings,
+                ],
             )
             _save_json(project_dir / "synthesis_map.json", synthesis_map)
             ctx["output_summary"] = {
                 "selected_primitive_count": len(selected_base_primitives),
                 "enriched_family_count": sum(
-                    1 for family in SYNTHESIS_PRIMITIVE_FAMILIES if selected_by_family.get(family)
+                    1
+                    for family in SYNTHESIS_PRIMITIVE_FAMILIES
+                    if selected_by_family.get(family)
                 ),
                 "retained_primitive_count": sum(
                     len(items) for items in synthesis_map.primitives_by_family.values()
                 ),
+                "warning_count": len(gloss_warnings),
             }
             return synthesis_map
 
@@ -6953,8 +7740,7 @@ class PipelineOrchestrator:
             strategy=strategy.strategy_type,
         ) as ctx:
             episode_map = {
-                episode.episode_number: episode
-                for episode in strategy.episodes
+                episode.episode_number: episode for episode in strategy.episodes
             }
             missing_episodes = [
                 episode_number
@@ -6970,6 +7756,7 @@ class PipelineOrchestrator:
             primitive_lookup = _flatten_synthesis_primitives(synthesis_map)
             passage_lookup = _build_passage_lookup(corpus)
             project_metadata = {
+                "podcast_mode": project.config.podcast_mode.value,
                 "theme": project.theme,
                 "sub_themes": project.sub_themes,
                 "book_count": len(project.books),
@@ -6977,6 +7764,12 @@ class PipelineOrchestrator:
                     {"book_id": b.book_id, "title": b.title, "author": b.author}
                     for b in project.books
                 ],
+                "architecture_section_target_min": (
+                    project.config.architecture_section_target_min
+                ),
+                "architecture_section_target_max": (
+                    project.config.architecture_section_target_max
+                ),
                 "min_episode_minutes": project.config.min_episode_minutes,
                 "max_episode_minutes": project.config.max_episode_minutes,
             }
@@ -6994,12 +7787,16 @@ class PipelineOrchestrator:
                 async with architecture_sem:
                     primitive_ids_by_role = {
                         "core": list(episode.episode_spine.core_primitive_ids),
-                        "support": list(episode.episode_spine.support_primitive_roles.keys()),
+                        "support": list(
+                            episode.episode_spine.support_primitive_roles.keys()
+                        ),
                         "recall": list(episode.episode_spine.recall_primitive_ids),
                     }
-                    episode_synthesis_map_payload, primitive_ids = _build_episode_synthesis_map_payload(
-                        synthesis_map,
-                        primitive_ids_by_role,
+                    episode_synthesis_map_payload, primitive_ids = (
+                        _build_episode_synthesis_map_payload(
+                            synthesis_map,
+                            primitive_ids_by_role,
+                        )
                     )
                     episode_actor_ids = {
                         actor.actor_id
@@ -7022,10 +7819,18 @@ class PipelineOrchestrator:
                         synthesis_map=episode_synthesis_map_payload,
                         project_metadata=project_metadata,
                         core_passages=core_passages,
-                        narrator_profile=strategy.narrator_profile.model_dump(mode="json"),
+                        series_explanation_registry=[
+                            item.model_dump(mode="json")
+                            for item in strategy.series_explanation_registry
+                        ],
+                        narrator_profile=strategy.narrator_profile.model_dump(
+                            mode="json"
+                        ),
                         actor_metadata=compact_actor_metadata(episode_actor_metadata),
                     )
-                    architecture = await asyncio.to_thread(self.episode_architecture_agent.run, payload)
+                    architecture = await asyncio.to_thread(
+                        self.episode_architecture_agent.run, payload
+                    )
                     architecture = _validate_architecture_transition(
                         strategy_episode=episode,
                         architecture=architecture,
@@ -7034,7 +7839,9 @@ class PipelineOrchestrator:
                         "episode_number": episode.episode_number,
                         "section_count": len(architecture.sections),
                         "major_turn_section_id": architecture.major_turn_section_id,
-                        "core_primitive_count": len(episode.episode_spine.core_primitive_ids),
+                        "core_primitive_count": len(
+                            episode.episode_spine.core_primitive_ids
+                        ),
                         "actor_directive_count": len(episode.actor_arc_directives),
                     }
                     return episode.episode_number, episode, architecture, report
@@ -7043,12 +7850,18 @@ class PipelineOrchestrator:
                 *[_build_episode_architecture(episode) for episode in ordered_episodes]
             )
             architecture_results.sort(key=lambda item: item[0])
-            architectures = [architecture for _, _, architecture, _ in architecture_results]
+            architectures = [
+                architecture for _, _, architecture, _ in architecture_results
+            ]
             reports = [report for _, _, _, report in architecture_results]
             realization_reports = [
                 _build_episode_architecture_realization(
                     strategy_episode=episode,
                     architecture=architecture,
+                    pipeline_config=project.config,
+                    narrator_profile=strategy.narrator_profile,
+                    primitive_lookup=primitive_lookup,
+                    series_explanation_registry=strategy.series_explanation_registry,
                 )
                 for _, episode, architecture, _ in architecture_results
             ]
@@ -7062,7 +7875,11 @@ class PipelineOrchestrator:
 
             _save_json(
                 project_dir / "episode_architectures.json",
-                {"episodes": [episode.model_dump(mode="json") for episode in architectures]},
+                {
+                    "episodes": [
+                        episode.model_dump(mode="json") for episode in architectures
+                    ]
+                },
             )
             _save_json(
                 project_dir / "architecture_realization.json",
@@ -7089,21 +7906,22 @@ class PipelineOrchestrator:
     ) -> tuple[list[EpisodePlan], dict[str, Any]]:
         actor_metadata = actor_metadata or ActorMetadata(project_id=project.project_id)
         async with _stage_log(
-            self.run_logger, "episode_planning", project_dir,
+            self.run_logger,
+            "episode_planning",
+            project_dir,
             episode_count=project.episode_count,
         ) as ctx:
             episode_map = {
-                episode.episode_number: episode
-                for episode in episode_architectures
+                episode.episode_number: episode for episode in episode_architectures
             }
             strategy_episode_map = {
-                episode.episode_number: episode
-                for episode in strategy.episodes
+                episode.episode_number: episode for episode in strategy.episodes
             }
             missing_episodes = [
                 episode_number
                 for episode_number in range(1, project.episode_count + 1)
-                if episode_number not in episode_map or episode_number not in strategy_episode_map
+                if episode_number not in episode_map
+                or episode_number not in strategy_episode_map
             ]
             if missing_episodes:
                 raise RuntimeError(
@@ -7114,6 +7932,7 @@ class PipelineOrchestrator:
             primitive_lookup = _flatten_synthesis_primitives(synthesis_map)
             primitive_family_by_id = _primitive_family_lookup(synthesis_map)
             project_metadata = {
+                "podcast_mode": project.config.podcast_mode.value,
                 "theme": project.theme,
                 "sub_themes": project.sub_themes,
                 "book_count": len(project.books),
@@ -7121,11 +7940,15 @@ class PipelineOrchestrator:
                     {"book_id": b.book_id, "title": b.title, "author": b.author}
                     for b in project.books
                 ],
+                "scene_card_target_min": project.config.scene_card_target_min,
+                "scene_card_target_max": project.config.scene_card_target_max,
                 "min_episode_minutes": project.config.min_episode_minutes,
                 "max_episode_minutes": project.config.max_episode_minutes,
             }
             host_policy = _build_host_policy_payload(strategy.narrator_profile)
-            planning_sem = asyncio.Semaphore(max(1, project.config.episode_planning_concurrency))
+            planning_sem = asyncio.Semaphore(
+                max(1, project.config.episode_planning_concurrency)
+            )
             ordered_episodes = [
                 (
                     episode_map[episode_number],
@@ -7143,9 +7966,11 @@ class PipelineOrchestrator:
                         strategy_episode,
                         episode,
                     )
-                    episode_synthesis_map_payload, primitive_ids = _build_episode_synthesis_map_payload(
-                        synthesis_map,
-                        primitive_ids_by_role,
+                    episode_synthesis_map_payload, primitive_ids = (
+                        _build_episode_synthesis_map_payload(
+                            synthesis_map,
+                            primitive_ids_by_role,
+                        )
                     )
                     episode_actor_ids = {
                         actor.actor_id
@@ -7183,7 +8008,9 @@ class PipelineOrchestrator:
                         {
                             "passage_id": passage_lookup[passage_id].passage_id,
                             "book_id": passage_lookup[passage_id].book_id,
-                            "text": _resolve_writing_passage_text(passage_lookup[passage_id]),
+                            "text": _resolve_writing_passage_text(
+                                passage_lookup[passage_id]
+                            ),
                             "chapter_ref": passage_lookup[passage_id].chapter_ref,
                         }
                         for passage_id in passage_ids
@@ -7197,10 +8024,12 @@ class PipelineOrchestrator:
                     episode_query_text = " ".join(
                         part for part in episode_query_parts if part
                     ).strip()
-                    passage_query_text_by_id = _build_episode_planning_passage_query_texts(
-                        episode_query_text=episode_query_text,
-                        passage_refs=planning_passage_refs,
-                        primitive_lookup=primitive_lookup,
+                    passage_query_text_by_id = (
+                        _build_episode_planning_passage_query_texts(
+                            episode_query_text=episode_query_text,
+                            passage_refs=planning_passage_refs,
+                            primitive_lookup=primitive_lookup,
+                        )
                     )
                     _trim_candidate_texts_by_bm25_query_text(
                         episode_query_text,
@@ -7210,7 +8039,9 @@ class PipelineOrchestrator:
                         query_text_by_passage_id=passage_query_text_by_id,
                     )
                     episode_payload = episode.model_dump(mode="json")
-                    compact_episode_actor_metadata = compact_actor_metadata(episode_actor_metadata)
+                    compact_episode_actor_metadata = compact_actor_metadata(
+                        episode_actor_metadata
+                    )
                     plan_draft: EpisodePlanDraft | None = None
                     actor_link_metrics: dict[str, Any] = {}
                     planning_feedback: dict[str, Any] | None = None
@@ -7245,7 +8076,9 @@ class PipelineOrchestrator:
                         except ComplianceViolationError as exc:
                             if attempt >= max_attempts:
                                 raise
-                            backoff = min(2 ** (attempt - 1), 16) + (time.monotonic() % 1)
+                            backoff = min(2 ** (attempt - 1), 16) + (
+                                time.monotonic() % 1
+                            )
                             planning_feedback = _build_plan_transition_feedback(exc)
                             self.run_logger.log(
                                 "episode_planning_retry_scheduled",
@@ -7267,22 +8100,26 @@ class PipelineOrchestrator:
                         strategy_episode=strategy_episode,
                         plan=plan_draft,
                     )
-                    host_move_diagnostics, host_move_warnings = _build_host_move_plan_diagnostics(
-                        scene_cards=plan_draft.scene_cards,
-                        architecture=episode,
-                        narrator_profile=strategy.narrator_profile,
+                    host_moves_diagnostics, host_move_warnings = (
+                        _build_host_move_plan_diagnostics(
+                            scene_cards=plan_draft.scene_cards,
+                            architecture=episode,
+                            narrator_profile=strategy.narrator_profile,
+                        )
                     )
                     scene_card_count_warnings = _build_scene_card_count_warnings(
                         scene_card_count=len(plan_draft.scene_cards),
                         scene_card_target_min=project.config.scene_card_target_min,
                         scene_card_target_max=project.config.scene_card_target_max,
                     )
-                    scene_card_primitive_warnings = _build_scene_card_primitive_warnings(
-                        scene_cards=plan_draft.scene_cards,
-                        primitive_pool_ids=set(primitive_ids),
-                        primitive_by_id=primitive_lookup,
-                        primitive_min=project.config.scene_card_primitives_min,
-                        primitive_max=project.config.scene_card_primitives_max,
+                    scene_card_primitive_warnings = (
+                        _build_scene_card_primitive_warnings(
+                            scene_cards=plan_draft.scene_cards,
+                            primitive_pool_ids=set(primitive_ids),
+                            primitive_by_id=primitive_lookup,
+                            primitive_min=project.config.scene_card_primitives_min,
+                            primitive_max=project.config.scene_card_primitives_max,
+                        )
                     )
                     scene_card_family_warnings = _build_scene_card_family_warnings(
                         strategy_episode=strategy_episode,
@@ -7293,7 +8130,9 @@ class PipelineOrchestrator:
                         _build_section_plan_realization(
                             episode=episode,
                             scene_cards=plan_draft.scene_cards,
-                            words_per_minute=float(self.settings.pipeline.spoken_words_per_minute),
+                            words_per_minute=float(
+                                self.settings.pipeline.spoken_words_per_minute
+                            ),
                         )
                     )
                     structural_card_concreteness_warnings = (
@@ -7369,11 +8208,15 @@ class PipelineOrchestrator:
                         "scene_function_counts": scene_function_counts,
                         "human_grounding_diagnostics": human_grounding_diagnostics,
                         "section_count": len(episode.sections),
-                        "core_primitive_count": len(strategy_episode.episode_spine.core_primitive_ids),
-                        "covered_core_primitive_count": len(strategy_episode.episode_spine.core_primitive_ids),
+                        "core_primitive_count": len(
+                            strategy_episode.episode_spine.core_primitive_ids
+                        ),
+                        "covered_core_primitive_count": len(
+                            strategy_episode.episode_spine.core_primitive_ids
+                        ),
                         "missing_core_primitive_ids": [],
                         "spine_diagnostics": spine_diagnostics,
-                        "host_move_diagnostics": host_move_diagnostics,
+                        "host_moves_diagnostics": host_moves_diagnostics,
                         "actor_link_metrics": actor_link_metrics,
                         "allocated_duration_seconds": sum(
                             scene.estimated_duration_seconds
@@ -7392,13 +8235,16 @@ class PipelineOrchestrator:
             planned_episodes = [plan for _, plan, _ in planning_results]
             planning_reports = [report for _, _, report in planning_results]
             planning_actor_metrics = _merge_actor_metric_dicts(
-                report.get("actor_link_metrics", {})
-                for report in planning_reports
+                report.get("actor_link_metrics", {}) for report in planning_reports
             )
 
             _save_json(
                 project_dir / "series_plan.json",
-                {"episodes": [episode.model_dump(mode="json") for episode in planned_episodes]},
+                {
+                    "episodes": [
+                        episode.model_dump(mode="json") for episode in planned_episodes
+                    ]
+                },
             )
             _save_json(
                 project_dir / "episode_plan_realization.json",
@@ -7407,7 +8253,9 @@ class PipelineOrchestrator:
 
             ctx["output_summary"] = {
                 "episode_count": len(planned_episodes),
-                "titles": [strategy_episode.title for _, strategy_episode in ordered_episodes],
+                "titles": [
+                    strategy_episode.title for _, strategy_episode in ordered_episodes
+                ],
             }
             return planned_episodes, planning_actor_metrics
 
@@ -7422,7 +8270,9 @@ class PipelineOrchestrator:
     ) -> None:
         utilized_passage_ids: set[str] = set()
         for episode_number in episode_numbers:
-            payload = _load_json(project_dir / "episodes" / str(episode_number) / "episode_script.json")
+            payload = _load_json(
+                project_dir / "episodes" / str(episode_number) / "episode_script.json"
+            )
             if payload is None:
                 continue
             try:
@@ -7436,7 +8286,9 @@ class PipelineOrchestrator:
                 )
                 continue
             for section in script.prose_sections:
-                utilized_passage_ids.update(citation.passage_id for citation in section.citations)
+                utilized_passage_ids.update(
+                    citation.passage_id for citation in section.citations
+                )
 
         utilization = {
             "summary": {
@@ -7510,24 +8362,43 @@ class PipelineOrchestrator:
         host_policy: dict[str, Any],
         semaphore: asyncio.Semaphore,
         spoken_semaphore: asyncio.Semaphore | None = None,
+        series_explanation_registry: list[Any] | None = None,
     ) -> tuple[int, SpokenScript]:
         async with semaphore:
             ep_dir = project_dir / "episodes" / str(plan.episode_number)
             ep_dir.mkdir(parents=True, exist_ok=True)
 
             script = await self._write_episode(
-                plan, strategy_episode, architecture, project, corpus, ep_dir, project_dir, actor_metadata, host_policy,
+                plan,
+                strategy_episode,
+                architecture,
+                project,
+                corpus,
+                ep_dir,
+                project_dir,
+                actor_metadata,
+                host_policy,
             )
 
             if not project.config.skip_grounding:
                 report = await self._validate_grounding(
-                    plan.episode_number, script, corpus, ep_dir, project_dir, architecture=architecture,
+                    plan.episode_number,
+                    script,
+                    corpus,
+                    ep_dir,
+                    project_dir,
+                    architecture=architecture,
                 )
                 if report.overall_status != "PASSED":
                     script, report = await self._repair_loop(
-                        plan.episode_number, script, report, corpus, ep_dir,
+                        plan.episode_number,
+                        script,
+                        report,
+                        corpus,
+                        ep_dir,
                         architecture,
-                        project_dir, max_attempts=project.config.max_repair_attempts,
+                        project_dir,
+                        max_attempts=project.config.max_repair_attempts,
                     )
             else:
                 self.run_logger.log("grounding_skipped", episode=plan.episode_number)
@@ -7540,14 +8411,22 @@ class PipelineOrchestrator:
                 project_dir,
                 plan=plan,
                 host_policy=host_policy,
+                strategy_episode=strategy_episode,
+                series_explanation_registry=series_explanation_registry,
             )
 
         if not project.config.skip_spoken_delivery:
             spoken_gate = spoken_semaphore or semaphore
             async with spoken_gate:
                 spoken = await self._rewrite_for_speech(
-                    plan.episode_number, script, project, ep_dir, project_dir, architecture=architecture,
-                    plan=plan, host_policy=host_policy,
+                    plan.episode_number,
+                    script,
+                    project,
+                    ep_dir,
+                    project_dir,
+                    architecture=architecture,
+                    plan=plan,
+                    host_policy=host_policy,
                 )
         else:
             spoken = SpokenScript(
@@ -7566,15 +8445,22 @@ class PipelineOrchestrator:
         return (plan.episode_number, spoken)
 
     async def _write_episode(
-        self, plan: EpisodePlan, strategy_episode: StrategyEpisode,
-        architecture: EpisodeArchitecture, project: ThematicProject,
-        corpus: ThematicCorpus, ep_dir: Path, project_dir: Path,
+        self,
+        plan: EpisodePlan,
+        strategy_episode: StrategyEpisode,
+        architecture: EpisodeArchitecture,
+        project: ThematicProject,
+        corpus: ThematicCorpus,
+        ep_dir: Path,
+        project_dir: Path,
         actor_metadata: ActorMetadata | None = None,
         host_policy: dict[str, Any] | None = None,
     ) -> EpisodeScript:
         actor_metadata = actor_metadata or ActorMetadata(project_id=project.project_id)
         async with _stage_log(
-            self.run_logger, f"write_episode_{plan.episode_number}", project_dir,
+            self.run_logger,
+            f"write_episode_{plan.episode_number}",
+            project_dir,
             episode=plan.episode_number,
             scene_card_count=len(plan.scene_cards),
             writing_source_mode=_WRITING_SOURCE_MODE_FULL_CHUNK,
@@ -7619,8 +8505,12 @@ class PipelineOrchestrator:
                 if project.config.skip_grounding
                 else self.writing_agent
             )
-            episode_target_word_count_lower = sum(scene_word_count_targets_lower.values())
-            episode_target_word_count_higher = sum(scene_word_count_targets_higher.values())
+            episode_target_word_count_lower = sum(
+                scene_word_count_targets_lower.values()
+            )
+            episode_target_word_count_higher = sum(
+                scene_word_count_targets_higher.values()
+            )
             writing_windows = _split_episode_writing_windows(
                 plan=plan,
                 architecture=architecture,
@@ -7642,7 +8532,9 @@ class PipelineOrchestrator:
                     actual_word_count = 0
                     normalized_section_outputs: list[dict[str, Any]] = []
                     prior_window_continuity: dict[str, Any] | None = None
-                    for part_number, window_scene_cards in enumerate(writing_windows, start=1):
+                    for part_number, window_scene_cards in enumerate(
+                        writing_windows, start=1
+                    ):
                         part_target_word_count_lower = sum(
                             scene_word_count_targets_lower.get(scene.scene_id, 0)
                             for scene in window_scene_cards
@@ -7669,9 +8561,11 @@ class PipelineOrchestrator:
                             scene_payload_by_id=scene_payload_by_id,
                             target_word_count=part_target_word_count,
                         )
-                        window_architecture_payload = _build_window_architecture_payload(
-                            architecture=architecture,
-                            window_scene_cards=window_scene_cards,
+                        window_architecture_payload = (
+                            _build_window_architecture_payload(
+                                architecture=architecture,
+                                window_scene_cards=window_scene_cards,
+                            )
                         )
                         window_passages = _build_window_passages(
                             window_scene_cards=window_scene_cards,
@@ -7698,7 +8592,9 @@ class PipelineOrchestrator:
                         ) as part_ctx:
                             payload = writing_agent.build_payload(
                                 episode_number=plan.episode_number,
-                                strategy_episode=strategy_episode.model_dump(mode="json"),
+                                strategy_episode=strategy_episode.model_dump(
+                                    mode="json"
+                                ),
                                 architecture=window_architecture_payload,
                                 episode_plan=window_plan_payload,
                                 passages=window_passages,
@@ -7708,19 +8604,23 @@ class PipelineOrchestrator:
                                 skip_grounding=project.config.skip_grounding,
                                 host_policy=host_policy,
                                 actor_metadata=window_actor_metadata,
-                                writing_feedback=writing_feedback_by_part.get(part_number),
+                                writing_feedback=writing_feedback_by_part.get(
+                                    part_number
+                                ),
                                 prior_window_continuity=prior_window_continuity,
                             )
                             result = await asyncio.to_thread(writing_agent.run, payload)
                             part_word_count = _writing_result_word_count(result)
                             actual_word_count += part_word_count
                             try:
-                                normalized_window_outputs = _normalize_writing_section_outputs(
-                                    result=result,
-                                    architecture=architecture,
-                                    scene_cards=window_scene_cards,
-                                    episode_number=plan.episode_number,
-                                    skip_grounding=project.config.skip_grounding,
+                                normalized_window_outputs = (
+                                    _normalize_writing_section_outputs(
+                                        result=result,
+                                        architecture=architecture,
+                                        scene_cards=window_scene_cards,
+                                        episode_number=plan.episode_number,
+                                        skip_grounding=project.config.skip_grounding,
+                                    )
                                 )
                             except ComplianceViolationError as exc:
                                 exc.data = {
@@ -7783,9 +8683,12 @@ class PipelineOrchestrator:
                         raise contract_exc from exc
                     backoff = min(2 ** (attempt - 1), 16) + (time.monotonic() % 1)
                     failed_part_number = int(
-                        (contract_exc.data or {}).get("failed_part_number") or len(writing_windows)
+                        (contract_exc.data or {}).get("failed_part_number")
+                        or len(writing_windows)
                     )
-                    writing_feedback_by_part[failed_part_number] = _build_writing_retry_feedback(contract_exc)
+                    writing_feedback_by_part[failed_part_number] = (
+                        _build_writing_retry_feedback(contract_exc)
+                    )
                     self.run_logger.log(
                         "episode_writing_retry_scheduled",
                         episode=plan.episode_number,
@@ -7802,9 +8705,12 @@ class PipelineOrchestrator:
                         raise
                     backoff = min(2 ** (attempt - 1), 16) + (time.monotonic() % 1)
                     failed_part_number = int(
-                        (exc.data or {}).get("failed_part_number") or len(writing_windows)
+                        (exc.data or {}).get("failed_part_number")
+                        or len(writing_windows)
                     )
-                    writing_feedback_by_part[failed_part_number] = _build_writing_retry_feedback(exc)
+                    writing_feedback_by_part[failed_part_number] = (
+                        _build_writing_retry_feedback(exc)
+                    )
                     self.run_logger.log(
                         "episode_writing_retry_scheduled",
                         episode=plan.episode_number,
@@ -7832,8 +8738,7 @@ class PipelineOrchestrator:
                         actual_word_count - episode_target_word_count_higher
                     ),
                     over_high_ratio=(
-                        actual_word_count
-                        / max(1, episode_target_word_count_higher)
+                        actual_word_count / max(1, episode_target_word_count_higher)
                     ),
                 )
             _save_json(ep_dir / "episode_script.json", script)
@@ -7865,13 +8770,20 @@ class PipelineOrchestrator:
             return script
 
     async def _validate_grounding(
-        self, episode_number: int, script: EpisodeScript,
-        corpus: ThematicCorpus, ep_dir: Path, project_dir: Path,
+        self,
+        episode_number: int,
+        script: EpisodeScript,
+        corpus: ThematicCorpus,
+        ep_dir: Path,
+        project_dir: Path,
         architecture: EpisodeArchitecture | None = None,
     ) -> GroundingReport:
         async with _stage_log(
-            self.run_logger, f"grounding_{episode_number}", project_dir,
-            episode=episode_number, text_unit_count=len(script.prose_sections),
+            self.run_logger,
+            f"grounding_{episode_number}",
+            project_dir,
+            episode=episode_number,
+            text_unit_count=len(script.prose_sections),
         ) as ctx:
             passage_lookup: dict[str, dict] = {}
             for axis_passages in corpus.passages_by_axis.values():
@@ -7906,10 +8818,15 @@ class PipelineOrchestrator:
             return report
 
     async def _repair_loop(
-        self, episode_number: int, script: EpisodeScript,
-        report: GroundingReport, corpus: ThematicCorpus,
-        ep_dir: Path, architecture: EpisodeArchitecture,
-        project_dir: Path, max_attempts: int = 3,
+        self,
+        episode_number: int,
+        script: EpisodeScript,
+        report: GroundingReport,
+        corpus: ThematicCorpus,
+        ep_dir: Path,
+        architecture: EpisodeArchitecture,
+        project_dir: Path,
+        max_attempts: int = 3,
     ) -> tuple[EpisodeScript, GroundingReport]:
         current_script = script
         current_report = report
@@ -7919,15 +8836,19 @@ class PipelineOrchestrator:
                 break
 
             failing_claims = [
-                ca for ca in current_report.claim_assessments
+                ca
+                for ca in current_report.claim_assessments
                 if ca.status in ("UNSUPPORTED", "FABRICATED")
             ]
             if not failing_claims and not current_report.fairness_flags:
                 break
 
             async with _stage_log(
-                self.run_logger, f"repair_{episode_number}_attempt_{attempt}", project_dir,
-                episode=episode_number, attempt=attempt,
+                self.run_logger,
+                f"repair_{episode_number}_attempt_{attempt}",
+                project_dir,
+                episode=episode_number,
+                attempt=attempt,
                 failing_claims=len(failing_claims),
             ) as ctx:
                 passage_lookup: dict[str, dict] = {}
@@ -7940,7 +8861,9 @@ class PipelineOrchestrator:
                         }
 
                 failing_unit_ids = {claim.text_unit_id for claim in failing_claims}
-                failing_unit_ids.update(flag.text_unit_id for flag in current_report.fairness_flags)
+                failing_unit_ids.update(
+                    flag.text_unit_id for flag in current_report.fairness_flags
+                )
                 failing_sections = [
                     section
                     for section in _build_script_sections_payload(
@@ -7967,8 +8890,7 @@ class PipelineOrchestrator:
                 result = await asyncio.to_thread(self.repair_agent.run, payload)
 
                 repaired_sections = {
-                    section.section_id: section
-                    for section in result.repaired_sections
+                    section.section_id: section for section in result.repaired_sections
                 }
                 new_sections = []
                 diffs: list[SegmentDiff] = []
@@ -8001,16 +8923,26 @@ class PipelineOrchestrator:
                     }
                 )
                 new_report = await self._validate_grounding(
-                    episode_number, new_script, corpus, ep_dir, project_dir, architecture=architecture,
+                    episode_number,
+                    new_script,
+                    corpus,
+                    ep_dir,
+                    project_dir,
+                    architecture=architecture,
                 )
 
-                remaining = len([
-                    ca for ca in new_report.claim_assessments
-                    if ca.status in ("UNSUPPORTED", "FABRICATED")
-                ])
+                remaining = len(
+                    [
+                        ca
+                        for ca in new_report.claim_assessments
+                        if ca.status in ("UNSUPPORTED", "FABRICATED")
+                    ]
+                )
                 status = (
-                    "RESOLVED" if new_report.overall_status == "PASSED"
-                    else "IMPROVED" if new_report.grounding_score > current_report.grounding_score
+                    "RESOLVED"
+                    if new_report.overall_status == "PASSED"
+                    else "IMPROVED"
+                    if new_report.grounding_score > current_report.grounding_score
                     else "NO_PROGRESS"
                 )
 
@@ -8049,6 +8981,8 @@ class PipelineOrchestrator:
         project_dir: Path,
         plan: EpisodePlan | None = None,
         host_policy: dict[str, Any] | None = None,
+        strategy_episode: StrategyEpisode | None = None,
+        series_explanation_registry: list[Any] | None = None,
     ) -> EpisodeScript:
         async with _stage_log(
             self.run_logger,
@@ -8066,16 +9000,23 @@ class PipelineOrchestrator:
                     plan=plan,
                 ),
                 host_policy=host_policy,
+                series_explanation_registry=_build_episode_explanation_registry_payload(
+                    strategy_episode=strategy_episode,
+                    architecture=architecture,
+                    series_explanation_registry=series_explanation_registry,
+                ),
             )
             audit = await asyncio.to_thread(self.style_audit_agent.run, payload)
             _save_json(ep_dir / "style_audit_result.json", audit)
             audited_script = _apply_style_audit_to_script(
                 script=script,
                 audit=audit,
-                spoken_words_per_minute=float(self.settings.pipeline.spoken_words_per_minute),
+                spoken_words_per_minute=float(
+                    self.settings.pipeline.spoken_words_per_minute
+                ),
             )
             _save_json(ep_dir / "style_audited_script.json", audited_script)
-            host_move_text_diagnostics = _build_host_move_text_diagnostics(
+            host_moves_text_diagnostics = _build_host_move_text_diagnostics(
                 text_by_section_id={
                     section.section_id: section.text
                     for section in audited_script.prose_sections
@@ -8083,28 +9024,38 @@ class PipelineOrchestrator:
                 plan=plan,
             )
             _save_json(
-                ep_dir / "host_move_script_diagnostics.json",
-                host_move_text_diagnostics,
+                ep_dir / "host_moves_script_diagnostics.json",
+                host_moves_text_diagnostics,
             )
             ctx["output_summary"] = {
                 "sections": len(audit.sections),
                 "warnings": len(audit.episode_warnings),
                 "word_delta": audited_script.total_word_count - script.total_word_count,
-                "planned_host_moves": host_move_text_diagnostics["planned_host_move_count"],
-                "approx_realized_host_moves": host_move_text_diagnostics["approx_realized_host_move_count"],
+                "planned_host_phases": host_moves_text_diagnostics[
+                    "planned_host_phase_count"
+                ],
+                "approx_realized_host_phases": host_moves_text_diagnostics[
+                    "approx_realized_host_phase_count"
+                ],
             }
             return audited_script
 
     async def _rewrite_for_speech(
-        self, episode_number: int, script: EpisodeScript,
-        project: ThematicProject, ep_dir: Path, project_dir: Path,
+        self,
+        episode_number: int,
+        script: EpisodeScript,
+        project: ThematicProject,
+        ep_dir: Path,
+        project_dir: Path,
         architecture: EpisodeArchitecture | None = None,
         plan: EpisodePlan | None = None,
         host_policy: dict[str, Any] | None = None,
     ) -> SpokenScript:
         batches = _build_spoken_delivery_batches(script.prose_sections)
         async with _stage_log(
-            self.run_logger, f"spoken_delivery_{episode_number}", project_dir,
+            self.run_logger,
+            f"spoken_delivery_{episode_number}",
+            project_dir,
             episode=episode_number,
             section_count=len(script.prose_sections),
             batch_count=len(batches),
@@ -8137,9 +9088,16 @@ class PipelineOrchestrator:
                     host_policy=host_policy,
                     previous_spoken_tail=previous_spoken_tail,
                 )
-                result = await asyncio.to_thread(self.spoken_delivery_agent.run, payload)
+                result = await asyncio.to_thread(
+                    self.spoken_delivery_agent.run, payload
+                )
                 result_sections = list(result.sections)
-                if not result_sections and len(prose_batch) == 1 and result.text is not None and result.speech_hints is not None:
+                if (
+                    not result_sections
+                    and len(prose_batch) == 1
+                    and result.text is not None
+                    and result.speech_hints is not None
+                ):
                     result_sections = [
                         SpokenDeliveryBatchSection(
                             section_id=prose_batch[0].section_id,
@@ -8156,7 +9114,9 @@ class PipelineOrchestrator:
                         )
                     )
                 if result_sections:
-                    previous_spoken_tail = _extract_previous_spoken_tail(result_sections[-1].text)
+                    previous_spoken_tail = _extract_previous_spoken_tail(
+                        result_sections[-1].text
+                    )
 
             spoken = SpokenScript(
                 episode_number=episode_number,
@@ -8166,23 +9126,26 @@ class PipelineOrchestrator:
                 tts_provider=project.config.tts_provider,
             )
             _save_json(ep_dir / "spoken_script.json", spoken)
-            spoken_host_move_diagnostics = _build_host_move_text_diagnostics(
+            spoken_host_moves_diagnostics = _build_host_move_text_diagnostics(
                 text_by_section_id={
-                    section.section_id: section.text
-                    for section in spoken.sections
+                    section.section_id: section.text for section in spoken.sections
                 },
                 plan=plan,
             )
             _save_json(
-                ep_dir / "spoken_host_move_diagnostics.json",
-                spoken_host_move_diagnostics,
+                ep_dir / "spoken_host_moves_diagnostics.json",
+                spoken_host_moves_diagnostics,
             )
 
             ctx["output_summary"] = {
                 "sections": len(spoken.sections),
                 "batch_count": len(spoken.sections),
-                "planned_host_moves": spoken_host_move_diagnostics["planned_host_move_count"],
-                "approx_realized_host_moves": spoken_host_move_diagnostics["approx_realized_host_move_count"],
+                "planned_host_phases": spoken_host_moves_diagnostics[
+                    "planned_host_phase_count"
+                ],
+                "approx_realized_host_phases": spoken_host_moves_diagnostics[
+                    "approx_realized_host_phase_count"
+                ],
             }
             return spoken
 
@@ -8199,7 +9162,9 @@ class PipelineOrchestrator:
             )
         return ffmpeg_path
 
-    def _merge_audio_segments(self, segment_paths: list[Path], output_path: Path) -> None:
+    def _merge_audio_segments(
+        self, segment_paths: list[Path], output_path: Path
+    ) -> None:
         ffmpeg_path = self._ensure_ffmpeg_available()
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.unlink(missing_ok=True)
@@ -8297,7 +9262,9 @@ class PipelineOrchestrator:
                         instructions=seg.instructions,
                         speed=seg.speed,
                     )
-                    audio_path = audio_dir / f"{seg.segment_id}.{self.settings.tts.audio_format}"
+                    audio_path = (
+                        audio_dir / f"{seg.segment_id}.{self.settings.tts.audio_format}"
+                    )
                     audio_path.write_bytes(audio_bytes)
                     successful_paths.append(audio_path)
                     audio_segments.append(
@@ -8318,7 +9285,9 @@ class PipelineOrchestrator:
                         error=str(exc),
                     )
                     if attempt == self.settings.pipeline.audio_retry_attempts:
-                        logger.error("TTS failed for segment %s: %s", seg.segment_id, exc)
+                        logger.error(
+                            "TTS failed for segment %s: %s", seg.segment_id, exc
+                        )
                         audio_segments.append(
                             AudioSegmentResult(
                                 segment_id=seg.segment_id,
@@ -8370,18 +9339,24 @@ class PipelineOrchestrator:
         return audio_manifest
 
     async def _render_episode_audio(
-        self, episode_number: int, spoken: SpokenScript,
+        self,
+        episode_number: int,
+        spoken: SpokenScript,
         config: PipelineConfig,
         project_dir: Path,
-        semaphore: asyncio.Semaphore, *,
+        semaphore: asyncio.Semaphore,
+        *,
         skip_audio: bool,
     ) -> AudioManifest:
         async with semaphore:
             ep_dir = project_dir / "episodes" / str(episode_number)
 
             async with _stage_log(
-                self.run_logger, f"audio_{episode_number}", project_dir,
-                episode=episode_number, segment_count=len(spoken.sections),
+                self.run_logger,
+                f"audio_{episode_number}",
+                project_dir,
+                episode=episode_number,
+                segment_count=len(spoken.sections),
             ) as ctx:
                 manifest = build_render_manifest(
                     spoken,

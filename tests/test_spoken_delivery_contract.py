@@ -82,14 +82,22 @@ def _architecture() -> EpisodeArchitecture:
         major_turn_section_id=payload["major_turn_section_id"],
         allowed_recurring_primitive_ids=[],
         forbidden_redundancies=[],
-        sections=[ArchitectureSection.model_validate(section) for section in payload["sections"]],
+        sections=[
+            ArchitectureSection.model_validate(section)
+            for section in payload["sections"]
+        ],
         architecture_notes=[],
     )
 
 
-def test_rewrite_for_speech_passes_continuity_tail_for_later_batches(monkeypatch, tmp_path: Path) -> None:
+def test_rewrite_for_speech_passes_continuity_tail_for_later_batches(
+    monkeypatch, tmp_path: Path
+) -> None:
     heuristic = HeuristicLLMClient()
-    monkeypatch.setattr("podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic)
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.build_llm_client",
+        lambda settings: heuristic,
+    )
     monkeypatch.setattr(
         "podcast_agent.pipeline.orchestrator.PGVectorRetrieval",
         lambda settings, run_logger=None: SimpleNamespace(),
@@ -167,7 +175,9 @@ def test_rewrite_for_speech_passes_continuity_tail_for_later_batches(monkeypatch
     ep_dir.mkdir(parents=True, exist_ok=True)
 
     spoken = asyncio.run(
-        orchestrator._rewrite_for_speech(1, script, project, ep_dir, tmp_path, architecture=_architecture())
+        orchestrator._rewrite_for_speech(
+            1, script, project, ep_dir, tmp_path, architecture=_architecture()
+        )
     )
 
     assert len(payloads) == 2
@@ -175,6 +185,8 @@ def test_rewrite_for_speech_passes_continuity_tail_for_later_batches(monkeypatch
     assert payloads[1]["section"]["section_id"] == "section_2"
     assert payloads[0]["section"]["anchor"] == "Anchor 1"
     assert payloads[1]["section"]["closure_mode"] == "final_answer"
+    assert payloads[0]["section"]["term_explanations"] == []
+    assert payloads[0]["section"]["host_presence_beats"] == []
     assert "batch_index" not in payloads[0]
     assert "batch_index" not in payloads[1]
     assert "batch_count" not in payloads[0]
@@ -187,16 +199,24 @@ def test_rewrite_for_speech_passes_continuity_tail_for_later_batches(monkeypatch
     )
     assert "upcoming_batches_summary" not in payloads[0]
     assert "upcoming_batches_summary" not in payloads[1]
-    assert [section.section_id for section in spoken.sections] == ["section_1", "section_2"]
+    assert [section.section_id for section in spoken.sections] == [
+        "section_1",
+        "section_2",
+    ]
     assert [section.text for section in spoken.sections] == [
         "spoken::First sentence. Second sentence. Third sentence. Fourth sentence. Fifth sentence.",
         "spoken::Later batch.",
     ]
 
 
-def test_style_audit_episode_uses_section_anchor_payload(monkeypatch, tmp_path: Path) -> None:
+def test_style_audit_episode_uses_section_anchor_payload(
+    monkeypatch, tmp_path: Path
+) -> None:
     heuristic = HeuristicLLMClient()
-    monkeypatch.setattr("podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic)
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.build_llm_client",
+        lambda settings: heuristic,
+    )
     monkeypatch.setattr(
         "podcast_agent.pipeline.orchestrator.PGVectorRetrieval",
         lambda settings, run_logger=None: SimpleNamespace(),
@@ -277,6 +297,8 @@ def test_style_audit_episode_uses_section_anchor_payload(monkeypatch, tmp_path: 
         "Anchor 1",
         "Anchor 2",
     ]
+    assert payloads[0]["sections"][0]["term_explanations"] == []
+    assert payloads[0]["sections"][0]["host_presence_beats"] == []
     assert [section.text for section in audited_script.prose_sections] == [
         "Edited first section.",
         "Edited second section.",

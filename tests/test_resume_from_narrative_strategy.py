@@ -567,7 +567,16 @@ def test_resume_from_narrative_strategy_passes_actor_metadata_and_forces_skips(
     assert calls["production_strategy_episode"].title == "Episode"
     assert calls["production_architecture"].episode_number == 1
     assert "authorial_policy" in calls["host_policy"]
-    assert calls["host_policy"]["authorial_policy"]["host_moves_are_secondary"] is True
+    assert (
+        calls["host_policy"]["authorial_policy"][
+            "authorial_passages_are_primary_exposition"
+        ]
+        is True
+    )
+    assert (
+        calls["host_policy"]["authorial_policy"]["host_moves_are_primary_scene_shaping"]
+        is True
+    )
     assert calls["narrative_config"].skip_grounding is True
     assert calls["narrative_config"].skip_audio is True
     assert calls["narrative_config"].skip_spoken_delivery is False

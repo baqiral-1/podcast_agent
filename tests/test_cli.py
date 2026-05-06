@@ -6,7 +6,12 @@ import pytest
 import typer
 from typer.testing import CliRunner
 
-from podcast_agent.cli.app import _normalize_tts_provider, _parse_sub_themes, app
+from podcast_agent.cli.app import (
+    _normalize_podcast_mode,
+    _normalize_tts_provider,
+    _parse_sub_themes,
+    app,
+)
 
 
 runner = CliRunner()
@@ -115,6 +120,18 @@ class TestNormalizeTTSProvider:
             _normalize_tts_provider("bad-provider")
 
 
+class TestNormalizePodcastMode:
+    def test_full_is_preserved(self):
+        assert _normalize_podcast_mode("full") == "full"
+
+    def test_minified_is_preserved(self):
+        assert _normalize_podcast_mode("minified") == "minified"
+
+    def test_invalid_mode_raises(self):
+        with pytest.raises(typer.BadParameter, match="Invalid --podcast-mode value"):
+            _normalize_podcast_mode("compact")
+
+
 class TestRunCommand:
     def test_run_uses_resolved_tts_provider_for_settings_and_config(self, monkeypatch, tmp_path):
         from types import SimpleNamespace
@@ -140,6 +157,7 @@ class TestRunCommand:
             ):
                 captured["config_provider"] = config.tts_provider
                 captured["passage_extraction_concurrency"] = config.passage_extraction_concurrency
+                captured["podcast_mode"] = config.podcast_mode
                 return SimpleNamespace(
                     project_id="proj-1",
                     status=SimpleNamespace(value="complete"),
@@ -163,6 +181,8 @@ class TestRunCommand:
                 "--skip-audio",
                 "--tts-provider",
                 "openai",
+                "--podcast-mode",
+                "minified",
                 "--passage-extraction-concurrency",
                 "8",
             ],
@@ -172,3 +192,4 @@ class TestRunCommand:
         assert captured["settings_provider"] == "openai-compatible"
         assert captured["config_provider"] == "openai-compatible"
         assert captured["passage_extraction_concurrency"] == 8
+        assert captured["podcast_mode"] == "minified"

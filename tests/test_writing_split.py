@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 
@@ -28,12 +29,31 @@ class DummyTTSClient:
         return None
 
 
+class APIStatusError(Exception):
+    def __init__(self, message: str, *, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
 def _core_primitive_ids() -> list[str]:
     return [f"primitive_{idx}" for idx in range(1, 8)]
 
 
 def _support_primitive_roles() -> dict[str, str]:
     return {f"support_{idx}": "mechanism" for idx in range(1, 8)}
+
+
+def _host_moves() -> dict[str, list[dict[str, str]]]:
+    return {
+        "open": [
+            {
+                "move_type": "orient",
+                "note": "Set the listener's footing before the beat turns.",
+            }
+        ],
+        "pivot": [],
+        "close": [],
+    }
 
 
 def _strategy_episode() -> StrategyEpisode:
@@ -176,6 +196,7 @@ def _episode_plan() -> EpisodePlan:
                     "intended_move": "Move 1",
                     "primitive_ids": ["primitive_1"],
                     "passage_ids": ["p1"],
+                    "host_moves": _host_moves(),
                     "actors": [{"name": "Actor 1", "actor_id": "actor_1", "presence": "primary"}],
                     "estimated_duration_seconds": 60,
                 },
@@ -195,6 +216,7 @@ def _episode_plan() -> EpisodePlan:
                     "intended_move": "Move 2",
                     "primitive_ids": ["primitive_1"],
                     "passage_ids": ["p2"],
+                    "host_moves": _host_moves(),
                     "actors": [{"name": "Actor 2", "actor_id": "actor_2", "presence": "primary"}],
                     "estimated_duration_seconds": 60,
                 },
@@ -212,6 +234,7 @@ def _episode_plan() -> EpisodePlan:
                     "intended_move": "Move 3",
                     "primitive_ids": ["primitive_1"],
                     "passage_ids": ["p3"],
+                    "host_moves": _host_moves(),
                     "actors": [{"name": "Actor 3", "actor_id": "actor_3", "presence": "primary"}],
                     "estimated_duration_seconds": 60,
                 },
@@ -229,6 +252,7 @@ def _episode_plan() -> EpisodePlan:
                     "intended_move": "Move 4",
                     "primitive_ids": ["primitive_1"],
                     "passage_ids": ["p4"],
+                    "host_moves": _host_moves(),
                     "actors": [{"name": "Actor 4", "actor_id": "actor_4", "presence": "primary"}],
                     "estimated_duration_seconds": 60,
                 },
@@ -495,6 +519,94 @@ def test_write_episode_retries_failed_second_part_from_start(
     assert "writing_feedback" not in captured_payloads[2]
     assert "writing_feedback" in captured_payloads[3]
     assert "scene_renamed" in str(captured_payloads[3]["writing_feedback"])
+    assert [scene_id for section in script.prose_sections for scene_id in section.scene_card_ids] == [
+        "scene_1",
+        "scene_2",
+        "scene_3",
+        "scene_4",
+    ]
+
+
+def test_write_episode_retries_transient_failure_for_second_part(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    async def fake_async_sleep(_seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr("podcast_agent.pipeline.orchestrator.asyncio.sleep", fake_async_sleep)
+    orchestrator = _build_orchestrator(monkeypatch)
+    captured_calls: list[dict[str, object]] = []
+
+    def fake_generate_json(
+        schema_name: str,
+        instructions: str,
+        payload: dict,
+        response_model,
+        *,
+        attempt: int = 1,
+        max_attempts: int = 1,
+    ):
+        captured_calls.append(
+            {
+                "attempt": attempt,
+                "scene_ids": [scene["scene_id"] for scene in payload["plan"]["scene_cards"]],
+            }
+        )
+        if len(captured_calls) == 2:
+            raise APIStatusError("Internal server error", status_code=500)
+        return response_model.model_validate(
+            {
+                "prose_sections": [
+                    {
+                        "section_id": section["section_id"],
+                        "scene_card_ids": [
+                            scene["scene_id"]
+                            for scene in payload["plan"]["scene_cards"]
+                            if scene["section_id"] == section["section_id"]
+                        ],
+                        "movement_goal": "discover",
+                        "text": " ".join(
+                            f"Draft for {scene['scene_id']}."
+                            for scene in payload["plan"]["scene_cards"]
+                            if scene["section_id"] == section["section_id"]
+                        ),
+                        "source_book_ids": ["book_1"],
+                    }
+                    for section in payload["architecture"]["sections"]
+                ]
+            }
+        )
+
+    monkeypatch.setattr(orchestrator.writing_agent.llm, "generate_json", fake_generate_json)
+
+    plan = _episode_plan()
+    strategy_episode = _strategy_episode()
+    architecture = _episode_architecture()
+    corpus = _corpus()
+    actor_metadata = _actor_metadata()
+    project = _project()
+    ep_dir = tmp_path / "episodes" / "1"
+
+    with patch("podcast_agent.agents.base.time.sleep", return_value=None):
+        script = asyncio.run(
+            orchestrator._write_episode(
+                plan,
+                strategy_episode,
+                architecture,
+                project,
+                corpus,
+                ep_dir,
+                tmp_path,
+                actor_metadata,
+            )
+        )
+
+    assert captured_calls == [
+        {"attempt": 1, "scene_ids": ["scene_1", "scene_2"]},
+        {"attempt": 1, "scene_ids": ["scene_3", "scene_4"]},
+        {"attempt": 2, "scene_ids": ["scene_3", "scene_4"]},
+    ]
     assert [scene_id for section in script.prose_sections for scene_id in section.scene_card_ids] == [
         "scene_1",
         "scene_2",

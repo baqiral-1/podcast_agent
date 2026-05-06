@@ -24,6 +24,7 @@ from podcast_agent.pipeline.orchestrator import (
     _build_scene_card_count_warnings,
     _build_scene_card_primitive_warnings,
     _build_passage_lookup,
+    _build_episode_architecture_realization,
     _compact_primitives_for_consolidation,
     _estimate_duration_seconds_from_words,
     _flatten_synthesis_primitives,
@@ -60,6 +61,7 @@ from podcast_agent.schemas.models import (
     NarrativeStrategy,
     PassagePair,
     PipelineConfig,
+    PodcastMode,
     ProseSection,
     SceneActor,
     SceneActorArcBinding,
@@ -80,6 +82,7 @@ from podcast_agent.schemas.models import (
     ThematicAxis,
     ThematicProject,
     VerdictMode,
+    resolve_pipeline_config_for_mode,
 )
 
 
@@ -137,6 +140,19 @@ def _strategy_episode(
     )
 
 
+def _host_moves() -> dict[str, list[dict[str, str]]]:
+    return {
+        "open": [
+            {
+                "move_type": "orient",
+                "note": "Set the listener's footing before the beat turns.",
+            }
+        ],
+        "pivot": [],
+        "close": [],
+    }
+
+
 def _scene_card(
     scene_id: str,
     pack_id: str,
@@ -158,6 +174,7 @@ def _scene_card(
         observable_detail="Detail",
         intended_move="Move",
         passage_ids=["p1"],
+        host_moves=_host_moves(),
         actors=list(actors or []),
         estimated_duration_seconds=120,
     )
@@ -606,6 +623,49 @@ def test_build_scene_card_count_warnings_for_under_target():
     assert warnings[0].startswith("scene_card_count_below_target")
 
 
+def test_episode_architecture_realization_uses_resolved_config_targets():
+    strategy_episode = _strategy_episode("et_1", "et_2", "et_3")
+    sections = []
+    for idx in range(6):
+        section_id = f"section_{idx + 1:02d}"
+        sections.append(
+            ArchitectureSection(
+                section_id=section_id,
+                purpose="closing" if idx == 5 else "setup",
+                approx_runtime_minutes=2.0 if idx == 5 else 8.0,
+                primitive_ids=[
+                    strategy_episode.episode_spine.assigned_primitive_ids[
+                        min(idx, len(strategy_episode.episode_spine.assigned_primitive_ids) - 1)
+                    ]
+                ],
+                section_anchor="Anchor",
+                must_stage_beats=["Visible move", "Immediate consequence"],
+                listener_question="Question?",
+                section_resolution="Resolution",
+                transition_logic="Transition",
+            )
+        )
+    architecture = EpisodeArchitecture(
+        episode_number=1,
+        major_turn_section_id="section_03",
+        sections=sections,
+        architecture_notes=[],
+    )
+
+    realization = _build_episode_architecture_realization(
+        strategy_episode=strategy_episode,
+        architecture=architecture,
+        pipeline_config=resolve_pipeline_config_for_mode(
+            PipelineConfig(podcast_mode=PodcastMode.MINIFIED)
+        ),
+    )
+
+    assert not any(
+        warning.startswith("architecture_section_count_below_target")
+        for warning in realization["warnings"]
+    )
+
+
 def test_build_scene_card_primitive_warnings_reports_density_and_unknown_ids():
     cards = [
         SceneCard(
@@ -621,6 +681,7 @@ def test_build_scene_card_primitive_warnings_reports_density_and_unknown_ids():
             intended_move="Move",
             primitive_ids=[],
             passage_ids=["p1"],
+            host_moves=_host_moves(),
             estimated_duration_seconds=60,
         ),
         SceneCard(
@@ -636,6 +697,7 @@ def test_build_scene_card_primitive_warnings_reports_density_and_unknown_ids():
             intended_move="Move",
             primitive_ids=["tp_1", "tp_2", "tp_3"],
             passage_ids=["p2"],
+            host_moves=_host_moves(),
             estimated_duration_seconds=90,
         ),
     ]
@@ -686,6 +748,7 @@ def test_compute_scene_word_count_targets_uses_scene_durations():
             intended_move="Move",
             primitive_ids=[],
             passage_ids=["p1"],
+            host_moves=_host_moves(),
             estimated_duration_seconds=30,
         ),
         SceneCard(
@@ -701,6 +764,7 @@ def test_compute_scene_word_count_targets_uses_scene_durations():
             intended_move="Move",
             primitive_ids=[],
             passage_ids=["p2"],
+            host_moves=_host_moves(),
             estimated_duration_seconds=90,
         ),
     ]
@@ -722,6 +786,7 @@ def test_compute_scene_word_count_targets_scales_with_words_per_minute():
             observable_detail="Detail",
             intended_move="Move",
             passage_ids=["p1"],
+            host_moves=_host_moves(),
             estimated_duration_seconds=30,
         ),
         SceneCard(
@@ -736,6 +801,7 @@ def test_compute_scene_word_count_targets_scales_with_words_per_minute():
             observable_detail="Detail",
             intended_move="Move",
             passage_ids=["p2"],
+            host_moves=_host_moves(),
             estimated_duration_seconds=90,
         ),
     ]
@@ -756,6 +822,7 @@ def test_compute_scene_word_count_targets_requires_positive_scene_durations():
         observable_detail="Detail",
         intended_move="Move",
         passage_ids=["p1"],
+        host_moves=_host_moves(),
         estimated_duration_seconds=60,
     )
     scenes = [

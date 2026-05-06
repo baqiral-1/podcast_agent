@@ -49,6 +49,18 @@ def _normalize_tts_provider(value: str | None) -> str | None:
     )
 
 
+def _normalize_podcast_mode(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    if normalized in {"full", "minified"}:
+        return normalized
+    raise typer.BadParameter(
+        f"Invalid --podcast-mode value '{value}'. Expected full or minified.",
+        param_hint="podcast-mode",
+    )
+
+
 @app.command()
 def run(
     sources: list[str] = typer.Argument(..., help="Paths to book files (PDF, TXT, MD)."),
@@ -85,6 +97,11 @@ def run(
         "--tts-provider",
         help="TTS provider for audio synthesis (openai-compatible, kokoro).",
     ),
+    podcast_mode: Optional[str] = typer.Option(
+        None,
+        "--podcast-mode",
+        help="Podcast mode profile (full, minified).",
+    ),
     project_id: Optional[str] = typer.Option(None, "--project-id", help="Custom project ID (default: auto-generated UUID)."),
 ) -> None:
     """Run the full multi-book thematic podcast pipeline."""
@@ -98,12 +115,15 @@ def run(
             update={"pipeline": settings.pipeline.model_copy(update={"artifact_root": Path(output_dir)})}
         )
     resolved_tts_provider = _normalize_tts_provider(tts_provider)
+    resolved_podcast_mode = _normalize_podcast_mode(podcast_mode)
     if resolved_tts_provider is not None:
         settings = settings.model_copy(
             update={"tts": settings.tts.model_copy(update={"provider": resolved_tts_provider})}
         )
 
     config_updates: dict = {"tts_provider": settings.tts.provider}
+    if resolved_podcast_mode is not None:
+        config_updates["podcast_mode"] = resolved_podcast_mode
     if skip_grounding:
         config_updates["skip_grounding"] = True
     if skip_spoken_delivery:

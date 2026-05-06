@@ -34,6 +34,42 @@ class ComplianceViolationError(RuntimeError):
         self.data = data or {}
 
 
+_TRANSIENT_API_STATUS_MESSAGE_SNIPPETS = (
+    "overloaded_error",
+    "overloaded",
+    "internal server error",
+    "service unavailable",
+    "gateway timeout",
+    "temporarily unavailable",
+)
+
+
+def _iter_exception_chain(exc: Exception) -> Sequence[BaseException]:
+    seen: set[int] = set()
+    stack: list[BaseException] = [exc]
+    ordered: list[BaseException] = []
+
+    while stack:
+        current = stack.pop()
+        marker = id(current)
+        if marker in seen:
+            continue
+        seen.add(marker)
+        ordered.append(current)
+
+        nested = getattr(current, "exceptions", None)
+        if isinstance(nested, tuple):
+            stack.extend(
+                child for child in reversed(nested) if isinstance(child, BaseException)
+            )
+        for attr_name in ("__cause__", "__context__"):
+            linked = getattr(current, attr_name, None)
+            if isinstance(linked, BaseException):
+                stack.append(linked)
+
+    return ordered
+
+
 def is_timeout_error(exc: Exception) -> bool:
     if isinstance(exc, (TimeoutError, socket.timeout)):
         return True
@@ -109,27 +145,24 @@ def is_api_status_transient_error(exc: Exception) -> bool:
 
     if "ratelimit" in error_name:
         return True
-    if "apistatuserror" not in error_name:
-        return False
 
     message = str(exc).lower()
-    if (
-        "overloaded_error" in message
-        or "overloaded" in message
-        or "internal server error" in message
-        or "service unavailable" in message
-        or "gateway timeout" in message
-        or "temporarily unavailable" in message
-    ):
+    if any(snippet in message for snippet in _TRANSIENT_API_STATUS_MESSAGE_SNIPPETS):
         return True
+    if "internalservererror" in error_name:
+        return True
+    if "apistatuserror" not in error_name:
+        return False
     return False
 
 
 def is_transient_error(exc: Exception) -> bool:
-    return (
-        is_timeout_error(exc)
-        or is_connection_error(exc)
-        or is_api_status_transient_error(exc)
+    return any(
+        is_timeout_error(candidate)
+        or is_connection_error(candidate)
+        or is_api_status_transient_error(candidate)
+        for candidate in _iter_exception_chain(exc)
+        if isinstance(candidate, Exception)
     )
 
 

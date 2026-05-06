@@ -24,6 +24,8 @@ from podcast_agent.schemas.models import (
     EpisodeSpine,
     NarrativeStrategy,
     PipelineConfig,
+    SeriesNarratorProfile,
+    SeriesExplanationItem,
     SynthesisPrimitivesArtifact,
     StrategyEpisode,
     ThematicProject,
@@ -166,9 +168,14 @@ def test_build_narrative_strategy_payload_helpers_trim_fields():
     }
 
 
-def test_choose_narrative_strategy_uses_trimmed_runtime_payload(monkeypatch, tmp_path: Path):
+def test_choose_narrative_strategy_uses_trimmed_runtime_payload(
+    monkeypatch, tmp_path: Path
+):
     heuristic = HeuristicLLMClient()
-    monkeypatch.setattr("podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic)
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.build_llm_client",
+        lambda settings: heuristic,
+    )
     monkeypatch.setattr(
         "podcast_agent.pipeline.orchestrator.PGVectorRetrieval",
         lambda settings, run_logger=None: SimpleNamespace(),
@@ -209,8 +216,7 @@ def test_choose_narrative_strategy_uses_trimmed_runtime_payload(monkeypatch, tmp
                             "core_7",
                         ],
                         support_primitive_roles={
-                            f"support_{idx}": "mechanism"
-                            for idx in range(1, 8)
+                            f"support_{idx}": "mechanism" for idx in range(1, 8)
                         },
                     ),
                 )
@@ -304,3 +310,60 @@ def test_choose_narrative_strategy_uses_trimmed_runtime_payload(monkeypatch, tmp
     assert "narrative_functions" not in payload["actor_metadata"]["actors"][0]
     assert "relationships" not in payload["actor_metadata"]
     assert "quality_notes" not in payload["actor_metadata"]
+
+
+def test_narrative_strategy_accepts_series_explanation_registry_contract() -> None:
+    strategy = NarrativeStrategy.model_validate(
+        {
+            "strategy_type": "chronological",
+            "justification": "Fits the material.",
+            "series_arc": "An arc.",
+            "narrator_profile": SeriesNarratorProfile().model_dump(mode="json"),
+            "series_explanation_registry": [
+                SeriesExplanationItem(
+                    item_id="registry_1",
+                    label="taqlid",
+                    aliases=["emulation"],
+                    kind="term",
+                    importance="foundational",
+                    introduction_episode_number=1,
+                    preferred_plain_gloss="follow a recognized jurist",
+                ).model_dump(mode="json")
+            ],
+            "episodes": [
+                {
+                    "episode_number": 1,
+                    "title": "Episode 1",
+                    "arc_summary": "Arc",
+                    "episode_spine": {
+                        "listener_question": "Question?",
+                        "argument": "Claim",
+                        "core_primitive_ids": [
+                            "core_1",
+                            "core_2",
+                            "core_3",
+                            "core_4",
+                            "core_5",
+                            "core_6",
+                            "core_7",
+                        ],
+                        "support_primitive_roles": {
+                            f"support_{idx}": "mechanism" for idx in range(1, 6)
+                        },
+                    },
+                    "authorial_contract": {
+                        "introduce_explanation_item_ids": ["registry_1"],
+                        "remind_explanation_item_ids": [],
+                        "callback_obligations": [
+                            "Recall that clerical authority already had an operating structure."
+                        ],
+                    },
+                }
+            ],
+        }
+    )
+
+    assert strategy.series_explanation_registry[0].item_id == "registry_1"
+    assert strategy.episodes[0].authorial_contract.introduce_explanation_item_ids == [
+        "registry_1"
+    ]

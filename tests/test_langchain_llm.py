@@ -370,6 +370,20 @@ class _FakeStreamingClient:
         return iter(self._chunks)
 
 
+class _FakeInvokeClient:
+    def __init__(self, exc: Exception) -> None:
+        self._exc = exc
+
+    def invoke(self, messages: Any, **_: Any) -> Any:
+        raise self._exc
+
+
+class _FakeAPIStatusError(Exception):
+    def __init__(self, message: str, *, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
 class _DummySchema(BaseModel):
     k: int
 
@@ -601,6 +615,47 @@ def test_generate_json_logs_stop_reason(
 
     meta = [p for (t, p) in run_logger.events if t == "llm_response_meta"][0]
     assert meta["stop_reason"] == "end_turn"
+
+
+def test_generate_json_logs_transient_provider_failure_as_retryable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(
+        llm=LLMConfig(
+            llm_provider="anthropic",
+            provider="anthropic",
+            model_name="claude-opus-4-7",
+            anthropic_api_key="test-key",
+            provider_overrides={"custom_schema": "anthropic"},
+        )
+    )
+    client = llm_module.LangChainLLMClient(settings)
+    run_logger = _StubRunLogger()
+    client.set_run_logger(run_logger)
+    monkeypatch.setattr(
+        client,
+        "_build_model",
+        lambda _schema: _FakeInvokeClient(
+            _FakeAPIStatusError("Internal server error", status_code=500)
+        ),
+    )
+
+    with pytest.raises(llm_module.TransientLLMError, match="Internal server error"):
+        client.generate_json(
+            schema_name="custom_schema",
+            instructions="x",
+            payload={"user_text": "y"},
+            response_model=_DummySchema,
+            attempt=1,
+            max_attempts=2,
+        )
+
+    retryable_events = [p for (t, p) in run_logger.events if t == "llm_retryable_error"]
+    error_events = [p for (t, p) in run_logger.events if t == "llm_error"]
+    assert len(retryable_events) == 1
+    assert retryable_events[0]["error_type"] == "_FakeAPIStatusError"
+    assert retryable_events[0]["will_retry"] is True
+    assert error_events == []
 
 
 def test_thinking_config_event_includes_display(

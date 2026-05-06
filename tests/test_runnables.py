@@ -23,6 +23,10 @@ class APIStatusError(Exception):
         self.status_code = status_code
 
 
+class ProviderWrapperError(Exception):
+    pass
+
+
 def test_connection_error_detects_builtin_connection_error() -> None:
     assert is_connection_error(ConnectionError("socket disconnected"))
 
@@ -66,6 +70,17 @@ def test_transient_error_true_for_api_internal_server_message_without_status() -
         "{'type': 'error', 'error': {'type': 'api_error', 'message': 'Internal server error'}}"
     )
     assert is_transient_error(exc)
+
+
+def test_transient_error_true_for_internal_server_message_without_api_status_name() -> None:
+    exc = ProviderWrapperError("Upstream failure: Internal server error")
+    assert is_transient_error(exc)
+
+
+def test_transient_error_true_for_wrapped_api_status_error() -> None:
+    wrapped = ProviderWrapperError("model call failed")
+    wrapped.__cause__ = APIStatusError("upstream failure", status_code=503)
+    assert is_transient_error(wrapped)
 
 
 def test_transient_error_true_for_api_overloaded_message_without_status() -> None:

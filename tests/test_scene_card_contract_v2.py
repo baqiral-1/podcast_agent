@@ -65,6 +65,16 @@ def _scene(
         observable_detail=observable_detail,
         actors=list(actors or []),
         passage_ids=["p1"],
+        host_moves={
+            "open": [
+                {
+                    "move_type": "orient",
+                    "note": "Set the listener's footing before the pressure turns.",
+                }
+            ],
+            "pivot": [],
+            "close": [],
+        },
         estimated_duration_seconds=duration,
     )
 
@@ -78,6 +88,11 @@ def test_scene_card_draft_maps_legacy_setup_role_to_two_axis_defaults() -> None:
             "scene_role": "setup",
             "beat_change": "Pressure becomes concrete.",
             "passage_ids": ["p1"],
+            "host_moves": {
+                "open": [{"move_type": "orient", "note": "Set the footing."}],
+                "pivot": [],
+                "close": [],
+            },
             "estimated_duration_seconds": 90,
         }
     )
@@ -95,6 +110,11 @@ def test_scene_card_draft_maps_legacy_synthesis_role_to_implication_landing() ->
             "scene_role": "synthesis",
             "beat_change": "The implication can now be stated briefly.",
             "passage_ids": ["p1"],
+            "host_moves": {
+                "open": [{"move_type": "orient", "note": "Set the footing."}],
+                "pivot": [],
+                "close": [],
+            },
             "estimated_duration_seconds": 75,
         }
     )
@@ -103,7 +123,9 @@ def test_scene_card_draft_maps_legacy_synthesis_role_to_implication_landing() ->
     assert card.scene_function == "landing"
 
 
-def test_structural_card_concreteness_warnings_report_missing_image_and_detail() -> None:
+def test_structural_card_concreteness_warnings_report_missing_image_and_detail() -> (
+    None
+):
     warnings = _build_structural_card_concreteness_warnings(
         scene_cards=[
             _scene(
@@ -116,14 +138,19 @@ def test_structural_card_concreteness_warnings_report_missing_image_and_detail()
         ]
     )
 
-    assert any(warning.startswith("structural_card_missing_entry_image") for warning in warnings)
+    assert any(
+        warning.startswith("structural_card_missing_entry_image")
+        for warning in warnings
+    )
     assert any(
         warning.startswith("structural_card_missing_observable_detail")
         for warning in warnings
     )
 
 
-def test_human_grounding_warning_fires_for_structurally_heavy_episode_without_grounding() -> None:
+def test_human_grounding_warning_fires_for_structurally_heavy_episode_without_grounding() -> (
+    None
+):
     diagnostics, warnings = _build_human_grounding_warnings(
         scene_cards=[
             _scene(
@@ -153,8 +180,7 @@ def test_section_plan_realization_adds_section_load_warnings() -> None:
         architecture_notes=[],
     )
     scene_cards = [
-        _scene(f"scene_{idx}", duration=300, section_id="section_1")
-        for idx in range(5)
+        _scene(f"scene_{idx}", duration=300, section_id="section_1") for idx in range(5)
     ]
 
     section_reports, warnings = _build_section_plan_realization(
@@ -223,3 +249,5 @@ def test_style_audit_payload_includes_section_load_metadata() -> None:
     assert payload[0]["scene_card_count"] == 2
     assert payload[0]["structural_card_count"] == 1
     assert payload[0]["projected_word_count"] > 0
+    assert payload[0]["term_explanations"] == []
+    assert payload[0]["host_presence_beats"] == []
