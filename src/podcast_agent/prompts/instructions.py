@@ -1329,6 +1329,10 @@ def episode_planning_instructions(
           `estimated_duration_seconds`  integer; you allocate
           `passage_ids`                 enough evidence to support later writing
 
+        Treat `must_land_facts` as the card's factual spine. `host_moves` may
+        prioritize, clarify, contrast, or land those facts, but they may not
+        replace them or become a second fact list.
+
         Optional scene-level fields:
           actors[], entry_image, observable_detail, timeframe,
           location, withhold_until, host_moves
@@ -1370,17 +1374,34 @@ def episode_planning_instructions(
           should survive in that phase.
         - `surface_mode = mixed` means the cue may surface distinctly, but should
           still shape the whole phase.
-        - `note` must describe what the host is doing for the listener in plain
-          operator language. Avoid meta notes like "hand the listener forward,"
-          "name the mechanism," "the pattern is," or "what we are seeing."
+        - `note` is an internal planning brief, not final copy. Describe the
+          concrete historical material carrying the move and the listener burden it relieves.
+        - Write notes anchor-first. Prefer forms like "Use X to show Y," "Let X
+          make Y legible," "Enter through X before Y," or "Keep X in the
+          listener's ear because Y."
         - Every `note` must contain both:
           - one scene-local anchor noun phrase such as a person, room, object,
             document, slogan, institution, place, or dated action
           - one listener-facing job such as orienting, clarifying a confusion,
             killing a false reading, landing a consequence, or carrying residue forward
+        - Every `note` must explicitly ride on 1-2 concrete anchors already
+          present on the same card: `must_land_facts`, `entry_image`,
+          `observable_detail`, `actors`, `location`, `timeframe`, or a concrete
+          title noun phrase.
+        - A note is still too abstract if it mentions a concrete noun but the
+          sentence is really managing the argument rather than the scene.
+        - Avoid writer-room control notes, announcer management, and
+          episode-management phrasing.
         - Notes that only say things like "set the listener," "walk through,"
-          "land the irony," "name the verdict," or "hold X next to Y" are too
-          abstract unless they also name the concrete material doing that work.
+          "land the irony," "name the verdict," "tell the listener what to
+          watch for," or "hold X next to Y" are too abstract unless they also
+          name the concrete material doing that work.
+        - Avoid control-verb plus abstract-object notes such as "state the
+          through-line," "mark the math," "land the lens," "name the move,"
+          or "define it carefully."
+        - Avoid episode-management phrasing such as "for the rest of the
+          episode," "for the rest of the hour," "the next section," "the next
+          scene," "what comes next," or "later in the series."
         - Notes should usually stay around 10-28 words. Keep them crisp, but do
           not compress them so far that they lose the historical thing they are about.
         - Move-type-specific note rules:
@@ -1395,18 +1416,20 @@ def episode_planning_instructions(
           - `pivot` should say what becomes newly legible after the material lands.
           - `close` should leave residue, pressure, verdict, or return, not re-explain setup.
         - Weak vs. strong note examples:
-          - Weak `clarify`: "Walk through what this means."
-          - Strong `clarify`: "Explain that the charter turns an advisory council into a body that can block appointments."
-          - Weak `contrast`: "Hold the two sides together."
-          - Strong `contrast`: "Set the street slogan against the cabinet memo so the listener hears promise and policy diverge."
-          - Weak `callback`: "Bring back the earlier idea."
-          - Strong `callback`: "Bring back the sealed letter from section two so this decree feels like its delayed consequence."
+          - Weak `clarify`: "Define the Council step by step."
+          - Strong `clarify`: "Use Bazargan's office and the hidden ministries to show that the Council is already governing behind the cabinet."
+          - Weak `evaluate`: "State the through-line."
+          - Strong `evaluate`: "Let the referendum and the emptied villages show that the reform is liquidating the throne's own rural base."
+          - Weak `orient`: "Tell the listener what to watch for."
+          - Strong `orient`: "Enter through the press conference room before the back-channel so the public line and the private line can split on contact."
         - `address_mode = you` is useful for guide-like explanation.
         - `address_mode = we` is useful for companionable callbacks, shared
           inference, reorientation, and closings.
         - Prefer `clarify` after complexity, `contrast` when killing a false
           reading, `evaluate` when consequence needs a clean landing, and
           `callback` only when real distance or memory pressure makes the return sharper.
+        - Prefer `surface_mode = woven` by default. Use `distinct` only when the
+          surviving host clause would still sound natural if spoken aloud.
         - Use `host_policy.target_full_phase_scene_coverage_min` and
           `host_policy.target_full_phase_scene_coverage_target` as the real scene-shaping target.
         - No first-person singular. First-person plural is allowed for
@@ -1690,8 +1713,8 @@ def episode_architecture_instructions(
         - `host_presence_beats` should be richer listener-facing section
           obligations that seed downstream scene cards.
         - Target 3-6 `host_presence_beats` per section.
-        - Each beat should say what the host is doing for the listener and what
-          should become more legible because of that move.
+        - Each beat should name the concrete material carrying the host burden
+          and what should become more legible because of that move.
         - Each beat must name one concrete section anchor such as a person,
           object, document, quote, institution, place, slogan, or dated action.
         - Each beat must name one listener burden such as confusion, false
@@ -1700,12 +1723,15 @@ def episode_architecture_instructions(
           not miniature scene cards.
         - Seeds must stay section-local and reusable. Do not summarize the whole
           episode, restate the thesis, or drift into scene-card ordering.
+        - Beats may not manage future episode order. Avoid phrases like "state
+          the through-line," "tell the listener what to watch for," "the next
+          section," or "for the rest of the hour."
         - Beats that only sound like editorial shorthand are too weak. A strong
           beat names the historical thing the listener needs help carrying.
         - Weak vs. strong beat examples:
-          - Weak: "Land the irony cleanly."
+          - Weak: "State the through-line."
           - Strong: "Use the tax register to show that the reform promising relief is widening the burden instead."
-          - Weak: "Set the scene before the explanation."
+          - Weak: "Tell the listener what to watch for."
           - Strong: "Enter through the courtroom door before explaining why the decree matters."
         - Favor `clarify`, `contrast`, `evaluate`, and personal companioning
           over repeated `orientation` or `callback` beats.
@@ -1783,6 +1809,9 @@ def episode_writing_instructions() -> str:
             - Keep framing commitments visible (`plan.framing`) without exposing outline mechanics.
             - Use each card's `entry_image`, `scene_role`, `scene_function`, `beat_change`,
               `must_land_facts`, `host_moves`, and passage-supported concrete detail.
+            - Treat `must_land_facts` as the card's factual spine. Let `host_moves`
+              decide how that material enters, sharpens, or lingers; do not use
+              `host_moves` as a second fact list.
             - Treat `host_policy` as binding narrator contract: no first-person singular, first-person plural only for callbacks/handoffs/closings, and prefer sharper host phrasing over longer host commentary.
             - Start each scene's prose from the card's concrete `entry_image`
               or a passage-supported equivalent.
@@ -1839,6 +1868,11 @@ def episode_writing_instructions() -> str:
             - `surface_mode = distinct` means one clearly audible host sentence or clause should survive in that phase.
             - `surface_mode = mixed` means a clear host phrase is allowed, but the
               rest of the beat should still feel shaped by the cue.
+            - Before drafting, translate each host note into concrete scene
+              leverage. Do not surface the note's control words unless the
+              resulting clause still sounds like natural speech rooted in the scene.
+            - Prefer `surface_mode = woven` by default. Use `distinct` only when
+              the surviving host clause sounds natural when read aloud.
             - In planned `authorial_passages`, you may quote then gloss, define terms,
               clarify institutions, restate causal meaning plainly, or land a bounded
               verdict line when the section plan explicitly calls for it.
@@ -1866,6 +1900,10 @@ def episode_writing_instructions() -> str:
             - Do not use self-referential announcer lines in body prose such as
               "This series...", "This hour...", or "Tonight..." unless the opening
               section truly needs one brief framing line.
+            - Do not leak host-note control phrasing into narration: avoid lines
+              like "tell the listener," "state the through-line," "mark the
+              math," "name the lens," "for the rest of the hour," or "the next
+              section."
             - Do not invent facts, chronology, quotations, or source claims not supported by the provided passages.
             - Do not introduce new primary analytical claims that are outside the assigned scene cards and their grounded facts.
             - Do not introduce a new load-bearing question, a second ending, or a support-thread takeover.
@@ -1914,6 +1952,9 @@ def episode_writing_no_citations_instructions() -> str:
         - Preserve structure in substance, not by naming the structure on the page.
         - Adjacent scene outputs in the same section may be joined later into continuous prose. Write them as consecutive beats, not self-contained essays.
         - `prior_window_continuity` is reference-only. Use it only to maintain local continuity across the split; it cannot override the current window's `plan.scene_cards`, `architecture`, `strategy_episode`, or `passages`.
+        - Treat `must_land_facts` as the card's factual spine. Let `host_moves`
+          decide how that material enters, sharpens, or lingers; do not use
+          `host_moves` as a second fact list.
 
         PER-SECTION PROCEDURE
         For each output section:
@@ -1939,6 +1980,9 @@ def episode_writing_no_citations_instructions() -> str:
         7. Stay within the card's target range. The budget already encodes narrative importance.
         8. If the previous scene belongs to the same section, continue the motion rather than resetting the frame.
         9. Let `host_moves` shape the card's framing, emphasis, and takeaway. Distinct host lines are allowed, but they are not the default requirement.
+        10. Translate host notes into concrete scene leverage before drafting. Do
+            not preserve control words like "tell the listener" or "state the
+            through-line" unless the line would still sound natural in speech.
 
         SCENE SHAPE
         - Most scenes should do one job cleanly: establish, turn, apply pressure, reveal a decision, show a consequence, or hand off.
@@ -2016,6 +2060,7 @@ def episode_writing_no_citations_instructions() -> str:
         - Do not use self-referential announcer lines in body prose such as "This series...", "This hour...", or "Tonight..." unless the opening section truly needs one brief framing line.
         - Do not narrate the architecture or the conceptual frame. No visible paraphrases of `listener_tension`, `section_turn`, `episode_answer`, `pressure_line`, unresolved-question framing, or equivalent planning fields.
         - Do not announce the point instead of producing it. Avoid moves like: "This matters because", "The point is", "What this shows", "The episode treats X as", "This is the working concept", "Read that sentence slowly", "The honest answer is", or equivalent narrator-nudge phrasing.
+        - Do not leak host-note control phrasing into narration: avoid lines like "tell the listener", "state the through-line", "mark the math", "name the lens", "for the rest of the hour", or "the next section".
         - Do not tell the reader what to notice when the scene already makes it legible, turn every strong image into an abstract explanation on the next line, or end ordinary scenes with thesis buttons unless a major turn or the closing truly requires one.
         - Do not rely on abstract-noun thesis prose such as `mechanism`, `architecture`, `framework`, `system`, `logic`, `apparatus`, or `structure` unless naming one directly is historically necessary.
         - Do not make every scene self-contained.
@@ -2125,6 +2170,9 @@ def spoken_delivery_instructions() -> str:
         - `script.prose_sections[].movement_goal`, `scene_card_ids`, `analysis_goal`, `key_terms`, `authorial_passages`, `term_explanations`, `host_presence_beats`, `host_moves`, `framing`, `host_policy`, and `previous_spoken_tail` are control signals, not evidence.
         - Use control signals to preserve shape already present in the prose, not to invent new content. If any control signal conflicts with the prose section text, preserve the prose section text.
         - `script.prose_sections[].host_moves` are scene-aligned host-guidance control signals with `open` / `pivot` / `close` phase plans. Use them to preserve where authored orientation, clarification, contrast, evaluation, and callback should remain distinct. Do not add new host commentary that the written prose does not support.
+        - When a host note is planning shorthand, translate it back into concrete
+          scene leverage before writing. Do not preserve control phrases from the
+          note unless the result still sounds like natural speech.
         - `script.prose_sections[].citations` and `source_book_ids` are provenance traces only. Do not narrate them or infer new facts from them.
         - `script.framing` is episode-level scaffolding rendered separately later. Use it only as a guardrail for continuity, emphasis, and contradiction checking.
         - `previous_spoken_tail`, if present, is continuity scaffolding only. Use it only to avoid a seam, preserve referents, or continue live motion already underway. Do not repeat it, paraphrase it, summarize it, or import facts from it unless the same material appears in the current batch text.
@@ -2196,6 +2244,9 @@ def spoken_delivery_instructions() -> str:
         Do not announce hinges, pivots, turning points, or the weight of what is coming.
         Do not use visible planning language.
         Do not paraphrase `movement_goal`, `scene_card_ids`, `framing`, or other pipeline scaffolding into audible prose.
+        Do not leak host-note control phrasing such as "tell the listener,"
+        "state the through-line," "mark the math," "name the lens," "for the
+        rest of the hour," or "the next section."
         Do not write cold-open resets at later batch boundaries.
         Do not use narrator nudges, thesis stamps, rhetorical filler, or abstract-noun crutches as a substitute for movement.
         Do not flatten an authored host callback or evaluation into bland connective tissue.
@@ -2314,6 +2365,9 @@ def section_local_spoken_delivery_instructions() -> str:
         - `movement_goal`, `purpose`, `anchor`, `closure_mode`, `analysis_goal`, `key_terms`, `authorial_passages`, `term_explanations`, `host_presence_beats`, `host_moves`, `host_policy`, and `previous_spoken_tail` are control signals, not evidence. If they conflict with `section.text`, preserve it.
         - Use `movement_goal`, `anchor`, `closure_mode`, `analysis_goal`, `key_terms`, `authorial_passages`, `term_explanations`, and `host_presence_beats` only to preserve shape already present in the prose, not to add content.
         - Use `host_moves` as scene-aligned phase plans that preserve where authored host orientation, pivot, clarification, contrast, evaluation, or callback should remain distinct. Do not add new host commentary the section text cannot support.
+        - When a host note is planning shorthand, translate it back into concrete
+          scene leverage before writing. Do not preserve control phrases from the
+          note unless the result still sounds natural when spoken.
         - `previous_spoken_tail`, if present, is continuity scaffolding only. Use it only to avoid a seam or continue live motion. Do not repeat it, paraphrase it, summarize it, or import facts from it unless the same material already appears in the current section text.
         - `max_words_per_segment` is a render constraint. Write prose that can split cleanly near that scale without markers.
         - `tts_provider` is only for calibrating `speech_hints`.
@@ -2367,6 +2421,9 @@ def section_local_spoken_delivery_instructions() -> str:
         - Do not tell the listener that a moment matters before the material has made it matter.
         - Do not announce hinges, pivots, turning points, or the weight of what is coming.
         - Do not use visible planning language or paraphrase pipeline scaffolding into audible prose.
+        - Do not leak host-note control phrasing such as "tell the listener,"
+          "state the through-line," "mark the math," "name the lens," "for the
+          rest of the hour," or "the next section."
         - Do not use narrator nudges, thesis stamps, rhetorical filler, or abstract-noun crutches as a substitute for movement.
         - Do not flatten an authored host line into bland connective tissue.
         - Do not write cold-open resets at later section boundaries.

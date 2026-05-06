@@ -4028,11 +4028,120 @@ _HOST_MOVE_LOW_YIELD_ROLES = {
     "shock",
     "reaction",
 }
+_HOST_NOTE_EDITORIAL_CONTROL_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(
+        r"\b(state the through[- ]line|mark the math|land the lens|name the move|name the lens|define it carefully)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\btell the listener\b", re.IGNORECASE),
+    re.compile(r"\bwhat (?:to watch for|they are about to watch)\b", re.IGNORECASE),
+    re.compile(r"\bpause the chronology\b", re.IGNORECASE),
+)
+_HOST_NOTE_EPISODE_MANAGEMENT_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(
+        r"\b(rest of the episode|rest of the hour|next section|next scene|what comes next|later in the series)\b",
+        re.IGNORECASE,
+    ),
+)
+_HOST_NOTE_ABSTRACT_TARGET_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\bthrough[- ]line\b", re.IGNORECASE),
+    re.compile(r"\blens\b", re.IGNORECASE),
+    re.compile(r"\bmath\b", re.IGNORECASE),
+    re.compile(r"\bverdict\b", re.IGNORECASE),
+    re.compile(r"\bmechanism\b", re.IGNORECASE),
+    re.compile(r"\bstructural (choice|fact|finding)\b", re.IGNORECASE),
+)
+_HOST_NOTE_ANCHOR_IGNORE_TOKENS = {
+    "after",
+    "already",
+    "before",
+    "carefully",
+    "carry",
+    "chronology",
+    "cleanly",
+    "define",
+    "episode",
+    "guide",
+    "hold",
+    "honestly",
+    "hour",
+    "land",
+    "later",
+    "lens",
+    "line",
+    "listener",
+    "mark",
+    "math",
+    "mechanism",
+    "move",
+    "name",
+    "next",
+    "pause",
+    "plainly",
+    "rest",
+    "section",
+    "series",
+    "show",
+    "state",
+    "tell",
+    "through",
+    "use",
+    "verdict",
+    "walk",
+    "watch",
+    "what",
+}
 
 
 def _host_move_note_looks_meta(note: str) -> bool:
     normalized = " ".join(str(note or "").lower().split())
     return any(pattern in normalized for pattern in _HOST_MOVE_META_NOTE_PATTERNS)
+
+
+def _scene_host_anchor_tokens(scene: SceneCardDraft | SceneCard) -> set[str]:
+    anchor_texts = [
+        scene.title,
+        scene.entry_image,
+        scene.observable_detail,
+        scene.location or "",
+        scene.timeframe or "",
+        *scene.must_land_facts,
+        *(actor.name for actor in scene.actors),
+    ]
+    return _normalize_section_text_tokens(" ".join(text for text in anchor_texts if text))
+
+
+def _host_move_editorial_scaffolding_flags(
+    note: str,
+    *,
+    anchor_tokens: set[str],
+) -> list[str]:
+    normalized_note = " ".join(str(note or "").split())
+    if not normalized_note:
+        return []
+
+    flags: list[str] = []
+    if any(
+        pattern.search(normalized_note)
+        for pattern in _HOST_NOTE_EDITORIAL_CONTROL_PATTERNS
+    ):
+        flags.append("editorial_control_phrase")
+    if any(
+        pattern.search(normalized_note)
+        for pattern in _HOST_NOTE_EPISODE_MANAGEMENT_PATTERNS
+    ):
+        flags.append("episode_management_phrase")
+    if any(
+        pattern.search(normalized_note)
+        for pattern in _HOST_NOTE_ABSTRACT_TARGET_PATTERNS
+    ):
+        flags.append("abstract_target_noun")
+
+    note_tokens = _normalize_section_text_tokens(normalized_note)
+    meaningful_note_tokens = note_tokens - _HOST_NOTE_ANCHOR_IGNORE_TOKENS
+    if anchor_tokens and not (meaningful_note_tokens & anchor_tokens):
+        flags.append("missing_scene_anchor_overlap")
+    return flags
 
 
 def _build_host_move_plan_diagnostics(
@@ -4044,6 +4153,7 @@ def _build_host_move_plan_diagnostics(
     counts_by_type: dict[str, int] = {}
     counts_by_phase: dict[str, int] = {phase: 0 for phase in _HOST_MOVE_PHASE_ORDER}
     meta_note_phase_ids: list[str] = []
+    editorial_scaffolding_phase_ids: list[str] = []
     first_person_plural_note_scene_ids: list[str] = []
     disallowed_move_scene_ids: list[str] = []
     personalized_scene_ids: list[str] = []
@@ -4055,6 +4165,7 @@ def _build_host_move_plan_diagnostics(
     allowed_moves = set(narrator_profile.allowed_moves)
 
     for scene in scene_cards:
+        anchor_tokens = _scene_host_anchor_tokens(scene)
         phase_bucket_count = _scene_host_phase_bucket_count(scene)
         if phase_bucket_count == 1:
             scenes_with_1_phase.append(scene.scene_id)
@@ -4080,6 +4191,11 @@ def _build_host_move_plan_diagnostics(
                 scene_has_disallowed_move = True
             if _host_move_note_looks_meta(cue.note):
                 meta_note_phase_ids.append(f"{scene.scene_id}:{phase}")
+            if _host_move_editorial_scaffolding_flags(
+                cue.note,
+                anchor_tokens=anchor_tokens,
+            ):
+                editorial_scaffolding_phase_ids.append(f"{scene.scene_id}:{phase}")
         if scene_has_first_person_plural_note:
             first_person_plural_note_scene_ids.append(scene.scene_id)
         if scene_is_personalized:
@@ -4094,6 +4210,11 @@ def _build_host_move_plan_diagnostics(
     if meta_note_phase_ids:
         warnings.append(
             f"host_phase_meta_notes_detected: {_preview_ids(meta_note_phase_ids)}"
+        )
+    if editorial_scaffolding_phase_ids:
+        warnings.append(
+            "host_phase_editorial_scaffolding_detected: "
+            f"{_preview_ids(sorted(set(editorial_scaffolding_phase_ids)))}"
         )
     if disallowed_move_scene_ids:
         warnings.append(
@@ -4156,6 +4277,9 @@ def _build_host_move_plan_diagnostics(
         "scenes_with_3_phases_count": len(scenes_with_3_phases),
         "full_phase_scene_ids": full_phase_scene_ids,
         "meta_note_phase_ids": meta_note_phase_ids,
+        "editorial_scaffolding_phase_ids": sorted(
+            set(editorial_scaffolding_phase_ids)
+        ),
         "first_person_plural_note_scene_ids": first_person_plural_note_scene_ids,
         "personalized_scene_ids": personalized_scene_ids,
         "disallowed_move_scene_ids": disallowed_move_scene_ids,
@@ -5492,6 +5616,9 @@ def _build_host_move_text_diagnostics(
             "sections_with_first_person_plural": [],
             "section_host_cue_counts": {},
             "sections_with_host_phase_collapse": [],
+            "editorial_host_note_count": 0,
+            "sections_with_editorial_host_note_pressure": [],
+            "editorial_host_note_examples": [],
             "phase_trace": [],
         }
 
@@ -5501,6 +5628,7 @@ def _build_host_move_text_diagnostics(
     sections_with_first_person_plural: set[str] = set()
     phase_counts_by_section: dict[str, int] = {}
     for scene in plan.scene_cards:
+        anchor_tokens = _scene_host_anchor_tokens(scene)
         section_text = text_by_section_id.get(scene.section_id, "")
         if re.search(r"\b(we|our|us)\b", section_text.lower()):
             sections_with_first_person_plural.add(scene.section_id)
@@ -5515,6 +5643,10 @@ def _build_host_move_text_diagnostics(
             phase_note = " ".join(cue.note for cue in phase_cues if cue.note)
             note_tokens = _normalize_section_text_tokens(phase_note)
             approx_realized = not note_tokens or bool(note_tokens & section_tokens)
+            editorial_scaffolding_flags = _host_move_editorial_scaffolding_flags(
+                phase_note,
+                anchor_tokens=anchor_tokens,
+            )
             phase_id = f"{scene.scene_id}:{phase}"
             if approx_realized:
                 approx_realized_phase_ids.append(phase_id)
@@ -5530,6 +5662,7 @@ def _build_host_move_text_diagnostics(
                     "host_note": phase_note,
                     "address_modes": [cue.address_mode for cue in phase_cues],
                     "approx_realized": approx_realized,
+                    "editorial_scaffolding_flags": editorial_scaffolding_flags,
                     "first_person_plural_present": scene.section_id
                     in sections_with_first_person_plural,
                 }
@@ -5544,6 +5677,23 @@ def _build_host_move_text_diagnostics(
         for section_id, count in phase_counts_by_section.items()
         if count >= 4 and section_host_cue_counts.get(section_id, 0) <= 2
     )
+    editorial_phase_entries = [
+        row
+        for row in phase_trace
+        if row.get("editorial_scaffolding_flags")
+    ]
+    editorial_host_note_examples = [
+        {
+            "scene_id": str(row["scene_id"]),
+            "section_id": str(row["section_id"]),
+            "phase": str(row["phase"]),
+            "host_note": str(row["host_note"]),
+            "editorial_scaffolding_flags": list(
+                row.get("editorial_scaffolding_flags", [])
+            ),
+        }
+        for row in editorial_phase_entries[:8]
+    ]
 
     return {
         "planned_host_phase_count": len(phase_trace),
@@ -5553,6 +5703,11 @@ def _build_host_move_text_diagnostics(
         "sections_with_first_person_plural": sorted(sections_with_first_person_plural),
         "section_host_cue_counts": section_host_cue_counts,
         "sections_with_host_phase_collapse": sections_with_host_phase_collapse,
+        "editorial_host_note_count": len(editorial_phase_entries),
+        "sections_with_editorial_host_note_pressure": sorted(
+            {str(row["section_id"]) for row in editorial_phase_entries}
+        ),
+        "editorial_host_note_examples": editorial_host_note_examples,
         "phase_trace": phase_trace,
     }
 

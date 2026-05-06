@@ -1155,18 +1155,17 @@ class TestRedesignedAgents:
         assert "`host_policy`" in instructions
         assert "Each scene card must include `host_moves` with phase buckets" in instructions
         assert "Most scene cards should populate all three phase buckets." in instructions
+        assert "Treat `must_land_facts` as the card's factual spine." in instructions
         assert "Every `note` must contain both:" in instructions
+        assert "Write notes anchor-first." in instructions
         assert "Move-type-specific note rules:" in instructions
         assert "Phase-specific note rules:" in instructions
         assert "Weak vs. strong note examples:" in instructions
         assert (
-            "Explain that the charter turns an advisory council into a body that can block appointments."
+            "Use Bazargan's office and the hidden ministries to show that the Council is already governing behind the cabinet."
             in instructions
         )
-        assert (
-            "Set the street slogan against the cabinet memo so the listener hears promise and policy diverge."
-            in instructions
-        )
+        assert "State the through-line." in instructions
         assert "No first-person singular." in instructions
         assert "`section_id`" in instructions
         assert "`scene_function`" in instructions
@@ -1333,6 +1332,8 @@ class TestRedesignedAgents:
         assert "Follow scene-function intent:" in agent.instructions
         assert "Structural cards should stay concrete and brief." in agent.instructions
         assert "Planned `host_moves` should shape the scene's narration" in agent.instructions
+        assert "translate each host note into concrete scene" in agent.instructions.lower()
+        assert "Do not leak host-note control phrasing into narration" in agent.instructions
 
     def test_writing_response_allows_teaser_line(self):
         response = WritingAgent(_mock_llm()).response_model.model_validate(
@@ -1436,6 +1437,8 @@ class TestRedesignedAgents:
         )
         assert "`prior_window_continuity` is reference-only." in agent.instructions
         assert "Do not include a `citations` field" in agent.instructions
+        assert "concrete scene leverage" in agent.instructions
+        assert "Do not leak host-note control phrasing into narration" in agent.instructions
         assert "Populate `source_book_ids`" in agent.instructions
         assert "target ranges already encode narrative importance" in agent.instructions
         assert "`entry_image`" in agent.instructions

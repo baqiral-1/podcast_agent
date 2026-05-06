@@ -860,6 +860,85 @@ def test_build_host_move_text_diagnostics_warns_on_scene_collapse() -> None:
     assert diagnostics["sections_with_host_phase_collapse"] == ["section_01"]
 
 
+def test_build_host_move_text_diagnostics_flags_editorial_scaffolding() -> None:
+    plan = SimpleNamespace(
+        scene_cards=[
+            SceneCard.model_validate(
+                {
+                    "scene_id": "scene_1",
+                    "section_id": "section_01",
+                    "title": "What Is the Revolutionary Council?",
+                    "scene_role": "action",
+                    "scene_function": "scene",
+                    "beat_change": "A parallel executive becomes legible.",
+                    "must_land_facts": [
+                        "Bazargan sits in the prime minister's office while hidden ministries answer elsewhere.",
+                        "The Revolutionary Council runs in parallel to the official cabinet.",
+                        "Its authority is visible through the ministries it controls.",
+                    ],
+                    "passage_ids": ["p1"],
+                    "estimated_duration_seconds": 60,
+                    "actors": [{"name": "Bazargan"}],
+                    "entry_image": "Bazargan in the prime minister's office.",
+                    "host_moves": {
+                        "open": [
+                            {
+                                "move_type": "clarify",
+                                "note": "State the through-line.",
+                            }
+                        ],
+                        "pivot": [
+                            {
+                                "move_type": "clarify",
+                                "note": "Use Bazargan's office and the hidden ministries to show that the Council is already governing behind the cabinet.",
+                            }
+                        ],
+                        "close": [
+                            {
+                                "move_type": "orient",
+                                "note": "Tell the listener what to watch for in the next section.",
+                            }
+                        ],
+                    },
+                }
+            )
+        ]
+    )
+
+    diagnostics = _build_host_move_text_diagnostics(
+        text_by_section_id={
+            "section_01": (
+                "Bazargan sits in the prime minister's office while hidden ministries "
+                "answer elsewhere. The Revolutionary Council is already governing "
+                "behind the cabinet."
+            )
+        },
+        plan=plan,
+    )
+
+    phase_flags = {
+        f"{row['scene_id']}:{row['phase']}": row["editorial_scaffolding_flags"]
+        for row in diagnostics["phase_trace"]
+    }
+
+    assert phase_flags["scene_1:open"] == [
+        "editorial_control_phrase",
+        "abstract_target_noun",
+        "missing_scene_anchor_overlap",
+    ]
+    assert phase_flags["scene_1:pivot"] == []
+    assert phase_flags["scene_1:close"] == [
+        "editorial_control_phrase",
+        "episode_management_phrase",
+        "missing_scene_anchor_overlap",
+    ]
+    assert diagnostics["editorial_host_note_count"] == 2
+    assert diagnostics["sections_with_editorial_host_note_pressure"] == ["section_01"]
+    assert diagnostics["editorial_host_note_examples"][0]["host_note"] == (
+        "State the through-line."
+    )
+
+
 def test_build_episode_architecture_core_passages_uses_full_text_bm25_trim() -> None:
     passages = _build_episode_architecture_core_passages(
         driving_question="Drivingalpha",
