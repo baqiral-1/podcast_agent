@@ -509,26 +509,34 @@ def _build_window_architecture_payload(
     for section in architecture.sections:
         if section.section_id not in section_id_set:
             continue
-        section_payload = section.model_dump(mode="json")
-        section_payload["depends_on_section_ids"] = [
-            section_id
-            for section_id in section.depends_on_section_ids
-            if section_id in section_id_set
-        ]
-        section_payload["sets_up_section_ids"] = [
-            section_id
-            for section_id in section.sets_up_section_ids
-            if section_id in section_id_set
-        ]
-        filtered_sections.append(section_payload)
+        filtered_sections.append(section.model_dump(mode="json"))
 
-    architecture_payload = architecture.model_dump(mode="json")
-    architecture_payload["sections"] = filtered_sections
+    architecture_payload = {
+        "episode_number": architecture.episode_number,
+        "major_turn_section_id": architecture.major_turn_section_id,
+        "sections": filtered_sections,
+    }
     if filtered_sections and architecture.major_turn_section_id not in section_id_set:
         architecture_payload["major_turn_section_id"] = filtered_sections[-1][
             "section_id"
         ]
     return architecture_payload
+
+
+def _build_writer_strategy_episode_payload(
+    strategy_episode: StrategyEpisode,
+) -> dict[str, Any]:
+    spine = strategy_episode.episode_spine
+    return {
+        "episode_number": strategy_episode.episode_number,
+        "title": strategy_episode.title,
+        "episode_spine": {
+            "listener_problem": spine.listener_problem,
+            "episode_answer": spine.episode_answer,
+            "pressure_line": spine.pressure_line,
+            "core_primitive_ids": list(spine.core_primitive_ids),
+        },
+    }
 
 
 def _build_window_plan_payload(
@@ -812,11 +820,6 @@ def _build_host_policy_payload(
         "target_full_phase_scene_coverage_target": (
             narrator_profile.target_full_phase_scene_coverage_target
         ),
-        "target_policy": "full_phase_scene_coverage",
-        "scene_shaping_rule": (
-            "Host moves should shape each scene's entry, pivot, and residue "
-            "without turning the scene into standalone commentary."
-        ),
         "pronoun_policy": {
             "allow_first_person_singular": False,
             "allow_first_person_plural_only_for": [
@@ -829,11 +832,6 @@ def _build_host_policy_payload(
             ],
             "allow_second_person_guidance": True,
         },
-        "density_policy": {
-            "prefer_full_phase_scene_shaping": True,
-            "prefer_host_guidance_on_most_cards": True,
-            "allow_light_scenes_to_use_one_or_two_phases": True,
-        },
         "authorial_policy": {
             "analysis_mode": narrator_profile.analysis_mode,
             "analysis_density": narrator_profile.analysis_density,
@@ -844,9 +842,6 @@ def _build_host_policy_payload(
             "target_authorial_passages_per_episode": (
                 narrator_profile.target_authorial_passages_per_episode
             ),
-            "authorial_passages_are_primary_exposition": True,
-            "host_moves_are_primary_scene_shaping": True,
-            "host_moves_are_secondary_exposition": True,
         },
     }
 
@@ -1147,7 +1142,6 @@ def _build_style_audit_sections_payload(
                     if _is_structural_scene_card(scene)
                 ),
                 "host_moves": host_moves_by_section.get(prose_section.section_id, []),
-                "analysis_goal": meta.analysis_goal,
                 "key_terms": list(meta.key_terms),
                 "authorial_passages": [
                     passage.model_dump(mode="json")
@@ -1160,9 +1154,6 @@ def _build_style_audit_sections_payload(
                 "actor_explanations": [
                     explanation.model_dump(mode="json")
                     for explanation in meta.actor_explanations
-                ],
-                "host_presence_beats": [
-                    beat.model_dump(mode="json") for beat in meta.host_presence_beats
                 ],
                 "text": prose_section.text,
                 "actor_explanation_realizations": [
@@ -1205,9 +1196,6 @@ def _build_spoken_delivery_sections_payload(
                 "movement_goal": prose_section.movement_goal,
                 "scene_card_ids": list(prose_section.scene_card_ids),
                 "host_moves": host_moves_by_section.get(prose_section.section_id, []),
-                "analysis_goal": (
-                    architecture_section.analysis_goal if architecture_section else ""
-                ),
                 "key_terms": (
                     list(architecture_section.key_terms)
                     if architecture_section is not None
@@ -1233,14 +1221,6 @@ def _build_spoken_delivery_sections_payload(
                     [
                         explanation.model_dump(mode="json")
                         for explanation in architecture_section.actor_explanations
-                    ]
-                    if architecture_section is not None
-                    else []
-                ),
-                "host_presence_beats": (
-                    [
-                        beat.model_dump(mode="json")
-                        for beat in architecture_section.host_presence_beats
                     ]
                     if architecture_section is not None
                     else []
@@ -1270,9 +1250,6 @@ def _build_script_sections_payload(
         payload_sections.append(
             {
                 **prose_section.model_dump(mode="json"),
-                "analysis_goal": (
-                    architecture_section.analysis_goal if architecture_section else ""
-                ),
                 "key_terms": (
                     list(architecture_section.key_terms)
                     if architecture_section is not None
@@ -1298,14 +1275,6 @@ def _build_script_sections_payload(
                     [
                         explanation.model_dump(mode="json")
                         for explanation in architecture_section.actor_explanations
-                    ]
-                    if architecture_section is not None
-                    else []
-                ),
-                "host_presence_beats": (
-                    [
-                        beat.model_dump(mode="json")
-                        for beat in architecture_section.host_presence_beats
                     ]
                     if architecture_section is not None
                     else []
@@ -5663,50 +5632,6 @@ def _build_episode_architecture_realization(
             f"reminder_item_redefined: {_preview_ids(reminder_redefined_item_ids)}"
         )
 
-    host_presence_counts: dict[str, int] = {}
-    host_presence_counts_by_section: dict[str, int] = {}
-    for section in architecture.sections:
-        host_presence_counts_by_section[section.section_id] = len(
-            section.host_presence_beats
-        )
-        for beat in section.host_presence_beats:
-            host_presence_counts[beat.kind] = host_presence_counts.get(beat.kind, 0) + 1
-    underdense_host_presence_sections = [
-        section_id
-        for section_id, count in host_presence_counts_by_section.items()
-        if count < 3
-    ]
-    overdense_host_presence_sections = [
-        section_id
-        for section_id, count in host_presence_counts_by_section.items()
-        if count > 6
-    ]
-    if underdense_host_presence_sections:
-        warnings.append(
-            "host_presence_density_below_target: "
-            f"{_preview_ids(underdense_host_presence_sections)}"
-        )
-    if overdense_host_presence_sections:
-        warnings.append(
-            "host_presence_density_above_target: "
-            f"{_preview_ids(overdense_host_presence_sections)}"
-        )
-    callback_orientation_count = host_presence_counts.get(
-        "callback", 0
-    ) + host_presence_counts.get("orientation", 0)
-    active_host_presence_count = sum(host_presence_counts.values())
-    if active_host_presence_count and callback_orientation_count >= max(
-        2, active_host_presence_count - 1
-    ):
-        warnings.append(
-            "host_presence_skewed_to_orientation_callback: "
-            f"orientation={host_presence_counts.get('orientation', 0)} "
-            f"callback={host_presence_counts.get('callback', 0)} "
-            f"clarify={host_presence_counts.get('clarify', 0)} "
-            f"contrast={host_presence_counts.get('contrast', 0)} "
-            f"evaluate={host_presence_counts.get('evaluate', 0)}"
-        )
-
     if primitive_lookup:
         sectioned_substrates = {
             primitive_lookup[primitive_id].substrate.value
@@ -5744,11 +5669,6 @@ def _build_episode_architecture_realization(
                 and len(section.authorial_passages) <= 1
                 and len(section.term_explanations) >= 2
             )
-            or (
-                len(section.primitive_ids) >= 4
-                and len(section.authorial_passages) <= 1
-                and section.analysis_goal
-            )
         )
     ]
     if overloaded_section_ids:
@@ -5766,8 +5686,6 @@ def _build_episode_architecture_realization(
         "missing_recall_primitive_ids": missing_recall_primitive_ids,
         "target_authorial_passages_per_episode": target_authorial_passages,
         "authorial_passage_count": authorial_passage_count,
-        "host_presence_counts": host_presence_counts,
-        "host_presence_counts_by_section": host_presence_counts_by_section,
         "warning_count": len(warnings),
         "warnings": warnings,
     }
@@ -6514,18 +6432,6 @@ def _build_section_plan_realization(
                     used_priority_core_passage_ids.append(passage_id)
 
         section_warnings: list[str] = []
-        if section.listener_tension and not _section_text_realized(
-            section.listener_tension,
-            scene_realization_texts,
-        ):
-            section_warnings.append(
-                f"listener_tension_not_realized: {section.section_id}"
-            )
-        if section.section_turn and not _section_text_realized(
-            section.section_turn,
-            scene_realization_texts,
-        ):
-            section_warnings.append(f"section_turn_not_realized: {section.section_id}")
         unused_priority_core_passage_ids = [
             passage_id
             for passage_id in section.priority_core_passage_ids
@@ -9566,8 +9472,8 @@ class PipelineOrchestrator:
                         ) as part_ctx:
                             payload = writing_agent.build_payload(
                                 episode_number=plan.episode_number,
-                                strategy_episode=strategy_episode.model_dump(
-                                    mode="json"
+                                strategy_episode=_build_writer_strategy_episode_payload(
+                                    strategy_episode
                                 ),
                                 architecture=window_architecture_payload,
                                 episode_plan=window_plan_payload,

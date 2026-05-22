@@ -1379,14 +1379,14 @@ PRIMITIVE_SUBSTRATE_SET = set(PRIMITIVE_SUBSTRATES)
 PRIMITIVE_FUNCTION_SET = set(PRIMITIVE_FUNCTIONS)
 
 FULL_PRIMITIVE_SUBSTRATE_TARGET_RANGES: dict[str, tuple[int, int]] = {
-    "events": (100, 137),
-    "acts": (51, 68),
-    "utterances": (8, 12),
-    "actor_portraits": (8, 11),
-    "mechanisms": (25, 35),
-    "conditions": (15, 19),
-    "artifacts": (13, 17),
-    "readings": (8, 9),
+    "events": (82, 113),
+    "acts": (42, 56),
+    "utterances": (11, 16),
+    "actor_portraits": (11, 15),
+    "mechanisms": (35, 48),
+    "conditions": (20, 25),
+    "artifacts": (17, 23),
+    "readings": (10, 12),
 }
 _BASE_MINIFIED_PRIMITIVE_SUBSTRATE_TARGET_RANGES: dict[str, tuple[int, int]] = {
     substrate: _divide_range_floor(lower_bound, upper_bound)
@@ -2368,23 +2368,8 @@ class ArchitectureSection(StrictModel):
         serialization_alias="section_anchor",
     )
     must_stage_beats: list[str] = Field(default_factory=list, max_length=4)
-    listener_tension: str = Field(
-        min_length=1,
-        validation_alias=AliasChoices("listener_tension", "section_question"),
-        serialization_alias="listener_tension",
-    )
-    section_turn: str = Field(
-        min_length=1,
-        validation_alias=AliasChoices("section_turn", "section_resolution"),
-        serialization_alias="section_turn",
-    )
-    transition_logic: str = Field(min_length=1)
-    depends_on_section_ids: list[str] = Field(default_factory=list)
-    sets_up_section_ids: list[str] = Field(default_factory=list)
-    recurrence_role: RecurrenceRole = RecurrenceRole.NONE
     closure_mode: ClosureMode | None = None
     priority_core_passage_ids: list[str] = Field(default_factory=list)
-    analysis_goal: str = ""
     key_terms: list[str] = Field(default_factory=list, max_length=6)
     authorial_passages: list[AuthorialPassage] = Field(
         default_factory=list, max_length=4
@@ -2394,9 +2379,6 @@ class ArchitectureSection(StrictModel):
     )
     actor_explanations: list[ActorExplanationPlan] = Field(
         default_factory=list, max_length=4
-    )
-    host_presence_beats: list[HostPresenceBeat] = Field(
-        default_factory=list, max_length=6
     )
 
     @model_validator(mode="before")
@@ -2410,9 +2392,20 @@ class ArchitectureSection(StrictModel):
             "exit_state",
             "argument_role",
             "inference_mode",
+            "listener_tension",
+            "section_question",
+            "section_turn",
+            "section_resolution",
+            "transition_logic",
+            "depends_on_section_ids",
+            "sets_up_section_ids",
+            "recurrence_role",
             "pressure_type",
             "resolution_type",
             "closure_level",
+            "analysis_goal",
+            "host_presence_beats",
+            "host_beats",
         ):
             cleaned.pop(legacy_field, None)
         return cleaned
@@ -2473,42 +2466,15 @@ class EpisodeArchitecture(StrictModel):
     @model_validator(mode="after")
     def validate_architecture(self) -> "EpisodeArchitecture":
         seen_section_ids: set[str] = set()
-        ordered_section_ids: list[str] = []
         section_by_id: dict[str, ArchitectureSection] = {}
         for section in self.sections:
             if section.section_id in seen_section_ids:
                 raise ValueError("sections must use unique section_id values")
             seen_section_ids.add(section.section_id)
-            ordered_section_ids.append(section.section_id)
             section_by_id[section.section_id] = section
 
         if self.major_turn_section_id not in section_by_id:
             raise ValueError("major_turn_section_id must reference an existing section")
-
-        section_indices = {
-            section_id: idx for idx, section_id in enumerate(ordered_section_ids)
-        }
-        for section in self.sections:
-            for dependency_id in [
-                *section.depends_on_section_ids,
-                *section.sets_up_section_ids,
-            ]:
-                if dependency_id not in section_by_id:
-                    raise ValueError(
-                        f"section dependency references unknown section_id: {dependency_id}"
-                    )
-            if any(
-                section_indices[dependency_id] >= section_indices[section.section_id]
-                for dependency_id in section.depends_on_section_ids
-            ):
-                raise ValueError(
-                    "depends_on_section_ids must reference earlier sections"
-                )
-            if any(
-                section_indices[next_id] <= section_indices[section.section_id]
-                for next_id in section.sets_up_section_ids
-            ):
-                raise ValueError("sets_up_section_ids must reference later sections")
         return self
 
 

@@ -314,29 +314,29 @@ class TestThematicProject:
     def test_primitive_substrate_target_ranges_for_full_mode_match_rebalanced_table(self):
         target_ranges = primitive_substrate_target_ranges_for_mode(PodcastMode.FULL)
         assert target_ranges == {
-            "events": (93, 127),
-            "acts": (47, 63),
-            "utterances": (7, 11),
-            "actor_portraits": (7, 10),
-            "mechanisms": (23, 32),
-            "conditions": (14, 18),
-            "artifacts": (12, 16),
-            "readings": (7, 8),
+            "events": (82, 113),
+            "acts": (42, 56),
+            "utterances": (11, 16),
+            "actor_portraits": (11, 15),
+            "mechanisms": (35, 48),
+            "conditions": (20, 25),
+            "artifacts": (17, 23),
+            "readings": (10, 12),
         }
-        assert sum(lower for lower, _ in target_ranges.values()) == 210
-        assert sum(upper for _, upper in target_ranges.values()) == 285
+        assert sum(lower for lower, _ in target_ranges.values()) == 228
+        assert sum(upper for _, upper in target_ranges.values()) == 308
 
     def test_primitive_substrate_target_ranges_for_minified_mode_reduce_current_ranges_by_thirty_percent(self):
         target_ranges = primitive_substrate_target_ranges_for_mode(PodcastMode.MINIFIED)
         assert target_ranges == {
-            "events": (21, 29),
-            "acts": (10, 14),
-            "utterances": (1, 2),
-            "actor_portraits": (1, 2),
-            "mechanisms": (4, 7),
-            "conditions": (2, 4),
-            "artifacts": (2, 3),
-            "readings": (1, 1),
+            "events": (18, 25),
+            "acts": (9, 12),
+            "utterances": (2, 3),
+            "actor_portraits": (2, 3),
+            "mechanisms": (7, 11),
+            "conditions": (4, 5),
+            "artifacts": (3, 4),
+            "readings": (2, 2),
         }
 
     def test_thematic_project_accepts_forty_sub_themes(self):

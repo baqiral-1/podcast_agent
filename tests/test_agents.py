@@ -333,7 +333,7 @@ class TestRedesignedAgents:
         assert "SUBSTRATE REQUIRED FIELD MATRIX" in instructions
         assert "SCHEMA-BOUND FIELD RULES" in instructions
         assert "SOFT COUNT GUIDANCE" in instructions
-        assert "events (23–31)" in instructions
+        assert "events (18–25)" in instructions
 
     def test_narrative_strategy_agent_payload(self):
         agent = NarrativeStrategyAgent(_mock_llm())
@@ -812,10 +812,8 @@ class TestRedesignedAgents:
             in instructions
         )
         assert (
-            "`transition_logic` is forward-looking: for non-closing sections it describes how this"
-            in instructions
+            "`priority_core_passage_ids`" in instructions
         )
-        assert "`priority_core_passage_ids`" in instructions
         assert "`support_passages`" in instructions
         assert "`section_anchor`" in instructions
         assert "`must_stage_beats`" in instructions
@@ -823,20 +821,10 @@ class TestRedesignedAgents:
         assert "`series_actor_explanation_registry`" in instructions
         assert "`term_explanations`" in instructions
         assert "`actor_explanations`" in instructions
-        assert "`host_presence_beats`" in instructions
         assert "14–18 total `authorial_passages`" in instructions
         assert "are not scene cards, scene counts" in instructions
-        assert "Each beat must name one concrete section anchor" in instructions
-        assert "Each beat must name one listener burden" in instructions
-        assert "Weak vs. strong beat examples:" in instructions
-        assert (
-            "Use the tax register to show that the reform promising relief is widening the burden instead."
-            in instructions
-        )
-        assert (
-            "Enter through the courtroom door before explaining why the decree matters."
-            in instructions
-        )
+        assert "The first `must_stage_beats` item should usually open from the section" in instructions
+        assert "The last `must_stage_beats` item should usually imply the section's" in instructions
         assert (
             "Use `series_actor_explanation_registry`, `introduce_actor_ids`, and `remind_actor_ids`"
             in instructions
@@ -884,7 +872,6 @@ class TestRedesignedAgents:
             available_passages=[{"passage_id": "p1"}],
             host_policy={
                 "target_full_phase_scene_coverage_target": 0.8,
-                "target_policy": "full_phase_scene_coverage",
             },
             actor_metadata={"actors": [{"actor_id": "actor_1"}]},
             planning_feedback={"issue": "missing_spine_coverage"},
@@ -917,11 +904,7 @@ class TestRedesignedAgents:
             "Treat `architecture.section_anchor` as the section-local opening handle."
             in instructions
         )
-        assert (
-            "Treat `transition_logic` as a forward-looking handoff inside the current"
-            in instructions
-        )
-        assert "every item in `must_stage_beats`." in instructions
+        assert "`must_stage_beats`, `closure_mode`, and any" in instructions
         assert "should create curiosity in the same territory as" in instructions
         assert (
             "When a section has `priority_core_passage_ids`, prefer those passages"
@@ -940,7 +923,7 @@ class TestRedesignedAgents:
         assert "Copy the section plan's `background_depth`, `role_label`," not in instructions
         assert "`host_policy`" in instructions
         assert "Each scene card must include `host_moves` with phase buckets" in instructions
-        assert "Most scene cards should populate all three phase buckets." in instructions
+        assert "Ordinary cards may use one or two" in instructions
         assert "Treat `must_land_facts` as the card's factual spine." in instructions
         assert "Every `note` must contain both:" in instructions
         assert "Write notes anchor-first." in instructions
@@ -983,7 +966,6 @@ class TestRedesignedAgents:
             in agent.instructions
         )
         assert "`term_explanations`" in agent.instructions
-        assert "`host_presence_beats`" in agent.instructions
         assert "Every `note` must contain both:" in agent.instructions
         assert "Move-type-specific note rules:" in agent.instructions
         assert "Phase-specific note rules:" in agent.instructions
@@ -991,7 +973,6 @@ class TestRedesignedAgents:
             "Use `allowed_moves` from `host_policy` as binding." in agent.instructions
         )
         assert "Prefer `clarify` after complexity" in agent.instructions
-        assert "target_full_phase_scene_coverage_min" in agent.instructions
 
     def test_style_audit_agent_payload(self):
         agent = StyleAuditAgent(_mock_llm())
@@ -1003,7 +984,6 @@ class TestRedesignedAgents:
                     "section_id": "section_1",
                     "text": "Section text.",
                     "term_explanations": [],
-                    "host_presence_beats": [],
                 }
             ],
             host_policy={"target_full_phase_scene_coverage_target": 0.75},
@@ -1024,7 +1004,6 @@ class TestRedesignedAgents:
         assert "optional `series_explanation_registry`" in agent.instructions
         assert "`term_explanations`" in agent.instructions
         assert "`actor_explanations`" in agent.instructions
-        assert "`host_presence_beats`" in agent.instructions
         assert (
             'Visible production-frame phrasing such as "This series..."'
             in agent.instructions
@@ -1101,11 +1080,10 @@ class TestRedesignedAgents:
             in agent.instructions
         )
         assert "Return one output item per input section" in agent.instructions
-        assert "`architecture.sections[].analysis_goal`" in agent.instructions
-        assert "binding section-level narrator obligations" in agent.instructions
+        assert "`architecture.sections[].must_stage_beats`" in agent.instructions
+        assert "binding section-level obligations" in agent.instructions
         assert "`term_explanations`" in agent.instructions
         assert "`actor_explanations`" in agent.instructions
-        assert "`host_presence_beats`" in agent.instructions
         assert (
             "In planned `authorial_passages`, you may quote then gloss"
             in agent.instructions
@@ -1354,10 +1332,8 @@ class TestRedesignedAgents:
             "`script.prose_sections[].host_moves` are scene-aligned host-guidance control signals"
             in agent.instructions
         )
-        assert "`analysis_goal`" in agent.instructions
         assert "`term_explanations`" in agent.instructions
         assert "`actor_explanations`" in agent.instructions
-        assert "`host_presence_beats`" in agent.instructions
         assert "`host_policy`" in agent.instructions
         assert "TRANSFORMATION MANDATE" in agent.instructions
         assert (
@@ -1444,35 +1420,15 @@ class TestRedesignedAgents:
 
     def test_episode_architecture_prompt_includes_field_contract(self):
         prompt = episode_architecture_instructions()
-        assert "FIELD CONTRACT FOR NESTED EXPLANATION STRUCTURES" in prompt
-        assert (
-            "`authorial_passages` and `host_presence_beats` have overlapping "
-            "vocabulary but different field contracts."
-            in prompt
-        )
         assert "`authorial_passages.mode` carries the explanatory job and must be one of:" in prompt
-        assert (
-            "`quote_then_gloss`, `doctrinal_unpack`, `institutional_clarifier`, "
-            "`causal_compression`, `comparative_aside`, `verdict_landing`."
-            in prompt
-        )
-        assert (
-            "`authorial_passages.placement` carries explanatory placement inside "
-            "the section and must be one of: `open`, `mid`, `close`."
-            in prompt
-        )
-        assert "`host_presence_beats.kind` carries the listener-facing host move and must be one of:" in prompt
-        assert (
-            "`orientation`, `clarify`, `contrast`, `evaluate`, `callback`, "
-            "`term_reminder`, `light_aside`, `naming_note`."
-            in prompt
-        )
-        assert (
-            "`host_presence_beats.placement` carries host-move timing inside "
-            "the section and must be one of: `open`, `pivot`, `close`."
-            in prompt
-        )
-        assert "Keep these field families separate. Do not reuse values across them." in prompt
+        assert "`quote_then_gloss`" in prompt
+        assert "`doctrinal_unpack`" in prompt
+        assert "`institutional_clarifier`" in prompt
+        assert "`causal_compression`" in prompt
+        assert "`comparative_aside`" in prompt
+        assert "`verdict_landing`" in prompt
+        assert "`authorial_passages.placement` carries explanatory placement inside the" in prompt
+        assert "section and must be one of: `open`, `mid`, `close`." in prompt
 
     @pytest.mark.parametrize(
         "prompt_builder",

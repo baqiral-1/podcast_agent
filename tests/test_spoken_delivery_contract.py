@@ -186,7 +186,7 @@ def test_rewrite_for_speech_passes_continuity_tail_for_later_batches(
     assert payloads[0]["section"]["anchor"] == "Anchor 1"
     assert payloads[1]["section"]["closure_mode"] == "final_answer"
     assert payloads[0]["section"]["term_explanations"] == []
-    assert payloads[0]["section"]["host_presence_beats"] == []
+    assert "host_presence_beats" not in payloads[0]["section"]
     assert "batch_index" not in payloads[0]
     assert "batch_index" not in payloads[1]
     assert "batch_count" not in payloads[0]
@@ -298,7 +298,7 @@ def test_style_audit_episode_uses_section_anchor_payload(
         "Anchor 2",
     ]
     assert payloads[0]["sections"][0]["term_explanations"] == []
-    assert payloads[0]["sections"][0]["host_presence_beats"] == []
+    assert "host_presence_beats" not in payloads[0]["sections"][0]
     assert [section.text for section in audited_script.prose_sections] == [
         "Edited first section.",
         "Edited second section.",

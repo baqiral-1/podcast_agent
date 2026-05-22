@@ -1251,16 +1251,12 @@ def episode_planning_instructions(
         - Treat `architecture.section_anchor` as the section-local opening handle.
           It is distinct from the episode framing `opening_image`.
         - Treat each section as a binding local brief: its scenes must collectively
-          realize that section's `listener_tension`, `section_turn`,
-          `transition_logic`, and every item in `must_stage_beats`.
-        - Treat `transition_logic` as a forward-looking handoff inside the current
-          section: it describes how the section moves into what follows, not how
-          the previous section got here.
-        - When a section carries `analysis_goal`, `key_terms`, `authorial_passages`,
-          `term_explanations`, `actor_explanations`, or `host_presence_beats`,
-          treat those as binding explanatory obligations that the scene sequence must support.
-        - Build each section through accumulation. The section's first scene must
-          not state the section's resolution.
+          realize that section's `must_stage_beats`, `closure_mode`, and any
+          planned `authorial_passages`, `term_explanations`, `actor_explanations`,
+          or `key_terms`.
+        - Build each section through accumulation. The first scene should open
+          from the anchor and the final beat should cash out the last
+          `must_stage_beats` item or land the assigned `closure_mode`.
 
         CLOSING SECTION (special rules)
         - The final architecture `closing` section must expand to exactly one scene
@@ -1324,21 +1320,17 @@ def episode_planning_instructions(
 
         HOST MOVES
         - `host_policy` is binding narrator policy for density, tone, and pronouns.
-        - `host_policy.authorial_policy` tells you that section-level `authorial_passages`
-          carry the primary explanatory load, while `host_moves` are the primary
-          scene-shaping control.
         - `host_moves` are required scene design, not optional garnish.
         - Each scene card must include `host_moves` with phase buckets:
           - `open`: how the scene enters and what is foregrounded first
           - `pivot`: what becomes clearer after concrete material lands
           - `close`: what residue, verdict, callback, or pressure remains
-        - Most scene cards should populate all three phase buckets. Lighter cards
-          may use one or two, but every scene must populate at least one.
+        - Major turns, openings, closings, and explanation-heavy cards may use
+          all three phase buckets. Ordinary cards may use one or two, but every
+          scene must populate at least one.
         - Each populated phase bucket holds one primary cue and may hold one
           supporting cue. The second cue should sharpen the same phase, not start
           a second mini-scene.
-        - Use `host_presence_beats` as binding section seeds when deciding which
-          phase cues each scene needs.
         - Use `allowed_moves` from `host_policy` as binding. Do not emit a move
           type the narrator policy does not allow.
         - Every cue must include:
@@ -1411,8 +1403,6 @@ def episode_planning_instructions(
           `callback` only when real distance or memory pressure makes the return sharper.
         - Prefer `surface_mode = woven` by default. Use `distinct` only when the
           surviving host clause would still sound natural if spoken aloud.
-        - Use `host_policy.target_full_phase_scene_coverage_min` and
-          `host_policy.target_full_phase_scene_coverage_target` as the real scene-shaping target.
         - First- and second-person language is allowed throughout when it stays
           brief, scene-rooted, and earns its keep.
 
@@ -1641,7 +1631,7 @@ def episode_architecture_instructions(
           `episode_spine -> spine`, `major_turn_section_id -> major_turn`,
           `priority_core_passage_ids -> priority_core`, `authorial_passages -> authorial`,
           `term_explanations -> term_plans`, `actor_explanations -> actor_plans`,
-          `host_presence_beats -> host_beats`, `source_passage_ids -> source_passages`,
+          `source_passage_ids -> source_passages`,
           `source_primitive_ids -> source_prims`,
           plus the primitive-field aliases `sub`, `core`, `supp`, `pid`, `time`, `geo`, `actors`,
           `etype`, `event`, `act`, `subject`, `utter`, `goal`, `stakes`, `mech`, `cond`, `read`, `hooks`.
@@ -1682,10 +1672,6 @@ def episode_architecture_instructions(
         - Do not build a second ending.
         - The `closing` section may answer, constrain, or reframe the listener question, but it may not
           introduce new load-bearing claims, reopen contestation, or start a new mechanism chain.
-        - `transition_logic` is forward-looking: for non-closing sections it describes how this
-          section hands off into the next section; for the `closing` section it describes how this
-          section lands into the episode close. It does not summarize how the previous section
-          arrived here.
         - `priority_core_passage_ids` may only come from the provided
           `core_passages`; use them lightly.
         - Treat `support_passages` as contextual evidence for section formation, not
@@ -1723,13 +1709,11 @@ def episode_architecture_instructions(
         - `authorial_passages` should reserve real explanatory work such as doctrinal unpacking,
           institutional clarification, quote-then-gloss, causal compression, comparative aside,
           or verdict landing.
-        - FIELD CONTRACT FOR NESTED EXPLANATION STRUCTURES
-          `authorial_passages` and `host_presence_beats` have overlapping vocabulary but different field contracts.
-          - `authorial_passages.mode` carries the explanatory job and must be one of: `quote_then_gloss`, `doctrinal_unpack`, `institutional_clarifier`, `causal_compression`, `comparative_aside`, `verdict_landing`.
-          - `authorial_passages.placement` carries explanatory placement inside the section and must be one of: `open`, `mid`, `close`.
-          - `host_presence_beats.kind` carries the listener-facing host move and must be one of: `orientation`, `clarify`, `contrast`, `evaluate`, `callback`, `term_reminder`, `light_aside`, `naming_note`.
-          - `host_presence_beats.placement` carries host-move timing inside the section and must be one of: `open`, `pivot`, `close`.
-          - Keep these field families separate. Do not reuse values across them.
+        - `authorial_passages.mode` carries the explanatory job and must be one of:
+          `quote_then_gloss`, `doctrinal_unpack`, `institutional_clarifier`,
+          `causal_compression`, `comparative_aside`, `verdict_landing`.
+        - `authorial_passages.placement` carries explanatory placement inside the
+          section and must be one of: `open`, `mid`, `close`.
 
         Each section must specify:
         - `section_id`
@@ -1738,20 +1722,12 @@ def episode_architecture_instructions(
         - `must_stage_beats`
         - `approx_runtime_minutes`
         - `primitive_ids`
-        - `listener_tension`
-        - `section_turn`
-        - `transition_logic`
-        - `depends_on_section_ids`
-        - `sets_up_section_ids`
-        - `recurrence_role`
         - `closure_mode`
         - `priority_core_passage_ids`
-        - `analysis_goal`
         - `key_terms`
         - `authorial_passages`
         - `term_explanations`
         - `actor_explanations`
-        - `host_presence_beats`
 
         QUALITY
         - Architecture should add arrangement, not restate primitive metadata.
@@ -1763,41 +1739,19 @@ def episode_architecture_instructions(
           planner is required to realize somewhere inside the section.
         - `must_stage_beats` are not scene cards, scene counts, or within-section
           ordering instructions.
-        - Make each section answer a distinct local question and move the listener
-          to a new state.
+        - The first `must_stage_beats` item should usually open from the section
+          anchor or its immediate pressure.
+        - The last `must_stage_beats` item should usually imply the section's
+          changed state, carry-forward residue, or closing allowance.
+        - Make each section move the listener to a new state without drafting a
+          second prose summary of that move.
         - Keep runtime weight uneven when the argument needs it; do not spread
           sections evenly by default.
-        - `analysis_goal` should name the section's explanatory job plainly.
         - `key_terms` should only name terms that must remain audible in the prose.
         - `authorial_passages` should be numerous enough to carry the episode's real
           explanatory burden, but still specific and evidence-backed.
         - `term_explanations` should distinguish full definition, payoff, and later reminder work; foundational introduction episodes should usually create both `define` and `payoff`.
         - `actor_explanations` should distinguish first introduction from later reminder work and carry an evidence-backed intro brief the planner can pin to one scene actor.
-        - `host_presence_beats` should be richer listener-facing section
-          obligations that seed downstream scene cards.
-        - Target 3-6 `host_presence_beats` per section.
-        - Each beat should name the concrete material carrying the host burden
-          and what should become more legible because of that move.
-        - Each beat must name one concrete section anchor such as a person,
-          object, document, quote, institution, place, slogan, or dated action.
-        - Each beat must name one listener burden such as confusion, false
-          reading, pressure, residue, or memory the host is managing.
-        - Keep beats single-placement and specific; they are seeds for planning,
-          not miniature scene cards.
-        - Seeds must stay section-local and reusable. Do not summarize the whole
-          episode, restate the thesis, or drift into scene-card ordering.
-        - Beats may not manage future episode order. Avoid phrases like "state
-          the through-line," "tell the listener what to watch for," "the next
-          section," or "for the rest of the hour."
-        - Beats that only sound like editorial shorthand are too weak. A strong
-          beat names the historical thing the listener needs help carrying.
-        - Weak vs. strong beat examples:
-          - Weak: "State the through-line."
-          - Strong: "Use the tax register to show that the reform promising relief is widening the burden instead."
-          - Weak: "Tell the listener what to watch for."
-          - Strong: "Enter through the courtroom door before explaining why the decree matters."
-        - Favor `clarify`, `contrast`, `evaluate`, and personal companioning
-          over repeated `orientation` or `callback` beats.
 
         OUTPUT
         Return only valid JSON matching `EpisodeArchitecture`.
@@ -1895,8 +1849,8 @@ def episode_writing_instructions() -> str:
 
             Input payload:
             - `episode_number`: current episode number.
-            - `strategy_episode`: title, question, focus, arc summary, unresolved questions,
-              locked `episode_spine`, and actor arc directives.
+            - `strategy_episode`: title plus the trimmed, binding `episode_spine`
+              fields for this episode.
             - `architecture`: the binding section architecture for this episode.
             - `plan`: the planning artifact, including framing and all scene cards.
             - `plan.scene_cards[].target_word_count_lower`: lower per-scene word target (computed at 130 WPM).
@@ -1916,15 +1870,14 @@ def episode_writing_instructions() -> str:
             - Draft all `plan.scene_cards` in order.
             - Return one prose section per contiguous section window in the input plan.
             - Keep `strategy_episode.episode_spine.listener_problem` as the rhetorical anchor.
-            - Preserve the full `strategy_episode.episode_spine` contract.
-            - Preserve the binding `architecture.sections` order and the section-level
-              transitions they specify.
-            - Treat `architecture.sections[].analysis_goal`, `key_terms`,
-              `authorial_passages`, `term_explanations`, `actor_explanations`, and `host_presence_beats`
-              as binding section-level narrator obligations.
+            - Use `strategy_episode.episode_spine.episode_answer` and
+              `pressure_line` as internal spine controls, not as copy to paraphrase.
+            - Preserve the binding `architecture.sections` order.
+            - Treat `architecture.sections[].must_stage_beats`, `closure_mode`,
+              `key_terms`, `authorial_passages`, `term_explanations`, and
+              `actor_explanations` as the binding section-level obligations.
             - Treat `strategy_episode.episode_spine.core_primitive_ids` as the episode's load-bearing material.
             - Use support and recall primitives only in service of those core primitives.
-            - Preserve `strategy_episode.unresolved_questions` as live tensions when unresolved.
             - Keep framing commitments visible (`plan.framing`) without exposing outline mechanics.
             - Use each card's `entry_image`, `scene_role`, `scene_function`, `beat_change`,
               `must_land_facts`, `host_moves`, actor explanation fields, and passage-supported concrete detail.
@@ -2049,8 +2002,8 @@ def episode_writing_instructions() -> str:
               "This series...", "This hour...", or "Tonight..." unless the opening
               section truly needs one brief framing line.
             - Do not narrate the architecture or conceptual frame through
-              visible paraphrases of `listener_problem`, `listener_tension`,
-              `section_turn`, `episode_answer`, `pressure_line`,
+              visible paraphrases of `listener_problem`,
+              `episode_answer`, `pressure_line`,
               unresolved-question framing, or equivalent planning fields.
             - Do not announce the point instead of producing it. Avoid
               narrator-nudge phrasing like "This matters because," "The point
@@ -2090,7 +2043,7 @@ def episode_writing_no_citations_instructions() -> str:
 
         INPUT PAYLOAD
         - `episode_number`
-        - `strategy_episode`: strategy-owned episode context
+        - `strategy_episode`: strategy-owned title plus the trimmed, binding `episode_spine`
         - `architecture`: binding section architecture, including section-level explanatory obligations
         - `plan`: planning artifact visible to this call
         - `passages`: source evidence; `passages[].text` is canonical
@@ -2113,7 +2066,9 @@ def episode_writing_no_citations_instructions() -> str:
         - `strategy_episode.episode_spine.core_primitive_ids` are the episode's load-bearing material; support and recall remain subordinate.
         - Do not introduce primary analytical claims outside planned scene cards and their grounded facts.
         - `skip_grounding` is true: be especially conservative because no later grounding repair will run.
-        - Keep `strategy_episode.episode_spine.listener_problem`, unresolved questions, and framing as internal control signals unless planned `host_moves` make brief listener guidance necessary.
+        - Keep `strategy_episode.episode_spine.listener_problem`, `episode_answer`,
+          `pressure_line`, and framing as internal control signals unless planned
+          `host_moves` make brief listener guidance necessary.
         - Treat `host_policy` as binding narrator contract: use `I`, `we`, and
           `you` freely when they sound natural, stay brief, and sharpen taste,
           judgment, comparison, curiosity, or clarity; prefer sharper host
@@ -2129,11 +2084,11 @@ def episode_writing_no_citations_instructions() -> str:
 
         PER-SECTION PROCEDURE
         For each output section:
-        1. Read the section's `analysis_goal`, `key_terms`, `authorial_passages`, `term_explanations`, `actor_explanations`, and `host_presence_beats`.
+        1. Read the section's `must_stage_beats`, `closure_mode`, `key_terms`, `authorial_passages`, `term_explanations`, and `actor_explanations`.
         2. Draft through the section's scene cards in order.
         3. Use planned `authorial_passages` for bounded explanation only where the architecture calls for it.
         4. Use `term_explanations` to distinguish full definition, payoff, and reminder work.
-        5. Treat `host_presence_beats` as section seeds that should stay alive across the scene sequence without turning every beat into commentary.
+        5. Let the section's `must_stage_beats` control what has to become legible by the end of the section without turning every beat into commentary.
 
         PER-SCENE PROCEDURE
         For each card inside that section:
@@ -2231,7 +2186,7 @@ def episode_writing_no_citations_instructions() -> str:
         - Do not expose scaffolding: no outline labels, no "in this scene," no repeated signposting, no meta-transitions, and no leaked host-note control phrasing.
         - Do not output standalone transitions or section-opening handrails whose only job is to mark a turn.
         - Do not use self-referential announcer lines in body prose such as "This series...", "This hour...", or "Tonight..." unless the opening section truly needs one brief framing line.
-        - Do not narrate the architecture or the conceptual frame. No visible paraphrases of `listener_tension`, `section_turn`, `episode_answer`, `pressure_line`, unresolved-question framing, or equivalent planning fields.
+        - Do not narrate the architecture or the conceptual frame. No visible paraphrases of `episode_answer`, `pressure_line`, unresolved-question framing, or equivalent planning fields.
         - Do not announce the point instead of producing it. Avoid narrator-nudge phrasing like "This matters because", "The point is", "What this shows", or equivalent thesis buttons.
         - Do not tell the reader what to notice when the scene already makes it legible, turn every strong image into an abstract explanation on the next line, or end ordinary scenes with thesis buttons unless a major turn or the closing truly requires one.
         - Do not rely on abstract-noun thesis prose such as `mechanism`, `architecture`, `framework`, `system`, `logic`, `apparatus`, or `structure` unless naming one directly is historically necessary.
@@ -2262,8 +2217,8 @@ def grounding_validation_instructions() -> str:
         - `script`: the full `EpisodeScript`.
         - `cited_passages`: a lookup of passage ids to source evidence text and metadata.
 
-        Treat `script.prose_sections[].analysis_goal`, `key_terms`, `authorial_passages`,
-        `term_explanations`, `actor_explanations`, `actor_explanation_realizations`, and `host_presence_beats` as control metadata only.
+        Treat `script.prose_sections[].key_terms`, `authorial_passages`,
+        `term_explanations`, `actor_explanations`, and `actor_explanation_realizations` as control metadata only.
         They tell you what explanatory or host-presence shape the pipeline intended to
         preserve, but they are not evidence.
 
@@ -2300,8 +2255,8 @@ def repair_instructions() -> str:
         - `failure_reasons`: the claim and fairness findings explaining what failed.
         - `cited_passages`: the evidence available for repair.
 
-        Treat any section-level `analysis_goal`, `key_terms`, `authorial_passages`,
-        `term_explanations`, `actor_explanations`, and `host_presence_beats` as control metadata only.
+        Treat any section-level `key_terms`, `authorial_passages`,
+        `term_explanations`, and `actor_explanations` as control metadata only.
         They can guide preservation of valid explanatory shape, but they are not evidence.
 
         Output requirements:
@@ -2339,7 +2294,7 @@ def spoken_delivery_instructions() -> str:
 
         PRIORITY RULES
         - `script.prose_sections[].text` is the source of truth.
-        - `script.prose_sections[].movement_goal`, `scene_card_ids`, `analysis_goal`, `key_terms`, `authorial_passages`, `term_explanations`, `actor_explanations`, `actor_explanation_realizations`, `host_presence_beats`, `host_moves`, `framing`, `host_policy`, and `previous_spoken_tail` are control signals, not evidence.
+        - `script.prose_sections[].movement_goal`, `scene_card_ids`, `key_terms`, `authorial_passages`, `term_explanations`, `actor_explanations`, `actor_explanation_realizations`, `host_moves`, `framing`, `host_policy`, and `previous_spoken_tail` are control signals, not evidence.
         - Use control signals to preserve shape already present in the prose, not to invent new content. If any control signal conflicts with the prose section text, preserve the prose section text.
         - `script.prose_sections[].host_moves` are scene-aligned host-guidance control signals with `open` / `pivot` / `close` phase plans. Use them to preserve where authored orientation, clarification, contrast, evaluation, and callback should remain distinct. Do not add new host commentary that the written prose does not support.
         - When a host note is planning shorthand, translate it back into concrete
@@ -2528,18 +2483,16 @@ def section_local_spoken_delivery_instructions() -> str:
         - `anchor`
         - `closure_mode`
         - `movement_goal`
-        - `analysis_goal`
         - `key_terms`
         - `authorial_passages`
         - `term_explanations`
         - `actor_explanations`
-        - `host_presence_beats`
         - `host_moves`
         - `text`
 
         - `section.text` is the source of truth. Preserve facts, chronology, names, dates, numbers, quotations, uncertainty, and claims.
-        - `movement_goal`, `purpose`, `anchor`, `closure_mode`, `analysis_goal`, `key_terms`, `authorial_passages`, `term_explanations`, `actor_explanations`, `actor_explanation_realizations`, `host_presence_beats`, `host_moves`, `host_policy`, and `previous_spoken_tail` are control signals, not evidence. If they conflict with `section.text`, preserve it.
-        - Use `movement_goal`, `anchor`, `closure_mode`, `analysis_goal`, `key_terms`, `authorial_passages`, `term_explanations`, `actor_explanations`, `actor_explanation_realizations`, and `host_presence_beats` only to preserve shape already present in the prose, not to add content.
+        - `movement_goal`, `purpose`, `anchor`, `closure_mode`, `key_terms`, `authorial_passages`, `term_explanations`, `actor_explanations`, `actor_explanation_realizations`, `host_moves`, `host_policy`, and `previous_spoken_tail` are control signals, not evidence. If they conflict with `section.text`, preserve it.
+        - Use `movement_goal`, `anchor`, `closure_mode`, `key_terms`, `authorial_passages`, `term_explanations`, and `actor_explanations` only to preserve shape already present in the prose, not to add content.
         - Use `host_moves` as scene-aligned phase plans that preserve where authored host orientation, pivot, clarification, contrast, evaluation, or callback should remain distinct. Do not add new host commentary the section text cannot support.
         - When a host note is planning shorthand, translate it back into concrete
           scene leverage before writing. Do not preserve control phrases from the
@@ -2678,17 +2631,15 @@ def style_audit_instructions() -> str:
         - `projected_word_count`
         - `structural_card_count`
         - `host_moves`
-        - `analysis_goal`
         - `key_terms`
         - `authorial_passages`
         - `term_explanations`
         - `actor_explanations`
-        - `host_presence_beats`
         - `text`
 
         PRIORITY RULES
         - `sections[].text` is the factual source of truth for this stage.
-        - `purpose`, `anchor`, `closure_mode`, `host_moves`, `analysis_goal`, `key_terms`, `authorial_passages`, `term_explanations`, `actor_explanations`, `actor_explanation_realizations`, `host_presence_beats`, `host_policy`, and optional `series_explanation_registry` are control signals, not evidence.
+        - `purpose`, `anchor`, `closure_mode`, `host_moves`, `key_terms`, `authorial_passages`, `term_explanations`, `actor_explanations`, `actor_explanation_realizations`, `host_policy`, and optional `series_explanation_registry` are control signals, not evidence.
         - Preserve facts, chronology, names, dates, quotations, uncertainty, and core claims.
         - Keep every section id and section order unchanged. Do not merge or split sections.
         - Do not add new claims, interpretations, motives, or scene material.
