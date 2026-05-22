@@ -124,8 +124,8 @@ class TestPipelineRuntimeConfig:
         assert config.max_chunk_words == 750
         assert config.chunk_overlap_words == 30
         assert config.max_repair_attempts == 3
-        assert config.episode_architecture_concurrency == 8
-        assert config.episode_planning_concurrency == 8
+        assert config.episode_architecture_concurrency == 12
+        assert config.episode_planning_concurrency == 12
         assert config.episode_write_concurrency == 8
         assert config.spoken_delivery_concurrency == 8
         assert config.tts_concurrency == 5
@@ -152,20 +152,18 @@ class TestPipelineRuntimeConfig:
         assert config.synthesis_axis_ceiling_multiplier == 1.68
         assert config.synthesis_trim_top_fraction == 0.10
         assert config.synthesis_trim_mid_fraction == 0.20
-        assert config.synthesis_trim_next_fraction == 0.0
-        assert config.synthesis_trim_top_keep_fraction == 0.375
-        assert config.synthesis_trim_mid_keep_fraction == 0.275
-        assert config.synthesis_trim_next_keep_fraction == 0.325
-        assert config.synthesis_trim_tail_keep_fraction == 0.175
+        assert config.synthesis_trim_top_keep_fraction == 0.35
+        assert config.synthesis_trim_mid_keep_fraction == 0.25
+        assert config.synthesis_trim_tail_keep_fraction == 0.15
         assert config.planning_axis_pct == 1.0
         assert config.planning_axis_min == 10
         assert config.planning_axis_max == 15
-        assert config.synthesis_total_passage_cap == 450
+        assert config.synthesis_total_passage_cap == 650
         assert config.planning_total_passage_cap == 300
         assert config.architecture_section_target_min == 9
         assert config.architecture_section_target_max == 12
-        assert config.scene_card_target_min == 32
-        assert config.scene_card_target_max == 40
+        assert config.scene_card_target_min == 34
+        assert config.scene_card_target_max == 44
         assert config.passage_extraction_concurrency == 16
         assert config.llm_global_max_concurrency == 30
 
@@ -204,11 +202,8 @@ class TestPipelineRuntimeConfig:
                 architecture_section_target_min=9,
                 architecture_section_target_max=8,
             )
-        with pytest.raises(
-            ValueError, match="synthesis trim top, mid, and next fractions"
-        ):
+        with pytest.raises(ValueError, match="synthesis trim top and mid fractions"):
             PipelineRuntimeConfig(
                 synthesis_trim_top_fraction=0.75,
-                synthesis_trim_mid_fraction=0.15,
-                synthesis_trim_next_fraction=0.20,
+                synthesis_trim_mid_fraction=0.30,
             )

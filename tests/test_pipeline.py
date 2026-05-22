@@ -35,6 +35,7 @@ from podcast_agent.pipeline.orchestrator import (
     _round_allocations_to_total,
     _scene_duration_bounds,
     _scene_importance_weight,
+    _split_episode_writing_windows,
     _extract_previous_spoken_tail,
     _split_sentences,
     _script_total_word_count,
@@ -56,6 +57,7 @@ from podcast_agent.schemas.models import (
     EpisodePlan,
     EpisodeSpine,
     EpisodeArchitecture,
+    EventPrimitive,
     ExtractedPassage,
     FramingBlock,
     NarrativeStrategy,
@@ -390,7 +392,6 @@ def _primitive(primitive_id: str, title: str = "Title") -> EpochalTurnPrimitive:
         id=primitive_id,
         family="epochal_turns",
         title=title,
-        summary="Summary",
         core_passage_ids=[f"p{suffix}"],
         before_state="The old arrangement still holds.",
         after_state="The balance has changed.",
@@ -445,8 +446,6 @@ def _generic_primitive(
         id=primitive_id,
         family=family,
         title=f"Primitive {primitive_id}",
-        summary=f"Summary {primitive_id}",
-        axis_ids=["axis_1"],
         core_passage_ids=list(core_passage_ids or []),
         support_passage_ids=list(support_passage_ids or []),
         narrative_importance_score=narrative_importance_score,
@@ -464,8 +463,6 @@ def _epochal_turn(
         id=primitive_id,
         family="epochal_turns",
         title=f"Primitive {primitive_id}",
-        summary=f"Summary {primitive_id}",
-        axis_ids=["axis_1"],
         core_passage_ids=list(core_passage_ids or []),
         support_passage_ids=list(support_passage_ids or []),
         narrative_importance_score=narrative_importance_score,
@@ -481,8 +478,6 @@ def test_compact_primitives_for_consolidation_omits_passage_and_legacy_tag_field
                     id="cx_1",
                     family="contested_explanations",
                     title="Competing readings",
-                    summary="The evidence supports multiple readings.",
-                    axis_ids=["axis_1"],
                     core_passage_ids=["p1"],
                     support_passage_ids=["p2"],
                     timeframe="1947",
@@ -497,12 +492,10 @@ def test_compact_primitives_for_consolidation_omits_passage_and_legacy_tag_field
                     candidate_readings=[
                         CandidateReading(
                             label="reading_a",
-                            summary="One reading.",
                             support_passage_ids=["p3"],
                         ),
                         CandidateReading(
                             label="reading_b",
-                            summary="Another reading.",
                             support_passage_ids=["p4"],
                         ),
                     ],
@@ -533,11 +526,9 @@ def test_compact_primitives_for_consolidation_omits_passage_and_legacy_tag_field
     assert primitive["candidate_readings"] == [
         {
             "label": "reading_a",
-            "summary": "One reading.",
         },
         {
             "label": "reading_b",
-            "summary": "Another reading.",
         }
     ]
     assert payload["quality_score"] == 0.6
@@ -1094,19 +1085,18 @@ def test_resolve_synthesis_bm25_keep_fraction_by_passage_uses_relevance_tiers():
     assert tier_counts == {
         "top_tier_passages": 1,
         "mid_tier_passages": 2,
-        "next_tier_passages": 0,
         "tail_tier_passages": 7,
     }
-    assert keep_fraction_by_passage_id["p1"] == 0.375
-    assert keep_fraction_by_passage_id["p2"] == 0.275
-    assert keep_fraction_by_passage_id["p3"] == 0.275
-    assert keep_fraction_by_passage_id["p4"] == 0.175
-    assert keep_fraction_by_passage_id["p5"] == 0.175
-    assert keep_fraction_by_passage_id["p6"] == 0.175
-    assert keep_fraction_by_passage_id["p7"] == 0.175
-    assert keep_fraction_by_passage_id["p8"] == 0.175
-    assert keep_fraction_by_passage_id["p9"] == 0.175
-    assert keep_fraction_by_passage_id["p10"] == 0.175
+    assert keep_fraction_by_passage_id["p1"] == 0.35
+    assert keep_fraction_by_passage_id["p2"] == 0.25
+    assert keep_fraction_by_passage_id["p3"] == 0.25
+    assert keep_fraction_by_passage_id["p4"] == 0.15
+    assert keep_fraction_by_passage_id["p5"] == 0.15
+    assert keep_fraction_by_passage_id["p6"] == 0.15
+    assert keep_fraction_by_passage_id["p7"] == 0.15
+    assert keep_fraction_by_passage_id["p8"] == 0.15
+    assert keep_fraction_by_passage_id["p9"] == 0.15
+    assert keep_fraction_by_passage_id["p10"] == 0.15
 
 
 def test_allocate_synthesis_passages_by_axis_uses_dynamic_floor_global_refill_and_exact_dedupe():
@@ -1573,8 +1563,6 @@ def test_map_synthesis_sends_compact_consolidation_payload_and_reconstructs_full
                     id="cx_1",
                     family="contested_explanations",
                     title="Competing readings",
-                    summary="The evidence supports multiple readings.",
-                    axis_ids=["axis_1"],
                     core_passage_ids=["p1"],
                     support_passage_ids=["p2"],
                     timeframe="1947",
@@ -1587,12 +1575,10 @@ def test_map_synthesis_sends_compact_consolidation_payload_and_reconstructs_full
                     candidate_readings=[
                         CandidateReading(
                             label="reading_a",
-                            summary="One reading.",
                             support_passage_ids=["p3"],
                         ),
                         CandidateReading(
                             label="reading_b",
-                            summary="Another reading.",
                             support_passage_ids=["p4"],
                         ),
                     ],
@@ -1795,7 +1781,7 @@ def test_write_episode_passes_full_text_to_writing_agent(monkeypatch, tmp_path):
                     "local_question": "Question",
                     "observable_detail": "Detail",
                     "intended_move": "Move",
-                    "primitive_ids": [],
+                    "primitive_ids": ["prim_1"],
                     "passage_ids": ["p1"],
                     "estimated_duration_seconds": 300,
                 }
@@ -1806,6 +1792,19 @@ def test_write_episode_passes_full_text_to_writing_agent(monkeypatch, tmp_path):
     )
     strategy_episode = _strategy_episode("pack_1")
     architecture = _episode_architecture_for_scene_cards(plan.scene_cards)
+    primitive = EventPrimitive(
+        id="prim_1",
+        substrate="events",
+        title="A decisive rupture",
+        core_passage_ids=["p1"],
+        support_passage_ids=["p_support"],
+        timeframe="2001",
+        geography="Kabul",
+        actor_ids=["actor_1"],
+        event_type="attack",
+        what_happened="A decisive rupture lands.",
+        event_result="The stakes become public.",
+    )
     corpus = ThematicCorpus(
         project_id="proj",
         passages_by_axis={
@@ -1824,17 +1823,27 @@ def test_write_episode_passes_full_text_to_writing_agent(monkeypatch, tmp_path):
     ep_dir = tmp_path / "episodes" / "1"
     asyncio.run(
         orchestrator._write_episode(
-            plan, strategy_episode, architecture, project, corpus, ep_dir, tmp_path
+            plan,
+            strategy_episode,
+            architecture,
+            project,
+            corpus,
+            ep_dir,
+            tmp_path,
+            primitive_lookup={primitive.id: primitive},
         )
     )
 
     payload = captured["payload"]
     assert payload["passages"][0]["text"] == "Full text evidence for writing."
     assert payload["episode_target_word_count_lower"] == 650
-    assert payload["episode_target_word_count_higher"] == 750
+    assert payload["episode_target_word_count_higher"] == 800
+    assert payload["scene_primitive_briefs"] == {
+        "scene_1": [primitive.model_dump(mode="json")]
+    }
 
 
-def test_write_episode_uses_single_writing_call_for_many_scene_cards(monkeypatch, tmp_path):
+def test_write_episode_uses_three_writing_calls_for_full_mode(monkeypatch, tmp_path):
     heuristic = HeuristicLLMClient()
     monkeypatch.setattr("podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic)
     monkeypatch.setattr(
@@ -1930,20 +1939,131 @@ def test_write_episode_uses_single_writing_call_for_many_scene_cards(monkeypatch
         )
     )
 
-    assert len(captured_payloads) == 1
-    payload = captured_payloads[0]
-    assert len(payload["passages"]) == 26
-    assert payload["episode_target_word_count_lower"] == 16900
-    assert payload["episode_target_word_count_higher"] == 19500
-    assert "previous_sections" not in payload
-    payload_scene_cards = payload["plan"]["scene_cards"]
+    assert len(captured_payloads) == 3
+    assert sum(payload["episode_target_word_count_lower"] for payload in captured_payloads) == 16900
+    assert sum(payload["episode_target_word_count_higher"] for payload in captured_payloads) == 19500
+    assert sum(len(payload["passages"]) for payload in captured_payloads) == 26
+    assert all("previous_sections" not in payload for payload in captured_payloads)
+    assert "prior_window_continuity" not in captured_payloads[0]
+    assert captured_payloads[1]["prior_window_continuity"]["completed_scene_count"] > 0
+    assert captured_payloads[2]["prior_window_continuity"]["completed_scene_count"] > 0
+    payload_scene_cards = [
+        scene
+        for payload in captured_payloads
+        for scene in payload["plan"]["scene_cards"]
+    ]
     assert [scene["scene_id"] for scene in payload_scene_cards] == [
         f"scene_{idx}" for idx in range(1, 27)
     ]
-    assert payload["plan"]["framing"]["handoff_scene_card_id"] == "scene_1"
+    assert captured_payloads[0]["plan"]["framing"]["handoff_scene_card_id"] == "scene_1"
     assert all("estimated_duration_seconds" not in scene for scene in payload_scene_cards)
     assert all(scene["target_word_count_lower"] == 650 for scene in payload_scene_cards)
-    assert all(scene["target_word_count_higher"] == 750 for scene in payload_scene_cards)
+    assert all(scene["target_word_count_higher"] == 800 for scene in payload_scene_cards)
+
+
+def test_write_episode_uses_two_writing_calls_for_minified_mode(monkeypatch, tmp_path):
+    heuristic = HeuristicLLMClient()
+    monkeypatch.setattr("podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic)
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.PGVectorRetrieval",
+        lambda settings, run_logger=None: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.RetrievalService",
+        lambda settings, vector_store: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.build_tts_client",
+        lambda settings: DummyTTSClient(),
+    )
+
+    orchestrator = PipelineOrchestrator()
+    captured_payloads: list[dict] = []
+
+    def fake_writing_run(payload: dict):
+        captured_payloads.append(payload)
+        return orchestrator.writing_agent.response_model.model_validate(
+            {
+                "prose_sections": _writing_prose_sections_from_payload(payload)
+            }
+        )
+
+    orchestrator.writing_agent.run = fake_writing_run
+
+    project = ThematicProject(
+        project_id="proj",
+        theme="War on terror",
+        books=[BookRecord(book_id="b1", title="Book 1", author="Author", source_path="/tmp/book.txt", source_type="txt")],
+        config=resolve_pipeline_config_for_mode(
+            PipelineConfig(podcast_mode=PodcastMode.MINIFIED)
+        ),
+    )
+    plan = EpisodePlan.model_validate(
+        {
+            "episode_number": 1,
+            "title": "Episode 1",
+            "driving_question": "What changes?",
+            "thematic_focus": "Focus",
+            "arc_summary": "Arc",
+            "unresolved_questions": [],
+            "episode_spine": _episode_spine("pack_1", "pack_2").model_dump(mode="json"),
+            "framing": _framing().model_dump(mode="json"),
+            "scene_cards": [
+                {
+                    "scene_id": f"scene_{idx}",
+                    "section_id": f"section_{idx}",
+                    "title": f"Scene {idx}",
+                    "scene_role": "setup",
+                    "dominant_pack_id": f"pack_{((idx - 1) % 2) + 1}",
+                    "spine_relation": "set_stakes",
+                    "state_effect": "The stakes become visible.",
+                    "entry_image": "Image",
+                    "local_question": "Question",
+                    "observable_detail": "Detail",
+                    "intended_move": "Move",
+                    "primitive_ids": [],
+                    "passage_ids": [f"p{idx}"],
+                    "estimated_duration_seconds": 300,
+                }
+                for idx in range(1, 9)
+            ],
+            "target_duration_minutes": 56.0,
+            "target_word_count": 5400,
+        }
+    )
+    strategy_episode = _strategy_episode("pack_1", "pack_2")
+    architecture = _episode_architecture_for_scene_cards(plan.scene_cards)
+    corpus = ThematicCorpus(
+        project_id="proj",
+        passages_by_axis={
+            "axis_1": [
+                ExtractedPassage(
+                    passage_id=f"p{idx}",
+                    book_id="b1",
+                    chunk_ids=[f"c{idx}"],
+                    text=f"Trimmed text {idx}",
+                    full_text=f"Full text evidence {idx}.",
+                    axis_id="axis_1",
+                )
+                for idx in range(1, 9)
+            ]
+        },
+    )
+    ep_dir = tmp_path / "episodes" / "1"
+    asyncio.run(
+        orchestrator._write_episode(
+            plan, strategy_episode, architecture, project, corpus, ep_dir, tmp_path
+        )
+    )
+
+    assert len(captured_payloads) == 2
+    assert "prior_window_continuity" not in captured_payloads[0]
+    assert captured_payloads[1]["prior_window_continuity"]["completed_scene_count"] > 0
+    assert [
+        scene["scene_id"]
+        for payload in captured_payloads
+        for scene in payload["plan"]["scene_cards"]
+    ] == [f"scene_{idx}" for idx in range(1, 9)]
 
 
 def test_write_episode_payload_uses_unequal_scene_duration_targets(monkeypatch, tmp_path):
@@ -2072,11 +2192,11 @@ def test_write_episode_payload_uses_unequal_scene_duration_targets(monkeypatch, 
         for scene in captured["payload"]["plan"]["scene_cards"]
     }
     assert scene_targets == {
-        "scene_anchor": (13650, 15750),
-        "scene_context": (4550, 5250),
+        "scene_anchor": (13650, 16800),
+        "scene_context": (4550, 5600),
     }
     assert captured["payload"]["episode_target_word_count_lower"] == 18200
-    assert captured["payload"]["episode_target_word_count_higher"] == 21000
+    assert captured["payload"]["episode_target_word_count_higher"] == 22400
 
 
 def test_write_episode_uses_no_citation_agent_when_skip_grounding(monkeypatch, tmp_path):
@@ -2195,12 +2315,12 @@ def test_write_episode_uses_no_citation_agent_when_skip_grounding(monkeypatch, t
     assert "scene_word_count_targets" not in payload
     assert "previous_sections" not in payload
     assert payload["episode_target_word_count_lower"] == 650
-    assert payload["episode_target_word_count_higher"] == 750
+    assert payload["episode_target_word_count_higher"] == 800
     scene = payload["plan"]["scene_cards"][0]
     assert scene["scene_id"] == "scene_1"
     assert "estimated_duration_seconds" not in scene
     assert scene["target_word_count_lower"] == 650
-    assert scene["target_word_count_higher"] == 750
+    assert scene["target_word_count_higher"] == 800
     assert script.prose_sections[0].citations == []
     budget_warnings = [
         payload
@@ -2214,7 +2334,7 @@ def test_write_episode_uses_no_citation_agent_when_skip_grounding(monkeypatch, t
     ]
     assert budget_warnings
     assert budget_warnings[0]["actual_word_count"] == 800
-    assert budget_warnings[0]["target_word_count_higher"] == 750
+    assert budget_warnings[0]["target_word_count_higher"] == 800
     assert section_count_warnings == []
 
 
@@ -2518,6 +2638,91 @@ def test_validate_grounding_uses_full_text_lookup(monkeypatch, tmp_path):
     assert payload["cited_passages"]["p1"]["text"] == "Full text evidence for grounding."
 
 
+def test_split_episode_writing_windows_uses_three_balanced_batches_when_available():
+    scene_cards = [
+        _scene_card(
+            f"scene_{idx}",
+            "pack_1",
+            section_id=f"section_{idx}",
+        )
+        for idx in range(1, 10)
+    ]
+    plan = EpisodePlan.model_validate(
+        {
+            "episode_number": 1,
+            "title": "Episode 1",
+            "driving_question": "What changes?",
+            "thematic_focus": "Focus",
+            "arc_summary": "Arc",
+            "unresolved_questions": [],
+            "episode_spine": _episode_spine("pack_1").model_dump(mode="json"),
+            "framing": _framing().model_dump(mode="json"),
+            "scene_cards": [scene.model_dump(mode="json") for scene in scene_cards],
+            "target_duration_minutes": 70.0,
+            "target_word_count": 9450,
+        }
+    )
+    architecture = _episode_architecture_for_scene_cards(scene_cards)
+    lower_targets = {scene.scene_id: 650 for scene in scene_cards}
+    higher_targets = {scene.scene_id: 750 for scene in scene_cards}
+
+    windows = _split_episode_writing_windows(
+        plan=plan,
+        architecture=architecture,
+        scene_word_count_targets_lower=lower_targets,
+        scene_word_count_targets_higher=higher_targets,
+        max_windows=3,
+    )
+
+    assert [[scene.scene_id for scene in window] for window in windows] == [
+        ["scene_1", "scene_2", "scene_3"],
+        ["scene_4", "scene_5", "scene_6"],
+        ["scene_7", "scene_8", "scene_9"],
+    ]
+
+
+def test_split_episode_writing_windows_falls_back_when_requested_windows_exceed_boundaries():
+    scene_cards = [
+        _scene_card(
+            f"scene_{idx}",
+            "pack_1",
+            section_id=f"section_{idx}",
+        )
+        for idx in range(1, 3)
+    ]
+    plan = EpisodePlan.model_validate(
+        {
+            "episode_number": 1,
+            "title": "Episode 1",
+            "driving_question": "What changes?",
+            "thematic_focus": "Focus",
+            "arc_summary": "Arc",
+            "unresolved_questions": [],
+            "episode_spine": _episode_spine("pack_1").model_dump(mode="json"),
+            "framing": _framing().model_dump(mode="json"),
+            "scene_cards": [scene.model_dump(mode="json") for scene in scene_cards],
+            "target_duration_minutes": 14.0,
+            "target_word_count": 1500,
+        }
+    )
+    architecture = _episode_architecture_for_scene_cards(scene_cards)
+    lower_targets = {scene.scene_id: 650 for scene in scene_cards}
+    higher_targets = {scene.scene_id: 750 for scene in scene_cards}
+
+    windows = _split_episode_writing_windows(
+        plan=plan,
+        architecture=architecture,
+        scene_word_count_targets_lower=lower_targets,
+        scene_word_count_targets_higher=higher_targets,
+        max_windows=3,
+    )
+
+    assert [[scene.scene_id for scene in window] for window in windows] == [
+        ["scene_1"],
+        ["scene_2"],
+    ]
+
+
 def test_rewrite_for_speech_rewrites_each_section_individually(monkeypatch, tmp_path):
     heuristic = HeuristicLLMClient()
     monkeypatch.setattr("podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic)
@@ -2730,11 +2935,15 @@ def test_produce_episode_releases_write_slot_before_spoken_delivery(monkeypatch,
 
     async def fake_write_episode(
         plan: EpisodePlan,
+        strategy_episode: StrategyEpisode,
+        architecture: EpisodeArchitecture,
         project: ThematicProject,
         corpus: ThematicCorpus,
         ep_dir: Path,
         project_dir: Path,
         actor_metadata: ActorMetadata | None = None,
+        host_policy: dict[str, Any] | None = None,
+        primitive_lookup: dict[str, Any] | None = None,
     ) -> EpisodeScript:
         with lock:
             event_log.append(("write_start", plan.episode_number, time.monotonic()))
@@ -2798,6 +3007,18 @@ def test_produce_episode_releases_write_slot_before_spoken_delivery(monkeypatch,
     )
     corpus = ThematicCorpus(project_id="proj")
     actor_metadata = ActorMetadata(project_id="proj")
+    strategy_episode = StrategyEpisode(
+        episode_number=1,
+        title="Episode",
+        arc_summary="Arc summary",
+        episode_spine=_episode_spine("pack_1"),
+        actor_arc_directives=[],
+    )
+    architecture = EpisodeArchitecture(
+        episode_number=1,
+        major_turn_section_id="section_1",
+        sections=[],
+    )
     plans = [
         EpisodePlan(
             episode_number=episode_number,
@@ -2825,12 +3046,18 @@ def test_produce_episode_releases_write_slot_before_spoken_delivery(monkeypatch,
             *[
                 orchestrator._produce_episode(
                     plan,
+                    strategy_episode.model_copy(
+                        update={"episode_number": plan.episode_number}
+                    ),
+                    architecture.model_copy(update={"episode_number": plan.episode_number}),
                     project,
                     corpus,
                     actor_metadata,
                     tmp_path,
-                    write_sem,
-                    spoken_sem,
+                    host_policy={},
+                    primitive_lookup={},
+                    semaphore=write_sem,
+                    spoken_semaphore=spoken_sem,
                 )
                 for plan in plans
             ]

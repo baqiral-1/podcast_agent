@@ -94,6 +94,8 @@ class ThemeDecompositionAgent(Agent):
         books: list[BookRecord],
         axis_count_min: int,
         axis_count_max: int,
+        actor_count_min: int = 10,
+        actor_count_max: int = 40,
         book_summaries: dict[str, str] | None = None,
     ) -> dict:
         summary_by_book = book_summaries or {}
@@ -118,15 +120,21 @@ class ThemeDecompositionAgent(Agent):
             "theme_elaboration": theme_elaboration or "",
             "axis_count_min": axis_count_min,
             "axis_count_max": axis_count_max,
+            "actor_count_min": actor_count_min,
+            "actor_count_max": actor_count_max,
             "books": book_summaries,
         }
 
     def run(self, payload: dict) -> BaseModel:
         axis_count_min = int(payload.get("axis_count_min", 12))
         axis_count_max = int(payload.get("axis_count_max", 20))
+        actor_count_min = int(payload.get("actor_count_min", 10))
+        actor_count_max = int(payload.get("actor_count_max", 40))
         instructions = theme_decomposition_instructions(
             axis_count_min=axis_count_min,
             axis_count_max=axis_count_max,
+            actor_count_min=actor_count_min,
+            actor_count_max=actor_count_max,
         )
         last_exc: Exception | None = None
         for attempt in range(1, self.max_retry_attempts + 1):
@@ -145,6 +153,7 @@ class ThemeDecompositionAgent(Agent):
                     if attempt < self.max_retry_attempts:
                         backoff = min(2 ** (attempt - 1), 16) + (time.monotonic() % 1)
                         self._log_retry_scheduled(
+                            payload=payload,
                             attempt=attempt,
                             backoff=backoff,
                             exc=exc,

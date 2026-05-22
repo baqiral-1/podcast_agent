@@ -9,6 +9,7 @@ from podcast_agent.config import Settings
 from podcast_agent.pipeline.orchestrator import (
     PipelineOrchestrator,
     _build_host_policy_payload,
+    _flatten_synthesis_primitives,
     _save_json,
 )
 from podcast_agent.schemas.models import (
@@ -107,6 +108,7 @@ async def main() -> None:
         or project.config.episode_write_concurrency
     )
     host_policy = _build_host_policy_payload(strategy.narrator_profile)
+    retained_primitive_lookup = _flatten_synthesis_primitives(synthesis_map)
     ep_tasks = [
         orchestrator._produce_episode(
             plan,
@@ -116,9 +118,10 @@ async def main() -> None:
             corpus,
             actor_metadata,
             project_dir,
-            host_policy,
-            sem,
-            spoken_sem,
+            host_policy=host_policy,
+            primitive_lookup=retained_primitive_lookup,
+            semaphore=sem,
+            spoken_semaphore=spoken_sem,
         )
         for plan in episode_plans
     ]

@@ -18,6 +18,7 @@ from podcast_agent.schemas.models import (
     BaseSynthesisPrimitive,
     EpisodePlan,
     EpisodePlanDraft,
+    NarrativeStrategy,
     SceneActor,
     SceneCard,
     SceneCardDraft,
@@ -356,20 +357,11 @@ def clean_synthesis_primitive_actor_links(
 ) -> tuple[SynthesisPrimitivesArtifact, dict[str, Any]]:
     valid_actor_ids = {actor.actor_id for actor in actor_metadata.actors}
     metrics = {"unknown_actor_ids": 0}
-    cleaned_by_family: dict[str, list[BaseSynthesisPrimitive]] = {}
-    for family, primitives in artifact.primitives_by_family.items():
-        cleaned_items: list[BaseSynthesisPrimitive] = []
-        for primitive in primitives:
-            actor_ids = _filter_known_ids(primitive.actor_ids, valid_actor_ids, metrics)
-            cleaned_items.append(
-                primitive.model_copy(
-                    update={
-                        "actor_ids": actor_ids,
-                    }
-                )
-            )
-        cleaned_by_family[family] = cleaned_items
-    return artifact.model_copy(update={"primitives_by_family": cleaned_by_family}), metrics
+    cleaned_primitives: list[BaseSynthesisPrimitive] = []
+    for primitive in artifact.primitives:
+        actor_ids = _filter_known_ids(primitive.actor_ids, valid_actor_ids, metrics)
+        cleaned_primitives.append(primitive.model_copy(update={"actor_ids": actor_ids}))
+    return artifact.model_copy(update={"primitives": cleaned_primitives}), metrics
 
 
 def clean_strategy_actor_links(
@@ -400,6 +392,101 @@ def clean_strategy_actor_links(
     return cleaned, metrics
 
 
+def _fallback_actor_plain_gloss(actor: ActorProfile) -> str:
+    text = str(actor.description or "").strip()
+    if not text:
+        return actor.actor_type.replace("_", " ")
+    for delimiter in (".", ";", ":"):
+        if delimiter in text:
+            text = text.split(delimiter, 1)[0].strip()
+            break
+    words = text.split()
+    if len(words) > 18:
+        text = " ".join(words[:18]).rstrip(",")
+    return text
+
+
+def clean_narrative_strategy_actor_links(
+    strategy: NarrativeStrategy,
+    actor_metadata: ActorMetadata,
+) -> tuple[NarrativeStrategy, dict[str, Any]]:
+    actor_by_id = {actor.actor_id: actor for actor in actor_metadata.actors}
+    valid_actor_ids = set(actor_by_id)
+    metrics = {
+        "unknown_actor_ids": 0,
+        "unknown_actor_registry_refs": 0,
+        "fallback_actor_gloss_count": 0,
+    }
+
+    cleaned_registry = []
+    seen_registry_actor_ids: set[str] = set()
+    for item in strategy.series_actor_explanation_registry:
+        if item.actor_id not in valid_actor_ids:
+            metrics["unknown_actor_ids"] += 1
+            continue
+        if item.actor_id in seen_registry_actor_ids:
+            continue
+        seen_registry_actor_ids.add(item.actor_id)
+        preferred_plain_gloss = str(item.preferred_plain_gloss or "").strip()
+        if not preferred_plain_gloss:
+            preferred_plain_gloss = _fallback_actor_plain_gloss(
+                actor_by_id[item.actor_id]
+            )
+            metrics["fallback_actor_gloss_count"] += 1
+        cleaned_registry.append(
+            item.model_copy(update={"preferred_plain_gloss": preferred_plain_gloss})
+        )
+
+    valid_registry_actor_ids = {item.actor_id for item in cleaned_registry}
+    cleaned_episodes, episode_metrics = clean_strategy_actor_links(
+        strategy.episodes,
+        actor_metadata,
+    )
+    metrics["unknown_actor_ids"] += int(episode_metrics.get("unknown_actor_ids", 0))
+
+    updated_episodes: list[StrategyEpisode] = []
+    for episode in cleaned_episodes:
+        introduce_actor_ids = _filter_known_ids(
+            episode.authorial_contract.introduce_actor_ids,
+            valid_registry_actor_ids,
+            metrics={"unknown_actor_ids": 0},
+        )
+        remind_actor_ids = _filter_known_ids(
+            episode.authorial_contract.remind_actor_ids,
+            valid_registry_actor_ids,
+            metrics={"unknown_actor_ids": 0},
+        )
+        dropped_registry_refs = (
+            len(episode.authorial_contract.introduce_actor_ids) - len(introduce_actor_ids)
+        ) + (
+            len(episode.authorial_contract.remind_actor_ids) - len(remind_actor_ids)
+        )
+        if dropped_registry_refs:
+            metrics["unknown_actor_registry_refs"] += dropped_registry_refs
+        updated_episodes.append(
+            episode.model_copy(
+                update={
+                    "authorial_contract": episode.authorial_contract.model_copy(
+                        update={
+                            "introduce_actor_ids": introduce_actor_ids,
+                            "remind_actor_ids": remind_actor_ids,
+                        }
+                    )
+                }
+            )
+        )
+
+    return (
+        strategy.model_copy(
+            update={
+                "series_actor_explanation_registry": cleaned_registry,
+                "episodes": updated_episodes,
+            }
+        ),
+        metrics,
+    )
+
+
 def clean_scene_actor_links(
     plan: EpisodePlanDraft | EpisodePlan,
     actor_metadata: ActorMetadata,
@@ -414,7 +501,6 @@ def clean_scene_actor_links(
         "unknown_actor_ids": 0,
         "unknown_actor_arc_thread_ids": 0,
     }
-    thread_ids_by_actor = _episode_actor_arc_thread_ids(actor_arc_directives)
     cleaned_scenes: list[SceneCardDraft | SceneCard] = []
     for scene in plan.scene_cards:
         cleaned_actors: list[SceneActor] = []
@@ -542,8 +628,6 @@ def collect_actor_ids_for_primitives(primitives: list[SynthesisPrimitiveBase]) -
     actor_ids: set[str] = set()
     for primitive in primitives:
         actor_ids.update(primitive.actor_ids)
-        actor_ids.update(primitive.primary_actor_ids)
-        actor_ids.update(primitive.affected_actor_ids)
     return actor_ids
 
 

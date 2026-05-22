@@ -11,12 +11,12 @@ from podcast_agent.schemas.models import (
     ActorMetadata,
     ActorProfile,
     ArchitectureSection,
-    BaseSynthesisPrimitive,
     BookRecord,
     EpisodeArchitecture,
-    EpochalTurnPrimitive,
+    EventPrimitive,
     NarrativeStrategy,
     PipelineConfig,
+    PrimitiveSubstrate,
     ProjectStatus,
     StrategyEpisode,
     SynthesisMap,
@@ -167,35 +167,32 @@ def _build_project_dir(tmp_path: Path) -> Path:
         description="Axis description",
         theme_importance_score=1.0,
     )
-    primitive = BaseSynthesisPrimitive(
+    primitive = EventPrimitive(
         id="primitive_1",
-        family="epochal_turns",
+        substrate=PrimitiveSubstrate.EVENTS,
         title="Primitive",
-        summary="Primitive summary",
-        axis_ids=["axis_1"],
-        core_passage_ids=[],
+        core_passage_ids=["passage_1"],
         actor_ids=["actor_1"],
+        event_type="turning_point",
+        what_happened="A decisive event changes the field.",
     )
     primitives = SynthesisPrimitivesArtifact(
         project_id="run_1",
-        primitives_by_family={"epochal_turns": [primitive]},
+        primitives=[primitive],
     )
-    enriched_primitive = EpochalTurnPrimitive(
+    enriched_primitive = EventPrimitive(
         id="primitive_1",
-        family="epochal_turns",
+        substrate=PrimitiveSubstrate.EVENTS,
         title="Primitive",
-        summary="Primitive summary",
-        axis_ids=["axis_1"],
-        core_passage_ids=[],
+        core_passage_ids=["passage_1"],
         actor_ids=["actor_1"],
-        before_state="The prior balance still holds.",
-        after_state="The balance breaks.",
-        change_driver="A decisive move forces the turn.",
-        irreversibility_reason="The fallout cannot be unwound quickly.",
+        event_type="turning_point",
+        what_happened="A decisive event changes the field.",
+        event_result="The balance breaks.",
     )
     synthesis_map = SynthesisMap(
         project_id="run_1",
-        primitives_by_family={"epochal_turns": [enriched_primitive]},
+        primitives=[enriched_primitive],
     )
     actor_metadata = ActorMetadata(
         project_id="run_1",
@@ -304,6 +301,7 @@ def test_resume_from_episode_architecture_passes_host_policy(
             actor_metadata: ActorMetadata,
             project_dir: Path,
             host_policy: dict[str, Any],
+            primitive_lookup: dict[str, EventPrimitive],
             semaphore: asyncio.Semaphore,
             spoken_semaphore: asyncio.Semaphore | None = None,
         ) -> tuple[int, Any]:
@@ -311,6 +309,7 @@ def test_resume_from_episode_architecture_passes_host_policy(
             calls["host_policy"] = host_policy
             calls["production_actor_metadata"] = actor_metadata
             calls["production_architecture"] = architecture
+            calls["primitive_lookup"] = primitive_lookup
             return plan.episode_number, SimpleNamespace(
                 episode_number=plan.episode_number
             )
@@ -354,6 +353,7 @@ def test_resume_from_episode_architecture_passes_host_policy(
     assert calls["production_config"].skip_spoken_delivery is False
     assert calls["production_actor_metadata"].actors[0].actor_id == "actor_1"
     assert calls["production_architecture"].episode_number == 1
+    assert calls["primitive_lookup"]["primitive_1"].id == "primitive_1"
     assert "authorial_policy" in calls["host_policy"]
     assert calls["audio_skip"] is True
 

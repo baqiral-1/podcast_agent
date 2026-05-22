@@ -19,17 +19,19 @@ from podcast_agent.schemas.models import (
     ActorMetadata,
     ActorProfile,
     ActorRelationship,
-    BaseSynthesisPrimitive,
     BookRecord,
     EpisodeSpine,
+    EventPrimitive,
     NarrativeStrategy,
     PipelineConfig,
+    PrimitiveSalience,
+    PrimitiveSubstrate,
+    SeriesActorExplanationItem,
     SeriesNarratorProfile,
     SeriesExplanationItem,
     SynthesisPrimitivesArtifact,
     StrategyEpisode,
     ThematicProject,
-    VerdictMode,
 )
 
 
@@ -72,23 +74,20 @@ def test_compact_narrative_strategy_runtime_payload_elides_empty_values():
 def test_build_narrative_strategy_payload_helpers_trim_fields():
     synthesis_map = SynthesisPrimitivesArtifact(
         project_id="proj",
-        primitives_by_family={
-            "epochal_turns": [
-                BaseSynthesisPrimitive(
-                    id="et_1",
-                    family="epochal_turns",
-                    title="Turn",
-                    summary="A decisive turn.",
-                    axis_ids=["axis_1"],
-                    core_passage_ids=["p1"],
-                    support_passage_ids=[],
-                    timeframe=None,
-                    geography="Delhi",
-                    actor_ids=["actor_1", "actor_2"],
-                    narrative_importance_score=0.82,
-                )
-            ]
-        },
+        primitives=[
+            EventPrimitive(
+                id="et_1",
+                substrate=PrimitiveSubstrate.EVENTS,
+                title="Turn",
+                core_passage_ids=["p1"],
+                support_passage_ids=[],
+                geography="Delhi",
+                actor_ids=["actor_1", "actor_2"],
+                salience=PrimitiveSalience(score=0.82, justification="High signal."),
+                event_type="turning_point",
+                what_happened="A decisive turn shifts the field.",
+            )
+        ],
         quality_score=0.6,
         quality_notes=[],
     )
@@ -140,7 +139,7 @@ def test_build_narrative_strategy_payload_helpers_trim_fields():
     project_payload = _build_narrative_strategy_project_metadata_payload(project)
     actor_payload = _build_narrative_strategy_actor_metadata_payload(actor_metadata)
 
-    primitive = synthesis_payload["primitives_by_family"]["epochal_turns"][0]
+    primitive = synthesis_payload["primitives"][0]
     assert "affected_actor_ids" not in primitive
     assert "actor_tags" not in primitive
     assert "institution_tags" not in primitive
@@ -240,22 +239,20 @@ def test_choose_narrative_strategy_uses_trimmed_runtime_payload(
     )
     synthesis_map = SynthesisPrimitivesArtifact(
         project_id="proj",
-        primitives_by_family={
-            "epochal_turns": [
-                BaseSynthesisPrimitive(
-                    id="et_1",
-                    family="epochal_turns",
-                    title="Turn",
-                    summary="A decisive turn.",
-                    axis_ids=["axis_1"],
-                    core_passage_ids=["p1"],
-                    support_passage_ids=[],
-                    geography="Delhi",
-                    actor_ids=["actor_1", "actor_2"],
-                    narrative_importance_score=0.82,
-                )
-            ]
-        },
+        primitives=[
+            EventPrimitive(
+                id="et_1",
+                substrate=PrimitiveSubstrate.EVENTS,
+                title="Turn",
+                core_passage_ids=["p1"],
+                support_passage_ids=[],
+                geography="Delhi",
+                actor_ids=["actor_1", "actor_2"],
+                salience=PrimitiveSalience(score=0.82, justification="High signal."),
+                event_type="turning_point",
+                what_happened="A decisive turn shifts the field.",
+            )
+        ],
     )
     actor_metadata = ActorMetadata(
         project_id="proj",
@@ -297,9 +294,9 @@ def test_choose_narrative_strategy_uses_trimmed_runtime_payload(
     )
 
     payload = captured["payload"]
-    assert payload["recommended_episode_count_min"] == 8
-    assert payload["recommended_episode_count_max"] == 12
-    primitive = payload["synthesis_map"]["primitives_by_family"]["epochal_turns"][0]
+    assert payload["recommended_episode_count_min"] == 10
+    assert payload["recommended_episode_count_max"] == 16
+    primitive = payload["synthesis_map"]["primitives"][0]
     assert "affected_actor_ids" not in primitive
     assert "actor_tags" not in primitive
     assert "institution_tags" not in primitive
@@ -330,6 +327,15 @@ def test_narrative_strategy_accepts_series_explanation_registry_contract() -> No
                     preferred_plain_gloss="follow a recognized jurist",
                 ).model_dump(mode="json")
             ],
+            "series_actor_explanation_registry": [
+                SeriesActorExplanationItem(
+                    actor_id="mohammad_mossadeq",
+                    introduction_episode_number=1,
+                    first_background_depth="appositive",
+                    preferred_plain_gloss="the nationalist prime minister driving oil nationalization",
+                    later_episode_policy="brief_reminder",
+                ).model_dump(mode="json")
+            ],
             "episodes": [
                 {
                     "episode_number": 1,
@@ -354,6 +360,8 @@ def test_narrative_strategy_accepts_series_explanation_registry_contract() -> No
                     "authorial_contract": {
                         "introduce_explanation_item_ids": ["registry_1"],
                         "remind_explanation_item_ids": [],
+                        "introduce_actor_ids": ["mohammad_mossadeq"],
+                        "remind_actor_ids": [],
                         "callback_obligations": [
                             "Recall that clerical authority already had an operating structure."
                         ],
@@ -364,6 +372,13 @@ def test_narrative_strategy_accepts_series_explanation_registry_contract() -> No
     )
 
     assert strategy.series_explanation_registry[0].item_id == "registry_1"
+    assert (
+        strategy.series_actor_explanation_registry[0].actor_id
+        == "mohammad_mossadeq"
+    )
     assert strategy.episodes[0].authorial_contract.introduce_explanation_item_ids == [
         "registry_1"
+    ]
+    assert strategy.episodes[0].authorial_contract.introduce_actor_ids == [
+        "mohammad_mossadeq"
     ]

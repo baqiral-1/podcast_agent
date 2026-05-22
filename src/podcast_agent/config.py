@@ -58,7 +58,18 @@ class LLMConfig(BaseModel):
         description="Per-schema model overrides keyed by schema_name.",
     )
     provider_overrides: dict[str, str] = Field(
-        default_factory=lambda: {"synthesis_primitives": "anthropic"},
+        default_factory=lambda: {
+            "primitive_substrate_extraction": "anthropic",
+            "primitive_function_tagging_events": "anthropic",
+            "primitive_function_tagging_acts": "anthropic",
+            "primitive_function_tagging_utterances": "anthropic",
+            "primitive_function_tagging_actor_portraits": "anthropic",
+            "primitive_function_tagging_mechanisms": "anthropic",
+            "primitive_function_tagging_conditions": "anthropic",
+            "primitive_function_tagging_artifacts": "anthropic",
+            "primitive_function_tagging_readings": "anthropic",
+            "synthesis_primitives": "anthropic",
+        },
         description="Per-schema LLM provider overrides keyed by schema_name.",
     )
     temperature: float = Field(default=1.0, ge=0.0, le=2.0)
@@ -100,9 +111,17 @@ class LLMConfig(BaseModel):
     timeout_seconds_overrides: dict[str, float] = Field(
         default_factory=lambda: {
             "passage_extraction": 480.0,
+            "primitive_substrate_extraction": 3360.0,
+            "primitive_function_tagging_events": 1200.0,
+            "primitive_function_tagging_acts": 1200.0,
+            "primitive_function_tagging_utterances": 1200.0,
+            "primitive_function_tagging_actor_portraits": 1200.0,
+            "primitive_function_tagging_mechanisms": 1200.0,
+            "primitive_function_tagging_conditions": 1200.0,
+            "primitive_function_tagging_artifacts": 1200.0,
+            "primitive_function_tagging_readings": 1200.0,
             "synthesis_primitives": 3360.0,
             "narrative_strategy": 900.0,
-            "primitive_enrichment": 900.0,
             "episode_architecture": 900.0,
             "theme_decomposition": 900.0,
             "episode_planning": 1500.0,
@@ -115,7 +134,15 @@ class LLMConfig(BaseModel):
     thinking_budget_tokens: dict[str, int] = Field(
         default_factory=lambda: {
             "narrative_strategy": 30000,
-            "primitive_enrichment": 20000,
+            "primitive_substrate_extraction": 30000,
+            "primitive_function_tagging_events": 20000,
+            "primitive_function_tagging_acts": 20000,
+            "primitive_function_tagging_utterances": 20000,
+            "primitive_function_tagging_actor_portraits": 20000,
+            "primitive_function_tagging_mechanisms": 20000,
+            "primitive_function_tagging_conditions": 20000,
+            "primitive_function_tagging_artifacts": 20000,
+            "primitive_function_tagging_readings": 20000,
             "episode_architecture": 30000,
             "episode_planning": 30000,
             "episode_writing": 30000,
@@ -177,6 +204,60 @@ class LLMConfig(BaseModel):
                 max_retry_attempts=4,
                 concurrency_limit=26,
             ),
+            "primitive_substrate_extraction": AgentConfig(
+                model_name="claude-opus-4-7",
+                temperature=0.8,
+                max_retry_attempts=2,
+                concurrency_limit=3,
+            ),
+            "primitive_function_tagging_events": AgentConfig(
+                model_name="claude-opus-4-7",
+                temperature=0.4,
+                max_retry_attempts=2,
+                concurrency_limit=8,
+            ),
+            "primitive_function_tagging_acts": AgentConfig(
+                model_name="claude-opus-4-7",
+                temperature=0.4,
+                max_retry_attempts=2,
+                concurrency_limit=8,
+            ),
+            "primitive_function_tagging_utterances": AgentConfig(
+                model_name="claude-opus-4-7",
+                temperature=0.4,
+                max_retry_attempts=2,
+                concurrency_limit=8,
+            ),
+            "primitive_function_tagging_actor_portraits": AgentConfig(
+                model_name="claude-opus-4-7",
+                temperature=0.4,
+                max_retry_attempts=2,
+                concurrency_limit=8,
+            ),
+            "primitive_function_tagging_mechanisms": AgentConfig(
+                model_name="claude-opus-4-7",
+                temperature=0.4,
+                max_retry_attempts=2,
+                concurrency_limit=8,
+            ),
+            "primitive_function_tagging_conditions": AgentConfig(
+                model_name="claude-opus-4-7",
+                temperature=0.4,
+                max_retry_attempts=2,
+                concurrency_limit=8,
+            ),
+            "primitive_function_tagging_artifacts": AgentConfig(
+                model_name="claude-opus-4-7",
+                temperature=0.4,
+                max_retry_attempts=2,
+                concurrency_limit=8,
+            ),
+            "primitive_function_tagging_readings": AgentConfig(
+                model_name="claude-opus-4-7",
+                temperature=0.4,
+                max_retry_attempts=2,
+                concurrency_limit=8,
+            ),
             "synthesis_primitives": AgentConfig(
                 model_name="claude-opus-4-7",
                 temperature=0.8,
@@ -186,12 +267,6 @@ class LLMConfig(BaseModel):
             "narrative_strategy": AgentConfig(
                 model_name="claude-opus-4-7",
                 temperature=0.5,
-                max_retry_attempts=2,
-                concurrency_limit=6,
-            ),
-            "primitive_enrichment": AgentConfig(
-                model_name="claude-opus-4-7",
-                temperature=0.4,
                 max_retry_attempts=2,
                 concurrency_limit=6,
             ),
@@ -375,8 +450,8 @@ class PipelineRuntimeConfig(BaseModel):
     chunk_overlap_words: int = Field(default=30, ge=0)
     min_chunk_words: int = Field(default=80, ge=10)
     max_repair_attempts: int = Field(default=3, ge=0)
-    episode_architecture_concurrency: int = Field(default=8, ge=1)
-    episode_planning_concurrency: int = Field(default=8, ge=1)
+    episode_architecture_concurrency: int = Field(default=12, ge=1)
+    episode_planning_concurrency: int = Field(default=12, ge=1)
     episode_write_concurrency: int = Field(default=8, ge=1)
     spoken_delivery_concurrency: int | None = Field(default=8, ge=1)
     tts_concurrency: int = Field(default=5, ge=1)
@@ -404,18 +479,16 @@ class PipelineRuntimeConfig(BaseModel):
     synthesis_axis_pct: float = Field(default=1.0, ge=0.0, le=1.0)
     synthesis_axis_min: int = Field(default=12, ge=0)
     synthesis_axis_max: int = Field(default=20, ge=1)
-    synthesis_total_passage_cap: int = Field(default=450, ge=1)
+    synthesis_total_passage_cap: int = Field(default=650, ge=1)
     synthesis_floor_budget_fraction: float = Field(default=0.0, ge=0.0, le=1.0)
     synthesis_axis_floor_min: int = Field(default=0, ge=0)
     synthesis_axis_floor_max: int = Field(default=0, ge=0)
     synthesis_axis_ceiling_multiplier: float = Field(default=1.68, ge=1.0)
     synthesis_trim_top_fraction: float = Field(default=0.10, ge=0.0, le=1.0)
     synthesis_trim_mid_fraction: float = Field(default=0.20, ge=0.0, le=1.0)
-    synthesis_trim_next_fraction: float = Field(default=0.0, ge=0.0, le=1.0)
-    synthesis_trim_top_keep_fraction: float = Field(default=0.375, gt=0.0, le=1.0)
-    synthesis_trim_mid_keep_fraction: float = Field(default=0.275, gt=0.0, le=1.0)
-    synthesis_trim_next_keep_fraction: float = Field(default=0.325, gt=0.0, le=1.0)
-    synthesis_trim_tail_keep_fraction: float = Field(default=0.175, gt=0.0, le=1.0)
+    synthesis_trim_top_keep_fraction: float = Field(default=0.35, gt=0.0, le=1.0)
+    synthesis_trim_mid_keep_fraction: float = Field(default=0.25, gt=0.0, le=1.0)
+    synthesis_trim_tail_keep_fraction: float = Field(default=0.15, gt=0.0, le=1.0)
     planning_axis_pct: float = Field(default=1.0, ge=0.0, le=1.0)
     planning_axis_min: int = Field(default=10, ge=0)
     planning_axis_max: int = Field(default=15, ge=1)
@@ -425,8 +498,8 @@ class PipelineRuntimeConfig(BaseModel):
     spoken_chunk_max_words: int = Field(default=250, ge=50)
     architecture_section_target_min: int = Field(default=9, ge=1)
     architecture_section_target_max: int = Field(default=12, ge=1)
-    scene_card_target_min: int = Field(default=32, ge=1)
-    scene_card_target_max: int = Field(default=40, ge=1)
+    scene_card_target_min: int = Field(default=34, ge=1)
+    scene_card_target_max: int = Field(default=44, ge=1)
 
     @model_validator(mode="after")
     def validate_retrieval_budget_bounds(self) -> PipelineRuntimeConfig:
@@ -442,13 +515,9 @@ class PipelineRuntimeConfig(BaseModel):
             )
         if self.planning_axis_max < self.planning_axis_min:
             raise ValueError("planning_axis_max must be >= planning_axis_min")
-        if (
-            self.synthesis_trim_top_fraction
-            + self.synthesis_trim_mid_fraction
-            + self.synthesis_trim_next_fraction
-        ) > 1.0:
+        if self.synthesis_trim_top_fraction + self.synthesis_trim_mid_fraction > 1.0:
             raise ValueError(
-                "synthesis trim top, mid, and next fractions must sum to <= 1.0"
+                "synthesis trim top and mid fractions must sum to <= 1.0"
             )
         if self.architecture_section_target_max < self.architecture_section_target_min:
             raise ValueError(

@@ -13,19 +13,18 @@ from podcast_agent.schemas.models import (
     ActorMetadata,
     ActorProfile,
     ArchitectureSection,
-    BaseSynthesisPrimitive,
     BookRecord,
-    EpochalTurnPrimitive,
     EpisodeArchitecture,
     EpisodePlan,
     EpisodeScript,
+    EventPrimitive,
     NarrativeStrategy,
     PipelineConfig,
+    PrimitiveSubstrate,
     ProjectStatus,
     SpokenScript,
     StrategyEpisode,
     SynthesisMap,
-    SynthesisPrimitivesArtifact,
     ThematicAxis,
     ThematicCorpus,
     ThematicProject,
@@ -54,6 +53,19 @@ def _write_json(path: Path, payload: Any) -> None:
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
+def _host_moves() -> dict[str, list[dict[str, str]]]:
+    return {
+        "open": [
+            {
+                "move_type": "orient",
+                "note": "Set the listener's footing before the beat turns.",
+            }
+        ],
+        "pivot": [],
+        "close": [],
+    }
+
+
 def _episode_plan(episode_number: int) -> EpisodePlan:
     scene_id = f"scene_{episode_number}"
     return EpisodePlan.model_validate(
@@ -80,6 +92,7 @@ def _episode_plan(episode_number: int) -> EpisodePlan:
                     "intended_move": "Move",
                     "primitive_ids": ["primitive_1"],
                     "passage_ids": [],
+                    "host_moves": _host_moves(),
                     "estimated_duration_seconds": 60,
                 }
             ],
@@ -329,35 +342,28 @@ def _build_project_dir(tmp_path: Path) -> tuple[Path, list[EpisodePlan]]:
         description="Axis description",
         theme_importance_score=1.0,
     )
-    primitive = BaseSynthesisPrimitive(
+    primitive = EventPrimitive(
         id="primitive_1",
-        family="epochal_turns",
+        substrate=PrimitiveSubstrate.EVENTS,
         title="Primitive",
-        summary="Primitive summary",
-        axis_ids=["axis_1"],
-        core_passage_ids=[],
+        core_passage_ids=["passage_1"],
         actor_ids=["actor_1"],
+        event_type="turning_point",
+        what_happened="A decisive event changes the situation.",
     )
-    primitives = SynthesisPrimitivesArtifact(
-        project_id="run_1",
-        primitives_by_family={"epochal_turns": [primitive]},
-    )
-    enriched_primitive = EpochalTurnPrimitive(
+    enriched_primitive = EventPrimitive(
         id="primitive_1",
-        family="epochal_turns",
+        substrate=PrimitiveSubstrate.EVENTS,
         title="Primitive",
-        summary="Primitive summary",
-        axis_ids=["axis_1"],
-        core_passage_ids=[],
+        core_passage_ids=["passage_1"],
         actor_ids=["actor_1"],
-        before_state="The prior balance still holds.",
-        after_state="The balance breaks.",
-        change_driver="A decisive move forces the turn.",
-        irreversibility_reason="The fallout cannot be unwound quickly.",
+        event_type="turning_point",
+        what_happened="A decisive event changes the situation.",
+        event_result="The balance breaks.",
     )
-    synthesis_map = SynthesisMap(
+    retained_primitives = SynthesisMap(
         project_id="run_1",
-        primitives_by_family={"epochal_turns": [enriched_primitive]},
+        primitives=[enriched_primitive],
     )
     actor_metadata = ActorMetadata(
         project_id="run_1",
@@ -447,8 +453,7 @@ def _build_project_dir(tmp_path: Path) -> tuple[Path, list[EpisodePlan]]:
     _write_json(project_dir / "thematic_axes.json", {"axes": [axis.model_dump(mode="json")]})
     _write_json(project_dir / "thematic_project.json", project)
     _write_json(project_dir / "thematic_corpus.json", corpus)
-    _write_json(project_dir / "synthesis_primitives.json", primitives)
-    _write_json(project_dir / "synthesis_map.json", synthesis_map)
+    _write_json(project_dir / "retained_primitives.json", retained_primitives)
     _write_json(project_dir / "narrative_strategy.json", strategy)
     _write_json(
         project_dir / "episode_architectures.json",
@@ -491,38 +496,39 @@ def test_retry_single_episode_from_writing_retries_target_episode_and_regenerate
         def _bind_run_logger(self, bound_project_dir: Path) -> None:
             calls["bound_project_dir"] = bound_project_dir
 
-        async def _write_episode(
+        async def _produce_episode(
             self,
             plan: EpisodePlan,
             strategy_episode: StrategyEpisode,
             architecture: EpisodeArchitecture,
             project: ThematicProject,
             corpus: ThematicCorpus,
-            ep_dir: Path,
+            actor_metadata: ActorMetadata,
             project_dir: Path,
-            actor_metadata: ActorMetadata | None = None,
-        ) -> EpisodeScript:
-            calls["written_episode_number"] = plan.episode_number
+            *,
+            host_policy: dict[str, Any],
+            primitive_lookup: dict[str, EventPrimitive],
+            semaphore: asyncio.Semaphore,
+            spoken_semaphore: asyncio.Semaphore | None = None,
+            series_explanation_registry: list[Any] | None = None,
+        ) -> tuple[int, SpokenScript]:
+            ep_dir = project_dir / "episodes" / str(plan.episode_number)
+            ep_dir.mkdir(parents=True, exist_ok=True)
+            calls["produced_episode_number"] = plan.episode_number
             calls["write_config"] = project.config
-            calls["written_strategy_title"] = strategy_episode.title
-            calls["written_architecture_episode"] = architecture.episode_number
+            calls["produced_strategy_title"] = strategy_episode.title
+            calls["produced_architecture_episode"] = architecture.episode_number
+            calls["host_policy"] = host_policy
+            calls["primitive_lookup"] = primitive_lookup
             script = _episode_script(plan, strategy_episode.title)
             _write_json(ep_dir / "episode_script.json", script)
             _write_json(ep_dir / "spine_diagnostics.json", {"status": "ok"})
-            return script
-
-        async def _rewrite_for_speech(
-            self,
-            episode_number: int,
-            script: EpisodeScript,
-            project: ThematicProject,
-            ep_dir: Path,
-            project_dir: Path,
-        ) -> SpokenScript:
-            calls["spoken_episode_number"] = episode_number
-            spoken = _spoken_script(plans[episode_number - 1], script.title)
+            _write_json(ep_dir / "style_audited_script.json", script)
+            _write_json(ep_dir / "style_audit_result.json", {"status": "ok"})
+            spoken = _spoken_script(plans[plan.episode_number - 1], script.title)
             _write_json(ep_dir / "spoken_script.json", spoken)
-            return spoken
+            _write_json(ep_dir / "spoken_host_moves_diagnostics.json", {"status": "ok"})
+            return plan.episode_number, spoken
 
         async def _render_episode_audio(
             self,
@@ -565,15 +571,16 @@ def test_retry_single_episode_from_writing_retries_target_episode_and_regenerate
     asyncio.run(retry_script._retry_single_episode_from_writing("run_1", 2))
 
     assert calls["bound_project_dir"] == project_dir
-    assert calls["written_episode_number"] == 2
-    assert calls["written_strategy_title"] == "Episode 2"
-    assert calls["written_architecture_episode"] == 2
-    assert calls["spoken_episode_number"] == 2
+    assert calls["produced_episode_number"] == 2
+    assert calls["produced_strategy_title"] == "Episode 2"
+    assert calls["produced_architecture_episode"] == 2
     assert calls["render_episode_number"] == 2
     assert calls["write_config"].skip_grounding is True
     assert calls["write_config"].skip_audio is True
     assert calls["write_config"].skip_spoken_delivery is False
     assert calls["audio_skip"] is True
+    assert calls["primitive_lookup"]["primitive_1"].id == "primitive_1"
+    assert "authorial_policy" in calls["host_policy"]
     assert calls["passage_utilization"]["episode_numbers"] == [1, 2]
     assert [episode_number for episode_number, _ in calls["spoken_scripts"]] == [1, 2]
     assert calls["actor_metadata_metrics"]["metrics"]["episode_planning"] == {
@@ -583,6 +590,8 @@ def test_retry_single_episode_from_writing_retries_target_episode_and_regenerate
         "completed_episode_count": 2
     }
     assert (project_dir / "episodes" / "2" / "episode_script.json").exists()
+    assert (project_dir / "episodes" / "2" / "style_audited_script.json").exists()
+    assert (project_dir / "episodes" / "2" / "style_audit_result.json").exists()
     assert (project_dir / "episodes" / "2" / "spoken_script.json").exists()
     assert (project_dir / "episodes" / "2" / "render_manifest.json").exists()
 
@@ -606,7 +615,7 @@ def test_retry_single_episode_from_writing_restores_original_status_on_failure(
         def _bind_run_logger(self, bound_project_dir: Path) -> None:
             return None
 
-        async def _write_episode(self, *args: Any, **kwargs: Any) -> EpisodeScript:
+        async def _produce_episode(self, *args: Any, **kwargs: Any) -> tuple[int, SpokenScript]:
             raise RuntimeError("writing failed")
 
     monkeypatch.setattr(

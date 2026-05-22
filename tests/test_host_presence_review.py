@@ -140,6 +140,92 @@ def test_build_review_payload_counts_entries(tmp_path: Path) -> None:
     assert payload["entries"][0]["highlight_text"] == "Listen for the turn in the room."
 
 
+def test_extract_host_snippets_supports_i_address_mode(tmp_path: Path) -> None:
+    run_dir = _build_run(tmp_path)
+    episode_dir = run_dir / "episodes" / "1"
+
+    _write_json(
+        run_dir / "series_plan.json",
+        {
+            "episodes": [
+                {
+                    "episode_number": 1,
+                    "scene_cards": [
+                        {
+                            "scene_id": "sc01_intro",
+                            "section_id": "s01_open",
+                            "title": "Opening frame",
+                            "host_moves": {
+                                "open": [
+                                    {
+                                        "move_type": "light_aside",
+                                        "note": "Let the line turn personal once the room starts to tilt.",
+                                        "address_mode": "i",
+                                    }
+                                ],
+                                "pivot": [],
+                                "close": [],
+                            },
+                        }
+                    ],
+                }
+            ]
+        },
+    )
+
+    _write_json(
+        episode_dir / "host_moves_script_diagnostics.json",
+        {
+            "phase_trace": [
+                {
+                    "scene_id": "sc01_intro",
+                    "section_id": "s01_open",
+                    "phase": "open",
+                    "cue_count": 1,
+                    "move_types": ["light_aside"],
+                    "host_note": "Let the line turn personal once the room starts to tilt.",
+                    "address_modes": ["i"],
+                    "approx_realized": True,
+                    "first_person_plural_present": False,
+                }
+            ]
+        },
+    )
+
+    _write_json(
+        episode_dir / "episode_script.json",
+        {
+            "episode_number": 1,
+            "title": "Episode One",
+            "framing": {
+                "opening_image": "Image",
+                "threat_or_unresolved_action": "Threat",
+                "opening_question": "Question",
+                "handoff_scene_card_id": "sc01_intro",
+            },
+            "prose_sections": [
+                {
+                    "section_id": "s01_open",
+                    "scene_card_ids": ["sc01_intro"],
+                    "movement_goal": "orient",
+                    "text": (
+                        "I keep coming back to the turn in the room. "
+                        "Then the crowd starts moving."
+                    ),
+                }
+            ],
+            "total_word_count": 12,
+            "estimated_duration_seconds": 20,
+        },
+    )
+
+    entries = extract_host_snippets(run_dir)
+
+    assert len(entries) == 1
+    assert entries[0].highlight_text == "I keep coming back to the turn in the room."
+    assert "i" in entries[0].cue_tags
+
+
 def test_build_host_presence_review_script_writes_outputs(tmp_path: Path) -> None:
     run_dir = _build_run(tmp_path)
     output_html = tmp_path / "review.html"

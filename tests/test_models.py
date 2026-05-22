@@ -48,7 +48,10 @@ from podcast_agent.schemas.models import (
     ThematicProject,
     PipelineConfig,
     PodcastMode,
-    VerdictMode,
+    authorial_passage_target_for_mode,
+    authorial_passage_target_range_for_mode,
+    dense_section_authorial_passage_range_for_mode,
+    primitive_substrate_target_ranges_for_mode,
     resolve_pipeline_config_for_mode,
     synthesis_primitive_target_ranges_for_mode,
     validate_episode_architecture_targets,
@@ -69,8 +72,6 @@ def _epochal_turn(primitive_id: str = "et_1") -> EpochalTurnPrimitive:
         id=primitive_id,
         family="epochal_turns",
         title="Threshold breaks",
-        summary="A decision changes the field.",
-        axis_ids=["axis_1"],
         core_passage_ids=["p1"],
         support_passage_ids=["p2"],
         before_state="The prior balance still holds.",
@@ -85,17 +86,14 @@ def _contested_explanation(primitive_id: str = "cx_1") -> ContestedExplanationPr
         id=primitive_id,
         family="contested_explanations",
         title="Competing readings",
-        summary="The evidence supports multiple paths.",
         core_passage_ids=["p1"],
         candidate_readings=[
             CandidateReading(
                 label="reading_a",
-                summary="One reading.",
                 support_passage_ids=["p1"],
             ),
             CandidateReading(
                 label="reading_b",
-                summary="Another reading.",
                 support_passage_ids=["p2"],
             ),
         ],
@@ -212,8 +210,8 @@ class TestThematicProject:
         assert config.max_axes == 20
         assert config.synthesis_axis_min == 12
         assert config.synthesis_axis_max == 20
-        assert config.narrative_strategy_episode_count_min == 8
-        assert config.narrative_strategy_episode_count_max == 12
+        assert config.narrative_strategy_episode_count_min == 10
+        assert config.narrative_strategy_episode_count_max == 16
 
     def test_pipeline_config_rejects_narrative_strategy_episode_count_bound_inversion(
         self,
@@ -234,34 +232,33 @@ class TestThematicProject:
         with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
             PipelineConfig(scene_batch_min_cards=1)
 
-    def test_pipeline_config_defaults_synthesis_cap_to_450(self):
+    def test_pipeline_config_defaults_synthesis_cap_to_650(self):
         config = PipelineConfig()
-        assert config.synthesis_total_passage_cap == 450
+        assert config.synthesis_total_passage_cap == 650
         assert config.synthesis_floor_budget_fraction == 0.0
         assert config.synthesis_axis_floor_min == 0
         assert config.synthesis_axis_floor_max == 0
         assert config.synthesis_axis_ceiling_multiplier == 1.68
         assert config.synthesis_trim_top_fraction == 0.10
         assert config.synthesis_trim_mid_fraction == 0.20
-        assert config.synthesis_trim_next_fraction == 0.0
-        assert config.synthesis_trim_top_keep_fraction == 0.375
-        assert config.synthesis_trim_mid_keep_fraction == 0.275
-        assert config.synthesis_trim_next_keep_fraction == 0.325
-        assert config.synthesis_trim_tail_keep_fraction == 0.175
+        assert config.synthesis_trim_top_keep_fraction == 0.35
+        assert config.synthesis_trim_mid_keep_fraction == 0.25
+        assert config.synthesis_trim_tail_keep_fraction == 0.15
         assert config.passage_extraction_concurrency == 16
         assert config.episode_write_concurrency == 8
+        assert config.episode_writing_batch_count == 3
         assert config.spoken_delivery_concurrency == 8
-        assert config.min_episode_minutes == 90.0
-        assert config.max_episode_minutes == 105.0
+        assert config.min_episode_minutes == 100.0
+        assert config.max_episode_minutes == 115.0
         assert config.architecture_section_target_min == 9
         assert config.architecture_section_target_max == 12
-        assert config.episode_spine_core_primitive_target_min == 5
-        assert config.episode_spine_core_primitive_target_max == 7
-        assert config.episode_spine_support_primitive_target_min == 5
-        assert config.episode_spine_support_primitive_target_max == 7
+        assert config.episode_spine_core_primitive_target_min == 6
+        assert config.episode_spine_core_primitive_target_max == 8
+        assert config.episode_spine_support_primitive_target_min == 7
+        assert config.episode_spine_support_primitive_target_max == 10
         assert config.episode_spine_recall_primitive_target_max == 2
-        assert config.scene_card_target_min == 32
-        assert config.scene_card_target_max == 40
+        assert config.scene_card_target_min == 34
+        assert config.scene_card_target_max == 44
 
     def test_resolve_pipeline_config_for_mode_applies_minified_profile(self):
         config = resolve_pipeline_config_for_mode(
@@ -276,6 +273,7 @@ class TestThematicProject:
         assert config.narrative_strategy_episode_count_min == 2
         assert config.narrative_strategy_episode_count_max == 4
         assert config.synthesis_total_passage_cap == 200
+        assert config.episode_writing_batch_count == 2
         assert config.episode_spine_core_primitive_target_min == 2
         assert config.episode_spine_core_primitive_target_max == 4
         assert config.episode_spine_support_primitive_target_min == 2
@@ -288,18 +286,71 @@ class TestThematicProject:
         assert config.scene_card_target_min == 21
         assert config.scene_card_target_max == 26
 
+    def test_authorial_passage_target_ranges_for_minified_mode_derive_by_ratio(self):
+        assert authorial_passage_target_range_for_mode(PodcastMode.FULL) == (14, 18)
+        assert authorial_passage_target_range_for_mode(PodcastMode.MINIFIED) == (9, 12)
+        assert dense_section_authorial_passage_range_for_mode(PodcastMode.FULL) == (
+            2,
+            4,
+        )
+        assert dense_section_authorial_passage_range_for_mode(
+            PodcastMode.MINIFIED
+        ) == (1, 3)
+        assert authorial_passage_target_for_mode(PodcastMode.FULL) == 16
+        assert authorial_passage_target_for_mode(PodcastMode.MINIFIED) == 10
+
     def test_synthesis_primitive_target_ranges_for_minified_mode_floor_by_thirds(self):
         target_ranges = synthesis_primitive_target_ranges_for_mode(PodcastMode.MINIFIED)
-        assert target_ranges["epochal_turns"] == (10, 12)
-        assert target_ranges["telling_details"] == (1, 2)
-        assert target_ranges["perspective_windows"] == (0, 1)
-        assert target_ranges["recurring_images_and_symbols"] == (0, 1)
+        assert target_ranges["epochal_turns"] == (14, 18)
+        assert target_ranges["telling_details"] == (2, 4)
+        assert target_ranges["perspective_windows"] == (1, 3)
+        assert target_ranges["recurring_images_and_symbols"] == (1, 3)
 
-    def test_thematic_project_rejects_more_than_thirty_sub_themes(self):
-        with pytest.raises(ValidationError, match="at most 30 entries"):
+    def test_synthesis_primitive_target_ranges_for_full_mode_preserve_total_counts(self):
+        target_ranges = synthesis_primitive_target_ranges_for_mode(PodcastMode.FULL)
+        assert sum(lower for lower, _ in target_ranges.values()) == 223
+        assert sum(upper for _, upper in target_ranges.values()) == 312
+
+    def test_primitive_substrate_target_ranges_for_full_mode_match_rebalanced_table(self):
+        target_ranges = primitive_substrate_target_ranges_for_mode(PodcastMode.FULL)
+        assert target_ranges == {
+            "events": (93, 127),
+            "acts": (47, 63),
+            "utterances": (7, 11),
+            "actor_portraits": (7, 10),
+            "mechanisms": (23, 32),
+            "conditions": (14, 18),
+            "artifacts": (12, 16),
+            "readings": (7, 8),
+        }
+        assert sum(lower for lower, _ in target_ranges.values()) == 210
+        assert sum(upper for _, upper in target_ranges.values()) == 285
+
+    def test_primitive_substrate_target_ranges_for_minified_mode_reduce_current_ranges_by_thirty_percent(self):
+        target_ranges = primitive_substrate_target_ranges_for_mode(PodcastMode.MINIFIED)
+        assert target_ranges == {
+            "events": (21, 29),
+            "acts": (10, 14),
+            "utterances": (1, 2),
+            "actor_portraits": (1, 2),
+            "mechanisms": (4, 7),
+            "conditions": (2, 4),
+            "artifacts": (2, 3),
+            "readings": (1, 1),
+        }
+
+    def test_thematic_project_accepts_forty_sub_themes(self):
+        project = ThematicProject(
+            theme="Theme",
+            sub_themes=[f"s{i}" for i in range(40)],
+        )
+        assert project.sub_themes == [f"s{i}" for i in range(40)]
+
+    def test_thematic_project_rejects_more_than_forty_sub_themes(self):
+        with pytest.raises(ValidationError, match="at most 40 entries"):
             ThematicProject(
                 theme="Theme",
-                sub_themes=[f"s{i}" for i in range(31)],
+                sub_themes=[f"s{i}" for i in range(41)],
             )
 
     def test_chapter_analysis_discards_legacy_fields(self):
@@ -340,6 +391,27 @@ class TestThematicProject:
         assert beat.kind == "clarify"
         assert beat.scope == "scene"
         assert beat.address_mode == "implicit"
+
+    def test_host_presence_beat_accepts_i_address_mode(self):
+        beat = HostPresenceBeat.model_validate(
+            {
+                "kind": "light_aside",
+                "placement": "open",
+                "seed": "I keep coming back to the ledger on the desk.",
+                "address_mode": "i",
+            }
+        )
+
+        assert beat.address_mode == "i"
+
+    def test_host_move_cue_accepts_i_address_mode(self):
+        cue = HostMoveCue(
+            move_type="light_aside",
+            note="Let the ledger invite one brief personal aside.",
+            address_mode="i",
+        )
+
+        assert cue.address_mode == "i"
 
     def test_host_moves_require_at_least_one_phase_bucket(self):
         with pytest.raises(ValidationError, match="at least one phase bucket"):
@@ -687,12 +759,10 @@ class TestSynthesisModels:
             id="cx_invalid",
             family="contested_explanations",
             title="Single reading",
-            summary="The evidence supports only one explicit reading.",
             core_passage_ids=["p1"],
             candidate_readings=[
                 CandidateReading(
                     label="reading_a",
-                    summary="Only one reading present.",
                     support_passage_ids=["p1"],
                 )
             ],
@@ -743,12 +813,10 @@ class TestSynthesisModels:
                             id="cx_invalid",
                             family="contested_explanations",
                             title="Single reading",
-                            summary="The evidence supports only one explicit reading.",
                             core_passage_ids=["p1"],
                             candidate_readings=[
                                 CandidateReading(
                                     label="reading_a",
-                                    summary="Only one reading present.",
                                     support_passage_ids=["p1"],
                                 )
                             ],
@@ -1021,7 +1089,7 @@ class TestNarrativeStrategy:
 
     def test_episode_spine_rejects_core_primitive_count_outside_shared_range(self):
         with pytest.raises(
-            ValidationError, match="core_primitive_ids must contain 2-7"
+            ValidationError, match="core_primitive_ids must contain 2-8"
         ):
             EpisodeSpine(
                 listener_question="What changed?",
@@ -1034,7 +1102,7 @@ class TestNarrativeStrategy:
 
     def test_episode_spine_rejects_support_primitive_count_outside_shared_range(self):
         with pytest.raises(
-            ValidationError, match="support_primitive_roles must contain 2-7"
+            ValidationError, match="support_primitive_roles must contain 2-10"
         ):
             EpisodeSpine(
                 listener_question="What changed?",
@@ -1042,9 +1110,20 @@ class TestNarrativeStrategy:
                 core_primitive_ids=[f"core_{idx}" for idx in range(1, 8)],
                 support_primitive_roles={
                     "support_1": SupportPackRole.MECHANISM,
-                    "support_2": SupportPackRole.MECHANISM,
                 },
             )
+
+    def test_episode_spine_accepts_shared_upper_bound_of_ten_for_support(self):
+        spine = EpisodeSpine(
+            listener_question="What changed?",
+            argument="A claim",
+            core_primitive_ids=[f"core_{idx}" for idx in range(1, 9)],
+            support_primitive_roles={
+                f"support_{idx}": SupportPackRole.MECHANISM for idx in range(1, 11)
+            },
+        )
+        assert len(spine.core_primitive_ids) == 8
+        assert len(spine.support_primitive_roles) == 10
 
     def test_validate_episode_spine_targets_enforces_full_mode_counts(self):
         spine = EpisodeSpine(
@@ -1056,15 +1135,34 @@ class TestNarrativeStrategy:
             },
         )
 
-        with pytest.raises(ValueError, match="core_primitive_ids must contain 5-7"):
+        with pytest.raises(ValueError, match="core_primitive_ids must contain 6-8"):
             validate_episode_spine_targets(
                 spine,
-                core_target_min=5,
-                core_target_max=7,
-                support_target_min=5,
-                support_target_max=7,
+                core_target_min=6,
+                core_target_max=8,
+                support_target_min=7,
+                support_target_max=10,
                 recall_target_max=2,
             )
+
+    def test_validate_episode_spine_targets_accepts_full_mode_support_range(self):
+        spine = EpisodeSpine(
+            listener_question="What changed?",
+            argument="A claim",
+            core_primitive_ids=[f"core_{idx}" for idx in range(1, 7)],
+            support_primitive_roles={
+                f"support_{idx}": SupportPackRole.MECHANISM for idx in range(1, 8)
+            },
+        )
+
+        validate_episode_spine_targets(
+            spine,
+            core_target_min=6,
+            core_target_max=8,
+            support_target_min=7,
+            support_target_max=10,
+            recall_target_max=2,
+        )
 
     def test_validate_episode_spine_targets_accepts_minified_counts(self):
         spine = EpisodeSpine(
@@ -1182,6 +1280,65 @@ class TestNarrativeStrategy:
 
 
 class TestPlanningModels:
+    def test_scene_actor_allows_intro_fields_without_explanation_stage(self):
+        actor = SceneActor.model_validate(
+            {
+                "name": "Muhammad Ali Jinnah",
+                "actor_id": "muhammad_ali_jinnah",
+                "role_label": "Bombay barrister",
+                "source_primitive_ids": ["p_1"],
+                "source_passage_ids": ["passage_1"],
+                "intro_facts": ["He leads the League."],
+                "why_now": "He now enters the scene directly.",
+            }
+        )
+
+        assert actor.explanation_stage is None
+        assert actor.role_label == "Bombay barrister"
+        assert actor.source_primitive_ids == ["p_1"]
+
+    def test_scene_card_draft_suggests_scene_function_for_swapped_scene_role(self):
+        with pytest.raises(
+            ValidationError,
+            match="scene_role='mechanism' looks like a scene_function value",
+        ):
+            SceneCardDraft.model_validate(
+                {
+                    "scene_id": "scene_1",
+                    "section_id": "section_1",
+                    "title": "The chain becomes visible",
+                    "scene_role": "mechanism",
+                    "scene_function": "scene",
+                    "beat_change": "The mechanism is now exposed.",
+                    "passage_ids": ["p1"],
+                    "host_moves": {
+                        "open": [{"move_type": "orient", "note": "Enter through the ledger."}]
+                    },
+                    "estimated_duration_seconds": 90,
+                }
+            )
+
+    def test_scene_card_draft_suggests_scene_role_for_swapped_scene_function(self):
+        with pytest.raises(
+            ValidationError,
+            match="scene_function='contestation' looks like a scene_role value",
+        ):
+            SceneCardDraft.model_validate(
+                {
+                    "scene_id": "scene_1",
+                    "section_id": "section_1",
+                    "title": "The argument turns public",
+                    "scene_role": "action",
+                    "scene_function": "contestation",
+                    "beat_change": "The disagreement becomes visible.",
+                    "passage_ids": ["p1"],
+                    "host_moves": {
+                        "open": [{"move_type": "orient", "note": "Enter through the council chamber."}]
+                    },
+                    "estimated_duration_seconds": 90,
+                }
+            )
+
     def test_scene_actor_uses_arc_bindings(self):
         actor = SceneActor(
             name="Mahatma Gandhi",

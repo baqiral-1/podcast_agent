@@ -13,12 +13,12 @@ from podcast_agent.schemas.models import (
     ActorMetadata,
     ActorProfile,
     ArchitectureSection,
-    BaseSynthesisPrimitive,
     BookRecord,
     EpisodeArchitecture,
-    EpochalTurnPrimitive,
+    EventPrimitive,
     NarrativeStrategy,
     PipelineConfig,
+    PrimitiveSubstrate,
     ProjectStatus,
     StrategyEpisode,
     SynthesisMap,
@@ -85,6 +85,7 @@ def _build_project_dir(tmp_path: Path) -> Path:
             skip_grounding=False,
             skip_audio=False,
             skip_spoken_delivery=True,
+            synthesis_total_passage_cap=321,
         ),
         status=ProjectStatus.ANALYZING,
     )
@@ -100,19 +101,17 @@ def _build_project_dir(tmp_path: Path) -> Path:
 
 
 def _build_synthesis_primitives() -> SynthesisPrimitivesArtifact:
-    primitive = BaseSynthesisPrimitive(
+    primitive = EventPrimitive(
         id="primitive_1",
-        family="epochal_turns",
+        substrate=PrimitiveSubstrate.EVENTS,
         title="Primitive",
-        summary="Primitive summary",
-        axis_ids=["axis_1"],
-        core_passage_ids=[],
+        core_passage_ids=["passage_1"],
         actor_ids=["actor_1"],
+        event_type="turning_point",
+        what_happened="A decisive event changes the situation.",
+        event_result="The balance breaks.",
     )
-    return SynthesisPrimitivesArtifact(
-        project_id="run_1",
-        primitives_by_family={"epochal_turns": [primitive]},
-    )
+    return SynthesisPrimitivesArtifact(project_id="run_1", primitives=[primitive])
 
 
 def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
@@ -125,6 +124,8 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
     class FakeOrchestrator:
         def __init__(self, settings: Any) -> None:
             self.settings = settings
+            self.run_logger = SimpleNamespace(log=lambda _event, **kwargs: None)
+            self.run_logger = SimpleNamespace(log=lambda _event, **kwargs: None)
 
         def _bind_run_logger(self, bound_project_dir: Path) -> None:
             calls["bound_project_dir"] = bound_project_dir
@@ -141,7 +142,9 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
             calls["map_config"] = project.config
             calls["map_corpus"] = corpus
             calls["map_actor_metadata"] = actor_metadata
-            return _build_synthesis_primitives(), {
+            primitives = _build_synthesis_primitives()
+            _write_json(project_dir / "synthesis_primitives.json", primitives)
+            return primitives, {
                 "primitives": {"unknown_actor_ids": 0},
             }
 
@@ -184,46 +187,29 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
                     )
                 ],
             )
-            persisted_strategy = strategy.model_copy(
-                update={
-                    "episodes": [
-                        strategy.episodes[0].model_copy(
-                            update={"title": "Persisted Episode"}
-                        )
-                    ]
-                }
-            )
-            _write_json(project_dir / "narrative_strategy.json", persisted_strategy)
+            _write_json(project_dir / "narrative_strategy.json", strategy)
             return strategy, {"unknown_actor_ids": 0}
 
-        async def _enrich_selected_primitives(
+        async def _materialize_selected_primitives(
             self,
             *,
             project: ThematicProject,
             synthesis_primitives: SynthesisPrimitivesArtifact,
             strategy: NarrativeStrategy,
-            corpus: ThematicCorpus,
             project_dir: Path,
-            actor_metadata: ActorMetadata,
         ) -> SynthesisMap:
-            calls["order"].append("primitive_enrichment")
-            primitive = EpochalTurnPrimitive(
+            calls["order"].append("selected_primitives")
+            primitive = EventPrimitive(
                 id="primitive_1",
-                family="epochal_turns",
+                substrate=PrimitiveSubstrate.EVENTS,
                 title="Primitive",
-                summary="Primitive summary",
-                axis_ids=["axis_1"],
-                core_passage_ids=[],
+                core_passage_ids=["passage_1"],
                 actor_ids=["actor_1"],
-                before_state="The prior balance still holds.",
-                after_state="The balance breaks.",
-                change_driver="A decisive move forces the turn.",
-                irreversibility_reason="The fallout cannot be unwound quickly.",
+                event_type="turning_point",
+                what_happened="A decisive event changes the situation.",
+                event_result="The balance breaks.",
             )
-            synthesis_map = SynthesisMap(
-                project_id=project.project_id,
-                primitives_by_family={"epochal_turns": [primitive]},
-            )
+            synthesis_map = SynthesisMap(project_id=project.project_id, primitives=[primitive])
             _write_json(project_dir / "synthesis_map.json", synthesis_map)
             return synthesis_map
 
@@ -473,8 +459,10 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
             actor_metadata: ActorMetadata,
             project_dir: Path,
             host_policy: dict[str, Any],
+            primitive_lookup: dict[str, Any],
             semaphore: asyncio.Semaphore,
             spoken_semaphore: asyncio.Semaphore | None = None,
+            series_explanation_registry: list[Any] | None = None,
         ) -> tuple[int, Any]:
             calls["order"].append("produce_episode")
             calls["production_actor_metadata"] = actor_metadata
@@ -482,6 +470,7 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
             calls["production_strategy_episode"] = strategy_episode
             calls["production_architecture"] = architecture
             calls["host_policy"] = host_policy
+            calls["primitive_lookup"] = primitive_lookup
             return plan.episode_number, SimpleNamespace(
                 episode_number=plan.episode_number
             )
@@ -525,7 +514,7 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
     assert calls["order"] == [
         "map_synthesis",
         "narrative_strategy",
-        "primitive_enrichment",
+        "selected_primitives",
         "resolve_episode_count",
         "episode_architecture",
         "plan_series",
@@ -542,11 +531,15 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
     assert calls["planning_strategy"].episodes[0].title == "Episode"
     assert calls["planning_architectures"][0].runtime_minutes == 90.0
     assert calls["production_strategy_episode"].title == "Episode"
+    assert calls["primitive_lookup"]["primitive_1"].id == "primitive_1"
     assert calls["map_config"].skip_grounding is True
     assert calls["map_config"].skip_audio is True
     assert calls["map_config"].skip_spoken_delivery is False
+    assert calls["map_config"].synthesis_total_passage_cap == 321
     assert calls["planning_config"].skip_audio is True
+    assert calls["planning_config"].synthesis_total_passage_cap == 321
     assert calls["production_config"].skip_grounding is True
+    assert calls["production_config"].synthesis_total_passage_cap == 321
     assert "authorial_policy" in calls["host_policy"]
     assert calls["audio_skip"] is True
     assert calls["actor_metadata_metrics"]["metrics"]["synthesis_primitives"] == {
@@ -583,6 +576,8 @@ def test_resume_from_synthesis_mapping_rejects_axis_mismatch(
     class FakeOrchestrator:
         def __init__(self, settings: Any) -> None:
             self.settings = settings
+            self.run_logger = SimpleNamespace(log=lambda _event, **kwargs: None)
+            self.run_logger = SimpleNamespace(log=lambda _event, **kwargs: None)
 
         def _bind_run_logger(self, bound_project_dir: Path) -> None:
             raise AssertionError("resume should fail before binding run logger")
@@ -618,3 +613,200 @@ def test_resume_from_synthesis_mapping_requires_actor_metadata(
 
     with pytest.raises(RuntimeError, match="Missing required artifact"):
         asyncio.run(resume_script._resume_from_synthesis_mapping("run_1"))
+
+
+def test_resume_from_synthesis_mapping_fails_when_upstream_artifact_changes(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    project_dir = _build_project_dir(tmp_path)
+
+    class FakeOrchestrator:
+        def __init__(self, settings: Any) -> None:
+            self.settings = settings
+            self.run_logger = SimpleNamespace(log=lambda _event, **kwargs: None)
+
+        def _bind_run_logger(self, bound_project_dir: Path) -> None:
+            assert bound_project_dir == project_dir
+
+        async def _map_synthesis(
+            self,
+            *,
+            project: ThematicProject,
+            corpus: ThematicCorpus,
+            project_dir: Path,
+            actor_metadata: ActorMetadata,
+        ) -> tuple[SynthesisPrimitivesArtifact, dict[str, Any]]:
+            mutated_metadata = ActorMetadata(project_id="run_1", actors=[])
+            _write_json(project_dir / "actor_metadata.json", mutated_metadata)
+            primitives = _build_synthesis_primitives()
+            _write_json(project_dir / "synthesis_primitives.json", primitives)
+            return primitives, {"primitives": {"unknown_actor_ids": 0}}
+
+        async def _choose_narrative_strategy(
+            self,
+            *,
+            project: ThematicProject,
+            synthesis_map: SynthesisPrimitivesArtifact,
+            project_dir: Path,
+            actor_metadata: ActorMetadata,
+        ) -> tuple[NarrativeStrategy, dict[str, Any]]:
+            strategy = NarrativeStrategy(
+                strategy_type="chronological",
+                justification="Test",
+                series_arc="Test arc",
+                episodes=[
+                    StrategyEpisode(
+                        episode_number=1,
+                        title="Episode",
+                        arc_summary="Arc summary",
+                        episode_spine={
+                            "listener_question": "Question?",
+                            "argument": "A working claim.",
+                            "core_primitive_ids": [
+                                "primitive_1",
+                                "core_2",
+                                "core_3",
+                                "core_4",
+                                "core_5",
+                                "core_6",
+                                "core_7",
+                            ],
+                            "support_primitive_roles": {
+                                f"support_{idx}": "mechanism" for idx in range(1, 8)
+                            },
+                            "recall_primitive_ids": [],
+                        },
+                    )
+                ],
+            )
+            _write_json(project_dir / "narrative_strategy.json", strategy)
+            return strategy, {"unknown_actor_ids": 0}
+
+        async def _materialize_selected_primitives(
+            self,
+            *,
+            project: ThematicProject,
+            synthesis_primitives: SynthesisPrimitivesArtifact,
+            strategy: NarrativeStrategy,
+            project_dir: Path,
+        ) -> SynthesisMap:
+            primitive = EventPrimitive(
+                id="primitive_1",
+                substrate=PrimitiveSubstrate.EVENTS,
+                title="Primitive",
+                core_passage_ids=["passage_1"],
+                actor_ids=["actor_1"],
+                event_type="turning_point",
+                what_happened="A decisive event changes the situation.",
+                event_result="The balance breaks.",
+            )
+            synthesis_map = SynthesisMap(project_id=project.project_id, primitives=[primitive])
+            _write_json(project_dir / "synthesis_map.json", synthesis_map)
+            return synthesis_map
+
+        def _resolve_episode_count_from_strategy(
+            self,
+            project: ThematicProject,
+            strategy: NarrativeStrategy,
+        ) -> ThematicProject:
+            return project.model_copy(update={"episode_count": 1})
+
+        async def _build_episode_architectures(
+            self,
+            *,
+            project: ThematicProject,
+            synthesis_map: SynthesisMap,
+            strategy: NarrativeStrategy,
+            corpus: ThematicCorpus,
+            project_dir: Path,
+            actor_metadata: ActorMetadata,
+        ) -> tuple[list[EpisodeArchitecture], dict[str, Any]]:
+            architecture = EpisodeArchitecture.model_construct(
+                episode_number=1,
+                major_turn_section_id="section_01",
+                allowed_recurring_primitive_ids=["primitive_1"],
+                forbidden_redundancies=[],
+                sections=[],
+                architecture_notes=[],
+            )
+            _write_json(
+                project_dir / "episode_architectures.json",
+                {"episodes": [architecture.model_dump(mode="json")]},
+            )
+            return [architecture], {"unknown_actor_ids": 0}
+
+        async def _plan_series(
+            self,
+            *,
+            project: ThematicProject,
+            synthesis_map: SynthesisMap,
+            strategy: NarrativeStrategy,
+            episode_architectures: list[EpisodeArchitecture],
+            corpus: ThematicCorpus,
+            project_dir: Path,
+            actor_metadata: ActorMetadata,
+        ) -> tuple[list[Any], dict[str, Any]]:
+            return [SimpleNamespace(episode_number=1)], {"unknown_actor_ids": 0}
+
+        async def _produce_episode(
+            self,
+            plan: Any,
+            strategy_episode: StrategyEpisode,
+            architecture: EpisodeArchitecture,
+            project: ThematicProject,
+            corpus: ThematicCorpus,
+            actor_metadata: ActorMetadata,
+            project_dir: Path,
+            host_policy: dict[str, Any],
+            primitive_lookup: dict[str, Any],
+            semaphore: asyncio.Semaphore,
+            spoken_semaphore: asyncio.Semaphore | None = None,
+            series_explanation_registry: list[Any] | None = None,
+        ) -> tuple[int, Any]:
+            return plan.episode_number, SimpleNamespace(
+                episode_number=plan.episode_number
+            )
+
+        def _write_passage_utilization(self, **kwargs: Any) -> None:
+            return None
+
+        def _build_writing_actor_metrics(
+            self,
+            project_dir: Path,
+            spoken_scripts: list[tuple[int, Any]],
+        ) -> dict[str, Any]:
+            return {"completed_episode_count": len(spoken_scripts)}
+
+        def _write_actor_metadata_metrics(self, **kwargs: Any) -> None:
+            return None
+
+        async def _render_episode_audio(
+            self,
+            episode_number: int,
+            spoken: Any,
+            config: PipelineConfig,
+            project_dir: Path,
+            semaphore: asyncio.Semaphore,
+            *,
+            skip_audio: bool,
+        ) -> None:
+            return None
+
+    monkeypatch.setattr(
+        resume_script,
+        "Settings",
+        lambda: SimpleNamespace(pipeline=SimpleNamespace(artifact_root=tmp_path)),
+    )
+    monkeypatch.setattr(resume_script, "PipelineOrchestrator", FakeOrchestrator)
+
+    with pytest.raises(
+        RuntimeError,
+        match="Strict integrity check failed: actor_metadata.json changed during resume",
+    ):
+        asyncio.run(resume_script._resume_from_synthesis_mapping("run_1"))
+
+    final_project = ThematicProject.model_validate(
+        json.loads((project_dir / "thematic_project.json").read_text(encoding="utf-8"))
+    )
+    assert final_project.status == ProjectStatus.FAILED

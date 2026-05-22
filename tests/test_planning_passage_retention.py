@@ -12,6 +12,7 @@ from podcast_agent.pipeline.orchestrator import (
     _build_host_move_text_diagnostics,
     _build_episode_architecture_realization,
     _build_episode_architecture_core_passages,
+    _build_episode_architecture_support_passages,
     _build_section_plan_realization,
     _build_episode_planning_passage_refs,
     _flatten_synthesis_primitives,
@@ -27,18 +28,19 @@ from podcast_agent.schemas.models import (
     BookRecord,
     EpisodeArchitecture,
     EpisodeSpine,
-    EpochalTurnPrimitive,
+    EventPrimitive,
     ExtractedPassage,
+    MechanismPrimitive,
     NarrativeStrategy,
     PipelineConfig,
+    PrimitiveSubstrate,
+    ReadingPrimitive,
     SceneCard,
     StrategyEpisode,
     SeriesExplanationItem,
     SeriesNarratorProfile,
     SupportPrimitiveRole,
-    SynthesisPrimitive,
     SynthesisPrimitiveBase,
-    SystemsOperatingLogicPrimitive,
     SynthesisMap,
     ThematicCorpus,
     ThematicProject,
@@ -93,32 +95,28 @@ def _primitive(
     *,
     family: str = "epochal_turns",
 ) -> SynthesisPrimitiveBase:
+    if not core_passage_ids and not support_passage_ids:
+        core_passage_ids = [f"{primitive_id}_passage"]
     if family == "epochal_turns":
-        return EpochalTurnPrimitive(
+        return EventPrimitive(
             id=primitive_id,
-            family="epochal_turns",
+            substrate=PrimitiveSubstrate.EVENTS,
             title=primitive_id,
-            summary=f"{primitive_id} summary",
-            axis_ids=["axis_1"],
             core_passage_ids=list(core_passage_ids or []),
             support_passage_ids=list(support_passage_ids or []),
-            before_state="The prior balance still holds.",
-            after_state="The balance breaks.",
-            change_driver="A decisive move forces the turn.",
-            irreversibility_reason="The fallout cannot be unwound quickly.",
+            event_type="turning_point",
+            what_happened="A decisive move forces the turn.",
+            event_result="The balance breaks.",
         )
     if family == "systems_and_operating_logics":
-        return SystemsOperatingLogicPrimitive(
+        return MechanismPrimitive(
             id=primitive_id,
-            family="systems_and_operating_logics",
+            substrate=PrimitiveSubstrate.MECHANISMS,
             title=primitive_id,
-            summary=f"{primitive_id} summary",
-            axis_ids=["axis_1"],
             core_passage_ids=list(core_passage_ids or []),
             support_passage_ids=list(support_passage_ids or []),
-            system_name=primitive_id,
-            mechanism="Pressure moves through the same institutional channels.",
-            mechanism_steps=[
+            mechanism_name=primitive_id,
+            operating_chain=[
                 "Orders move through the institution.",
                 "Local actors translate those orders into pressure.",
             ],
@@ -127,14 +125,14 @@ def _primitive(
             failure_mode="The system distorts under stress.",
         )
     if family == "afterlives":
-        return SynthesisPrimitive(
+        return ReadingPrimitive(
             id=primitive_id,
-            family="afterlives",
+            substrate=PrimitiveSubstrate.READINGS,
             title=primitive_id,
-            summary=f"{primitive_id} summary",
-            axis_ids=["axis_1"],
             core_passage_ids=list(core_passage_ids or []),
             support_passage_ids=list(support_passage_ids or []),
+            reading_type="interpretive_claim",
+            reading_summary="A later interpretation keeps the scene alive.",
         )
     raise ValueError(f"Unsupported test primitive family: {family}")
 
@@ -287,26 +285,20 @@ def _episode_architecture(
 def test_build_episode_planning_passage_refs_preserves_order_and_provenance() -> None:
     synthesis_map = SynthesisMap(
         project_id="proj",
-        primitives_by_family={
-            "epochal_turns": [
-                _primitive(
-                    "core_1",
-                    core_passage_ids=["p1", "p2"],
-                    support_passage_ids=["p3", "p2"],
-                )
-            ],
-            "systems_and_operating_logics": [
-                _primitive(
-                    "support_1",
-                    core_passage_ids=["p3"],
-                    support_passage_ids=["p4"],
-                    family="systems_and_operating_logics",
-                )
-            ],
-            "afterlives": [
-                _primitive("recall_1", support_passage_ids=["p5"], family="afterlives")
-            ],
-        },
+        primitives=[
+            _primitive(
+                "core_1",
+                core_passage_ids=["p1", "p2"],
+                support_passage_ids=["p3", "p2"],
+            ),
+            _primitive(
+                "support_1",
+                core_passage_ids=["p3"],
+                support_passage_ids=["p4"],
+                family="systems_and_operating_logics",
+            ),
+            _primitive("recall_1", support_passage_ids=["p5"], family="afterlives"),
+        ],
     )
 
     refs = _build_episode_planning_passage_refs(
@@ -662,10 +654,6 @@ def test_build_episode_architecture_realization_warns_for_missing_payoff_and_low
     assert "foundational_item_missing_payoff: taqlid" in realization["warnings"]
     assert "reminder_item_redefined: marjaiya" in realization["warnings"]
     assert any(
-        warning.startswith("missing_human_grounding_support_family:")
-        for warning in realization["warnings"]
-    )
-    assert any(
         warning.startswith("explanation_section_overloaded:")
         for warning in realization["warnings"]
     )
@@ -976,6 +964,150 @@ def test_build_episode_architecture_core_passages_uses_full_text_bm25_trim() -> 
     ]
 
 
+def test_build_episode_architecture_core_passages_merges_query_text_across_primitives() -> (
+    None
+):
+    shared_text = " ".join(
+        [
+            "Alpha signal appears first.",
+            "Beta signal appears second.",
+            "Neutral signal appears third.",
+            "Neutral signal appears fourth.",
+            "Neutral signal appears fifth.",
+            "Neutral signal appears sixth.",
+            "Neutral signal appears seventh.",
+            "Neutral signal appears eighth.",
+            "Neutral signal appears ninth.",
+            "Neutral signal appears tenth.",
+        ]
+    )
+    passages = _build_episode_architecture_core_passages(
+        driving_question="Drivingalpha",
+        thematic_focus="Focusbeta",
+        episode_spine=EpisodeSpine(
+            listener_question="Drivingalpha",
+            argument="Claim",
+            core_primitive_ids=["alpha", "beta"],
+            support_primitive_roles={
+                "support_unused_1": SupportPrimitiveRole.MECHANISM,
+                "support_unused_2": SupportPrimitiveRole.MECHANISM,
+            },
+            recall_primitive_ids=[],
+        ),
+        primitive_lookup={
+            "alpha": _primitive("alpha", core_passage_ids=["p_shared"]),
+            "beta": _primitive("beta", core_passage_ids=["p_shared"]),
+        },
+        passage_lookup={
+            "p_shared": ExtractedPassage(
+                passage_id="p_shared",
+                book_id="b1",
+                chunk_ids=["c1"],
+                text="Fallback text",
+                trimmed_text="Irrelevant trimmed text.",
+                full_text=shared_text,
+                chapter_ref="1",
+                axis_id="axis_1",
+            )
+        },
+    )
+
+    assert passages == [
+        {
+            "passage_id": "p_shared",
+            "primitive_id": "alpha",
+            "book_id": "b1",
+            "chapter_ref": "1",
+            "summary_text": (
+                "Alpha signal appears first. Beta signal appears second."
+            ),
+        }
+    ]
+
+
+def test_build_episode_architecture_support_passages_use_support_refs_and_core_precedence() -> (
+    None
+):
+    episode_spine = EpisodeSpine(
+        listener_question="Drivingalpha",
+        argument="Claim",
+        core_primitive_ids=["core_1", "core_unused_2"],
+        support_primitive_roles={
+            "support_1": SupportPrimitiveRole.MECHANISM,
+            "support_unused_2": SupportPrimitiveRole.MECHANISM,
+        },
+        recall_primitive_ids=[],
+    )
+    primitive_lookup = {
+        "core_1": _primitive("core_1", core_passage_ids=["p_shared"]),
+        "support_1": _primitive(
+            "support_1",
+            core_passage_ids=["p_shared", "p_support_core"],
+            support_passage_ids=["p_support_support"],
+            family="systems_and_operating_logics",
+        ),
+    }
+    passage_lookup = {
+        "p_shared": ExtractedPassage(
+            passage_id="p_shared",
+            book_id="b1",
+            chunk_ids=["c1"],
+            text="Fallback text",
+            trimmed_text="Irrelevant trimmed text.",
+            full_text=_full_text("shared"),
+            chapter_ref="1",
+            axis_id="axis_1",
+        ),
+        "p_support_core": ExtractedPassage(
+            passage_id="p_support_core",
+            book_id="b1",
+            chunk_ids=["c2"],
+            text="Fallback text",
+            trimmed_text="Irrelevant trimmed text.",
+            full_text=_full_text("support core"),
+            chapter_ref="1",
+            axis_id="axis_1",
+        ),
+        "p_support_support": ExtractedPassage(
+            passage_id="p_support_support",
+            book_id="b1",
+            chunk_ids=["c3"],
+            text="Fallback text",
+            trimmed_text="Irrelevant trimmed text.",
+            full_text=_full_text("support support"),
+            chapter_ref="1",
+            axis_id="axis_1",
+        ),
+    }
+
+    core_passages = _build_episode_architecture_core_passages(
+        driving_question="Drivingalpha",
+        thematic_focus="Focusbeta",
+        episode_spine=episode_spine,
+        primitive_lookup=primitive_lookup,
+        passage_lookup=passage_lookup,
+    )
+    support_passages = _build_episode_architecture_support_passages(
+        driving_question="Drivingalpha",
+        thematic_focus="Focusbeta",
+        episode_spine=episode_spine,
+        primitive_lookup=primitive_lookup,
+        passage_lookup=passage_lookup,
+    )
+
+    assert [passage["passage_id"] for passage in core_passages] == ["p_shared"]
+    assert [passage["passage_id"] for passage in support_passages] == [
+        "p_support_core",
+        "p_support_support",
+    ]
+    assert _split_sentences(support_passages[0]["summary_text"]) == [
+        "Drivingalpha support core appears first."
+    ]
+    assert _split_sentences(support_passages[1]["summary_text"]) == [
+        "Drivingalpha support support appears first."
+    ]
+
+
 def test_build_episode_architectures_uses_only_strategy_actor_directives(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
@@ -1075,17 +1207,11 @@ def test_build_episode_architectures_uses_only_strategy_actor_directives(
     )
     synthesis_map = SynthesisMap(
         project_id="proj",
-        primitives_by_family={
-            "epochal_turns": [
-                _primitive("core_1", core_passage_ids=["p_core"]).model_copy(
-                    update={
-                        "actor_ids": ["actor_primitive"],
-                        "primary_actor_ids": ["actor_primitive"],
-                        "affected_actor_ids": ["actor_primitive"],
-                    }
-                )
-            ]
-        },
+        primitives=[
+            _primitive("core_1", core_passage_ids=["p_core"]).model_copy(
+                update={"actor_ids": ["actor_primitive"]}
+            )
+        ],
     )
     corpus = ThematicCorpus(
         project_id="proj",
@@ -1124,9 +1250,13 @@ def test_build_episode_architectures_uses_only_strategy_actor_directives(
         )
     )
 
-    assert [
+    assert {
         actor["actor_id"] for actor in captured_payload["actor_metadata"]["actors"]
-    ] == ["actor_strategy"]
+    } == {"actor_strategy", "actor_primitive"}
+    assert [passage["passage_id"] for passage in captured_payload["core_passages"]] == [
+        "p_core"
+    ]
+    assert captured_payload["support_passages"] == []
     assert architectures[0].episode_number == 1
 
 
@@ -1618,35 +1748,29 @@ def test_plan_series_trims_core_support_and_recall_by_passage_role(
     )
     synthesis_map = SynthesisMap(
         project_id="proj",
-        primitives_by_family={
-            "epochal_turns": [
-                _primitive(
-                    "core_1",
-                    core_passage_ids=["p_core"],
-                    support_passage_ids=["p_core_support"],
-                ),
-            ],
-            "systems_and_operating_logics": [
-                _primitive(
-                    "support_1",
-                    core_passage_ids=["p_support"],
-                    support_passage_ids=["p_support_support"],
-                    family="systems_and_operating_logics",
-                ),
-                _primitive(
-                    "support_omitted_1",
-                    core_passage_ids=["p_omitted"],
-                    family="systems_and_operating_logics",
-                ),
-            ],
-            "afterlives": [
-                _primitive(
-                    "recall_1",
-                    support_passage_ids=["p_recall"],
-                    family="afterlives",
-                ),
-            ],
-        },
+        primitives=[
+            _primitive(
+                "core_1",
+                core_passage_ids=["p_core"],
+                support_passage_ids=["p_core_support"],
+            ),
+            _primitive(
+                "support_1",
+                core_passage_ids=["p_support"],
+                support_passage_ids=["p_support_support"],
+                family="systems_and_operating_logics",
+            ),
+            _primitive(
+                "support_omitted_1",
+                core_passage_ids=["p_omitted"],
+                family="systems_and_operating_logics",
+            ),
+            _primitive(
+                "recall_1",
+                support_passage_ids=["p_recall"],
+                family="afterlives",
+            ),
+        ],
     )
     corpus = ThematicCorpus(
         project_id="proj",
@@ -1900,41 +2024,31 @@ def test_plan_series_uses_primitive_aware_queries_for_reused_passages(
     )
     synthesis_map = SynthesisMap(
         project_id="proj",
-        primitives_by_family={
-            "epochal_turns": [
-                EpochalTurnPrimitive(
-                    id="core_1",
-                    family="epochal_turns",
-                    title="Founding rupture",
-                    summary="Panipat becomes the decisive break with the old order.",
-                    axis_ids=["axis_1"],
-                    core_passage_ids=["p_reused"],
-                    before_state="The old imperial balance still holds.",
-                    after_state="The old order can no longer be restored.",
-                    change_driver="A battlefield defeat rearranges the political field.",
-                    irreversibility_reason="The institutions and alliances reorganize around the loss.",
-                ),
-            ],
-            "systems_and_operating_logics": [
-                SystemsOperatingLogicPrimitive(
-                    id="support_1",
-                    family="systems_and_operating_logics",
-                    title="Dynastic survival logic",
-                    summary="The founder pivots from exile toward preserving a threatened line.",
-                    axis_ids=["axis_1"],
-                    support_passage_ids=["p_reused"],
-                    system_name="Dynastic survival",
-                    mechanism="Political decisions flow through survival incentives.",
-                    mechanism_steps=[
-                        "Defeat redirects attention toward survival.",
-                        "Survival incentives narrow the next political move.",
-                    ],
-                    inputs=["military defeat"],
-                    outputs=["defensive consolidation"],
-                    failure_mode="The system narrows future options as pressure rises.",
-                ),
-            ],
-        },
+        primitives=[
+            EventPrimitive(
+                id="core_1",
+                substrate=PrimitiveSubstrate.EVENTS,
+                title="Founding rupture",
+                core_passage_ids=["p_reused"],
+                event_type="turning_point",
+                what_happened="A battlefield defeat rearranges the political field.",
+                event_result="The old order can no longer be restored.",
+            ),
+            MechanismPrimitive(
+                id="support_1",
+                substrate=PrimitiveSubstrate.MECHANISMS,
+                title="Dynastic survival logic",
+                support_passage_ids=["p_reused"],
+                mechanism_name="Dynastic survival",
+                operating_chain=[
+                    "Defeat redirects attention toward survival.",
+                    "Survival incentives narrow the next political move.",
+                ],
+                inputs=["military defeat"],
+                outputs=["defensive consolidation"],
+                failure_mode="The system narrows future options as pressure rises.",
+            ),
+        ],
     )
     corpus = ThematicCorpus(
         project_id="proj",

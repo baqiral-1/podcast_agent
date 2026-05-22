@@ -19,8 +19,8 @@ class EpisodePlanningAgent(Agent):
         if not isinstance(project, dict):
             return self.instructions
         return episode_planning_instructions(
-            scene_card_target_min=int(project.get("scene_card_target_min", 32)),
-            scene_card_target_max=int(project.get("scene_card_target_max", 40)),
+            scene_card_target_min=int(project.get("scene_card_target_min", 34)),
+            scene_card_target_max=int(project.get("scene_card_target_max", 44)),
         )
 
     def build_payload(

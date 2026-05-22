@@ -31,10 +31,11 @@ from podcast_agent.llm.base import (
     prompt_log_metadata,
 )
 from podcast_agent.llm.heuristic import HeuristicLLMClient
+from podcast_agent.llm.json_utils import normalize_json_content, unwrap_response_payload
+from podcast_agent.llm.transport import decode_transport_payload
+from podcast_agent.schemas.models import ChapterAnalysis
 
 logger = logging.getLogger(__name__)
-from podcast_agent.llm.json_utils import normalize_json_content, unwrap_response_payload
-from podcast_agent.schemas.models import ChapterAnalysis
 
 
 def _normalize_provider(provider: str) -> str:
@@ -140,6 +141,21 @@ def _resolve_stop_reason(
             stop_reason = resp_meta.get("stop_reason")
             if stop_reason is not None:
                 return stop_reason
+    return None
+
+
+def _extract_payload_episode_number(payload: PromptPayload) -> int | None:
+    if not isinstance(payload, dict):
+        return None
+    episode_number = payload.get("episode_number")
+    if isinstance(episode_number, int):
+        return episode_number
+    for key in ("strategy_episode", "architecture", "episode"):
+        value = payload.get(key)
+        if isinstance(value, dict):
+            episode_number = value.get("episode_number")
+            if isinstance(episode_number, int):
+                return episode_number
     return None
 
 
@@ -587,6 +603,7 @@ class LangChainLLMClient(LLMClient):
         request_started_at = datetime.now(UTC).isoformat()
         request_started_monotonic = time.monotonic()
         resolved_model = self.config.resolve_model(schema_name)
+        episode_number = _extract_payload_episode_number(payload)
         if self.run_logger is not None:
             self.run_logger.log(
                 "llm_request",
@@ -594,6 +611,7 @@ class LangChainLLMClient(LLMClient):
                 client="langchain",
                 schema_name=schema_name,
                 model=resolved_model,
+                episode_number=episode_number,
                 attempt=attempt,
                 max_attempts=max_attempts,
                 request_started_at=request_started_at,
@@ -765,6 +783,9 @@ class LangChainLLMClient(LLMClient):
                         },
                     ) from parse_exc
                 raise
+            normalized_payload = decode_transport_payload(
+                schema_name, normalized_payload
+            )
             normalized_payload, cap_truncations = _apply_schema_caps(
                 normalized_payload, response_model, schema_name
             )
@@ -774,6 +795,7 @@ class LangChainLLMClient(LLMClient):
                     request_uuid=request_uuid,
                     client="langchain",
                     schema_name=schema_name,
+                    episode_number=episode_number,
                     truncation_count=len(cap_truncations),
                     truncations=cap_truncations,
                 )
@@ -791,6 +813,7 @@ class LangChainLLMClient(LLMClient):
                         request_uuid=request_uuid,
                         client="langchain",
                         schema_name=schema_name,
+                        episode_number=episode_number,
                         char_count=len(joined_thinking),
                         content_head=joined_thinking[:2000],
                         truncated=len(joined_thinking) > 2000,
@@ -801,6 +824,7 @@ class LangChainLLMClient(LLMClient):
                     request_uuid=request_uuid,
                     client="langchain",
                     schema_name=schema_name,
+                    episode_number=episode_number,
                     attempt=attempt,
                     response_id=response_metadata.get("id") if isinstance(response_metadata, dict) else None,
                     provider_request_id=provider_request_id,
@@ -827,6 +851,7 @@ class LangChainLLMClient(LLMClient):
                     request_uuid=request_uuid,
                     client="langchain",
                     schema_name=schema_name,
+                    episode_number=episode_number,
                     response=normalized_payload,
                 )
             try:
@@ -843,6 +868,7 @@ class LangChainLLMClient(LLMClient):
                     request_uuid=request_uuid,
                     client="langchain",
                     schema_name=schema_name,
+                    episode_number=episode_number,
                     attempt=attempt,
                     max_attempts=max_attempts,
                     will_retry=attempt < max_attempts,
@@ -859,6 +885,7 @@ class LangChainLLMClient(LLMClient):
                         request_uuid=request_uuid,
                         client="langchain",
                         schema_name=schema_name,
+                        episode_number=episode_number,
                         attempt=attempt,
                         max_attempts=max_attempts,
                         will_retry=attempt < max_attempts,
@@ -872,6 +899,7 @@ class LangChainLLMClient(LLMClient):
                     request_uuid=request_uuid,
                     client="langchain",
                     schema_name=schema_name,
+                    episode_number=episode_number,
                     attempt=attempt,
                     max_attempts=max_attempts,
                     error_type=type(exc).__name__,

@@ -9,7 +9,11 @@ from uuid import uuid4
 from pydantic import BaseModel
 
 from podcast_agent.llm.base import LLMClient, PromptPayload, prompt_log_metadata
-from podcast_agent.schemas.models import SYNTHESIS_PRIMITIVE_FAMILIES
+from podcast_agent.llm.transport import decode_transport_payload
+from podcast_agent.schemas.models import (
+    PodcastMode,
+    authorial_passage_target_for_mode,
+)
 
 
 class HeuristicLLMClient(LLMClient):
@@ -34,12 +38,13 @@ class HeuristicLLMClient(LLMClient):
                 schema_name=schema_name,
                 **prompt_log_metadata(instructions, payload),
             )
+        decoded_payload = decode_transport_payload(schema_name, payload)
         try:
             generator = getattr(self, f"_generate_{schema_name}", None)
             if generator is None:
-                response = self._generate_default(schema_name, payload)
+                response = self._generate_default(schema_name, decoded_payload)
             else:
-                response = generator(payload)
+                response = generator(decoded_payload)
             if self.run_logger is not None:
                 self.run_logger.log(
                     "llm_response",
@@ -237,39 +242,39 @@ class HeuristicLLMClient(LLMClient):
                     passage_ids.append(str(passage.get("passage_id", uuid4().hex)))
         return passage_ids
 
-    def _build_primitive(
+    def _build_base_primitive(
         self,
         *,
-        family: str,
-        primitive_id: str,
+        substrate: str,
         title: str,
-        summary: str,
-        axis_ids: list[str],
         passage_ids: list[str],
         actor_ids: list[str] | None = None,
         extra_fields: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         actor_ids = actor_ids or []
-        primitive = {
-            "id": primitive_id,
-            "family": family,
+        primitive: dict[str, Any] = {
+            "substrate": substrate,
             "title": title,
-            "summary": summary,
-            "axis_ids": axis_ids,
-            "core_passage_ids": passage_ids[:1],
-            "support_passage_ids": passage_ids[1:3],
+            "core_passage_ids": passage_ids[:1] or [uuid4().hex],
             "timeframe": None,
             "geography": None,
-            "actor_ids": actor_ids[:1],
-            "narrative_importance_score": 0.5,
+            "functions": [],
+            "salience": None,
         }
+        support_passage_ids = passage_ids[1:3]
+        if support_passage_ids:
+            primitive["support_passage_ids"] = support_passage_ids
+        compact_actor_ids = actor_ids[:2]
+        if compact_actor_ids:
+            primitive["actor_ids"] = compact_actor_ids
         if extra_fields:
             primitive.update(extra_fields)
         return primitive
 
-    def _generate_synthesis_primitives(self, payload: PromptPayload) -> dict[str, Any]:
+    def _generate_primitive_substrate_extraction(
+        self, payload: PromptPayload
+    ) -> dict[str, Any]:
         passages_by_axis = payload.get("passages_by_axis", {})
-        axis_ids = list(passages_by_axis.keys()) or ["axis_01"]
         passage_ids = self._collect_passage_ids(passages_by_axis) or [
             uuid4().hex,
             uuid4().hex,
@@ -280,266 +285,312 @@ class HeuristicLLMClient(LLMClient):
             for actor in actor_metadata.get("actors", [])
             if actor.get("actor_id")
         ]
-        family_templates: dict[str, tuple[str, str, str]] = {
-            "epochal_turns": (
-                "et_001",
-                "Heuristic epochal turn",
-                "A large irreversible pivot changes the rules of the story.",
-            ),
-            "decisions_and_nondecisions": (
-                "dn_001",
-                "Heuristic decision or nondecision",
-                "A choice, refusal, delay, or failure to act redirects events.",
-            ),
-            "set_piece_scenes": (
-                "ss_001",
-                "Heuristic set piece",
-                "A major playable scene concentrates the story's pressure.",
-            ),
-            "telling_details": (
-                "td_001",
-                "Heuristic telling detail",
-                "A concrete memorable detail makes the history locally vivid.",
-            ),
-            "human_costs": (
-                "hc_001",
-                "Heuristic human cost",
-                "A development lands as lived damage for people on the ground.",
-            ),
-            "character_engines": (
-                "cg_001",
-                "Heuristic character engine",
-                "A person's motive, fear, or ambition helps drive the story.",
-            ),
-            "coalitions_and_fault_lines": (
-                "cf_001",
-                "Heuristic coalition fault line",
-                "An alliance holds, strains, or fractures under pressure.",
-            ),
-            "systems_and_operating_logics": (
-                "so_001",
-                "Heuristic operating logic",
-                "A system or institutional logic explains how pressure propagates.",
-            ),
-            "misreadings_and_fantasies": (
-                "mf_001",
-                "Heuristic misreading",
-                "Actors misread reality or cling to a flattering illusion.",
-            ),
-            "contested_explanations": (
-                "cx_001",
-                "Heuristic contested explanation",
-                "The evidence supports more than one plausible explanation.",
-            ),
-            "perspective_windows": (
-                "pw_001",
-                "Heuristic perspective window",
-                "Meaning changes when seen from a different vantage.",
-            ),
-            "moral_traps": (
-                "mt_001",
-                "Heuristic moral trap",
-                "Every available option carries compromise or stain.",
-            ),
-            "afterlives": (
-                "al_001",
-                "Heuristic afterlife",
-                "An earlier rupture keeps shaping the present.",
-            ),
-            "recurring_images_and_symbols": (
-                "rs_001",
-                "Heuristic recurring image",
-                "An image or symbol can recur across the series and gather meaning.",
-            ),
-            "ironies_and_reversals": (
-                "ir_001",
-                "Heuristic irony or reversal",
-                "A development lands opposite to its intended or expected result.",
-            ),
-        }
-        primitives_by_family: dict[str, list[dict[str, Any]]] = {}
-        for family in SYNTHESIS_PRIMITIVE_FAMILIES:
-            primitive_id, title, summary = family_templates[family]
-            primitive = self._build_primitive(
-                family=family,
-                primitive_id=primitive_id,
-                title=title,
-                summary=summary,
-                axis_ids=axis_ids[:1],
+        primitives = [
+            self._build_base_primitive(
+                substrate="events",
+                title="Heuristic event",
                 passage_ids=passage_ids[:3],
                 actor_ids=actor_ids[:1],
+                extra_fields={
+                    "event_type": "crisis",
+                    "what_happened": "A decisive event concentrates pressure in one place and time.",
+                },
+            ),
+            self._build_base_primitive(
+                substrate="acts",
+                title="Heuristic act",
+                passage_ids=passage_ids[:3],
+                actor_ids=actor_ids[:1],
+                extra_fields={
+                    "act_type": "decision",
+                    "acting_subject": actor_ids[0] if actor_ids else "A named actor",
+                    "act_summary": "A concrete choice or refusal narrows the next set of options.",
+                },
+            ),
+            self._build_base_primitive(
+                substrate="utterances",
+                title="Heuristic utterance",
+                passage_ids=passage_ids[:3],
+                actor_ids=actor_ids[:1],
+                extra_fields={
+                    "utterance_type": "speech",
+                    "speaker": "A visible speaker",
+                    "audience": "A public audience",
+                    "utterance_summary": "A speech or text makes the dispute audible.",
+                    "key_quote": "This changes what can now be said aloud.",
+                },
+            ),
+            self._build_base_primitive(
+                substrate="actor_portraits",
+                title="Heuristic actor pressure",
+                passage_ids=passage_ids[:3],
+                actor_ids=actor_ids[:1],
+                extra_fields={
+                    "focus_actor_id": actor_ids[0] if actor_ids else None,
+                    "actor_label": "A pressure-bearing actor",
+                    "goal_or_project": "Protect a vulnerable position.",
+                    "stakes_or_fears": "Loss of leverage or safety.",
+                },
+            ),
+            self._build_base_primitive(
+                substrate="mechanisms",
+                title="Heuristic mechanism",
+                passage_ids=passage_ids[:3],
+                extra_fields={
+                    "mechanism_name": "A political-administrative chain",
+                    "failure_mode": "The chain distorts under stress.",
+                },
+            ),
+            self._build_base_primitive(
+                substrate="conditions",
+                title="Heuristic condition",
+                passage_ids=passage_ids[:3],
+                extra_fields={
+                    "condition_type": "fault_line",
+                    "condition_summary": "A standing political condition narrows later choices.",
+                },
+            ),
+            self._build_base_primitive(
+                substrate="artifacts",
+                title="Heuristic artifact",
+                passage_ids=passage_ids[:3],
+                extra_fields={
+                    "artifact_type": "document",
+                    "artifact_label": "A visible document or object",
+                },
+            ),
+            self._build_base_primitive(
+                substrate="readings",
+                title="Heuristic reading",
+                passage_ids=passage_ids[:3],
+                extra_fields={
+                    "reading_type": "interpretive_claim",
+                    "subject_of_reading": "The central development",
+                    "attributed_to": "A visible interpreter",
+                    "reading_summary": "The same evidence can bear more than one plausible reading.",
+                },
+            ),
+        ]
+        grouped = {
+            "events": [],
+            "acts": [],
+            "utterances": [],
+            "actor_portraits": [],
+            "mechanisms": [],
+            "conditions": [],
+            "artifacts": [],
+            "readings": [],
+        }
+        for primitive in primitives:
+            grouped[str(primitive["substrate"])].append(
+                {key: value for key, value in primitive.items() if key != "substrate"}
             )
-            primitives_by_family[family] = [primitive]
         return {
             "project_id": payload.get("project_id", "project"),
-            "primitives_by_family": primitives_by_family,
+            **grouped,
             "quality_score": 0.5,
             "quality_notes": ["Heuristic primitives artifact."],
         }
 
-    def _generate_primitive_enrichment(self, payload: PromptPayload) -> dict[str, Any]:
-        family = str(payload.get("family", "")).strip() or "epochal_turns"
+    def _generate_synthesis_primitives(self, payload: PromptPayload) -> dict[str, Any]:
+        return self._generate_primitive_substrate_extraction(payload)
+
+    def _generate_primitive_function_tagging_batch(
+        self, payload: PromptPayload, *, substrate: str
+    ) -> dict[str, Any]:
         base_primitives = payload.get("base_primitives", []) or []
-        enriched_primitives: list[dict[str, Any]] = []
+        tagged_primitives: list[dict[str, Any]] = []
         for primitive in base_primitives:
-            primitive_id = str(primitive.get("id", uuid4().hex))
-            actor_ids = list(primitive.get("actor_ids", []) or [])
-            scoped_actor_ids = actor_ids[:2] or ["actor_001"]
-            primary_actor_id = scoped_actor_ids[0]
-            delta: dict[str, Any] = {"id": primitive_id, "family": family}
-            hooks = {
-                "concrete_detail": "A concrete detail crystallizes the turn.",
-                "host_lens": "The pressure is now visible.",
-                "carry_forward": "The residue shapes what follows.",
-                "quote_anchor": "",
-                "plain_gloss": "The narrator can say plainly what this changes.",
-                "listener_confusion": "",
-                "authorial_move": "causal_compression",
+            updated = dict(primitive)
+            updated["salience"] = {
+                "score": 0.7 if substrate in {"events", "acts"} else 0.55,
+                "justification": "Heuristic: this primitive is useful for downstream selection.",
             }
-            if family == "epochal_turns":
-                delta.update(
-                    {
-                        "before_state": "The old balance still holds.",
-                        "after_state": "A new political reality is now in force.",
-                        "change_driver": "A decisive turn forces the transition.",
-                        "why_no_return": "The institutional and political costs cannot be unwound quickly.",
-                        "proof_of_change": "The new balance becomes publicly undeniable.",
-                        "narration_hooks": hooks,
-                    }
+            if substrate == "events":
+                updated.setdefault(
+                    "event_result",
+                    "Actors now have to respond to the changed situation.",
                 )
-            elif family == "decisions_and_nondecisions":
-                delta.update(
-                    {
-                        "actor_ids": scoped_actor_ids,
-                        "decision_trigger": "A fresh shock forces the actor to choose.",
-                        "decision_question": "Should the actor force a move now or hold back?",
-                        "decision_mode": "decision",
-                        "options_considered": [
-                            "Act immediately.",
-                            "Hold position and wait.",
-                        ],
-                        "next_result": "The choice redirects the next phase of events.",
-                        "narration_hooks": hooks,
-                    }
+                updated["functions"] = ["pivot", "texture"]
+                updated["pivot"] = {
+                    "what_changed": "The event forces the next phase of the story into a new channel.",
+                    "irreversibility": "med",
+                }
+                updated["texture"] = {
+                    "what_it_anchors": "A visible moment the listener can step into.",
+                }
+            elif substrate == "acts":
+                updated.setdefault(
+                    "immediate_result",
+                    "The move forces a new response.",
                 )
-            elif family == "set_piece_scenes":
-                delta.update(
-                    {
-                        "actor_ids": scoped_actor_ids,
-                        "scene_anchor": "A public confrontation concentrates pressure in one place.",
-                        "hinge_action": "One visible move breaks the standoff.",
-                        "scene_outcome": "The confrontation makes the next turn unavoidable.",
-                        "location": "capital",
-                        "narration_hooks": hooks,
-                    }
+                updated["functions"] = ["pivot", "stake"]
+                updated["pivot"] = {
+                    "what_changed": "The act narrows what the actors can now do next.",
+                    "irreversibility": "med",
+                }
+                updated["stake"] = {
+                    "whose": primitive.get("acting_subject") or "The acting subject",
+                    "what_at_stake": "Authority and immediate leverage.",
+                }
+            elif substrate == "utterances":
+                updated["functions"] = ["texture", "contest"]
+                updated["texture"] = {
+                    "what_it_anchors": "A line or phrase that makes the political pressure audible.",
+                }
+                updated["contest"] = {
+                    "candidate_readings": [
+                        {
+                            "reading": "The utterance is a sincere declaration.",
+                            "support": "Its explicit wording carries the claim directly.",
+                            "weakness": "It may also be performative or strategic.",
+                        },
+                        {
+                            "reading": "The utterance is strategic positioning.",
+                            "support": "Its timing suggests tactical intent.",
+                            "weakness": "The public wording may still bind actors sincerely.",
+                        },
+                    ]
+                }
+            elif substrate == "actor_portraits":
+                updated.setdefault(
+                    "operating_pressure",
+                    "Institutions and rivals narrow the available room to move.",
                 )
-            elif family == "human_costs":
-                delta.update(
-                    {
-                        "actor_ids": scoped_actor_ids,
-                        "affected_group": "ordinary families near the center of events",
-                        "cost_type": "displacement and fear",
-                        "concrete_marker": "Households carry loss into the street.",
-                        "lived_consequence": "People closest to the rupture absorb the damage first.",
-                        "who_saw_it": "public but unevenly acknowledged",
-                        "narration_hooks": hooks,
-                    }
+                updated["functions"] = ["stake", "complication"]
+                updated["stake"] = {
+                    "whose": primitive.get("actor_label") or "The actor",
+                    "what_at_stake": primitive.get("stakes_or_fears")
+                    or "Status and survival.",
+                }
+                updated["complication"] = {
+                    "what_is_compromised": "A clean reading of the actor's available options.",
+                    "why_no_clean_option": "Every live move damages something binding or risky.",
+                }
+            elif substrate == "mechanisms":
+                updated.setdefault(
+                    "operating_chain",
+                    [
+                        "Orders move downward through an institution.",
+                        "Intermediaries translate them into local pressure.",
+                    ],
                 )
-            elif family == "character_engines":
-                delta.update(
-                    {
-                        "actor_id": primary_actor_id,
-                        "goal": "Protect a fragile position.",
-                        "pressure_box": "Institutions, rivals, and fear narrow the available choices.",
-                        "risk_if_it_breaks": "The actor's status and safety both depend on the outcome.",
-                        "tell": "The actor keeps justifying the same risky move.",
-                        "narration_hooks": hooks,
-                    }
+                updated.setdefault("inputs", ["orders"])
+                updated.setdefault("outputs", ["compliance"])
+                updated["functions"] = ["complication", "recurrence"]
+                updated["complication"] = {
+                    "what_is_compromised": "Any simple explanation that ignores the operating chain.",
+                    "why_no_clean_option": "The machinery keeps producing pressure even when individual actors hesitate.",
+                }
+                updated["recurrence"] = {
+                    "connects_to": [],
+                    "meaning_accrued": "The same machinery can reappear later as a callback or explanatory spine.",
+                }
+            elif substrate == "conditions":
+                updated.setdefault(
+                    "active_tension",
+                    "The condition is stable only until direct pressure arrives.",
                 )
-            elif family == "coalitions_and_fault_lines":
-                delta.update(
-                    {
-                        "actor_ids": scoped_actor_ids,
-                        "alignment_type": "tactical",
-                        "coalition_phase": "holding",
-                        "alignment_shape": "A temporary alliance of convenience.",
-                        "alignment_basis": "Each side needs the other for the moment.",
-                        "fracture_trigger": "The alliance weakens when pressure rises.",
-                        "narration_hooks": hooks,
-                    }
+                updated["functions"] = ["stake", "cost"]
+                updated["stake"] = {
+                    "whose": "Actors moving inside the condition",
+                    "what_at_stake": "Room to maneuver under a standing pressure field.",
+                }
+                updated["cost"] = {
+                    "who_paid": "Those closest to the unstable condition",
+                    "what_was_paid": "Security and future options.",
+                }
+            elif substrate == "artifacts":
+                updated.setdefault(
+                    "artifact_detail",
+                    "The carrier itself becomes historically memorable.",
                 )
-            elif family == "systems_and_operating_logics":
-                delta.update(
-                    {
-                        "system_name": "A coercive political-administrative machine",
-                        "operating_chain": [
-                            "Orders move downward through patronage and command.",
-                            "Local intermediaries translate pressure into compliance.",
-                        ],
-                        "inputs": ["orders", "money"],
-                        "outputs": ["compliance", "distortion"],
-                        "where_it_shows_up": "Officials and intermediaries enforce it face to face.",
-                        "failure_mode": "The system becomes brittle when pressure outruns coordination.",
-                        "narration_hooks": hooks,
-                    }
-                )
-            elif family == "contested_explanations":
-                base_passage_ids = list(primitive.get("core_passage_ids", []) or [])
-                delta.update(
-                    {
-                        "candidate_readings": [
-                            {
-                                "label": "reading_a",
-                                "claim": "A cautious interpretation of the evidence.",
-                                "emphasizes": "institutional caution",
-                                "downplays": "short-term opportunism",
-                                "support_passage_ids": base_passage_ids[:1],
-                            },
-                            {
-                                "label": "reading_b",
-                                "claim": "A competing interpretation that remains plausible.",
-                                "emphasizes": "short-term opportunism",
-                                "downplays": "institutional caution",
-                                "support_passage_ids": base_passage_ids[:1],
-                            },
-                        ],
-                        "narration_hooks": hooks,
-                    }
-                )
-            elif family == "moral_traps":
-                delta.update(
-                    {
-                        "actor_ids": scoped_actor_ids,
-                        "competing_obligations": [
-                            "Protect allies.",
-                            "Preserve institutional order.",
-                        ],
-                        "compromised_options": [
-                            "Act and deepen the damage.",
-                            "Wait and allow the damage to spread.",
-                        ],
-                        "trap_structure": "Every plausible move imposes a visible cost.",
-                        "narration_hooks": hooks,
-                    }
-                )
-            elif family == "ironies_and_reversals":
-                delta.update(
-                    {
-                        "actor_ids": scoped_actor_ids,
-                        "expected_outcome": "The move should stabilize the situation.",
-                        "actual_outcome": "It instead accelerates the breakdown.",
-                        "flip_cause": "The same tactic triggers the opposite effect under pressure.",
-                        "narration_hooks": hooks,
-                    }
-                )
+                updated["functions"] = ["texture", "recurrence"]
+                updated["texture"] = {
+                    "what_it_anchors": "A concrete carrier the listener can remember and revisit.",
+                }
+                updated["recurrence"] = {
+                    "connects_to": [],
+                    "meaning_accrued": "The image or object can return later with added meaning.",
+                }
             else:
-                delta.update({"narration_hooks": hooks})
-            enriched_primitives.append(delta)
+                updated["functions"] = ["contest", "complication"]
+                updated["contest"] = {
+                    "candidate_readings": [
+                        {
+                            "reading": "One interpretation emphasizes institutional logic.",
+                            "support": "It fits the available structural evidence.",
+                            "weakness": "It may underweight immediate tactical calculation.",
+                        },
+                        {
+                            "reading": "Another interpretation emphasizes tactical improvisation.",
+                            "support": "It explains the short-term behavior more directly.",
+                            "weakness": "It may underweight longer structural constraints.",
+                        },
+                    ]
+                }
+                updated["complication"] = {
+                    "what_is_compromised": "A clean single-cause explanation.",
+                    "why_no_clean_option": "The evidence can plausibly be read in more than one direction.",
+                }
+            updated["narration_hooks"] = {
+                "concrete_detail": "A concrete detail makes the primitive speakable.",
+                "host_lens": "One narrow lens helps orient the listener to the pressure here.",
+                "carry_forward": "This primitive leaves residue that can matter again later.",
+                "quote_anchor": "",
+                "plain_gloss": "",
+                "listener_confusion": "",
+                "authorial_move": "none",
+            }
+            tagged_primitives.append(updated)
         return {
             "project_id": payload.get("project_id", "project"),
-            "family": family,
-            "enriched_primitives": enriched_primitives,
+            "primitives": tagged_primitives,
+            "quality_score": 0.6,
+            "quality_notes": ["Heuristic primitive function tagging artifact."],
         }
+
+    def _generate_primitive_function_tagging_events(
+        self, payload: PromptPayload
+    ) -> dict[str, Any]:
+        return self._generate_primitive_function_tagging_batch(payload, substrate="events")
+
+    def _generate_primitive_function_tagging_acts(
+        self, payload: PromptPayload
+    ) -> dict[str, Any]:
+        return self._generate_primitive_function_tagging_batch(payload, substrate="acts")
+
+    def _generate_primitive_function_tagging_utterances(
+        self, payload: PromptPayload
+    ) -> dict[str, Any]:
+        return self._generate_primitive_function_tagging_batch(payload, substrate="utterances")
+
+    def _generate_primitive_function_tagging_actor_portraits(
+        self, payload: PromptPayload
+    ) -> dict[str, Any]:
+        return self._generate_primitive_function_tagging_batch(
+            payload, substrate="actor_portraits"
+        )
+
+    def _generate_primitive_function_tagging_mechanisms(
+        self, payload: PromptPayload
+    ) -> dict[str, Any]:
+        return self._generate_primitive_function_tagging_batch(payload, substrate="mechanisms")
+
+    def _generate_primitive_function_tagging_conditions(
+        self, payload: PromptPayload
+    ) -> dict[str, Any]:
+        return self._generate_primitive_function_tagging_batch(payload, substrate="conditions")
+
+    def _generate_primitive_function_tagging_artifacts(
+        self, payload: PromptPayload
+    ) -> dict[str, Any]:
+        return self._generate_primitive_function_tagging_batch(payload, substrate="artifacts")
+
+    def _generate_primitive_function_tagging_readings(
+        self, payload: PromptPayload
+    ) -> dict[str, Any]:
+        return self._generate_primitive_function_tagging_batch(payload, substrate="readings")
 
     def _generate_narrative_strategy(self, payload: PromptPayload) -> dict[str, Any]:
         requested_episode_count = payload.get("requested_episode_count")
@@ -554,25 +605,43 @@ class HeuristicLLMClient(LLMClient):
         project = payload.get("project", {})
         if not isinstance(project, dict):
             project = {}
+        try:
+            podcast_mode = PodcastMode(
+                project.get("podcast_mode", PodcastMode.FULL.value)
+            )
+        except ValueError:
+            podcast_mode = PodcastMode.FULL
         core_target_min = int(
-            project.get("episode_spine_core_primitive_target_min", 5)
+            project.get("episode_spine_core_primitive_target_min", 6)
         )
         support_target_min = int(
-            project.get("episode_spine_support_primitive_target_min", 5)
+            project.get("episode_spine_support_primitive_target_min", 7)
         )
         synthesis_map = payload.get("synthesis_map", {})
-        primitive_ids = []
-        for family_items in (
-            synthesis_map.get("primitives_by_family", {}) or {}
-        ).values():
-            for item in family_items:
-                primitive_id = str(item.get("id", ""))
-                if primitive_id:
-                    primitive_ids.append(primitive_id)
+        primitives = list(synthesis_map.get("primitives", []) or [])
+        primitive_ids = [
+            str(item.get("id", ""))
+            for item in primitives
+            if isinstance(item, dict) and str(item.get("id", "")).strip()
+        ]
         if not primitive_ids:
             primitive_ids = ["primitive_001", "primitive_002", "primitive_003"]
         while len(primitive_ids) < 96:
             primitive_ids.append(f"primitive_{len(primitive_ids) + 1:03d}")
+        pivot_ids = [
+            str(item.get("id", ""))
+            for item in primitives
+            if isinstance(item, dict)
+            and "pivot" in list(item.get("functions", []) or [])
+            and str(item.get("id", "")).strip()
+        ]
+        event_or_act_ids = [
+            str(item.get("id", ""))
+            for item in primitives
+            if isinstance(item, dict)
+            and str(item.get("substrate", "")) in {"events", "acts"}
+            and str(item.get("id", "")).strip()
+        ]
         if requested_episode_count is None:
             recommended_episode_count = recommended_episode_count_min
         else:
@@ -588,6 +657,12 @@ class HeuristicLLMClient(LLMClient):
             core_ids = primitive_ids[core_start : core_start + core_target_min]
             if len(core_ids) < core_target_min:
                 core_ids = primitive_ids[:core_target_min]
+            if pivot_ids:
+                preferred_cores = [primitive_id for primitive_id in pivot_ids if primitive_id not in core_ids]
+                core_ids = list(dict.fromkeys([*pivot_ids[:2], *core_ids, *preferred_cores]))[:core_target_min]
+            if event_or_act_ids and not any(primitive_id in event_or_act_ids for primitive_id in core_ids):
+                core_ids = [event_or_act_ids[0], *core_ids]
+                core_ids = list(dict.fromkeys(core_ids))[:core_target_min]
             support_candidates = primitive_ids[
                 core_start + core_target_min : core_start + core_target_min + 10
             ]
@@ -625,11 +700,11 @@ class HeuristicLLMClient(LLMClient):
                         "pressure_line": "The listener should feel one pressure line tightening across the episode.",
                         "core_primitive_ids": core_ids,
                         "support_primitive_roles": {
-                            primitive_id: "mechanism"
+                            primitive_id: "mechanism" if primitive_id not in event_or_act_ids else "stakes"
                             for primitive_id in support_ids
                             if primitive_id not in core_ids
                         },
-                        "recall_primitive_ids": [],
+                        "recall_primitive_ids": pivot_ids[2:3] if idx > 0 else [],
                     },
                 }
             )
@@ -667,7 +742,9 @@ class HeuristicLLMClient(LLMClient):
                 "clarifier_tolerance": "medium",
                 "comparative_aside_tolerance": "light",
                 "wit_ceiling": "dry",
-                "target_authorial_passages_per_episode": 16,
+                "target_authorial_passages_per_episode": (
+                    authorial_passage_target_for_mode(podcast_mode)
+                ),
             },
             "episodes": episodes,
         }
@@ -692,7 +769,7 @@ class HeuristicLLMClient(LLMClient):
         )
         closing_minutes = 2.0
         non_closing_count = max(1, section_count - 1)
-        target_runtime_minutes = float(project.get("min_episode_minutes", 90.0))
+        target_runtime_minutes = float(project.get("min_episode_minutes", 100.0))
         non_closing_minutes = max(
             1.0, (target_runtime_minutes - closing_minutes) / non_closing_count
         )
@@ -784,8 +861,8 @@ class HeuristicLLMClient(LLMClient):
         sections = architecture.get("sections") or [{"section_id": "section_01"}]
         scene_cards = []
         default_duration = 180
-        scene_card_target_min = int(project.get("scene_card_target_min", 32))
-        scene_card_target_max = int(project.get("scene_card_target_max", 40))
+        scene_card_target_min = int(project.get("scene_card_target_min", 34))
+        scene_card_target_max = int(project.get("scene_card_target_max", 44))
         scene_count = min(
             scene_card_target_max,
             max(scene_card_target_min, len(sections)),
@@ -793,6 +870,7 @@ class HeuristicLLMClient(LLMClient):
         for idx in range(scene_count):
             source_section = sections[min(idx, len(sections) - 1)]
             section_id = str(source_section.get("section_id", "section_01"))
+            section_primitive_ids = list(source_section.get("primitive_ids", []) or [])
             is_closing = idx == scene_count - 1
             scene_cards.append(
                 {
@@ -821,6 +899,7 @@ class HeuristicLLMClient(LLMClient):
                     "timeframe": None,
                     "location": None,
                     "actors": [],
+                    "primitive_ids": section_primitive_ids[:2],
                     "passage_ids": passage_ids,
                     "estimated_duration_seconds": 120
                     if is_closing

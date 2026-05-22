@@ -30,9 +30,14 @@ class TestParseSubThemes:
         with pytest.raises(typer.BadParameter, match="non-empty"):
             _parse_sub_themes("valid, ,other")
 
-    def test_rejects_more_than_thirty(self):
-        raw = ",".join(f"a{i}" for i in range(1, 32))
-        with pytest.raises(typer.BadParameter, match="at most 30"):
+    def test_accepts_forty_entries(self):
+        raw = ",".join(f"a{i}" for i in range(1, 41))
+        result = _parse_sub_themes(raw)
+        assert result == [f"a{i}" for i in range(1, 41)]
+
+    def test_rejects_more_than_forty(self):
+        raw = ",".join(f"a{i}" for i in range(1, 42))
+        with pytest.raises(typer.BadParameter, match="at most 40"):
             _parse_sub_themes(raw)
 
 

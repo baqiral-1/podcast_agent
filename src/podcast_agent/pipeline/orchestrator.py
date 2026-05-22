@@ -10,6 +10,7 @@ Implements the four-phase pipeline:
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 import hashlib
 from itertools import combinations
 import json
@@ -24,7 +25,7 @@ import unicodedata
 from contextlib import asynccontextmanager
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Callable
+from typing import Any, Callable, cast
 from uuid import uuid4
 
 from pydantic import ValidationError
@@ -35,7 +36,9 @@ from podcast_agent.agents.episode_architecture import EpisodeArchitectureAgent
 from podcast_agent.agents.narrative_strategy import NarrativeStrategyAgent
 from podcast_agent.agents.passage_extraction import PassageExtractionAgent
 from podcast_agent.agents.planning import EpisodePlanningAgent
-from podcast_agent.agents.primitive_enrichment import PrimitiveEnrichmentAgent
+from podcast_agent.agents.primitive_function_tagging import (
+    PrimitiveFunctionTaggingAgent,
+)
 from podcast_agent.agents.repair import RepairAgent
 from podcast_agent.agents.spoken_delivery_agent import (
     SpokenDeliveryAgent,
@@ -58,7 +61,11 @@ from podcast_agent.run_logging import RunLogger
 from podcast_agent.schemas.models import (
     AudioManifest,
     AudioSegmentResult,
+    ActPrimitive,
+    ActorExplanationRealization,
+    ActorPrimitive,
     ActorMetadata,
+    ArtifactPrimitive,
     BaseSynthesisPrimitive,
     BookRecord,
     CharacterEnginePrimitive,
@@ -74,6 +81,9 @@ from podcast_agent.schemas.models import (
     EpisodeSpine,
     EpisodeScript,
     EpochalTurnPrimitive,
+    EventPrimitive,
+    ExtractedArtifactPrimitive,
+    ExtractedMechanismPrimitive,
     ExtractedPassage,
     GroundingReport,
     HumanCostPrimitive,
@@ -84,23 +94,28 @@ from podcast_agent.schemas.models import (
     PipelineConfig,
     ProseSection,
     ProjectStatus,
-    RICH_SYNTHESIS_PRIMITIVE_FAMILIES,
+    PrimitiveFunctionTaggingArtifact,
+    PrimitiveFunctionTaggingOverlayArtifact,
+    PrimitiveEnrichmentOverlay,
+    PRIMITIVE_SUBSTRATES,
+    PrimitiveSubstrate,
+    ReadingPrimitive,
     RenderManifest,
     RenderSegment,
     RepairResult,
     resolve_pipeline_config_for_mode,
     SceneCard,
     SceneCardDraft,
+    EpisodePlanDraft,
     SeriesNarratorProfile,
+    SeriesActorExplanationItem,
     SeriesExplanationItem,
     SegmentDiff,
     SetPieceScenePrimitive,
-    SpineRelation,
     StyleAuditResponse,
     SpokenSection,
     SpokenScript,
     StrategyEpisode,
-    SYNTHESIS_PRIMITIVE_FAMILIES,
     SynthesisMap,
     SynthesisPrimitiveBase,
     SynthesisPrimitive,
@@ -111,8 +126,12 @@ from podcast_agent.schemas.models import (
     ThematicAxis,
     ThematicCorpus,
     ThematicProject,
-    synthesis_primitive_target_max_counts_for_mode,
-    synthesis_primitive_target_ranges_for_mode,
+    ConditionPrimitive,
+    MechanismPrimitive,
+    PodcastMode,
+    primitive_substrate_target_ranges_for_mode,
+    apply_primitive_enrichment_overlay,
+    UtterancePrimitive,
 )
 from podcast_agent.tts.openai_compatible import (
     build_tts_client,
@@ -120,11 +139,12 @@ from podcast_agent.tts.openai_compatible import (
 )
 from podcast_agent.utils.actor_metadata import (
     clean_axis_actor_ids,
+    clean_narrative_strategy_actor_links,
     clean_scene_actor_links,
-    clean_strategy_actor_links,
     clean_synthesis_primitive_actor_links,
     compact_actor_registry,
     compact_actor_metadata,
+    collect_actor_ids_for_primitives,
     sanitize_actor_metadata_payload,
     select_actor_metadata_subset,
 )
@@ -158,6 +178,25 @@ def _load_model(path: Path, model_type: type[Any]) -> Any:
     return model_type.model_validate(payload)
 
 
+def _persist_failed_project_state(
+    *,
+    project: ThematicProject,
+    project_dir: Path,
+    run_logger: RunLogger,
+    exc: Exception,
+) -> ThematicProject:
+    failed_project = project.model_copy(update={"status": ProjectStatus.FAILED})
+    _save_json(project_dir / "thematic_project.json", failed_project)
+    run_logger.log(
+        "pipeline_error",
+        project_id=failed_project.project_id,
+        status=failed_project.status.value,
+        error_type=type(exc).__name__,
+        error_message=str(exc),
+    )
+    return failed_project
+
+
 def _input_hash(*args: Any) -> str:
     content = json.dumps(args, sort_keys=True, default=str)
     return hashlib.sha256(content.encode()).hexdigest()[:16]
@@ -183,13 +222,13 @@ _SYNTHESIS_MERGED_NARRATIVE_MIN = 7
 _SYNTHESIS_MERGED_NARRATIVE_MAX = 9
 
 
-def _primitive_counts_by_family(
-    artifact: SynthesisPrimitivesArtifact,
+def _primitive_counts_by_substrate(
+    artifact: SynthesisPrimitivesArtifact | PrimitiveFunctionTaggingArtifact | SynthesisMap,
 ) -> dict[str, int]:
-    return {
-        family: len(artifact.primitives_by_family.get(family, []))
-        for family in SYNTHESIS_PRIMITIVE_FAMILIES
-    }
+    counts = {substrate: 0 for substrate in PRIMITIVE_SUBSTRATES}
+    for primitive in artifact.primitives:
+        counts[primitive.substrate.value] = counts.get(primitive.substrate.value, 0) + 1
+    return counts
 
 
 def _trim_synthesis_primitives_by_family_caps(
@@ -313,6 +352,28 @@ _SENTENCE_TAIL_RE = re.compile(r'.*?[.!?](?:["\')\]]+)?(?=\s|$)', re.DOTALL)
 _WRITING_WINDOW_MIN_SHARE = 0.30
 
 
+def _partition_window_totals(
+    prefix_totals: list[int],
+    cut_points: tuple[int, ...],
+) -> list[int]:
+    boundaries = (0, *cut_points, len(prefix_totals) - 1)
+    return [
+        prefix_totals[end] - prefix_totals[start]
+        for start, end in zip(boundaries, boundaries[1:])
+    ]
+
+
+def _score_episode_writing_window_partition(
+    prefix_totals: list[int],
+    cut_points: tuple[int, ...],
+) -> tuple[float, int, tuple[int, ...]]:
+    window_totals = _partition_window_totals(prefix_totals, cut_points)
+    target = sum(window_totals) / len(window_totals)
+    worst_deviation = max(abs(total - target) for total in window_totals)
+    spread = max(window_totals) - min(window_totals)
+    return (worst_deviation, spread, cut_points)
+
+
 def _extract_previous_spoken_tail(
     text: str,
     *,
@@ -354,9 +415,14 @@ def _split_episode_writing_windows(
     architecture: EpisodeArchitecture,
     scene_word_count_targets_lower: dict[str, int],
     scene_word_count_targets_higher: dict[str, int],
+    max_windows: int = 2,
 ) -> list[list[SceneCard]]:
     scene_cards = list(plan.scene_cards)
-    if len(scene_cards) < 2:
+    if not scene_cards:
+        return []
+    if max_windows < 1:
+        raise ValueError("max_windows must be >= 1")
+    if len(scene_cards) < 2 or max_windows == 1:
         return [scene_cards]
 
     midpoint_targets = {
@@ -375,15 +441,6 @@ def _split_episode_writing_windows(
         for scene in scene_cards
     }
     total_target_words = sum(midpoint_targets.values())
-    if total_target_words <= 0:
-        midpoint = max(1, len(scene_cards) // 2)
-        return [scene_cards[:midpoint], scene_cards[midpoint:]]
-
-    min_window_target_words = total_target_words * _WRITING_WINDOW_MIN_SHARE
-    prefix_targets = [0]
-    for scene in scene_cards:
-        prefix_targets.append(prefix_targets[-1] + midpoint_targets[scene.scene_id])
-
     scene_section_ids = {scene.section_id for scene in scene_cards}
     section_order = [
         section.section_id
@@ -394,22 +451,6 @@ def _split_episode_writing_windows(
         section_id: idx for idx, section_id in enumerate(section_order)
     }
 
-    def _boundary_key(boundary_index: int) -> tuple[float, float, int]:
-        left_words = prefix_targets[boundary_index]
-        return (
-            abs(left_words - (total_target_words / 2.0)),
-            abs(boundary_index - (len(scene_cards) / 2.0)),
-            boundary_index,
-        )
-
-    def _is_substantial(boundary_index: int) -> bool:
-        left_words = prefix_targets[boundary_index]
-        right_words = total_target_words - left_words
-        return (
-            left_words >= min_window_target_words
-            and right_words >= min_window_target_words
-        )
-
     section_boundaries = [
         boundary_index
         for boundary_index in range(1, len(scene_cards))
@@ -418,14 +459,42 @@ def _split_episode_writing_windows(
         and ordered_section_ids.get(scene_cards[boundary_index - 1].section_id, -1)
         < ordered_section_ids.get(scene_cards[boundary_index].section_id, -1)
     ]
-    for candidates in (
-        [idx for idx in section_boundaries if _is_substantial(idx)],
-        section_boundaries,
-    ):
-        if not candidates:
+
+    if not section_boundaries:
+        return [scene_cards]
+
+    if total_target_words > 0:
+        prefix_targets = [0]
+        for scene in scene_cards:
+            prefix_targets.append(prefix_targets[-1] + midpoint_targets[scene.scene_id])
+    else:
+        prefix_targets = list(range(len(scene_cards) + 1))
+        total_target_words = len(scene_cards)
+
+    max_window_count = min(max_windows, len(section_boundaries) + 1, len(scene_cards))
+    for window_count in range(max_window_count, 1, -1):
+        min_window_target_words = total_target_words * (
+            (_WRITING_WINDOW_MIN_SHARE * 2.0) / window_count
+        )
+        best_cut_points: tuple[int, ...] | None = None
+        best_score: tuple[float, int, tuple[int, ...]] | None = None
+        for cut_points in combinations(section_boundaries, window_count - 1):
+            if any(
+                window_total < min_window_target_words
+                for window_total in _partition_window_totals(prefix_targets, cut_points)
+            ):
+                continue
+            score = _score_episode_writing_window_partition(prefix_targets, cut_points)
+            if best_score is None or score < best_score:
+                best_score = score
+                best_cut_points = cut_points
+        if best_cut_points is None:
             continue
-        split_index = min(candidates, key=_boundary_key)
-        return [scene_cards[:split_index], scene_cards[split_index:]]
+        boundaries = (0, *best_cut_points, len(scene_cards))
+        return [
+            scene_cards[start:end]
+            for start, end in zip(boundaries, boundaries[1:])
+        ]
 
     return [scene_cards]
 
@@ -492,8 +561,17 @@ def _build_writer_scene_brief(scene_payload: dict[str, Any]) -> dict[str, Any]:
         actors.append(
             {
                 "name": actor.get("name", ""),
+                "actor_id": actor.get("actor_id"),
                 "affiliation": actor.get("affiliation"),
                 "presence": actor.get("presence", "secondary"),
+                "explanation_stage": actor.get("explanation_stage"),
+                "background_depth": actor.get("background_depth"),
+                "role_label": actor.get("role_label", ""),
+                "source_primitive_ids": list(actor.get("source_primitive_ids", []) or []),
+                "source_passage_ids": list(actor.get("source_passage_ids", []) or []),
+                "intro_facts": list(actor.get("intro_facts", []) or []),
+                "why_now": actor.get("why_now", ""),
+                "preferred_plain_gloss": actor.get("preferred_plain_gloss", ""),
             }
         )
 
@@ -518,6 +596,7 @@ def _build_writer_scene_brief(scene_payload: dict[str, Any]) -> dict[str, Any]:
         "timeframe": scene_payload.get("timeframe"),
         "location": scene_payload.get("location"),
         "actors": actors,
+        "primitive_ids": list(scene_payload.get("primitive_ids", []) or []),
         "passage_ids": list(scene_payload.get("passage_ids", []) or []),
         "target_word_count_lower": int(
             scene_payload.get("target_word_count_lower", 0) or 0
@@ -533,6 +612,190 @@ def _build_writer_scene_brief(scene_payload: dict[str, Any]) -> dict[str, Any]:
             "close": [],
         },
     }
+
+
+def _nonempty_runtime_text(value: Any) -> str | None:
+    text = str(value or "").strip()
+    return text or None
+
+
+def _compact_runtime_string_list(values: Any) -> list[str]:
+    if not isinstance(values, list):
+        return []
+    compacted: list[str] = []
+    for value in values:
+        text = _nonempty_runtime_text(value)
+        if text:
+            compacted.append(text)
+    return compacted
+
+
+def _primitive_substrate_fields_payload(
+    primitive: SynthesisPrimitiveBase,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    substrate = primitive.substrate
+    if substrate == PrimitiveSubstrate.EVENTS:
+        if event_type := _nonempty_runtime_text(getattr(primitive, "event_type", None)):
+            payload["event_type"] = event_type
+        if what_happened := _nonempty_runtime_text(
+            getattr(primitive, "what_happened", None)
+        ):
+            payload["what_happened"] = what_happened
+        if event_result := _nonempty_runtime_text(
+            getattr(primitive, "event_result", None)
+        ):
+            payload["event_result"] = event_result
+        return payload
+    if substrate == PrimitiveSubstrate.ACTS:
+        if act_type := _nonempty_runtime_text(getattr(primitive, "act_type", None)):
+            payload["act_type"] = act_type
+        if acting_subject := _nonempty_runtime_text(
+            getattr(primitive, "acting_subject", None)
+        ):
+            payload["acting_subject"] = acting_subject
+        if act_summary := _nonempty_runtime_text(
+            getattr(primitive, "act_summary", None)
+        ):
+            payload["act_summary"] = act_summary
+        if immediate_result := _nonempty_runtime_text(
+            getattr(primitive, "immediate_result", None)
+        ):
+            payload["immediate_result"] = immediate_result
+        return payload
+    if substrate == PrimitiveSubstrate.UTTERANCES:
+        if utterance_type := _nonempty_runtime_text(
+            getattr(primitive, "utterance_type", None)
+        ):
+            payload["utterance_type"] = utterance_type
+        if speaker := _nonempty_runtime_text(getattr(primitive, "speaker", None)):
+            payload["speaker"] = speaker
+        if audience := _nonempty_runtime_text(getattr(primitive, "audience", None)):
+            payload["audience"] = audience
+        if utterance_summary := _nonempty_runtime_text(
+            getattr(primitive, "utterance_summary", None)
+        ):
+            payload["utterance_summary"] = utterance_summary
+        if key_quote := _nonempty_runtime_text(getattr(primitive, "key_quote", None)):
+            payload["key_quote"] = key_quote
+        return payload
+    if substrate == PrimitiveSubstrate.ACTOR_PORTRAITS:
+        if focus_actor_id := _nonempty_runtime_text(
+            getattr(primitive, "focus_actor_id", None)
+        ):
+            payload["focus_actor_id"] = focus_actor_id
+        if actor_label := _nonempty_runtime_text(
+            getattr(primitive, "actor_label", None)
+        ):
+            payload["actor_label"] = actor_label
+        if goal_or_project := _nonempty_runtime_text(
+            getattr(primitive, "goal_or_project", None)
+        ):
+            payload["goal_or_project"] = goal_or_project
+        if stakes_or_fears := _nonempty_runtime_text(
+            getattr(primitive, "stakes_or_fears", None)
+        ):
+            payload["stakes_or_fears"] = stakes_or_fears
+        if operating_pressure := _nonempty_runtime_text(
+            getattr(primitive, "operating_pressure", None)
+        ):
+            payload["operating_pressure"] = operating_pressure
+        return payload
+    if substrate == PrimitiveSubstrate.MECHANISMS:
+        if mechanism_name := _nonempty_runtime_text(
+            getattr(primitive, "mechanism_name", None)
+        ):
+            payload["mechanism_name"] = mechanism_name
+        if operating_chain := _compact_runtime_string_list(
+            getattr(primitive, "operating_chain", None)
+        ):
+            payload["operating_chain"] = operating_chain
+        if inputs := _compact_runtime_string_list(getattr(primitive, "inputs", None)):
+            payload["inputs"] = inputs
+        if outputs := _compact_runtime_string_list(getattr(primitive, "outputs", None)):
+            payload["outputs"] = outputs
+        if failure_mode := _nonempty_runtime_text(
+            getattr(primitive, "failure_mode", None)
+        ):
+            payload["failure_mode"] = failure_mode
+        return payload
+    if substrate == PrimitiveSubstrate.CONDITIONS:
+        if condition_type := _nonempty_runtime_text(
+            getattr(primitive, "condition_type", None)
+        ):
+            payload["condition_type"] = condition_type
+        if condition_summary := _nonempty_runtime_text(
+            getattr(primitive, "condition_summary", None)
+        ):
+            payload["condition_summary"] = condition_summary
+        if active_tension := _nonempty_runtime_text(
+            getattr(primitive, "active_tension", None)
+        ):
+            payload["active_tension"] = active_tension
+        return payload
+    if substrate == PrimitiveSubstrate.ARTIFACTS:
+        if artifact_type := _nonempty_runtime_text(
+            getattr(primitive, "artifact_type", None)
+        ):
+            payload["artifact_type"] = artifact_type
+        if artifact_label := _nonempty_runtime_text(
+            getattr(primitive, "artifact_label", None)
+        ):
+            payload["artifact_label"] = artifact_label
+        if artifact_detail := _nonempty_runtime_text(
+            getattr(primitive, "artifact_detail", None)
+        ):
+            payload["artifact_detail"] = artifact_detail
+        return payload
+    if substrate == PrimitiveSubstrate.READINGS:
+        if reading_type := _nonempty_runtime_text(
+            getattr(primitive, "reading_type", None)
+        ):
+            payload["reading_type"] = reading_type
+        if subject_of_reading := _nonempty_runtime_text(
+            getattr(primitive, "subject_of_reading", None)
+        ):
+            payload["subject_of_reading"] = subject_of_reading
+        if attributed_to := _nonempty_runtime_text(
+            getattr(primitive, "attributed_to", None)
+        ):
+            payload["attributed_to"] = attributed_to
+        if reading_summary := _nonempty_runtime_text(
+            getattr(primitive, "reading_summary", None)
+        ):
+            payload["reading_summary"] = reading_summary
+        return payload
+    return payload
+
+
+def _primitive_substrate_text_fragments(
+    primitive: SynthesisPrimitiveBase,
+) -> list[str]:
+    fragments: list[str] = []
+    for value in _primitive_substrate_fields_payload(primitive).values():
+        if isinstance(value, str):
+            fragments.append(value)
+            continue
+        if isinstance(value, list):
+            fragments.extend(_compact_runtime_string_list(value))
+    return fragments
+
+
+def _build_scene_primitive_briefs(
+    *,
+    scene_cards: list[SceneCard],
+    primitive_lookup: dict[str, SynthesisPrimitiveBase],
+) -> dict[str, list[dict[str, Any]]]:
+    briefs: dict[str, list[dict[str, Any]]] = {}
+    for scene in scene_cards:
+        scene_briefs: list[dict[str, Any]] = []
+        for primitive_id in scene.primitive_ids:
+            primitive = primitive_lookup.get(primitive_id)
+            if primitive is None:
+                continue
+            scene_briefs.append(primitive.model_dump(mode="json"))
+        briefs[scene.scene_id] = scene_briefs
+    return briefs
 
 
 def _build_host_policy_payload(
@@ -629,6 +892,96 @@ def _build_episode_explanation_registry_payload(
     return filtered_items
 
 
+def _episode_actor_gloss(actor: Any) -> str:
+    text = str(getattr(actor, "description", "") or "").strip()
+    if not text:
+        return str(getattr(actor, "actor_type", "actor") or "actor").replace("_", " ")
+    for delimiter in (".", ";", ":"):
+        if delimiter in text:
+            text = text.split(delimiter, 1)[0].strip()
+            break
+    words = text.split()
+    if len(words) > 18:
+        text = " ".join(words[:18]).rstrip(",")
+    return text
+
+
+def _build_episode_actor_explanation_registry_payload(
+    *,
+    strategy_episode: StrategyEpisode | None,
+    architecture: EpisodeArchitecture | None,
+    series_actor_explanation_registry: list[SeriesActorExplanationItem] | None,
+    actor_metadata: ActorMetadata | None = None,
+) -> list[dict[str, Any]]:
+    if not series_actor_explanation_registry:
+        return []
+    referenced_actor_ids: set[str] = set()
+    if strategy_episode is not None:
+        referenced_actor_ids.update(
+            actor_id
+            for actor_id in strategy_episode.authorial_contract.introduce_actor_ids
+            if actor_id
+        )
+        referenced_actor_ids.update(
+            actor_id
+            for actor_id in strategy_episode.authorial_contract.remind_actor_ids
+            if actor_id
+        )
+    if architecture is not None:
+        for section in architecture.sections:
+            referenced_actor_ids.update(
+                explanation.actor_id
+                for explanation in section.actor_explanations
+                if explanation.actor_id
+            )
+    if not referenced_actor_ids:
+        return []
+    actor_by_id = {
+        actor.actor_id: actor for actor in (actor_metadata.actors if actor_metadata else [])
+    }
+    filtered_items: list[dict[str, Any]] = []
+    for item in series_actor_explanation_registry:
+        if item.actor_id not in referenced_actor_ids:
+            continue
+        payload = item.model_dump(mode="json")
+        if not str(payload.get("preferred_plain_gloss", "") or "").strip():
+            actor = actor_by_id.get(item.actor_id)
+            if actor is not None:
+                payload["preferred_plain_gloss"] = _episode_actor_gloss(actor)
+        filtered_items.append(payload)
+    return filtered_items
+
+
+def _collect_episode_actor_ids(
+    *,
+    strategy_episode: StrategyEpisode,
+    primitive_ids: list[str],
+    primitive_lookup: dict[str, SynthesisPrimitiveBase],
+) -> set[str]:
+    actor_ids = {
+        actor.actor_id
+        for actor in strategy_episode.actor_arc_directives
+        if actor.actor_id
+    }
+    actor_ids.update(
+        actor_id
+        for actor_id in strategy_episode.authorial_contract.introduce_actor_ids
+        if actor_id
+    )
+    actor_ids.update(
+        actor_id
+        for actor_id in strategy_episode.authorial_contract.remind_actor_ids
+        if actor_id
+    )
+    selected_primitives = [
+        primitive_lookup[primitive_id]
+        for primitive_id in primitive_ids
+        if primitive_id in primitive_lookup
+    ]
+    actor_ids.update(collect_actor_ids_for_primitives(selected_primitives))
+    return {actor_id for actor_id in actor_ids if actor_id}
+
+
 def _build_host_moves_by_section(
     plan: EpisodePlan | None,
 ) -> dict[str, list[dict[str, Any]]]:
@@ -674,6 +1027,7 @@ def _build_window_actor_metadata(
     *,
     window_scene_cards: list[SceneCard],
     strategy_episode: StrategyEpisode,
+    architecture: EpisodeArchitecture,
     actor_metadata: ActorMetadata,
 ) -> dict[str, Any]:
     actor_ids = {
@@ -682,6 +1036,14 @@ def _build_window_actor_metadata(
         for actor in scene.actors
         if actor.actor_id
     }
+    window_section_ids = {scene.section_id for scene in window_scene_cards}
+    actor_ids.update(
+        explanation.actor_id
+        for section in architecture.sections
+        if section.section_id in window_section_ids
+        for explanation in section.actor_explanations
+        if explanation.actor_id
+    )
     if not actor_ids:
         actor_ids.update(
             actor.actor_id
@@ -795,10 +1157,18 @@ def _build_style_audit_sections_payload(
                     explanation.model_dump(mode="json")
                     for explanation in meta.term_explanations
                 ],
+                "actor_explanations": [
+                    explanation.model_dump(mode="json")
+                    for explanation in meta.actor_explanations
+                ],
                 "host_presence_beats": [
                     beat.model_dump(mode="json") for beat in meta.host_presence_beats
                 ],
                 "text": prose_section.text,
+                "actor_explanation_realizations": [
+                    realization.model_dump(mode="json")
+                    for realization in prose_section.actor_explanation_realizations
+                ],
             }
         )
     return payload_sections
@@ -859,6 +1229,14 @@ def _build_spoken_delivery_sections_payload(
                     if architecture_section is not None
                     else []
                 ),
+                "actor_explanations": (
+                    [
+                        explanation.model_dump(mode="json")
+                        for explanation in architecture_section.actor_explanations
+                    ]
+                    if architecture_section is not None
+                    else []
+                ),
                 "host_presence_beats": (
                     [
                         beat.model_dump(mode="json")
@@ -868,6 +1246,10 @@ def _build_spoken_delivery_sections_payload(
                     else []
                 ),
                 "text": prose_section.text,
+                "actor_explanation_realizations": [
+                    realization.model_dump(mode="json")
+                    for realization in prose_section.actor_explanation_realizations
+                ],
             }
         )
     return payload_sections
@@ -908,6 +1290,14 @@ def _build_script_sections_payload(
                     [
                         explanation.model_dump(mode="json")
                         for explanation in architecture_section.term_explanations
+                    ]
+                    if architecture_section is not None
+                    else []
+                ),
+                "actor_explanations": (
+                    [
+                        explanation.model_dump(mode="json")
+                        for explanation in architecture_section.actor_explanations
                     ]
                     if architecture_section is not None
                     else []
@@ -1087,6 +1477,71 @@ def _bm25_idf_and_avg_len(documents: list[list[str]]) -> tuple[dict[str, float],
     return idf, avg_len
 
 
+@dataclass(frozen=True)
+class _PrimitiveEvidenceTrimProfile:
+    core_keep_fraction: float
+    support_keep_fraction: float
+    shared_passage_keep_fraction: float
+
+
+@dataclass(frozen=True)
+class _ScoredSentence:
+    score: float
+    index: int
+    sentence: str
+    word_count: int
+
+
+_FUNCTION_TAGGING_PRIMITIVE_EVIDENCE_TRIM_PROFILE = _PrimitiveEvidenceTrimProfile(
+    core_keep_fraction=0.15,
+    support_keep_fraction=0.075,
+    shared_passage_keep_fraction=0.25,
+)
+
+
+def _rank_bm25_sentences(
+    sentences: list[str],
+    *,
+    query_terms: dict[str, int],
+    idf: dict[str, float],
+    avg_len: float,
+) -> list[_ScoredSentence]:
+    scored: list[_ScoredSentence] = []
+    for idx, sentence in enumerate(sentences):
+        tokens = _tokenize(sentence)
+        score = _bm25_score(tokens, query_terms, idf, avg_len)
+        scored.append(
+            _ScoredSentence(
+                score=score,
+                index=idx,
+                sentence=sentence,
+                word_count=len(sentence.split()),
+            )
+        )
+    scored.sort(key=lambda item: (-item.score, item.index))
+    return scored
+
+
+def _select_ranked_sentences(
+    scored_sentences: list[_ScoredSentence],
+    *,
+    word_budget: int,
+) -> list[_ScoredSentence]:
+    if not scored_sentences or word_budget <= 0:
+        return []
+    selected: list[_ScoredSentence] = []
+    selected_word_count = 0
+    for item in scored_sentences:
+        if not selected:
+            selected.append(item)
+            selected_word_count += item.word_count
+            continue
+        if selected_word_count + item.word_count <= word_budget:
+            selected.append(item)
+            selected_word_count += item.word_count
+    return selected
+
+
 def _trim_candidate_texts_by_bm25_query_text(
     query_text: str,
     candidates: list[dict],
@@ -1141,27 +1596,18 @@ def _trim_candidate_texts_by_bm25_query_text(
             query_terms = _bm25_query_terms(passage_query_text)
         if not query_terms:
             continue
-        scored: list[tuple[float, int, str, int]] = []
-        for idx, sentence in enumerate(sentences):
-            tokens = _tokenize(sentence)
-            score = _bm25_score(tokens, query_terms, idf, avg_len)
-            scored.append((score, idx, sentence, len(sentence.split())))
-        scored.sort(key=lambda item: (-item[0], item[1]))
+        scored = _rank_bm25_sentences(
+            sentences,
+            query_terms=query_terms,
+            idf=idf,
+            avg_len=avg_len,
+        )
         word_budget = max(
             1, math.floor(len(cand.get("text", "").split()) * passage_keep_fraction)
         )
-        selected: list[tuple[float, int, str, int]] = []
-        selected_word_count = 0
-        for item in scored:
-            if not selected:
-                selected.append(item)
-                selected_word_count += item[3]
-                continue
-            if selected_word_count + item[3] <= word_budget:
-                selected.append(item)
-                selected_word_count += item[3]
-        selected.sort(key=lambda item: item[1])
-        trimmed = " ".join(sentence for _, _, sentence, _ in selected).strip()
+        selected = _select_ranked_sentences(scored, word_budget=word_budget)
+        selected.sort(key=lambda item: item.index)
+        trimmed = " ".join(item.sentence for item in selected).strip()
         if trimmed:
             cand["text"] = trimmed
 
@@ -1190,17 +1636,14 @@ def _resolve_synthesis_bm25_keep_fraction_by_passage(
     *,
     top_fraction: float = 0.10,
     mid_fraction: float = 0.20,
-    next_fraction: float = 0.0,
-    top_keep_fraction: float = 0.375,
-    mid_keep_fraction: float = 0.275,
-    next_keep_fraction: float = 0.325,
-    tail_keep_fraction: float = 0.175,
+    top_keep_fraction: float = 0.35,
+    mid_keep_fraction: float = 0.25,
+    tail_keep_fraction: float = 0.15,
 ) -> tuple[dict[str, float], dict[str, int]]:
     if not passages:
         return {}, {
             "top_tier_passages": 0,
             "mid_tier_passages": 0,
-            "next_tier_passages": 0,
             "tail_tier_passages": 0,
         }
 
@@ -1218,10 +1661,6 @@ def _resolve_synthesis_bm25_keep_fraction_by_passage(
         max(0, passage_count - top_tier_count),
         max(0, math.ceil(passage_count * mid_fraction)),
     )
-    next_tier_count = min(
-        max(0, passage_count - top_tier_count - mid_tier_count),
-        max(0, math.ceil(passage_count * next_fraction)),
-    )
     keep_fraction_by_passage_id: dict[str, float] = {}
     for idx, passage in enumerate(ranked_passages):
         if idx < top_tier_count:
@@ -1230,17 +1669,13 @@ def _resolve_synthesis_bm25_keep_fraction_by_passage(
         if idx < top_tier_count + mid_tier_count:
             keep_fraction_by_passage_id[passage.passage_id] = mid_keep_fraction
             continue
-        if idx < top_tier_count + mid_tier_count + next_tier_count:
-            keep_fraction_by_passage_id[passage.passage_id] = next_keep_fraction
-            continue
         keep_fraction_by_passage_id[passage.passage_id] = tail_keep_fraction
     return keep_fraction_by_passage_id, {
         "top_tier_passages": top_tier_count,
         "mid_tier_passages": mid_tier_count,
-        "next_tier_passages": next_tier_count,
         "tail_tier_passages": max(
             0,
-            passage_count - top_tier_count - mid_tier_count - next_tier_count,
+            passage_count - top_tier_count - mid_tier_count,
         ),
     }
 
@@ -1597,7 +2032,7 @@ def _build_narrative_strategy_warnings(
     return warnings
 
 
-def _build_enrichment_gloss_warnings(
+def _build_narration_hook_gloss_warnings(
     primitives: list[SynthesisPrimitiveBase],
 ) -> list[str]:
     warnings: list[str] = []
@@ -1610,7 +2045,7 @@ def _build_enrichment_gloss_warnings(
         if authorial_move != "none" and not plain_gloss:
             warnings.append(
                 "enrichment_missing_plain_gloss: "
-                f"{primitive.id} ({primitive.family}) carries authorial_move={authorial_move} without a usable spoken gloss."
+                f"{primitive.id} ({primitive.substrate.value}) carries authorial_move={authorial_move} without a usable spoken gloss."
             )
     return warnings
 
@@ -2193,9 +2628,9 @@ def _build_strategy_feedback_for_merged_narratives(
 _NARRATIVE_STRATEGY_OMIT = object()
 _NARRATIVE_STRATEGY_PRIMITIVE_DROP_FIELDS = {
     "support_passage_ids",
-    "axis_ids",
     "affected_actor_ids",
     "actor_tags",
+    "narration_hooks",
 }
 _NARRATIVE_STRATEGY_ACTOR_KEEP_FIELDS = {
     "actor_id",
@@ -2209,7 +2644,7 @@ _NARRATIVE_STRATEGY_ACTOR_KEEP_FIELDS = {
     "transformations",
     "narrative_importance_score",
 }
-_PRIMITIVE_ENRICHMENT_ACTOR_KEEP_FIELDS = {
+_PRIMITIVE_ANNOTATION_ACTOR_KEEP_FIELDS = {
     "actor_id",
     "display_name",
     "aliases",
@@ -2292,22 +2727,20 @@ def _compact_narrative_strategy_runtime_payload(
 
 
 def _build_narrative_strategy_synthesis_map_payload(
-    synthesis_map: SynthesisPrimitivesArtifact,
+    synthesis_map: PrimitiveFunctionTaggingArtifact | SynthesisMap,
 ) -> dict[str, Any]:
-    primitives_by_family: dict[str, list[dict[str, Any]]] = {}
-    for family in SYNTHESIS_PRIMITIVE_FAMILIES:
-        primitives_by_family[family] = [
-            {
-                key: value
-                for key, value in primitive.model_dump(mode="json").items()
-                if key not in _NARRATIVE_STRATEGY_PRIMITIVE_DROP_FIELDS
-            }
-            for primitive in synthesis_map.primitives_by_family.get(family, [])
-        ]
+    primitives = [
+        {
+            key: value
+            for key, value in primitive.model_dump(mode="json").items()
+            if key not in _NARRATIVE_STRATEGY_PRIMITIVE_DROP_FIELDS
+        }
+        for primitive in synthesis_map.primitives
+    ]
     return _compact_narrative_strategy_runtime_payload(
         {
             "project_id": synthesis_map.project_id,
-            "primitives_by_family": primitives_by_family,
+            "primitives": primitives,
             "quality_score": synthesis_map.quality_score,
             "quality_notes": list(synthesis_map.quality_notes),
         }
@@ -2386,17 +2819,24 @@ _ENRICHED_PRIMITIVE_MODEL_BY_FAMILY: dict[str, type[SynthesisPrimitiveBase]] = {
     "recurring_images_and_symbols": SynthesisPrimitive,
     "ironies_and_reversals": IronyReversalPrimitive,
 }
-_PRIMITIVE_ENRICHMENT_FAMILY_CONCURRENCY = 5
+_PRIMITIVE_ANNOTATION_BATCH_CONCURRENCY = 8
+_PRIMITIVE_ANNOTATION_BATCH_THRESHOLD = 30
+_PRIMITIVE_ANNOTATION_SPLIT_BATCH_COUNT = 2
 
 
 def _flatten_base_synthesis_primitives(
-    artifact: SynthesisPrimitivesArtifact,
+    artifact: SynthesisPrimitivesArtifact | PrimitiveFunctionTaggingArtifact | SynthesisMap,
 ) -> dict[str, BaseSynthesisPrimitive]:
-    flattened: dict[str, BaseSynthesisPrimitive] = {}
-    for family in SYNTHESIS_PRIMITIVE_FAMILIES:
-        for item in artifact.primitives_by_family.get(family, []):
-            flattened[item.id] = item
-    return flattened
+    return {item.id: item for item in artifact.primitives}
+
+
+def _split_primitive_annotation_batches(
+    primitives: list[BaseSynthesisPrimitive],
+) -> list[list[BaseSynthesisPrimitive]]:
+    if len(primitives) <= _PRIMITIVE_ANNOTATION_BATCH_THRESHOLD:
+        return [primitives]
+    midpoint = (len(primitives) + 1) // _PRIMITIVE_ANNOTATION_SPLIT_BATCH_COUNT
+    return [primitives[:midpoint], primitives[midpoint:]]
 
 
 def _collect_strategy_selected_primitive_ids(strategy: NarrativeStrategy) -> list[str]:
@@ -2419,8 +2859,8 @@ def _build_passage_lookup(corpus: ThematicCorpus) -> dict[str, ExtractedPassage]
     return lookup
 
 
-def _build_primitive_enrichment_primitive_query(
-    family: str,
+def _build_primitive_evidence_query(
+    substrate: str,
     primitive: BaseSynthesisPrimitive,
     actor_metadata: ActorMetadata,
 ) -> str:
@@ -2429,9 +2869,9 @@ def _build_primitive_enrichment_primitive_query(
         for actor in actor_metadata.actors
         if actor.display_name.strip()
     }
-    parts: list[str] = [family.replace("_", " ")]
+    parts: list[str] = [substrate.replace("_", " ")]
     parts.append(primitive.title)
-    parts.append(primitive.summary)
+    parts.extend(_primitive_substrate_text_fragments(primitive))
     if primitive.timeframe:
         parts.append(primitive.timeframe)
     if primitive.geography:
@@ -2442,27 +2882,30 @@ def _build_primitive_enrichment_primitive_query(
     return " ".join(part.strip() for part in parts if part and part.strip())
 
 
-def _build_primitive_enrichment_evidence_by_primitive_id(
+@dataclass(frozen=True)
+class _PrimitivePassageReference:
+    primitive_id: str
+    role: str
+    query_text: str
+
+
+def _build_function_tagging_passage_list(
     *,
-    family: str,
     primitives: list[BaseSynthesisPrimitive],
     passage_lookup: dict[str, ExtractedPassage],
     actor_metadata: ActorMetadata,
-) -> dict[str, dict[str, list[dict[str, str]]]]:
+    trim_profile: _PrimitiveEvidenceTrimProfile,
+) -> list[dict[str, str]]:
     if not primitives:
-        return {}
-    core_keep_fraction = 0.35
-    support_keep_fraction = core_keep_fraction / 2
-    evidence_by_primitive_id: dict[str, dict[str, list[dict[str, str]]]] = {}
+        return []
+    passage_records: dict[str, dict[str, Any]] = {}
+
     for primitive in primitives:
-        query_text = _build_primitive_enrichment_primitive_query(
-            family,
+        query_text = _build_primitive_evidence_query(
+            primitive.substrate.value,
             primitive,
             actor_metadata,
         )
-
-        core_candidates: list[dict[str, str]] = []
-        support_candidates: list[dict[str, str]] = []
         seen_core_ids: set[str] = set()
         seen_support_ids: set[str] = set()
         for passage_id in primitive.core_passage_ids:
@@ -2479,13 +2922,20 @@ def _build_primitive_enrichment_evidence_by_primitive_id(
             )
             if not full_text:
                 continue
-            core_candidates.append(
+            record = passage_records.setdefault(
+                passage.passage_id,
                 {
                     "passage_id": passage.passage_id,
-                    "book_id": passage.book_id,
-                    "chapter_ref": passage.chapter_ref,
                     "text": full_text,
-                }
+                    "references": [],
+                },
+            )
+            record["references"].append(
+                _PrimitivePassageReference(
+                    primitive_id=primitive.id,
+                    role="core",
+                    query_text=query_text,
+                )
             )
         for passage_id in primitive.support_passage_ids:
             if (
@@ -2505,54 +2955,172 @@ def _build_primitive_enrichment_evidence_by_primitive_id(
             )
             if not full_text:
                 continue
-            support_candidates.append(
+            record = passage_records.setdefault(
+                passage.passage_id,
                 {
                     "passage_id": passage.passage_id,
-                    "book_id": passage.book_id,
-                    "chapter_ref": passage.chapter_ref,
                     "text": full_text,
+                    "references": [],
+                },
+            )
+            record["references"].append(
+                _PrimitivePassageReference(
+                    primitive_id=primitive.id,
+                    role="support",
+                    query_text=query_text,
+                )
+            )
+
+    passage_list: list[dict[str, str]] = []
+    for passage_id, record in passage_records.items():
+        full_text = str(record["text"]).strip()
+        sentences = _split_sentences(full_text)
+        if not sentences:
+            continue
+        sentence_tokens = [_tokenize(sentence) for sentence in sentences]
+        idf, avg_len = _bm25_idf_and_avg_len(sentence_tokens)
+        total_word_count = len(full_text.split())
+        if total_word_count <= 0:
+            continue
+
+        selected_indices_by_reference: dict[_PrimitivePassageReference, set[int]] = {}
+        score_by_reference_and_index: dict[tuple[_PrimitivePassageReference, int], float] = {}
+        role_by_index: dict[int, set[str]] = {}
+        reference_count_by_index: dict[int, int] = {}
+
+        references: list[_PrimitivePassageReference] = list(record["references"])
+        for reference in references:
+            keep_fraction = (
+                trim_profile.core_keep_fraction
+                if reference.role == "core"
+                else trim_profile.support_keep_fraction
+            )
+            query_terms = _bm25_query_terms(reference.query_text)
+            scored = _rank_bm25_sentences(
+                sentences,
+                query_terms=query_terms,
+                idf=idf,
+                avg_len=avg_len,
+            )
+            word_budget = max(1, math.floor(total_word_count * keep_fraction))
+            selected = _select_ranked_sentences(scored, word_budget=word_budget)
+            selected_indices = {item.index for item in selected}
+            selected_indices_by_reference[reference] = selected_indices
+            for item in scored:
+                score_by_reference_and_index[(reference, item.index)] = item.score
+            for idx in selected_indices:
+                role_by_index.setdefault(idx, set()).add(reference.role)
+                reference_count_by_index[idx] = (
+                    reference_count_by_index.get(idx, 0) + 1
+                )
+
+        final_pool_indices: set[int]
+        if len(references) == 1:
+            final_pool_indices = set(next(iter(selected_indices_by_reference.values())))
+        else:
+            shared_budget = max(
+                1,
+                math.floor(
+                    total_word_count * trim_profile.shared_passage_keep_fraction
+                ),
+            )
+            reserved_candidates: dict[int, dict[str, Any]] = {}
+            for reference in references:
+                scored = _rank_bm25_sentences(
+                    sentences,
+                    query_terms=_bm25_query_terms(reference.query_text),
+                    idf=idf,
+                    avg_len=avg_len,
+                )
+                if not scored:
+                    continue
+                top = scored[0]
+                candidate = reserved_candidates.setdefault(
+                    top.index,
+                    {
+                        "refs": set(),
+                        "has_core": False,
+                        "best_score": top.score,
+                    },
+                )
+                candidate["refs"].add(reference)
+                candidate["has_core"] = candidate["has_core"] or reference.role == "core"
+                candidate["best_score"] = max(candidate["best_score"], top.score)
+
+            final_pool_indices = set()
+            used_words = 0
+            covered_refs: set[_PrimitivePassageReference] = set()
+            pending_reserved = dict(reserved_candidates)
+            while pending_reserved:
+                next_idx = None
+                next_payload = None
+                for idx, payload in sorted(
+                    pending_reserved.items(),
+                    key=lambda item: (
+                        -len(item[1]["refs"] - covered_refs),
+                        0 if item[1]["has_core"] else 1,
+                        -item[1]["best_score"],
+                        item[0],
+                    ),
+                ):
+                    sentence_words = len(sentences[idx].split())
+                    if used_words + sentence_words <= shared_budget:
+                        next_idx = idx
+                        next_payload = payload
+                        break
+                if next_idx is None or next_payload is None:
+                    break
+                final_pool_indices.add(next_idx)
+                used_words += len(sentences[next_idx].split())
+                covered_refs.update(next_payload["refs"])
+                pending_reserved.pop(next_idx, None)
+
+            remaining_candidates = sorted(
+                [
+                    idx
+                    for idx in reference_count_by_index
+                    if idx not in final_pool_indices
+                ],
+                key=lambda idx: (
+                    -reference_count_by_index.get(idx, 0),
+                    0 if "core" in role_by_index.get(idx, set()) else 1,
+                    -max(
+                        score_by_reference_and_index.get((reference, idx), 0.0)
+                        for reference in references
+                    ),
+                    idx,
+                ),
+            )
+            for idx in remaining_candidates:
+                sentence_words = len(sentences[idx].split())
+                if used_words + sentence_words > shared_budget:
+                    continue
+                final_pool_indices.add(idx)
+                used_words += sentence_words
+
+            if not final_pool_indices and reserved_candidates:
+                best_idx = min(
+                    reserved_candidates,
+                    key=lambda idx: (
+                        0 if reserved_candidates[idx]["has_core"] else 1,
+                        -reserved_candidates[idx]["best_score"],
+                        idx,
+                    ),
+                )
+                final_pool_indices.add(best_idx)
+
+        trimmed = " ".join(sentences[idx] for idx in sorted(final_pool_indices)).strip()
+        if trimmed:
+            passage_list.append(
+                {
+                    "passage_id": passage_id,
+                    "text": trimmed,
                 }
             )
-        if core_candidates:
-            _trim_candidate_texts_by_bm25_query_text(
-                query_text,
-                core_candidates,
-                keep_fraction=core_keep_fraction,
-            )
-        if support_candidates:
-            _trim_candidate_texts_by_bm25_query_text(
-                query_text,
-                support_candidates,
-                keep_fraction=support_keep_fraction,
-            )
-        core_passages = [
-            {
-                "passage_id": str(candidate["passage_id"]),
-                "book_id": str(candidate.get("book_id", "")),
-                "chapter_ref": str(candidate.get("chapter_ref", "")),
-                "text": str(candidate.get("text", "")).strip(),
-            }
-            for candidate in core_candidates
-            if str(candidate.get("text", "")).strip()
-        ]
-        support_passages = [
-            {
-                "passage_id": str(candidate["passage_id"]),
-                "book_id": str(candidate.get("book_id", "")),
-                "chapter_ref": str(candidate.get("chapter_ref", "")),
-                "text": str(candidate.get("text", "")).strip(),
-            }
-            for candidate in support_candidates
-            if str(candidate.get("text", "")).strip()
-        ]
-        evidence_by_primitive_id[primitive.id] = {
-            "core_passages": core_passages,
-            "support_passages": support_passages,
-        }
-    return evidence_by_primitive_id
+    return passage_list
 
 
-def _build_primitive_enrichment_actor_metadata_payload(
+def _build_primitive_actor_metadata_payload(
     actor_metadata: ActorMetadata,
 ) -> dict[str, Any]:
     def _one_line_role(description: str, actor_type: str) -> str:
@@ -2574,7 +3142,7 @@ def _build_primitive_enrichment_actor_metadata_payload(
                 **{
                     key: value
                     for key, value in actor.model_dump(mode="json").items()
-                    if key in _PRIMITIVE_ENRICHMENT_ACTOR_KEEP_FIELDS
+                    if key in _PRIMITIVE_ANNOTATION_ACTOR_KEEP_FIELDS
                 },
                 "one_line_role": _one_line_role(actor.description, actor.actor_type),
             }
@@ -3235,6 +3803,8 @@ def chunk_text(
     book_id: str,
     chapters: list[ChapterInfo],
     config: ChunkingConfig,
+    *,
+    book_slot: int = 0,
 ) -> list[TextChunk]:
     """Split chapter text into overlapping chunks."""
     chunks: list[TextChunk] = []
@@ -3252,7 +3822,7 @@ def chunk_text(
             word_count = len(text_str.split())
             chunks.append(
                 TextChunk(
-                    chunk_id=f"{book_id}-{chapter.chapter_id}-chunk-{global_index}",
+                    chunk_id=_project_chunk_id(book_slot, global_index),
                     book_id=book_id,
                     chapter_id=chapter.chapter_id,
                     text=text_str,
@@ -3263,6 +3833,25 @@ def chunk_text(
             )
             global_index += 1
     return chunks
+
+
+def _base36_encode(number: int, *, width: int) -> str:
+    if number < 0:
+        raise ValueError("base36 encoding requires a non-negative integer")
+    alphabet = "0123456789abcdefghijklmnopqrstuvwxyz"
+    base = len(alphabet)
+    digits = ["0"] * width
+    current = number
+    for index in range(width - 1, -1, -1):
+        current, remainder = divmod(current, base)
+        digits[index] = alphabet[remainder]
+    if current:
+        raise ValueError(f"value {number} exceeds {width}-digit base36 capacity")
+    return "".join(digits)
+
+
+def _project_chunk_id(book_slot: int, chunk_index: int) -> str:
+    return f"{_base36_encode(book_slot, width=2)}{_base36_encode(chunk_index + 1, width=4)}"
 
 
 def _split_into_chunks(
@@ -4185,7 +4774,7 @@ def _build_host_move_plan_diagnostics(
             normalized_note = " ".join(cue.note.lower().split())
             if normalized_note and re.search(r"\b(we|our|us)\b", normalized_note):
                 scene_has_first_person_plural_note = True
-            if cue.address_mode in {"we", "you"}:
+            if cue.address_mode in {"we", "you", "i"}:
                 scene_is_personalized = True
             if cue.move_type not in allowed_moves:
                 scene_has_disallowed_move = True
@@ -4502,6 +5091,17 @@ def _normalize_writing_section_outputs(
             "source_book_ids": list(
                 getattr(section_output, "source_book_ids", []) or []
             ),
+            "actor_explanation_realizations": [
+                ActorExplanationRealization.model_validate(
+                    realization.model_dump(mode="json")
+                    if hasattr(realization, "model_dump")
+                    else realization
+                )
+                for realization in getattr(
+                    section_output, "actor_explanation_realizations", []
+                )
+                or []
+            ],
         }
         if skip_grounding:
             payload["citations"] = []
@@ -4741,7 +5341,7 @@ def _build_episode_planning_passage_query_texts(
             passage_id, [episode_query_text]
         )
         query_parts.append(primitive.title)
-        query_parts.append(primitive.summary)
+        query_parts.extend(_primitive_substrate_text_fragments(primitive))
         if primitive.timeframe:
             query_parts.append(primitive.timeframe)
         if primitive.geography:
@@ -4752,6 +5352,81 @@ def _build_episode_planning_passage_query_texts(
         ).strip()
         for passage_id, parts in query_parts_by_passage_id.items()
     }
+
+
+def _build_episode_architecture_passage_refs(
+    *,
+    episode_spine: EpisodeSpine,
+    primitive_lookup: dict[str, SynthesisPrimitiveBase],
+) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    core_refs: list[dict[str, str]] = []
+    for primitive_id in episode_spine.core_primitive_ids:
+        primitive = primitive_lookup.get(primitive_id)
+        if primitive is None:
+            continue
+        for passage_id in primitive.core_passage_ids:
+            if not passage_id:
+                continue
+            core_refs.append(
+                {
+                    "passage_id": passage_id,
+                    "episode_role": "core",
+                    "passage_kind": "core",
+                    "primitive_id": primitive_id,
+                }
+            )
+
+    support_refs = _build_episode_planning_passage_refs(
+        primitive_ids_by_role={
+            "core": [],
+            "support": list(episode_spine.support_primitive_roles.keys()),
+            "recall": [],
+        },
+        primitive_lookup=primitive_lookup,
+    )
+    return core_refs, support_refs
+
+
+def _build_episode_architecture_passage_payload(
+    *,
+    passage_refs: list[dict[str, str]],
+    seen_passage_ids: set[str],
+    passage_lookup: dict[str, ExtractedPassage],
+    query_text: str,
+    query_text_by_passage_id: dict[str, str],
+    keep_fraction: float,
+) -> list[dict[str, Any]]:
+    payload: list[dict[str, Any]] = []
+    for passage_ref in passage_refs:
+        passage_id = passage_ref["passage_id"]
+        if passage_id in seen_passage_ids:
+            continue
+        passage = passage_lookup.get(passage_id)
+        if passage is None:
+            continue
+        seen_passage_ids.add(passage_id)
+        full_text = passage.full_text.strip() or passage.text
+        trimmed_passage = {
+            "passage_id": passage.passage_id,
+            "text": full_text,
+        }
+        _trim_candidate_texts_by_bm25_query_text(
+            query_text,
+            [trimmed_passage],
+            keep_fraction=keep_fraction,
+            query_text_by_passage_id=query_text_by_passage_id,
+        )
+        summary_text = str(trimmed_passage.get("text", "")).strip() or full_text
+        payload.append(
+            {
+                "passage_id": passage.passage_id,
+                "primitive_id": passage_ref["primitive_id"],
+                "book_id": passage.book_id,
+                "chapter_ref": passage.chapter_ref,
+                "summary_text": summary_text,
+            }
+        )
+    return payload
 
 
 def _ordered_architecture_primitive_ids(
@@ -5032,22 +5707,25 @@ def _build_episode_architecture_realization(
             f"evaluate={host_presence_counts.get('evaluate', 0)}"
         )
 
-    human_grounding_families = {
-        "human_costs",
-        "character_engines",
-        "perspective_windows",
-        "set_piece_scenes",
-    }
     if primitive_lookup:
-        sectioned_families = {
-            primitive_lookup[primitive_id].family
+        sectioned_substrates = {
+            primitive_lookup[primitive_id].substrate.value
             for primitive_id in section_primitive_id_set
             if primitive_id in primitive_lookup
         }
-        if not sectioned_families.intersection(human_grounding_families):
+        sectioned_functions = {
+            function.value
+            for primitive_id in section_primitive_id_set
+            if primitive_id in primitive_lookup
+            for function in primitive_lookup[primitive_id].functions
+        }
+        if not (
+            {"cost", "stake"} & sectioned_functions
+            or {"actor_portraits", "events", "acts"} & sectioned_substrates
+        ):
             warnings.append(
-                "missing_human_grounding_support_family: "
-                "episode sections omit human-cost, character, perspective, or set-piece grounding."
+                "missing_human_grounding_support: "
+                "episode sections omit cost/stake or actor/event/act grounding."
             )
 
     overloaded_section_ids = [
@@ -5200,22 +5878,73 @@ def _validate_plan_transition(
     return plan
 
 
+def _validate_actor_explanation_scene_links(
+    *,
+    architecture: EpisodeArchitecture,
+    plan: EpisodePlanDraft | EpisodePlan,
+) -> list[str]:
+    scene_cards_by_section: dict[str, list[SceneCardDraft | SceneCard]] = {}
+    earliest_scene_by_actor: dict[str, SceneCardDraft | SceneCard] = {}
+    for scene in plan.scene_cards:
+        scene_cards_by_section.setdefault(scene.section_id, []).append(scene)
+        for actor in scene.actors:
+            if actor.actor_id and actor.actor_id not in earliest_scene_by_actor:
+                earliest_scene_by_actor[actor.actor_id] = scene
+
+    missing_links: list[str] = []
+    misplaced_introductions: list[str] = []
+    for section in architecture.sections:
+        if not section.actor_explanations:
+            continue
+        section_scenes = scene_cards_by_section.get(section.section_id, [])
+        for explanation in section.actor_explanations:
+            matched = any(
+                actor.actor_id == explanation.actor_id
+                and actor.explanation_stage == explanation.stage
+                for scene in section_scenes
+                for actor in scene.actors
+            )
+            if not matched:
+                missing_links.append(
+                    f"{section.section_id}:{explanation.actor_id}:{explanation.stage}"
+                )
+                continue
+            if explanation.stage != "introduce":
+                continue
+            earliest_scene = earliest_scene_by_actor.get(explanation.actor_id)
+            if earliest_scene is None:
+                continue
+            tagged_earliest_scene = any(
+                actor.actor_id == explanation.actor_id
+                and actor.explanation_stage == "introduce"
+                for actor in earliest_scene.actors
+            )
+            if not tagged_earliest_scene:
+                misplaced_introductions.append(
+                    f"{explanation.actor_id}:{earliest_scene.scene_id}"
+                )
+    warnings: list[str] = []
+    if missing_links:
+        warnings.append(
+            "missing_actor_explanation_scene_links:"
+            + ",".join(missing_links)
+        )
+    if misplaced_introductions:
+        warnings.append(
+            "late_actor_introduction_scene_links:"
+            + ",".join(misplaced_introductions)
+        )
+    return warnings
+
+
 def _flatten_synthesis_primitives(
     synthesis_map: SynthesisMap,
 ) -> dict[str, SynthesisPrimitiveBase]:
-    flattened: dict[str, SynthesisPrimitiveBase] = {}
-    for family in SYNTHESIS_PRIMITIVE_FAMILIES:
-        for item in synthesis_map.primitives_by_family.get(family, []):
-            flattened[item.id] = item
-    return flattened
+    return {item.id: item for item in synthesis_map.primitives}
 
 
-def _primitive_family_lookup(synthesis_map: SynthesisMap) -> dict[str, str]:
-    family_by_primitive_id: dict[str, str] = {}
-    for family in SYNTHESIS_PRIMITIVE_FAMILIES:
-        for item in synthesis_map.primitives_by_family.get(family, []):
-            family_by_primitive_id[item.id] = family
-    return family_by_primitive_id
+def _primitive_substrate_lookup(synthesis_map: SynthesisMap) -> dict[str, str]:
+    return {item.id: item.substrate.value for item in synthesis_map.primitives}
 
 
 def _build_episode_synthesis_map_payload(
@@ -5233,13 +5962,11 @@ def _build_episode_synthesis_map_payload(
             primitive_ids.append(primitive_id)
 
     primitive_id_set = set(primitive_ids)
-    primitives_by_family: dict[str, list[dict[str, Any]]] = {}
-    for family in SYNTHESIS_PRIMITIVE_FAMILIES:
-        primitives_by_family[family] = [
-            item.model_dump(mode="json")
-            for item in synthesis_map.primitives_by_family.get(family, [])
-            if item.id in primitive_id_set
-        ]
+    primitives = [
+        item.model_dump(mode="json")
+        for item in synthesis_map.primitives
+        if item.id in primitive_id_set
+    ]
     payload = {
         "project_id": synthesis_map.project_id,
         "primitive_ids_by_role": {
@@ -5250,7 +5977,7 @@ def _build_episode_synthesis_map_payload(
             ]
             for role in ("core", "support", "recall")
         },
-        "primitives_by_family": primitives_by_family,
+        "primitives": primitives,
         "quality_score": synthesis_map.quality_score,
         "quality_notes": list(synthesis_map.quality_notes),
     }
@@ -5265,45 +5992,74 @@ def _build_episode_architecture_core_passages(
     primitive_lookup: dict[str, SynthesisPrimitiveBase],
     passage_lookup: dict[str, ExtractedPassage],
 ) -> list[dict[str, Any]]:
+    core_passages, _support_passages = _build_episode_architecture_passages(
+        driving_question=driving_question,
+        thematic_focus=thematic_focus,
+        episode_spine=episode_spine,
+        primitive_lookup=primitive_lookup,
+        passage_lookup=passage_lookup,
+    )
+    return core_passages
+
+
+def _build_episode_architecture_support_passages(
+    *,
+    driving_question: str,
+    thematic_focus: str,
+    episode_spine: EpisodeSpine,
+    primitive_lookup: dict[str, SynthesisPrimitiveBase],
+    passage_lookup: dict[str, ExtractedPassage],
+) -> list[dict[str, Any]]:
+    _core_passages, support_passages = _build_episode_architecture_passages(
+        driving_question=driving_question,
+        thematic_focus=thematic_focus,
+        episode_spine=episode_spine,
+        primitive_lookup=primitive_lookup,
+        passage_lookup=passage_lookup,
+    )
+    return support_passages
+
+
+def _build_episode_architecture_passages(
+    *,
+    driving_question: str,
+    thematic_focus: str,
+    episode_spine: EpisodeSpine,
+    primitive_lookup: dict[str, SynthesisPrimitiveBase],
+    passage_lookup: dict[str, ExtractedPassage],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     query_text = " ".join(
         part.strip()
         for part in (driving_question, thematic_focus)
         if part and part.strip()
     )
-    payload: list[dict[str, Any]] = []
+    core_refs, support_refs = _build_episode_architecture_passage_refs(
+        episode_spine=episode_spine,
+        primitive_lookup=primitive_lookup,
+    )
+    query_text_by_passage_id = _build_episode_planning_passage_query_texts(
+        episode_query_text=query_text,
+        passage_refs=[*core_refs, *support_refs],
+        primitive_lookup=primitive_lookup,
+    )
     seen_passage_ids: set[str] = set()
-    for primitive_id in episode_spine.core_primitive_ids:
-        primitive = primitive_lookup.get(primitive_id)
-        if primitive is None:
-            continue
-        for passage_id in primitive.core_passage_ids:
-            if passage_id in seen_passage_ids:
-                continue
-            passage = passage_lookup.get(passage_id)
-            if passage is None:
-                continue
-            seen_passage_ids.add(passage_id)
-            full_text = passage.full_text.strip() or passage.text
-            trimmed_passage = {
-                "passage_id": passage.passage_id,
-                "text": full_text,
-            }
-            _trim_candidate_texts_by_bm25_query_text(
-                query_text,
-                [trimmed_passage],
-                keep_fraction=0.15,
-            )
-            summary_text = str(trimmed_passage.get("text", "")).strip() or full_text
-            payload.append(
-                {
-                    "passage_id": passage.passage_id,
-                    "primitive_id": primitive_id,
-                    "book_id": passage.book_id,
-                    "chapter_ref": passage.chapter_ref,
-                    "summary_text": summary_text,
-                }
-            )
-    return payload
+    core_passages = _build_episode_architecture_passage_payload(
+        passage_refs=core_refs,
+        seen_passage_ids=seen_passage_ids,
+        passage_lookup=passage_lookup,
+        query_text=query_text,
+        query_text_by_passage_id=query_text_by_passage_id,
+        keep_fraction=0.20,
+    )
+    support_passages = _build_episode_architecture_passage_payload(
+        passage_refs=support_refs,
+        seen_passage_ids=seen_passage_ids,
+        passage_lookup=passage_lookup,
+        query_text=query_text,
+        query_text_by_passage_id=query_text_by_passage_id,
+        keep_fraction=0.10,
+    )
+    return core_passages, support_passages
 
 
 def _merge_actor_metric_dicts(metrics_items: Any) -> dict[str, Any]:
@@ -5332,11 +6088,7 @@ def _actor_linkage_counts(
     strategy: NarrativeStrategy,
     episode_plans: list[EpisodePlan],
 ) -> dict[str, int]:
-    primitives = [
-        primitive
-        for family in SYNTHESIS_PRIMITIVE_FAMILIES
-        for primitive in synthesis_map.primitives_by_family.get(family, [])
-    ]
+    primitives = list(synthesis_map.primitives)
     scenes = [scene for plan in episode_plans for scene in plan.scene_cards]
     return {
         "primitive_count": len(primitives),
@@ -5484,67 +6236,62 @@ def _build_human_grounding_warnings(
     return diagnostics, warnings
 
 
-_SPINE_PRIMITIVE_FAMILIES = frozenset({"epochal_turns", "decisions_and_nondecisions"})
-_SCENE_DETAIL_PRIMITIVE_FAMILIES = frozenset({"set_piece_scenes", "telling_details"})
-_HUMAN_GROUNDING_PRIMITIVE_FAMILIES = frozenset({"human_costs", "character_engines"})
-_SYSTEM_CONTEXT_PRIMITIVE_FAMILIES = frozenset(
-    {
-        "systems_and_operating_logics",
-        "coalitions_and_fault_lines",
-    }
-)
-_RECURRENCE_PRIMITIVE_FAMILIES = frozenset(
-    {"afterlives", "recurring_images_and_symbols"}
-)
+_SPINE_PRIMITIVE_SUBSTRATES = frozenset({"events", "acts"})
+_SCENE_DETAIL_PRIMITIVE_SUBSTRATES = frozenset({"events", "utterances", "artifacts"})
+_SYSTEM_CONTEXT_PRIMITIVE_SUBSTRATES = frozenset({"mechanisms", "conditions", "readings"})
 
 
 def _build_scene_card_family_warnings(
     *,
     strategy_episode: StrategyEpisode,
     primitive_pool_ids: set[str],
-    primitive_family_by_id: dict[str, str],
+    primitive_by_id: dict[str, SynthesisPrimitiveBase],
 ) -> list[str]:
-    families_present = {
-        primitive_family_by_id[primitive_id]
+    primitive_pool = [
+        primitive_by_id[primitive_id]
         for primitive_id in primitive_pool_ids
-        if primitive_id in primitive_family_by_id
+        if primitive_id in primitive_by_id
+    ]
+    substrates_present = {primitive.substrate.value for primitive in primitive_pool}
+    functions_present = {
+        function.value
+        for primitive in primitive_pool
+        for function in primitive.functions
     }
     warnings: list[str] = []
-    if not families_present:
+    if not primitive_pool:
         return warnings
 
-    if families_present.isdisjoint(_SPINE_PRIMITIVE_FAMILIES):
+    if substrates_present.isdisjoint(_SPINE_PRIMITIVE_SUBSTRATES):
         warnings.append(
-            "primitive_family_missing_spine: "
-            "episode primitive pool lacks epochal_turns/decisions_and_nondecisions"
+            "primitive_pool_missing_spine: "
+            "episode primitive pool lacks event/act grounding"
         )
-    if families_present.isdisjoint(_SCENE_DETAIL_PRIMITIVE_FAMILIES):
+    if "texture" not in functions_present and substrates_present.isdisjoint(
+        _SCENE_DETAIL_PRIMITIVE_SUBSTRATES
+    ):
         warnings.append(
-            "primitive_family_missing_scene_or_detail: "
-            "episode primitive pool lacks set_piece_scenes/telling_details"
+            "primitive_pool_missing_scene_or_detail: "
+            "episode primitive pool lacks texture-capable concrete primitives"
         )
-    if families_present.isdisjoint(_HUMAN_GROUNDING_PRIMITIVE_FAMILIES):
+    if not ({"cost", "stake"} & functions_present) and "actor_portraits" not in substrates_present:
         warnings.append(
-            "primitive_family_missing_human_grounding: "
-            "episode primitive pool lacks human_costs/character_engines"
+            "primitive_pool_missing_human_grounding: "
+            "episode primitive pool lacks cost/stake or actor-centered grounding"
         )
-    if families_present.isdisjoint(_SYSTEM_CONTEXT_PRIMITIVE_FAMILIES):
+    if substrates_present.isdisjoint(_SYSTEM_CONTEXT_PRIMITIVE_SUBSTRATES):
         warnings.append(
-            "primitive_family_missing_system_or_context: "
-            "episode primitive pool lacks systems_and_operating_logics/"
-            "coalitions_and_fault_lines"
+            "primitive_pool_missing_system_or_context: "
+            "episode primitive pool lacks mechanism/condition/reading support"
         )
 
     support_primitive_count = len(
         strategy_episode.episode_spine.support_primitive_roles
     ) + len(strategy_episode.episode_spine.recall_primitive_ids)
-    if support_primitive_count >= 1 and families_present.isdisjoint(
-        _RECURRENCE_PRIMITIVE_FAMILIES
-    ):
+    if support_primitive_count >= 1 and "recurrence" not in functions_present:
         warnings.append(
-            "primitive_family_missing_recurrence: "
-            "support-heavy episode primitive pool lacks afterlives/"
-            "recurring_images_and_symbols"
+            "primitive_pool_missing_recurrence: "
+            "support-heavy episode primitive pool lacks recurrence-tagged primitives"
         )
     return warnings
 
@@ -5970,13 +6717,20 @@ class PipelineOrchestrator:
             self.llm, max_retry_attempts=_retries("passage_extraction")
         )
         self.synthesis_primitives_agent = SynthesisPrimitivesAgent(
-            self.llm, max_retry_attempts=_retries("synthesis_primitives")
+            self.llm, max_retry_attempts=_retries("primitive_substrate_extraction")
         )
+        self.primitive_function_tagging_agents = {
+            substrate: PrimitiveFunctionTaggingAgent(
+                self.llm,
+                substrate=substrate,
+                max_retry_attempts=_retries(
+                    f"primitive_function_tagging_{substrate}"
+                ),
+            )
+            for substrate in PRIMITIVE_SUBSTRATES
+        }
         self.narrative_strategy_agent = NarrativeStrategyAgent(
             self.llm, max_retry_attempts=_retries("narrative_strategy")
-        )
-        self.primitive_enrichment_agent = PrimitiveEnrichmentAgent(
-            self.llm, max_retry_attempts=_retries("primitive_enrichment")
         )
         self.episode_architecture_agent = EpisodeArchitectureAgent(
             self.llm, max_retry_attempts=_retries("episode_architecture")
@@ -6064,211 +6818,238 @@ class PipelineOrchestrator:
             config=pipeline_config,
             status=ProjectStatus.INGESTING,
         )
-
-        # Phase 1: Ingest & Index (parallel per book)
-        logger.info("Phase 1: Ingest & Index (%d books)", len(source_paths))
-        book_tasks = []
-        for i, path in enumerate(source_paths):
-            title = titles[i] if titles and i < len(titles) else Path(path).stem
-            author = authors[i] if authors and i < len(authors) else "Unknown"
-            book_tasks.append(
-                self._ingest_and_index_book(
-                    path,
-                    title,
-                    author,
-                    project_id,
-                    project_dir,
-                    pipeline_config,
-                    theme=theme,
-                    sub_themes=sub_themes,
-                    theme_elaboration=theme_elaboration,
+        try:
+            # Phase 1: Ingest & Index (parallel per book)
+            logger.info("Phase 1: Ingest & Index (%d books)", len(source_paths))
+            book_tasks = []
+            for i, path in enumerate(source_paths):
+                title = titles[i] if titles and i < len(titles) else Path(path).stem
+                author = authors[i] if authors and i < len(authors) else "Unknown"
+                book_tasks.append(
+                    self._ingest_and_index_book(
+                        path,
+                        title,
+                        author,
+                        i,
+                        project_id,
+                        project_dir,
+                        pipeline_config,
+                        theme=theme,
+                        sub_themes=sub_themes,
+                        theme_elaboration=theme_elaboration,
+                    )
                 )
-            )
-        book_results = await asyncio.gather(*book_tasks, return_exceptions=True)
+            book_results = await asyncio.gather(*book_tasks, return_exceptions=True)
 
-        successful_books: list[BookRecord] = []
-        for i, result in enumerate(book_results):
-            if isinstance(result, Exception):
-                logger.error("Book %d failed: %s", i, result)
-                self.run_logger.log("book_ingest_failed", index=i, error=str(result))
-            else:
-                successful_books.append(result)
+            successful_books: list[BookRecord] = []
+            for i, result in enumerate(book_results):
+                if isinstance(result, Exception):
+                    logger.error("Book %d failed: %s", i, result)
+                    self.run_logger.log("book_ingest_failed", index=i, error=str(result))
+                else:
+                    successful_books.append(result)
 
-        if len(successful_books) < 2:
-            project = project.model_copy(update={"status": ProjectStatus.FAILED})
+            project = project.model_copy(update={"books": successful_books})
+            if len(successful_books) < 2:
+                raise RuntimeError(
+                    f"Only {len(successful_books)} books ingested successfully. Minimum 2 required."
+                )
+
+            project = project.model_copy(update={"status": ProjectStatus.ANALYZING})
             _save_json(project_dir / "thematic_project.json", project)
-            raise RuntimeError(
-                f"Only {len(successful_books)} books ingested successfully. Minimum 2 required."
-            )
-
-        project = project.model_copy(
-            update={
-                "books": successful_books,
-                "status": ProjectStatus.ANALYZING,
-            }
-        )
-        _save_json(project_dir / "thematic_project.json", project)
-        self.run_logger.log(
-            "convergence_barrier",
-            successful_books=len(successful_books),
-            total_words=sum(b.total_words for b in successful_books),
-        )
-
-        # Phase 2: Thematic Intelligence (sequential)
-        logger.info("Phase 2: Thematic Intelligence")
-
-        axes, actor_metadata, actor_metrics = await self._decompose_theme(
-            project, project_dir
-        )
-        corpus = await self._extract_passages(project, axes, project_dir)
-        synthesis_primitives, synthesis_actor_metrics = await self._map_synthesis(
-            project,
-            corpus,
-            project_dir,
-            actor_metadata,
-        )
-        actor_metrics["synthesis_primitives"] = synthesis_actor_metrics.get(
-            "primitives", {}
-        )
-
-        if (
-            synthesis_primitives.quality_score
-            < pipeline_config.synthesis_quality_threshold
-        ):
-            logger.warning(
-                "Synthesis quality %.2f below threshold %.2f. "
-                "Books may lack thematic overlap for strong synthesis.",
-                synthesis_primitives.quality_score,
-                pipeline_config.synthesis_quality_threshold,
-            )
             self.run_logger.log(
-                "synthesis_quality_warning",
-                score=synthesis_primitives.quality_score,
-                threshold=pipeline_config.synthesis_quality_threshold,
+                "convergence_barrier",
+                successful_books=len(successful_books),
+                total_words=sum(b.total_words for b in successful_books),
             )
 
-        strategy, strategy_actor_metrics = await self._choose_narrative_strategy(
-            project,
-            synthesis_primitives,
-            project_dir,
-            actor_metadata,
-        )
-        actor_metrics["narrative_strategy"] = strategy_actor_metrics
-        synthesis_map = await self._enrich_selected_primitives(
-            project, synthesis_primitives, strategy, corpus, project_dir, actor_metadata
-        )
-        project = self._resolve_episode_count_from_strategy(project, strategy)
-        _save_json(project_dir / "thematic_project.json", project)
+            # Phase 2: Thematic Intelligence (sequential)
+            logger.info("Phase 2: Thematic Intelligence")
 
-        project = project.model_copy(update={"status": ProjectStatus.PLANNING})
-        (
-            episode_architectures,
-            architecture_actor_metrics,
-        ) = await self._build_episode_architectures(
-            project,
-            synthesis_map,
-            strategy,
-            corpus,
-            project_dir,
-            actor_metadata,
-        )
-        actor_metrics["episode_architecture"] = architecture_actor_metrics
-        episode_plans, planning_actor_metrics = await self._plan_series(
-            project,
-            synthesis_map,
-            strategy,
-            episode_architectures,
-            corpus,
-            project_dir,
-            actor_metadata,
-        )
-        actor_metrics["episode_planning"] = planning_actor_metrics
-
-        # Phase 3: Episode Production (parallel per episode)
-        logger.info("Phase 3: Episode Production (%d episodes)", len(episode_plans))
-        project = project.model_copy(update={"status": ProjectStatus.PRODUCING})
-
-        sem = asyncio.Semaphore(max(1, pipeline_config.episode_write_concurrency))
-        spoken_sem = asyncio.Semaphore(
-            max(
-                1,
-                pipeline_config.spoken_delivery_concurrency
-                or pipeline_config.episode_write_concurrency,
+            axes, actor_metadata, actor_metrics = await self._decompose_theme(
+                project, project_dir
             )
-        )
-        host_policy = _build_host_policy_payload(strategy.narrator_profile)
-        strategy_episode_by_number = {
-            episode.episode_number: episode for episode in strategy.episodes
-        }
-        architecture_by_number = {
-            episode.episode_number: episode for episode in episode_architectures
-        }
-        ep_tasks = [
-            self._produce_episode(
-                plan,
-                strategy_episode_by_number[plan.episode_number],
-                architecture_by_number[plan.episode_number],
+            corpus = await self._extract_passages(project, axes, project_dir)
+            synthesis_primitives, synthesis_actor_metrics = await self._map_synthesis(
                 project,
                 corpus,
+                project_dir,
                 actor_metadata,
-                project_dir,
-                host_policy,
-                sem,
-                spoken_sem,
-                strategy.series_explanation_registry,
             )
-            for plan in episode_plans
-        ]
-        ep_results = await asyncio.gather(*ep_tasks, return_exceptions=True)
-
-        spoken_scripts: list[tuple[int, SpokenScript]] = []
-        for result in ep_results:
-            if isinstance(result, Exception):
-                logger.error("Episode production failed: %s", result)
-            else:
-                spoken_scripts.append(result)
-        spoken_scripts.sort(key=lambda x: x[0])
-        self._write_passage_utilization(
-            project=project,
-            corpus=corpus,
-            episode_plans=episode_plans,
-            project_dir=project_dir,
-            episode_numbers=[episode_number for episode_number, _ in spoken_scripts],
-        )
-        actor_metrics["writing"] = self._build_writing_actor_metrics(
-            project_dir, spoken_scripts
-        )
-        self._write_actor_metadata_metrics(
-            project_dir=project_dir,
-            actor_metadata=actor_metadata,
-            synthesis_map=synthesis_map,
-            strategy=strategy,
-            episode_plans=episode_plans,
-            metrics=actor_metrics,
-        )
-
-        # Phase 4: Audio Rendering (parallel per episode)
-        logger.info("Phase 4: Audio Rendering")
-        audio_sem = asyncio.Semaphore(pipeline_config.tts_concurrency)
-        audio_tasks = [
-            self._render_episode_audio(
-                ep_num,
-                spoken,
-                project.config,
-                project_dir,
-                audio_sem,
-                skip_audio=pipeline_config.skip_audio,
+            actor_metrics["synthesis_primitives"] = synthesis_actor_metrics.get(
+                "primitives", {}
             )
-            for ep_num, spoken in spoken_scripts
-        ]
-        await asyncio.gather(*audio_tasks, return_exceptions=True)
 
-        project = project.model_copy(update={"status": ProjectStatus.COMPLETE})
-        _save_json(project_dir / "thematic_project.json", project)
-        self.run_logger.log("pipeline_complete", project_id=project_id)
-        logger.info("Pipeline complete. Artifacts at %s", project_dir)
+            if (
+                synthesis_primitives.quality_score
+                < pipeline_config.synthesis_quality_threshold
+            ):
+                logger.warning(
+                    "Synthesis quality %.2f below threshold %.2f. "
+                    "Books may lack thematic overlap for strong synthesis.",
+                    synthesis_primitives.quality_score,
+                    pipeline_config.synthesis_quality_threshold,
+                )
+                self.run_logger.log(
+                    "synthesis_quality_warning",
+                    score=synthesis_primitives.quality_score,
+                    threshold=pipeline_config.synthesis_quality_threshold,
+                )
 
-        return project
+            strategy, strategy_actor_metrics = await self._choose_narrative_strategy(
+                project,
+                synthesis_primitives,
+                project_dir,
+                actor_metadata,
+            )
+            actor_metrics["narrative_strategy"] = strategy_actor_metrics
+            synthesis_map = await self._materialize_selected_primitives(
+                project,
+                synthesis_primitives,
+                strategy,
+                project_dir,
+            )
+            project = self._resolve_episode_count_from_strategy(project, strategy)
+            _save_json(project_dir / "thematic_project.json", project)
+
+            project = project.model_copy(update={"status": ProjectStatus.PLANNING})
+            (
+                episode_architectures,
+                architecture_actor_metrics,
+            ) = await self._build_episode_architectures(
+                project,
+                synthesis_map,
+                strategy,
+                corpus,
+                project_dir,
+                actor_metadata,
+            )
+            actor_metrics["episode_architecture"] = architecture_actor_metrics
+            episode_plans, planning_actor_metrics = await self._plan_series(
+                project,
+                synthesis_map,
+                strategy,
+                episode_architectures,
+                corpus,
+                project_dir,
+                actor_metadata,
+            )
+            actor_metrics["episode_planning"] = planning_actor_metrics
+
+            # Phase 3: Episode Production (parallel per episode)
+            logger.info("Phase 3: Episode Production (%d episodes)", len(episode_plans))
+            project = project.model_copy(update={"status": ProjectStatus.PRODUCING})
+
+            sem = asyncio.Semaphore(max(1, pipeline_config.episode_write_concurrency))
+            spoken_sem = asyncio.Semaphore(
+                max(
+                    1,
+                    pipeline_config.spoken_delivery_concurrency
+                    or pipeline_config.episode_write_concurrency,
+                )
+            )
+            host_policy = _build_host_policy_payload(strategy.narrator_profile)
+            retained_primitive_lookup = _flatten_synthesis_primitives(synthesis_map)
+            strategy_episode_by_number = {
+                episode.episode_number: episode for episode in strategy.episodes
+            }
+            architecture_by_number = {
+                episode.episode_number: episode
+                for episode in episode_architectures
+            }
+            ep_tasks = [
+                self._produce_episode(
+                    plan,
+                    strategy_episode_by_number[plan.episode_number],
+                    architecture_by_number[plan.episode_number],
+                    project,
+                    corpus,
+                    actor_metadata,
+                    project_dir,
+                    host_policy,
+                    retained_primitive_lookup,
+                    sem,
+                    spoken_sem,
+                    strategy.series_explanation_registry,
+                )
+                for plan in episode_plans
+            ]
+            ep_results = await asyncio.gather(*ep_tasks, return_exceptions=True)
+
+            spoken_scripts: list[tuple[int, SpokenScript]] = []
+            episode_errors = [
+                result for result in ep_results if isinstance(result, Exception)
+            ]
+            for error in episode_errors:
+                logger.error("Episode production failed: %s", error)
+            if episode_errors:
+                raise RuntimeError(
+                    "Episode production failed for "
+                    f"{len(episode_errors)} episode(s): {episode_errors[0]}"
+                )
+            for result in ep_results:
+                if not isinstance(result, Exception):
+                    spoken_scripts.append(result)
+            spoken_scripts.sort(key=lambda x: x[0])
+            self._write_passage_utilization(
+                project=project,
+                corpus=corpus,
+                episode_plans=episode_plans,
+                project_dir=project_dir,
+                episode_numbers=[
+                    episode_number for episode_number, _ in spoken_scripts
+                ],
+            )
+            actor_metrics["writing"] = self._build_writing_actor_metrics(
+                project_dir, spoken_scripts
+            )
+            self._write_actor_metadata_metrics(
+                project_dir=project_dir,
+                actor_metadata=actor_metadata,
+                synthesis_map=synthesis_map,
+                strategy=strategy,
+                episode_plans=episode_plans,
+                metrics=actor_metrics,
+            )
+
+            # Phase 4: Audio Rendering (parallel per episode)
+            logger.info("Phase 4: Audio Rendering")
+            audio_sem = asyncio.Semaphore(pipeline_config.tts_concurrency)
+            audio_tasks = [
+                self._render_episode_audio(
+                    ep_num,
+                    spoken,
+                    project.config,
+                    project_dir,
+                    audio_sem,
+                    skip_audio=pipeline_config.skip_audio,
+                )
+                for ep_num, spoken in spoken_scripts
+            ]
+            audio_results = await asyncio.gather(*audio_tasks, return_exceptions=True)
+            audio_errors = [
+                result for result in audio_results if isinstance(result, Exception)
+            ]
+            if audio_errors:
+                raise RuntimeError(
+                    "Audio rendering failed for "
+                    f"{len(audio_errors)} episode(s): {audio_errors[0]}"
+                )
+
+            project = project.model_copy(update={"status": ProjectStatus.COMPLETE})
+            _save_json(project_dir / "thematic_project.json", project)
+            self.run_logger.log("pipeline_complete", project_id=project_id)
+            logger.info("Pipeline complete. Artifacts at %s", project_dir)
+
+            return project
+        except Exception as exc:
+            _persist_failed_project_state(
+                project=project,
+                project_dir=project_dir,
+                run_logger=self.run_logger,
+                exc=exc,
+            )
+            raise
 
     async def synthesize_audio_from_run(self, run_dir: Path) -> dict[str, Any]:
         project_dir = run_dir.resolve()
@@ -6355,6 +7136,7 @@ class PipelineOrchestrator:
         source_path: str,
         title: str,
         author: str,
+        book_slot: int,
         project_id: str,
         project_dir: Path,
         config: PipelineConfig,
@@ -6411,7 +7193,13 @@ class PipelineOrchestrator:
                 max_chunk_words=config.chunk_max_words,
                 overlap_words=config.chunk_overlap_words,
             )
-            chunks = chunk_text(raw_text, book_id, chapters, chunking_config)
+            chunks = chunk_text(
+                raw_text,
+                book_id,
+                chapters,
+                chunking_config,
+                book_slot=book_slot,
+            )
             for c in chunks:
                 c.metadata["author"] = author
                 c.metadata["title"] = title
@@ -6540,6 +7328,12 @@ class PipelineOrchestrator:
                 books=project.books,
                 axis_count_min=project.config.min_axes,
                 axis_count_max=project.config.max_axes,
+                actor_count_min=(
+                    5 if project.config.podcast_mode == PodcastMode.MINIFIED else 10
+                ),
+                actor_count_max=(
+                    12 if project.config.podcast_mode == PodcastMode.MINIFIED else 40
+                ),
                 book_summaries=book_summaries,
             )
             expected_book_ids = [book.book_id for book in project.books]
@@ -7129,7 +7923,7 @@ class PipelineOrchestrator:
                             continue
                         candidates.append(
                             {
-                                "passage_id": uuid4().hex,
+                                "passage_id": hit.chunk_id,
                                 "book_id": bid,
                                 "chunk_ids": [hit.chunk_id],
                                 "text": hit.text,
@@ -7438,7 +8232,7 @@ class PipelineOrchestrator:
         corpus: ThematicCorpus,
         project_dir: Path,
         actor_metadata: ActorMetadata | None = None,
-    ) -> tuple[SynthesisPrimitivesArtifact, dict[str, Any]]:
+    ) -> tuple[PrimitiveFunctionTaggingArtifact, dict[str, Any]]:
         actor_metadata = actor_metadata or ActorMetadata(project_id=project.project_id)
         async with _stage_log(
             self.run_logger,
@@ -7463,7 +8257,6 @@ class PipelineOrchestrator:
             synthesis_trim_tiers = {
                 "top_tier_passages": 0,
                 "mid_tier_passages": 0,
-                "next_tier_passages": 0,
                 "tail_tier_passages": 0,
             }
             synthesis_total_cap = max(1, project.config.synthesis_total_passage_cap)
@@ -7516,10 +8309,8 @@ class PipelineOrchestrator:
                             passages,
                             top_fraction=project.config.synthesis_trim_top_fraction,
                             mid_fraction=project.config.synthesis_trim_mid_fraction,
-                            next_fraction=project.config.synthesis_trim_next_fraction,
                             top_keep_fraction=project.config.synthesis_trim_top_keep_fraction,
                             mid_keep_fraction=project.config.synthesis_trim_mid_keep_fraction,
-                            next_keep_fraction=project.config.synthesis_trim_next_keep_fraction,
                             tail_keep_fraction=project.config.synthesis_trim_tail_keep_fraction,
                         )
                     )
@@ -7568,11 +8359,12 @@ class PipelineOrchestrator:
 
             primitives_payload = self.synthesis_primitives_agent.build_payload(
                 project_id=project.project_id,
+                podcast_mode=project.config.podcast_mode.value,
                 axes_summary=axes_summary,
                 passages_by_axis=passages_summary,
                 cross_book_pairs=cross_pairs,
                 book_metadata=book_metadata,
-                primitive_target_ranges=synthesis_primitive_target_ranges_for_mode(
+                primitive_target_ranges=primitive_substrate_target_ranges_for_mode(
                     project.config.podcast_mode
                 ),
                 actor_metadata=compact_actor_registry(actor_metadata),
@@ -7584,17 +8376,15 @@ class PipelineOrchestrator:
                 primitives,
                 actor_metadata,
             )
-            pre_trim_counts = _primitive_counts_by_family(primitives)
-            pre_trim_total = sum(pre_trim_counts.values())
-            primitives = _trim_synthesis_primitives_by_family_caps(
-                primitives,
-                family_max_counts=synthesis_primitive_target_max_counts_for_mode(
-                    project.config.podcast_mode
-                ),
+            extraction_counts = _primitive_counts_by_substrate(primitives)
+            _save_json(project_dir / "substrate_primitives.json", primitives)
+            tagged_primitives, tagging_metrics = await self._tag_substrate_primitives(
+                project=project,
+                corpus=corpus,
+                project_dir=project_dir,
+                primitives=primitives,
+                actor_metadata=actor_metadata,
             )
-            post_trim_counts = _primitive_counts_by_family(primitives)
-            post_trim_total = sum(post_trim_counts.values())
-            _save_json(project_dir / "synthesis_primitives.json", primitives)
 
             ctx["output_summary"] = {
                 "selected_axes": len(selected_axes),
@@ -7606,34 +8396,124 @@ class PipelineOrchestrator:
                 "synthesis_trim_keep_fractions": {
                     "top_fraction": project.config.synthesis_trim_top_fraction,
                     "mid_fraction": project.config.synthesis_trim_mid_fraction,
-                    "next_fraction": project.config.synthesis_trim_next_fraction,
                     "tail_fraction": max(
                         0.0,
                         1.0
                         - project.config.synthesis_trim_top_fraction
-                        - project.config.synthesis_trim_mid_fraction
-                        - project.config.synthesis_trim_next_fraction,
+                        - project.config.synthesis_trim_mid_fraction,
                     ),
                     "top_keep_fraction": project.config.synthesis_trim_top_keep_fraction,
                     "mid_keep_fraction": project.config.synthesis_trim_mid_keep_fraction,
-                    "next_keep_fraction": project.config.synthesis_trim_next_keep_fraction,
                     "tail_keep_fraction": project.config.synthesis_trim_tail_keep_fraction,
                 },
                 "cap_report": cap_report,
-                "primitive_counts_by_family_pre_trim": pre_trim_counts,
-                "primitive_counts_by_family": post_trim_counts,
-                "primitive_count_pre_trim": pre_trim_total,
-                "primitive_count_post_trim": post_trim_total,
-                "quality_score": primitives.quality_score,
+                "primitive_counts_by_substrate": extraction_counts,
+                "tagged_counts_by_substrate": tagging_metrics["tagged_counts_by_substrate"],
+                "primitive_count": len(primitives.primitives),
+                "tagged_primitive_count": len(tagged_primitives.primitives),
+                "quality_score": tagged_primitives.quality_score,
             }
-            return primitives, {
+            return tagged_primitives, {
                 "primitives": primitive_actor_metrics,
             }
+
+    async def _tag_substrate_primitives(
+        self,
+        *,
+        project: ThematicProject,
+        corpus: ThematicCorpus,
+        project_dir: Path,
+        primitives: SynthesisPrimitivesArtifact,
+        actor_metadata: ActorMetadata | None = None,
+    ) -> tuple[PrimitiveFunctionTaggingArtifact, dict[str, Any]]:
+        actor_metadata = actor_metadata or ActorMetadata(project_id=project.project_id)
+        passage_lookup = _build_passage_lookup(corpus)
+        tagging_sem = asyncio.Semaphore(_PRIMITIVE_ANNOTATION_BATCH_CONCURRENCY)
+        overlay_by_primitive_id: dict[str, PrimitiveEnrichmentOverlay] = {}
+
+        async def _tag_substrate_batch(
+            substrate: str,
+            substrate_primitives: list[BaseSynthesisPrimitive],
+        ) -> PrimitiveFunctionTaggingOverlayArtifact:
+            async with tagging_sem:
+                batch_actor_ids = collect_actor_ids_for_primitives(substrate_primitives)
+                batch_actor_metadata = select_actor_metadata_subset(
+                    actor_metadata,
+                    batch_actor_ids,
+                )
+                stage_name = f"primitive_function_tagging_{substrate}"
+                async with _stage_log(
+                    self.run_logger,
+                    stage_name,
+                    project_dir,
+                    substrate=substrate,
+                    primitive_count=len(substrate_primitives),
+                ) as batch_ctx:
+                    payload = self.primitive_function_tagging_agents[substrate].build_payload(
+                        project_id=project.project_id,
+                        podcast_mode=project.config.podcast_mode.value,
+                        base_primitives=[
+                            primitive.model_dump(mode="json")
+                            for primitive in substrate_primitives
+                        ],
+                        passage_list=_build_function_tagging_passage_list(
+                            primitives=substrate_primitives,
+                            passage_lookup=passage_lookup,
+                            actor_metadata=batch_actor_metadata,
+                            trim_profile=_FUNCTION_TAGGING_PRIMITIVE_EVIDENCE_TRIM_PROFILE,
+                        ),
+                        actor_metadata=_build_primitive_actor_metadata_payload(
+                            batch_actor_metadata
+                        ),
+                    )
+                    tagged_batch = await asyncio.to_thread(
+                        self.primitive_function_tagging_agents[substrate].run,
+                        payload,
+                    )
+                    batch_ctx["output_summary"] = {
+                        "substrate": substrate,
+                        "primitive_count": len(tagged_batch.overlays_by_id),
+                    }
+                return tagged_batch
+
+        tagging_tasks = []
+        for substrate, substrate_primitives in primitives.primitives_by_substrate().items():
+            if not substrate_primitives:
+                continue
+            tagging_tasks.append(
+                _tag_substrate_batch(
+                    substrate,
+                    substrate_primitives,
+                )
+            )
+        for tagged_batch in await asyncio.gather(*tagging_tasks):
+            overlay_by_primitive_id.update(tagged_batch.overlays_by_id)
+
+        tagged_primitives = PrimitiveFunctionTaggingArtifact(
+            project_id=project.project_id,
+            primitives=[
+                apply_primitive_enrichment_overlay(
+                    primitive,
+                    overlay_by_primitive_id.get(
+                        primitive.id,
+                        PrimitiveEnrichmentOverlay(),
+                    ),
+                )
+                for primitive in primitives.primitives
+            ],
+            quality_score=primitives.quality_score,
+            quality_notes=list(primitives.quality_notes),
+        )
+        _save_json(project_dir / "tagged_primitives.json", tagged_primitives)
+        return tagged_primitives, {
+            "primitive_counts_by_substrate": _primitive_counts_by_substrate(primitives),
+            "tagged_counts_by_substrate": _primitive_counts_by_substrate(tagged_primitives),
+        }
 
     async def _choose_narrative_strategy(
         self,
         project: ThematicProject,
-        synthesis_map: SynthesisPrimitivesArtifact,
+        synthesis_map: PrimitiveFunctionTaggingArtifact,
         project_dir: Path,
         actor_metadata: ActorMetadata | None = None,
     ) -> tuple[NarrativeStrategy, dict[str, Any]]:
@@ -7667,11 +8547,10 @@ class PipelineOrchestrator:
             strategy = await asyncio.to_thread(
                 self.narrative_strategy_agent.run, payload
             )
-            cleaned_episodes, strategy_actor_metrics = clean_strategy_actor_links(
-                strategy.episodes,
+            strategy, strategy_actor_metrics = clean_narrative_strategy_actor_links(
+                strategy,
                 actor_metadata,
             )
-            strategy = strategy.model_copy(update={"episodes": cleaned_episodes})
             _save_json(project_dir / "narrative_strategy.json", strategy)
             strategy_warnings = _build_narrative_strategy_warnings(
                 strategy=strategy,
@@ -7688,16 +8567,13 @@ class PipelineOrchestrator:
             }
             return strategy, strategy_actor_metrics
 
-    async def _enrich_selected_primitives(
+    async def _materialize_selected_primitives(
         self,
         project: ThematicProject,
-        synthesis_primitives: SynthesisPrimitivesArtifact,
+        synthesis_primitives: PrimitiveFunctionTaggingArtifact,
         strategy: NarrativeStrategy,
-        corpus: ThematicCorpus,
         project_dir: Path,
-        actor_metadata: ActorMetadata | None = None,
     ) -> SynthesisMap:
-        actor_metadata = actor_metadata or ActorMetadata(project_id=project.project_id)
         selected_primitive_ids = _collect_strategy_selected_primitive_ids(strategy)
         base_primitive_by_id = _flatten_base_synthesis_primitives(synthesis_primitives)
         selected_base_primitives: list[BaseSynthesisPrimitive] = []
@@ -7713,126 +8589,40 @@ class PipelineOrchestrator:
                 f"narrative_strategy selected unknown primitive ids: {missing_primitive_ids[:10]}"
             )
 
-        selected_by_family: dict[str, list[BaseSynthesisPrimitive]] = {
-            family: [] for family in SYNTHESIS_PRIMITIVE_FAMILIES
-        }
-        for primitive in selected_base_primitives:
-            selected_by_family.setdefault(primitive.family, []).append(primitive)
-
         async with _stage_log(
             self.run_logger,
-            "primitive_enrichment",
+            "selected_primitives",
             project_dir,
             selected_primitive_count=len(selected_base_primitives),
         ) as ctx:
-            passage_lookup = _build_passage_lookup(corpus)
-            enriched_primitive_by_id: dict[str, SynthesisPrimitiveBase] = {}
-            family_sem = asyncio.Semaphore(_PRIMITIVE_ENRICHMENT_FAMILY_CONCURRENCY)
-
-            async def _enrich_family(
-                family: str,
-                family_primitives: list[BaseSynthesisPrimitive],
-            ) -> dict[str, SynthesisPrimitiveBase]:
-                async with family_sem:
-                    family_actor_ids = {
-                        actor_id
-                        for primitive in family_primitives
-                        for actor_id in primitive.actor_ids
-                        if actor_id
-                    }
-                    family_actor_metadata = select_actor_metadata_subset(
-                        actor_metadata,
-                        family_actor_ids,
-                    )
-                    payload = self.primitive_enrichment_agent.build_payload(
-                        project_id=project.project_id,
-                        family=family,
-                        base_primitives=[
-                            primitive.model_dump(mode="json")
-                            for primitive in family_primitives
-                        ],
-                        evidence_by_primitive_id=_build_primitive_enrichment_evidence_by_primitive_id(
-                            family=family,
-                            primitives=family_primitives,
-                            passage_lookup=passage_lookup,
-                            actor_metadata=family_actor_metadata,
-                        ),
-                        actor_metadata=_build_primitive_enrichment_actor_metadata_payload(
-                            family_actor_metadata
-                        ),
-                        narrator_profile=strategy.narrator_profile.model_dump(
-                            mode="json"
-                        ),
-                    )
-                    enrichment = await asyncio.to_thread(
-                        self.primitive_enrichment_agent.run,
-                        payload,
-                    )
-                    delta_by_id = {
-                        item.id: item.model_dump(mode="json")
-                        for item in enrichment.enriched_primitives
-                    }
-                    primitive_model = _ENRICHED_PRIMITIVE_MODEL_BY_FAMILY[family]
-                    enriched_family: dict[str, SynthesisPrimitiveBase] = {}
-                    for primitive in family_primitives:
-                        delta = delta_by_id.get(primitive.id)
-                        if delta is None:
-                            raise RuntimeError(
-                                "primitive_enrichment omitted selected primitive "
-                                f"{primitive.id} in family {family}"
-                            )
-                        merged_payload = primitive.model_dump(mode="json")
-                        merged_payload.update(delta)
-                        enriched_family[primitive.id] = primitive_model.model_validate(
-                            merged_payload
-                        )
-                    return enriched_family
-
-            family_tasks = [
-                _enrich_family(family, family_primitives)
-                for family in SYNTHESIS_PRIMITIVE_FAMILIES
-                if (family_primitives := selected_by_family.get(family, []))
-            ]
-            for family_result in await asyncio.gather(*family_tasks):
-                enriched_primitive_by_id.update(family_result)
-
-            primitives_by_family: dict[str, list[SynthesisPrimitiveBase]] = {
-                family: [] for family in SYNTHESIS_PRIMITIVE_FAMILIES
-            }
-            for primitive in selected_base_primitives:
-                enriched = enriched_primitive_by_id.get(primitive.id)
-                if enriched is None:
-                    raise RuntimeError(
-                        f"Missing enriched primitive for selected primitive {primitive.id}"
-                    )
-                primitives_by_family[primitive.family].append(enriched)
-
-            gloss_warnings = _build_enrichment_gloss_warnings(
-                [item for items in primitives_by_family.values() for item in items]
+            retained_primitives: list[SynthesisPrimitiveBase] = list(
+                selected_base_primitives
             )
+            gloss_warnings = _build_narration_hook_gloss_warnings(retained_primitives)
             for warning in gloss_warnings:
                 logger.warning("%s", warning)
 
             synthesis_map = SynthesisMap(
                 project_id=project.project_id,
-                primitives_by_family=primitives_by_family,
+                primitives=retained_primitives,
                 quality_score=synthesis_primitives.quality_score,
                 quality_notes=[
                     *list(synthesis_primitives.quality_notes),
                     *gloss_warnings,
                 ],
             )
-            _save_json(project_dir / "synthesis_map.json", synthesis_map)
+            _save_json(project_dir / "retained_primitives.json", synthesis_map)
             ctx["output_summary"] = {
                 "selected_primitive_count": len(selected_base_primitives),
-                "enriched_family_count": sum(
+                "selected_substrate_count": sum(
                     1
-                    for family in SYNTHESIS_PRIMITIVE_FAMILIES
-                    if selected_by_family.get(family)
+                    for substrate in PRIMITIVE_SUBSTRATES
+                    if any(
+                        primitive.substrate.value == substrate
+                        for primitive in selected_base_primitives
+                    )
                 ),
-                "retained_primitive_count": sum(
-                    len(items) for items in synthesis_map.primitives_by_family.values()
-                ),
+                "retained_primitive_count": len(synthesis_map.primitives),
                 "warning_count": len(gloss_warnings),
             }
             return synthesis_map
@@ -7953,11 +8743,11 @@ class PipelineOrchestrator:
                             primitive_ids_by_role,
                         )
                     )
-                    episode_actor_ids = {
-                        actor.actor_id
-                        for actor in episode.actor_arc_directives
-                        if actor.actor_id
-                    }
+                    episode_actor_ids = _collect_episode_actor_ids(
+                        strategy_episode=episode,
+                        primitive_ids=primitive_ids,
+                        primitive_lookup=primitive_lookup,
+                    )
                     episode_actor_metadata = select_actor_metadata_subset(
                         actor_metadata,
                         episode_actor_ids,
@@ -7969,14 +8759,26 @@ class PipelineOrchestrator:
                         primitive_lookup=primitive_lookup,
                         passage_lookup=passage_lookup,
                     )
+                    support_passages = _build_episode_architecture_support_passages(
+                        driving_question=episode.episode_spine.listener_problem,
+                        thematic_focus=episode.thematic_focus,
+                        episode_spine=episode.episode_spine,
+                        primitive_lookup=primitive_lookup,
+                        passage_lookup=passage_lookup,
+                    )
                     payload = self.episode_architecture_agent.build_payload(
                         episode=episode.model_dump(mode="json"),
                         synthesis_map=episode_synthesis_map_payload,
                         project_metadata=project_metadata,
                         core_passages=core_passages,
+                        support_passages=support_passages,
                         series_explanation_registry=[
                             item.model_dump(mode="json")
                             for item in strategy.series_explanation_registry
+                        ],
+                        series_actor_explanation_registry=[
+                            item.model_dump(mode="json")
+                            for item in strategy.series_actor_explanation_registry
                         ],
                         narrator_profile=strategy.narrator_profile.model_dump(
                             mode="json"
@@ -8085,7 +8887,6 @@ class PipelineOrchestrator:
                 )
             passage_lookup = _build_passage_lookup(corpus)
             primitive_lookup = _flatten_synthesis_primitives(synthesis_map)
-            primitive_family_by_id = _primitive_family_lookup(synthesis_map)
             project_metadata = {
                 "podcast_mode": project.config.podcast_mode.value,
                 "theme": project.theme,
@@ -8127,11 +8928,11 @@ class PipelineOrchestrator:
                             primitive_ids_by_role,
                         )
                     )
-                    episode_actor_ids = {
-                        actor.actor_id
-                        for actor in strategy_episode.actor_arc_directives
-                        if actor.actor_id
-                    }
+                    episode_actor_ids = _collect_episode_actor_ids(
+                        strategy_episode=strategy_episode,
+                        primitive_ids=primitive_ids,
+                        primitive_lookup=primitive_lookup,
+                    )
                     episode_actor_metadata = select_actor_metadata_subset(
                         actor_metadata,
                         episode_actor_ids,
@@ -8199,6 +9000,7 @@ class PipelineOrchestrator:
                     )
                     plan_draft: EpisodePlanDraft | None = None
                     actor_link_metrics: dict[str, Any] = {}
+                    actor_explanation_warnings: list[str] = []
                     planning_feedback: dict[str, Any] | None = None
                     max_attempts = self.episode_planning_agent.max_retry_attempts
                     for attempt in range(1, max_attempts + 1):
@@ -8226,6 +9028,12 @@ class PipelineOrchestrator:
                                 plan_draft,
                                 episode_actor_metadata,
                                 strategy_episode.actor_arc_directives,
+                            )
+                            actor_explanation_warnings = (
+                                _validate_actor_explanation_scene_links(
+                                    architecture=episode,
+                                    plan=plan_draft,
+                                )
                             )
                             break
                         except ComplianceViolationError as exc:
@@ -8279,7 +9087,7 @@ class PipelineOrchestrator:
                     scene_card_family_warnings = _build_scene_card_family_warnings(
                         strategy_episode=strategy_episode,
                         primitive_pool_ids=set(primitive_ids),
-                        primitive_family_by_id=primitive_family_by_id,
+                        primitive_by_id=primitive_lookup,
                     )
                     section_realization_reports, section_planning_warnings = (
                         _build_section_plan_realization(
@@ -8320,6 +9128,7 @@ class PipelineOrchestrator:
                         + scene_card_family_warnings
                         + structural_card_concreteness_warnings
                         + human_grounding_warnings
+                        + actor_explanation_warnings
                         + section_planning_warnings
                         + host_move_warnings
                     )
@@ -8515,6 +9324,7 @@ class PipelineOrchestrator:
         actor_metadata: ActorMetadata,
         project_dir: Path,
         host_policy: dict[str, Any],
+        primitive_lookup: dict[str, SynthesisPrimitiveBase],
         semaphore: asyncio.Semaphore,
         spoken_semaphore: asyncio.Semaphore | None = None,
         series_explanation_registry: list[Any] | None = None,
@@ -8533,6 +9343,7 @@ class PipelineOrchestrator:
                 project_dir,
                 actor_metadata,
                 host_policy,
+                primitive_lookup,
             )
 
             if not project.config.skip_grounding:
@@ -8610,8 +9421,10 @@ class PipelineOrchestrator:
         project_dir: Path,
         actor_metadata: ActorMetadata | None = None,
         host_policy: dict[str, Any] | None = None,
+        primitive_lookup: dict[str, SynthesisPrimitiveBase] | None = None,
     ) -> EpisodeScript:
         actor_metadata = actor_metadata or ActorMetadata(project_id=project.project_id)
+        primitive_lookup = primitive_lookup or {}
         async with _stage_log(
             self.run_logger,
             f"write_episode_{plan.episode_number}",
@@ -8639,7 +9452,7 @@ class PipelineOrchestrator:
             scene_word_count_targets_higher = _compute_scene_word_count_targets(
                 plan.scene_cards,
                 plan.target_word_count,
-                155.0,
+                160.0,
             )
             full_episode_plan_payload = plan.model_dump(mode="json")
             scene_payload_by_id: dict[str, dict[str, Any]] = {}
@@ -8671,6 +9484,7 @@ class PipelineOrchestrator:
                 architecture=architecture,
                 scene_word_count_targets_lower=scene_word_count_targets_lower,
                 scene_word_count_targets_higher=scene_word_count_targets_higher,
+                max_windows=project.config.episode_writing_batch_count,
             )
             warning_threshold = int(
                 math.ceil(
@@ -8729,7 +9543,12 @@ class PipelineOrchestrator:
                         window_actor_metadata = _build_window_actor_metadata(
                             window_scene_cards=window_scene_cards,
                             strategy_episode=strategy_episode,
+                            architecture=architecture,
                             actor_metadata=actor_metadata,
+                        )
+                        window_scene_primitive_briefs = _build_scene_primitive_briefs(
+                            scene_cards=window_scene_cards,
+                            primitive_lookup=primitive_lookup,
                         )
                         async with _stage_log(
                             self.run_logger,
@@ -8758,6 +9577,7 @@ class PipelineOrchestrator:
                                 episode_target_word_count_higher=part_target_word_count_higher,
                                 skip_grounding=project.config.skip_grounding,
                                 host_policy=host_policy,
+                                scene_primitive_briefs=window_scene_primitive_briefs,
                                 actor_metadata=window_actor_metadata,
                                 writing_feedback=writing_feedback_by_part.get(
                                     part_number

@@ -9,7 +9,7 @@ from podcast_agent.prompts import (
     episode_writing_instructions,
     episode_writing_no_citations_instructions,
 )
-from podcast_agent.schemas.models import Citation
+from podcast_agent.schemas.models import ActorExplanationRealization, Citation
 
 
 class SectionProse(BaseModel):
@@ -20,6 +20,9 @@ class SectionProse(BaseModel):
     text: str
     citations: list[Citation] = Field(default_factory=list)
     source_book_ids: list[str] = Field(default_factory=list)
+    actor_explanation_realizations: list[ActorExplanationRealization] = Field(
+        default_factory=list
+    )
 
 
 class EpisodeWritingResponse(BaseModel):
@@ -34,6 +37,9 @@ class SectionProseNoCitations(BaseModel):
     movement_goal: str
     text: str
     source_book_ids: list[str] = Field(default_factory=list)
+    actor_explanation_realizations: list[ActorExplanationRealization] = Field(
+        default_factory=list
+    )
 
 
 class EpisodeWritingNoCitationsResponse(BaseModel):
@@ -60,6 +66,7 @@ class WritingAgent(Agent):
         episode_target_word_count_higher: int | None = None,
         skip_grounding: bool = False,
         host_policy: dict | None = None,
+        scene_primitive_briefs: dict[str, list[dict[str, object]]] | None = None,
         actor_metadata: dict | None = None,
         writing_feedback: str | None = None,
         prior_window_continuity: dict | None = None,
@@ -75,6 +82,8 @@ class WritingAgent(Agent):
         }
         if host_policy is not None:
             payload["host_policy"] = host_policy
+        if scene_primitive_briefs is not None:
+            payload["scene_primitive_briefs"] = scene_primitive_briefs
         if actor_metadata is not None:
             payload["actor_metadata"] = actor_metadata
         if writing_feedback:
@@ -82,9 +91,13 @@ class WritingAgent(Agent):
         if prior_window_continuity is not None:
             payload["prior_window_continuity"] = prior_window_continuity
         if episode_target_word_count_lower is not None:
-            payload["episode_target_word_count_lower"] = int(episode_target_word_count_lower)
+            payload["episode_target_word_count_lower"] = int(
+                episode_target_word_count_lower
+            )
         if episode_target_word_count_higher is not None:
-            payload["episode_target_word_count_higher"] = int(episode_target_word_count_higher)
+            payload["episode_target_word_count_higher"] = int(
+                episode_target_word_count_higher
+            )
         return payload
 
 

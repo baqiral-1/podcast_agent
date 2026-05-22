@@ -11,6 +11,7 @@ from podcast_agent.config import Settings
 from podcast_agent.pipeline.orchestrator import (
     PipelineOrchestrator,
     _build_host_policy_payload,
+    _flatten_synthesis_primitives,
     _save_json,
 )
 from podcast_agent.schemas.models import (
@@ -196,13 +197,11 @@ async def _resume_from_narrative_strategy(project_id: str) -> None:
         )
         actor_metrics["narrative_strategy"] = strategy_actor_metrics
         _load_persisted_strategy(project_dir, expected=strategy)
-        synthesis_map = await orchestrator._enrich_selected_primitives(
+        synthesis_map = await orchestrator._materialize_selected_primitives(
             project=project,
             synthesis_primitives=synthesis_primitives,
             strategy=strategy,
-            corpus=corpus,
             project_dir=project_dir,
-            actor_metadata=actor_metadata,
         )
 
         project = orchestrator._resolve_episode_count_from_strategy(project, strategy)
@@ -252,6 +251,7 @@ async def _resume_from_narrative_strategy(project_id: str) -> None:
             )
         )
         host_policy = _build_host_policy_payload(strategy.narrator_profile)
+        retained_primitive_lookup = _flatten_synthesis_primitives(synthesis_map)
         ep_tasks = [
             orchestrator._produce_episode(
                 plan,
@@ -269,9 +269,10 @@ async def _resume_from_narrative_strategy(project_id: str) -> None:
                 corpus,
                 actor_metadata,
                 project_dir,
-                host_policy,
-                sem,
-                spoken_sem,
+                host_policy=host_policy,
+                primitive_lookup=retained_primitive_lookup,
+                semaphore=sem,
+                spoken_semaphore=spoken_sem,
             )
             for plan in episode_plans
         ]

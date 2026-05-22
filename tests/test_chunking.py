@@ -98,6 +98,23 @@ class TestChunkText:
         chunks1 = chunk_text(raw_text, "book1", chapters, config)
         chunks2 = chunk_text(raw_text, "book1", chapters, config)
         assert [c.chunk_id for c in chunks1] == [c.chunk_id for c in chunks2]
+        assert all(len(chunk.chunk_id) == 6 for chunk in chunks1)
+
+    def test_chunk_ids_are_project_unique_by_book_slot(self):
+        raw_text = "Test text " * 100
+        chapters = [ChapterInfo(
+            chapter_id="ch1", title="Ch 1",
+            start_index=0, end_index=len(raw_text),
+            word_count=100,
+        )]
+        config = ChunkingConfig(max_chunk_words=50)
+
+        chunks_a = chunk_text(raw_text, "book1", chapters, config, book_slot=0)
+        chunks_b = chunk_text(raw_text, "book2", chapters, config, book_slot=1)
+
+        assert set(chunk.chunk_id for chunk in chunks_a).isdisjoint(
+            chunk.chunk_id for chunk in chunks_b
+        )
 
     def test_chunk_positions_are_sequential(self):
         raw_text = "Word " * 1000

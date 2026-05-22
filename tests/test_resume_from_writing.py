@@ -11,13 +11,13 @@ from podcast_agent.schemas.models import (
     ActorMetadata,
     ActorProfile,
     ArchitectureSection,
-    BaseSynthesisPrimitive,
     EpisodeArchitecture,
     BookRecord,
-    EpochalTurnPrimitive,
     EpisodePlan,
+    EventPrimitive,
     NarrativeStrategy,
     PipelineConfig,
+    PrimitiveSubstrate,
     ProjectStatus,
     StrategyEpisode,
     SynthesisMap,
@@ -70,6 +70,16 @@ def _episode_plan() -> EpisodePlan:
                     "local_question": "Question",
                     "observable_detail": "Detail",
                     "intended_move": "Move",
+                    "host_moves": {
+                        "open": [
+                            {
+                                "move_type": "orient",
+                                "note": "Set the listener's footing before the beat turns.",
+                            }
+                        ],
+                        "pivot": [],
+                        "close": [],
+                    },
                     "primitive_ids": ["primitive_1"],
                     "passage_ids": [],
                     "estimated_duration_seconds": 60,
@@ -284,35 +294,32 @@ def _build_project_dir(tmp_path: Path) -> Path:
         description="Axis description",
         theme_importance_score=1.0,
     )
-    primitive = BaseSynthesisPrimitive(
+    primitive = EventPrimitive(
         id="primitive_1",
-        family="epochal_turns",
+        substrate=PrimitiveSubstrate.EVENTS,
         title="Primitive",
-        summary="Primitive summary",
-        axis_ids=["axis_1"],
-        core_passage_ids=[],
+        core_passage_ids=["passage_1"],
         actor_ids=["actor_1"],
+        event_type="turning_point",
+        what_happened="A decisive event changes the field.",
     )
     primitives = SynthesisPrimitivesArtifact(
         project_id="run_1",
-        primitives_by_family={"epochal_turns": [primitive]},
+        primitives=[primitive],
     )
-    enriched_primitive = EpochalTurnPrimitive(
+    enriched_primitive = EventPrimitive(
         id="primitive_1",
-        family="epochal_turns",
+        substrate=PrimitiveSubstrate.EVENTS,
         title="Primitive",
-        summary="Primitive summary",
-        axis_ids=["axis_1"],
-        core_passage_ids=[],
+        core_passage_ids=["passage_1"],
         actor_ids=["actor_1"],
-        before_state="The prior balance still holds.",
-        after_state="The balance breaks.",
-        change_driver="A decisive move forces the turn.",
-        irreversibility_reason="The fallout cannot be unwound quickly.",
+        event_type="turning_point",
+        what_happened="A decisive event changes the field.",
+        event_result="The balance breaks.",
     )
     synthesis_map = SynthesisMap(
         project_id="run_1",
-        primitives_by_family={"epochal_turns": [enriched_primitive]},
+        primitives=[enriched_primitive],
     )
     actor_metadata = ActorMetadata(
         project_id="run_1",
@@ -424,6 +431,7 @@ def test_resume_from_writing_uses_series_plan_and_actor_metadata(
             actor_metadata: ActorMetadata,
             project_dir: Path,
             host_policy: dict[str, Any],
+            primitive_lookup: dict[str, EventPrimitive],
             semaphore: asyncio.Semaphore,
             spoken_semaphore: asyncio.Semaphore | None = None,
         ) -> tuple[int, Any]:
@@ -433,6 +441,7 @@ def test_resume_from_writing_uses_series_plan_and_actor_metadata(
             calls["produced_strategy_episode"] = strategy_episode
             calls["produced_architecture"] = architecture
             calls["host_policy"] = host_policy
+            calls["primitive_lookup"] = primitive_lookup
             return plan.episode_number, SimpleNamespace(
                 episode_number=plan.episode_number
             )
@@ -477,6 +486,7 @@ def test_resume_from_writing_uses_series_plan_and_actor_metadata(
     assert calls["produced_strategy_episode"].title == "Episode"
     assert calls["produced_architecture"].episode_number == 1
     assert calls["production_actor_metadata"].actors[0].actor_id == "actor_1"
+    assert calls["primitive_lookup"]["primitive_1"].id == "primitive_1"
     assert "authorial_policy" in calls["host_policy"]
     assert calls["production_config"].skip_grounding is True
     assert calls["production_config"].skip_audio is True

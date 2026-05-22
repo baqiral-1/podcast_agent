@@ -6,6 +6,9 @@ from podcast_agent.agents.base import Agent
 from podcast_agent.prompts import episode_architecture_instructions
 from podcast_agent.schemas.models import (
     EpisodeArchitecture,
+    PodcastMode,
+    authorial_passage_target_range_for_mode,
+    dense_section_authorial_passage_range_for_mode,
     validate_episode_architecture_targets,
 )
 
@@ -27,11 +30,34 @@ class EpisodeArchitectureAgent(Agent):
             int(project.get("architecture_section_target_max", 12)),
         )
 
+    @staticmethod
+    def _podcast_mode(payload: dict) -> PodcastMode:
+        project = payload.get("project")
+        if not isinstance(project, dict):
+            return PodcastMode.FULL
+        raw_mode = project.get("podcast_mode", PodcastMode.FULL.value)
+        try:
+            return PodcastMode(raw_mode)
+        except ValueError:
+            return PodcastMode.FULL
+
     def build_instructions(self, payload: dict) -> str:
         section_target_min, section_target_max = self._section_target_bounds(payload)
+        mode = self._podcast_mode(payload)
+        authorial_target_min, authorial_target_max = (
+            authorial_passage_target_range_for_mode(mode)
+        )
+        dense_section_min, dense_section_max = (
+            dense_section_authorial_passage_range_for_mode(mode)
+        )
         return episode_architecture_instructions(
             section_target_min=section_target_min,
             section_target_max=section_target_max,
+            authorial_passage_target_min=authorial_target_min,
+            authorial_passage_target_max=authorial_target_max,
+            dense_section_authorial_passage_min=dense_section_min,
+            dense_section_authorial_passage_max=dense_section_max,
+            podcast_mode=mode,
         )
 
     def validate_result(
@@ -51,7 +77,9 @@ class EpisodeArchitectureAgent(Agent):
         synthesis_map: dict,
         project_metadata: dict,
         core_passages: list[dict],
+        support_passages: list[dict],
         series_explanation_registry: list[dict] | None = None,
+        series_actor_explanation_registry: list[dict] | None = None,
         narrator_profile: dict | None = None,
         actor_metadata: dict | None = None,
         architecture_feedback: dict | None = None,
@@ -61,11 +89,16 @@ class EpisodeArchitectureAgent(Agent):
             "synthesis_map": synthesis_map,
             "project": project_metadata,
             "core_passages": core_passages,
+            "support_passages": support_passages,
         }
         if narrator_profile is not None:
             payload["narrator_profile"] = narrator_profile
         if series_explanation_registry is not None:
             payload["series_explanation_registry"] = series_explanation_registry
+        if series_actor_explanation_registry is not None:
+            payload["series_actor_explanation_registry"] = (
+                series_actor_explanation_registry
+            )
         if actor_metadata is not None:
             payload["actor_metadata"] = actor_metadata
         if architecture_feedback is not None:

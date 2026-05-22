@@ -10,22 +10,25 @@ import pytest
 from podcast_agent.llm.heuristic import HeuristicLLMClient
 from podcast_agent.pipeline.orchestrator import PipelineOrchestrator, _validate_plan_transition
 from podcast_agent.schemas.models import (
+    ActorExplanationPlan,
+    ActorPrimitive,
+    ActorMetadata,
+    ActorProfile,
+    ArtifactPrimitive,
     ArchitectureSection,
     BookRecord,
-    CharacterEnginePrimitive,
-    EpochalTurnPrimitive,
     EpisodeArchitecture,
     EpisodePlanDraft,
-    HumanCostPrimitive,
+    EventPrimitive,
     NarrativeStrategy,
     PipelineConfig,
+    PrimitiveSalience,
+    PrimitiveSubstrate,
     SupportPrimitiveRole,
-    SynthesisPrimitive,
     StrategyEpisode,
     SynthesisMap,
     ThematicCorpus,
     ThematicProject,
-    VerdictMode,
     EpisodeSpine,
 )
 
@@ -56,54 +59,48 @@ def _primitive(
     passage_id: str,
 ) -> object:
     if primitive_id.startswith("support_1"):
-        return SynthesisPrimitive(
+        return ArtifactPrimitive(
             id=primitive_id,
-            family="telling_details",
+            substrate=PrimitiveSubstrate.ARTIFACTS,
             title=title,
-            summary=f"{title} summary",
-            axis_ids=["axis_1"],
             core_passage_ids=[passage_id],
+            artifact_type="detail",
+            artifact_label=title,
+            artifact_detail="A telling detail frames the scene.",
         )
     if primitive_id.startswith("support_2"):
-        return HumanCostPrimitive(
+        return EventPrimitive(
             id=primitive_id,
-            family="human_costs",
+            substrate=PrimitiveSubstrate.EVENTS,
             title=title,
-            summary=f"{title} summary",
-            axis_ids=["axis_1"],
             core_passage_ids=[passage_id],
             actor_ids=["actor_1"],
-            affected_group="Civilians",
-            cost_type="displacement",
-            lived_consequence="Families are driven from their homes.",
-            visibility="public",
+            event_type="consequence",
+            what_happened="Families are driven from their homes.",
+            event_result="The cost becomes public.",
         )
     if primitive_id.startswith("support_3"):
-        return CharacterEnginePrimitive(
+        return ActorPrimitive(
             id=primitive_id,
-            family="character_engines",
+            substrate=PrimitiveSubstrate.ACTOR_PORTRAITS,
             title=title,
-            summary=f"{title} summary",
-            axis_ids=["axis_1"],
             core_passage_ids=[passage_id],
-            actor_id="actor_1",
-            goal="Hold the center.",
-            fear="Losing control.",
-            constraint="Allies are unreliable.",
-            stakes="Collapse would be final.",
+            actor_ids=["actor_1"],
+            focus_actor_id="actor_1",
+            actor_label="Actor 1",
+            goal_or_project="Hold the center.",
+            stakes_or_fears="Collapse would be final.",
+            operating_pressure="Allies are unreliable.",
         )
-    return EpochalTurnPrimitive(
+    return EventPrimitive(
         id=primitive_id,
-        family="epochal_turns",
+        substrate=PrimitiveSubstrate.EVENTS,
         title=title,
-        summary=f"{title} summary",
-        axis_ids=["axis_1"],
         core_passage_ids=[passage_id],
-        narrative_importance_score=0.8,
-        before_state="The prior balance still holds.",
-        after_state="The balance breaks.",
-        change_driver="A decisive move forces the turn.",
-        irreversibility_reason="The fallout cannot be unwound quickly.",
+        salience=PrimitiveSalience(score=0.8, justification="Core turn."),
+        event_type="turning_point",
+        what_happened="A decisive move forces the turn.",
+        event_result="The balance breaks.",
     )
 
 
@@ -200,6 +197,14 @@ def _valid_plan_payload(payload: dict, *, use_invalid_section_primitive: bool) -
                 "state_effect": "State 1",
                 "primitive_ids": ["support_1"],
                 "passage_ids": ["p_support_1"],
+                "host_moves": {
+                    "open": [
+                        {
+                            "move_type": "orient",
+                            "note": "Frame the opening conditions cleanly.",
+                        }
+                    ]
+                },
                 "estimated_duration_seconds": 120,
             },
             {
@@ -212,6 +217,14 @@ def _valid_plan_payload(payload: dict, *, use_invalid_section_primitive: bool) -
                 "state_effect": "State 2",
                 "primitive_ids": section_two_primitives,
                 "passage_ids": ["p_core_1"],
+                "host_moves": {
+                    "open": [
+                        {
+                            "move_type": "clarify",
+                            "note": "Mark the hinge in the action.",
+                        }
+                    ]
+                },
                 "estimated_duration_seconds": 120,
             },
             {
@@ -224,6 +237,14 @@ def _valid_plan_payload(payload: dict, *, use_invalid_section_primitive: bool) -
                 "state_effect": "State 3",
                 "primitive_ids": ["support_2"],
                 "passage_ids": ["p_support_2"],
+                "host_moves": {
+                    "open": [
+                        {
+                            "move_type": "evaluate",
+                            "note": "Make the fallout legible.",
+                        }
+                    ]
+                },
                 "estimated_duration_seconds": 120,
             },
             {
@@ -236,6 +257,14 @@ def _valid_plan_payload(payload: dict, *, use_invalid_section_primitive: bool) -
                 "state_effect": "State 4",
                 "primitive_ids": ["support_3"],
                 "passage_ids": ["p_support_3"],
+                "host_moves": {
+                    "open": [
+                        {
+                            "move_type": "callback",
+                            "note": "Close by tying the residue back to the opening.",
+                        }
+                    ]
+                },
                 "estimated_duration_seconds": 120,
             },
         ],
@@ -274,7 +303,7 @@ def _build_orchestrator(monkeypatch: pytest.MonkeyPatch) -> PipelineOrchestrator
     return PipelineOrchestrator()
 
 
-def test_plan_series_retries_on_primitive_outside_architecture_section(monkeypatch, tmp_path):
+def test_plan_series_ignores_legacy_scene_primitive_ids(monkeypatch, tmp_path):
     async def fake_sleep(_seconds: float) -> None:
         return None
 
@@ -305,23 +334,12 @@ def test_plan_series_retries_on_primitive_outside_architecture_section(monkeypat
     )
     synthesis_map = SynthesisMap(
         project_id="proj",
-        primitives_by_family={
-            "epochal_turns": [_primitive("core_1", "Core", passage_id="p_core_1")],
-            "decisions_and_nondecisions": [],
-            "set_piece_scenes": [],
-            "telling_details": [_primitive("support_1", "Support 1", passage_id="p_support_1")],
-            "human_costs": [_primitive("support_2", "Support 2", passage_id="p_support_2")],
-            "character_engines": [_primitive("support_3", "Support 3", passage_id="p_support_3")],
-            "coalitions_and_fault_lines": [],
-            "systems_and_operating_logics": [],
-            "misreadings_and_fantasies": [],
-            "contested_explanations": [],
-            "perspective_windows": [],
-            "moral_traps": [],
-            "afterlives": [],
-            "recurring_images_and_symbols": [],
-            "ironies_and_reversals": [],
-        },
+        primitives=[
+            _primitive("core_1", "Core", passage_id="p_core_1"),
+            _primitive("support_1", "Support 1", passage_id="p_support_1"),
+            _primitive("support_2", "Support 2", passage_id="p_support_2"),
+            _primitive("support_3", "Support 3", passage_id="p_support_3"),
+        ],
     )
     corpus = ThematicCorpus(project_id="proj")
 
@@ -337,12 +355,8 @@ def test_plan_series_retries_on_primitive_outside_architecture_section(monkeypat
     )
 
     assert [plan.episode_number for plan in plans] == [1]
-    assert len(captured_payloads) == 2
+    assert len(captured_payloads) == 1
     assert "planning_feedback" not in captured_payloads[0]
-    assert captured_payloads[1]["planning_feedback"]["issue"] == "primitive_outside_architecture_section"
-    assert captured_payloads[1]["planning_feedback"]["invalid_scene_primitives"] == {
-        "scene_2": ["support_1"]
-    }
 
 
 def test_validate_plan_transition_allows_dropped_support_primitives_missing_after_architecture_filtering():
@@ -364,7 +378,7 @@ def test_validate_plan_transition_allows_dropped_support_primitives_missing_afte
     }
 
 
-def test_plan_series_raises_after_retry_exhaustion_on_primitive_outside_architecture_section(
+def test_plan_series_does_not_raise_on_legacy_scene_primitive_ids(
     monkeypatch, tmp_path
 ):
     async def fake_sleep(_seconds: float) -> None:
@@ -397,37 +411,419 @@ def test_plan_series_raises_after_retry_exhaustion_on_primitive_outside_architec
     )
     synthesis_map = SynthesisMap(
         project_id="proj",
-        primitives_by_family={
-            "epochal_turns": [_primitive("core_1", "Core", passage_id="p_core_1")],
-            "decisions_and_nondecisions": [],
-            "set_piece_scenes": [],
-            "telling_details": [_primitive("support_1", "Support 1", passage_id="p_support_1")],
-            "human_costs": [_primitive("support_2", "Support 2", passage_id="p_support_2")],
-            "character_engines": [_primitive("support_3", "Support 3", passage_id="p_support_3")],
-            "coalitions_and_fault_lines": [],
-            "systems_and_operating_logics": [],
-            "misreadings_and_fantasies": [],
-            "contested_explanations": [],
-            "perspective_windows": [],
-            "moral_traps": [],
-            "afterlives": [],
-            "recurring_images_and_symbols": [],
-            "ironies_and_reversals": [],
-        },
+        primitives=[
+            _primitive("core_1", "Core", passage_id="p_core_1"),
+            _primitive("support_1", "Support 1", passage_id="p_support_1"),
+            _primitive("support_2", "Support 2", passage_id="p_support_2"),
+            _primitive("support_3", "Support 3", passage_id="p_support_3"),
+        ],
     )
     corpus = ThematicCorpus(project_id="proj")
 
-    with pytest.raises(Exception, match="Episode plan used primitives outside their architecture section"):
-        asyncio.run(
-            orchestrator._plan_series(
-                project,
-                synthesis_map,
-                strategy,
-                [_episode_architecture()],
-                corpus,
-                tmp_path,
-            )
+    plans, _metrics = asyncio.run(
+        orchestrator._plan_series(
+            project,
+            synthesis_map,
+            strategy,
+            [_episode_architecture()],
+            corpus,
+            tmp_path,
+        )
+    )
+
+    assert [plan.episode_number for plan in plans] == [1]
+    assert len(captured_payloads) == 1
+
+
+def test_plan_series_warns_without_retry_on_late_actor_introduction(
+    monkeypatch, tmp_path
+):
+    async def fake_sleep(_seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr("podcast_agent.pipeline.orchestrator.asyncio.sleep", fake_sleep)
+    orchestrator = _build_orchestrator(monkeypatch)
+    orchestrator.episode_planning_agent.max_retry_attempts = 2
+    captured_payloads: list[dict] = []
+    warning_messages: list[str] = []
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.logger.warning",
+        lambda msg, *args: warning_messages.append(msg % args),
+    )
+
+    architecture = _episode_architecture().model_copy(
+        update={
+            "sections": [
+                _episode_architecture().sections[0].model_copy(
+                    update={
+                        "actor_explanations": [
+                            ActorExplanationPlan(
+                                actor_id="actor_1",
+                                stage="introduce",
+                                background_depth="appositive",
+                                role_label="the visible political face of the crisis",
+                                source_primitive_ids=["support_2"],
+                                source_passage_ids=["p_support_2"],
+                                intro_facts=["Actor 1 now carries the conflict publicly."],
+                                why_now="The actor becomes concrete in the opening section.",
+                                preferred_plain_gloss="the actor now carrying the crisis",
+                            )
+                        ]
+                    }
+                ),
+                *_episode_architecture().sections[1:],
+            ]
+        }
+    )
+
+    def fake_planning_run(payload: dict):
+        captured_payloads.append(payload)
+        return orchestrator.episode_planning_agent.response_model.model_validate(
+            {
+                "episode_number": 1,
+                "framing": {
+                    "opening_image": "A corridor outside the chamber.",
+                    "threat_or_unresolved_action": "No one knows who will take responsibility.",
+                    "opening_question": "Who now owns the crisis?",
+                    "handoff_scene_card_id": "scene_early",
+                },
+                "scene_cards": [
+                    {
+                        "scene_id": "scene_early",
+                        "section_id": "s01",
+                        "title": "A face in the corridor",
+                        "scene_role": "actor_setup",
+                        "scene_function": "scene",
+                        "beat_change": "The actor is visible before the formal introduction lands.",
+                        "actors": [
+                            {
+                                "name": "Actor 1",
+                                "actor_id": "actor_1",
+                                "presence": "primary",
+                                "role_label": "the visible political face of the crisis",
+                                "source_primitive_ids": ["support_2"],
+                                "source_passage_ids": ["p_support_2"],
+                                "intro_facts": ["Actor 1 now carries the conflict publicly."],
+                                "why_now": "The actor becomes concrete in the opening section.",
+                            }
+                        ],
+                        "passage_ids": ["p_support_2"],
+                        "host_moves": {
+                            "open": [
+                                {
+                                    "move_type": "orient",
+                                    "note": "Enter through the corridor outside the chamber.",
+                                }
+                            ]
+                        },
+                        "estimated_duration_seconds": 90,
+                    },
+                    {
+                        "scene_id": "scene_intro",
+                        "section_id": "s01",
+                        "title": "The formal naming",
+                        "scene_role": "actor_setup",
+                        "scene_function": "scene",
+                        "beat_change": "The same actor is now explicitly introduced.",
+                        "actors": [
+                            {
+                                "name": "Actor 1",
+                                "actor_id": "actor_1",
+                                "presence": "primary",
+                                "explanation_stage": "introduce",
+                                "background_depth": "appositive",
+                                "role_label": "the visible political face of the crisis",
+                                "source_primitive_ids": ["support_2"],
+                                "source_passage_ids": ["p_support_2"],
+                                "intro_facts": ["Actor 1 now carries the conflict publicly."],
+                                "why_now": "The actor becomes concrete in the opening section.",
+                            }
+                        ],
+                        "passage_ids": ["p_support_2"],
+                        "host_moves": {
+                            "open": [
+                                {
+                                    "move_type": "clarify",
+                                    "note": "Name the actor once the room has come into focus.",
+                                }
+                            ]
+                        },
+                        "estimated_duration_seconds": 90,
+                    },
+                    {
+                        "scene_id": "scene_2",
+                        "section_id": "s02",
+                        "title": "The turn gathers",
+                        "scene_role": "action",
+                        "scene_function": "scene",
+                        "beat_change": "The pressure starts to move.",
+                        "passage_ids": ["p_core_1"],
+                        "host_moves": {
+                            "open": [{"move_type": "orient", "note": "Enter through the chamber doors."}]
+                        },
+                        "estimated_duration_seconds": 90,
+                    },
+                    {
+                        "scene_id": "scene_3",
+                        "section_id": "s03",
+                        "title": "The cost lands",
+                        "scene_role": "fallout",
+                        "scene_function": "scene",
+                        "beat_change": "The cost is now visible.",
+                        "passage_ids": ["p_support_2"],
+                        "host_moves": {
+                            "open": [{"move_type": "evaluate", "note": "Let the cost settle on the room."}]
+                        },
+                        "estimated_duration_seconds": 90,
+                    },
+                    {
+                        "scene_id": "scene_4",
+                        "section_id": "s04",
+                        "title": "The residue remains",
+                        "scene_role": "implication",
+                        "scene_function": "landing",
+                        "beat_change": "The residue is named.",
+                        "passage_ids": ["p_support_3"],
+                        "host_moves": {
+                            "open": [{"move_type": "callback", "note": "Carry the first corridor image into the close."}]
+                        },
+                        "estimated_duration_seconds": 90,
+                    },
+                ],
+            }
         )
 
-    assert len(captured_payloads) == 2
-    assert captured_payloads[1]["planning_feedback"]["issue"] == "primitive_outside_architecture_section"
+    orchestrator.episode_planning_agent.run = fake_planning_run
+    project = ThematicProject(
+        project_id="proj",
+        theme="Theme",
+        books=[BookRecord(book_id="b1", title="Book 1", author="Author", source_path="/tmp/book.txt", source_type="txt")],
+        episode_count=1,
+        config=PipelineConfig(),
+    )
+    strategy = NarrativeStrategy(
+        strategy_type="convergence",
+        justification="Because.",
+        series_arc="Arc.",
+        episodes=[_strategy_episode()],
+    )
+    synthesis_map = SynthesisMap(
+        project_id="proj",
+        primitives=[
+            _primitive("core_1", "Core", passage_id="p_core_1"),
+            _primitive("support_1", "Support 1", passage_id="p_support_1"),
+            _primitive("support_2", "Support 2", passage_id="p_support_2"),
+            _primitive("support_3", "Support 3", passage_id="p_support_3"),
+        ],
+    )
+    corpus = ThematicCorpus(project_id="proj")
+    actor_metadata = ActorMetadata(
+        actors=[
+            ActorProfile(
+                actor_id="actor_1",
+                display_name="Actor 1",
+                actor_type="person",
+            )
+        ]
+    )
+
+    plans, _metrics = asyncio.run(
+        orchestrator._plan_series(
+            project,
+            synthesis_map,
+            strategy,
+            [architecture],
+            corpus,
+            tmp_path,
+            actor_metadata=actor_metadata,
+        )
+    )
+
+    assert [plan.episode_number for plan in plans] == [1]
+    assert len(captured_payloads) == 1
+    assert not any("episode_planning_retry_scheduled" in message for message in warning_messages)
+    assert any(
+        "late_actor_introduction_scene_links:actor_1:scene_early" in message
+        for message in warning_messages
+    )
+
+
+def test_plan_series_warns_without_retry_on_missing_actor_explanation_link(
+    monkeypatch, tmp_path
+):
+    async def fake_sleep(_seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr("podcast_agent.pipeline.orchestrator.asyncio.sleep", fake_sleep)
+    orchestrator = _build_orchestrator(monkeypatch)
+    orchestrator.episode_planning_agent.max_retry_attempts = 2
+    captured_payloads: list[dict] = []
+    warning_messages: list[str] = []
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.logger.warning",
+        lambda msg, *args: warning_messages.append(msg % args),
+    )
+
+    architecture = _episode_architecture().model_copy(
+        update={
+            "sections": [
+                _episode_architecture().sections[0].model_copy(
+                    update={
+                        "actor_explanations": [
+                            ActorExplanationPlan(
+                                actor_id="actor_1",
+                                stage="introduce",
+                                background_depth="appositive",
+                                role_label="the visible political face of the crisis",
+                                source_primitive_ids=["support_2"],
+                                source_passage_ids=["p_support_2"],
+                                intro_facts=["Actor 1 now carries the conflict publicly."],
+                                why_now="The actor becomes concrete in the opening section.",
+                                preferred_plain_gloss="the actor now carrying the crisis",
+                            )
+                        ]
+                    }
+                ),
+                *_episode_architecture().sections[1:],
+            ]
+        }
+    )
+
+    def fake_planning_run(payload: dict):
+        captured_payloads.append(payload)
+        return orchestrator.episode_planning_agent.response_model.model_validate(
+            {
+                "episode_number": 1,
+                "framing": {
+                    "opening_image": "A corridor outside the chamber.",
+                    "threat_or_unresolved_action": "No one knows who will take responsibility.",
+                    "opening_question": "Who now owns the crisis?",
+                    "handoff_scene_card_id": "scene_early",
+                },
+                "scene_cards": [
+                    {
+                        "scene_id": "scene_early",
+                        "section_id": "s01",
+                        "title": "A face in the corridor",
+                        "scene_role": "actor_setup",
+                        "scene_function": "scene",
+                        "beat_change": "The actor is visible before any formal explanation lands.",
+                        "actors": [
+                            {
+                                "name": "Actor 1",
+                                "actor_id": "actor_1",
+                                "presence": "primary",
+                                "role_label": "the visible political face of the crisis",
+                                "source_primitive_ids": ["support_2"],
+                                "source_passage_ids": ["p_support_2"],
+                                "intro_facts": ["Actor 1 now carries the conflict publicly."],
+                                "why_now": "The actor becomes concrete in the opening section.",
+                            }
+                        ],
+                        "passage_ids": ["p_support_2"],
+                        "host_moves": {
+                            "open": [
+                                {
+                                    "move_type": "orient",
+                                    "note": "Enter through the corridor outside the chamber.",
+                                }
+                            ]
+                        },
+                        "estimated_duration_seconds": 90,
+                    },
+                    {
+                        "scene_id": "scene_2",
+                        "section_id": "s02",
+                        "title": "The turn gathers",
+                        "scene_role": "action",
+                        "scene_function": "scene",
+                        "beat_change": "The pressure starts to move.",
+                        "passage_ids": ["p_core_1"],
+                        "host_moves": {
+                            "open": [{"move_type": "orient", "note": "Enter through the chamber doors."}]
+                        },
+                        "estimated_duration_seconds": 90,
+                    },
+                    {
+                        "scene_id": "scene_3",
+                        "section_id": "s03",
+                        "title": "The cost lands",
+                        "scene_role": "fallout",
+                        "scene_function": "scene",
+                        "beat_change": "The cost is now visible.",
+                        "passage_ids": ["p_support_2"],
+                        "host_moves": {
+                            "open": [{"move_type": "evaluate", "note": "Let the cost settle on the room."}]
+                        },
+                        "estimated_duration_seconds": 90,
+                    },
+                    {
+                        "scene_id": "scene_4",
+                        "section_id": "s04",
+                        "title": "The residue remains",
+                        "scene_role": "implication",
+                        "scene_function": "landing",
+                        "beat_change": "The residue is named.",
+                        "passage_ids": ["p_support_3"],
+                        "host_moves": {
+                            "open": [{"move_type": "callback", "note": "Carry the first corridor image into the close."}]
+                        },
+                        "estimated_duration_seconds": 90,
+                    },
+                ],
+            }
+        )
+
+    orchestrator.episode_planning_agent.run = fake_planning_run
+    project = ThematicProject(
+        project_id="proj",
+        theme="Theme",
+        books=[BookRecord(book_id="b1", title="Book 1", author="Author", source_path="/tmp/book.txt", source_type="txt")],
+        episode_count=1,
+        config=PipelineConfig(),
+    )
+    strategy = NarrativeStrategy(
+        strategy_type="convergence",
+        justification="Because.",
+        series_arc="Arc.",
+        episodes=[_strategy_episode()],
+    )
+    synthesis_map = SynthesisMap(
+        project_id="proj",
+        primitives=[
+            _primitive("core_1", "Core", passage_id="p_core_1"),
+            _primitive("support_1", "Support 1", passage_id="p_support_1"),
+            _primitive("support_2", "Support 2", passage_id="p_support_2"),
+            _primitive("support_3", "Support 3", passage_id="p_support_3"),
+        ],
+    )
+    corpus = ThematicCorpus(project_id="proj")
+    actor_metadata = ActorMetadata(
+        actors=[
+            ActorProfile(
+                actor_id="actor_1",
+                display_name="Actor 1",
+                actor_type="person",
+            )
+        ]
+    )
+
+    plans, _metrics = asyncio.run(
+        orchestrator._plan_series(
+            project,
+            synthesis_map,
+            strategy,
+            [architecture],
+            corpus,
+            tmp_path,
+            actor_metadata=actor_metadata,
+        )
+    )
+
+    assert [plan.episode_number for plan in plans] == [1]
+    assert len(captured_payloads) == 1
+    assert not any("episode_planning_retry_scheduled" in message for message in warning_messages)
+    assert any(
+        "missing_actor_explanation_scene_links:s01:actor_1:introduce" in message
+        for message in warning_messages
+    )

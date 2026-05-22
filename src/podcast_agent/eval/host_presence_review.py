@@ -29,8 +29,12 @@ COMMON_STOPWORDS = {
     "in",
     "into",
     "is",
+    "i",
     "it",
     "its",
+    "me",
+    "my",
+    "mine",
     "of",
     "on",
     "or",
@@ -50,6 +54,7 @@ COMMON_STOPWORDS = {
 }
 
 TAG_PATTERNS: dict[str, tuple[re.Pattern[str], float]] = {
+    "i": (re.compile(r"\b(?:i|me|my|mine|myself|i'm|i've|i'd|i'll)\b", re.IGNORECASE), 2.2),
     "we": (re.compile(r"\b(?:we|us|our)\b", re.IGNORECASE), 2.2),
     "you": (re.compile(r"\b(?:you|your)\b", re.IGNORECASE), 2.2),
     "question": (re.compile(r"\?|\bthe question\b", re.IGNORECASE), 1.8),
@@ -320,6 +325,8 @@ def _sentence_score(
     overlap = note_keywords & sentence_keywords
     score += 1.35 * len(overlap)
 
+    if "i" in address_modes and "i" in tags:
+        score += 1.0
     if "we" in address_modes and "we" in tags:
         score += 1.0
     if "you" in address_modes and "you" in tags:

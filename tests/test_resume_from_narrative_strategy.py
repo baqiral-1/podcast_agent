@@ -13,12 +13,12 @@ from podcast_agent.schemas.models import (
     ActorMetadata,
     ActorProfile,
     ArchitectureSection,
-    BaseSynthesisPrimitive,
     BookRecord,
     EpisodeArchitecture,
-    EpochalTurnPrimitive,
+    EventPrimitive,
     NarrativeStrategy,
     PipelineConfig,
+    PrimitiveSubstrate,
     ProjectStatus,
     SupportPrimitiveRole,
     StrategyEpisode,
@@ -61,35 +61,36 @@ def _build_project_dir(tmp_path: Path) -> Path:
         description="Axis description",
         theme_importance_score=1.0,
     )
-    primitive = BaseSynthesisPrimitive(
+    primitive = EventPrimitive(
         id="primitive_1",
-        family="epochal_turns",
+        substrate=PrimitiveSubstrate.EVENTS,
         title="Primitive",
-        summary="Primitive summary",
-        axis_ids=["axis_1"],
-        core_passage_ids=[],
+        core_passage_ids=["passage_1"],
         actor_ids=["actor_1"],
+        event_type="turning_point",
+        what_happened="A decisive event changes the field.",
     )
     primitives = SynthesisPrimitivesArtifact(
         project_id="run_1",
-        primitives_by_family={"epochal_turns": [primitive]},
+        primitives=[primitive],
     )
-    enriched_primitive = EpochalTurnPrimitive(
+    enriched_primitive = EventPrimitive(
         id="primitive_1",
-        family="epochal_turns",
+        substrate=PrimitiveSubstrate.EVENTS,
         title="Primitive",
-        summary="Primitive summary",
-        axis_ids=["axis_1"],
-        core_passage_ids=[],
+        core_passage_ids=["passage_1"],
         actor_ids=["actor_1"],
-        before_state="The prior balance still holds.",
-        after_state="The balance breaks.",
-        change_driver="A decisive move forces the turn.",
-        irreversibility_reason="The fallout cannot be unwound quickly.",
+        event_type="turning_point",
+        what_happened="A decisive event changes the field.",
+        narration_hooks={
+            "concrete_detail": "A decree lands in the room.",
+            "host_lens": "The event changes what actors can do next.",
+            "carry_forward": "The turn keeps shaping what follows.",
+        },
     )
     synthesis_map = SynthesisMap(
         project_id="run_1",
-        primitives_by_family={"epochal_turns": [enriched_primitive]},
+        primitives=[enriched_primitive],
     )
     actor_metadata = ActorMetadata(
         project_id="run_1",
@@ -235,32 +236,26 @@ def test_resume_from_narrative_strategy_passes_actor_metadata_and_forces_skips(
             _write_json(project_dir / "narrative_strategy.json", persisted_strategy)
             return strategy, {"unknown_actor_ids": 0}
 
-        async def _enrich_selected_primitives(
+        async def _materialize_selected_primitives(
             self,
             *,
             project: ThematicProject,
             synthesis_primitives: SynthesisPrimitivesArtifact,
             strategy: NarrativeStrategy,
-            corpus: ThematicCorpus,
             project_dir: Path,
-            actor_metadata: ActorMetadata,
         ) -> SynthesisMap:
-            primitive = EpochalTurnPrimitive(
+            primitive = EventPrimitive(
                 id="primitive_1",
-                family="epochal_turns",
+                substrate=PrimitiveSubstrate.EVENTS,
                 title="Primitive",
-                summary="Primitive summary",
-                axis_ids=["axis_1"],
-                core_passage_ids=[],
+                core_passage_ids=["passage_1"],
                 actor_ids=["actor_1"],
-                before_state="The prior balance still holds.",
-                after_state="The balance breaks.",
-                change_driver="A decisive move forces the turn.",
-                irreversibility_reason="The fallout cannot be unwound quickly.",
+                event_type="turning_point",
+                what_happened="A decisive event changes the field.",
             )
             synthesis_map = SynthesisMap(
                 project_id=project.project_id,
-                primitives_by_family={"epochal_turns": [primitive]},
+                primitives=[primitive],
             )
             _write_json(project_dir / "synthesis_map.json", synthesis_map)
             return synthesis_map
@@ -509,6 +504,7 @@ def test_resume_from_narrative_strategy_passes_actor_metadata_and_forces_skips(
             actor_metadata: ActorMetadata,
             project_dir: Path,
             host_policy: dict[str, Any],
+            primitive_lookup: dict[str, EventPrimitive],
             semaphore: asyncio.Semaphore,
             spoken_semaphore: asyncio.Semaphore | None = None,
         ) -> tuple[int, Any]:
@@ -517,6 +513,7 @@ def test_resume_from_narrative_strategy_passes_actor_metadata_and_forces_skips(
             calls["production_strategy_episode"] = strategy_episode
             calls["production_architecture"] = architecture
             calls["host_policy"] = host_policy
+            calls["primitive_lookup"] = primitive_lookup
             return plan.episode_number, SimpleNamespace(
                 episode_number=plan.episode_number
             )
@@ -566,6 +563,7 @@ def test_resume_from_narrative_strategy_passes_actor_metadata_and_forces_skips(
     assert calls["planning_architectures"][0].runtime_minutes == 90.0
     assert calls["production_strategy_episode"].title == "Episode"
     assert calls["production_architecture"].episode_number == 1
+    assert calls["primitive_lookup"]["primitive_1"].id == "primitive_1"
     assert "authorial_policy" in calls["host_policy"]
     assert (
         calls["host_policy"]["authorial_policy"][
@@ -658,32 +656,26 @@ def test_resume_from_narrative_strategy_fails_before_planning_when_persisted_str
             )
             return strategy, {"unknown_actor_ids": 0}
 
-        async def _enrich_selected_primitives(
+        async def _materialize_selected_primitives(
             self,
             *,
             project: ThematicProject,
             synthesis_primitives: SynthesisPrimitivesArtifact,
             strategy: NarrativeStrategy,
-            corpus: ThematicCorpus,
             project_dir: Path,
-            actor_metadata: ActorMetadata,
         ) -> SynthesisMap:
-            primitive = EpochalTurnPrimitive(
+            primitive = EventPrimitive(
                 id="primitive_1",
-                family="epochal_turns",
+                substrate=PrimitiveSubstrate.EVENTS,
                 title="Primitive",
-                summary="Primitive summary",
-                axis_ids=["axis_1"],
-                core_passage_ids=[],
+                core_passage_ids=["passage_1"],
                 actor_ids=["actor_1"],
-                before_state="The prior balance still holds.",
-                after_state="The balance breaks.",
-                change_driver="A decisive move forces the turn.",
-                irreversibility_reason="The fallout cannot be unwound quickly.",
+                event_type="turning_point",
+                what_happened="A decisive event changes the field.",
             )
             synthesis_map = SynthesisMap(
                 project_id=project.project_id,
-                primitives_by_family={"epochal_turns": [primitive]},
+                primitives=[primitive],
             )
             _write_json(project_dir / "synthesis_map.json", synthesis_map)
             return synthesis_map
