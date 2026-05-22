@@ -13,6 +13,8 @@ from podcast_agent.llm.transport import decode_transport_payload
 from podcast_agent.schemas.models import (
     PodcastMode,
     authorial_passage_target_for_mode,
+    scene_discovery_candidate_range_for_mode,
+    scene_job_budget_for_mode,
 )
 
 
@@ -538,8 +540,11 @@ class HeuristicLLMClient(LLMClient):
                 "host_lens": "One narrow lens helps orient the listener to the pressure here.",
                 "carry_forward": "This primitive leaves residue that can matter again later.",
                 "quote_anchor": "",
-                "plain_gloss": "",
-                "listener_confusion": "",
+                "plain_gloss": "Plainspoken gloss for oral use.",
+                "why_it_matters": "Why this matters to the listener-facing pressure line.",
+                "best_use": "Best used as build material unless elevated by later structure.",
+                "natural_host_move": "orient",
+                "listener_confusion": "What this is doing in the story.",
                 "authorial_move": "none",
             }
             tagged_primitives.append(updated)
@@ -591,6 +596,53 @@ class HeuristicLLMClient(LLMClient):
         self, payload: PromptPayload
     ) -> dict[str, Any]:
         return self._generate_primitive_function_tagging_batch(payload, substrate="readings")
+
+    def _generate_scene_discovery(self, payload: PromptPayload) -> dict[str, Any]:
+        project = payload.get("project", {}) or {}
+        if not isinstance(project, dict):
+            project = {}
+        try:
+            mode = PodcastMode(project.get("podcast_mode", PodcastMode.FULL.value))
+        except ValueError:
+            mode = PodcastMode.FULL
+        target_min, _target_max = scene_discovery_candidate_range_for_mode(mode)
+        synthesis_map = payload.get("synthesis_map", {}) or {}
+        primitives = list(synthesis_map.get("primitives", []) or [])
+        passage_list = list(payload.get("passage_list", []) or [])
+        candidates: list[dict[str, Any]] = []
+        for idx in range(target_min):
+            primitive = primitives[min(idx, len(primitives) - 1)] if primitives else {}
+            primitive_id = str(primitive.get("id", f"primitive_{idx + 1:03d}"))
+            passage = passage_list[min(idx, len(passage_list) - 1)] if passage_list else {}
+            passage_id = str(passage.get("passage_id", f"passage_{idx + 1:03d}"))
+            actor_ids = list(primitive.get("actors", primitive.get("actor_ids", [])) or [])
+            if idx == 0:
+                candidate_roles = ["opening"]
+            elif idx == target_min - 3:
+                candidate_roles = ["turn", "hinge"]
+            elif idx == target_min - 2:
+                candidate_roles = ["answer"]
+            elif idx == target_min - 1:
+                candidate_roles = ["residue", "callback"]
+            else:
+                candidate_roles = ["mechanism" if idx % 4 == 0 else "opening"]
+            normalized_roles = [
+                role for role in candidate_roles if role in {"opening", "hinge", "answer", "residue", "mechanism", "callback"}
+            ] or ["opening"]
+            candidates.append(
+                {
+                    "candidate_id": f"candidate_{idx + 1:03d}",
+                    "primitive_ids": [primitive_id],
+                    "passage_ids": [passage_id],
+                    "scene_sketch": f"Candidate scene {idx + 1} stages one load-bearing historical beat.",
+                    "candidate_roles": normalized_roles[:2],
+                    "anchor_image": "A concrete room, object, or public act anchors the beat.",
+                    "why_sceneable": "The beat has a visible carrier and a clear oral payoff.",
+                    "quote_anchor": "A short line can survive on air." if idx % 3 == 0 else "",
+                    "actor_ids": [str(actor_id) for actor_id in actor_ids[:2] if actor_id],
+                }
+            )
+        return {"candidates": candidates}
 
     def _generate_narrative_strategy(self, payload: PromptPayload) -> dict[str, Any]:
         requested_episode_count = payload.get("requested_episode_count")
@@ -647,6 +699,8 @@ class HeuristicLLMClient(LLMClient):
         else:
             recommended_episode_count = int(requested_episode_count)
         episodes = []
+        scene_discovery = payload.get("scene_discovery", {}) or {}
+        discovered_candidates = list(scene_discovery.get("candidates", []) or [])
         for idx in range(recommended_episode_count):
             listener_problem = (
                 "What local turn best explains the series?"
@@ -677,6 +731,44 @@ class HeuristicLLMClient(LLMClient):
                     for primitive_id in primitive_ids
                     if primitive_id not in core_ids
                 ][:support_target_min]
+            promised_beats: list[dict[str, Any]] = []
+            if discovered_candidates:
+                opening_candidate = discovered_candidates[min(idx, len(discovered_candidates) - 1)]
+                promised_beats.append(
+                    {
+                        "beat_id": f"episode_{idx + 1:02d}_opening",
+                        "label": f"Episode {idx + 1} opening promise",
+                        "kind": "scene",
+                        "intended_job": "opening",
+                        "source_candidate_ids": [str(opening_candidate.get("candidate_id", ""))],
+                        "source_primitive_ids": list(opening_candidate.get("primitive_ids", []) or [])[:2],
+                        "why_load_bearing": "The episode needs one concrete opening obligation.",
+                    }
+                )
+                answer_candidate = discovered_candidates[min(idx + 1, len(discovered_candidates) - 1)]
+                promised_beats.append(
+                    {
+                        "beat_id": f"episode_{idx + 1:02d}_answer",
+                        "label": f"Episode {idx + 1} answer promise",
+                        "kind": "scene",
+                        "intended_job": "answer",
+                        "source_candidate_ids": [str(answer_candidate.get("candidate_id", ""))],
+                        "source_primitive_ids": list(answer_candidate.get("primitive_ids", []) or [])[:2],
+                        "why_load_bearing": "The episode needs one explicit answer-bearing scene commitment.",
+                    }
+                )
+                residue_candidate = discovered_candidates[min(idx + 2, len(discovered_candidates) - 1)]
+                promised_beats.append(
+                    {
+                        "beat_id": f"episode_{idx + 1:02d}_residue",
+                        "label": f"Episode {idx + 1} residue promise",
+                        "kind": "callback",
+                        "intended_job": "residue",
+                        "source_candidate_ids": [str(residue_candidate.get("candidate_id", ""))],
+                        "source_primitive_ids": list(residue_candidate.get("primitive_ids", []) or [])[:2],
+                        "why_load_bearing": "The episode should leave one clear remainder live after the answer.",
+                    }
+                )
             episodes.append(
                 {
                     "episode_number": idx + 1,
@@ -705,6 +797,13 @@ class HeuristicLLMClient(LLMClient):
                             if primitive_id not in core_ids
                         },
                         "recall_primitive_ids": pivot_ids[2:3] if idx > 0 else [],
+                    },
+                    "promised_beats": promised_beats,
+                    "negative_scope": {
+                        "boundary": "Keep the episode on one pressure line.",
+                        "excluded_topics": ["adjacent background not required for this episode"],
+                        "tempting_but_out": ["parallel but non-binding subplot"],
+                        "omission_logic": "Leave neighboring material out unless it directly advances the current episode's answer pressure.",
                     },
                 }
             )
@@ -774,15 +873,24 @@ class HeuristicLLMClient(LLMClient):
             1.0, (target_runtime_minutes - closing_minutes) / non_closing_count
         )
         sections = []
+        answer_section_idx = max(0, section_count - 3)
+        residue_section_idx = max(0, section_count - 2)
         for idx in range(section_count):
             section_id = f"section_{idx + 1:02d}"
             local_primitive_ids = [primitive_ids[min(idx, len(primitive_ids) - 1)]]
             is_closing = idx == section_count - 1
+            is_turn = idx == min(2, section_count - 2)
             sections.append(
                 {
                     "section_id": section_id,
                     "purpose": (
-                        "opening" if idx == 0 else "closing" if is_closing else "setup"
+                        "opening"
+                        if idx == 0
+                        else "closing"
+                        if is_closing
+                        else "turn"
+                        if is_turn
+                        else "setup"
                     ),
                     "approx_runtime_minutes": closing_minutes
                     if is_closing
@@ -805,9 +913,13 @@ class HeuristicLLMClient(LLMClient):
                     else "payoff"
                     if idx == section_count - 1
                     else "deepen",
-                    "closure_mode": "final_answer"
-                    if idx == section_count - 1
-                    else "residue",
+                    "closure_mode": (
+                        "final_answer"
+                        if is_closing
+                        else "partial_answer"
+                        if idx == answer_section_idx
+                        else "residue"
+                    ),
                     "priority_core_passage_ids": [],
                     "analysis_goal": (
                         "Cash out the main pressure line in plain terms."
@@ -837,11 +949,32 @@ class HeuristicLLMClient(LLMClient):
                     ),
                 }
             )
+        promised_beat_decisions = []
+        for beat in list(episode.get("promised_beats", []) or []):
+            beat_id = str(beat.get("beat_id", "") or "")
+            intended_job = str(beat.get("intended_job", "") or "")
+            if intended_job == "answer":
+                section_id = sections[answer_section_idx]["section_id"]
+            elif intended_job == "residue":
+                section_id = sections[residue_section_idx]["section_id"]
+            else:
+                section_id = sections[min(1, len(sections) - 1)]["section_id"]
+            promised_beat_decisions.append(
+                {
+                    "beat_id": beat_id,
+                    "decision": "stage",
+                    "section_id": section_id,
+                    "reason": "",
+                }
+            )
         return {
             "episode_number": int(episode.get("episode_number", 1)),
             "major_turn_section_id": sections[min(2, len(sections) - 1)]["section_id"],
+            "answer_section_id": sections[answer_section_idx]["section_id"],
+            "residue_section_id": sections[residue_section_idx]["section_id"],
             "allowed_recurring_primitive_ids": primitive_ids[:2],
             "forbidden_redundancies": [],
+            "promised_beat_decisions": promised_beat_decisions,
             "sections": sections,
             "architecture_notes": ["Heuristic architecture output."],
         }
@@ -861,39 +994,64 @@ class HeuristicLLMClient(LLMClient):
         sections = architecture.get("sections") or [{"section_id": "section_01"}]
         scene_cards = []
         default_duration = 180
-        scene_card_target_min = int(project.get("scene_card_target_min", 34))
-        scene_card_target_max = int(project.get("scene_card_target_max", 44))
-        scene_count = min(
-            scene_card_target_max,
-            max(scene_card_target_min, len(sections)),
+        budget = payload.get("scene_job_budget") or scene_job_budget_for_mode(
+            project.get("podcast_mode", PodcastMode.FULL.value)
         )
+        opening_count = int(budget.get("opening_min", 2))
+        build_count = int(budget.get("build_min", 11))
+        turn_count = int(budget.get("turn_min", 2))
+        job_sequence = (
+            [("opening", "context_setup")] * opening_count
+            + [("build", "action")] * build_count
+            + [("turn", "shock")] * turn_count
+            + [("answer", "implication")]
+            + [("residue", "fallout")]
+            + [("close", "implication")]
+        )
+        scene_count = len(job_sequence)
+        answer_section_id = str(architecture.get("answer_section_id") or sections[max(0, len(sections) - 3)].get("section_id", "section_01"))
+        residue_section_id = str(architecture.get("residue_section_id") or sections[max(0, len(sections) - 2)].get("section_id", "section_01"))
+        close_section_id = str(sections[-1].get("section_id", "section_01"))
+        answer_scene_card_id = None
+        residue_scene_card_id = None
         for idx in range(scene_count):
+            scene_job, scene_role = job_sequence[idx]
             source_section = sections[min(idx, len(sections) - 1)]
             section_id = str(source_section.get("section_id", "section_01"))
+            if scene_job == "answer":
+                section_id = answer_section_id
+            elif scene_job == "residue":
+                section_id = residue_section_id
+            elif scene_job == "close":
+                section_id = close_section_id
             section_primitive_ids = list(source_section.get("primitive_ids", []) or [])
-            is_closing = idx == scene_count - 1
+            is_closing = scene_job == "close"
+            scene_id = f"scene_{idx + 1:02d}"
+            if scene_job == "answer":
+                answer_scene_card_id = scene_id
+            elif scene_job == "residue":
+                residue_scene_card_id = scene_id
             scene_cards.append(
                 {
-                    "scene_id": f"scene_{idx + 1:02d}",
-                    "section_id": section_id
-                    if not is_closing
-                    else str(sections[-1].get("section_id", section_id)),
+                    "scene_id": scene_id,
+                    "section_id": section_id,
                     "title": f"Heuristic scene {idx + 1}",
-                    "scene_role": "setup"
-                    if idx == 0
-                    else "consequence"
-                    if is_closing
-                    else "action",
+                    "scene_role": scene_role,
+                    "scene_job": scene_job,
                     "beat_change": "The listener enters the episode's opening pressure."
-                    if idx == 0
+                    if scene_job == "opening"
                     else "The next beat changes the situation in a concrete way."
-                    if not is_closing
-                    else "The closing beat leaves a constrained answer in view.",
+                    if scene_job in {"build", "turn"}
+                    else "The answer becomes clear without abstraction."
+                    if scene_job == "answer"
+                    else "A cost or ambiguity remains after the answer lands."
+                    if scene_job == "residue"
+                    else "The close exits the episode without reopening the answer.",
                     "must_land_facts": [
                         "A concrete change becomes visible in the beat."
                     ],
                     "entry_image": "A concrete opening image."
-                    if idx == 0
+                    if scene_job == "opening"
                     else "A grounded detail keeps the scene moving.",
                     "observable_detail": "A visible consequence lands in the scene.",
                     "timeframe": None,
@@ -905,30 +1063,42 @@ class HeuristicLLMClient(LLMClient):
                     if is_closing
                     else default_duration,
                     "host_moves": {
-                        "open": [
-                            {
-                                "move_type": "orient",
-                                "note": "Open by telling the listener what pressure is entering the room first.",
-                                "surface_mode": "woven",
-                                "address_mode": "implicit",
-                            }
-                        ],
-                        "pivot": [
-                            {
-                                "move_type": "clarify",
-                                "note": "Make the governing pressure more legible once the concrete material lands.",
-                                "surface_mode": "woven",
-                                "address_mode": "implicit",
-                            }
-                        ],
-                        "close": [
-                            {
-                                "move_type": "evaluate",
-                                "note": "Leave the beat with a clear residue or consequence.",
-                                "surface_mode": "mixed",
-                                "address_mode": "implicit",
-                            }
-                        ],
+                        "open": (
+                            [
+                                {
+                                    "move_type": "orient",
+                                    "target": "pressure first",
+                                    "surface_mode": "woven",
+                                    "address_mode": "implicit",
+                                }
+                            ]
+                            if scene_job in {"opening", "build"}
+                            else []
+                        ),
+                        "pivot": (
+                            [
+                                {
+                                    "move_type": "clarify",
+                                    "target": "what changes",
+                                    "surface_mode": "woven",
+                                    "address_mode": "implicit",
+                                }
+                            ]
+                            if scene_job in {"turn", "answer"}
+                            else []
+                        ),
+                        "close": (
+                            [
+                                {
+                                    "move_type": "evaluate" if scene_job != "close" else "callback",
+                                    "target": "leave residue" if scene_job != "close" else "clean exit",
+                                    "surface_mode": "mixed",
+                                    "address_mode": "implicit",
+                                }
+                            ]
+                            if scene_job in {"residue", "close"}
+                            else []
+                        ),
                     },
                 }
             )
@@ -948,6 +1118,8 @@ class HeuristicLLMClient(LLMClient):
                 "preview": None,
             },
             "scene_cards": scene_cards,
+            "answer_scene_card_id": answer_scene_card_id or "scene_01",
+            "residue_scene_card_id": residue_scene_card_id or "scene_02",
             "dropped_support_primitive_reasons": {},
         }
 

@@ -11,6 +11,7 @@ from podcast_agent.schemas.models import (
     PodcastMode,
     authorial_passage_target_for_mode,
     authorial_passage_target_range_for_mode,
+    SceneJob,
     validate_episode_spine_targets,
 )
 
@@ -90,6 +91,14 @@ class NarrativeStrategyAgent(Agent):
                 if primitive_id:
                     primitive_by_id[primitive_id] = primitive
         for episode in result.episodes:
+            if not episode.promised_beats:
+                raise ValueError(
+                    f"strategy episode {episode.episode_number} must include promised_beats"
+                )
+            if not episode.negative_scope.boundary.strip() or not episode.negative_scope.omission_logic.strip():
+                raise ValueError(
+                    f"strategy episode {episode.episode_number} must include negative_scope.boundary and negative_scope.omission_logic"
+                )
             validate_episode_spine_targets(
                 episode.episode_spine,
                 core_target_min=core_target_min,
@@ -133,6 +142,22 @@ class NarrativeStrategyAgent(Agent):
                                 episode_number=episode.episode_number,
                                 primitive_id=primitive_id,
                             )
+            if sum(
+                1
+                for beat in episode.promised_beats
+                if beat.intended_job == SceneJob.ANSWER
+            ) > 1:
+                raise ValueError(
+                    f"strategy episode {episode.episode_number} may not emit multiple answer promised beats"
+                )
+            if sum(
+                1
+                for beat in episode.promised_beats
+                if beat.intended_job == SceneJob.RESIDUE
+            ) > 1:
+                raise ValueError(
+                    f"strategy episode {episode.episode_number} may not emit multiple residue promised beats"
+                )
         narrator_profile = result.narrator_profile
         if (
             "target_authorial_passages_per_episode"
@@ -155,6 +180,7 @@ class NarrativeStrategyAgent(Agent):
         self,
         synthesis_map: dict,
         project_metadata: dict,
+        scene_discovery: dict | None,
         episode_count: int | None,
         recommended_episode_count_min: int,
         recommended_episode_count_max: int,
@@ -167,6 +193,8 @@ class NarrativeStrategyAgent(Agent):
             "recommended_episode_count_min": recommended_episode_count_min,
             "recommended_episode_count_max": recommended_episode_count_max,
         }
+        if scene_discovery is not None:
+            payload["scene_discovery"] = scene_discovery
         if actor_metadata is not None:
             payload["actor_metadata"] = actor_metadata
         if episode_count is not None:

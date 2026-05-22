@@ -150,6 +150,7 @@ class LLMConfig(BaseModel):
             "spoken_delivery": 30000,
             "synthesis_primitives": 30000,
             "theme_decomposition": 30000,
+            "scene_discovery": 30000,
         },
         description=(
             "Legacy per-schema thinking budget in tokens. "
@@ -498,8 +499,8 @@ class PipelineRuntimeConfig(BaseModel):
     spoken_chunk_max_words: int = Field(default=250, ge=50)
     architecture_section_target_min: int = Field(default=9, ge=1)
     architecture_section_target_max: int = Field(default=12, ge=1)
-    scene_card_target_min: int = Field(default=34, ge=1)
-    scene_card_target_max: int = Field(default=44, ge=1)
+    scene_card_target_min: int = Field(default=30, ge=1)
+    scene_card_target_max: int = Field(default=36, ge=1)
 
     @model_validator(mode="after")
     def validate_retrieval_budget_bounds(self) -> PipelineRuntimeConfig:

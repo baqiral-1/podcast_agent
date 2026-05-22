@@ -40,6 +40,7 @@ from podcast_agent.agents.primitive_function_tagging import (
     PrimitiveFunctionTaggingAgent,
 )
 from podcast_agent.agents.repair import RepairAgent
+from podcast_agent.agents.scene_discovery import SceneDiscoveryAgent
 from podcast_agent.agents.spoken_delivery_agent import (
     SpokenDeliveryAgent,
     SpokenDeliveryBatchSection,
@@ -106,7 +107,9 @@ from podcast_agent.schemas.models import (
     resolve_pipeline_config_for_mode,
     SceneCard,
     SceneCardDraft,
+    SceneDiscoveryArtifact,
     EpisodePlanDraft,
+    SceneJob,
     SeriesNarratorProfile,
     SeriesActorExplanationItem,
     SeriesExplanationItem,
@@ -131,6 +134,8 @@ from podcast_agent.schemas.models import (
     PodcastMode,
     primitive_substrate_target_ranges_for_mode,
     apply_primitive_enrichment_overlay,
+    scene_discovery_candidate_range_for_mode,
+    scene_job_budget_for_mode,
     UtterancePrimitive,
 )
 from podcast_agent.tts.openai_compatible import (
@@ -595,7 +600,7 @@ def _build_writer_scene_brief(scene_payload: dict[str, Any]) -> dict[str, Any]:
         "section_id": scene_payload.get("section_id"),
         "title": scene_payload.get("title", ""),
         "scene_role": scene_payload.get("scene_role", ""),
-        "scene_function": scene_payload.get("scene_function", ""),
+        "scene_job": scene_payload.get("scene_job", ""),
         "entry_image": scene_payload.get("entry_image", ""),
         "observable_detail": scene_payload.get("observable_detail", ""),
         "beat_change": beat_change,
@@ -1094,7 +1099,7 @@ def _build_prior_window_continuity(
             "scene_id": last_scene.scene_id,
             "section_id": last_scene.section_id,
             "scene_role": last_scene.scene_role,
-            "scene_function": last_scene.scene_function,
+            "scene_job": last_scene.scene_job,
             "spine_relation": "",
             "withhold_until": last_scene.withhold_until,
             "intended_move": last_scene.beat_change,
@@ -2601,6 +2606,71 @@ _NARRATIVE_STRATEGY_PRIMITIVE_DROP_FIELDS = {
     "actor_tags",
     "narration_hooks",
 }
+_SCENE_DISCOVERY_PRIMITIVE_BASE_KEEP_FIELDS = {
+    "id",
+    "substrate",
+    "title",
+    "core_passage_ids",
+    "support_passage_ids",
+    "timeframe",
+    "geography",
+    "actor_ids",
+    "functions",
+    "cost",
+    "complication",
+}
+_SCENE_DISCOVERY_PRIMITIVE_TYPE_KEEP_FIELDS: dict[str, set[str]] = {
+    PrimitiveSubstrate.EVENTS.value: {"event_type", "what_happened", "event_result"},
+    PrimitiveSubstrate.ACTS.value: {
+        "act_type",
+        "acting_subject",
+        "act_summary",
+        "immediate_result",
+    },
+    PrimitiveSubstrate.UTTERANCES.value: {
+        "utterance_type",
+        "speaker",
+        "audience",
+        "utterance_summary",
+        "key_quote",
+    },
+    PrimitiveSubstrate.ACTOR_PORTRAITS.value: {
+        "focus_actor_id",
+        "actor_label",
+        "goal_or_project",
+        "stakes_or_fears",
+        "operating_pressure",
+    },
+    PrimitiveSubstrate.MECHANISMS.value: {
+        "mechanism_name",
+        "operating_chain",
+        "inputs",
+        "outputs",
+        "failure_mode",
+    },
+    PrimitiveSubstrate.CONDITIONS.value: {
+        "condition_type",
+        "condition_summary",
+        "active_tension",
+    },
+    PrimitiveSubstrate.ARTIFACTS.value: {
+        "artifact_type",
+        "artifact_label",
+        "artifact_detail",
+    },
+    PrimitiveSubstrate.READINGS.value: {
+        "reading_type",
+        "subject_of_reading",
+        "attributed_to",
+        "reading_summary",
+    },
+}
+_SCENE_DISCOVERY_NARRATION_HOOK_KEEP_FIELDS = {
+    "plain_gloss",
+    "why_it_matters",
+    "best_use",
+    "natural_host_move",
+}
 _NARRATIVE_STRATEGY_ACTOR_KEEP_FIELDS = {
     "actor_id",
     "display_name",
@@ -2769,6 +2839,192 @@ def _build_narrative_strategy_actor_metadata_payload(
             ],
         }
     )
+
+
+def _build_scene_discovery_synthesis_map_payload(
+    synthesis_map: PrimitiveFunctionTaggingArtifact,
+) -> dict[str, Any]:
+    primitives: list[dict[str, Any]] = []
+    for primitive in synthesis_map.primitives:
+        payload = primitive.model_dump(mode="json")
+        keep_fields = _SCENE_DISCOVERY_PRIMITIVE_BASE_KEEP_FIELDS | (
+            _SCENE_DISCOVERY_PRIMITIVE_TYPE_KEEP_FIELDS.get(
+                str(payload.get("substrate", "")),
+                set(),
+            )
+        )
+        compacted_primitive = {
+            key: value for key, value in payload.items() if key in keep_fields
+        }
+        salience = payload.get("salience")
+        if isinstance(salience, dict) and salience.get("score") is not None:
+            compacted_primitive["salience"] = {"score": salience["score"]}
+        narration_hooks = payload.get("narration_hooks")
+        if isinstance(narration_hooks, dict):
+            compacted_primitive["narration_hooks"] = {
+                key: value
+                for key, value in narration_hooks.items()
+                if key in _SCENE_DISCOVERY_NARRATION_HOOK_KEEP_FIELDS
+            }
+        primitives.append(compacted_primitive)
+    return _compact_narrative_strategy_runtime_payload(
+        {
+            "project_id": synthesis_map.project_id,
+            "primitives": primitives,
+            "quality_score": synthesis_map.quality_score,
+            "quality_notes": list(synthesis_map.quality_notes),
+        }
+    )
+
+
+def _build_scene_discovery_project_metadata_payload(
+    project: ThematicProject,
+) -> dict[str, Any]:
+    metadata = _build_narrative_strategy_project_metadata_payload(project)
+    metadata.update(
+        {
+            "scene_card_target_min": project.config.scene_card_target_min,
+            "scene_card_target_max": project.config.scene_card_target_max,
+        }
+    )
+    return _compact_narrative_strategy_runtime_payload(metadata)
+
+
+def _build_scene_discovery_passage_list_payload(
+    *,
+    project: ThematicProject,
+    synthesis_map: PrimitiveFunctionTaggingArtifact,
+    passage_lookup: dict[str, ExtractedPassage],
+) -> list[dict[str, str]]:
+    primitive_lookup = {primitive.id: primitive for primitive in synthesis_map.primitives}
+    passage_refs: list[dict[str, str]] = []
+    core_flags_by_passage_id: dict[str, bool] = {}
+    primitive_sets_by_passage_id: dict[str, set[str]] = {}
+    for primitive in synthesis_map.primitives:
+        for passage_id in primitive.core_passage_ids:
+            if not passage_id:
+                continue
+            passage_refs.append({"passage_id": passage_id, "primitive_id": primitive.id})
+            core_flags_by_passage_id[passage_id] = True
+            primitive_sets_by_passage_id.setdefault(passage_id, set()).add(primitive.id)
+        for passage_id in primitive.support_passage_ids:
+            if not passage_id:
+                continue
+            passage_refs.append({"passage_id": passage_id, "primitive_id": primitive.id})
+            core_flags_by_passage_id.setdefault(passage_id, False)
+            primitive_sets_by_passage_id.setdefault(passage_id, set()).add(primitive.id)
+    query_text = " ".join(
+        part.strip()
+        for part in [project.theme, *list(project.sub_themes)[:4]]
+        if part and part.strip()
+    )
+    query_text_by_passage_id = _build_episode_planning_passage_query_texts(
+        episode_query_text=query_text,
+        passage_refs=passage_refs,
+        primitive_lookup=primitive_lookup,
+    )
+    keep_fraction_by_passage_id: dict[str, float] = {}
+    passage_list: list[dict[str, str]] = []
+    seen_passage_ids: set[str] = set()
+    for passage_ref in passage_refs:
+        passage_id = passage_ref["passage_id"]
+        if passage_id in seen_passage_ids:
+            continue
+        seen_passage_ids.add(passage_id)
+        passage = passage_lookup.get(passage_id)
+        if passage is None:
+            continue
+        primitive_count = len(primitive_sets_by_passage_id.get(passage_id, set()))
+        if primitive_count > 1:
+            keep_fraction_by_passage_id[passage_id] = 0.16
+        elif core_flags_by_passage_id.get(passage_id):
+            keep_fraction_by_passage_id[passage_id] = 0.10
+        else:
+            keep_fraction_by_passage_id[passage_id] = 0.05
+        passage_list.append(
+            {
+                "passage_id": passage_id,
+                "text": _resolve_writing_passage_text(passage),
+            }
+        )
+    _trim_candidate_texts_by_bm25_query_text(
+        query_text,
+        passage_list,
+        keep_fraction=0.10,
+        keep_fraction_by_passage_id=keep_fraction_by_passage_id,
+        query_text_by_passage_id=query_text_by_passage_id,
+    )
+    return [
+        {
+            "passage_id": str(item.get("passage_id", "")),
+            "text": str(item.get("text", "")).strip(),
+        }
+        for item in passage_list
+        if str(item.get("passage_id", "")).strip()
+        and str(item.get("text", "")).strip()
+    ]
+
+
+def _build_scene_discovery_diagnostics(
+    *,
+    artifact: SceneDiscoveryArtifact,
+    mode: PodcastMode,
+) -> dict[str, Any]:
+    target_min, target_max = scene_discovery_candidate_range_for_mode(mode)
+    candidate_count = len(artifact.candidates)
+    overlap_heavy_candidate_ids: list[str] = []
+    thin_evidence_candidate_ids: list[str] = []
+    candidate_sets = [
+        (candidate.candidate_id, set(candidate.primitive_ids))
+        for candidate in artifact.candidates
+    ]
+    for candidate in artifact.candidates:
+        if len(candidate.passage_ids) <= 1 and not candidate.quote_anchor.strip():
+            thin_evidence_candidate_ids.append(candidate.candidate_id)
+    for idx, (candidate_id, primitive_ids) in enumerate(candidate_sets):
+        for other_id, other_primitive_ids in candidate_sets[idx + 1 :]:
+            if not primitive_ids or not other_primitive_ids:
+                continue
+            overlap_ratio = len(primitive_ids & other_primitive_ids) / max(
+                1, min(len(primitive_ids), len(other_primitive_ids))
+            )
+            if overlap_ratio >= 0.75:
+                overlap_heavy_candidate_ids.extend([candidate_id, other_id])
+    overlap_heavy_candidate_ids = sorted(set(overlap_heavy_candidate_ids))
+    warnings: list[str] = []
+    if candidate_count < target_min:
+        warnings.append(
+            f"scene_candidate_count_below_target: {candidate_count} < {target_min}"
+        )
+    elif candidate_count > target_max:
+        warnings.append(
+            f"scene_candidate_count_above_target: {candidate_count} > {target_max}"
+        )
+    if overlap_heavy_candidate_ids:
+        warnings.append(
+            "scene_candidate_overlap_heavy: "
+            f"{_preview_ids(overlap_heavy_candidate_ids)}"
+        )
+    if thin_evidence_candidate_ids:
+        warnings.append(
+            "scene_candidate_thin_evidence: "
+            f"{_preview_ids(sorted(set(thin_evidence_candidate_ids)))}"
+        )
+    return {
+        "candidate_count": candidate_count,
+        "candidate_count_target_min": target_min,
+        "candidate_count_target_max": target_max,
+        "candidates_with_quote_anchor": sum(
+            1 for candidate in artifact.candidates if candidate.quote_anchor.strip()
+        ),
+        "candidates_with_actor_ids": sum(
+            1 for candidate in artifact.candidates if candidate.actor_ids
+        ),
+        "overlap_heavy_candidate_ids": overlap_heavy_candidate_ids,
+        "thin_evidence_candidate_ids": sorted(set(thin_evidence_candidate_ids)),
+        "warning_count": len(warnings),
+        "warnings": warnings,
+    }
 
 
 _ENRICHED_PRIMITIVE_MODEL_BY_FAMILY: dict[str, type[SynthesisPrimitiveBase]] = {
@@ -4317,17 +4573,17 @@ _NO_ACTOR_BOUNDS_MULT_BY_BUCKET: dict[str, tuple[float, float]] = {
     "mid": (0.45, 0.90),
     "action": (0.60, 1.20),
 }
-_ARGUMENT_SCENE_FUNCTIONS: frozenset[str] = frozenset(
-    {"mechanism", "landing", "callback", "afterlife"}
+_ARGUMENT_SCENE_JOBS: frozenset[str] = frozenset(
+    {"build", "answer", "residue", "close"}
 )
 _ARGUMENT_ROLES: frozenset[str] = frozenset({"implication", "perspective_shift"})
 _ACTION_BUCKET_ROLES: frozenset[str] = frozenset(
     {"shock", "action", "fallout", "reveal", "reversal", "stage_choice"}
 )
-_STRUCTURAL_SCENE_FUNCTIONS: frozenset[str] = frozenset(
-    {"mechanism", "turn", "landing", "callback", "afterlife"}
+_STRUCTURAL_SCENE_JOBS: frozenset[str] = frozenset(
+    {"turn", "answer", "residue", "close"}
 )
-_GROUNDING_SCENE_FUNCTIONS: frozenset[str] = frozenset({"scene", "hinge"})
+_GROUNDING_SCENE_JOBS: frozenset[str] = frozenset({"opening", "build", "turn"})
 _GROUNDING_SCENE_ROLES: frozenset[str] = frozenset(
     {"actor_setup", "action", "shock", "reaction", "fallout"}
 )
@@ -4710,16 +4966,21 @@ def _build_host_move_plan_diagnostics(
 ) -> tuple[dict[str, Any], list[str]]:
     counts_by_type: dict[str, int] = {}
     counts_by_phase: dict[str, int] = {phase: 0 for phase in _HOST_MOVE_PHASE_ORDER}
-    meta_note_phase_ids: list[str] = []
+    meta_target_phase_ids: list[str] = []
     editorial_scaffolding_phase_ids: list[str] = []
-    first_person_plural_note_scene_ids: list[str] = []
+    first_person_plural_target_scene_ids: list[str] = []
     disallowed_move_scene_ids: list[str] = []
     personalized_scene_ids: list[str] = []
     scenes_with_1_phase: list[str] = []
-    scenes_with_2_phases: list[str] = []
-    scenes_with_3_phases: list[str] = []
-    full_phase_scene_ids: list[str] = []
+    scenes_with_2_plus_phases: list[str] = []
     total_host_phase_count = 0
+    host_target_too_long_ids: list[str] = []
+    host_target_sentence_shaped_ids: list[str] = []
+    host_target_verb_led_ids: list[str] = []
+    host_target_abstract_ids: list[str] = []
+    host_phase_multiple_cues: list[str] = []
+    host_phase_overcoverage_unjustified: list[str] = []
+    host_target_closure_override_pressure: list[str] = []
     allowed_moves = set(narrator_profile.allowed_moves)
 
     for scene in scene_cards:
@@ -4727,35 +4988,60 @@ def _build_host_move_plan_diagnostics(
         phase_bucket_count = _scene_host_phase_bucket_count(scene)
         if phase_bucket_count == 1:
             scenes_with_1_phase.append(scene.scene_id)
-        elif phase_bucket_count == 2:
-            scenes_with_2_phases.append(scene.scene_id)
-        elif phase_bucket_count == 3:
-            scenes_with_3_phases.append(scene.scene_id)
-            full_phase_scene_ids.append(scene.scene_id)
+        elif phase_bucket_count >= 2:
+            scenes_with_2_plus_phases.append(scene.scene_id)
+        if phase_bucket_count > 1 and scene.scene_job == SceneJob.BUILD:
+            host_phase_overcoverage_unjustified.append(scene.scene_id)
 
         scene_is_personalized = False
-        scene_has_first_person_plural_note = False
+        scene_has_first_person_plural_target = False
         scene_has_disallowed_move = False
-        for phase, cue in _iter_host_move_cues(scene):
-            total_host_phase_count += 1
-            counts_by_phase[phase] = counts_by_phase.get(phase, 0) + 1
-            counts_by_type[cue.move_type] = counts_by_type.get(cue.move_type, 0) + 1
-            normalized_note = " ".join(cue.note.lower().split())
-            if normalized_note and re.search(r"\b(we|our|us)\b", normalized_note):
-                scene_has_first_person_plural_note = True
-            if cue.address_mode in {"we", "you", "i"}:
-                scene_is_personalized = True
-            if cue.move_type not in allowed_moves:
-                scene_has_disallowed_move = True
-            if _host_move_note_looks_meta(cue.note):
-                meta_note_phase_ids.append(f"{scene.scene_id}:{phase}")
-            if _host_move_editorial_scaffolding_flags(
-                cue.note,
-                anchor_tokens=anchor_tokens,
-            ):
-                editorial_scaffolding_phase_ids.append(f"{scene.scene_id}:{phase}")
-        if scene_has_first_person_plural_note:
-            first_person_plural_note_scene_ids.append(scene.scene_id)
+        for phase in _HOST_MOVE_PHASE_ORDER:
+            phase_cues = list(getattr(scene.host_moves, phase))
+            if len(phase_cues) > 1:
+                host_phase_multiple_cues.append(f"{scene.scene_id}:{phase}")
+            for cue in phase_cues:
+                total_host_phase_count += 1
+                counts_by_phase[phase] = counts_by_phase.get(phase, 0) + 1
+                counts_by_type[cue.move_type] = counts_by_type.get(
+                    cue.move_type, 0
+                ) + 1
+                normalized_target = " ".join(cue.target.lower().split())
+                if normalized_target and re.search(r"\b(we|our|us)\b", normalized_target):
+                    scene_has_first_person_plural_target = True
+                if cue.address_mode in {"we", "you", "i"}:
+                    scene_is_personalized = True
+                if cue.move_type not in allowed_moves:
+                    scene_has_disallowed_move = True
+                if _word_count(cue.target) > 6:
+                    host_target_too_long_ids.append(f"{scene.scene_id}:{phase}")
+                if len(re.findall(r"[.!?]", cue.target)) > 0 or _word_count(
+                    cue.target
+                ) > 4:
+                    host_target_sentence_shaped_ids.append(f"{scene.scene_id}:{phase}")
+                if re.match(
+                    r"^(use|let|enter|keep|tell|state|mark|name|define)\b",
+                    normalized_target,
+                ):
+                    host_target_verb_led_ids.append(f"{scene.scene_id}:{phase}")
+                if _host_move_note_looks_meta(cue.target):
+                    meta_target_phase_ids.append(f"{scene.scene_id}:{phase}")
+                target_flags = _host_move_editorial_scaffolding_flags(
+                    cue.target,
+                    anchor_tokens=anchor_tokens,
+                )
+                if target_flags:
+                    editorial_scaffolding_phase_ids.append(f"{scene.scene_id}:{phase}")
+                if "abstract_target_noun" in target_flags:
+                    host_target_abstract_ids.append(f"{scene.scene_id}:{phase}")
+                if scene.scene_job == SceneJob.CLOSE and (
+                    phase != "close" or cue.move_type in {"clarify", "contrast"}
+                ):
+                    host_target_closure_override_pressure.append(
+                        f"{scene.scene_id}:{phase}"
+                    )
+        if scene_has_first_person_plural_target:
+            first_person_plural_target_scene_ids.append(scene.scene_id)
         if scene_is_personalized:
             personalized_scene_ids.append(scene.scene_id)
         if scene_has_disallowed_move:
@@ -4763,31 +5049,51 @@ def _build_host_move_plan_diagnostics(
 
     warnings: list[str] = []
     scene_card_count = len(scene_cards)
-    full_phase_scene_count = len(full_phase_scene_ids)
-    full_phase_scene_coverage = full_phase_scene_count / max(1, scene_card_count)
-    if meta_note_phase_ids:
+    if meta_target_phase_ids:
         warnings.append(
-            f"host_phase_meta_notes_detected: {_preview_ids(meta_note_phase_ids)}"
+            f"host_phase_meta_targets_detected: {_preview_ids(meta_target_phase_ids)}"
         )
     if editorial_scaffolding_phase_ids:
         warnings.append(
             "host_phase_editorial_scaffolding_detected: "
             f"{_preview_ids(sorted(set(editorial_scaffolding_phase_ids)))}"
         )
+    if host_target_too_long_ids:
+        warnings.append(
+            f"host_target_too_long: {_preview_ids(sorted(set(host_target_too_long_ids)))}"
+        )
+    if host_target_sentence_shaped_ids:
+        warnings.append(
+            "host_target_sentence_shaped: "
+            f"{_preview_ids(sorted(set(host_target_sentence_shaped_ids)))}"
+        )
+    if host_target_verb_led_ids:
+        warnings.append(
+            f"host_target_verb_led: {_preview_ids(sorted(set(host_target_verb_led_ids)))}"
+        )
+    if host_phase_multiple_cues:
+        warnings.append(
+            "host_phase_multiple_cues: "
+            f"{_preview_ids(sorted(set(host_phase_multiple_cues)))}"
+        )
+    if host_phase_overcoverage_unjustified:
+        warnings.append(
+            "host_phase_overcoverage_unjustified: "
+            f"{_preview_ids(sorted(set(host_phase_overcoverage_unjustified)))}"
+        )
+    if host_target_abstract_ids:
+        warnings.append(
+            f"host_target_abstract: {_preview_ids(sorted(set(host_target_abstract_ids)))}"
+        )
+    if host_target_closure_override_pressure:
+        warnings.append(
+            "host_target_closure_override_pressure: "
+            f"{_preview_ids(sorted(set(host_target_closure_override_pressure)))}"
+        )
     if disallowed_move_scene_ids:
         warnings.append(
             "host_move_allowed_move_mismatch: "
             f"{_preview_ids(disallowed_move_scene_ids)}"
-        )
-    if (
-        full_phase_scene_coverage
-        < narrator_profile.target_full_phase_scene_coverage_min
-    ):
-        warnings.append(
-            "host_full_phase_coverage_below_min: "
-            f"{full_phase_scene_count}/{scene_card_count} "
-            f"({full_phase_scene_coverage:.2f} < "
-            f"{narrator_profile.target_full_phase_scene_coverage_min:.2f})"
         )
     orient_callback_count = counts_by_type.get("orient", 0) + counts_by_type.get(
         "callback", 0
@@ -4803,9 +5109,7 @@ def _build_host_move_plan_diagnostics(
             f"evaluate={counts_by_type.get('evaluate', 0)} "
             f"naming_note={counts_by_type.get('naming_note', 0)}"
         )
-    host_shaped_scene_count = (
-        len(scenes_with_1_phase) + len(scenes_with_2_phases) + len(scenes_with_3_phases)
-    )
+    host_shaped_scene_count = len(scenes_with_1_phase) + len(scenes_with_2_plus_phases)
     if host_shaped_scene_count and len(personalized_scene_ids) < max(
         1, int(host_shaped_scene_count * 0.2)
     ):
@@ -4816,31 +5120,33 @@ def _build_host_move_plan_diagnostics(
         )
 
     diagnostics = {
-        "target_full_phase_scene_coverage_min": (
-            narrator_profile.target_full_phase_scene_coverage_min
-        ),
-        "target_full_phase_scene_coverage_target": (
-            narrator_profile.target_full_phase_scene_coverage_target
-        ),
-        "target_policy": "full_phase_scene_coverage",
         "scene_card_count": scene_card_count,
         "host_shaped_scene_count": host_shaped_scene_count,
-        "full_phase_scene_count": full_phase_scene_count,
-        "full_phase_scene_coverage": full_phase_scene_coverage,
         "total_host_phase_count": total_host_phase_count,
         "counts_by_type": counts_by_type,
         "counts_by_phase": counts_by_phase,
         "scenes_with_1_phase_count": len(scenes_with_1_phase),
-        "scenes_with_2_phases_count": len(scenes_with_2_phases),
-        "scenes_with_3_phases_count": len(scenes_with_3_phases),
-        "full_phase_scene_ids": full_phase_scene_ids,
-        "meta_note_phase_ids": meta_note_phase_ids,
+        "scenes_with_2_plus_phases_count": len(scenes_with_2_plus_phases),
+        "meta_target_phase_ids": meta_target_phase_ids,
         "editorial_scaffolding_phase_ids": sorted(
             set(editorial_scaffolding_phase_ids)
         ),
-        "first_person_plural_note_scene_ids": first_person_plural_note_scene_ids,
+        "first_person_plural_target_scene_ids": first_person_plural_target_scene_ids,
         "personalized_scene_ids": personalized_scene_ids,
         "disallowed_move_scene_ids": disallowed_move_scene_ids,
+        "host_target_too_long_ids": sorted(set(host_target_too_long_ids)),
+        "host_target_sentence_shaped_ids": sorted(
+            set(host_target_sentence_shaped_ids)
+        ),
+        "host_target_verb_led_ids": sorted(set(host_target_verb_led_ids)),
+        "host_phase_multiple_cues": sorted(set(host_phase_multiple_cues)),
+        "host_phase_overcoverage_unjustified": sorted(
+            set(host_phase_overcoverage_unjustified)
+        ),
+        "host_target_abstract_ids": sorted(set(host_target_abstract_ids)),
+        "host_target_closure_override_pressure": sorted(
+            set(host_target_closure_override_pressure)
+        ),
         "warning_count": len(warnings),
         "warnings": warnings,
     }
@@ -4849,11 +5155,11 @@ def _build_host_move_plan_diagnostics(
 
 def _no_actor_bucket(scene: SceneCardDraft | SceneCard) -> str:
     if (
-        scene.scene_function in _ARGUMENT_SCENE_FUNCTIONS
+        scene.scene_job in _ARGUMENT_SCENE_JOBS
         or scene.scene_role in _ARGUMENT_ROLES
     ):
         return "argument"
-    if scene.scene_function == "turn" or scene.scene_role in _ACTION_BUCKET_ROLES:
+    if scene.scene_job == "turn" or scene.scene_role in _ACTION_BUCKET_ROLES:
         return "action"
     return "mid"
 
@@ -5499,6 +5805,59 @@ def _validate_architecture_transition(
             "Episode architecture must end with a closing section for episode "
             f"{architecture.episode_number}."
         )
+    if not architecture.answer_section_id:
+        raise RuntimeError(
+            "Episode architecture must include answer_section_id for episode "
+            f"{architecture.episode_number}."
+        )
+    if not architecture.residue_section_id:
+        raise RuntimeError(
+            "Episode architecture must include residue_section_id for episode "
+            f"{architecture.episode_number}."
+        )
+    section_order = {
+        section.section_id: idx for idx, section in enumerate(architecture.sections)
+    }
+    if section_order[architecture.residue_section_id] <= section_order[
+        architecture.answer_section_id
+    ]:
+        raise RuntimeError(
+            "Episode architecture must place residue_section_id after answer_section_id "
+            f"for episode {architecture.episode_number}."
+        )
+
+    promised_beat_ids = [beat.beat_id for beat in strategy_episode.promised_beats]
+    if promised_beat_ids:
+        decision_by_id = {
+            decision.beat_id: decision
+            for decision in architecture.promised_beat_decisions
+        }
+        missing_decision_ids = sorted(
+            beat_id for beat_id in promised_beat_ids if beat_id not in decision_by_id
+        )
+        if missing_decision_ids:
+            raise RuntimeError(
+                "Episode architecture omitted promised beat decisions for episode "
+                f"{architecture.episode_number}: {_preview_ids(missing_decision_ids)}"
+            )
+        unknown_decision_ids = sorted(
+            beat_id for beat_id in decision_by_id if beat_id not in set(promised_beat_ids)
+        )
+        if unknown_decision_ids:
+            raise RuntimeError(
+                "Episode architecture emitted promised beat decisions outside the strategy "
+                f"episode for episode {architecture.episode_number}: {_preview_ids(unknown_decision_ids)}"
+            )
+        invalid_staged_section_ids = sorted(
+            decision.section_id or ""
+            for decision in architecture.promised_beat_decisions
+            if decision.section_id and decision.section_id not in section_order
+        )
+        if invalid_staged_section_ids:
+            raise RuntimeError(
+                "Episode architecture staged promised beats into unknown sections for episode "
+                f"{architecture.episode_number}: {_preview_ids(invalid_staged_section_ids)}"
+            )
     return architecture
 
 
@@ -5562,6 +5921,18 @@ def _build_episode_architecture_realization(
         for primitive_id in selected_recall_primitive_ids
         if primitive_id not in section_primitive_id_set
     ]
+    section_order = {
+        section.section_id: idx for idx, section in enumerate(architecture.sections)
+    }
+    answer_section_id = architecture.answer_section_id
+    residue_section_id = architecture.residue_section_id
+    promised_beat_ids = [beat.beat_id for beat in strategy_episode.promised_beats]
+    promised_beat_decision_counts = {"stage": 0, "defer": 0, "drop": 0}
+    promised_beat_unaccounted_ids: list[str] = []
+    staged_promised_beats_without_section: list[str] = []
+    deferred_promised_beats_without_reason: list[str] = []
+    dropped_promised_beats_without_reason: list[str] = []
+    negative_scope_violation_examples: list[str] = []
     warnings: list[str] = []
     warnings.extend(
         _build_architecture_section_count_warnings(
@@ -5675,6 +6046,133 @@ def _build_episode_architecture_realization(
         warnings.append(
             f"explanation_section_overloaded: {_preview_ids(overloaded_section_ids)}"
         )
+    if not answer_section_id:
+        warnings.append("answer_section_missing")
+    if not residue_section_id:
+        warnings.append("residue_section_missing")
+    if answer_section_id and residue_section_id:
+        if answer_section_id == residue_section_id:
+            warnings.append("answer_residue_collision")
+        elif section_order.get(residue_section_id, -1) <= section_order.get(
+            answer_section_id, -1
+        ):
+            warnings.append("residue_precedes_answer")
+
+    decision_by_id = {
+        decision.beat_id: decision for decision in architecture.promised_beat_decisions
+    }
+    for decision in architecture.promised_beat_decisions:
+        promised_beat_decision_counts[decision.decision.value] = (
+            promised_beat_decision_counts.get(decision.decision.value, 0) + 1
+        )
+        if decision.decision.value == "stage":
+            if not decision.section_id or decision.section_id not in section_order:
+                staged_promised_beats_without_section.append(decision.beat_id)
+        elif decision.decision.value == "defer":
+            if not decision.reason.strip():
+                deferred_promised_beats_without_reason.append(decision.beat_id)
+        elif decision.decision.value == "drop":
+            if not decision.reason.strip():
+                dropped_promised_beats_without_reason.append(decision.beat_id)
+    promised_beat_unaccounted_ids = [
+        beat_id for beat_id in promised_beat_ids if beat_id not in decision_by_id
+    ]
+    if promised_beat_unaccounted_ids:
+        warnings.append(
+            "promised_beat_unaccounted_for: "
+            f"{_preview_ids(promised_beat_unaccounted_ids)}"
+        )
+    if staged_promised_beats_without_section:
+        warnings.append(
+            "promised_beat_staged_without_section: "
+            f"{_preview_ids(staged_promised_beats_without_section)}"
+        )
+    if deferred_promised_beats_without_reason:
+        warnings.append(
+            "promised_beat_deferred_without_reason: "
+            f"{_preview_ids(deferred_promised_beats_without_reason)}"
+        )
+    if dropped_promised_beats_without_reason:
+        warnings.append(
+            "promised_beat_dropped_without_reason: "
+            f"{_preview_ids(dropped_promised_beats_without_reason)}"
+        )
+
+    negative_scope_terms = [
+        term.strip()
+        for term in [
+            *strategy_episode.negative_scope.excluded_topics,
+            *strategy_episode.negative_scope.tempting_but_out,
+        ]
+        if term and str(term).strip()
+    ]
+    if negative_scope_terms:
+        for section in architecture.sections:
+            section_text = " ".join(
+                [
+                    section.section_anchor,
+                    *section.must_stage_beats,
+                    *[passage.claim for passage in section.authorial_passages],
+                ]
+            ).lower()
+            for term in negative_scope_terms:
+                term_lower = term.lower()
+                if term_lower and term_lower in section_text:
+                    negative_scope_violation_examples.append(
+                        f"{section.section_id}:{term}"
+                    )
+    if negative_scope_violation_examples:
+        warnings.append(
+            "negative_scope_violation: "
+            f"{_preview_ids(negative_scope_violation_examples)}"
+        )
+
+    def _section_tokens(section_id: str | None) -> set[str]:
+        if not section_id:
+            return set()
+        section = next(
+            (item for item in architecture.sections if item.section_id == section_id),
+            None,
+        )
+        if section is None:
+            return set()
+        text = " ".join(
+            [
+                section.section_anchor,
+                *section.must_stage_beats,
+                *[passage.claim for passage in section.authorial_passages],
+            ]
+        )
+        return _normalize_section_text_tokens(text)
+
+    answer_tokens = _section_tokens(answer_section_id)
+    closing_section = architecture.sections[-1] if architecture.sections else None
+    closing_tokens = _section_tokens(closing_section.section_id if closing_section else None)
+    if answer_tokens and closing_tokens:
+        overlap = answer_tokens & closing_tokens
+        overlap_ratio = len(overlap) / max(1, min(len(answer_tokens), len(closing_tokens)))
+        if len(overlap) >= 4 and overlap_ratio >= 0.6:
+            warnings.append("close_restates_answer")
+
+    if closing_section is not None and primitive_lookup is not None:
+        prior_primitive_ids = {
+            primitive_id
+            for section in architecture.sections[:-1]
+            for primitive_id in section.primitive_ids
+        }
+        closing_only_system_primitive_ids = [
+            primitive_id
+            for primitive_id in closing_section.primitive_ids
+            if primitive_id not in prior_primitive_ids
+            and primitive_id in primitive_lookup
+            and primitive_lookup[primitive_id].substrate.value
+            in {"mechanisms", "conditions", "readings"}
+        ]
+        if closing_only_system_primitive_ids:
+            warnings.append(
+                "closing_section_new_mechanism_or_counterpressure: "
+                f"{_preview_ids(closing_only_system_primitive_ids)}"
+            )
     return {
         "episode_number": architecture.episode_number,
         "selected_core_primitive_ids": selected_core_primitive_ids,
@@ -5684,6 +6182,15 @@ def _build_episode_architecture_realization(
         "missing_core_primitive_ids": missing_core_primitive_ids,
         "missing_support_primitive_ids": missing_support_primitive_ids,
         "missing_recall_primitive_ids": missing_recall_primitive_ids,
+        "answer_section_id": answer_section_id,
+        "residue_section_id": residue_section_id,
+        "promised_beat_count": len(promised_beat_ids),
+        "promised_beat_decision_counts": promised_beat_decision_counts,
+        "promised_beat_unaccounted_ids": promised_beat_unaccounted_ids,
+        "staged_promised_beats_without_section": staged_promised_beats_without_section,
+        "deferred_promised_beats_without_reason": deferred_promised_beats_without_reason,
+        "dropped_promised_beats_without_reason": dropped_promised_beats_without_reason,
+        "negative_scope_violation_examples": negative_scope_violation_examples,
         "target_authorial_passages_per_episode": target_authorial_passages,
         "authorial_passage_count": authorial_passage_count,
         "warning_count": len(warnings),
@@ -5790,6 +6297,169 @@ def _validate_plan_transition(
                 "episode_number": plan.episode_number,
                 "scene_ids": sorted(set(multi_turn_sections)),
                 "instruction": "Keep scene cards lean. Split overloaded beats instead of packing more than five required facts into one scene.",
+            },
+        )
+
+    scene_by_id = {scene.scene_id: scene for scene in plan.scene_cards}
+    if not plan.answer_scene_card_id:
+        raise ComplianceViolationError(
+            f"Episode plan must include answer_scene_card_id for episode {plan.episode_number}.",
+            data={
+                "issue": "answer_scene_missing",
+                "episode_number": plan.episode_number,
+                "instruction": "Return exactly one answer scene and set answer_scene_card_id to that scene_id.",
+            },
+        )
+    if not plan.residue_scene_card_id:
+        raise ComplianceViolationError(
+            f"Episode plan must include residue_scene_card_id for episode {plan.episode_number}.",
+            data={
+                "issue": "residue_scene_missing",
+                "episode_number": plan.episode_number,
+                "instruction": "Return exactly one residue scene and set residue_scene_card_id to that scene_id.",
+            },
+        )
+
+    answer_scene = scene_by_id.get(plan.answer_scene_card_id)
+    residue_scene = scene_by_id.get(plan.residue_scene_card_id)
+    if answer_scene is None or answer_scene.scene_job != SceneJob.ANSWER:
+        raise ComplianceViolationError(
+            "Episode plan answer_scene_card_id must reference a scene_job='answer' card.",
+            data={
+                "issue": "answer_scene_invalid",
+                "episode_number": plan.episode_number,
+                "answer_scene_card_id": plan.answer_scene_card_id,
+                "instruction": "Set answer_scene_card_id to the scene_id of the single answer card.",
+            },
+        )
+    if residue_scene is None or residue_scene.scene_job != SceneJob.RESIDUE:
+        raise ComplianceViolationError(
+            "Episode plan residue_scene_card_id must reference a scene_job='residue' card.",
+            data={
+                "issue": "residue_scene_invalid",
+                "episode_number": plan.episode_number,
+                "residue_scene_card_id": plan.residue_scene_card_id,
+                "instruction": "Set residue_scene_card_id to the scene_id of the single residue card.",
+            },
+        )
+    if architecture.answer_section_id and answer_scene.section_id != architecture.answer_section_id:
+        raise ComplianceViolationError(
+            "Answer scene does not belong to architecture.answer_section_id.",
+            data={
+                "issue": "answer_scene_wrong_section",
+                "episode_number": plan.episode_number,
+                "answer_scene_card_id": plan.answer_scene_card_id,
+                "expected_section_id": architecture.answer_section_id,
+                "actual_section_id": answer_scene.section_id,
+                "instruction": "Place the answer scene inside the declared answer section.",
+            },
+        )
+    if architecture.residue_section_id and residue_scene.section_id != architecture.residue_section_id:
+        raise ComplianceViolationError(
+            "Residue scene does not belong to architecture.residue_section_id.",
+            data={
+                "issue": "residue_scene_wrong_section",
+                "episode_number": plan.episode_number,
+                "residue_scene_card_id": plan.residue_scene_card_id,
+                "expected_section_id": architecture.residue_section_id,
+                "actual_section_id": residue_scene.section_id,
+                "instruction": "Place the residue scene inside the declared residue section.",
+            },
+        )
+
+    answer_scene_ids = [
+        scene.scene_id for scene in plan.scene_cards if scene.scene_job == SceneJob.ANSWER
+    ]
+    residue_scene_ids = [
+        scene.scene_id for scene in plan.scene_cards if scene.scene_job == SceneJob.RESIDUE
+    ]
+    close_scene_ids = [
+        scene.scene_id for scene in plan.scene_cards if scene.scene_job == SceneJob.CLOSE
+    ]
+    if len(answer_scene_ids) != 1:
+        raise ComplianceViolationError(
+            "Episode plan must contain exactly one answer scene.",
+            data={
+                "issue": "answer_scene_count_invalid",
+                "episode_number": plan.episode_number,
+                "scene_ids": answer_scene_ids,
+                "instruction": "Return exactly one scene card with scene_job='answer'.",
+            },
+        )
+    if len(residue_scene_ids) != 1:
+        raise ComplianceViolationError(
+            "Episode plan must contain exactly one residue scene.",
+            data={
+                "issue": "residue_scene_count_invalid",
+                "episode_number": plan.episode_number,
+                "scene_ids": residue_scene_ids,
+                "instruction": "Return exactly one scene card with scene_job='residue'.",
+            },
+        )
+    if len(close_scene_ids) != 1:
+        raise ComplianceViolationError(
+            "Episode plan must contain exactly one close scene.",
+            data={
+                "issue": "close_scene_count_invalid",
+                "episode_number": plan.episode_number,
+                "scene_ids": close_scene_ids,
+                "instruction": "Return exactly one scene card with scene_job='close'.",
+            },
+        )
+
+    ordered_scene_ids = [scene.scene_id for scene in plan.scene_cards]
+    if ordered_scene_ids.index(residue_scene.scene_id) <= ordered_scene_ids.index(
+        answer_scene.scene_id
+    ):
+        raise ComplianceViolationError(
+            "Episode plan must place residue after answer.",
+            data={
+                "issue": "residue_precedes_answer",
+                "episode_number": plan.episode_number,
+                "answer_scene_card_id": answer_scene.scene_id,
+                "residue_scene_card_id": residue_scene.scene_id,
+                "instruction": "Place the residue scene after the answer scene.",
+            },
+        )
+    close_scene_id = close_scene_ids[0]
+    if ordered_scene_ids.index(close_scene_id) <= ordered_scene_ids.index(
+        residue_scene.scene_id
+    ):
+        raise ComplianceViolationError(
+            "Episode plan must place the close scene after residue.",
+            data={
+                "issue": "close_precedes_residue",
+                "episode_number": plan.episode_number,
+                "close_scene_card_id": close_scene_id,
+                "residue_scene_card_id": residue_scene.scene_id,
+                "instruction": "Place the close scene after the residue scene.",
+            },
+        )
+    if ordered_scene_ids[-1] != close_scene_id:
+        raise ComplianceViolationError(
+            "Episode plan must end with the close scene.",
+            data={
+                "issue": "close_not_last",
+                "episode_number": plan.episode_number,
+                "close_scene_card_id": close_scene_id,
+                "instruction": "Make the close scene the final scene card in the episode.",
+            },
+        )
+
+    overfull_host_phases = [
+        f"{scene.scene_id}:{phase}"
+        for scene in plan.scene_cards
+        for phase in _HOST_MOVE_PHASE_ORDER
+        if len(getattr(scene.host_moves, phase)) > 1
+    ]
+    if overfull_host_phases:
+        raise ComplianceViolationError(
+            "Episode plan must use at most one host cue per populated phase.",
+            data={
+                "issue": "host_phase_multiple_cues",
+                "episode_number": plan.episode_number,
+                "phase_ids": overfull_host_phases,
+                "instruction": "Compress host cues so each populated phase has at most one cue.",
             },
         )
 
@@ -6052,6 +6722,128 @@ def _build_scene_card_count_warnings(
     return warnings
 
 
+def _scene_overlap_token_ratio(
+    left_tokens: set[str],
+    right_tokens: set[str],
+) -> float:
+    if not left_tokens or not right_tokens:
+        return 0.0
+    return len(left_tokens & right_tokens) / max(1, min(len(left_tokens), len(right_tokens)))
+
+
+def _scene_text_tokens(scene: SceneCardDraft | SceneCard) -> set[str]:
+    return _normalize_section_text_tokens(
+        " ".join([scene.beat_change, *scene.must_land_facts, scene.entry_image])
+    )
+
+
+def _build_scene_job_budget_diagnostics(
+    *,
+    scene_cards: list[SceneCardDraft | SceneCard],
+    scene_job_budget: dict[str, Any],
+    answer_scene_card_id: str | None,
+    residue_scene_card_id: str | None,
+) -> tuple[dict[str, Any], list[str]]:
+    scene_job_counts = _build_scene_job_counts(scene_cards)
+    scene_ids_by_job: dict[str, list[str]] = {
+        job.value: [scene.scene_id for scene in scene_cards if scene.scene_job == job]
+        for job in SceneJob
+    }
+    warnings: list[str] = []
+    total_count = len(scene_cards)
+    total_min = int(scene_job_budget.get("total_min", total_count))
+    total_max = int(scene_job_budget.get("total_max", total_count))
+    if total_count < total_min:
+        warnings.append(
+            f"scene_budget_total_out_of_range: {total_count} < {total_min} (target range {total_min}-{total_max})"
+        )
+    elif total_count > total_max:
+        warnings.append(
+            f"scene_budget_total_out_of_range: {total_count} > {total_max} (target range {total_min}-{total_max})"
+        )
+
+    for job_name in ("opening", "build", "turn"):
+        count = scene_job_counts.get(job_name, 0)
+        lower = int(scene_job_budget.get(f"{job_name}_min", count))
+        upper = int(scene_job_budget.get(f"{job_name}_max", count))
+        if count < lower or count > upper:
+            warnings.append(
+                f"scene_budget_{job_name}_out_of_range: {count} (target range {lower}-{upper})"
+            )
+
+    for job_name in ("answer", "residue", "close"):
+        count = scene_job_counts.get(job_name, 0)
+        if count == 0:
+            warnings.append(f"scene_budget_{job_name}_missing")
+        elif count > 1:
+            warnings.append(f"scene_budget_{job_name}_duplicate: {count}")
+
+    ordered_scene_ids = [scene.scene_id for scene in scene_cards]
+    answer_scene_present = bool(answer_scene_card_id) and answer_scene_card_id in ordered_scene_ids
+    residue_scene_present = bool(residue_scene_card_id) and residue_scene_card_id in ordered_scene_ids
+    close_scene_ids = scene_ids_by_job[SceneJob.CLOSE.value]
+    close_scene_card_id = close_scene_ids[0] if close_scene_ids else None
+    close_scene_present = close_scene_card_id is not None
+    residue_follows_answer = True
+    close_follows_residue = True
+    if answer_scene_present and residue_scene_present:
+        residue_follows_answer = ordered_scene_ids.index(residue_scene_card_id) > ordered_scene_ids.index(answer_scene_card_id)
+        if not residue_follows_answer:
+            warnings.append("scene_budget_residue_precedes_answer")
+    if residue_scene_present and close_scene_present:
+        close_follows_residue = ordered_scene_ids.index(close_scene_card_id) > ordered_scene_ids.index(residue_scene_card_id)  # type: ignore[arg-type]
+        if not close_follows_residue:
+            warnings.append("scene_budget_close_precedes_residue")
+    elif close_scene_present and ordered_scene_ids and ordered_scene_ids[-1] != close_scene_card_id:
+        close_follows_residue = False
+        warnings.append("scene_budget_close_precedes_residue")
+
+    close_duplicates_answer = False
+    if answer_scene_present and close_scene_present:
+        answer_scene = next(
+            scene for scene in scene_cards if scene.scene_id == answer_scene_card_id
+        )
+        close_scene = next(
+            scene for scene in scene_cards if scene.scene_id == close_scene_card_id
+        )
+        overlap_ratio = _scene_overlap_token_ratio(
+            _scene_text_tokens(answer_scene),
+            _scene_text_tokens(close_scene),
+        )
+        close_duplicates_answer = overlap_ratio >= 0.6
+
+    recap_build_scene_count = sum(
+        1
+        for scene in scene_cards
+        if scene.scene_job == SceneJob.BUILD
+        and re.search(r"\b(recap|reorient|reset|previously)\b", scene.title.lower())
+    )
+    max_recap_build_scenes = int(scene_job_budget.get("max_recap_build_scenes", 1))
+    if recap_build_scene_count > max_recap_build_scenes:
+        warnings.append(
+            f"scene_budget_recap_build_out_of_range: {recap_build_scene_count} > {max_recap_build_scenes}"
+        )
+
+    diagnostics = {
+        "scene_job_budget": scene_job_budget,
+        "scene_job_counts": scene_job_counts,
+        "scene_ids_by_job": scene_ids_by_job,
+        "answer_scene_card_id": answer_scene_card_id,
+        "residue_scene_card_id": residue_scene_card_id,
+        "close_scene_card_id": close_scene_card_id,
+        "answer_scene_present": answer_scene_present,
+        "residue_scene_present": residue_scene_present,
+        "close_scene_present": close_scene_present,
+        "residue_follows_answer": residue_follows_answer,
+        "close_follows_residue": close_follows_residue,
+        "close_duplicates_answer": close_duplicates_answer,
+        "parallel_answer_detected": scene_job_counts.get(SceneJob.ANSWER.value, 0) > 1,
+        "recap_build_scene_count": recap_build_scene_count,
+        "scene_job_budget_warnings": warnings,
+    }
+    return diagnostics, warnings
+
+
 def _build_architecture_section_count_warnings(
     *,
     section_count: int,
@@ -6073,12 +6865,12 @@ def _build_architecture_section_count_warnings(
 
 
 def _is_structural_scene_card(scene: SceneCardDraft | SceneCard) -> bool:
-    return scene.scene_function in _STRUCTURAL_SCENE_FUNCTIONS
+    return scene.scene_job in _STRUCTURAL_SCENE_JOBS
 
 
 def _is_human_grounding_scene_card(scene: SceneCardDraft | SceneCard) -> bool:
     return (
-        scene.scene_function in _GROUNDING_SCENE_FUNCTIONS
+        scene.scene_job in _GROUNDING_SCENE_JOBS
         and scene.scene_role in _GROUNDING_SCENE_ROLES
         and bool(scene.actors)
         and bool((scene.entry_image or "").strip())
@@ -6086,12 +6878,12 @@ def _is_human_grounding_scene_card(scene: SceneCardDraft | SceneCard) -> bool:
     )
 
 
-def _build_scene_function_counts(
+def _build_scene_job_counts(
     scene_cards: list[SceneCardDraft | SceneCard],
 ) -> dict[str, int]:
     counts: dict[str, int] = {}
     for scene in scene_cards:
-        counts[scene.scene_function] = counts.get(scene.scene_function, 0) + 1
+        counts[scene.scene_job] = counts.get(scene.scene_job, 0) + 1
     return counts
 
 
@@ -6281,9 +7073,9 @@ def _build_host_move_text_diagnostics(
             "sections_with_first_person_plural": [],
             "section_host_cue_counts": {},
             "sections_with_host_phase_collapse": [],
-            "editorial_host_note_count": 0,
-            "sections_with_editorial_host_note_pressure": [],
-            "editorial_host_note_examples": [],
+            "editorial_host_target_count": 0,
+            "sections_with_editorial_host_target_pressure": [],
+            "editorial_host_target_examples": [],
             "phase_trace": [],
         }
 
@@ -6305,11 +7097,11 @@ def _build_host_move_text_diagnostics(
             phase_counts_by_section[scene.section_id] = (
                 phase_counts_by_section.get(scene.section_id, 0) + 1
             )
-            phase_note = " ".join(cue.note for cue in phase_cues if cue.note)
-            note_tokens = _normalize_section_text_tokens(phase_note)
-            approx_realized = not note_tokens or bool(note_tokens & section_tokens)
+            phase_target = " ".join(cue.target for cue in phase_cues if cue.target)
+            target_tokens = _normalize_section_text_tokens(phase_target)
+            approx_realized = not target_tokens or bool(target_tokens & section_tokens)
             editorial_scaffolding_flags = _host_move_editorial_scaffolding_flags(
-                phase_note,
+                phase_target,
                 anchor_tokens=anchor_tokens,
             )
             phase_id = f"{scene.scene_id}:{phase}"
@@ -6324,7 +7116,7 @@ def _build_host_move_text_diagnostics(
                     "phase": phase,
                     "cue_count": len(phase_cues),
                     "move_types": [cue.move_type for cue in phase_cues],
-                    "host_note": phase_note,
+                    "host_target": phase_target,
                     "address_modes": [cue.address_mode for cue in phase_cues],
                     "approx_realized": approx_realized,
                     "editorial_scaffolding_flags": editorial_scaffolding_flags,
@@ -6347,12 +7139,12 @@ def _build_host_move_text_diagnostics(
         for row in phase_trace
         if row.get("editorial_scaffolding_flags")
     ]
-    editorial_host_note_examples = [
+    editorial_host_target_examples = [
         {
             "scene_id": str(row["scene_id"]),
             "section_id": str(row["section_id"]),
             "phase": str(row["phase"]),
-            "host_note": str(row["host_note"]),
+            "host_target": str(row["host_target"]),
             "editorial_scaffolding_flags": list(
                 row.get("editorial_scaffolding_flags", [])
             ),
@@ -6368,11 +7160,11 @@ def _build_host_move_text_diagnostics(
         "sections_with_first_person_plural": sorted(sections_with_first_person_plural),
         "section_host_cue_counts": section_host_cue_counts,
         "sections_with_host_phase_collapse": sections_with_host_phase_collapse,
-        "editorial_host_note_count": len(editorial_phase_entries),
-        "sections_with_editorial_host_note_pressure": sorted(
+        "editorial_host_target_count": len(editorial_phase_entries),
+        "sections_with_editorial_host_target_pressure": sorted(
             {str(row["section_id"]) for row in editorial_phase_entries}
         ),
-        "editorial_host_note_examples": editorial_host_note_examples,
+        "editorial_host_target_examples": editorial_host_target_examples,
         "phase_trace": phase_trace,
     }
 
@@ -6493,8 +7285,14 @@ def _build_spine_plan_diagnostics(
     *,
     strategy_episode: StrategyEpisode,
     plan: EpisodePlanDraft | EpisodePlan,
+    scene_job_budget: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     scene_cards = list(plan.scene_cards)
+    if scene_job_budget is None:
+        inferred_mode = (
+            PodcastMode.MINIFIED if len(scene_cards) <= 20 else PodcastMode.FULL
+        )
+        scene_job_budget = scene_job_budget_for_mode(inferred_mode)
     total_scene_count = len(scene_cards)
     spine_scene_cards = [
         scene
@@ -6524,6 +7322,14 @@ def _build_spine_plan_diagnostics(
         1, int(math.floor(total_scene_count * 0.35))
     )
     secondary_chain_detected = support_scene_count >= max(2, len(spine_scene_cards))
+    scene_job_budget_diagnostics, _scene_job_budget_warnings = (
+        _build_scene_job_budget_diagnostics(
+            scene_cards=scene_cards,
+            scene_job_budget=scene_job_budget,
+            answer_scene_card_id=plan.answer_scene_card_id,
+            residue_scene_card_id=plan.residue_scene_card_id,
+        )
+    )
     diagnostics = {
         "core_scene_share": round(scene_share, 4),
         "core_word_share": round(word_share, 4),
@@ -6536,6 +7342,7 @@ def _build_spine_plan_diagnostics(
         "host_phase_count": sum(
             _scene_host_phase_bucket_count(scene) for scene in scene_cards
         ),
+        **scene_job_budget_diagnostics,
         "spine_drift_detected": (
             scene_share < 0.60
             or word_share < 0.60
@@ -6555,6 +7362,7 @@ def _build_spine_plan_diagnostics(
                     for phase in _HOST_MOVE_PHASE_ORDER
                     if getattr(scene.host_moves, phase)
                 },
+                "scene_job": scene.scene_job,
                 "counts_toward_spine_dominance": _scene_counts_toward_spine(
                     scene,
                     strategy_episode,
@@ -6575,6 +7383,8 @@ def _build_spine_plan_diagnostics(
         diagnostics["failure_labels"].append("support_thread_takeover")
     if not diagnostics["ending_alignment_pass"]:
         diagnostics["failure_labels"].append("ending_displacement")
+    if diagnostics["close_duplicates_answer"]:
+        diagnostics["failure_labels"].append("close_duplicates_answer")
     return diagnostics
 
 
@@ -6635,6 +7445,9 @@ class PipelineOrchestrator:
             )
             for substrate in PRIMITIVE_SUBSTRATES
         }
+        self.scene_discovery_agent = SceneDiscoveryAgent(
+            self.llm, max_retry_attempts=_retries("scene_discovery")
+        )
         self.narrative_strategy_agent = NarrativeStrategyAgent(
             self.llm, max_retry_attempts=_retries("narrative_strategy")
         )
@@ -6802,10 +7615,18 @@ class PipelineOrchestrator:
                     threshold=pipeline_config.synthesis_quality_threshold,
                 )
 
+            scene_discovery = await self._discover_scenes(
+                project,
+                synthesis_primitives,
+                corpus,
+                project_dir,
+                actor_metadata,
+            )
             strategy, strategy_actor_metrics = await self._choose_narrative_strategy(
                 project,
                 synthesis_primitives,
                 project_dir,
+                scene_discovery,
                 actor_metadata,
             )
             actor_metrics["narrative_strategy"] = strategy_actor_metrics
@@ -8416,11 +9237,56 @@ class PipelineOrchestrator:
             "tagged_counts_by_substrate": _primitive_counts_by_substrate(tagged_primitives),
         }
 
+    async def _discover_scenes(
+        self,
+        project: ThematicProject,
+        synthesis_map: PrimitiveFunctionTaggingArtifact,
+        corpus: ThematicCorpus,
+        project_dir: Path,
+        actor_metadata: ActorMetadata | None = None,
+    ) -> SceneDiscoveryArtifact:
+        actor_metadata = actor_metadata or ActorMetadata(project_id=project.project_id)
+        passage_lookup = _build_passage_lookup(corpus)
+        passage_list = _build_scene_discovery_passage_list_payload(
+            project=project,
+            synthesis_map=synthesis_map,
+            passage_lookup=passage_lookup,
+        )
+        async with _stage_log(
+            self.run_logger,
+            "scene_discovery",
+            project_dir,
+            primitive_count=len(_flatten_base_synthesis_primitives(synthesis_map)),
+            passage_count=len(passage_list),
+            actor_count=len(actor_metadata.actors),
+        ) as ctx:
+            payload = self.scene_discovery_agent.build_payload(
+                synthesis_map=_build_scene_discovery_synthesis_map_payload(synthesis_map),
+                project_metadata=_build_scene_discovery_project_metadata_payload(project),
+                actor_metadata=_build_narrative_strategy_actor_metadata_payload(
+                    actor_metadata
+                ),
+                passage_list=passage_list,
+            )
+            artifact = await asyncio.to_thread(self.scene_discovery_agent.run, payload)
+            diagnostics = _build_scene_discovery_diagnostics(
+                artifact=artifact,
+                mode=PodcastMode(project.config.podcast_mode),
+            )
+            _save_json(project_dir / "scene_discovery.json", artifact)
+            _save_json(project_dir / "scene_discovery_diagnostics.json", diagnostics)
+            ctx["output_summary"] = {
+                "candidate_count": len(artifact.candidates),
+                "warning_count": diagnostics["warning_count"],
+            }
+            return artifact
+
     async def _choose_narrative_strategy(
         self,
         project: ThematicProject,
         synthesis_map: PrimitiveFunctionTaggingArtifact,
         project_dir: Path,
+        scene_discovery: SceneDiscoveryArtifact | None = None,
         actor_metadata: ActorMetadata | None = None,
     ) -> tuple[NarrativeStrategy, dict[str, Any]]:
         actor_metadata = actor_metadata or ActorMetadata(project_id=project.project_id)
@@ -8437,6 +9303,11 @@ class PipelineOrchestrator:
                     ),
                     project_metadata=_build_narrative_strategy_project_metadata_payload(
                         project
+                    ),
+                    scene_discovery=(
+                        scene_discovery.model_dump(mode="json")
+                        if scene_discovery is not None
+                        else None
                     ),
                     episode_count=project.requested_episode_count,
                     recommended_episode_count_min=(
@@ -8915,6 +9786,9 @@ class PipelineOrchestrator:
                             architecture=episode_payload,
                             synthesis_map=episode_synthesis_map_payload,
                             project_metadata=project_metadata,
+                            scene_job_budget=scene_job_budget_for_mode(
+                                project.config.podcast_mode
+                            ),
                             available_passages=available_passages,
                             host_policy=host_policy,
                             actor_metadata=compact_episode_actor_metadata,
@@ -8968,6 +9842,9 @@ class PipelineOrchestrator:
                     spine_diagnostics = _build_spine_plan_diagnostics(
                         strategy_episode=strategy_episode,
                         plan=plan_draft,
+                        scene_job_budget=scene_job_budget_for_mode(
+                            project.config.podcast_mode
+                        ),
                     )
                     host_moves_diagnostics, host_move_warnings = (
                         _build_host_move_plan_diagnostics(
@@ -9014,7 +9891,7 @@ class PipelineOrchestrator:
                             scene_cards=plan_draft.scene_cards,
                         )
                     )
-                    scene_function_counts = _build_scene_function_counts(
+                    scene_job_counts = _build_scene_job_counts(
                         plan_draft.scene_cards
                     )
                     scene_role_counts: dict[str, int] = {}
@@ -9036,6 +9913,7 @@ class PipelineOrchestrator:
                         + human_grounding_warnings
                         + actor_explanation_warnings
                         + section_planning_warnings
+                        + list(spine_diagnostics.get("scene_job_budget_warnings", []))
                         + host_move_warnings
                     )
                     for warning in planning_warnings:
@@ -9069,13 +9947,16 @@ class PipelineOrchestrator:
                         "scene_card_count_warnings": scene_card_count_warnings,
                         "scene_card_primitive_warnings": scene_card_primitive_warnings,
                         "scene_card_family_warnings": scene_card_family_warnings,
+                        "scene_job_budget_warnings": list(
+                            spine_diagnostics.get("scene_job_budget_warnings", [])
+                        ),
                         "structural_card_concreteness_warnings": structural_card_concreteness_warnings,
                         "human_grounding_warnings": human_grounding_warnings,
                         "section_load_warnings": section_load_warnings,
                         "section_realization": section_realization_reports,
                         "scene_card_warning_count": len(planning_warnings),
                         "scene_role_counts": scene_role_counts,
-                        "scene_function_counts": scene_function_counts,
+                        "scene_job_counts": scene_job_counts,
                         "human_grounding_diagnostics": human_grounding_diagnostics,
                         "section_count": len(episode.sections),
                         "core_primitive_count": len(

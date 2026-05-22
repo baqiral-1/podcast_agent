@@ -233,6 +233,15 @@ class SceneRole(str, Enum):
     IMPLICATION = "implication"
 
 
+class SceneJob(str, Enum):
+    OPENING = "opening"
+    BUILD = "build"
+    TURN = "turn"
+    ANSWER = "answer"
+    RESIDUE = "residue"
+    CLOSE = "close"
+
+
 class SceneFunction(str, Enum):
     SCENE = "scene"
     HINGE = "hinge"
@@ -243,7 +252,23 @@ class SceneFunction(str, Enum):
     AFTERLIFE = "afterlife"
 
 
+class PromisedBeatKind(str, Enum):
+    SCENE = "scene"
+    IMAGE = "image"
+    ACTOR_TURN = "actor_turn"
+    MECHANISM = "mechanism"
+    CALLBACK = "callback"
+    QUOTE = "quote"
+
+
+class PromisedBeatDecision(str, Enum):
+    STAGE = "stage"
+    DEFER = "defer"
+    DROP = "drop"
+
+
 _SCENE_ROLE_VALUES = {member.value for member in SceneRole}
+_SCENE_JOB_VALUES = {member.value for member in SceneJob}
 _SCENE_FUNCTION_VALUES = {member.value for member in SceneFunction}
 
 
@@ -351,8 +376,8 @@ class PipelineConfig(StrictModel):
     min_episode_minutes: float = Field(default=100.0, gt=0.0)
     max_episode_minutes: float = Field(default=115.0, gt=0.0)
     duration_shortfall_policy: Literal["warn"] = "warn"
-    scene_card_target_min: int = Field(default=34, ge=1)
-    scene_card_target_max: int = Field(default=44, ge=1)
+    scene_card_target_min: int = Field(default=30, ge=1)
+    scene_card_target_max: int = Field(default=36, ge=1)
     scene_card_target_policy: Literal["warn"] = "warn"
     scene_card_primitives_min: int = Field(default=1, ge=0)
     scene_card_primitives_max: int = Field(default=2, ge=1)
@@ -543,6 +568,52 @@ def authorial_passage_target_for_mode(mode: PodcastMode | str) -> int:
     return math.floor((lower_bound + upper_bound) / 2)
 
 
+def scene_job_budget_for_mode(mode: PodcastMode | str) -> dict[str, int]:
+    if PodcastMode(mode) == PodcastMode.MINIFIED:
+        return {
+            "total_min": 18,
+            "total_max": 20,
+            "opening_min": 2,
+            "opening_max": 2,
+            "build_min": 11,
+            "build_max": 13,
+            "turn_min": 2,
+            "turn_max": 2,
+            "answer_min": 1,
+            "answer_max": 1,
+            "residue_min": 1,
+            "residue_max": 1,
+            "close_min": 1,
+            "close_max": 1,
+            "max_recap_build_scenes": 1,
+        }
+    return {
+        "total_min": 30,
+        "total_max": 36,
+        "opening_min": 3,
+        "opening_max": 3,
+        "build_min": 20,
+        "build_max": 25,
+        "turn_min": 3,
+        "turn_max": 4,
+        "answer_min": 1,
+        "answer_max": 1,
+        "residue_min": 1,
+        "residue_max": 1,
+        "close_min": 1,
+        "close_max": 1,
+        "max_recap_build_scenes": 1,
+    }
+
+
+def scene_discovery_candidate_range_for_mode(
+    mode: PodcastMode | str,
+) -> tuple[int, int]:
+    if PodcastMode(mode) == PodcastMode.MINIFIED:
+        return 16, 24
+    return 48, 72
+
+
 def resolve_pipeline_config_for_mode(config: "PipelineConfig") -> "PipelineConfig":
     mode = PodcastMode(config.podcast_mode)
     if mode == PodcastMode.MINIFIED:
@@ -565,8 +636,8 @@ def resolve_pipeline_config_for_mode(config: "PipelineConfig") -> "PipelineConfi
             "architecture_section_target_max": 8,
             "min_episode_minutes": 54.0,
             "max_episode_minutes": 63.0,
-            "scene_card_target_min": 21,
-            "scene_card_target_max": 26,
+            "scene_card_target_min": 18,
+            "scene_card_target_max": 20,
             "synthesis_total_passage_cap": 200,
         }
     else:
@@ -588,8 +659,8 @@ def resolve_pipeline_config_for_mode(config: "PipelineConfig") -> "PipelineConfi
             "architecture_section_target_max": 12,
             "min_episode_minutes": 100.0,
             "max_episode_minutes": 115.0,
-            "scene_card_target_min": 34,
-            "scene_card_target_max": 44,
+            "scene_card_target_min": 30,
+            "scene_card_target_max": 36,
             "synthesis_total_passage_cap": 650,
         }
     return config.model_copy(update=updates)
@@ -905,6 +976,9 @@ class NarrationHooks(StrictModel):
     carry_forward: str = Field(min_length=1)
     quote_anchor: str = ""
     plain_gloss: str = ""
+    why_it_matters: str = ""
+    best_use: str = ""
+    natural_host_move: str = ""
     listener_confusion: str = ""
     authorial_move: Literal[
         "none",
@@ -2038,6 +2112,102 @@ class SeriesActorExplanationItem(StrictModel):
     preferred_plain_gloss: str = ""
 
 
+class SceneDiscoveryCandidate(StrictModel):
+    candidate_id: str = Field(min_length=1)
+    primitive_ids: list[str] = Field(default_factory=list, min_length=1)
+    passage_ids: list[str] = Field(default_factory=list, min_length=1)
+    scene_sketch: str = Field(min_length=1)
+    candidate_roles: list[
+        Literal["opening", "hinge", "answer", "residue", "mechanism", "callback"]
+    ] = Field(default_factory=list, min_length=1, max_length=4)
+    anchor_image: str = Field(min_length=1)
+    why_sceneable: str = Field(min_length=1)
+    quote_anchor: str = ""
+    actor_ids: list[str] = Field(default_factory=list, max_length=4)
+
+    @model_validator(mode="after")
+    def validate_references(self) -> "SceneDiscoveryCandidate":
+        self.primitive_ids = list(dict.fromkeys(_nonempty_text(item) for item in self.primitive_ids if _nonempty_text(item)))
+        self.passage_ids = list(dict.fromkeys(_nonempty_text(item) for item in self.passage_ids if _nonempty_text(item)))
+        self.actor_ids = list(dict.fromkeys(_nonempty_text(item) for item in self.actor_ids if _nonempty_text(item)))
+        if not self.primitive_ids:
+            raise ValueError("scene discovery candidates must reference primitive_ids")
+        if not self.passage_ids:
+            raise ValueError("scene discovery candidates must reference passage_ids")
+        return self
+
+
+class SceneDiscoveryArtifact(StrictModel):
+    candidates: list[SceneDiscoveryCandidate] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_candidate_ids(self) -> "SceneDiscoveryArtifact":
+        candidate_ids = [candidate.candidate_id for candidate in self.candidates]
+        if len(candidate_ids) != len(set(candidate_ids)):
+            raise ValueError("scene discovery candidates must use unique candidate_id values")
+        return self
+
+
+class PromisedBeat(StrictModel):
+    beat_id: str = Field(min_length=1)
+    label: str = Field(min_length=1)
+    kind: PromisedBeatKind
+    intended_job: SceneJob
+    source_candidate_ids: list[str] = Field(default_factory=list, max_length=4)
+    source_primitive_ids: list[str] = Field(default_factory=list, max_length=6)
+    why_load_bearing: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_sources(self) -> "PromisedBeat":
+        self.source_candidate_ids = list(
+            dict.fromkeys(
+                _nonempty_text(item)
+                for item in self.source_candidate_ids
+                if _nonempty_text(item)
+            )
+        )
+        self.source_primitive_ids = list(
+            dict.fromkeys(
+                _nonempty_text(item)
+                for item in self.source_primitive_ids
+                if _nonempty_text(item)
+            )
+        )
+        if not self.source_candidate_ids and not self.source_primitive_ids:
+            raise ValueError(
+                "promised beats must reference at least one source_candidate_id or source_primitive_id"
+            )
+        return self
+
+
+class NegativeScope(StrictModel):
+    boundary: str = ""
+    excluded_topics: list[str] = Field(default_factory=list, max_length=5)
+    tempting_but_out: list[str] = Field(default_factory=list, max_length=3)
+    omission_logic: str = ""
+
+
+class PromisedBeatDecisionRecord(StrictModel):
+    beat_id: str = Field(min_length=1)
+    decision: PromisedBeatDecision
+    section_id: str | None = None
+    reason: str = ""
+
+    @model_validator(mode="after")
+    def validate_decision_payload(self) -> "PromisedBeatDecisionRecord":
+        section_id = _nonempty_text(self.section_id)
+        reason = _nonempty_text(self.reason)
+        self.section_id = section_id or None
+        self.reason = reason
+        if self.decision == PromisedBeatDecision.STAGE:
+            if not self.section_id:
+                raise ValueError("staged promised beats must include section_id")
+        else:
+            if not self.reason:
+                raise ValueError("deferred or dropped promised beats must include reason")
+        return self
+
+
 class StrategyEpisode(StrictModel):
     episode_number: int = Field(ge=1)
     title: str = Field(min_length=1)
@@ -2051,6 +2221,25 @@ class StrategyEpisode(StrictModel):
     authorial_contract: EpisodeAuthorialContract = Field(
         default_factory=EpisodeAuthorialContract
     )
+    promised_beats: list[PromisedBeat] = Field(default_factory=list, max_length=12)
+    negative_scope: NegativeScope = Field(default_factory=NegativeScope)
+
+    @model_validator(mode="after")
+    def validate_commitments(self) -> "StrategyEpisode":
+        beat_ids = [beat.beat_id for beat in self.promised_beats]
+        if len(beat_ids) != len(set(beat_ids)):
+            raise ValueError("promised_beats must use unique beat_id values")
+        answer_count = sum(
+            1 for beat in self.promised_beats if beat.intended_job == SceneJob.ANSWER
+        )
+        if answer_count > 1:
+            raise ValueError("promised_beats may contain at most one answer beat")
+        residue_count = sum(
+            1 for beat in self.promised_beats if beat.intended_job == SceneJob.RESIDUE
+        )
+        if residue_count > 1:
+            raise ValueError("promised_beats may contain at most one residue beat")
+        return self
 
 
 class SeriesNarratorProfile(StrictModel):
@@ -2445,8 +2634,13 @@ class ArchitectureSection(StrictModel):
 class EpisodeArchitecture(StrictModel):
     episode_number: int = Field(ge=1)
     major_turn_section_id: str = Field(min_length=1)
+    answer_section_id: str | None = None
+    residue_section_id: str | None = None
     allowed_recurring_primitive_ids: list[str] = Field(default_factory=list)
     forbidden_redundancies: list[str] = Field(default_factory=list)
+    promised_beat_decisions: list[PromisedBeatDecisionRecord] = Field(
+        default_factory=list
+    )
     sections: list[ArchitectureSection] = Field(
         default_factory=list, min_length=6, max_length=12
     )
@@ -2475,6 +2669,21 @@ class EpisodeArchitecture(StrictModel):
 
         if self.major_turn_section_id not in section_by_id:
             raise ValueError("major_turn_section_id must reference an existing section")
+        if self.answer_section_id is not None and self.answer_section_id not in section_by_id:
+            raise ValueError("answer_section_id must reference an existing section")
+        if self.residue_section_id is not None and self.residue_section_id not in section_by_id:
+            raise ValueError("residue_section_id must reference an existing section")
+        if self.answer_section_id and self.residue_section_id:
+            ordered_section_ids = [section.section_id for section in self.sections]
+            if ordered_section_ids.index(self.residue_section_id) <= ordered_section_ids.index(
+                self.answer_section_id
+            ):
+                raise ValueError("residue_section_id must occur after answer_section_id")
+        beat_ids = [record.beat_id for record in self.promised_beat_decisions]
+        if len(beat_ids) != len(set(beat_ids)):
+            raise ValueError(
+                "promised_beat_decisions must use unique beat_id values"
+            )
         return self
 
 
@@ -2555,7 +2764,7 @@ class HostMoveCue(StrictModel):
         "light_aside",
         "naming_note",
     ]
-    note: str = ""
+    target: str = ""
     surface_mode: Literal["woven", "distinct", "mixed"] = "mixed"
     address_mode: Literal["implicit", "we", "you", "i"] = "implicit"
 
@@ -2569,7 +2778,9 @@ class HostMoveCue(StrictModel):
         if not move_type:
             raise ValueError("host move cues must include move_type")
         cleaned["move_type"] = move_type
-        cleaned["note"] = str(cleaned.get("note", "") or "").strip()
+        target = cleaned.get("target", cleaned.get("note", "")) or ""
+        cleaned["target"] = str(target).strip()
+        cleaned.pop("note", None)
         cleaned["surface_mode"] = (
             str(cleaned.get("surface_mode", "mixed") or "mixed").strip() or "mixed"
         )
@@ -2600,7 +2811,7 @@ class _SceneCardBase(StrictModel):
     section_id: str = Field(min_length=1)
     title: str = Field(min_length=1)
     scene_role: SceneRole
-    scene_function: SceneFunction
+    scene_job: SceneJob
     beat_change: str = Field(
         min_length=1,
         validation_alias=AliasChoices("beat_change", "state_effect"),
@@ -2640,33 +2851,43 @@ class _SceneCardBase(StrictModel):
         return self
 
 
-_LEGACY_SCENE_ROLE_TO_ROLE_FUNCTION: dict[str, tuple[str, str | None]] = {
-    "setup": (SceneRole.CONTEXT_SETUP.value, SceneFunction.SCENE.value),
-    "shock": (SceneRole.SHOCK.value, SceneFunction.SCENE.value),
-    "action": (SceneRole.ACTION.value, SceneFunction.SCENE.value),
-    "consequence": (SceneRole.FALLOUT.value, SceneFunction.SCENE.value),
-    "reaction": (SceneRole.REACTION.value, SceneFunction.SCENE.value),
-    "contestation": (SceneRole.CONTESTATION.value, SceneFunction.SCENE.value),
-    "synthesis": (SceneRole.IMPLICATION.value, SceneFunction.LANDING.value),
-    "process": (SceneRole.ACTION.value, SceneFunction.MECHANISM.value),
-    "perspective shift": (SceneRole.IMPLICATION.value, SceneFunction.CALLBACK.value),
-    "perspective_shift": (SceneRole.IMPLICATION.value, SceneFunction.CALLBACK.value),
-    "reveal": (SceneRole.IMPLICATION.value, SceneFunction.HINGE.value),
-    "reversal": (SceneRole.SHOCK.value, SceneFunction.TURN.value),
-    "stage_choice": (SceneRole.ACTION.value, SceneFunction.HINGE.value),
-    "turn": (SceneRole.SHOCK.value, SceneFunction.TURN.value),
-    "closing": (SceneRole.IMPLICATION.value, SceneFunction.LANDING.value),
+_LEGACY_SCENE_ROLE_TO_ROLE_JOB: dict[str, tuple[str, str | None]] = {
+    "setup": (SceneRole.CONTEXT_SETUP.value, SceneJob.BUILD.value),
+    "shock": (SceneRole.SHOCK.value, SceneJob.BUILD.value),
+    "action": (SceneRole.ACTION.value, SceneJob.BUILD.value),
+    "consequence": (SceneRole.FALLOUT.value, SceneJob.BUILD.value),
+    "reaction": (SceneRole.REACTION.value, SceneJob.BUILD.value),
+    "contestation": (SceneRole.CONTESTATION.value, SceneJob.BUILD.value),
+    "synthesis": (SceneRole.IMPLICATION.value, SceneJob.BUILD.value),
+    "process": (SceneRole.ACTION.value, SceneJob.BUILD.value),
+    "perspective shift": (SceneRole.IMPLICATION.value, SceneJob.BUILD.value),
+    "perspective_shift": (SceneRole.IMPLICATION.value, SceneJob.BUILD.value),
+    "reveal": (SceneRole.IMPLICATION.value, SceneJob.TURN.value),
+    "reversal": (SceneRole.SHOCK.value, SceneJob.TURN.value),
+    "stage_choice": (SceneRole.ACTION.value, SceneJob.TURN.value),
+    "turn": (SceneRole.SHOCK.value, SceneJob.TURN.value),
+    "closing": (SceneRole.IMPLICATION.value, SceneJob.CLOSE.value),
 }
 
-_SCENE_FUNCTION_DEFAULT_BY_ROLE: dict[str, str] = {
-    SceneRole.CONTEXT_SETUP.value: SceneFunction.SCENE.value,
-    SceneRole.ACTOR_SETUP.value: SceneFunction.SCENE.value,
-    SceneRole.ACTION.value: SceneFunction.SCENE.value,
-    SceneRole.SHOCK.value: SceneFunction.SCENE.value,
-    SceneRole.CONTESTATION.value: SceneFunction.SCENE.value,
-    SceneRole.REACTION.value: SceneFunction.SCENE.value,
-    SceneRole.FALLOUT.value: SceneFunction.SCENE.value,
-    SceneRole.IMPLICATION.value: SceneFunction.LANDING.value,
+_LEGACY_SCENE_FUNCTION_TO_JOB: dict[str, str] = {
+    SceneFunction.SCENE.value: SceneJob.BUILD.value,
+    SceneFunction.HINGE.value: SceneJob.TURN.value,
+    SceneFunction.MECHANISM.value: SceneJob.BUILD.value,
+    SceneFunction.TURN.value: SceneJob.TURN.value,
+    SceneFunction.LANDING.value: SceneJob.BUILD.value,
+    SceneFunction.CALLBACK.value: SceneJob.BUILD.value,
+    SceneFunction.AFTERLIFE.value: SceneJob.RESIDUE.value,
+}
+
+_SCENE_JOB_DEFAULT_BY_ROLE: dict[str, str] = {
+    SceneRole.CONTEXT_SETUP.value: SceneJob.BUILD.value,
+    SceneRole.ACTOR_SETUP.value: SceneJob.BUILD.value,
+    SceneRole.ACTION.value: SceneJob.BUILD.value,
+    SceneRole.SHOCK.value: SceneJob.BUILD.value,
+    SceneRole.CONTESTATION.value: SceneJob.BUILD.value,
+    SceneRole.REACTION.value: SceneJob.BUILD.value,
+    SceneRole.FALLOUT.value: SceneJob.BUILD.value,
+    SceneRole.IMPLICATION.value: SceneJob.BUILD.value,
 }
 
 
@@ -2680,35 +2901,44 @@ def _migrate_legacy_scene_card(data: Any) -> Any:
     cleaned.pop("spine_relation", None)
     role = str(cleaned.get("scene_role", "") or "").strip()
     if role:
-        if role in _SCENE_FUNCTION_VALUES and role not in _LEGACY_SCENE_ROLE_TO_ROLE_FUNCTION:
+        if role in _SCENE_FUNCTION_VALUES and role not in _LEGACY_SCENE_ROLE_TO_ROLE_JOB:
             raise ValueError(
-                f"scene_role={role!r} looks like a scene_function value; move it to scene_function and use one of: "
+                f"scene_role={role!r} looks like a scene_function value; move it to scene_job and use one of: "
                 f"{', '.join(member.value for member in SceneRole)}"
             )
-        normalized_role, default_function = _LEGACY_SCENE_ROLE_TO_ROLE_FUNCTION.get(
+        normalized_role, default_job = _LEGACY_SCENE_ROLE_TO_ROLE_JOB.get(
             role,
             (role, None),
         )
         cleaned["scene_role"] = normalized_role
-        if (
-            not str(cleaned.get("scene_function", "") or "").strip()
-            and default_function
-        ):
-            cleaned["scene_function"] = default_function
-    scene_function = str(cleaned.get("scene_function", "") or "").strip()
-    if scene_function and scene_function in _SCENE_ROLE_VALUES:
+        if not str(cleaned.get("scene_job", "") or "").strip() and default_job:
+            cleaned["scene_job"] = default_job
+    legacy_scene_function = str(cleaned.get("scene_function", "") or "").strip()
+    scene_job = str(cleaned.get("scene_job", "") or "").strip()
+    if legacy_scene_function:
+        mapped_job = _LEGACY_SCENE_FUNCTION_TO_JOB.get(legacy_scene_function)
+        if mapped_job:
+            scene_job = scene_job or mapped_job
+            cleaned["scene_job"] = scene_job
+        elif legacy_scene_function in _SCENE_ROLE_VALUES:
+            raise ValueError(
+                f"scene_function={legacy_scene_function!r} looks like a scene_role value; move it to scene_role and use one of: "
+                f"{', '.join(member.value for member in SceneRole)}"
+            )
+    if scene_job and scene_job in _SCENE_ROLE_VALUES:
         raise ValueError(
-            f"scene_function={scene_function!r} looks like a scene_role value; move it to scene_role and use one of: "
-            f"{', '.join(member.value for member in SceneFunction)}"
+            f"scene_job={scene_job!r} looks like a scene_role value; move it to scene_role and use one of: "
+            f"{', '.join(member.value for member in SceneJob)}"
         )
-    if not str(cleaned.get("scene_function", "") or "").strip():
+    if not str(cleaned.get("scene_job", "") or "").strip():
         normalized_role = str(cleaned.get("scene_role", "") or "").strip()
-        default_function = _SCENE_FUNCTION_DEFAULT_BY_ROLE.get(normalized_role)
-        if default_function:
-            cleaned["scene_function"] = default_function
+        default_job = _SCENE_JOB_DEFAULT_BY_ROLE.get(normalized_role)
+        if default_job:
+            cleaned["scene_job"] = default_job
     if "beat_change" not in cleaned and cleaned.get("state_effect"):
         cleaned["beat_change"] = cleaned["state_effect"]
     cleaned.pop("state_effect", None)
+    cleaned.pop("scene_function", None)
     cleaned.pop("local_question", None)
     cleaned.pop("what_becomes_legible_later", None)
     cleaned.pop("intended_move", None)
@@ -2745,6 +2975,8 @@ class EpisodePlanDraft(StrictModel):
     episode_number: int = Field(ge=1)
     framing: FramingBlock
     scene_cards: list[SceneCardDraft] = Field(default_factory=list, min_length=1)
+    answer_scene_card_id: str | None = None
+    residue_scene_card_id: str | None = None
     dropped_support_primitive_reasons: dict[str, str] = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -2756,6 +2988,35 @@ class EpisodePlanDraft(StrictModel):
             raise ValueError(
                 "framing.handoff_scene_card_id must reference an existing scene card"
             )
+        scene_by_id = {scene.scene_id: scene for scene in self.scene_cards}
+        if self.answer_scene_card_id is not None:
+            answer_scene = scene_by_id.get(self.answer_scene_card_id)
+            if answer_scene is None:
+                raise ValueError(
+                    "answer_scene_card_id must reference an existing scene card"
+                )
+            if answer_scene.scene_job != SceneJob.ANSWER:
+                raise ValueError(
+                    "answer_scene_card_id must reference a scene card with scene_job='answer'"
+                )
+        if self.residue_scene_card_id is not None:
+            residue_scene = scene_by_id.get(self.residue_scene_card_id)
+            if residue_scene is None:
+                raise ValueError(
+                    "residue_scene_card_id must reference an existing scene card"
+                )
+            if residue_scene.scene_job != SceneJob.RESIDUE:
+                raise ValueError(
+                    "residue_scene_card_id must reference a scene card with scene_job='residue'"
+                )
+        if self.answer_scene_card_id and self.residue_scene_card_id:
+            ordered_scene_ids = [scene.scene_id for scene in self.scene_cards]
+            if ordered_scene_ids.index(self.residue_scene_card_id) <= ordered_scene_ids.index(
+                self.answer_scene_card_id
+            ):
+                raise ValueError(
+                    "residue_scene_card_id must occur after answer_scene_card_id"
+                )
         return self
 
 

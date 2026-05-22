@@ -163,7 +163,7 @@ class HostSnippetEntry:
     phase: str
     cue_count: int
     move_types: list[str]
-    host_note: str
+    host_target: str
     address_modes: list[str]
     approx_realized: bool
     first_person_plural_present: bool | None
@@ -421,7 +421,7 @@ def extract_host_snippets(
                 continue
 
             scene_card = scene_card_map.get(scene_id, {})
-            host_note = ""
+            host_target = ""
             move_types: list[str] = []
             address_modes: list[str] = []
             cue_count = trace.get("cue_count")
@@ -441,10 +441,10 @@ def extract_host_snippets(
                     for address_mode in phase_address_modes
                     if isinstance(address_mode, str) and address_mode
                 ]
-            note = trace.get("host_note")
-            if isinstance(note, str):
-                host_note = note
-            if not move_types or not address_modes or not host_note:
+            target_text = trace.get("host_target", trace.get("host_note"))
+            if isinstance(target_text, str):
+                host_target = target_text
+            if not move_types or not address_modes or not host_target:
                 phase_bucket = {}
                 host_moves = scene_card.get("host_moves")
                 if isinstance(host_moves, dict):
@@ -468,13 +468,13 @@ def extract_host_snippets(
                             for address_mode in [cue.get("address_mode")]
                             if isinstance(address_mode, str) and address_mode
                         ]
-                    if not host_note:
-                        host_note = " ".join(
-                            note_text
+                    if not host_target:
+                        host_target = " ".join(
+                            target_text
                             for cue in phase_bucket
                             if isinstance(cue, dict)
-                            for note_text in [cue.get("note")]
-                            if isinstance(note_text, str) and note_text
+                            for target_text in [cue.get("target", cue.get("note"))]
+                            if isinstance(target_text, str) and target_text
                         )
                     cue_count = max(cue_count, len(phase_bucket))
             if not move_types:
@@ -486,7 +486,7 @@ def extract_host_snippets(
             if not sentences:
                 continue
 
-            note_keywords = _keyword_tokens(host_note)
+            note_keywords = _keyword_tokens(host_target)
             scored: list[tuple[float, list[str], int, int]] = []
             for index, sentence in enumerate(sentences):
                 score, tags = _sentence_score(
@@ -525,7 +525,7 @@ def extract_host_snippets(
                     phase=phase,
                     cue_count=cue_count,
                     move_types=move_types,
-                    host_note=host_note,
+                    host_target=host_target,
                     address_modes=address_modes,
                     approx_realized=approx_realized,
                     first_person_plural_present=(
@@ -1271,7 +1271,7 @@ __PAYLOAD_JSON__
                     </div>
                   </div>
                   <p><strong>Scene title:</strong> ${entry.scene_title}</p>
-                  <p><strong>Planned host note:</strong> ${entry.host_note || 'No host note found in series_plan.'}</p>
+                  <p><strong>Planned host target:</strong> ${entry.host_target || 'No host target found in series_plan.'}</p>
                   <p class="tiny"><strong>File:</strong> <code>${entry.source_path}</code></p>
                 </div>
               </details>

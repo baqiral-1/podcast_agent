@@ -10,6 +10,7 @@ from typing import Any
 from podcast_agent.llm.heuristic import HeuristicLLMClient
 from podcast_agent.pipeline.orchestrator import (
     PipelineOrchestrator,
+    _build_scene_discovery_synthesis_map_payload,
     _build_narrative_strategy_actor_metadata_payload,
     _build_narrative_strategy_project_metadata_payload,
     _build_narrative_strategy_synthesis_map_payload,
@@ -167,6 +168,74 @@ def test_build_narrative_strategy_payload_helpers_trim_fields():
     }
 
 
+def test_build_scene_discovery_payload_trims_heavy_primitive_fields():
+    synthesis_map = SynthesisPrimitivesArtifact(
+        project_id="proj",
+        primitives=[
+            EventPrimitive(
+                id="et_1",
+                substrate=PrimitiveSubstrate.EVENTS,
+                title="Turn",
+                core_passage_ids=["p1"],
+                support_passage_ids=["p2"],
+                geography="Delhi",
+                actor_ids=["actor_1", "actor_2"],
+                functions=["cost", "complication"],
+                salience=PrimitiveSalience(score=0.82, justification="High signal."),
+                event_type="turning_point",
+                what_happened="A decisive turn shifts the field.",
+                event_result="A political order weakens.",
+                cost={
+                    "who_paid": "Civilians",
+                    "what_was_paid": "Security and livelihood",
+                },
+                complication={
+                    "what_is_compromised": "Clean blame",
+                    "why_no_clean_option": "Every path worsens something.",
+                },
+                narration_hooks={
+                    "concrete_detail": "A sealed file on a desk.",
+                    "host_lens": "The state narrows its options.",
+                    "carry_forward": "Returns later as panic.",
+                    "plain_gloss": "A turning point with real fallout.",
+                    "why_it_matters": "It makes the later collapse legible.",
+                    "best_use": "opening",
+                    "natural_host_move": "orient",
+                    "listener_confusion": "Why does this matter now?",
+                    "authorial_move": "causal_compression",
+                },
+            )
+        ],
+        quality_score=0.6,
+        quality_notes=[],
+    )
+
+    payload = _build_scene_discovery_synthesis_map_payload(synthesis_map)
+    primitive = payload["primitives"][0]
+
+    assert primitive["salience"] == {"score": 0.82}
+    assert primitive["narration_hooks"] == {
+        "plain_gloss": "A turning point with real fallout.",
+        "why_it_matters": "It makes the later collapse legible.",
+        "best_use": "opening",
+        "natural_host_move": "orient",
+    }
+    assert primitive["cost"] == {
+        "who_paid": "Civilians",
+        "what_was_paid": "Security and livelihood",
+    }
+    assert primitive["complication"] == {
+        "what_is_compromised": "Clean blame",
+        "why_no_clean_option": "Every path worsens something.",
+    }
+    assert "concrete_detail" not in primitive["narration_hooks"]
+    assert "host_lens" not in primitive["narration_hooks"]
+    assert "carry_forward" not in primitive["narration_hooks"]
+    assert "listener_confusion" not in primitive["narration_hooks"]
+    assert "authorial_move" not in primitive["narration_hooks"]
+    assert primitive["event_result"] == "A political order weakens."
+
+
 def test_choose_narrative_strategy_uses_trimmed_runtime_payload(
     monkeypatch, tmp_path: Path
 ):
@@ -289,7 +358,7 @@ def test_choose_narrative_strategy_uses_trimmed_runtime_payload(
             project,
             synthesis_map,
             tmp_path,
-            actor_metadata,
+            actor_metadata=actor_metadata,
         )
     )
 

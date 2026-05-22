@@ -69,6 +69,18 @@ class EpisodeArchitectureAgent(Agent):
             section_target_min=section_target_min,
             section_target_max=section_target_max,
         )
+        if not result.answer_section_id:
+            raise ValueError("episode architecture must include answer_section_id")
+        if not result.residue_section_id:
+            raise ValueError("episode architecture must include residue_section_id")
+        episode = payload.get("episode")
+        promised_beats = []
+        if isinstance(episode, dict):
+            promised_beats = list(episode.get("promised_beats", []) or [])
+        if promised_beats and len(result.promised_beat_decisions) != len(promised_beats):
+            raise ValueError(
+                "episode architecture must account for every promised beat exactly once"
+            )
         return result
 
     def build_payload(

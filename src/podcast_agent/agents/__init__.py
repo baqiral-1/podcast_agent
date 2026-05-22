@@ -10,6 +10,7 @@ from podcast_agent.agents.primitive_function_tagging import (
     PrimitiveFunctionTaggingAgent,
 )
 from podcast_agent.agents.repair import RepairAgent
+from podcast_agent.agents.scene_discovery import SceneDiscoveryAgent
 from podcast_agent.agents.spoken_delivery_agent import SpokenDeliveryAgent
 from podcast_agent.agents.style_audit import StyleAuditAgent
 from podcast_agent.agents.synthesis_primitives import (
@@ -30,6 +31,7 @@ __all__ = [
     "PassageExtractionAgent",
     "PrimitiveFunctionTaggingAgent",
     "RepairAgent",
+    "SceneDiscoveryAgent",
     "PrimitiveSubstrateExtractionAgent",
     "SpokenDeliveryAgent",
     "StyleAuditAgent",
