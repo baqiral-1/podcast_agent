@@ -44,6 +44,7 @@ class SpokenDeliveryAgent(Agent):
         tts_provider: str,
         host_policy: dict | None = None,
         previous_spoken_tail: str | None = None,
+        field_semantics: dict | None = None,
     ) -> dict:
         payload = {
             "episode_number": episode_number,
@@ -58,4 +59,6 @@ class SpokenDeliveryAgent(Agent):
             payload["section"] = prose_sections[0]
         if previous_spoken_tail:
             payload["previous_spoken_tail"] = previous_spoken_tail
+        if field_semantics is not None:
+            payload["field_semantics"] = field_semantics
         return payload

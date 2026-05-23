@@ -383,9 +383,11 @@ def test_resume_from_scene_discovery_reruns_from_scene_discovery_and_downstream(
             corpus: ThematicCorpus,
             project_dir: Path,
             actor_metadata: ActorMetadata,
+            scene_discovery: SceneDiscoveryArtifact | None = None,
         ) -> tuple[list[EpisodeArchitecture], dict[str, Any]]:
             calls["order"].append("episode_architecture")
             calls["architecture_actor_metadata"] = actor_metadata
+            calls["architecture_scene_discovery"] = scene_discovery
             architecture = _episode_architecture()
             _write_json(
                 project_dir / "episode_architectures.json",
@@ -490,6 +492,7 @@ def test_resume_from_scene_discovery_reruns_from_scene_discovery_and_downstream(
         calls["narrative_strategy_scene_discovery"].candidates[0].candidate_id
         == "candidate_01"
     )
+    assert calls["architecture_scene_discovery"].candidates[0].candidate_id == "candidate_01"
     assert (
         calls["narrative_strategy_actor_metadata"].actors[0].actor_id == "actor_1"
     )
@@ -717,6 +720,7 @@ def test_resume_from_scene_discovery_fails_when_upstream_artifact_changes(
             corpus: ThematicCorpus,
             project_dir: Path,
             actor_metadata: ActorMetadata,
+            scene_discovery: SceneDiscoveryArtifact | None = None,
         ) -> tuple[list[EpisodeArchitecture], dict[str, Any]]:
             return [_episode_architecture()], {"unknown_actor_ids": 0}
 
@@ -860,6 +864,7 @@ def test_resume_from_scene_discovery_uses_stage_label_in_resume_failures(
             corpus: ThematicCorpus,
             project_dir: Path,
             actor_metadata: ActorMetadata,
+            scene_discovery: SceneDiscoveryArtifact | None = None,
         ) -> tuple[list[EpisodeArchitecture], dict[str, Any]]:
             return [_episode_architecture()], {"unknown_actor_ids": 0}
 

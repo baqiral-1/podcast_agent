@@ -8,7 +8,7 @@ from podcast_agent.agents.episode_architecture import EpisodeArchitectureAgent
 from podcast_agent.agents.narrative_strategy import NarrativeStrategyAgent
 from podcast_agent.agents.planning import EpisodePlanningAgent
 from podcast_agent.agents.scene_discovery import SceneDiscoveryAgent
-from podcast_agent.langchain.runnables import ComplianceViolationError
+from podcast_agent.langchain.runnables import ComplianceViolationError, RetryableGenerationError
 from podcast_agent.llm.base import LLMClient
 from podcast_agent.pipeline.orchestrator import (
     _build_spine_plan_diagnostics,
@@ -265,6 +265,7 @@ def test_scene_discovery_agent_builds_payload_and_uses_mode_range() -> None:
         project_metadata={"podcast_mode": "minified"},
         actor_metadata={"actors": [{"actor_id": "actor_1"}]},
         passage_list=[{"passage_id": "passage_1", "text": "Room detail."}],
+        scene_discovery_feedback={"issue": "invalid_candidate_roles"},
     )
     artifact = SceneDiscoveryArtifact.model_validate(
         {
@@ -287,6 +288,7 @@ def test_scene_discovery_agent_builds_payload_and_uses_mode_range() -> None:
 
     assert payload["project"]["podcast_mode"] == "minified"
     assert "actor_metadata" in payload
+    assert payload["scene_discovery_feedback"]["issue"] == "invalid_candidate_roles"
     assert len(validated.candidates) == 16
 
 
@@ -304,9 +306,67 @@ def test_scene_discovery_agent_builds_richer_mode_specific_instructions() -> Non
     assert "Return 16–24 candidates." in minified_instructions
     assert "DISCOVERY WORKFLOW" in minified_instructions
     assert "MERGE VS SEPARATE" in minified_instructions
+    assert "`scene_discovery_feedback` (optional): retry feedback" in minified_instructions
+    assert "visible consequence, irreversible turn, or immediate aftermath" in minified_instructions
     assert "SELF-CHECK BEFORE RETURNING" in minified_instructions
     assert "This is a `full` run." in full_instructions
     assert "Return 48–72 candidates." in full_instructions
+
+
+def test_scene_discovery_agent_prepare_retry_payload_adds_role_feedback() -> None:
+    agent = SceneDiscoveryAgent(_mock_llm())
+
+    next_payload = agent.prepare_retry_payload(
+        {"project": {"podcast_mode": "minified"}},
+        RetryableGenerationError(
+            "Schema validation failed for scene_discovery",
+            data={
+                "raw_payload": {
+                    "candidates": [
+                        {
+                            "candidate_id": "candidate_01",
+                            "candidate_roles": ["opening", "cost", "complication"],
+                        }
+                    ]
+                }
+            },
+        ),
+    )
+
+    assert next_payload["scene_discovery_feedback"]["issue"] == "invalid_candidate_roles"
+    assert next_payload["scene_discovery_feedback"]["candidate_ids"] == ["candidate_01"]
+    assert next_payload["scene_discovery_feedback"]["invalid_roles"] == [
+        "complication",
+        "cost",
+    ]
+
+
+def test_scene_discovery_agent_retries_when_candidate_count_out_of_range() -> None:
+    agent = SceneDiscoveryAgent(_mock_llm())
+    payload = agent.build_payload(
+        synthesis_map={"primitives": [{"id": "p1"}]},
+        project_metadata={"podcast_mode": "minified"},
+        actor_metadata=None,
+        passage_list=[{"passage_id": "passage_1", "text": "Room detail."}],
+    )
+    artifact = SceneDiscoveryArtifact.model_validate(
+        {
+            "candidates": [
+                {
+                    "candidate_id": "candidate_01",
+                    "primitive_ids": ["p1"],
+                    "passage_ids": ["passage_1"],
+                    "scene_sketch": "A room becomes a decision point.",
+                    "candidate_roles": ["opening"],
+                    "anchor_image": "A room and a file.",
+                    "why_sceneable": "The beat is visible and oral.",
+                }
+            ]
+        }
+    )
+
+    with pytest.raises(RetryableGenerationError, match="candidate count"):
+        agent.validate_result(artifact, payload)
 
 
 def test_narrative_strategy_agent_requires_commitment_fields() -> None:

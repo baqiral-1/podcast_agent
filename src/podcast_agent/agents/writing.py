@@ -70,6 +70,7 @@ class WritingAgent(Agent):
         actor_metadata: dict | None = None,
         writing_feedback: str | None = None,
         prior_window_continuity: dict | None = None,
+        field_semantics: dict | None = None,
     ) -> dict:
         payload = {
             "episode_number": episode_number,
@@ -90,6 +91,8 @@ class WritingAgent(Agent):
             payload["writing_feedback"] = str(writing_feedback)
         if prior_window_continuity is not None:
             payload["prior_window_continuity"] = prior_window_continuity
+        if field_semantics is not None:
+            payload["field_semantics"] = field_semantics
         if episode_target_word_count_lower is not None:
             payload["episode_target_word_count_lower"] = int(
                 episode_target_word_count_lower

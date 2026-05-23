@@ -90,6 +90,7 @@ from podcast_agent.schemas.models import (
     HumanCostPrimitive,
     IronyReversalPrimitive,
     MoralTrapPrimitive,
+    MustLandFacts,
     NarrativeStrategy,
     PassagePair,
     PipelineConfig,
@@ -137,6 +138,8 @@ from podcast_agent.schemas.models import (
     scene_discovery_candidate_range_for_mode,
     scene_job_budget_for_mode,
     UtterancePrimitive,
+    WithholdUntil,
+    WordCountPriority,
 )
 from podcast_agent.tts.openai_compatible import (
     build_tts_client,
@@ -287,6 +290,10 @@ def _spoken_delivery_batch_section_id(index: int) -> str:
 
 def _section_word_count(section: ProseSection) -> int:
     return len(section.text.split())
+
+
+def _text_word_count(value: str) -> int:
+    return len((value or "").split())
 
 
 def _project_scene_word_count(
@@ -508,13 +515,19 @@ def _build_window_architecture_payload(
     *,
     architecture: EpisodeArchitecture,
     window_scene_cards: list[SceneCard],
+    section_authorial_passages_by_section_id: dict[str, list[dict[str, Any]]] | None = None,
 ) -> dict[str, Any]:
     section_id_set = {scene.section_id for scene in window_scene_cards}
     filtered_sections = []
     for section in architecture.sections:
         if section.section_id not in section_id_set:
             continue
-        filtered_sections.append(section.model_dump(mode="json"))
+        section_payload = section.model_dump(mode="json")
+        if section_authorial_passages_by_section_id is not None:
+            section_payload["authorial_passages"] = list(
+                section_authorial_passages_by_section_id.get(section.section_id, [])
+            )
+        filtered_sections.append(section_payload)
 
     architecture_payload = {
         "episode_number": architecture.episode_number,
@@ -566,6 +579,166 @@ def _build_window_plan_payload(
     }
 
 
+def _normalize_scene_fact_tiers(must_land_facts: Any) -> dict[str, list[str]]:
+    if isinstance(must_land_facts, MustLandFacts):
+        return must_land_facts.model_dump(mode="json")
+    if isinstance(must_land_facts, list):
+        return {
+            "required": [
+                str(fact).strip()
+                for fact in must_land_facts
+                if str(fact).strip()
+            ],
+            "strongly_preferred": [],
+            "if_room": [],
+        }
+    if isinstance(must_land_facts, dict):
+        required = [
+            str(fact).strip()
+            for fact in list(must_land_facts.get("required", []) or [])
+            if str(fact).strip()
+        ]
+        strongly_preferred = [
+            str(fact).strip()
+            for fact in list(must_land_facts.get("strongly_preferred", []) or [])
+            if str(fact).strip()
+        ]
+        if_room = [
+            str(fact).strip()
+            for fact in list(must_land_facts.get("if_room", []) or [])
+            if str(fact).strip()
+        ]
+        return {
+            "required": required,
+            "strongly_preferred": strongly_preferred,
+            "if_room": if_room,
+        }
+    return {
+        "required": [],
+        "strongly_preferred": [],
+        "if_room": [],
+    }
+
+
+def _ordered_scene_fact_values(must_land_facts: Any) -> list[str]:
+    fact_tiers = _normalize_scene_fact_tiers(must_land_facts)
+    return [
+        *fact_tiers["required"],
+        *fact_tiers["strongly_preferred"],
+        *fact_tiers["if_room"],
+    ]
+
+
+def _first_required_scene_fact(must_land_facts: Any) -> str:
+    fact_tiers = _normalize_scene_fact_tiers(must_land_facts)
+    return fact_tiers["required"][0] if fact_tiers["required"] else ""
+
+
+def _scene_fact_total_count(must_land_facts: Any) -> int:
+    return len(_ordered_scene_fact_values(must_land_facts))
+
+
+def _withhold_until_payload(withhold_until: Any) -> dict[str, Any] | None:
+    if isinstance(withhold_until, WithholdUntil):
+        return withhold_until.model_dump(mode="json")
+    if isinstance(withhold_until, str):
+        normalized = withhold_until.strip()
+        if not normalized:
+            return None
+        if normalized.startswith("scene_"):
+            return {
+                "subject": "withheld material",
+                "reveal_phase": "open",
+                "reveal_scene_id": normalized,
+                "surrogate_label": "",
+            }
+        return {
+            "subject": normalized,
+            "reveal_phase": "close",
+            "reveal_scene_id": None,
+            "surrogate_label": "",
+        }
+    if isinstance(withhold_until, dict):
+        return {
+            "subject": str(withhold_until.get("subject", "") or "").strip(),
+            "reveal_phase": str(withhold_until.get("reveal_phase", "") or "").strip(),
+            "reveal_scene_id": str(withhold_until.get("reveal_scene_id", "") or "").strip()
+            or None,
+            "surrogate_label": str(withhold_until.get("surrogate_label", "") or "").strip(),
+        }
+    return None
+
+
+def _build_field_semantics_payload() -> dict[str, Any]:
+    return {
+        "closure_mode": {
+            "residue": "End on pressure, image, consequence, or after-pressure; do not restate the answer.",
+            "turn": "Land the pivot cleanly without sounding like the episode is over.",
+            "partial_answer": "Allow one constrained interpretive landing.",
+            "final_answer": "Use the strongest explicit close allowed; do not add a new load-bearing claim at the end.",
+        },
+        "must_land_facts": {
+            "required": "Load-bearing facts the scene must land to succeed.",
+            "strongly_preferred": "Important facts to include if the scene has room after the required tier lands.",
+            "if_room": "Contextual facts that may be omitted under length pressure.",
+        },
+        "withhold_until": {
+            "subject": "What is being withheld from the listener.",
+            "reveal_scene_id": "Optional later scene where the withheld subject may first be revealed.",
+            "reveal_phase": "Scene phase where the reveal should land: open, pivot, or close.",
+            "surrogate_label": "Optional temporary label to use before the reveal.",
+        },
+        "word_count_priority": {
+            "default": "Use the widened default scene range.",
+            "tight": "Use the narrower scene range only when pacing discipline matters more than breathing room.",
+        },
+    }
+
+
+def _resolve_authorial_passages(
+    *,
+    architecture: EpisodeArchitecture,
+    plan: EpisodePlan | EpisodePlanDraft,
+) -> tuple[dict[str, list[dict[str, Any]]], dict[str, list[dict[str, Any]]]]:
+    scene_authorial_passages_by_scene_id: dict[str, list[dict[str, Any]]] = {
+        scene.scene_id: [] for scene in plan.scene_cards
+    }
+    section_authorial_passages_by_section_id: dict[str, list[dict[str, Any]]] = {}
+    scenes_by_section_id: dict[str, list[SceneCard | SceneCardDraft]] = {}
+    for scene in plan.scene_cards:
+        scenes_by_section_id.setdefault(scene.section_id, []).append(scene)
+
+    for section in architecture.sections:
+        section_scene_cards = scenes_by_section_id.get(section.section_id, [])
+        section_authorial_by_id = {
+            passage.authorial_passage_id: passage for passage in section.authorial_passages
+        }
+        authorial_scene_id_by_passage_id: dict[str, str] = {}
+        for scene in section_scene_cards:
+            for authorial_passage_id in scene.authorial_passage_ids:
+                passage = section_authorial_by_id.get(authorial_passage_id)
+                if passage is None:
+                    continue
+                scene_payload = passage.model_dump(mode="json")
+                scene_payload["scene_id"] = scene.scene_id
+                scene_authorial_passages_by_scene_id.setdefault(scene.scene_id, []).append(
+                    scene_payload
+                )
+                authorial_scene_id_by_passage_id[authorial_passage_id] = scene.scene_id
+        section_authorial_passages_by_section_id[section.section_id] = []
+        for passage in section.authorial_passages:
+            payload = passage.model_dump(mode="json")
+            payload["scene_id"] = authorial_scene_id_by_passage_id.get(
+                passage.authorial_passage_id
+            )
+            section_authorial_passages_by_section_id[section.section_id].append(payload)
+
+    return (
+        scene_authorial_passages_by_scene_id,
+        section_authorial_passages_by_section_id,
+    )
+
+
 def _build_writer_scene_brief(scene_payload: dict[str, Any]) -> dict[str, Any]:
     actors = []
     for actor in list(scene_payload.get("actors", []) or []):
@@ -589,12 +762,10 @@ def _build_writer_scene_brief(scene_payload: dict[str, Any]) -> dict[str, Any]:
         )
 
     beat_change = str(scene_payload.get("beat_change", "") or "").strip()
-    must_land_facts = [
-        str(fact).strip()
-        for fact in list(scene_payload.get("must_land_facts", []) or [])
-        if str(fact).strip()
-    ]
-    why_now = beat_change or (must_land_facts[0] if must_land_facts else "")
+    must_land_facts = _normalize_scene_fact_tiers(
+        scene_payload.get("must_land_facts")
+    )
+    why_now = beat_change or _first_required_scene_fact(must_land_facts)
     return {
         "scene_id": scene_payload.get("scene_id"),
         "section_id": scene_payload.get("section_id"),
@@ -611,13 +782,22 @@ def _build_writer_scene_brief(scene_payload: dict[str, Any]) -> dict[str, Any]:
         "actors": actors,
         "primitive_ids": list(scene_payload.get("primitive_ids", []) or []),
         "passage_ids": list(scene_payload.get("passage_ids", []) or []),
+        "authorial_passage_ids": list(
+            scene_payload.get("authorial_passage_ids", []) or []
+        ),
+        "authorial_passages": list(
+            scene_payload.get("authorial_passages", []) or []
+        ),
+        "word_count_priority": scene_payload.get(
+            "word_count_priority", WordCountPriority.DEFAULT.value
+        ),
         "target_word_count_lower": int(
             scene_payload.get("target_word_count_lower", 0) or 0
         ),
         "target_word_count_higher": int(
             scene_payload.get("target_word_count_higher", 0) or 0
         ),
-        "withhold_until": scene_payload.get("withhold_until"),
+        "withhold_until": _withhold_until_payload(scene_payload.get("withhold_until")),
         "host_moves": scene_payload.get("host_moves")
         or {
             "open": [],
@@ -817,6 +997,7 @@ def _build_host_policy_payload(
     return {
         "presence_mode": narrator_profile.presence_mode,
         "baseline_tone": narrator_profile.baseline_tone,
+        "spoken_style_contract": narrator_profile.spoken_style_contract,
         "allowed_moves": list(narrator_profile.allowed_moves),
         "forbidden_moves": list(narrator_profile.forbidden_moves),
         "target_full_phase_scene_coverage_min": (
@@ -1082,7 +1263,11 @@ def _build_prior_window_continuity(
         carry_forward_threads.append(
             f"Keep this tension live without restating it explicitly: {live_unresolved_questions[-1]}"
         )
-    withheld_scene_id = (last_scene.withhold_until or "").strip()
+    withheld_scene_id = (
+        last_scene.withhold_until.reveal_scene_id
+        if last_scene.withhold_until is not None
+        else None
+    )
     if withheld_scene_id and withheld_scene_id in remaining_scene_ids:
         carry_forward_threads.append(
             f"Do not reveal the withheld material before {withheld_scene_id}."
@@ -1101,7 +1286,7 @@ def _build_prior_window_continuity(
             "scene_role": last_scene.scene_role,
             "scene_job": last_scene.scene_job,
             "spine_relation": "",
-            "withhold_until": last_scene.withhold_until,
+            "withhold_until": _withhold_until_payload(last_scene.withhold_until),
             "intended_move": last_scene.beat_change,
         },
         "live_unresolved_questions": live_unresolved_questions,
@@ -1119,6 +1304,12 @@ def _build_style_audit_sections_payload(
     section_meta_by_id = {
         section.section_id: section for section in architecture.sections
     }
+    section_authorial_passages_by_section_id: dict[str, list[dict[str, Any]]] = {}
+    if plan is not None:
+        _, section_authorial_passages_by_section_id = _resolve_authorial_passages(
+            architecture=architecture,
+            plan=plan,
+        )
     host_moves_by_section = _build_host_moves_by_section(plan)
     scene_cards_by_section: dict[str, list[SceneCard]] = {}
     if plan is not None:
@@ -1148,10 +1339,10 @@ def _build_style_audit_sections_payload(
                 ),
                 "host_moves": host_moves_by_section.get(prose_section.section_id, []),
                 "key_terms": list(meta.key_terms),
-                "authorial_passages": [
-                    passage.model_dump(mode="json")
-                    for passage in meta.authorial_passages
-                ],
+                "authorial_passages": section_authorial_passages_by_section_id.get(
+                    prose_section.section_id,
+                    [passage.model_dump(mode="json") for passage in meta.authorial_passages],
+                ),
                 "term_explanations": [
                     explanation.model_dump(mode="json")
                     for explanation in meta.term_explanations
@@ -1180,6 +1371,12 @@ def _build_spoken_delivery_sections_payload(
         section.section_id: section
         for section in (architecture.sections if architecture is not None else [])
     }
+    section_authorial_passages_by_section_id: dict[str, list[dict[str, Any]]] = {}
+    if architecture is not None and plan is not None:
+        _, section_authorial_passages_by_section_id = _resolve_authorial_passages(
+            architecture=architecture,
+            plan=plan,
+        )
     host_moves_by_section = _build_host_moves_by_section(plan)
     payload_sections: list[dict[str, Any]] = []
     for prose_section in script.prose_sections:
@@ -1207,10 +1404,13 @@ def _build_spoken_delivery_sections_payload(
                     else []
                 ),
                 "authorial_passages": (
-                    [
-                        passage.model_dump(mode="json")
-                        for passage in architecture_section.authorial_passages
-                    ]
+                    section_authorial_passages_by_section_id.get(
+                        prose_section.section_id,
+                        [
+                            passage.model_dump(mode="json")
+                            for passage in architecture_section.authorial_passages
+                        ],
+                    )
                     if architecture_section is not None
                     else []
                 ),
@@ -2965,6 +3165,34 @@ def _build_scene_discovery_passage_list_payload(
     ]
 
 
+def _build_episode_scene_payload(
+    *,
+    strategy_episode: StrategyEpisode,
+    scene_discovery: SceneDiscoveryArtifact | None,
+) -> list[dict[str, Any]]:
+    if scene_discovery is None:
+        return []
+
+    assigned_primitive_ids = set(strategy_episode.episode_spine.assigned_primitive_ids)
+    promised_candidate_ids = {
+        candidate_id
+        for beat in strategy_episode.promised_beats
+        for candidate_id in beat.source_candidate_ids
+        if candidate_id
+    }
+    episode_candidates: list[dict[str, Any]] = []
+    seen_candidate_ids: set[str] = set()
+    for candidate in scene_discovery.candidates:
+        if candidate.candidate_id in seen_candidate_ids:
+            continue
+        if candidate.candidate_id in promised_candidate_ids or (
+            assigned_primitive_ids & set(candidate.primitive_ids)
+        ):
+            episode_candidates.append(candidate.model_dump(mode="json"))
+            seen_candidate_ids.add(candidate.candidate_id)
+    return episode_candidates
+
+
 def _build_scene_discovery_diagnostics(
     *,
     artifact: SceneDiscoveryArtifact,
@@ -3604,7 +3832,9 @@ def _build_plan_transition_feedback(exc: ComplianceViolationError) -> dict[str, 
     }
     for key in (
         "scene_id",
+        "scene_ids",
         "section_id",
+        "phase_ids",
         "invalid_section_ids",
         "invalid_scene_primitives",
         "missing_section_ids",
@@ -3612,6 +3842,13 @@ def _build_plan_transition_feedback(exc: ComplianceViolationError) -> dict[str, 
         "invalid_dropped_support_ids",
         "expected_episode_number",
         "actual_episode_number",
+        "answer_scene_card_id",
+        "residue_scene_card_id",
+        "close_scene_card_id",
+        "expected_section_id",
+        "actual_section_id",
+        "authorial_passage_id",
+        "authorial_passage_ids",
     ):
         value = data.get(key)
         if value:
@@ -4503,6 +4740,46 @@ def _compute_scene_word_count_targets(
     return {scene.scene_id: floor_targets[idx] for idx, scene in enumerate(scene_cards)}
 
 
+def _scene_word_count_band_multipliers(
+    scene: SceneCard | SceneCardDraft,
+) -> tuple[float, float]:
+    if scene.word_count_priority == WordCountPriority.TIGHT:
+        return (0.95, 1.05)
+    return (0.90, 1.10)
+
+
+def _compute_scene_word_count_bands(
+    scene_cards: list[SceneCard],
+    episode_target_word_count: int,
+) -> tuple[dict[str, int], dict[str, int]]:
+    baseline_lower = _compute_scene_word_count_targets(
+        scene_cards,
+        episode_target_word_count,
+        145.0,
+    )
+    baseline_higher = _compute_scene_word_count_targets(
+        scene_cards,
+        episode_target_word_count,
+        160.0,
+    )
+    widened_lower: dict[str, int] = {}
+    widened_higher: dict[str, int] = {}
+    for scene in scene_cards:
+        baseline_center = (
+            float(baseline_lower.get(scene.scene_id, 0))
+            + float(baseline_higher.get(scene.scene_id, 0))
+        ) / 2.0
+        lower_mult, higher_mult = _scene_word_count_band_multipliers(scene)
+        widened_lower[scene.scene_id] = max(
+            1, int(math.floor(baseline_center * lower_mult))
+        )
+        widened_higher[scene.scene_id] = max(
+            widened_lower[scene.scene_id],
+            int(math.ceil(baseline_center * higher_mult)),
+        )
+    return widened_lower, widened_higher
+
+
 _PACK_ROLE_WEIGHTS: dict[str, float] = {
     "core": 1.75,
     "stakes": 0.95,
@@ -4761,7 +5038,7 @@ def _scene_pack_id_for_episode(
     strategy_episode: StrategyEpisode,
 ) -> str | None:
     assigned = set(strategy_episode.episode_spine.assigned_primitive_ids)
-    for fact in scene.must_land_facts:
+    for fact in scene.must_land_facts.ordered_facts():
         if fact in assigned:
             return fact
     return None
@@ -4919,7 +5196,7 @@ def _scene_host_anchor_tokens(scene: SceneCardDraft | SceneCard) -> set[str]:
         scene.observable_detail,
         scene.location or "",
         scene.timeframe or "",
-        *scene.must_land_facts,
+        *scene.must_land_facts.ordered_facts(),
         *(actor.name for actor in scene.actors),
     ]
     return _normalize_section_text_tokens(" ".join(text for text in anchor_texts if text))
@@ -5013,9 +5290,9 @@ def _build_host_move_plan_diagnostics(
                     scene_is_personalized = True
                 if cue.move_type not in allowed_moves:
                     scene_has_disallowed_move = True
-                if _word_count(cue.target) > 6:
+                if _text_word_count(cue.target) > 6:
                     host_target_too_long_ids.append(f"{scene.scene_id}:{phase}")
-                if len(re.findall(r"[.!?]", cue.target)) > 0 or _word_count(
+                if len(re.findall(r"[.!?]", cue.target)) > 0 or _text_word_count(
                     cue.target
                 ) > 4:
                     host_target_sentence_shaped_ids.append(f"{scene.scene_id}:{phase}")
@@ -6237,7 +6514,6 @@ def _validate_plan_transition(
     }
     highest_section_index = -1
     invalid_section_ids: list[str] = []
-    multi_turn_sections: list[str] = []
     for scene in plan.scene_cards:
         section_index = section_order.get(scene.section_id)
         if section_index is None:
@@ -6257,8 +6533,6 @@ def _validate_plan_transition(
             )
         highest_section_index = section_index
         scene_counts_by_section[scene.section_id] += 1
-        if len(scene.must_land_facts) > 5:
-            multi_turn_sections.append(scene.scene_id)
 
     if invalid_section_ids:
         raise ComplianceViolationError(
@@ -6288,17 +6562,83 @@ def _validate_plan_transition(
             },
         )
 
-    if multi_turn_sections:
-        raise ComplianceViolationError(
-            "Episode plan overloaded scene cards with too many must_land_facts for "
-            f"episode {plan.episode_number}: {_preview_ids(sorted(set(multi_turn_sections)))}",
-            data={
-                "issue": "scene_card_overloaded",
-                "episode_number": plan.episode_number,
-                "scene_ids": sorted(set(multi_turn_sections)),
-                "instruction": "Keep scene cards lean. Split overloaded beats instead of packing more than five required facts into one scene.",
-            },
+    scenes_by_section_id: dict[str, list[SceneCardDraft | SceneCard]] = {}
+    for scene in plan.scene_cards:
+        scenes_by_section_id.setdefault(scene.section_id, []).append(scene)
+    for section in architecture.sections:
+        section_authorial_passages = list(section.authorial_passages)
+        if not section_authorial_passages:
+            unexpected_scene_ids = sorted(
+                scene.scene_id
+                for scene in scenes_by_section_id.get(section.section_id, [])
+                if scene.authorial_passage_ids
+            )
+            if unexpected_scene_ids:
+                raise ComplianceViolationError(
+                    "Episode plan assigned authorial passages in a section with no authorial_passages.",
+                    data={
+                        "issue": "authorial_passage_assignment_without_section_authorial",
+                        "episode_number": plan.episode_number,
+                        "section_id": section.section_id,
+                        "scene_ids": unexpected_scene_ids,
+                        "instruction": "Assign authorial_passage_ids only in sections that define authorial_passages.",
+                    },
+                )
+            continue
+        section_authorial_by_id = {
+            passage.authorial_passage_id: passage
+            for passage in section_authorial_passages
+        }
+        assignment_counts: dict[str, int] = {
+            passage.authorial_passage_id: 0 for passage in section_authorial_passages
+        }
+        for scene in scenes_by_section_id.get(section.section_id, []):
+            for authorial_passage_id in scene.authorial_passage_ids:
+                if authorial_passage_id not in section_authorial_by_id:
+                    raise ComplianceViolationError(
+                        "Episode plan assigned an unknown authorial_passage_id.",
+                        data={
+                            "issue": "unknown_authorial_passage_id",
+                            "episode_number": plan.episode_number,
+                            "section_id": section.section_id,
+                            "scene_id": scene.scene_id,
+                            "authorial_passage_id": authorial_passage_id,
+                            "instruction": "Use only authorial_passage_id values defined on the matching architecture section.",
+                        },
+                    )
+                assignment_counts[authorial_passage_id] += 1
+        missing_authorial_passage_ids = sorted(
+            authorial_passage_id
+            for authorial_passage_id, count in assignment_counts.items()
+            if count == 0
         )
+        duplicated_authorial_passage_ids = sorted(
+            authorial_passage_id
+            for authorial_passage_id, count in assignment_counts.items()
+            if count > 1
+        )
+        if missing_authorial_passage_ids:
+            raise ComplianceViolationError(
+                "Episode plan left section authorial passages unassigned.",
+                data={
+                    "issue": "authorial_passage_unassigned",
+                    "episode_number": plan.episode_number,
+                    "section_id": section.section_id,
+                    "authorial_passage_ids": missing_authorial_passage_ids,
+                    "instruction": "Assign every section authorial_passage_id to exactly one scene in the same section.",
+                },
+            )
+        if duplicated_authorial_passage_ids:
+            raise ComplianceViolationError(
+                "Episode plan assigned the same authorial_passage_id to multiple scenes.",
+                data={
+                    "issue": "authorial_passage_assigned_multiple_times",
+                    "episode_number": plan.episode_number,
+                    "section_id": section.section_id,
+                    "authorial_passage_ids": duplicated_authorial_passage_ids,
+                    "instruction": "Assign each authorial_passage_id to exactly one scene in its section.",
+                },
+            )
 
     scene_by_id = {scene.scene_id: scene for scene in plan.scene_cards}
     if not plan.answer_scene_card_id:
@@ -6733,7 +7073,13 @@ def _scene_overlap_token_ratio(
 
 def _scene_text_tokens(scene: SceneCardDraft | SceneCard) -> set[str]:
     return _normalize_section_text_tokens(
-        " ".join([scene.beat_change, *scene.must_land_facts, scene.entry_image])
+        " ".join(
+            [
+                scene.beat_change,
+                *scene.must_land_facts.ordered_facts(),
+                scene.entry_image,
+            ]
+        )
     )
 
 
@@ -7018,7 +7364,7 @@ def _build_scene_card_primitive_warnings(
     overloaded_cards = [
         scene.scene_id
         for scene in scene_cards
-        if len(scene.must_land_facts) > max(5, primitive_max + 3)
+        if scene.must_land_facts.total_count() > max(5, primitive_max + 3)
     ]
     if overloaded_cards:
         warnings.append(
@@ -7213,7 +7559,7 @@ def _build_section_plan_realization(
                     scene.entry_image,
                     scene.observable_detail,
                     scene.beat_change,
-                    *scene.must_land_facts,
+                    *scene.must_land_facts.ordered_facts(),
                 ]
             )
             for passage_id in scene.passage_ids:
@@ -7278,7 +7624,7 @@ def _scene_counts_toward_spine(
     scene: SceneCardDraft | SceneCard,
     strategy_episode: StrategyEpisode,
 ) -> bool:
-    return bool(scene.must_land_facts or scene.beat_change.strip())
+    return bool(scene.must_land_facts.ordered_facts() or scene.beat_change.strip())
 
 
 def _build_spine_plan_diagnostics(
@@ -7650,6 +7996,7 @@ class PipelineOrchestrator:
                 corpus,
                 project_dir,
                 actor_metadata,
+                scene_discovery,
             )
             actor_metrics["episode_architecture"] = architecture_actor_metrics
             episode_plans, planning_actor_metrics = await self._plan_series(
@@ -9452,6 +9799,7 @@ class PipelineOrchestrator:
         corpus: ThematicCorpus,
         project_dir: Path,
         actor_metadata: ActorMetadata | None = None,
+        scene_discovery: SceneDiscoveryArtifact | None = None,
     ) -> tuple[list[EpisodeArchitecture], dict[str, Any]]:
         actor_metadata = actor_metadata or ActorMetadata(project_id=project.project_id)
         async with _stage_log(
@@ -9543,12 +9891,17 @@ class PipelineOrchestrator:
                         primitive_lookup=primitive_lookup,
                         passage_lookup=passage_lookup,
                     )
+                    episode_scene_payload = _build_episode_scene_payload(
+                        strategy_episode=episode,
+                        scene_discovery=scene_discovery,
+                    )
                     payload = self.episode_architecture_agent.build_payload(
                         episode=episode.model_dump(mode="json"),
                         synthesis_map=episode_synthesis_map_payload,
                         project_metadata=project_metadata,
                         core_passages=core_passages,
                         support_passages=support_passages,
+                        episode_scenes=episode_scene_payload,
                         series_explanation_registry=[
                             item.model_dump(mode="json")
                             for item in strategy.series_explanation_registry
@@ -9576,6 +9929,7 @@ class PipelineOrchestrator:
                         "core_primitive_count": len(
                             episode.episode_spine.core_primitive_ids
                         ),
+                        "episode_scene_candidate_count": len(episode_scene_payload),
                         "actor_directive_count": len(episode.actor_arc_directives),
                     }
                     return episode.episode_number, episode, architecture, report
@@ -9793,6 +10147,7 @@ class PipelineOrchestrator:
                             host_policy=host_policy,
                             actor_metadata=compact_episode_actor_metadata,
                             planning_feedback=planning_feedback,
+                            field_semantics=_build_field_semantics_payload(),
                         )
                         try:
                             plan_draft = await asyncio.to_thread(
@@ -9815,6 +10170,27 @@ class PipelineOrchestrator:
                                     plan=plan_draft,
                                 )
                             )
+                            retry_host_moves_diagnostics, _retry_host_move_warnings = (
+                                _build_host_move_plan_diagnostics(
+                                    scene_cards=plan_draft.scene_cards,
+                                    architecture=episode,
+                                    narrator_profile=strategy.narrator_profile,
+                                )
+                            )
+                            if retry_host_moves_diagnostics[
+                                "disallowed_move_scene_ids"
+                            ]:
+                                raise ComplianceViolationError(
+                                    "Episode plan used host move types that are not allowed by the narrator policy.",
+                                    data={
+                                        "issue": "host_move_allowed_move_mismatch",
+                                        "episode_number": episode.episode_number,
+                                        "scene_ids": retry_host_moves_diagnostics[
+                                            "disallowed_move_scene_ids"
+                                        ],
+                                        "instruction": "Use only move_type values allowed by host_policy.allowed_moves.",
+                                    },
+                                )
                             break
                         except ComplianceViolationError as exc:
                             if attempt >= max_attempts:
@@ -10227,27 +10603,35 @@ class PipelineOrchestrator:
                 plan=plan,
                 passage_lookup=passage_lookup,
             )
+            field_semantics = _build_field_semantics_payload()
             book_metadata = [
                 {"book_id": b.book_id, "title": b.title, "author": b.author}
                 for b in project.books
             ]
-            scene_word_count_targets_lower = _compute_scene_word_count_targets(
+            (
+                scene_word_count_targets_lower,
+                scene_word_count_targets_higher,
+            ) = _compute_scene_word_count_bands(
                 plan.scene_cards,
                 plan.target_word_count,
-                145.0,
-            )
-            scene_word_count_targets_higher = _compute_scene_word_count_targets(
-                plan.scene_cards,
-                plan.target_word_count,
-                160.0,
             )
             full_episode_plan_payload = plan.model_dump(mode="json")
+            (
+                scene_authorial_passages_by_scene_id,
+                section_authorial_passages_by_section_id,
+            ) = _resolve_authorial_passages(
+                architecture=architecture,
+                plan=plan,
+            )
             scene_payload_by_id: dict[str, dict[str, Any]] = {}
             for scene_payload in full_episode_plan_payload.get("scene_cards", []):
                 scene_id = scene_payload.get("scene_id")
                 if not scene_id:
                     continue
                 scene_payload.pop("estimated_duration_seconds", None)
+                scene_payload["authorial_passages"] = list(
+                    scene_authorial_passages_by_scene_id.get(scene_id, [])
+                )
                 scene_payload["target_word_count_lower"] = int(
                     scene_word_count_targets_lower.get(scene_id, 0)
                 )
@@ -10321,6 +10705,7 @@ class PipelineOrchestrator:
                             _build_window_architecture_payload(
                                 architecture=architecture,
                                 window_scene_cards=window_scene_cards,
+                                section_authorial_passages_by_section_id=section_authorial_passages_by_section_id,
                             )
                         )
                         window_passages = _build_window_passages(
@@ -10370,6 +10755,7 @@ class PipelineOrchestrator:
                                     part_number
                                 ),
                                 prior_window_continuity=prior_window_continuity,
+                                field_semantics=field_semantics,
                             )
                             result = await asyncio.to_thread(writing_agent.run, payload)
                             part_word_count = _writing_result_word_count(result)
@@ -10767,6 +11153,7 @@ class PipelineOrchestrator:
                     architecture=architecture,
                     series_explanation_registry=series_explanation_registry,
                 ),
+                field_semantics=_build_field_semantics_payload(),
             )
             audit = await asyncio.to_thread(self.style_audit_agent.run, payload)
             _save_json(ep_dir / "style_audit_result.json", audit)
@@ -10849,6 +11236,7 @@ class PipelineOrchestrator:
                     tts_provider=project.config.tts_provider,
                     host_policy=host_policy,
                     previous_spoken_tail=previous_spoken_tail,
+                    field_semantics=_build_field_semantics_payload(),
                 )
                 result = await asyncio.to_thread(
                     self.spoken_delivery_agent.run, payload

@@ -90,6 +90,7 @@ class EpisodeArchitectureAgent(Agent):
         project_metadata: dict,
         core_passages: list[dict],
         support_passages: list[dict],
+        episode_scenes: list[dict] | None = None,
         series_explanation_registry: list[dict] | None = None,
         series_actor_explanation_registry: list[dict] | None = None,
         narrator_profile: dict | None = None,
@@ -103,6 +104,8 @@ class EpisodeArchitectureAgent(Agent):
             "core_passages": core_passages,
             "support_passages": support_passages,
         }
+        if episode_scenes is not None:
+            payload["episode_scenes"] = episode_scenes
         if narrator_profile is not None:
             payload["narrator_profile"] = narrator_profile
         if series_explanation_registry is not None:

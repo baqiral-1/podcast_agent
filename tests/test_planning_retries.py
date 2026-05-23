@@ -7,8 +7,13 @@ from types import SimpleNamespace
 
 import pytest
 
+from podcast_agent.langchain.runnables import ComplianceViolationError
 from podcast_agent.llm.heuristic import HeuristicLLMClient
-from podcast_agent.pipeline.orchestrator import PipelineOrchestrator, _validate_plan_transition
+from podcast_agent.pipeline.orchestrator import (
+    PipelineOrchestrator,
+    _build_plan_transition_feedback,
+    _validate_plan_transition,
+)
 from podcast_agent.schemas.models import (
     ActorExplanationPlan,
     ActorPrimitive,
@@ -330,6 +335,9 @@ def test_plan_series_ignores_legacy_scene_primitive_ids(monkeypatch, tmp_path):
         strategy_type="convergence",
         justification="Because.",
         series_arc="Arc.",
+        narrator_profile={
+            "allowed_moves": ["orient", "clarify", "evaluate", "callback"],
+        },
         episodes=[_strategy_episode()],
     )
     synthesis_map = SynthesisMap(
@@ -376,6 +384,115 @@ def test_validate_plan_transition_allows_dropped_support_primitives_missing_afte
     assert validated_plan.dropped_support_primitive_reasons == {
         "support_4": "It does not fit the final scene chain."
     }
+
+
+def test_validate_plan_transition_allows_dense_scene_fact_cards():
+    plan = EpisodePlanDraft.model_validate(
+        {
+            "episode_number": 1,
+            "framing": {
+                "opening_image": "Image",
+                "threat_or_unresolved_action": "Threat",
+                "opening_question": "Question",
+                "handoff_scene_card_id": "scene_1",
+            },
+            "scene_cards": [
+                {
+                    "scene_id": "scene_1",
+                    "section_id": "s01",
+                    "title": "Scene 1",
+                    "scene_role": "context_setup",
+                    "scene_job": "build",
+                    "beat_change": "The opening condition becomes concrete.",
+                    "must_land_facts": {
+                        "required": ["Fact 1", "Fact 2"],
+                        "strongly_preferred": ["Fact 3", "Fact 4"],
+                        "if_room": ["Fact 5", "Fact 6"],
+                    },
+                    "passage_ids": ["p_support_1"],
+                    "host_moves": {
+                        "open": [
+                            {"move_type": "orient", "target": "opening conditions"}
+                        ]
+                    },
+                    "estimated_duration_seconds": 120,
+                },
+                {
+                    "scene_id": "scene_2",
+                    "section_id": "s02",
+                    "title": "Scene 2",
+                    "scene_role": "action",
+                    "scene_job": "answer",
+                    "beat_change": "The answer lands.",
+                    "must_land_facts": {"required": ["Fact 7"]},
+                    "passage_ids": ["p_core_1"],
+                    "host_moves": {
+                        "open": [{"move_type": "clarify", "target": "the hinge"}]
+                    },
+                    "estimated_duration_seconds": 120,
+                },
+                {
+                    "scene_id": "scene_3",
+                    "section_id": "s03",
+                    "title": "Scene 3",
+                    "scene_role": "fallout",
+                    "scene_job": "residue",
+                    "beat_change": "The cost becomes visible.",
+                    "must_land_facts": {"required": ["Fact 8"]},
+                    "passage_ids": ["p_support_2"],
+                    "host_moves": {
+                        "open": [{"move_type": "evaluate", "target": "visible cost"}]
+                    },
+                    "estimated_duration_seconds": 120,
+                },
+                {
+                    "scene_id": "scene_4",
+                    "section_id": "s04",
+                    "title": "Scene 4",
+                    "scene_role": "implication",
+                    "scene_job": "close",
+                    "beat_change": "The close contains the answer.",
+                    "must_land_facts": {"required": ["Fact 9"]},
+                    "passage_ids": ["p_support_3"],
+                    "host_moves": {
+                        "close": [{"move_type": "callback", "target": "opening image"}]
+                    },
+                    "estimated_duration_seconds": 120,
+                },
+            ],
+            "answer_scene_card_id": "scene_2",
+            "residue_scene_card_id": "scene_3",
+        }
+    )
+
+    validated_plan = _validate_plan_transition(
+        strategy_episode=_strategy_episode(),
+        architecture=_episode_architecture(),
+        plan=plan,
+    )
+
+    assert validated_plan.scene_cards[0].must_land_facts.total_count() == 6
+
+
+def test_build_plan_transition_feedback_includes_scene_and_phase_ids():
+    feedback = _build_plan_transition_feedback(
+        ComplianceViolationError(
+            "Host move types are invalid.",
+            data={
+                "issue": "host_move_allowed_move_mismatch",
+                "episode_number": 1,
+                "scene_ids": ["scene_2"],
+                "phase_ids": ["scene_2:pivot"],
+                "instruction": "Use only allowed host move types.",
+            },
+        )
+    )
+
+    assert feedback["issue"] == "host_move_allowed_move_mismatch"
+    assert feedback["scene_ids"] == ["scene_2"]
+    assert feedback["phase_ids"] == ["scene_2:pivot"]
+
+
 
 
 def test_plan_series_does_not_raise_on_legacy_scene_primitive_ids(

@@ -21,6 +21,7 @@ class StyleAuditAgent(Agent):
         sections: list[dict],
         host_policy: dict | None = None,
         series_explanation_registry: list[dict] | None = None,
+        field_semantics: dict | None = None,
     ) -> dict:
         payload = {
             "episode_number": episode_number,
@@ -31,4 +32,6 @@ class StyleAuditAgent(Agent):
             payload["host_policy"] = host_policy
         if series_explanation_registry is not None:
             payload["series_explanation_registry"] = series_explanation_registry
+        if field_semantics is not None:
+            payload["field_semantics"] = field_semantics
         return payload

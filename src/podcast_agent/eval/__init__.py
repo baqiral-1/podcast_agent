@@ -4,6 +4,11 @@ from .actor_explanation_audit import (
     build_actor_explanation_audit_payload,
     render_actor_explanation_audit_html,
 )
+from .audio_style_report import (
+    DEFAULT_SCRIPT_ARTIFACTS,
+    build_audio_style_payload,
+    render_audio_style_html,
+)
 from .blind_script_comparison import (
     build_blind_comparison_payload,
     render_blind_comparison_html,
@@ -24,13 +29,16 @@ __all__ = [
     "EpisodeSimilarityScore",
     "FeatureVector",
     "RunSimilarityScore",
+    "DEFAULT_SCRIPT_ARTIFACTS",
     "build_actor_explanation_audit_payload",
+    "build_audio_style_payload",
     "build_blind_comparison_payload",
     "build_review_payload",
     "extract_feature_vector",
     "extract_host_snippets",
     "load_episode_body_text",
     "render_actor_explanation_audit_html",
+    "render_audio_style_html",
     "render_blind_comparison_html",
     "render_review_html",
     "score_run_dir",

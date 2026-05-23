@@ -36,6 +36,7 @@ from podcast_agent.schemas.models import (
     PrimitiveSubstrate,
     ReadingPrimitive,
     SceneCard,
+    SceneDiscoveryArtifact,
     StrategyEpisode,
     SeriesExplanationItem,
     SeriesNarratorProfile,
@@ -716,6 +717,67 @@ def test_build_host_move_plan_diagnostics_warns_on_disallowed_move_type() -> Non
     assert diagnostics["disallowed_move_scene_ids"] == ["scene_1"]
 
 
+def test_build_host_move_plan_diagnostics_flags_long_sentence_shaped_targets() -> None:
+    architecture = _episode_architecture(
+        sections=[
+            ArchitectureSection(
+                section_id="section_01",
+                purpose="setup",
+                approx_runtime_minutes=2.0,
+                primitive_ids=["core_1"],
+                section_question="Q1?",
+                section_resolution="R1",
+                entry_state="E1",
+                exit_state="X1",
+                transition_logic="T1",
+                depends_on_section_ids=[],
+                sets_up_section_ids=[],
+                argument_role="frame",
+                inference_mode="scene_first",
+                recurrence_role="setup",
+                pressure_type="political",
+                resolution_type="expansion",
+                closure_level="medium",
+            )
+        ]
+    )
+    scene = SceneCard.model_validate(
+        {
+            "scene_id": "scene_1",
+            "section_id": architecture.sections[0].section_id,
+            "title": "Scene 1",
+            "scene_role": "context_setup",
+            "scene_function": "scene",
+            "beat_change": "The opening condition becomes visible.",
+            "passage_ids": ["p1"],
+            "estimated_duration_seconds": 60,
+            "host_moves": {
+                "open": [
+                    {
+                        "move_type": "orient",
+                        "target": "tell the listener what to watch for next.",
+                    }
+                ],
+                "pivot": [],
+                "close": [],
+            },
+        }
+    )
+
+    diagnostics, warnings = _build_host_move_plan_diagnostics(
+        scene_cards=[scene],
+        architecture=architecture,
+        narrator_profile=SeriesNarratorProfile(allowed_moves=["orient"]),
+    )
+
+    assert diagnostics["host_target_too_long_ids"] == ["scene_1:open"]
+    assert diagnostics["host_target_sentence_shaped_ids"] == ["scene_1:open"]
+    assert any(warning.startswith("host_target_too_long:") for warning in warnings)
+    assert any(
+        warning.startswith("host_target_sentence_shaped:") for warning in warnings
+    )
+
+
 def test_build_host_move_plan_diagnostics_warns_on_low_coverage() -> None:
     architecture = _episode_architecture(
         sections=[
@@ -1165,6 +1227,12 @@ def test_build_episode_architectures_uses_only_strategy_actor_directives(
                 )
                 for idx in range(1, 5)
             ],
+        ).model_copy(
+            update={
+                "answer_section_id": "section_03",
+                "residue_section_id": "section_04",
+                "promised_beat_decisions": [],
+            }
         )
 
     orchestrator.episode_architecture_agent.run = fake_architecture_run
@@ -1238,6 +1306,22 @@ def test_build_episode_architectures_uses_only_strategy_actor_directives(
             _actor_profile("actor_primitive"),
         ],
     )
+    scene_discovery = SceneDiscoveryArtifact.model_validate(
+        {
+            "candidates": [
+                {
+                    "candidate_id": "candidate_01",
+                    "primitive_ids": ["core_1"],
+                    "passage_ids": ["p_core"],
+                    "scene_sketch": "A decisive visible turn.",
+                    "candidate_roles": ["opening", "answer"],
+                    "anchor_image": "A decree lands in the room.",
+                    "why_sceneable": "The turn is concrete and audible.",
+                    "actor_ids": ["actor_strategy"],
+                }
+            ]
+        }
+    )
 
     architectures, _metrics = asyncio.run(
         orchestrator._build_episode_architectures(
@@ -1247,6 +1331,7 @@ def test_build_episode_architectures_uses_only_strategy_actor_directives(
             corpus,
             tmp_path,
             actor_metadata=actor_metadata,
+            scene_discovery=scene_discovery,
         )
     )
 
@@ -1257,6 +1342,9 @@ def test_build_episode_architectures_uses_only_strategy_actor_directives(
         "p_core"
     ]
     assert captured_payload["support_passages"] == []
+    assert [candidate["candidate_id"] for candidate in captured_payload["episode_scenes"]] == [
+        "candidate_01"
+    ]
     assert architectures[0].episode_number == 1
 
 

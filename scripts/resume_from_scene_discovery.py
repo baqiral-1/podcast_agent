@@ -9,12 +9,20 @@ from podcast_agent.pipeline.resume import resume_from_scene_discovery_stage
 
 
 async def _resume_from_scene_discovery(project_id: str) -> None:
-    await resume_from_scene_discovery_stage(
-        project_id,
-        stage_label="scene discovery",
-        settings_factory=Settings,
-        orchestrator_cls=PipelineOrchestrator,
-    )
+    try:
+        await resume_from_scene_discovery_stage(
+            project_id,
+            stage_label="scene discovery",
+            settings_factory=Settings,
+            orchestrator_cls=PipelineOrchestrator,
+        )
+    except RuntimeError as exc:
+        message = str(exc)
+        if message.startswith("Resume failed from scene discovery onward:"):
+            raise
+        raise RuntimeError(
+            f"Resume failed from scene discovery onward: {message}"
+        ) from exc
 
 
 def _parse_args() -> argparse.Namespace:

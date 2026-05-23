@@ -7,10 +7,11 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
+
 from podcast_agent.schemas.models import (
     ActorMetadata,
     ActorProfile,
-    ArchitectureSection,
     BookRecord,
     EpisodeArchitecture,
     EventPrimitive,
@@ -18,9 +19,11 @@ from podcast_agent.schemas.models import (
     PipelineConfig,
     PrimitiveSubstrate,
     ProjectStatus,
+    SceneDiscoveryArtifact,
+    SpokenScript,
+    SpokenSection,
     StrategyEpisode,
     SynthesisMap,
-    SynthesisPrimitivesArtifact,
     ThematicAxis,
     ThematicCorpus,
     ThematicProject,
@@ -48,151 +51,164 @@ def _write_json(path: Path, payload: Any) -> None:
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
-def _episode_architecture() -> EpisodeArchitecture:
-    sections: list[ArchitectureSection] = []
-    purposes = [
-        ("section_1", "opening", "frame", "scene_first", "low", "section_2"),
-        (
-            "section_2",
-            "setup",
-            "establish_mechanism",
-            "mechanism_first",
-            "low",
-            "section_3",
-        ),
-        (
-            "section_3",
-            "turn",
-            "test_viability",
-            "contrast_first",
-            "medium",
-            "section_4",
-        ),
-        (
-            "section_4",
-            "setup",
-            "establish_mechanism",
-            "mechanism_first",
-            "low",
-            "section_5",
-        ),
-        (
-            "section_5",
-            "setup",
-            "establish_mechanism",
-            "mechanism_first",
-            "low",
-            "section_6",
-        ),
-        (
-            "section_6",
-            "setup",
-            "establish_mechanism",
-            "mechanism_first",
-            "low",
-            "section_7",
-        ),
-        (
-            "section_7",
-            "setup",
-            "establish_mechanism",
-            "mechanism_first",
-            "low",
-            "section_8",
-        ),
-        (
-            "section_8",
-            "setup",
-            "establish_mechanism",
-            "mechanism_first",
-            "low",
-            "section_9",
-        ),
-        ("section_9", "closing", "close", "aftermath_first", "high", None),
-    ]
-    for idx, (
-        section_id,
-        purpose,
-        argument_role,
-        inference_mode,
-        closure_level,
-        next_section,
-    ) in enumerate(purposes, start=1):
-        sections.append(
-            ArchitectureSection.model_validate(
-                {
-                    "section_id": section_id,
-                    "purpose": purpose,
-                    "approx_runtime_minutes": 0.25,
-                    "primitive_ids": ["primitive_1"],
-                    "section_question": f"Question {idx}?",
-                    "section_resolution": f"Resolution {idx}.",
-                    "entry_state": f"Entry {idx}",
-                    "exit_state": f"Exit {idx}",
-                    "transition_logic": f"Transition {idx}.",
-                    "depends_on_section_ids": []
-                    if idx == 1
-                    else [f"section_{idx - 1}"],
-                    "sets_up_section_ids": []
-                    if next_section is None
-                    else [next_section],
-                    "argument_role": argument_role,
-                    "inference_mode": inference_mode,
-                    "recurrence_role": "none",
-                    "pressure_type": "mass_political",
-                    "resolution_type": "containment"
-                    if purpose == "closing"
-                    else "escalation",
-                    "closure_level": closure_level,
-                }
-            )
-        )
-    return EpisodeArchitecture.model_construct(
-        episode_number=1,
-        major_turn_section_id="section_3",
-        allowed_recurring_primitive_ids=["primitive_1"],
-        forbidden_redundancies=[],
-        sections=sections,
-        architecture_notes=[],
+def _primitive(primitive_id: str) -> EventPrimitive:
+    return EventPrimitive(
+        id=primitive_id,
+        substrate=PrimitiveSubstrate.EVENTS,
+        title=primitive_id,
+        core_passage_ids=["passage_1"],
+        actor_ids=["actor_1"],
+        event_type="turning_point",
+        what_happened=f"{primitive_id} changes the field.",
+        event_result=f"{primitive_id} lands.",
     )
 
 
-def _build_project_dir(tmp_path: Path) -> Path:
+def _strategy() -> NarrativeStrategy:
+    return NarrativeStrategy(
+        strategy_type="chronological",
+        justification="Test",
+        series_arc="Arc",
+        recommended_episode_count=1,
+        episodes=[
+            StrategyEpisode(
+                episode_number=1,
+                title="Episode 1",
+                arc_summary="Arc summary",
+                episode_spine={
+                    "listener_question": "What changed?",
+                    "argument": "A working claim.",
+                    "core_primitive_ids": ["primitive_1", "core_2"],
+                    "support_primitive_roles": {
+                        "support_1": "mechanism",
+                        "support_2": "mechanism",
+                    },
+                    "recall_primitive_ids": [],
+                },
+                promised_beats=[
+                    {
+                        "beat_id": "beat_1",
+                        "label": "Open from the decree",
+                        "kind": "scene",
+                        "intended_job": "opening",
+                        "source_candidate_ids": ["candidate_01"],
+                        "source_primitive_ids": ["primitive_1"],
+                        "why_load_bearing": "It is the concrete opening handle.",
+                    }
+                ],
+            )
+        ],
+    )
+
+
+def _architecture() -> EpisodeArchitecture:
+    return EpisodeArchitecture.model_validate(
+        {
+            "episode_number": 1,
+            "major_turn_section_id": "section_03",
+            "answer_section_id": "section_04",
+            "residue_section_id": "section_05",
+            "promised_beat_decisions": [
+                {"beat_id": "beat_1", "decision": "stage", "section_id": "section_01"}
+            ],
+            "sections": [
+                {
+                    "section_id": "section_01",
+                    "purpose": "opening",
+                    "section_anchor": "A decree arrives.",
+                    "must_stage_beats": ["The decree lands.", "Everyone recalculates."],
+                    "approx_runtime_minutes": 1.0,
+                    "primitive_ids": ["primitive_1"],
+                    "closure_mode": "residue",
+                    "priority_core_passage_ids": [],
+                    "key_terms": [],
+                    "authorial_passages": [],
+                    "term_explanations": [],
+                    "actor_explanations": [],
+                },
+                {
+                    "section_id": "section_02",
+                    "purpose": "setup",
+                    "section_anchor": "The coalition forms.",
+                    "must_stage_beats": ["Actors align.", "Pressure sharpens."],
+                    "approx_runtime_minutes": 1.0,
+                    "primitive_ids": ["core_2"],
+                    "closure_mode": "residue",
+                    "priority_core_passage_ids": [],
+                    "key_terms": [],
+                    "authorial_passages": [],
+                    "term_explanations": [],
+                    "actor_explanations": [],
+                },
+                {
+                    "section_id": "section_03",
+                    "purpose": "turn",
+                    "section_anchor": "The break becomes visible.",
+                    "must_stage_beats": ["A line is crossed.", "The balance shifts."],
+                    "approx_runtime_minutes": 1.0,
+                    "primitive_ids": ["support_1"],
+                    "closure_mode": "turn",
+                    "priority_core_passage_ids": [],
+                    "key_terms": [],
+                    "authorial_passages": [],
+                    "term_explanations": [],
+                    "actor_explanations": [],
+                },
+                {
+                    "section_id": "section_04",
+                    "purpose": "setup",
+                    "section_anchor": "The answer starts to settle.",
+                    "must_stage_beats": ["The mechanism is named.", "Its result becomes clear."],
+                    "approx_runtime_minutes": 1.0,
+                    "primitive_ids": ["support_2"],
+                    "closure_mode": "residue",
+                    "priority_core_passage_ids": [],
+                    "key_terms": [],
+                    "authorial_passages": [],
+                    "term_explanations": [],
+                    "actor_explanations": [],
+                },
+                {
+                    "section_id": "section_05",
+                    "purpose": "setup",
+                    "section_anchor": "The cost spreads outward.",
+                    "must_stage_beats": ["The answer carries cost.", "The burden remains."],
+                    "approx_runtime_minutes": 1.0,
+                    "primitive_ids": ["primitive_1"],
+                    "closure_mode": "residue",
+                    "priority_core_passage_ids": [],
+                    "key_terms": [],
+                    "authorial_passages": [],
+                    "term_explanations": [],
+                    "actor_explanations": [],
+                },
+                {
+                    "section_id": "section_06",
+                    "purpose": "closing",
+                    "section_anchor": "One image remains.",
+                    "must_stage_beats": ["The final image lands.", "The pressure stays alive."],
+                    "approx_runtime_minutes": 1.0,
+                    "primitive_ids": ["primitive_1"],
+                    "closure_mode": "final_answer",
+                    "priority_core_passage_ids": [],
+                    "key_terms": [],
+                    "authorial_passages": [],
+                    "term_explanations": [],
+                    "actor_explanations": [],
+                },
+            ],
+        }
+    )
+
+
+def _build_project_dir(tmp_path: Path, *, include_architecture: bool = True) -> Path:
     project_dir = tmp_path / "run_1"
     project_dir.mkdir()
-
     axis = ThematicAxis(
         axis_id="axis_1",
         name="Axis",
         description="Axis description",
         theme_importance_score=1.0,
-    )
-    primitive = EventPrimitive(
-        id="primitive_1",
-        substrate=PrimitiveSubstrate.EVENTS,
-        title="Primitive",
-        core_passage_ids=["passage_1"],
-        actor_ids=["actor_1"],
-        event_type="turning_point",
-        what_happened="A decisive event changes the field.",
-    )
-    primitives = SynthesisPrimitivesArtifact(
-        project_id="run_1",
-        primitives=[primitive],
-    )
-    enriched_primitive = EventPrimitive(
-        id="primitive_1",
-        substrate=PrimitiveSubstrate.EVENTS,
-        title="Primitive",
-        core_passage_ids=["passage_1"],
-        actor_ids=["actor_1"],
-        event_type="turning_point",
-        what_happened="A decisive event changes the field.",
-        event_result="The balance breaks.",
-    )
-    synthesis_map = SynthesisMap(
-        project_id="run_1",
-        primitives=[enriched_primitive],
     )
     actor_metadata = ActorMetadata(
         project_id="run_1",
@@ -201,36 +217,6 @@ def _build_project_dir(tmp_path: Path) -> Path:
                 actor_id="actor_1",
                 display_name="Actor One",
                 actor_type="person",
-            )
-        ],
-    )
-    strategy = NarrativeStrategy(
-        strategy_type="chronological",
-        justification="Test",
-        series_arc="Test arc",
-        recommended_episode_count=1,
-        episodes=[
-            StrategyEpisode(
-                episode_number=1,
-                title="Episode",
-                arc_summary="Arc summary",
-                episode_spine={
-                    "listener_question": "Question?",
-                    "argument": "A working claim.",
-                    "core_primitive_ids": [
-                        "primitive_1",
-                        "core_2",
-                        "core_3",
-                        "core_4",
-                        "core_5",
-                        "core_6",
-                        "core_7",
-                    ],
-                    "support_primitive_roles": {
-                        f"support_{idx}": "mechanism" for idx in range(1, 8)
-                    },
-                    "recall_primitive_ids": [],
-                },
             )
         ],
     )
@@ -255,29 +241,177 @@ def _build_project_dir(tmp_path: Path) -> Path:
         status=ProjectStatus.ANALYZING,
     )
     corpus = ThematicCorpus(project_id="run_1", axes=[axis])
-    architecture = _episode_architecture()
-
-    _write_json(
-        project_dir / "thematic_axes.json", {"axes": [axis.model_dump(mode="json")]}
+    scene_discovery = SceneDiscoveryArtifact.model_validate(
+        {
+            "candidates": [
+                {
+                    "candidate_id": "candidate_01",
+                    "primitive_ids": ["primitive_1"],
+                    "passage_ids": ["passage_1"],
+                    "scene_sketch": "A decree lands and the field changes.",
+                    "candidate_roles": ["opening"],
+                    "anchor_image": "A document hits the desk.",
+                    "why_sceneable": "The shift is concrete and audible.",
+                    "actor_ids": ["actor_1"],
+                }
+            ]
+        }
     )
+    retained_primitives = SynthesisMap(
+        project_id="run_1",
+        primitives=[
+            _primitive("primitive_1"),
+            _primitive("core_2"),
+            _primitive("support_1"),
+            _primitive("support_2"),
+        ],
+    )
+    strategy = _strategy()
+    architecture = _architecture()
+
+    _write_json(project_dir / "thematic_axes.json", {"axes": [axis.model_dump(mode="json")]})
     _write_json(project_dir / "thematic_project.json", project)
     _write_json(project_dir / "thematic_corpus.json", corpus)
-    _write_json(project_dir / "synthesis_primitives.json", primitives)
-    _write_json(project_dir / "synthesis_map.json", synthesis_map)
-    _write_json(project_dir / "narrative_strategy.json", strategy)
     _write_json(project_dir / "actor_metadata.json", actor_metadata)
-    _write_json(
-        project_dir / "episode_architectures.json",
-        {"episodes": [architecture.model_dump(mode="json")]},
-    )
+    _write_json(project_dir / "scene_discovery.json", scene_discovery)
+    _write_json(project_dir / "retained_primitives.json", retained_primitives)
+    _write_json(project_dir / "narrative_strategy.json", strategy)
+    if include_architecture:
+        _write_json(
+            project_dir / "episode_architectures.json",
+            {"episodes": [architecture.model_dump(mode="json")]},
+        )
     return project_dir
 
 
-def test_resume_from_episode_architecture_passes_host_policy(
-    monkeypatch,
-    tmp_path,
+def test_resume_from_episode_architecture_reruns_architecture_then_planning_then_production(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    project_dir = _build_project_dir(tmp_path, include_architecture=False)
+    calls: dict[str, Any] = {"order": []}
+
+    class FakeOrchestrator:
+        def __init__(self, settings: Any) -> None:
+            self.settings = settings
+
+        def _bind_run_logger(self, bound_project_dir: Path) -> None:
+            calls["bound_project_dir"] = bound_project_dir
+
+        async def _build_episode_architectures(
+            self,
+            **kwargs: Any,
+        ) -> tuple[list[EpisodeArchitecture], dict[str, Any]]:
+            calls["order"].append("episode_architecture")
+            calls["architecture_status"] = kwargs["project"].status
+            calls["architecture_scene_discovery"] = kwargs["scene_discovery"]
+            calls["architecture_actor_metadata"] = kwargs["actor_metadata"]
+            architecture = _architecture()
+            _write_json(
+                project_dir / "episode_architectures.json",
+                {"episodes": [architecture.model_dump(mode="json")]},
+            )
+            return [architecture], {"unknown_actor_ids": 0}
+
+        async def _plan_series(self, **kwargs: Any) -> tuple[list[Any], dict[str, Any]]:
+            calls["order"].append("plan_series")
+            calls["planning_status"] = kwargs["project"].status
+            _write_json(project_dir / "series_plan.json", {"episodes": [{"episode_number": 1}]})
+            return [SimpleNamespace(episode_number=1)], {"unknown_actor_ids": 0}
+
+        async def _produce_episode(self, *args: Any, **kwargs: Any) -> tuple[int, SpokenScript]:
+            calls["order"].append("produce_episode")
+            calls["host_policy"] = kwargs["host_policy"]
+            return (
+                1,
+                SpokenScript(
+                    episode_number=1,
+                    title="Episode 1",
+                    framing={
+                        "opening_image": "An image",
+                        "threat_or_unresolved_action": "A threat remains.",
+                        "opening_question": "What now?",
+                        "handoff_scene_card_id": "scene_01",
+                    },
+                    sections=[SpokenSection(section_id="section_01", text="Text.")],
+                    tts_provider="openai",
+                ),
+            )
+
+        def _write_passage_utilization(self, **_: Any) -> None:
+            calls["passage_utilization_written"] = True
+
+        def _build_writing_actor_metrics(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+            return {"episodes": 1}
+
+        def _write_actor_metadata_metrics(self, **_: Any) -> None:
+            calls["actor_metrics_written"] = True
+
+        async def _render_episode_audio(self, *args: Any, **kwargs: Any) -> None:
+            calls["order"].append("render_audio")
+            calls["audio_rendered"] = True
+
+    monkeypatch.setattr(
+        resume_script,
+        "Settings",
+        lambda: SimpleNamespace(
+            pipeline=SimpleNamespace(artifact_root=tmp_path),
+        ),
+    )
+    monkeypatch.setattr(resume_script, "PipelineOrchestrator", FakeOrchestrator)
+
+    asyncio.run(resume_script._resume_from_episode_architecture("run_1"))
+
+    assert project_dir.joinpath("synthesis_map.json").exists() is False
+    assert calls["order"] == [
+        "episode_architecture",
+        "plan_series",
+        "produce_episode",
+        "render_audio",
+    ]
+    assert calls["bound_project_dir"] == project_dir
+    assert calls["architecture_status"] == ProjectStatus.PLANNING
+    assert (
+        calls["architecture_scene_discovery"].candidates[0].candidate_id
+        == "candidate_01"
+    )
+    assert calls["architecture_actor_metadata"].actors[0].actor_id == "actor_1"
+    assert calls["planning_status"] == ProjectStatus.PLANNING
+    assert calls["host_policy"]["allowed_moves"]
+    assert calls["passage_utilization_written"] is True
+    assert calls["actor_metrics_written"] is True
+    assert calls["audio_rendered"] is True
+
+
+def test_resume_from_episode_architecture_requires_scene_discovery(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     project_dir = _build_project_dir(tmp_path)
+    project_dir.joinpath("scene_discovery.json").unlink()
+
+    monkeypatch.setattr(
+        resume_script,
+        "Settings",
+        lambda: SimpleNamespace(
+            pipeline=SimpleNamespace(artifact_root=tmp_path),
+        ),
+    )
+    monkeypatch.setattr(
+        resume_script,
+        "PipelineOrchestrator",
+        lambda settings: SimpleNamespace(),
+    )
+
+    with pytest.raises(RuntimeError, match="scene_discovery.json"):
+        asyncio.run(resume_script._resume_from_episode_architecture("run_1"))
+
+
+def test_resume_from_episode_architecture_does_not_require_persisted_architecture(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    project_dir = _build_project_dir(tmp_path, include_architecture=False)
     calls: dict[str, Any] = {}
 
     class FakeOrchestrator:
@@ -287,77 +421,62 @@ def test_resume_from_episode_architecture_passes_host_policy(
         def _bind_run_logger(self, bound_project_dir: Path) -> None:
             calls["bound_project_dir"] = bound_project_dir
 
+        async def _build_episode_architectures(
+            self,
+            **kwargs: Any,
+        ) -> tuple[list[EpisodeArchitecture], dict[str, Any]]:
+            calls["architecture_called"] = True
+            architecture = _architecture()
+            _write_json(
+                project_dir / "episode_architectures.json",
+                {"episodes": [architecture.model_dump(mode="json")]},
+            )
+            return [architecture], {"unknown_actor_ids": 0}
+
         async def _plan_series(self, **kwargs: Any) -> tuple[list[Any], dict[str, Any]]:
-            calls["planning_config"] = kwargs["project"].config
+            _write_json(project_dir / "series_plan.json", {"episodes": [{"episode_number": 1}]})
             return [SimpleNamespace(episode_number=1)], {"unknown_actor_ids": 0}
 
-        async def _produce_episode(
-            self,
-            plan: Any,
-            strategy_episode: StrategyEpisode,
-            architecture: EpisodeArchitecture,
-            project: ThematicProject,
-            corpus: ThematicCorpus,
-            actor_metadata: ActorMetadata,
-            project_dir: Path,
-            host_policy: dict[str, Any],
-            primitive_lookup: dict[str, EventPrimitive],
-            semaphore: asyncio.Semaphore,
-            spoken_semaphore: asyncio.Semaphore | None = None,
-        ) -> tuple[int, Any]:
-            calls["production_config"] = project.config
-            calls["host_policy"] = host_policy
-            calls["production_actor_metadata"] = actor_metadata
-            calls["production_architecture"] = architecture
-            calls["primitive_lookup"] = primitive_lookup
-            return plan.episode_number, SimpleNamespace(
-                episode_number=plan.episode_number
+        async def _produce_episode(self, *args: Any, **kwargs: Any) -> tuple[int, SpokenScript]:
+            return (
+                1,
+                SpokenScript(
+                    episode_number=1,
+                    title="Episode 1",
+                    framing={
+                        "opening_image": "An image",
+                        "threat_or_unresolved_action": "A threat remains.",
+                        "opening_question": "What now?",
+                        "handoff_scene_card_id": "scene_01",
+                    },
+                    sections=[SpokenSection(section_id="section_01", text="Text.")],
+                    tts_provider="openai",
+                ),
             )
 
-        def _write_passage_utilization(self, **kwargs: Any) -> None:
-            calls["passage_utilization"] = kwargs
+        def _write_passage_utilization(self, **_: Any) -> None:
+            return None
 
-        def _build_writing_actor_metrics(
-            self,
-            project_dir: Path,
-            spoken_scripts: list[tuple[int, Any]],
-        ) -> dict[str, Any]:
-            return {"completed_episode_count": len(spoken_scripts)}
+        def _build_writing_actor_metrics(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+            return {"episodes": 1}
 
-        def _write_actor_metadata_metrics(self, **kwargs: Any) -> None:
-            calls["actor_metadata_metrics"] = kwargs
+        def _write_actor_metadata_metrics(self, **_: Any) -> None:
+            return None
 
-        async def _render_episode_audio(
-            self,
-            episode_number: int,
-            spoken: Any,
-            config: PipelineConfig,
-            project_dir: Path,
-            semaphore: asyncio.Semaphore,
-            *,
-            skip_audio: bool,
-        ) -> None:
-            calls["audio_skip"] = skip_audio
+        async def _render_episode_audio(self, *args: Any, **kwargs: Any) -> None:
+            return None
 
     monkeypatch.setattr(
         resume_script,
         "Settings",
-        lambda: SimpleNamespace(pipeline=SimpleNamespace(artifact_root=tmp_path)),
+        lambda: SimpleNamespace(
+            pipeline=SimpleNamespace(artifact_root=tmp_path),
+        ),
     )
     monkeypatch.setattr(resume_script, "PipelineOrchestrator", FakeOrchestrator)
 
     asyncio.run(resume_script._resume_from_episode_architecture("run_1"))
 
     assert calls["bound_project_dir"] == project_dir
-    assert calls["planning_config"].skip_grounding is True
-    assert calls["production_config"].skip_spoken_delivery is False
-    assert calls["production_actor_metadata"].actors[0].actor_id == "actor_1"
-    assert calls["production_architecture"].episode_number == 1
-    assert calls["primitive_lookup"]["primitive_1"].id == "primitive_1"
-    assert "authorial_policy" in calls["host_policy"]
-    assert calls["audio_skip"] is True
-
-    final_project = ThematicProject.model_validate(
-        json.loads((project_dir / "thematic_project.json").read_text(encoding="utf-8"))
-    )
-    assert final_project.status == ProjectStatus.COMPLETE
+    assert calls["architecture_called"] is True
+    assert project_dir.joinpath("episode_architectures.json").exists() is True

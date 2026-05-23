@@ -56,6 +56,7 @@ class EpisodePlanningAgent(Agent):
         host_policy: dict | None = None,
         actor_metadata: dict | None = None,
         planning_feedback: dict | None = None,
+        field_semantics: dict | None = None,
     ) -> dict:
         payload = {
             "strategy_episode": strategy_episode,
@@ -74,4 +75,6 @@ class EpisodePlanningAgent(Agent):
             payload["actor_metadata"] = actor_metadata
         if planning_feedback is not None:
             payload["planning_feedback"] = planning_feedback
+        if field_semantics is not None:
+            payload["field_semantics"] = field_semantics
         return payload

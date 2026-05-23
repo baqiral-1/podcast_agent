@@ -28,6 +28,7 @@ from podcast_agent.langchain.runnables import (
     TransientLLMError,
 )
 from podcast_agent.llm.heuristic import HeuristicLLMClient
+from podcast_agent.pipeline.orchestrator import _build_host_policy_payload
 from podcast_agent.prompts.instructions import (
     episode_architecture_instructions,
     episode_writing_instructions,
@@ -41,6 +42,7 @@ from podcast_agent.schemas.models import (
     ChapterInfo,
     PrimitiveFunctionTaggingOverlayArtifact,
     PrimitiveSubstrate,
+    SeriesNarratorProfile,
     primitive_substrate_target_ranges_for_mode,
 )
 
@@ -340,6 +342,7 @@ class TestRedesignedAgents:
         payload = agent.build_payload(
             synthesis_map={"primitives": []},
             project_metadata={"theme": "War on terror"},
+            scene_discovery=None,
             episode_count=3,
             recommended_episode_count_min=10,
             recommended_episode_count_max=16,
@@ -422,6 +425,7 @@ class TestRedesignedAgents:
                 "episode_spine_support_primitive_target_max": 4,
                 "episode_spine_recall_primitive_target_max": 1,
             },
+            scene_discovery=None,
             episode_count=None,
             recommended_episode_count_min=2,
             recommended_episode_count_max=4,
@@ -536,6 +540,7 @@ class TestRedesignedAgents:
                     "episode_spine_support_primitive_target_max": 4,
                     "episode_spine_recall_primitive_target_max": 1,
                 },
+                scene_discovery=None,
                 episode_count=2,
                 recommended_episode_count_min=2,
                 recommended_episode_count_max=4,
@@ -543,6 +548,7 @@ class TestRedesignedAgents:
         )
 
         assert result.narrator_profile.target_authorial_passages_per_episode == 10
+        assert result.narrator_profile.spoken_style_contract == "anti_academic_oral"
 
     def test_primitive_function_tagging_agent_payload(self):
         agent = PrimitiveFunctionTaggingAgent(
@@ -762,6 +768,7 @@ class TestRedesignedAgents:
             project_metadata={"theme": "War on terror"},
             core_passages=[{"passage_id": "p1"}],
             support_passages=[{"passage_id": "p2"}],
+            episode_scenes=[{"candidate_id": "candidate_1"}],
             series_explanation_registry=[
                 {
                     "item_id": "registry_1",
@@ -788,6 +795,7 @@ class TestRedesignedAgents:
         instructions = agent.build_instructions(payload)
         assert payload["core_passages"][0]["passage_id"] == "p1"
         assert payload["support_passages"][0]["passage_id"] == "p2"
+        assert payload["episode_scenes"][0]["candidate_id"] == "candidate_1"
         assert payload["series_explanation_registry"][0]["item_id"] == "registry_1"
         assert payload["series_actor_explanation_registry"][0]["actor_id"] == "kermit_roosevelt"
         assert payload["actor_metadata"]["actors"][0]["actor_id"] == "actor_1"
@@ -815,6 +823,7 @@ class TestRedesignedAgents:
             "`priority_core_passage_ids`" in instructions
         )
         assert "`support_passages`" in instructions
+        assert "`episode_scenes`" in instructions
         assert "`section_anchor`" in instructions
         assert "`must_stage_beats`" in instructions
         assert "`series_explanation_registry`" in instructions
@@ -869,6 +878,7 @@ class TestRedesignedAgents:
             architecture={"episode_number": 1},
             synthesis_map={"primitives_by_family": {"epochal_turns": []}},
             project_metadata={"theme": "War on terror"},
+            scene_job_budget=None,
             available_passages=[{"passage_id": "p1"}],
             host_policy={
                 "target_full_phase_scene_coverage_target": 0.8,
@@ -954,6 +964,7 @@ class TestRedesignedAgents:
                 "scene_card_target_min": 21,
                 "scene_card_target_max": 26,
             },
+            scene_job_budget=None,
             available_passages=[{"passage_id": "p1"}],
         )
 
@@ -1002,12 +1013,19 @@ class TestRedesignedAgents:
         assert payload["series_explanation_registry"][0]["item_id"] == "registry_1"
         assert payload["host_policy"]["target_full_phase_scene_coverage_target"] == 0.75
         assert "optional `series_explanation_registry`" in agent.instructions
+        assert "spoken_style_contract = anti_academic_oral" in agent.instructions
         assert "`term_explanations`" in agent.instructions
         assert "`actor_explanations`" in agent.instructions
         assert (
             'Visible production-frame phrasing such as "This series..."'
             in agent.instructions
         )
+
+    def test_build_host_policy_payload_includes_spoken_style_contract(self):
+        payload = _build_host_policy_payload(SeriesNarratorProfile())
+
+        assert payload["spoken_style_contract"] == "anti_academic_oral"
+        assert payload["authorial_policy"]["comparative_aside_tolerance"] == "high"
 
     def test_writing_agent_payload(self):
         agent = WritingAgent(_mock_llm())
@@ -1038,7 +1056,11 @@ class TestRedesignedAgents:
         assert "previous_sections" not in payload
         assert "Draft all `plan.scene_cards` in order." in agent.instructions
         assert (
-            "`strategy_episode.episode_spine.core_primitive_ids` as the episode's load-bearing material"
+            "`strategy_episode.episode_spine.core_primitive_ids`" in agent.instructions
+            and "episode's load-bearing material" in agent.instructions
+        )
+        assert (
+            "Use support and recall primitives only in service of those core primitives."
             in agent.instructions
         )
         assert "next-episode teaser copy" not in agent.instructions
@@ -1047,23 +1069,21 @@ class TestRedesignedAgents:
         assert "`target_word_count_higher`" in agent.instructions
         assert "`episode_target_word_count_lower`" in agent.instructions
         assert "`episode_target_word_count_higher`" in agent.instructions
-        assert "computed at 130 WPM" in agent.instructions
-        assert "computed at 150 WPM" in agent.instructions
         assert "`passages[].text`" in agent.instructions
         assert agent.instructions.count("Optional `actor_metadata`") == 1
         assert (
             "Treat it as narrative scaffolding, not factual authority."
             in agent.instructions
         )
-        assert (
-            "Keep claims grounded in each card's `must_land_facts` and `passage_ids`."
-            in agent.instructions
-        )
+        assert "`must_land_facts`" in agent.instructions
+        assert "`passage_ids`" in agent.instructions
         assert "`host_policy`" in agent.instructions
         assert "use `I`, `we`" in agent.instructions
-        assert "and `you` freely" in agent.instructions
+        assert "`you` freely" in agent.instructions
         assert "avoid filler" in agent.instructions
         assert "self-performance" in agent.instructions
+        assert "Write this to be heard, not admired on the page." in agent.instructions
+        assert "The target is not historical prose with some personality." in agent.instructions
         assert "Read each scene's phase buckets in order" in agent.instructions
         assert "Optional `prior_window_continuity`" in agent.instructions
         assert (
@@ -1071,8 +1091,8 @@ class TestRedesignedAgents:
             in agent.instructions
         )
         assert (
-            "When `prior_window_continuity` is present, use it only to maintain local continuity across the split."
-            in agent.instructions
+            "maintain local continuity across the split" in agent.instructions
+            and "not factual authority" in agent.instructions
         )
         assert "target ranges already encode narrative importance" in agent.instructions
         assert (
@@ -1103,13 +1123,16 @@ class TestRedesignedAgents:
         )
         assert "Target 8-12 prose sections for the episode" not in agent.instructions
         assert "`entry_image`" in agent.instructions
-        assert "Treat scene roles and functions as concrete production constraints:" in agent.instructions
-        assert "`action`, `scene`, and `mechanism`" in agent.instructions
+        assert (
+            "Treat scene roles and scene jobs as concrete production constraints:"
+            in agent.instructions
+        )
+        assert "`action` scenes and `scene_job = build`" in agent.instructions
         assert "Do not write standalone transition paragraphs" in agent.instructions
         assert "Structural cards should stay concrete and brief." in agent.instructions
         assert "Planned `host_moves` should shape the scene's narration" in agent.instructions
-        assert "translate each host note into concrete scene" in agent.instructions.lower()
-        assert "Do not surface the note's control words unless the" in agent.instructions
+        assert "translate each host target into concrete scene" in agent.instructions.lower()
+        assert "Do not surface control words unless the" in agent.instructions
 
     def test_writing_response_allows_teaser_line(self):
         response = WritingAgent(_mock_llm()).response_model.model_validate(
@@ -1199,7 +1222,7 @@ class TestRedesignedAgents:
         )
         assert "`host_policy`" in agent.instructions
         assert "use `I`, `we`" in agent.instructions
-        assert "and `you` freely" in agent.instructions
+        assert "`you` freely" in agent.instructions
         assert "avoid filler" in agent.instructions
         assert "self-performance" in agent.instructions
         assert "Read the scene's `host_moves` phase buckets in order" in agent.instructions
@@ -1217,20 +1240,18 @@ class TestRedesignedAgents:
         assert "`prior_window_continuity` is reference-only." in agent.instructions
         assert "Do not include a `citations` field" in agent.instructions
         assert "concrete scene leverage" in agent.instructions
-        assert "no leaked host-note control phrasing" in agent.instructions
+        assert "no leaked host-target control phrasing" in agent.instructions
         assert "Populate `source_book_ids`" in agent.instructions
-        assert "budget already encodes narrative importance" in agent.instructions
+        assert "Target total narration for this call within" in agent.instructions
         assert "`entry_image`" in agent.instructions
-        assert "SCENE ROLES AND FUNCTIONS" in agent.instructions
+        assert "SCENE ROLES AND JOBS" in agent.instructions
         assert "Structural cards must stay concrete and brief." in agent.instructions
-        assert "`action`, `scene`, and `mechanism`" in agent.instructions
+        assert "`action` scenes and `scene_job = build`" in agent.instructions
         assert "Do not expose scaffolding" in agent.instructions
         assert "no meta-transitions" in agent.instructions
         assert "let `surface_mode` and `address_mode` decide" in agent.instructions
-        assert (
-            "Let host-marked scenes feel slightly more authored, but not more analytical."
-            in agent.instructions
-        )
+        assert "Distinct host lines are allowed" in agent.instructions
+        assert "not the default" in agent.instructions
         assert (
             "Planned `authorial_passages` may be more explanatory" in agent.instructions
         )
@@ -1241,6 +1262,11 @@ class TestRedesignedAgents:
             "Do not use self-referential announcer lines in body prose"
             in agent.instructions
         )
+        assert "spoken historical narration" in agent.instructions
+        assert "spoken_style_contract = anti_academic_oral" in agent.instructions
+        assert "Host-line archetypes are welcome when earned" in agent.instructions
+        assert "Write this to be heard, not admired on the page." in agent.instructions
+        assert "Do not become more oral by getting much shorter." in agent.instructions
 
     def test_writing_no_citations_response_allows_teaser_line(self):
         response = WritingAgentNoCitations(_mock_llm()).response_model.model_validate(
@@ -1323,15 +1349,10 @@ class TestRedesignedAgents:
         assert payload["max_words_per_segment"] == 250
         assert payload["host_policy"]["target_full_phase_scene_coverage_target"] == 0.8
         assert "You are the `oral_rewriter` stage" in agent.instructions
-        assert (
-            "turn one already-written batch of episode prose into spoken narration"
-            in agent.instructions
-        )
+        assert "already-written batch of episode prose" in agent.instructions
+        assert "spoken narration" in agent.instructions
         assert "INPUT" in agent.instructions
-        assert (
-            "`script.prose_sections[].host_moves` are scene-aligned host-guidance control signals"
-            in agent.instructions
-        )
+        assert "`script.prose_sections[].host_moves` are scene-aligned" in agent.instructions
         assert "`term_explanations`" in agent.instructions
         assert "`actor_explanations`" in agent.instructions
         assert "`host_policy`" in agent.instructions
@@ -1341,43 +1362,19 @@ class TestRedesignedAgents:
             in agent.instructions
         )
         assert (
-            "Do not draft from source sentences. Draft from extracted content moves."
-            in agent.instructions
+            "Do not draft from source sentences." in agent.instructions
+            and "Draft from extracted content" in agent.instructions
         )
         assert "PLANNING WORKFLOW" in agent.instructions
         assert "chronology" in agent.instructions
         assert "Extract the batch into content moves" in agent.instructions
-        assert "treating the past as a physical place" in agent.instructions
-        assert (
-            "Prioritize the weather of a scene. Replace abstract summaries with physical friction."
-            in agent.instructions
-        )
-        assert (
-            "Pivot from geopolitical forces to immediate pressure on individuals."
-            in agent.instructions
-        )
-        assert (
-            "Open from something concrete already present in the batch."
-            in agent.instructions
-        )
-        assert "PODCAST QUALITY" in agent.instructions
-        assert "Do not explain a beat before staging it." in agent.instructions
-        assert (
-            "Preserve staircase beats when the material earns them."
-            in agent.instructions
-        )
-        assert (
-            "If you must choose between a cleaner essay sentence and a sharper spoken sentence, choose the sharper spoken sentence."
-            in agent.instructions
-        )
-        assert (
-            "Slight expansion is allowed only when it restores audible force"
-            in agent.instructions
-        )
-        assert "barer and more percussive" in agent.instructions
-        assert (
-            "Avoid AI-cliches and topic-announcing transitions." in agent.instructions
-        )
+        assert "distinctive host mind carrying thought" in agent.instructions
+        assert "Write this to be heard, not admired on the page." in agent.instructions
+        assert "Make the most important turn, loss, contradiction, decision, or" in agent.instructions
+        assert "plain-English translation -> host" in agent.instructions
+        assert "Write for a voice that must carry the sentence in one pass." in agent.instructions
+        assert "If the material turns coercive, humiliating, or irreversible" in agent.instructions
+        assert "Avoid topic-announcing transitions and prestige-documentary phrasing" in agent.instructions
         assert "TTS AND SPEECH HINTS" in agent.instructions
         assert (
             "Return only valid JSON matching `expected_schema` exactly"
@@ -1387,14 +1384,12 @@ class TestRedesignedAgents:
             "If `previous_spoken_tail` is present, continue rather than restart."
             in agent.instructions
         )
-        assert (
-            "Do not repeat it, paraphrase it, summarize it, or import facts from it"
-            in agent.instructions
-        )
+        assert "Do not manufacture a new cold open" in agent.instructions
+        assert "Do not repeat it, paraphrase it" in agent.instructions
         assert "use `I`, `we`" in agent.instructions
         assert "SELF-CHECK BEFORE RETURNING" in agent.instructions
         assert "speech_hints" in agent.instructions
-        assert "Did you preserve the batch's hardest lines" in agent.instructions
+        assert "Does the narration sound like a serious host carrying thought" in agent.instructions
         assert "`script.prose_sections`" in agent.instructions
         assert "`script.framing`" in agent.instructions
         assert "upcoming_batches_summary" not in agent.instructions
@@ -1409,14 +1404,17 @@ class TestRedesignedAgents:
         assert "upcoming_batches_summary" not in payload
         assert "batch_index" not in payload
         assert "batch_count" not in payload
+        assert "spoken_style_contract = anti_academic_oral" in agent.instructions
+        assert "Preserve the forceful host mind already present." in agent.instructions
+        assert "Write this to be heard, not admired on the page." in agent.instructions
 
     def test_spoken_delivery_prompt_stays_trimmed(self):
         prompt = spoken_delivery_instructions()
-        assert len(prompt.split()) <= 2000
+        assert len(prompt.split()) <= 2150
 
     def test_section_local_spoken_prompt_stays_trimmed(self):
         prompt = section_local_spoken_delivery_instructions()
-        assert len(prompt.split()) <= 1500
+        assert len(prompt.split()) <= 1700
 
     def test_episode_architecture_prompt_includes_field_contract(self):
         prompt = episode_architecture_instructions()
@@ -1429,6 +1427,12 @@ class TestRedesignedAgents:
         assert "`verdict_landing`" in prompt
         assert "`authorial_passages.placement` carries explanatory placement inside the" in prompt
         assert "section and must be one of: `open`, `mid`, `close`." in prompt
+        assert "prefer them in your JSON output when possible" not in prompt
+        assert "`answer_section_id -> answer_section`" not in prompt
+        assert "`residue_section_id -> residue_section`" not in prompt
+        assert "`promised_beat_decisions -> promised_decisions`" not in prompt
+        assert "`episode_spine -> spine`" in prompt
+        assert "`major_turn_section_id -> major_turn`" in prompt
 
     @pytest.mark.parametrize(
         "prompt_builder",
@@ -1438,10 +1442,15 @@ class TestRedesignedAgents:
         prompt = prompt_builder()
         assert "Treat `address_mode = we` and `address_mode = i` as stance signals" in prompt
         assert "Let the scene begin inside the world." in prompt
-        assert "Let host presence feel companionable and precise" in prompt
+        assert "Treat `spoken_style_contract = anti_academic_oral` as the default narrator mode." in prompt
+        assert "Write this to be heard, not admired on the page." in prompt
+        assert "forceful host explaining history out loud." in prompt
+        assert "scene or factual pressure" in prompt
+        assert "plain-English interpretation" in prompt
         assert "Avoid companion-tour phrasing" in prompt
         assert "If a first-person clause adds no real insight, comparison, surprise," in prompt
         assert "Prefer one inhabited clause of judgment or comparison" in prompt
+        assert "Do not become more oral by getting much shorter." in prompt
 
 
 class TestHeuristicClient:
@@ -1517,6 +1526,7 @@ class TestHeuristicClient:
                     ]
                 },
                 project_metadata={"theme": "War on terror"},
+                scene_discovery=None,
                 episode_count=7,
                 recommended_episode_count_min=10,
                 recommended_episode_count_max=16,
@@ -1562,6 +1572,7 @@ class TestHeuristicClient:
                     "episode_spine_support_primitive_target_max": 4,
                     "episode_spine_recall_primitive_target_max": 1,
                 },
+                scene_discovery=None,
                 episode_count=2,
                 recommended_episode_count_min=2,
                 recommended_episode_count_max=4,
@@ -1584,6 +1595,7 @@ class TestHeuristicClient:
                     }
                 },
                 project_metadata={"theme": "War on terror"},
+                scene_discovery=None,
                 episode_count=None,
                 recommended_episode_count_min=10,
                 recommended_episode_count_max=16,

@@ -222,6 +222,11 @@ class ClosureMode(str, Enum):
     FINAL_ANSWER = "final_answer"
 
 
+class WordCountPriority(str, Enum):
+    DEFAULT = "default"
+    TIGHT = "tight"
+
+
 class SceneRole(str, Enum):
     CONTEXT_SETUP = "context_setup"
     ACTOR_SETUP = "actor_setup"
@@ -2245,6 +2250,9 @@ class StrategyEpisode(StrictModel):
 class SeriesNarratorProfile(StrictModel):
     presence_mode: Literal["visible_host"] = "visible_host"
     baseline_tone: Literal["dry", "plainspoken", "wry", "grave"] = "plainspoken"
+    spoken_style_contract: Literal["classic", "anti_academic_oral"] = (
+        "anti_academic_oral"
+    )
     allowed_moves: list[
         Literal[
             "orient",
@@ -2284,7 +2292,7 @@ class SeriesNarratorProfile(StrictModel):
     analysis_density: Literal["light", "medium", "high"] = "medium"
     quote_gloss_preference: Literal["avoid", "allow", "prefer"] = "allow"
     clarifier_tolerance: Literal["low", "medium", "high"] = "medium"
-    comparative_aside_tolerance: Literal["none", "light", "medium"] = "light"
+    comparative_aside_tolerance: Literal["none", "light", "medium", "high"] = "high"
     wit_ceiling: Literal["none", "dry", "wry"] = "dry"
     target_authorial_passages_per_episode: int = Field(default=16, ge=0, le=24)
 
@@ -2453,7 +2461,64 @@ class FramingBlock(StrictModel):
     preview: str | None = None
 
 
+class MustLandFacts(StrictModel):
+    required: list[str] = Field(default_factory=list, min_length=1)
+    strongly_preferred: list[str] = Field(default_factory=list)
+    if_room: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def normalize_fact_tiers(self) -> "MustLandFacts":
+        seen: set[str] = set()
+
+        def _normalize(values: list[str]) -> list[str]:
+            normalized_values: list[str] = []
+            for value in values:
+                normalized = str(value or "").strip()
+                if not normalized or normalized in seen:
+                    continue
+                seen.add(normalized)
+                normalized_values.append(normalized)
+            return normalized_values
+
+        self.required = _normalize(self.required)
+        self.strongly_preferred = _normalize(self.strongly_preferred)
+        self.if_room = _normalize(self.if_room)
+        if not self.required:
+            raise ValueError("must_land_facts.required must contain at least one fact")
+        return self
+
+    def ordered_facts(self) -> list[str]:
+        return [
+            *self.required,
+            *self.strongly_preferred,
+            *self.if_room,
+        ]
+
+    def first_required_fact(self) -> str:
+        return self.required[0]
+
+    def total_count(self) -> int:
+        return len(self.ordered_facts())
+
+
+class WithholdUntil(StrictModel):
+    subject: str = Field(min_length=1)
+    reveal_phase: Literal["open", "pivot", "close"]
+    reveal_scene_id: str | None = None
+    surrogate_label: str = ""
+
+    @model_validator(mode="after")
+    def normalize_values(self) -> "WithholdUntil":
+        reveal_scene_id = str(self.reveal_scene_id or "").strip()
+        self.reveal_scene_id = reveal_scene_id or None
+        self.surrogate_label = str(self.surrogate_label or "").strip()
+        return self
+
+
 class AuthorialPassage(StrictModel):
+    authorial_passage_id: str = Field(
+        default_factory=lambda: f"authorial_{new_id()[:8]}"
+    )
     passage_id: str = Field(min_length=1)
     mode: Literal[
         "quote_then_gloss",
@@ -2617,6 +2682,17 @@ class ArchitectureSection(StrictModel):
                 "must_stage_beats must contain at least 2 items when provided"
             )
         return cleaned
+
+    @model_validator(mode="after")
+    def validate_authorial_passage_ids(self) -> "ArchitectureSection":
+        seen_ids: set[str] = set()
+        for passage in self.authorial_passages:
+            if passage.authorial_passage_id in seen_ids:
+                raise ValueError(
+                    "authorial_passages must use unique authorial_passage_id values within a section"
+                )
+            seen_ids.add(passage.authorial_passage_id)
+        return self
 
     @model_validator(mode="after")
     def populate_closure_mode(self) -> "ArchitectureSection":
@@ -2817,28 +2893,21 @@ class _SceneCardBase(StrictModel):
         validation_alias=AliasChoices("beat_change", "state_effect"),
         serialization_alias="beat_change",
     )
-    must_land_facts: list[str] = Field(default_factory=list)
+    must_land_facts: MustLandFacts
     entry_image: str = ""
     observable_detail: str = ""
-    withhold_until: str | None = None
+    withhold_until: WithholdUntil | None = None
     timeframe: str | None = None
     location: str | None = None
     actors: list[SceneActor] = Field(default_factory=list, max_length=4)
     primitive_ids: list[str] = Field(default_factory=list)
     passage_ids: list[str] = Field(default_factory=list)
+    authorial_passage_ids: list[str] = Field(default_factory=list, max_length=4)
+    word_count_priority: WordCountPriority = WordCountPriority.DEFAULT
     host_moves: HostMovesByPhase
 
     @model_validator(mode="after")
     def validate_card_shape(self) -> "_SceneCardBase":
-        deduped_facts: list[str] = []
-        seen_facts: set[str] = set()
-        for fact in self.must_land_facts:
-            normalized = str(fact or "").strip()
-            if not normalized or normalized in seen_facts:
-                continue
-            seen_facts.add(normalized)
-            deduped_facts.append(normalized)
-        self.must_land_facts = deduped_facts
         deduped_primitive_ids: list[str] = []
         seen_primitive_ids: set[str] = set()
         for primitive_id in self.primitive_ids:
@@ -2848,6 +2917,15 @@ class _SceneCardBase(StrictModel):
             seen_primitive_ids.add(normalized)
             deduped_primitive_ids.append(normalized)
         self.primitive_ids = deduped_primitive_ids
+        deduped_authorial_ids: list[str] = []
+        seen_authorial_ids: set[str] = set()
+        for authorial_passage_id in self.authorial_passage_ids:
+            normalized = str(authorial_passage_id or "").strip()
+            if not normalized or normalized in seen_authorial_ids:
+                continue
+            seen_authorial_ids.add(normalized)
+            deduped_authorial_ids.append(normalized)
+        self.authorial_passage_ids = deduped_authorial_ids
         return self
 
 
@@ -2937,6 +3015,46 @@ def _migrate_legacy_scene_card(data: Any) -> Any:
             cleaned["scene_job"] = default_job
     if "beat_change" not in cleaned and cleaned.get("state_effect"):
         cleaned["beat_change"] = cleaned["state_effect"]
+    raw_facts = cleaned.get("must_land_facts")
+    if isinstance(raw_facts, list):
+        cleaned["must_land_facts"] = {
+            "required": raw_facts,
+            "strongly_preferred": [],
+            "if_room": [],
+        }
+    elif not isinstance(raw_facts, dict):
+        beat_change = str(cleaned.get("beat_change", "") or "").strip()
+        cleaned["must_land_facts"] = {
+            "required": [beat_change] if beat_change else [],
+            "strongly_preferred": [],
+            "if_room": [],
+        }
+    raw_withhold_until = cleaned.get("withhold_until")
+    if isinstance(raw_withhold_until, str):
+        normalized_withhold = raw_withhold_until.strip()
+        if normalized_withhold:
+            if normalized_withhold.startswith("scene_"):
+                cleaned["withhold_until"] = {
+                    "subject": "withheld material",
+                    "reveal_scene_id": normalized_withhold,
+                    "reveal_phase": "open",
+                    "surrogate_label": "",
+                }
+            else:
+                cleaned["withhold_until"] = {
+                    "subject": normalized_withhold,
+                    "reveal_scene_id": None,
+                    "reveal_phase": "close",
+                    "surrogate_label": "",
+                }
+    elif isinstance(raw_withhold_until, dict):
+        normalized_withhold = dict(raw_withhold_until)
+        subject = str(normalized_withhold.get("subject", "") or "").strip()
+        acting_subject = str(normalized_withhold.get("acting_subject", "") or "").strip()
+        if not subject and acting_subject:
+            normalized_withhold["subject"] = acting_subject
+        normalized_withhold.pop("acting_subject", None)
+        cleaned["withhold_until"] = normalized_withhold
     cleaned.pop("state_effect", None)
     cleaned.pop("scene_function", None)
     cleaned.pop("local_question", None)
@@ -3016,6 +3134,22 @@ class EpisodePlanDraft(StrictModel):
             ):
                 raise ValueError(
                     "residue_scene_card_id must occur after answer_scene_card_id"
+                )
+        scene_index_by_id = {
+            scene.scene_id: idx for idx, scene in enumerate(self.scene_cards)
+        }
+        for scene in self.scene_cards:
+            withhold = scene.withhold_until
+            if withhold is None or withhold.reveal_scene_id is None:
+                continue
+            reveal_index = scene_index_by_id.get(withhold.reveal_scene_id)
+            if reveal_index is None:
+                raise ValueError(
+                    "withhold_until.reveal_scene_id must reference an existing scene card"
+                )
+            if reveal_index < scene_index_by_id[scene.scene_id]:
+                raise ValueError(
+                    "withhold_until.reveal_scene_id must not point to an earlier scene card"
                 )
         return self
 

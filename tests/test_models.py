@@ -375,8 +375,10 @@ class TestThematicProject:
         profile = SeriesNarratorProfile()
         assert profile.target_full_phase_scene_coverage_min == 0.60
         assert profile.target_full_phase_scene_coverage_target == 0.75
+        assert profile.spoken_style_contract == "anti_academic_oral"
         assert profile.analysis_mode == "hybrid"
         assert profile.analysis_density == "medium"
+        assert profile.comparative_aside_tolerance == "high"
         assert profile.target_authorial_passages_per_episode == 16
 
     def test_host_presence_beat_normalizes_legacy_term_reminder(self):

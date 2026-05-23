@@ -818,6 +818,7 @@ class HeuristicLLMClient(LLMClient):
             "narrator_profile": {
                 "presence_mode": "visible_host",
                 "baseline_tone": "plainspoken",
+                "spoken_style_contract": "anti_academic_oral",
                 "allowed_moves": [
                     "orient",
                     "clarify",
@@ -839,7 +840,7 @@ class HeuristicLLMClient(LLMClient):
                 "analysis_density": "medium",
                 "quote_gloss_preference": "allow",
                 "clarifier_tolerance": "medium",
-                "comparative_aside_tolerance": "light",
+                "comparative_aside_tolerance": "high",
                 "wit_ceiling": "dry",
                 "target_authorial_passages_per_episode": (
                     authorial_passage_target_for_mode(podcast_mode)
@@ -1047,9 +1048,13 @@ class HeuristicLLMClient(LLMClient):
                     else "A cost or ambiguity remains after the answer lands."
                     if scene_job == "residue"
                     else "The close exits the episode without reopening the answer.",
-                    "must_land_facts": [
-                        "A concrete change becomes visible in the beat."
-                    ],
+                    "must_land_facts": {
+                        "required": [
+                            "A concrete change becomes visible in the beat."
+                        ],
+                        "strongly_preferred": [],
+                        "if_room": [],
+                    },
                     "entry_image": "A concrete opening image."
                     if scene_job == "opening"
                     else "A grounded detail keeps the scene moving.",
@@ -1059,6 +1064,8 @@ class HeuristicLLMClient(LLMClient):
                     "actors": [],
                     "primitive_ids": section_primitive_ids[:2],
                     "passage_ids": passage_ids,
+                    "authorial_passage_ids": [],
+                    "word_count_priority": "default",
                     "estimated_duration_seconds": 120
                     if is_closing
                     else default_duration,
