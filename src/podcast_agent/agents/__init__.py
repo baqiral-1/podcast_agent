@@ -4,6 +4,12 @@ from podcast_agent.agents.book_summary import BookSummaryAgent
 from podcast_agent.agents.chapter_summary import ChapterSummaryAgent
 from podcast_agent.agents.episode_architecture import EpisodeArchitectureAgent
 from podcast_agent.agents.narrative_strategy import NarrativeStrategyAgent
+from podcast_agent.agents.narrative_strategy_enrichment import (
+    NarrativeStrategyEnrichmentAgent,
+)
+from podcast_agent.agents.narrative_strategy_skeleton import (
+    NarrativeStrategySkeletonAgent,
+)
 from podcast_agent.agents.passage_extraction import PassageExtractionAgent
 from podcast_agent.agents.planning import EpisodePlanningAgent
 from podcast_agent.agents.primitive_function_tagging import (
@@ -28,6 +34,8 @@ __all__ = [
     "EpisodePlanningAgent",
     "GroundingValidationAgent",
     "NarrativeStrategyAgent",
+    "NarrativeStrategyEnrichmentAgent",
+    "NarrativeStrategySkeletonAgent",
     "PassageExtractionAgent",
     "PrimitiveFunctionTaggingAgent",
     "RepairAgent",

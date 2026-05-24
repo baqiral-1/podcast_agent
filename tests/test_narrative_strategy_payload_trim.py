@@ -10,6 +10,7 @@ from typing import Any
 from podcast_agent.llm.heuristic import HeuristicLLMClient
 from podcast_agent.pipeline.orchestrator import (
     PipelineOrchestrator,
+    _build_narrative_strategy_scene_discovery_payload,
     _build_scene_discovery_synthesis_map_payload,
     _build_narrative_strategy_actor_metadata_payload,
     _build_narrative_strategy_project_metadata_payload,
@@ -24,12 +25,15 @@ from podcast_agent.schemas.models import (
     EpisodeSpine,
     EventPrimitive,
     NarrativeStrategy,
+    NarrativeStrategyEnrichment,
+    NarrativeStrategySkeleton,
     PipelineConfig,
     PrimitiveSalience,
     PrimitiveSubstrate,
     SeriesActorExplanationItem,
     SeriesNarratorProfile,
     SeriesExplanationItem,
+    SceneDiscoveryArtifact,
     SynthesisPrimitivesArtifact,
     StrategyEpisode,
     ThematicProject,
@@ -236,6 +240,31 @@ def test_build_scene_discovery_payload_trims_heavy_primitive_fields():
     assert primitive["event_result"] == "A political order weakens."
 
 
+def test_build_narrative_strategy_scene_discovery_payload_drops_passage_ids():
+    scene_discovery = SceneDiscoveryArtifact.model_validate(
+        {
+            "candidates": [
+                {
+                    "candidate_id": "candidate_01",
+                    "primitive_ids": ["p1"],
+                    "passage_ids": ["passage_1"],
+                    "scene_sketch": "A decree lands.",
+                    "candidate_roles": ["opening"],
+                    "anchor_image": "A sheet of paper on a desk.",
+                    "why_sceneable": "The action is visible.",
+                    "quote_anchor": "The room goes quiet.",
+                    "actor_ids": ["actor_1"],
+                }
+            ]
+        }
+    )
+    payload = _build_narrative_strategy_scene_discovery_payload(scene_discovery)
+    assert payload is not None
+    candidate = payload["candidates"][0]
+    assert candidate["candidate_id"] == "candidate_01"
+    assert "passage_ids" not in candidate
+
+
 def test_choose_narrative_strategy_uses_trimmed_runtime_payload(
     monkeypatch, tmp_path: Path
 ):
@@ -260,38 +289,72 @@ def test_choose_narrative_strategy_uses_trimmed_runtime_payload(
     orchestrator = PipelineOrchestrator()
     captured: dict[str, Any] = {}
 
-    def fake_run(payload: dict[str, Any]) -> NarrativeStrategy:
-        captured["payload"] = payload
-        return NarrativeStrategy(
-            strategy_type="chronological",
-            justification="Because it fits.",
-            series_arc="Arc",
-            episodes=[
-                StrategyEpisode(
-                    episode_number=1,
-                    title="Episode 1",
-                    arc_summary="Arc",
-                    episode_spine=EpisodeSpine(
-                        listener_question="Question?",
-                        argument="Claim",
-                        core_primitive_ids=[
-                            "et_1",
-                            "core_2",
-                            "core_3",
-                            "core_4",
-                            "core_5",
-                            "core_6",
-                            "core_7",
-                        ],
-                        support_primitive_roles={
-                            f"support_{idx}": "mechanism" for idx in range(1, 8)
+    def fake_skeleton_run(payload: dict[str, Any]) -> NarrativeStrategySkeleton:
+        captured["skeleton_payload"] = payload
+        return NarrativeStrategySkeleton.model_validate(
+            {
+                "strategy_type": "chronological",
+                "justification": "Because it fits.",
+                "series_arc": "Arc",
+                "recommended_episode_count": 1,
+                "episodes": [
+                    {
+                        "episode_number": 1,
+                        "title": "Episode 1",
+                        "arc_summary": "Arc",
+                        "episode_spine": {
+                            "listener_question": "Question?",
+                            "argument": "Claim",
+                            "core_primitive_ids": [
+                                "et_1",
+                                "core_2",
+                                "core_3",
+                                "core_4",
+                                "core_5",
+                                "core_6",
+                                "core_7",
+                            ],
+                            "support_primitive_roles": {
+                                f"support_{idx}": "mechanism"
+                                for idx in range(1, 8)
+                            },
                         },
-                    ),
-                )
-            ],
+                        "negative_scope": {
+                            "boundary": "Stay on the main pressure line.",
+                            "excluded_topics": [],
+                            "tempting_but_out": [],
+                            "omission_logic": "Leave neighboring material out unless it advances the answer.",
+                        },
+                    }
+                ],
+            }
         )
 
-    orchestrator.narrative_strategy_agent.run = fake_run
+    def fake_enrichment_run(payload: dict[str, Any]) -> NarrativeStrategyEnrichment:
+        captured["enrichment_payload"] = payload
+        return NarrativeStrategyEnrichment.model_validate(
+            {
+                "episodes": [
+                    {
+                        "episode_number": 1,
+                        "promised_beats": [
+                            {
+                                "beat_id": "beat_1",
+                                "label": "Opening beat",
+                                "kind": "scene",
+                                "intended_job": "opening",
+                                "source_candidate_ids": ["candidate_01"],
+                                "source_primitive_ids": ["et_1"],
+                                "why_load_bearing": "Concrete opening obligation.",
+                            }
+                        ],
+                    }
+                ]
+            }
+        )
+
+    orchestrator.narrative_strategy_skeleton_agent.run = fake_skeleton_run
+    orchestrator.narrative_strategy_enrichment_agent.run = fake_enrichment_run
     project = ThematicProject(
         project_id="proj",
         theme="Theme",
@@ -352,19 +415,35 @@ def test_choose_narrative_strategy_uses_trimmed_runtime_payload(
         ],
         quality_notes=["verbose actor metadata"],
     )
+    scene_discovery = SceneDiscoveryArtifact.model_validate(
+        {
+            "candidates": [
+                {
+                    "candidate_id": "candidate_01",
+                    "primitive_ids": ["et_1"],
+                    "passage_ids": ["passage_1"],
+                    "scene_sketch": "A decree lands.",
+                    "candidate_roles": ["opening"],
+                    "anchor_image": "A decree on a desk.",
+                    "why_sceneable": "The act is visible.",
+                }
+            ]
+        }
+    )
 
     asyncio.run(
         orchestrator._choose_narrative_strategy(
             project,
             synthesis_map,
             tmp_path,
+            scene_discovery=scene_discovery,
             actor_metadata=actor_metadata,
         )
     )
 
-    payload = captured["payload"]
-    assert payload["recommended_episode_count_min"] == 10
-    assert payload["recommended_episode_count_max"] == 16
+    payload = captured["skeleton_payload"]
+    assert payload["recommended_episode_count_min"] == 8
+    assert payload["recommended_episode_count_max"] == 12
     primitive = payload["synthesis_map"]["primitives"][0]
     assert "affected_actor_ids" not in primitive
     assert "actor_tags" not in primitive
@@ -376,6 +455,10 @@ def test_choose_narrative_strategy_uses_trimmed_runtime_payload(
     assert "narrative_functions" not in payload["actor_metadata"]["actors"][0]
     assert "relationships" not in payload["actor_metadata"]
     assert "quality_notes" not in payload["actor_metadata"]
+    assert "passage_ids" not in payload["scene_discovery"]["candidates"][0]
+    enrichment_payload = captured["enrichment_payload"]
+    assert enrichment_payload["strategy_skeleton"]["episodes"][0]["episode_number"] == 1
+    assert enrichment_payload["episode_scene_candidates"][0]["episode_number"] == 1
 
 
 def test_narrative_strategy_accepts_series_explanation_registry_contract() -> None:

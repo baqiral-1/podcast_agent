@@ -6,6 +6,8 @@ from typing import Any
 
 _TRANSPORT_SCHEMA_NAMES = {
     "primitive_substrate_extraction",
+    "narrative_strategy_enrichment",
+    "narrative_strategy_skeleton",
     "narrative_strategy",
     "episode_architecture",
     "episode_planning",
@@ -48,6 +50,8 @@ _BASE_CANONICAL_TO_ALIAS: dict[str, str] = {
     "must_land_facts": "facts",
     "scene_cards": "scenes",
     "dropped_support_primitive_reasons": "dropped_support",
+    "strategy_skeleton": "skeleton",
+    "episode_scene_candidates": "episode_scenes",
 }
 _PRIMITIVE_CANONICAL_TO_ALIAS: dict[str, str] = {
     **_BASE_CANONICAL_TO_ALIAS,
@@ -58,6 +62,8 @@ _PRESERVE_SUBTREES = frozenset(
         "synthesis_feedback",
         "function_feedback",
         "strategy_feedback",
+        "strategy_skeleton_feedback",
+        "strategy_enrichment_feedback",
         "architecture_feedback",
         "planning_feedback",
     }

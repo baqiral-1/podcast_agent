@@ -4,6 +4,7 @@ import pytest
 
 from podcast_agent.langchain.runnables import ComplianceViolationError
 from podcast_agent.pipeline.orchestrator import (
+    _build_comparative_aside_scene_warnings,
     _build_style_audit_sections_payload,
     _build_writer_scene_brief,
     _compute_scene_word_count_bands,
@@ -294,6 +295,73 @@ def test_compute_scene_word_count_bands_uses_default_and_tight_ranges() -> None:
 
     assert lower["scene_1"] < lower["scene_2"]
     assert higher["scene_1"] > higher["scene_2"]
+
+def test_comparative_aside_scene_warnings_flag_tight_close_answer_stack() -> None:
+    architecture = EpisodeArchitecture.model_construct(
+        episode_number=1,
+        major_turn_section_id="section_1",
+        answer_section_id="section_1",
+        residue_section_id="section_1",
+        allowed_recurring_primitive_ids=[],
+        forbidden_redundancies=[],
+        promised_beat_decisions=[],
+        sections=[
+            ArchitectureSection.model_validate(
+                {
+                    "section_id": "section_1",
+                    "purpose": "turn",
+                    "approx_runtime_minutes": 8.0,
+                    "primitive_ids": ["primitive_1"],
+                    "section_anchor": "A clerk opens the envelope.",
+                    "must_stage_beats": [
+                        "The order becomes public.",
+                        "The pressure changes shape.",
+                    ],
+                    "closure_mode": "turn",
+                    "authorial_passages": [
+                        {
+                            "authorial_passage_id": "ap_quote",
+                            "passage_id": "p1",
+                            "mode": "quote_then_gloss",
+                            "placement": "mid",
+                            "claim": "A quote names the pressure.",
+                            "source_primitive_ids": ["primitive_1"],
+                        },
+                        {
+                            "authorial_passage_id": "ap_aside",
+                            "passage_id": "p1",
+                            "mode": "comparative_aside",
+                            "placement": "close",
+                            "claim": "The same act now works on a different audience.",
+                            "source_primitive_ids": ["primitive_1"],
+                            "budget_sentences": 3,
+                        },
+                    ],
+                }
+            )
+        ],
+        architecture_notes=[],
+    )
+    scene = SceneCardDraft.model_validate(
+        _scene_card(
+            "scene_1",
+            "answer",
+            authorial_passage_ids=["ap_quote", "ap_aside"],
+            word_count_priority="tight",
+        )
+    )
+    scene = scene.model_copy(update={"estimated_duration_seconds": 20})
+
+    warnings = _build_comparative_aside_scene_warnings(
+        architecture=architecture,
+        scene_cards=[scene],
+    )
+
+    assert "comparative_aside_close_underprovisioned: scene_1/ap_aside" in warnings
+    assert "comparative_aside_missing_return_move: scene_1/ap_aside" in warnings
+    assert "comparative_aside_tight_priority: scene_1/ap_aside" in warnings
+    assert "comparative_aside_scene_too_short: scene_1/ap_aside" in warnings
+    assert "comparative_aside_answer_scene_stacked: scene_1/ap_quote" in warnings
 
 
 def test_style_audit_payload_enriches_authorial_passages_with_scene_id() -> None:

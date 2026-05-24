@@ -644,7 +644,9 @@ class HeuristicLLMClient(LLMClient):
             )
         return {"candidates": candidates}
 
-    def _generate_narrative_strategy(self, payload: PromptPayload) -> dict[str, Any]:
+    def _generate_narrative_strategy_skeleton(
+        self, payload: PromptPayload
+    ) -> dict[str, Any]:
         requested_episode_count = payload.get("requested_episode_count")
         recommended_episode_count_min = int(
             payload.get("recommended_episode_count_min", 8)
@@ -731,44 +733,6 @@ class HeuristicLLMClient(LLMClient):
                     for primitive_id in primitive_ids
                     if primitive_id not in core_ids
                 ][:support_target_min]
-            promised_beats: list[dict[str, Any]] = []
-            if discovered_candidates:
-                opening_candidate = discovered_candidates[min(idx, len(discovered_candidates) - 1)]
-                promised_beats.append(
-                    {
-                        "beat_id": f"episode_{idx + 1:02d}_opening",
-                        "label": f"Episode {idx + 1} opening promise",
-                        "kind": "scene",
-                        "intended_job": "opening",
-                        "source_candidate_ids": [str(opening_candidate.get("candidate_id", ""))],
-                        "source_primitive_ids": list(opening_candidate.get("primitive_ids", []) or [])[:2],
-                        "why_load_bearing": "The episode needs one concrete opening obligation.",
-                    }
-                )
-                answer_candidate = discovered_candidates[min(idx + 1, len(discovered_candidates) - 1)]
-                promised_beats.append(
-                    {
-                        "beat_id": f"episode_{idx + 1:02d}_answer",
-                        "label": f"Episode {idx + 1} answer promise",
-                        "kind": "scene",
-                        "intended_job": "answer",
-                        "source_candidate_ids": [str(answer_candidate.get("candidate_id", ""))],
-                        "source_primitive_ids": list(answer_candidate.get("primitive_ids", []) or [])[:2],
-                        "why_load_bearing": "The episode needs one explicit answer-bearing scene commitment.",
-                    }
-                )
-                residue_candidate = discovered_candidates[min(idx + 2, len(discovered_candidates) - 1)]
-                promised_beats.append(
-                    {
-                        "beat_id": f"episode_{idx + 1:02d}_residue",
-                        "label": f"Episode {idx + 1} residue promise",
-                        "kind": "callback",
-                        "intended_job": "residue",
-                        "source_candidate_ids": [str(residue_candidate.get("candidate_id", ""))],
-                        "source_primitive_ids": list(residue_candidate.get("primitive_ids", []) or [])[:2],
-                        "why_load_bearing": "The episode should leave one clear remainder live after the answer.",
-                    }
-                )
             episodes.append(
                 {
                     "episode_number": idx + 1,
@@ -798,7 +762,6 @@ class HeuristicLLMClient(LLMClient):
                         },
                         "recall_primitive_ids": pivot_ids[2:3] if idx > 0 else [],
                     },
-                    "promised_beats": promised_beats,
                     "negative_scope": {
                         "boundary": "Keep the episode on one pressure line.",
                         "excluded_topics": ["adjacent background not required for this episode"],
@@ -815,6 +778,122 @@ class HeuristicLLMClient(LLMClient):
                 f"Episode {idx + 1}" for idx in range(recommended_episode_count)
             ],
             "recommended_episode_count": recommended_episode_count,
+            "episodes": episodes,
+        }
+
+    def _generate_narrative_strategy_enrichment(
+        self, payload: PromptPayload
+    ) -> dict[str, Any]:
+        strategy_skeleton = payload.get("strategy_skeleton", {}) or {}
+        episodes = list(strategy_skeleton.get("episodes", []) or [])
+        project = payload.get("project", {})
+        if not isinstance(project, dict):
+            project = {}
+        try:
+            podcast_mode = PodcastMode(
+                project.get("podcast_mode", PodcastMode.FULL.value)
+            )
+        except ValueError:
+            podcast_mode = PodcastMode.FULL
+        episode_scene_candidates = {
+            int(item.get("episode_number")): list(item.get("candidates", []) or [])
+            for item in list(payload.get("episode_scene_candidates", []) or [])
+            if isinstance(item, dict) and isinstance(item.get("episode_number"), int)
+        }
+        enriched_episodes: list[dict[str, Any]] = []
+        for episode in episodes:
+            if not isinstance(episode, dict):
+                continue
+            episode_number = int(episode.get("episode_number", 0) or 0)
+            candidates = episode_scene_candidates.get(episode_number, [])
+            promised_beats: list[dict[str, Any]] = []
+            if candidates:
+                opening_candidate = candidates[0]
+                promised_beats.append(
+                    {
+                        "beat_id": f"episode_{episode_number:02d}_opening",
+                        "label": f"Episode {episode_number} opening promise",
+                        "kind": "scene",
+                        "intended_job": "opening",
+                        "source_candidate_ids": [
+                            str(opening_candidate.get("candidate_id", ""))
+                        ],
+                        "source_primitive_ids": list(
+                            opening_candidate.get("primitive_ids", []) or []
+                        )[:2],
+                        "why_load_bearing": "The episode needs one concrete opening obligation.",
+                    }
+                )
+                answer_candidate = candidates[min(1, len(candidates) - 1)]
+                promised_beats.append(
+                    {
+                        "beat_id": f"episode_{episode_number:02d}_answer",
+                        "label": f"Episode {episode_number} answer promise",
+                        "kind": "scene",
+                        "intended_job": "answer",
+                        "source_candidate_ids": [
+                            str(answer_candidate.get("candidate_id", ""))
+                        ],
+                        "source_primitive_ids": list(
+                            answer_candidate.get("primitive_ids", []) or []
+                        )[:2],
+                        "why_load_bearing": "The episode needs one explicit answer-bearing scene commitment.",
+                    }
+                )
+                residue_candidate = candidates[min(2, len(candidates) - 1)]
+                promised_beats.append(
+                    {
+                        "beat_id": f"episode_{episode_number:02d}_residue",
+                        "label": f"Episode {episode_number} residue promise",
+                        "kind": "callback",
+                        "intended_job": "residue",
+                        "source_candidate_ids": [
+                            str(residue_candidate.get("candidate_id", ""))
+                        ],
+                        "source_primitive_ids": list(
+                            residue_candidate.get("primitive_ids", []) or []
+                        )[:2],
+                        "why_load_bearing": "The episode should leave one clear remainder live after the answer.",
+                    }
+                )
+            enriched_episodes.append(
+                {
+                    "episode_number": episode_number,
+                    "narrator_contract": {
+                        "analysis_weight": "medium",
+                        "priority_moves": ["causal_compression"],
+                        "governing_lenses": [
+                            "The episode tightens one governing pressure line."
+                        ],
+                    },
+                    "authorial_contract": {
+                        "analysis_weight": "medium",
+                        "priority_moves": ["causal_compression"],
+                        "governing_lenses": [
+                            "The episode tightens one governing pressure line."
+                        ],
+                        "must_clarify_terms": [],
+                        "must_clarify_institutions": [],
+                    },
+                    "narrative_agenda": {
+                        "listener": {
+                            "question_moves": [],
+                            "memory_thread_moves": [],
+                            "carry_forward_memory": [],
+                            "episode_takeaway": "The episode sharpens one pressure line.",
+                        },
+                        "host": {
+                            "mystery_moves": [],
+                            "assumption_moves": [],
+                            "theory_moves": [],
+                            "intended_revision_beats": [],
+                            "episode_takeaway": "The host leaves with a clearer sense of the governing pressure.",
+                        },
+                    },
+                    "promised_beats": promised_beats,
+                }
+            )
+        return {
             "narrator_profile": {
                 "presence_mode": "visible_host",
                 "baseline_tone": "plainspoken",
@@ -840,18 +919,65 @@ class HeuristicLLMClient(LLMClient):
                 "analysis_density": "medium",
                 "quote_gloss_preference": "allow",
                 "clarifier_tolerance": "medium",
-                "comparative_aside_tolerance": "high",
                 "wit_ceiling": "dry",
                 "target_authorial_passages_per_episode": (
                     authorial_passage_target_for_mode(podcast_mode)
                 ),
             },
-            "episodes": episodes,
+            "episodes": enriched_episodes,
+        }
+
+    def _generate_narrative_strategy(self, payload: PromptPayload) -> dict[str, Any]:
+        skeleton = self._generate_narrative_strategy_skeleton(payload)
+        enrichment = self._generate_narrative_strategy_enrichment(
+            {
+                "strategy_skeleton": skeleton,
+                "project": payload.get("project", {}),
+                "episode_scene_candidates": [
+                    {
+                        "episode_number": episode["episode_number"],
+                        "candidates": list(
+                            (payload.get("scene_discovery", {}) or {}).get(
+                                "candidates", []
+                            )
+                        )[:3],
+                    }
+                    for episode in skeleton.get("episodes", [])
+                ],
+            }
+        )
+        merged_episodes: list[dict[str, Any]] = []
+        enrichment_by_number = {
+            int(episode.get("episode_number", 0)): episode
+            for episode in enrichment.get("episodes", [])
+            if isinstance(episode, dict)
+        }
+        for skeleton_episode in skeleton.get("episodes", []):
+            if not isinstance(skeleton_episode, dict):
+                continue
+            episode_number = int(skeleton_episode.get("episode_number", 0) or 0)
+            merged_episodes.append(
+                {
+                    **skeleton_episode,
+                    **enrichment_by_number.get(episode_number, {}),
+                }
+            )
+        return {
+            "strategy_type": skeleton["strategy_type"],
+            "justification": skeleton["justification"],
+            "series_arc": skeleton["series_arc"],
+            "episode_arc_outline": skeleton["episode_arc_outline"],
+            "recommended_episode_count": skeleton["recommended_episode_count"],
+            "narrator_profile": enrichment["narrator_profile"],
+            "episodes": merged_episodes,
         }
 
     def _generate_episode_architecture(self, payload: PromptPayload) -> dict[str, Any]:
         episode = payload.get("episode", {})
         episode_spine = episode.get("episode_spine", {})
+        narrative_agenda = dict(episode.get("narrative_agenda", {}) or {})
+        listener_agenda = dict(narrative_agenda.get("listener", {}) or {})
+        host_agenda = dict(narrative_agenda.get("host", {}) or {})
         project = payload.get("project", {})
         if not isinstance(project, dict):
             project = {}
@@ -860,8 +986,8 @@ class HeuristicLLMClient(LLMClient):
             primitive_ids = list(
                 episode_spine.get("core_primitive_ids") or ["primitive_001"]
             )
-        section_target_min = int(project.get("architecture_section_target_min", 9))
-        section_target_max = int(project.get("architecture_section_target_max", 12))
+        section_target_min = int(project.get("architecture_section_target_min", 12))
+        section_target_max = int(project.get("architecture_section_target_max", 16))
         section_count = (
             min(section_target_max, max(section_target_min, len(primitive_ids)))
             if primitive_ids
@@ -869,18 +995,103 @@ class HeuristicLLMClient(LLMClient):
         )
         closing_minutes = 2.0
         non_closing_count = max(1, section_count - 1)
-        target_runtime_minutes = float(project.get("min_episode_minutes", 100.0))
+        target_runtime_minutes = float(project.get("min_episode_minutes", 130.0))
         non_closing_minutes = max(
             1.0, (target_runtime_minutes - closing_minutes) / non_closing_count
         )
         sections = []
         answer_section_idx = max(0, section_count - 3)
         residue_section_idx = max(0, section_count - 2)
+        turn_section_idx = min(2, section_count - 2)
+        question_moves = list(listener_agenda.get("question_moves", []) or [])
+        memory_thread_moves = list(listener_agenda.get("memory_thread_moves", []) or [])
+        mystery_moves = list(host_agenda.get("mystery_moves", []) or [])
+        assumption_moves = list(host_agenda.get("assumption_moves", []) or [])
+        theory_moves = list(host_agenda.get("theory_moves", []) or [])
         for idx in range(section_count):
             section_id = f"section_{idx + 1:02d}"
             local_primitive_ids = [primitive_ids[min(idx, len(primitive_ids) - 1)]]
             is_closing = idx == section_count - 1
-            is_turn = idx == min(2, section_count - 2)
+            is_turn = idx == turn_section_idx
+            section_question_moves = []
+            section_memory_thread_moves = []
+            section_host_mystery_moves = []
+            section_host_assumption_moves = []
+            section_host_theory_moves = []
+            if idx == 0:
+                section_question_moves.extend(
+                    move for move in question_moves if move.get("action") == "open"
+                )
+                section_memory_thread_moves.extend(
+                    move
+                    for move in memory_thread_moves
+                    if move.get("action") in {"open", "refresh"}
+                )
+                section_host_mystery_moves.extend(
+                    move for move in mystery_moves if move.get("action") == "open"
+                )
+                section_host_assumption_moves.extend(
+                    move
+                    for move in assumption_moves
+                    if move.get("action") == "introduce"
+                )
+                section_host_theory_moves.extend(
+                    move for move in theory_moves if move.get("action") == "propose"
+                )
+            if idx == turn_section_idx:
+                section_question_moves.extend(
+                    move
+                    for move in question_moves
+                    if move.get("action") in {"advance", "reframe"}
+                )
+                section_host_mystery_moves.extend(
+                    move
+                    for move in mystery_moves
+                    if move.get("action") in {"advance", "reframe"}
+                )
+                section_host_assumption_moves.extend(
+                    move
+                    for move in assumption_moves
+                    if move.get("action") == "weaken"
+                )
+            if idx == answer_section_idx:
+                section_question_moves.extend(
+                    move for move in question_moves if move.get("action") == "resolve"
+                )
+                section_host_mystery_moves.extend(
+                    move for move in mystery_moves if move.get("action") == "resolve"
+                )
+                section_host_assumption_moves.extend(
+                    move
+                    for move in assumption_moves
+                    if move.get("action") == "revise"
+                )
+                section_host_theory_moves.extend(
+                    move
+                    for move in theory_moves
+                    if move.get("action") in {"strengthen", "replace"}
+                )
+            if idx == residue_section_idx or is_closing:
+                section_memory_thread_moves.extend(
+                    move
+                    for move in memory_thread_moves
+                    if move.get("action") in {"payoff", "retire"}
+                )
+                section_host_mystery_moves.extend(
+                    move
+                    for move in mystery_moves
+                    if move.get("action") == "reframe"
+                )
+                section_host_assumption_moves.extend(
+                    move
+                    for move in assumption_moves
+                    if move.get("action") == "drop"
+                )
+                section_host_theory_moves.extend(
+                    move
+                    for move in theory_moves
+                    if move.get("action") == "retire"
+                )
             sections.append(
                 {
                     "section_id": section_id,
@@ -922,6 +1133,11 @@ class HeuristicLLMClient(LLMClient):
                         else "residue"
                     ),
                     "priority_core_passage_ids": [],
+                    "question_moves": section_question_moves,
+                    "memory_thread_moves": section_memory_thread_moves,
+                    "host_mystery_moves": section_host_mystery_moves,
+                    "host_assumption_moves": section_host_assumption_moves,
+                    "host_theory_moves": section_host_theory_moves,
                     "analysis_goal": (
                         "Cash out the main pressure line in plain terms."
                         if idx in (1, section_count - 1)
@@ -970,7 +1186,7 @@ class HeuristicLLMClient(LLMClient):
             )
         return {
             "episode_number": int(episode.get("episode_number", 1)),
-            "major_turn_section_id": sections[min(2, len(sections) - 1)]["section_id"],
+            "major_turn_section_id": sections[turn_section_idx]["section_id"],
             "answer_section_id": sections[answer_section_idx]["section_id"],
             "residue_section_id": sections[residue_section_idx]["section_id"],
             "allowed_recurring_primitive_ids": primitive_ids[:2],
@@ -1235,4 +1451,278 @@ class HeuristicLLMClient(LLMClient):
                 for idx, section in enumerate(sections)
             ],
             "episode_warnings": [],
+        }
+
+    def _generate_narrative_state_reconciliation(
+        self, payload: PromptPayload
+    ) -> dict[str, Any]:
+        episode_number = int(payload.get("episode_number", 1) or 1)
+        project_id = str(payload.get("project_id", "") or "project")
+        state_pre = dict(payload.get("narrative_state_pre", {}) or {})
+        listener_pre = dict(state_pre.get("listener", {}) or {})
+        host_pre = dict(state_pre.get("host", {}) or {})
+        strategy_episode = dict(payload.get("strategy_episode", {}) or {})
+        narrative_agenda = dict(strategy_episode.get("narrative_agenda", {}) or {})
+        listener_agenda = dict(narrative_agenda.get("listener", {}) or {})
+        host_agenda = dict(narrative_agenda.get("host", {}) or {})
+        architecture = dict(payload.get("architecture", {}) or {})
+
+        known_explanation_item_ids = list(
+            dict.fromkeys(
+                list(listener_pre.get("known_explanation_item_ids", []) or [])
+                + list(listener_agenda.get("introduce_explanation_item_ids", []) or [])
+            )
+        )
+        known_actor_ids = list(
+            dict.fromkeys(
+                list(listener_pre.get("known_actor_ids", []) or [])
+                + list(listener_agenda.get("introduce_actor_ids", []) or [])
+            )
+        )
+
+        questions_by_id = {
+            str(item.get("question_id", "")): dict(item)
+            for item in list(listener_pre.get("questions", []) or [])
+            if str(item.get("question_id", "")).strip()
+        }
+        for section in list(architecture.get("sections", []) or []):
+            for move in list(section.get("question_moves", []) or []):
+                question_id = str(move.get("question_id", "") or "").strip()
+                action = str(move.get("action", "") or "").strip()
+                text = str(move.get("text", "") or "").strip()
+                if not question_id:
+                    continue
+                entry = questions_by_id.get(
+                    question_id,
+                    {"question_id": question_id, "text": text or question_id, "status": "open"},
+                )
+                if text:
+                    entry["text"] = text
+                entry["status"] = {
+                    "open": "open",
+                    "advance": "advanced",
+                    "resolve": "resolved",
+                    "reframe": "reframed",
+                }.get(action, entry.get("status", "open"))
+                questions_by_id[question_id] = entry
+
+        memory_threads_by_id = {
+            str(item.get("thread_id", "")): dict(item)
+            for item in list(listener_pre.get("memory_threads", []) or [])
+            if str(item.get("thread_id", "")).strip()
+        }
+        for section in list(architecture.get("sections", []) or []):
+            for move in list(section.get("memory_thread_moves", []) or []):
+                thread_id = str(move.get("thread_id", "") or "").strip()
+                action = str(move.get("action", "") or "").strip()
+                label = str(move.get("label", "") or "").strip()
+                if not thread_id:
+                    continue
+                entry = memory_threads_by_id.get(
+                    thread_id,
+                    {
+                        "thread_id": thread_id,
+                        "label": label or thread_id,
+                        "status": "open",
+                        "source_promised_beat_id": move.get("source_promised_beat_id"),
+                    },
+                )
+                if label:
+                    entry["label"] = label
+                entry["status"] = {
+                    "open": "open",
+                    "refresh": "refreshed",
+                    "payoff": "paid_off",
+                    "retire": "retired",
+                }.get(action, entry.get("status", "open"))
+                memory_threads_by_id[thread_id] = entry
+
+        mysteries_by_id = {
+            str(item.get("mystery_id", "")): dict(item)
+            for item in list(host_pre.get("mysteries", []) or [])
+            if str(item.get("mystery_id", "")).strip()
+        }
+        for section in list(architecture.get("sections", []) or []):
+            for move in list(section.get("host_mystery_moves", []) or []):
+                mystery_id = str(move.get("mystery_id", "") or "").strip()
+                action = str(move.get("action", "") or "").strip()
+                text = str(move.get("text", "") or "").strip()
+                if not mystery_id:
+                    continue
+                entry = mysteries_by_id.get(
+                    mystery_id,
+                    {
+                        "mystery_id": mystery_id,
+                        "text": text or mystery_id,
+                        "status": "open",
+                    },
+                )
+                if text:
+                    entry["text"] = text
+                entry["status"] = {
+                    "open": "open",
+                    "advance": "advanced",
+                    "resolve": "resolved",
+                    "reframe": "reframed",
+                }.get(action, entry.get("status", "open"))
+                mysteries_by_id[mystery_id] = entry
+
+        assumptions_by_id = {
+            str(item.get("assumption_id", "")): dict(item)
+            for item in list(host_pre.get("assumptions", []) or [])
+            if str(item.get("assumption_id", "")).strip()
+        }
+        for section in list(architecture.get("sections", []) or []):
+            for move in list(section.get("host_assumption_moves", []) or []):
+                assumption_id = str(move.get("assumption_id", "") or "").strip()
+                action = str(move.get("action", "") or "").strip()
+                statement = str(move.get("statement", "") or "").strip()
+                revised_statement = str(move.get("revised_statement", "") or "").strip()
+                if not assumption_id:
+                    continue
+                entry = assumptions_by_id.get(
+                    assumption_id,
+                    {
+                        "assumption_id": assumption_id,
+                        "statement": statement or assumption_id,
+                        "status": "active",
+                    },
+                )
+                if revised_statement:
+                    entry["statement"] = revised_statement
+                elif statement:
+                    entry["statement"] = statement
+                entry["status"] = {
+                    "introduce": "active",
+                    "weaken": "weakened",
+                    "revise": "revised",
+                    "drop": "dropped",
+                }.get(action, entry.get("status", "active"))
+                assumptions_by_id[assumption_id] = entry
+
+        theories_by_id = {
+            str(item.get("theory_id", "")): dict(item)
+            for item in list(host_pre.get("working_theories", []) or [])
+            if str(item.get("theory_id", "")).strip()
+        }
+        for section in list(architecture.get("sections", []) or []):
+            for move in list(section.get("host_theory_moves", []) or []):
+                theory_id = str(move.get("theory_id", "") or "").strip()
+                action = str(move.get("action", "") or "").strip()
+                statement = str(move.get("statement", "") or "").strip()
+                if not theory_id:
+                    continue
+                entry = theories_by_id.get(
+                    theory_id,
+                    {
+                        "theory_id": theory_id,
+                        "statement": statement or theory_id,
+                        "status": "proposed",
+                    },
+                )
+                if statement:
+                    entry["statement"] = statement
+                entry["status"] = {
+                    "propose": "proposed",
+                    "strengthen": "strengthened",
+                    "replace": "replaced",
+                    "retire": "retired",
+                }.get(action, entry.get("status", "proposed"))
+                theories_by_id[theory_id] = entry
+
+        recent_revisions = list(host_pre.get("recent_revisions", []) or [])
+        for section in list(architecture.get("sections", []) or []):
+            for move in list(section.get("host_mystery_moves", []) or []):
+                action = str(move.get("action", "") or "").strip()
+                text = str(move.get("text", "") or "").strip()
+                mystery_id = str(move.get("mystery_id", "") or "").strip()
+                if action in {"advance", "resolve", "reframe"} and (text or mystery_id):
+                    recent_revisions.append(text or mystery_id)
+            for move in list(section.get("host_assumption_moves", []) or []):
+                action = str(move.get("action", "") or "").strip()
+                statement = str(move.get("statement", "") or "").strip()
+                revised_statement = str(move.get("revised_statement", "") or "").strip()
+                assumption_id = str(move.get("assumption_id", "") or "").strip()
+                if action in {"weaken", "revise", "drop"}:
+                    recent_revisions.append(
+                        revised_statement or statement or assumption_id
+                    )
+            for move in list(section.get("host_theory_moves", []) or []):
+                action = str(move.get("action", "") or "").strip()
+                statement = str(move.get("statement", "") or "").strip()
+                theory_id = str(move.get("theory_id", "") or "").strip()
+                if action in {"strengthen", "replace", "retire"}:
+                    recent_revisions.append(statement or theory_id)
+        recent_revisions = recent_revisions[-4:]
+
+        listener_takeaway = str(listener_agenda.get("episode_takeaway", "") or "").strip()
+        host_takeaway = str(host_agenda.get("episode_takeaway", "") or "").strip()
+        unresolved_mysteries = [
+            item
+            for item in mysteries_by_id.values()
+            if item.get("status") in {"open", "advanced"}
+        ]
+        destabilized_assumptions = any(
+            item.get("status") in {"weakened", "revised", "dropped"}
+            for item in assumptions_by_id.values()
+        )
+        stabilizing_theories = any(
+            item.get("status") in {"strengthened", "replaced"}
+            for item in theories_by_id.values()
+        )
+        if unresolved_mysteries or (destabilized_assumptions and not stabilizing_theories):
+            host_confidence_posture = "tentative"
+        elif not unresolved_mysteries and stabilizing_theories:
+            host_confidence_posture = "grounded"
+        else:
+            host_confidence_posture = "mixed"
+
+        state_post = {
+            "project_id": project_id,
+            "next_episode_number": episode_number + 1,
+            "listener": {
+                "known_explanation_item_ids": known_explanation_item_ids,
+                "known_actor_ids": known_actor_ids,
+                "questions": list(questions_by_id.values()),
+                "memory_threads": list(memory_threads_by_id.values()),
+                "carry_forward_memory": list(
+                    listener_agenda.get("carry_forward_memory", []) or []
+                ),
+                "last_episode_takeaway": listener_takeaway,
+            },
+            "host": {
+                "mysteries": list(mysteries_by_id.values()),
+                "assumptions": list(assumptions_by_id.values()),
+                "working_theories": list(theories_by_id.values()),
+                "recent_revisions": recent_revisions,
+                "confidence_posture": host_confidence_posture,
+                "last_episode_takeaway": host_takeaway,
+            },
+        }
+
+        return {
+            "episode_number": episode_number,
+            "state_post": state_post,
+            "delta": {
+                "introduced_explanation_item_ids": list(
+                    listener_agenda.get("introduce_explanation_item_ids", []) or []
+                ),
+                "introduced_actor_ids": list(
+                    listener_agenda.get("introduce_actor_ids", []) or []
+                ),
+                "listener_question_updates": list(questions_by_id.values()),
+                "listener_memory_thread_updates": list(memory_threads_by_id.values()),
+                "host_mystery_updates": list(mysteries_by_id.values()),
+                "host_assumption_updates": list(assumptions_by_id.values()),
+                "host_theory_updates": list(theories_by_id.values()),
+                "listener_carry_forward_memory": list(
+                    listener_agenda.get("carry_forward_memory", []) or []
+                ),
+                "listener_episode_takeaway": listener_takeaway,
+                "host_recent_revisions": recent_revisions,
+                "host_episode_takeaway": host_takeaway,
+                "host_confidence_posture": host_confidence_posture,
+            },
+            "warnings": [],
+            "rationale": "Heuristic reconciliation from agenda and architecture state moves.",
         }

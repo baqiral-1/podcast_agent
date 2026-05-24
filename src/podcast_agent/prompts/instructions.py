@@ -8,6 +8,8 @@ from podcast_agent.schemas.models import (
     PRIMITIVE_SUBSTRATE_TARGET_RANGES,
     PodcastMode,
     PrimitiveSubstrate,
+    authorial_passage_target_range_for_mode,
+    dense_section_authorial_passage_range_for_mode,
 )
 
 
@@ -1008,6 +1010,421 @@ def scene_discovery_instructions(
     ).strip()
 
 
+def narrative_strategy_skeleton_instructions(
+    *,
+    core_primitive_target_min: int = 8,
+    core_primitive_target_max: int = 11,
+    support_primitive_target_min: int = 9,
+    support_primitive_target_max: int = 13,
+    recall_primitive_target_max: int = 3,
+) -> str:
+    core_range = _format_target_range(
+        core_primitive_target_min, core_primitive_target_max
+    )
+    support_range = _format_target_range(
+        support_primitive_target_min, support_primitive_target_max
+    )
+    recall_limit = (
+        "1 primitive"
+        if recall_primitive_target_max == 1
+        else f"{recall_primitive_target_max} primitives"
+    )
+    return dedent(
+        f"""
+        You are the `narrative_strategy_skeleton` stage for a historical podcast pipeline.
+
+        Turn the flat primitive synthesis map into a series skeleton.
+
+        This stage decides the structural series shape:
+        - how many episodes there should be
+        - what each episode is actually about
+        - which primitives are core, support, or recall inside each episode
+        - which actors need explicit arc directives
+        - what each episode is consciously leaving out
+
+        This stage does NOT decide:
+        - narrator profile
+        - explanation registries
+        - actor introduction registry
+        - authorial contract
+        - narrator contract
+        - listener/host progression agenda
+        - promised beats
+
+        Those belong to a later enrichment stage. Your job is to produce a structurally
+        correct, evidence-backed series skeleton that a later stage can safely enrich
+        without changing the partition.
+
+        INPUT PAYLOAD
+        - `synthesis_map`: primitive-only synthesis artifact with a flat `primitives` list
+        - `project`: project metadata, runtime bounds, book metadata
+        - `scene_discovery` (optional): compact global sceneability pool used only to pressure-test what is concretely stageable
+        - `actor_metadata` (optional): canonical actor context
+        - `requested_episode_count` (optional): hard episode-count constraint
+        - `recommended_episode_count_min`: lower bound when no explicit count is requested
+        - `recommended_episode_count_max`: upper bound when no explicit count is requested
+        - `strategy_skeleton_feedback` (optional): retry feedback from the orchestrator; when present, it is binding corrective guidance for the retry
+        - When `strategy_skeleton_feedback` says an episode is underfull, strengthen, merge, or reduce episode count rather than forcing a thin partition.
+        - When `strategy_skeleton_feedback` says an episode is overfull, trim or demote primitives rather than adding more.
+
+        COMPACT TRANSPORT KEYS
+        - The payload may use compact keys for repeated fields. Treat these as equivalent:
+          `episode_spine -> spine`, `core_primitive_ids -> core_prims`,
+          `support_primitive_roles -> support_roles`, `recall_primitive_ids -> recall_prims`,
+          `scene_discovery -> scenes`,
+          plus the primitive-field aliases `sub`, `core`, `supp`, `pid`, `time`, `geo`, `actors`,
+          `etype`, `event`, `act`, `subject`, `utter`, `goal`, `stakes`, `mech`, `cond`, `read`, `hooks`.
+        - In your JSON output, prefer canonical field names: `episode_spine`, `core_primitive_ids`,
+          `support_primitive_roles`, `recall_primitive_ids`, and `negative_scope`.
+
+        EPISODE COUNT
+        - If `requested_episode_count` is present, treat it as binding.
+        - Otherwise, produce between `recommended_episode_count_min` and `recommended_episode_count_max` episodes, inclusive.
+
+        PRIORITY RULES
+        - Every episode must have exactly one `episode_spine`.
+        - `listener_problem` is the listener-facing problem the episode carries.
+        - `episode_answer` is the concise answer the episode earns.
+        - `pressure_line` is the live contradiction or pressure the listener should feel while moving through the episode.
+        - `core_primitive_ids` are the binding episode contract.
+        - Support primitives must be typed with exactly one role each:
+          `stakes`, `mechanism`, `counterpressure`, `consequence`, or `texture`.
+        - Infer support role and recall eligibility from primitive substrate, functions,
+          title, substrate-specific fields, salience, passage grounding, actor context, and time/place context.
+        - Use `scene_discovery` only to pressure-test whether an episode is concrete enough to survive downstream audio realization.
+        - Do not produce section topology, scene-card ordering, prose, narrator method, registries, or promised beats.
+
+        SUPPORT ROLE DEFINITIONS
+        - `stakes`: raises what can be lost, protected, or irreversibly changed
+        - `mechanism`: explains how the episode’s proposition works in practice
+        - `counterpressure`: supplies the force, contradiction, or rival logic resisting it
+        - `consequence`: shows what the proposition causes, unlocks, or damages downstream
+        - `texture`: adds grounded lived detail or context that strengthens the same proposition without carrying it alone
+
+        FIRST-PASS GROUPING WORKFLOW
+        - Draft the series using primitives first.
+        - Build provisional episodes from primitive title, substrate-specific fields, substrate, functions,
+          actor context, time/place context, causal sequence, and passage grounding.
+        - Infer thematic coverage from the primitive set itself rather than from external thematic scaffolds.
+
+        PRIMITIVE-FIRST DISCIPLINE
+        - Do not recreate abstract thematic buckets as episode titles.
+        - Do not let repeated conceptual vocabulary become the organizing outline unless the primitives independently force it.
+        - Prefer concrete historical problems, reversals, collisions, decision chains, and causal transformations over abstract thematic bucket labels.
+
+        SERIES SHAPE
+        Choose one `strategy_type`:
+        - `thesis_driven`
+        - `debate`
+        - `chronological`
+        - `convergence`
+        - `mosaic`
+
+        You must actively compare at least:
+        - `chronological`
+        - `thesis_driven`
+        - one other plausible shape
+
+        Do not default to `thesis_driven`.
+
+        SERIES SHAPE RULES
+        - Build episodes around escalation, consequence, contestation, discovery, and payoff.
+        - Do not partition material evenly.
+        - Do not organize episodes as biographies unless the evidence genuinely warrants it.
+        - Keep each episode centered on one main problem.
+        - Secondary pressures should sharpen that problem, not open a neighboring one.
+
+        EVIDENCE BALANCE
+        Balance evidence across episodes by sufficiency, not equality.
+        - Do not let one episode become evidence-thin while another absorbs reusable support with much deeper grounding.
+        - Prefer support sets that introduce new passage grounding or materially broaden interpretive coverage instead of stacking near-duplicate argumentative work.
+        - If an episode’s primitive mix is too concentrated on one local cluster or one local job, reassign support before accepting the partition.
+        - If two episodes could plausibly host the same non-core primitive, prefer the assignment that strengthens the weaker episode’s evidence base.
+        - Prefer the smallest support set that materially broadens grounding, pressure, or consequence.
+        - Do not stack multiple support primitives that perform the same argumentative job unless they add genuinely distinct grounding.
+        - If an episode is elegant but under-grounded, strengthen grounding first.
+
+        SCENEABILITY PRESSURE
+        When `scene_discovery` is present:
+        - Use it only as a reality check on whether an episode has enough concrete carriers to survive downstream audio realization.
+        - Prefer partitions whose core can plausibly yield an opening image, a turn-bearing moment, and an answer-bearing visible carrier.
+        - Do not convert scene candidates into promised beats here.
+        - Do not reshape the series around scene discovery alone if the primitive logic says otherwise.
+        - If an episode is structurally smart but starved of anything stageable, fix the primitive partition now rather than expecting a later stage to rescue it.
+
+        EPISODES
+        Each episode must include:
+        - `episode_number`
+        - `title`
+        - `thematic_focus`
+        - `arc_summary`
+        - `unresolved_questions`
+        - `episode_spine`
+        - `actor_arc_directives`
+        - `negative_scope`
+
+        Do NOT include:
+        - `narrator_contract`
+        - `authorial_contract`
+        - `narrative_agenda`
+        - `promised_beats`
+        - top-level narrator or registry fields
+
+        NEGATIVE SCOPE
+        `negative_scope` tells downstream stages what this episode is consciously not trying to carry.
+        It must include:
+        - `boundary`
+        - `excluded_topics`
+        - `tempting_but_out`
+        - `omission_logic`
+
+        EPISODE SPINE RULES
+        - `core_primitive_ids` must contain {core_range} primitives.
+        - `core_primitive_ids` is the episode's thesis-bearing contract, not a holding area for every later-useful primitive.
+        - Each episode core must be pivot-led.
+        - At least one core primitive must use substrate `events` or `acts`.
+        - Prefer at least two core primitives tagged `pivot` whenever the evidence supports it.
+        - `support_primitive_roles` must contain {support_range} primitives.
+        - Each support primitive gets exactly one support role.
+        - Support primitives cannot also appear in the core.
+        - `recall_primitive_ids` are optional and must contain at most {recall_limit}.
+        - Use recall only when it is explicitly justified and materially helps the listener carry accumulated meaning forward.
+        - Prefer recall primitives carrying `recurrence`. Do not use recall as recap.
+        - Do not use `core_primitive_ids` to preserve optional downstream material for enrichment.
+        - If an episode needs more than {core_range} core primitives to feel viable, the partition is wrong; rebalance, merge, or reduce episode count.
+        - If both core and support are overfull, reduce episode scope before adding more primitives.
+
+        ACTOR ARC DIRECTIVES
+        Actor arc directives are episode-specific planning guidance for how selected actors function across scenes.
+        - `actor_arc_directives` must contain only the 2-4 actors whose episode function needs explicit planning guidance.
+        - Choose actors who give the episode a usable character spine.
+        - Do not include an actor just because they appear in clusters or primitives.
+
+        QUALITY
+        - Keep the listener-facing problem narrow and concrete.
+        - Build each episode around one controlling proposition expressed through one explicit set of core primitives.
+        - Keep support subordinate, but do not confuse subordination with piling up multiple primitives that make the same point.
+        - If a later episode becomes too dense, demote non-thesis material into support before expanding core.
+        - If a proposed episode is weak, fix the partition rather than compensating by inflating core.
+        - Do not let tail episodes become everything left over.
+        - Let `pivot` drive cores, `stake` and `cost` drive human grounding, `mechanisms` and `conditions` drive explanation, `contest` and `complication` drive pressure, and `recurrence` drive callbacks and later memory burden.
+        - `arc_summary` should explain the episode shape, but it should not become a disguised narrator script.
+        - `unresolved_questions` should name live uncertainty or deferred consequence, not generic teaser copy.
+        - Use `negative_scope` to prevent neighboring attractive material from bleeding into an episode that already has enough load-bearing work.
+        - If a proposed episode sounds like an essay topic instead of an oral historical problem, rescope it now.
+
+        OUTPUT
+        Return only valid JSON matching `NarrativeStrategySkeleton`.
+        - `strategy_type` must be one of the schema values.
+        - If `recommended_episode_count` is present, it must match the number of episodes produced.
+        - If `episode_arc_outline` is present, it must align in length with `episodes`.
+        - Each episode must include `negative_scope`.
+        - Do not add markdown or commentary.
+        """
+    ).strip()
+
+
+def narrative_strategy_enrichment_instructions(
+    *,
+    authorial_passage_target_min: int = authorial_passage_target_range_for_mode(
+        PodcastMode.FULL
+    )[0],
+    authorial_passage_target_max: int = authorial_passage_target_range_for_mode(
+        PodcastMode.FULL
+    )[1],
+    podcast_mode: PodcastMode | str = PodcastMode.FULL,
+) -> str:
+    mode = PodcastMode(podcast_mode)
+    authorial_range = _format_target_range(
+        authorial_passage_target_min, authorial_passage_target_max
+    )
+    if mode == PodcastMode.MINIFIED:
+        authorial_guidance = (
+            f"For minified episodes, `target_authorial_passages_per_episode` should "
+            f"usually land around {authorial_range}."
+        )
+    else:
+        authorial_guidance = (
+            "For full-length episodes running about 130-150 minutes at the pipeline's spoken-rate targets, "
+            f"`target_authorial_passages_per_episode` should usually land around {authorial_range}."
+        )
+    return dedent(
+        f"""
+        You are the `narrative_strategy_enrichment` stage for a historical podcast pipeline.
+
+        Take an already-fixed series skeleton and enrich it into a complete narrative strategy.
+
+        This stage does NOT decide the partition. The skeleton is binding.
+        You may not:
+        - change episode count
+        - change episode order
+        - change titles
+        - change thematic focus
+        - change arc summaries
+        - change unresolved questions
+        - change episode spines
+        - change actor arc directives
+        - change negative scope
+        - reassign primitives across episodes
+
+        Your job is to add the layers that make the skeleton playable as a podcast season:
+        - narrator profile
+        - reusable term and institution registry
+        - reusable actor introduction registry
+        - per-episode narrator contract
+        - per-episode authorial contract
+        - per-episode listener/host progression agenda
+        - sparse promised beats anchored in episode-scoped scene candidates
+
+        INPUT PAYLOAD
+        - `strategy_skeleton`: binding structural series skeleton
+        - `synthesis_map`: skeleton-selected primitive subset only
+        - `project`: project metadata, runtime bounds, book metadata
+        - `episode_scene_candidates`: per-episode scene-candidate pools already filtered from global scene discovery
+        - `actor_metadata` (optional): canonical actor context
+        - `strategy_enrichment_feedback` (optional): retry feedback from the orchestrator
+
+        COMPACT TRANSPORT KEYS
+        - The payload may use compact keys for repeated fields. Treat these as equivalent and prefer them in your JSON output when possible:
+          `strategy_skeleton -> skeleton`, `episode_scene_candidates -> episode_scenes`,
+          `episode_spine -> spine`, `core_primitive_ids -> core_prims`,
+          `support_primitive_roles -> support_roles`, `recall_primitive_ids -> recall_prims`,
+          `series_explanation_registry -> term_registry`,
+          `series_actor_explanation_registry -> actor_registry`,
+          `source_candidate_ids -> source_candidates`,
+          `source_primitive_ids -> source_prims`,
+          `promised_beats -> promised`,
+          plus the primitive-field aliases `sub`, `core`, `supp`, `pid`, `time`, `geo`, `actors`,
+          `etype`, `event`, `act`, `subject`, `utter`, `goal`, `stakes`, `mech`, `cond`, `read`, `hooks`.
+
+        BINDING IMMUTABILITY RULES
+        - Treat `strategy_skeleton` as authoritative structure.
+        - Do not silently rewrite a weak episode by changing its primitive assignment or implied scope.
+        - Do not introduce a new top-level strategy type or series arc.
+
+        ENRICHMENT OBJECTIVE
+        You are converting a structural partition into a podcast-usable editorial contract.
+
+        The enriched output must answer:
+        - what kind of host mind is carrying the season
+        - what explanatory burdens must be explicit versus assumed
+        - which actors need a real first introduction and where
+        - which questions, mysteries, assumptions, and theories are moving across the season
+        - which concrete beats the episode is now explicitly promising to stage or pay off
+
+        You are not drafting sections or scene cards. You are deciding what downstream architecture and planning must honor.
+
+        NARRATOR METHOD
+        Return a top-level `narrator_profile`. Derive a usable narrator method from:
+        - primitive density
+        - chronology
+        - institutional load
+        - actor pressure
+        - doctrinal load
+        - the skeleton's pressure lines and answer shapes
+
+        Infer:
+        - whether the season is mostly scene-led or needs more explicit explanation
+        - which episodes need stronger doctrinal unpacking, institutional clarification, quote-then-gloss, or harder verdict landings
+        - how much explicit host presence the material can carry
+        - how much authorial passage density a listener needs to stay oriented in one hearing
+
+        NARRATOR PROFILE RULES
+        - `presence_mode` should default to `visible_host`.
+        - `spoken_style_contract` should default to `anti_academic_oral`.
+        - Prefer `baseline_tone = plainspoken` unless the material is overwhelmingly atrocity-led or testimonial in a way that truly requires graver surface phrasing.
+        - `allowed_moves` must contain only:
+          `orient`, `clarify`, `evaluate`, `contrast`, `callback`, `light_aside`,
+          `naming_note`, `uncertainty`, `revision`, `surprise`.
+        - If `wit_ceiling` is `dry` or `wry`, include `light_aside` in `allowed_moves`.
+        - The narrator profile must define method, not just tone.
+        - {authorial_guidance}
+
+        EXPLANATION REGISTRY
+        Return a top-level `series_explanation_registry` for only the most reusable terms or institutions.
+        - Use it sparingly.
+        - Give each item one canonical introduction episode.
+        - Later episodes should usually remind rather than fully redefine.
+        - `preferred_plain_gloss` must sound like something the host could actually say aloud.
+
+        ACTOR EXPLANATION REGISTRY
+        Return a top-level `series_actor_explanation_registry` for only the few people whose first naked mention would likely confuse the listener.
+        - Use it sparingly.
+        - Give each selected actor one canonical introduction episode.
+        - Use `first_background_depth = appositive` when one clause is enough and `full` only when the listener truly needs a short background sentence.
+
+        EPISODE ENRICHMENTS
+        Return one enrichment record per skeleton episode. Each enriched episode must include:
+        - `episode_number`
+        - `narrator_contract`
+        - `authorial_contract`
+        - `narrative_agenda`
+        - `promised_beats`
+
+        Do not repeat structural skeleton fields in the output.
+
+        PROMISED BEATS
+        `promised_beats` are the sparse set of concrete historical obligations this episode is explicitly promising to stage or pay off downstream.
+
+        Each item must include:
+        - `beat_id`
+        - `label`
+        - `kind`: `scene`, `image`, `actor_turn`, `mechanism`, `callback`, or `quote`
+        - `intended_job`: `opening`, `build`, `turn`, `answer`, `residue`, or `close`
+        - `source_candidate_ids`
+        - `source_primitive_ids`
+        - `why_load_bearing`
+
+        PROMISED BEAT RULES
+        - Use the per-episode `episode_scene_candidates` pool first.
+        - Every promised beat must cite at least one source candidate or source primitive.
+        - Prefer source candidates when a concrete carrier exists.
+        - Make `promised_beats` sparse.
+        - Usually land around 2-4 promised beats per episode unless the episode truly needs more structural commitments.
+        - Use at most one promised beat with `intended_job = answer`.
+        - Use at most one promised beat with `intended_job = residue`.
+
+        NARRATIVE AGENDA
+        Use `narrative_agenda` as the episode-level listener/host progression contract.
+
+        LISTENER AGENDA
+        The listener side must answer:
+        - what the listener is newly allowed to understand
+        - which terms/institutions get introduced versus merely reminded
+        - which actors get a real first introduction versus only a reminder
+        - what question is opened, advanced, resolved, or reframed
+        - what memory thread is opened, refreshed, paid off, or retired
+        - what carry-forward memory burden the next episode should inherit
+        - what the listener’s episode takeaway should be
+
+        HOST AGENDA
+        The host side must answer:
+        - what the host is still trying to understand
+        - what assumption is being weakened or revised
+        - what working theory is being proposed, strengthened, replaced, or retired
+        - what explicit revision beats should be felt across the season
+        - what the host’s episode takeaway is
+
+        QUALITY
+        - Keep the enrichment layer faithful to the skeleton’s actual episode problem.
+        - Prefer a host who sounds like a distinct spoken mind carrying pressure forward, not polished page prose softened for audio.
+        - Keep registries sparse and reusable.
+        - Make promised beats concrete enough to matter and few enough to remain binding.
+        - If a beat, registry item, or agenda move would not materially change downstream architecture or planning, leave it out.
+
+        OUTPUT
+        Return only valid JSON matching `NarrativeStrategyEnrichment`.
+        - `narrator_profile` must define narrator method, not just tone.
+        - `series_explanation_registry` is top-level output, not per-episode output.
+        - `series_actor_explanation_registry` is top-level output, not per-episode output.
+        - Every episode must include `promised_beats`.
+        - Before returning JSON, verify that every actor id used in any episode's `introduce_actor_ids` or `remind_actor_ids` appears exactly once in the top-level `series_actor_explanation_registry`.
+        - Do not restate skeleton fields that are already fixed upstream.
+        - Do not add markdown or commentary.
+        """
+    ).strip()
+
+
 def narrative_strategy_instructions(
     *,
     core_primitive_target_min: int = 6,
@@ -1015,8 +1432,12 @@ def narrative_strategy_instructions(
     support_primitive_target_min: int = 7,
     support_primitive_target_max: int = 10,
     recall_primitive_target_max: int = 2,
-    authorial_passage_target_min: int = 14,
-    authorial_passage_target_max: int = 18,
+    authorial_passage_target_min: int = authorial_passage_target_range_for_mode(
+        PodcastMode.FULL
+    )[0],
+    authorial_passage_target_max: int = authorial_passage_target_range_for_mode(
+        PodcastMode.FULL
+    )[1],
     podcast_mode: PodcastMode | str = PodcastMode.FULL,
 ) -> str:
     mode = PodcastMode(podcast_mode)
@@ -1047,7 +1468,7 @@ def narrative_strategy_instructions(
         )
     else:
         authorial_guidance = (
-            "For full-length episodes around 12,000-13,000 words, "
+            "For full-length episodes running about 130-150 minutes at the pipeline's spoken-rate targets, "
             f"`target_authorial_passages_per_episode` should usually land around "
             f"{authorial_range}."
         )
@@ -1061,8 +1482,8 @@ def narrative_strategy_instructions(
         f"""
         You are the `narrative_strategy` stage for a historical podcast pipeline.
         
-        Turn the flat primitive synthesis map plus discovered scene candidates into a
-        series structure.
+        Turn the flat primitive synthesis map into a series structure.
+        When discovered scene candidates are present, use them to pressure-test what is concretely stageable.
         The assignment unit is still the individual primitive, but you must also make
         a sparse set of binding beat commitments.
         You are deciding which primitives form each episode’s load-bearing core, which
@@ -1083,7 +1504,7 @@ def narrative_strategy_instructions(
         - `strategy_feedback` (optional): retry feedback from the orchestrator
 
         COMPACT TRANSPORT KEYS
-        - The payload may use compact keys for repeated fields. Treat these as equivalent and prefer them in your JSON output when possible:
+        - The payload may use compact keys for repeated fields. Treat these as equivalent:
           `episode_spine -> spine`, `core_primitive_ids -> core_prims`,
           `support_primitive_roles -> support_roles`, `recall_primitive_ids -> recall_prims`,
           `series_explanation_registry -> term_registry`,
@@ -1091,8 +1512,9 @@ def narrative_strategy_instructions(
           `source_passage_ids -> source_passages`, `source_primitive_ids -> source_prims`,
           plus the primitive-field aliases `sub`, `core`, `supp`, `pid`, `time`, `geo`, `actors`,
           `etype`, `event`, `act`, `subject`, `utter`, `goal`, `stakes`, `mech`, `cond`, `read`, `hooks`.
-          `promised_beats -> promised`, `negative_scope -> scope`, `scene_discovery -> scenes`,
+          `promised_beats -> promised`, `scene_discovery -> scenes`,
           `source_candidate_ids -> source_candidates`.
+        - In your JSON output, prefer canonical field names such as `negative_scope`.
 
         EPISODE COUNT
         - If `requested_episode_count` is present, treat it as binding.
@@ -1234,6 +1656,8 @@ def narrative_strategy_instructions(
         - `unresolved_questions`
         - `episode_spine`
         - `actor_arc_directives`
+        - `narrative_agenda`
+        - `narrator_contract`
         - `authorial_contract`
         - `promised_beats`
         - `negative_scope`
@@ -1339,7 +1763,7 @@ def narrative_strategy_instructions(
         - When `presence_mode = visible_host`, default `spoken_style_contract = anti_academic_oral` and prefer `baseline_tone = plainspoken` unless the material is overwhelmingly atrocity-led or testimonial in a way that truly requires graver surface phrasing.
         - In that default host mode, narrator method should feel like a distinct spoken mind carrying pressure forward, not polished page prose softened for audio.
         - `allowed_moves` must contain only: `orient`, `clarify`, `evaluate`, `contrast`,
-          `callback`, `light_aside`, or `naming_note`.
+          `callback`, `light_aside`, `naming_note`, `uncertainty`, `revision`, or `surprise`.
         - If `wit_ceiling` is `dry` or `wry`, include `light_aside` in `allowed_moves`.
         - {authorial_guidance}
         - {authorial_overage_guidance}
@@ -1348,6 +1772,10 @@ def narrative_strategy_instructions(
         - `introduce_explanation_item_ids` and `remind_explanation_item_ids` should point into `series_explanation_registry`.
         - `introduce_actor_ids` and `remind_actor_ids` must reference only actor_ids present in the top-level `series_actor_explanation_registry`. Do not include any actor id in either field unless that exact actor_id also appears in `series_actor_explanation_registry`.
         - `callback_obligations` should name listener-memory burdens, not drafted prose.
+        - `narrative_agenda.listener.carry_forward_memory` should be a short list of
+          structured continuity items. Each item should carry a stable `item_id`,
+          concise `label`, `kind`, `priority`, `desired_surface`, and
+          `recommended_action` rather than free-text recap copy.
         - If `scene_discovery` is present, use it to separate what should be staged
           from what should remain explanatory support inside another card.
 
@@ -1359,6 +1787,8 @@ def narrative_strategy_instructions(
         - If `episode_arc_outline` is present, it must align in length with `episodes`.
         - `narrator_profile` must define narrator method, not just tone.
         - `narrator_profile.spoken_style_contract` should default to `anti_academic_oral` unless there is a strong reason to preserve the legacy contract.
+        - Prefer `narrative_agenda` as the episode-level listener/host progression contract.
+        - Prefer `narrator_contract` for style/method and keep listener-memory obligations inside `narrative_agenda`.
         - `series_explanation_registry` is top-level output, not per-episode output.
         - `series_actor_explanation_registry` is top-level output, not per-episode output.
         - Each episode must include `promised_beats` and `negative_scope`.
@@ -1370,8 +1800,8 @@ def narrative_strategy_instructions(
 
 def episode_planning_instructions(
     *,
-    scene_card_target_min: int = 30,
-    scene_card_target_max: int = 36,
+    scene_card_target_min: int = 40,
+    scene_card_target_max: int = 48,
 ) -> str:
     scene_card_range = _format_target_range(
         scene_card_target_min, scene_card_target_max
@@ -1395,6 +1825,8 @@ def episode_planning_instructions(
         - `scene_job_budget`         explicit scene-job allocation contract for this mode
         - `available_passages`       evidence available to this episode
         - `host_policy`              series-level narrator policy for host moves
+        - `narrative_state_pre`      authoritative listener/host state entering this episode, already reconciled after the previous episode's architecture
+        - `continuity_contract_pre`  compact continuity obligations derived from the incoming state
         - `actor_metadata`           episode-relevant canonical actor context
         - `planning_feedback`        optional retry feedback from the orchestrator; if present, correct only the named contract failure and preserve valid structure
         - Optional `field_semantics` explicit definitions for `closure_mode`,
@@ -1414,10 +1846,13 @@ def episode_planning_instructions(
         ==============================================================================
         BINDING (do not restate, rewrite, reorder, or reconsider):
         - `strategy_episode` fields: title, thematic focus,
-          arc summary, unresolved questions, `episode_spine`, actor arc directives.
+          arc summary, unresolved questions, `episode_spine`, actor arc directives,
+          and `narrative_agenda`.
         - `architecture.section_id` order.
         - `architecture.major_turn_section_id`.
         - Per-section primitive groupings (`primitive_ids` lists).
+        - Per-section state obligations: `question_moves`, `memory_thread_moves`,
+          `host_mystery_moves`, `host_assumption_moves`, and `host_theory_moves`.
 
         YOU OWN:
         - Framing block (opening image, threat, opening question, handoff target).
@@ -1443,6 +1878,10 @@ def episode_planning_instructions(
         - `opening_question` — should create curiosity in the same territory as
           `strategy_episode.episode_spine.listener_problem`. Do not paraphrase it.
         - `handoff_scene_card_id` — must point to a real scene card you produce.
+        - `recap` — for Episode 1, set this to null. For later episodes, when
+          `continuity_contract_pre.recap_items` is non-empty, write a 1-2
+          sentence spoken recap that recalls inherited pressure or memory
+          without turning into teaser copy.
         - The framing should orient the listener without pre-explaining the episode.
           Do not preview the thesis, the turn, or the closing.
 
@@ -1468,7 +1907,8 @@ def episode_planning_instructions(
         - Treat each section as a binding local brief: its scenes must collectively
           realize that section's `must_stage_beats`, `closure_mode`, and any
           planned `authorial_passages`, `term_explanations`, `actor_explanations`,
-          or `key_terms`.
+          `question_moves`, `memory_thread_moves`, `host_mystery_moves`,
+          `host_assumption_moves`, `host_theory_moves`, or `key_terms`.
         - Build each section through accumulation. The first scene should open
           from the anchor and the final beat should cash out the last
           `must_stage_beats` item or land the assigned `closure_mode`.
@@ -1502,6 +1942,7 @@ def episode_planning_instructions(
           `estimated_duration_seconds`  integer; you allocate
           `passage_ids`                 enough evidence to support later writing
 
+        Treat `must_land_facts` as the card's factual spine.
         Treat `must_land_facts.required` as the card's factual spine.
         `strongly_preferred` is next-tier material and `if_room` is expendable
         under length pressure. `host_moves` may prioritize, clarify, contrast,
@@ -1527,6 +1968,14 @@ def episode_planning_instructions(
         - When a section has `authorial_passages`, assign every
           `authorial_passage_id` to exactly one scene in that same section using
           `authorial_passage_ids[]`.
+        - A scene carrying `comparative_aside` should usually have one concrete anchor,
+          one clear return path, and `word_count_priority = default`.
+        - If a scene carries both `comparative_aside` and another heavy explanatory
+          passage such as `quote_then_gloss`, `doctrinal_unpack`,
+          `institutional_clarifier`, or `verdict_landing`, split them into adjacent
+          scenes unless this is an intentionally benchmarked answer scene with room.
+        - For `scene_job = answer`, use `comparative_aside` only when it sharpens the
+          answer and returns immediately to the scene's own pressure.
         - Use structured `withhold_until` only when delayed legibility improves
           the scene. Set `subject`, `reveal_phase`, optional
           `surrogate_label`, and `reveal_scene_id` only when the reveal belongs
@@ -1535,6 +1984,9 @@ def episode_planning_instructions(
         CANONICAL `scene_role` VALUES:
           context_setup, actor_setup, action, shock, contestation, reaction,
           fallout, implication
+
+        Legacy scene-function vocabulary you may still see in older notes:
+          scene, hinge, mechanism, turn, landing, callback, afterlife
 
         CANONICAL `scene_job` VALUES:
           opening, build, turn, answer, residue, close
@@ -1552,15 +2004,28 @@ def episode_planning_instructions(
 
         HOST MOVES
         - `host_policy` is binding narrator policy for density, tone, and pronouns.
+        - `narrative_state_pre` is read-only continuity context. Use it to preserve
+          carry-forward memory and open host pressure, not to invent fresh season-state
+          changes.
+        - `continuity_contract_pre` is the compact version of that burden.
+          Prefer it when deciding what must surface early, especially in
+          `framing.recap` and the opening scenes.
+        - Planning may realize state commitments but may not invent new
+          listener-question, memory-thread, or host-state progression not already
+          present in strategy or architecture.
         - `host_moves` are required scene design, not optional garnish.
         - Each scene card must include `host_moves` with phase buckets:
           - `open`: how the scene enters and what is foregrounded first
           - `pivot`: what becomes clearer after concrete material lands
           - `close`: what residue, verdict, callback, or pressure remains
+        - Ordinary cards may use one or two populated phases. Heavier cards may use all three when they clearly need it.
         - Default to one populated phase and one cue per populated phase.
         - Major turns, openings, closings, and explanation-heavy cards may use
           more than one populated phase when they clearly need it, but every scene
           must populate at least one phase.
+        - If a section carries any `host_mystery_moves`, `host_assumption_moves`, or
+          `host_theory_moves`, at least one scene in that section must carry non-empty
+          `host_moves`.
         - Use `allowed_moves` from `host_policy` as binding. Do not emit a move
           type the narrator policy does not allow.
         - Every cue must include:
@@ -1576,21 +2041,6 @@ def episode_planning_instructions(
           still shape the whole phase.
         - `target` is a compressed structural permission, not final copy.
         - `target` should usually be 1-4 words, must never exceed 6, and should compress the move into a short phrase rather than planning prose.
-        - Prefer noun-phrase or very short phrase targets grounded in the card's own concrete material.
-        - Good targets look like: `press conference split`, `hidden ministries`, `empty villages`, `safe door`, `crowd outside the gate`.
-        - Bad targets are sentence-shaped planning notes such as "tell the listener what to watch for" or "state the through-line." If a target reads like a sentence or instruction to yourself, compress it again.
-        - Do not use writer-room control phrases, abstract management verbs, or episode-management phrasing.
-        - Move-type-specific target rules:
-          - `orient` must identify where, when, or what visible setup is foregrounded first.
-          - `clarify` must identify the exact term, institution, relationship, or confusion being clarified.
-          - `contrast` must identify both sides of the contrast.
-          - `evaluate` must identify the concrete consequence, irony, verdict, or pressure being landed.
-          - `callback` must identify the earlier image, phrase, promise, actor, or event returning here.
-          - `naming_note` must identify the exact word, title, office, slogan, or phrase the listener should retain.
-        - Phase-specific target rules:
-          - `open` should foreground entry, not conclusion.
-          - `pivot` should say what becomes newly legible after the material lands.
-          - `close` should leave residue, pressure, verdict, or return, not re-explain setup.
         - `address_mode = you` is useful for guide-like explanation.
         - `address_mode = we` is useful for shared inference, companionable
           guidance, callbacks, reorientation, and closings.
@@ -1753,14 +2203,181 @@ def episode_planning_instructions(
     ).strip()
 
 
+def narrative_state_reconciler_instructions() -> str:
+    return dedent(
+        """
+        You are the `narrative_state_reconciliation` stage of a historical podcast pipeline.
+
+        Your job is to reconcile the season's authoritative `NarrativeState` after
+        one episode has been architected. This is not a prose-writing pass. You are
+        producing the authoritative post-architecture state that the NEXT episode
+        will inherit.
+
+        ==============================================================================
+        INPUT
+        ==============================================================================
+        - `episode_number`
+        - `project_id`
+        - `narrative_state_pre`  the authoritative state entering this episode
+        - `strategy_episode`     the episode-level agenda and intended commitments
+        - `architecture`         section-level realization of those commitments
+
+        Think of the job as:
+        `narrative_state_pre` + this episode's realized commitments -> `state_post`
+
+        ==============================================================================
+        STATE SEMANTICS
+        ==============================================================================
+        `NarrativeState.listener` tracks what the audience now carries:
+        - known explanation items
+        - known actors
+        - currently open or resolved listener questions
+        - memory threads / callback burdens
+        - short structured carry-forward continuity items
+        - the last episode takeaway
+
+        `NarrativeState.host` tracks the host's evolving epistemic posture:
+        - mysteries the host is still pursuing
+        - assumptions the host is testing or revising
+        - working theories the host is advancing or replacing
+        - recent revisions or surprises worth carrying forward
+        - confidence posture
+        - the last episode takeaway
+
+        The key distinction:
+        - listener state = what the audience should now know / still be waiting on
+        - host state = what the host can now say confidently, tentatively, or no longer believe
+
+        ==============================================================================
+        RECONCILIATION ORDER
+        ==============================================================================
+        Use this precedence order:
+        1. Start from `narrative_state_pre`.
+        2. Read `strategy_episode.narrative_agenda` as the intended delta.
+        3. Use `architecture` to see which listener-facing and host-facing moves were
+           actually staged.
+        4. Produce the smallest correct `state_post` that reflects what this episode
+           actually commits the next episode to inherit.
+
+        Prefer realized structure over vague intention:
+        - if the agenda says to open a question but no section-level
+          realization supports it, prefer a warning over confidently mutating state
+        - if the architecture clearly advances or resolves a question/thread, reflect that
+        - if architecture explicitly stages host epistemic movement, it should usually
+          leave a trace in host state
+
+        ==============================================================================
+        LISTENER RECONCILIATION RULES
+        ==============================================================================
+        - `introduce_explanation_item_ids` and `introduce_actor_ids` usually add to
+          listener known sets.
+        - Reminder fields are not new knowledge. Do not treat reminders as introductions.
+        - Section-level `question_moves` are the primary source of listener-question state.
+        - Section-level `memory_thread_moves` are the primary source of callback /
+          carry-forward thread state.
+        - Preserve existing questions and threads unless this episode clearly advances,
+          reframes, pays off, retires, or resolves them.
+        - `carry_forward_memory` should stay short and should reflect what the listener
+          is meant to carry into the next episode, not a summary of everything that happened.
+        - Each `carry_forward_memory` entry is structured continuity metadata,
+          not drafted prose. Preserve item identity and metadata when the burden
+          remains live.
+        - `last_episode_takeaway` should capture the episode's landed takeaway, not a
+          teaser for the next episode.
+
+        ==============================================================================
+        HOST RECONCILIATION RULES
+        ==============================================================================
+        - Use `strategy_episode.narrative_agenda.host` for intended host evolution.
+        - Use section-level `host_mystery_moves` as the primary realized source for what
+          the host is still actively wondering about.
+        - Use section-level `host_assumption_moves` as the primary realized source for
+          what the host still believes, has weakened, revised, or dropped.
+        - Use section-level `host_theory_moves` as the primary realized source for the
+          host's current working explanation of events.
+        - `recent_revisions` should capture notable epistemic movement, especially
+          changed assumptions, changed theories, and mystery movement that the next
+          episode might reasonably build on.
+        - `confidence_posture` should reflect the host's current overall footing:
+          - `tentative` when key mysteries remain open or a prior theory was materially weakened
+          - `mixed` when the host has some grounded conclusions but still unresolved pressure
+          - `grounded` when the episode substantially stabilizes the host's frame
+
+        ==============================================================================
+        HARD CONSTRAINTS
+        ==============================================================================
+        - `state_post.project_id` must match `project_id`.
+        - `state_post.next_episode_number` must equal `episode_number + 1`.
+        - Do not invent explanation ids, actor ids, question ids, thread ids,
+          mystery ids, assumption ids, or theory ids not already present in the
+          prior state, agenda, or architecture.
+        - Do not resolve listener questions or host mysteries that were never opened.
+        - Do not drop prior state just because this episode did not mention it.
+        - Preserve prior state unless this episode clearly changes it.
+
+        ==============================================================================
+        DELTA EXPECTATIONS
+        ==============================================================================
+        `delta` should describe what changed in this episode, not restate the entire state.
+        Use it to expose:
+        - new explanation items introduced
+        - new actors introduced
+        - current listener question states after this episode's moves
+        - current listener memory-thread states after this episode's moves
+        - current host mystery / assumption / theory states after this episode's moves
+        - carry-forward memory
+        - listener and host takeaways
+        - host confidence posture
+
+        Keep `delta` tightly aligned with `state_post`.
+
+        ==============================================================================
+        WARNINGS
+        ==============================================================================
+        Use `warnings` when:
+        - the agenda asks for a change that architecture never clearly realizes
+        - a question/thread/mystery looks advanced or resolved too abruptly
+        - the host agenda implies epistemic evolution but architecture never clearly stages it
+        - architecture appears to move listener or host state too aggressively without
+          corresponding setup
+
+        Prefer warning on ambiguity instead of fabricating a clean transition.
+
+        ==============================================================================
+        OUTPUT
+        ==============================================================================
+        Return only valid JSON matching `NarrativeStateReconciliation`:
+        - `episode_number`
+        - `state_post`
+        - `delta`
+        - `warnings`
+        - `rationale`
+
+        ==============================================================================
+        STYLE
+        ==============================================================================
+        - Keep `rationale` short and operational.
+        - Do not add markdown or commentary.
+        """
+    ).strip()
+
+
 def episode_architecture_instructions(
     *,
     section_target_min: int = 9,
     section_target_max: int = 12,
-    authorial_passage_target_min: int = 14,
-    authorial_passage_target_max: int = 18,
-    dense_section_authorial_passage_min: int = 2,
-    dense_section_authorial_passage_max: int = 4,
+    authorial_passage_target_min: int = authorial_passage_target_range_for_mode(
+        PodcastMode.FULL
+    )[0],
+    authorial_passage_target_max: int = authorial_passage_target_range_for_mode(
+        PodcastMode.FULL
+    )[1],
+    dense_section_authorial_passage_min: int = (
+        dense_section_authorial_passage_range_for_mode(PodcastMode.FULL)[0]
+    ),
+    dense_section_authorial_passage_max: int = (
+        dense_section_authorial_passage_range_for_mode(PodcastMode.FULL)[1]
+    ),
     podcast_mode: PodcastMode | str = PodcastMode.FULL,
 ) -> str:
     mode = PodcastMode(podcast_mode)
@@ -1773,7 +2390,7 @@ def episode_architecture_instructions(
     )
     if mode == PodcastMode.MINIFIED:
         total_authorial_guidance = (
-            f"Most minified episodes should carry {authorial_range} total "
+            "Most minified episodes should carry 12–16 total "
             "`authorial_passages`."
         )
         dense_section_guidance = (
@@ -1814,6 +2431,7 @@ def episode_architecture_instructions(
         - `episode`: one episode object from `narrative_strategy`
         - `episode_scenes` (optional): advisory scene candidates already narrowed to this episode; use them to judge what is concretely stageable here, not as a fixed sequence
         - `narrator_profile` (optional): strategy-level narrator method for explanation density and clarifier tolerance
+        - `narrative_state` (optional): current listener and host state entering this episode
         - `series_explanation_registry` (optional): strategy-owned reusable term/institution registry
         - `series_actor_explanation_registry` (optional): strategy-owned reusable actor-introduction registry
         - `synthesis_map`: only the primitives already assigned to this episode
@@ -1836,10 +2454,14 @@ def episode_architecture_instructions(
         PRIMARY RESPONSIBILITY
         - Convert the episode spine into {section_range} binding sections.
         - Decide where the major turn lands, where the answer lands, where residue lands, and how the episode closes.
+        - Treat architecture as the last stage allowed to mutate season state.
         - Group only the provided primitives into section-level structural units.
         - Use `episode_scenes`, when present, to distinguish what can be staged concretely in this episode from what should remain explanatory or supporting.
         - Translate narrator-facing primitive hooks and the episode's `authorial_contract`
           into section-level explanatory jobs.
+        - Use `episode.narrative_agenda` and `narrative_state` to decide what the listener already knows, what must advance, and what the host should still sound uncertain about.
+        - Make listener and host state changes explicit on sections instead of leaving
+          them implicit in `must_stage_beats` or `architecture_notes`.
         - Account explicitly for each upstream promised beat.
         - Make the section architecture rich enough that planning only needs to
           elaborate it into ordered scene cards and preserve planned explanation.
@@ -1907,6 +2529,8 @@ def episode_architecture_instructions(
         - Treat those actor-registry fields as routing metadata only, not as copy-ready prose for `actor_explanations`.
         - Explanation belongs at section level. Do not spray tiny explanatory obligations into every section.
         - Actor introduction belongs at section level too. Choose the earliest section where the actor materially enters the episode.
+        - Listener and host state changes belong at section level too. Do not rely on the
+          downstream planner to infer season-state changes from prose-like section summaries.
         - Build each introduced actor's section-level brief from section-local
           evidence, assigned primitives, passage grounding, and `actor_metadata`
           when useful for continuity. Attach `source_primitive_ids`,
@@ -1924,6 +2548,12 @@ def episode_architecture_instructions(
           `causal_compression`, `comparative_aside`, `verdict_landing`.
         - `authorial_passages.placement` carries explanatory placement inside the
           section and must be one of: `open`, `mid`, `close`.
+        - Treat `comparative_aside` as comparison-with-return, not as a stray simile.
+        - A good `comparative_aside` usually does: concrete anchor -> carried comparison -> explicit return.
+        - Prefer `placement = mid` for `comparative_aside`; reserve `close` for rare benchmark or measuring-stick landings.
+        - A `comparative_aside` should usually not do the section's main quote-gloss job.
+        - In full mode, `comparative_aside` should usually budget 4-6 sentences.
+        - In minified mode, `comparative_aside` should usually budget 3-5 sentences.
 
         Each section must specify:
         - `section_id`
@@ -1938,6 +2568,32 @@ def episode_architecture_instructions(
         - `authorial_passages`
         - `term_explanations`
         - `actor_explanations`
+        - `question_moves`
+        - `memory_thread_moves`
+        - `host_mystery_moves`
+        - `host_assumption_moves`
+        - `host_theory_moves`
+
+        STATE MOVE SEMANTICS
+        - `question_moves` capture listener-question changes materially staged in this section.
+        - `memory_thread_moves` capture callback or memory-thread changes materially staged
+          in this section.
+        - `host_mystery_moves` capture host curiosity or uncertainty changes materially
+          staged in this section.
+        - `host_assumption_moves` capture host belief changes materially staged in this
+          section.
+        - `host_theory_moves` capture host explanatory-frame changes materially staged in
+          this section.
+        - Do not leave state changes implicit inside `must_stage_beats`.
+        - Do not stash state changes in `architecture_notes`.
+        - Do not dump all host evolution into the closing section.
+        - `open`, `introduce`, and `propose` moves usually belong in early or
+          pressure-building sections.
+        - `advance` and `weaken` moves usually belong near the turn.
+        - `resolve`, `revise`, `strengthen`, and `replace` moves usually belong in the
+          answer or residue sections.
+        - `reframe`, `retire`, and `drop` moves usually belong in residue or closing only
+          when they are genuinely staged there.
 
         ARCHITECTURE-LEVEL REQUIRED FIELDS
         - `major_turn_section_id`
@@ -2135,6 +2791,10 @@ def episode_writing_instructions() -> str:
             - `books`: compact book metadata.
             - `skip_grounding`: whether a later grounding pass will be skipped.
             - `host_policy`: narrator policy for host density, tone, and pronouns.
+            - Optional `narrative_state_pre`: listener/host state entering this episode.
+            - Optional `narrative_state_post`: authoritative post-architecture listener/host state after this episode.
+            - Optional `continuity_contract_pre`: compact inherited continuity burdens for recap/opening recall.
+            - Optional `continuity_contract_post`: compact outgoing continuity burdens that should survive as residue.
             - Optional `field_semantics`: explicit semantics for `closure_mode`,
               fact tiers, withholding, and word-count priority.
 {scene_primitive_brief_input}
@@ -2154,12 +2814,20 @@ def episode_writing_instructions() -> str:
               paraphrase.
             - Preserve the binding `architecture.sections` order.
             - Treat `architecture.sections[].must_stage_beats`, `closure_mode`,
-              `key_terms`, `authorial_passages`, `term_explanations`, and
-              `actor_explanations` as the binding section-level obligations.
+              `key_terms`, `authorial_passages`, `term_explanations`,
+              `actor_explanations`, `question_moves`, `memory_thread_moves`,
+              `host_mystery_moves`, `host_assumption_moves`, and
+              `host_theory_moves` as the binding section-level obligations.
             - Treat `strategy_episode.episode_spine.core_primitive_ids` as the
               episode's load-bearing material.
             - Use support and recall primitives only in service of those core primitives.
             - Keep framing commitments visible (`plan.framing`) without exposing outline mechanics.
+            - When `continuity_contract_pre.recap_items` is present, preserve that
+              recall burden in the opening section and respect any existing
+              `plan.framing.recap`.
+            - When `continuity_contract_post.must_leave_live` is present, do not
+              close the episode so cleanly that those items disappear from the
+              ending pressure.
             - Treat `host_policy` as binding narrator contract: use `I`, `we`,
               and `you` freely when they sound natural, stay brief, and sharpen
               taste, judgment, comparison, curiosity, or clarity; prefer
@@ -2243,6 +2911,12 @@ def episode_writing_instructions() -> str:
             - In planned `authorial_passages`, you may quote then gloss, define terms,
               clarify institutions, restate causal meaning plainly, or land a bounded
               verdict line when the section plan explicitly calls for it.
+            - For `comparative_aside`, prefer: scene fact -> carried comparison -> explicit snap-back.
+            - Let the comparison run for 2-4 sentences when it earns the space.
+            - The return sentence should reattach to the room, actor, decision point,
+              or benchmark pressure already active in the scene.
+            - A `close` `comparative_aside` may benchmark what follows, but should not
+              reopen the answer or duplicate the closing card's job.
             - For `term_explanations.stage = define`, prefer: concrete fact or quote
               -> plainspoken translation -> bounded consequence.
             - A foundational `define` should normally yield one clear spoken definition
@@ -2360,6 +3034,8 @@ def episode_writing_no_citations_instructions() -> str:
         - `books`: compact book metadata
         - `skip_grounding`: true for this no-citations mode
         - `host_policy`: narrator policy for host density, tone, and pronouns
+        - Optional `continuity_contract_pre`: compact inherited continuity burdens for recap/opening recall
+        - Optional `continuity_contract_post`: compact outgoing continuity burdens that should survive as residue
         - Optional `field_semantics`: explicit semantics for `closure_mode`,
           fact tiers, withholding, and word-count priority
 {scene_primitive_brief_input}
@@ -2387,6 +3063,11 @@ def episode_writing_no_citations_instructions() -> str:
           phrasing over longer commentary and avoid filler, moralizing, or
           self-performance.
         - Preserve structure in substance, not by naming the structure on the page.
+        - If `continuity_contract_pre.recap_items` is present, preserve that
+          recall burden in the opening section and respect any existing
+          `plan.framing.recap`.
+        - If `continuity_contract_post.must_leave_live` is present, keep those
+          items alive in the ending pressure instead of resolving them away by tone.
         - Adjacent scene outputs in the same section may be joined later into continuous prose. Write them as consecutive beats, not self-contained essays.
         - `prior_window_continuity` is reference-only. Use it only to maintain local continuity across the split; it cannot override the current window's `plan.scene_cards`, `architecture`, `strategy_episode`, or `passages`.
 {scene_primitive_brief_guidance}
@@ -2456,6 +3137,12 @@ def episode_writing_no_citations_instructions() -> str:
         EXPLANATION, PACING, AND CONTINUITY
         - Planned `authorial_passages` may be more explanatory, but must remain
           bounded, evidence-led, and audibly integrated into the section.
+        - For `comparative_aside`, prefer: scene fact -> carried comparison -> explicit snap-back.
+        - Let the comparison run for 2-4 sentences when it earns the space.
+        - The return sentence should reattach to the room, actor, decision point,
+          or benchmark pressure already active in the scene.
+        - A `close` `comparative_aside` may benchmark what follows, but should not
+          reopen the answer or duplicate the closing card's job.
         - For `term_explanations.stage = define`, prefer: concrete fact or
           quote -> plainspoken translation -> bounded consequence.
         - A foundational `define` should normally yield one clear spoken
@@ -2620,6 +3307,10 @@ def spoken_delivery_instructions() -> str:
         - `max_words_per_segment`
         - `tts_provider`
         - `host_policy`
+        - optional `narrative_state_pre`
+        - optional `narrative_state_post`
+        - optional `continuity_contract_pre`
+        - optional `continuity_contract_post`
         - optional `field_semantics`
         - optional `previous_spoken_tail`
 
@@ -2831,6 +3522,8 @@ def section_local_spoken_delivery_instructions() -> str:
         - `max_words_per_segment`
         - `tts_provider`
         - `host_policy`
+        - optional `narrative_state_pre`
+        - optional `narrative_state_post`
         - optional `field_semantics`
         - optional `previous_spoken_tail`
 
@@ -2849,6 +3542,9 @@ def section_local_spoken_delivery_instructions() -> str:
 
         - `section.text` is the source of truth. Preserve facts, chronology, names, dates, numbers, quotations, uncertainty, and claims.
         - `movement_goal`, `purpose`, `anchor`, `closure_mode`, `key_terms`, `authorial_passages`, `term_explanations`, `actor_explanations`, `actor_explanation_realizations`, `host_moves`, `host_policy`, and `previous_spoken_tail` are control signals, not evidence. If they conflict with `section.text`, preserve it.
+        - `continuity_contract_pre` and `continuity_contract_post` are continuity
+          guides, not evidence. Use them to preserve recap, opening callback,
+          or residue lines.
         - Use `movement_goal`, `anchor`, `closure_mode`, `key_terms`, `authorial_passages`, `term_explanations`, and `actor_explanations` only to preserve shape already present in the prose, not to add content.
         - Use `host_moves` as scene-aligned phase plans that preserve where authored host orientation, pivot, clarification, contrast, evaluation, or callback should remain distinct. Do not add new host commentary the section text cannot support.
         - When a host target is planning shorthand, translate it back into concrete
@@ -2869,6 +3565,9 @@ def section_local_spoken_delivery_instructions() -> str:
         - Preserve the forceful host mind already present. Keep plain-English
           interpretation audible. Keep pressure-point, bargain, surprise,
           consequence, and narrowing lines distinct when they are earned.
+        - Do not cut the only realized recap, opening callback, or closing
+          residue line in the section text.
+        - Do not invent a missing continuity callback from metadata alone.
         - Write this to be heard, not admired on the page.
         - Preserve section scope. Do not import material from other sections.
 
@@ -3013,6 +3712,10 @@ def style_audit_instructions() -> str:
         - `episode_number`
         - `title`
         - `host_policy`
+        - optional `narrative_state_pre`
+        - optional `narrative_state_post`
+        - optional `continuity_contract_pre`
+        - optional `continuity_contract_post`
         - optional `field_semantics`
         - optional `series_explanation_registry`
         - `sections[]`
@@ -3040,6 +3743,12 @@ def style_audit_instructions() -> str:
         - Do not add new claims, interpretations, motives, or scene material.
         - Prefer cutting repetition before flattening a strong natural host line.
         - Preserve planned explanatory passages when they are doing real listener work.
+        - If `continuity_contract_pre.recap_items` is present, do not cut the
+          only recap line that realizes that burden.
+        - If `continuity_contract_pre.must_surface_early` or
+          `continuity_contract_post.must_leave_live` is present, do not delete
+          the sole explicit callback, payoff, or residue line carrying a
+          high-priority continuity item.
         - Treat compressed host targets as lower-authority than section shape, closure logic, and natural speech.
         - Use `field_semantics` when present as the authoritative gloss for `closure_mode`.
         - Treat `spoken_style_contract = anti_academic_oral` as the default.

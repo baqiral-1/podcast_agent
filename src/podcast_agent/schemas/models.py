@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import re
+from hashlib import sha1
 from datetime import UTC, datetime
 from enum import Enum
 from typing import Annotated, Any, Literal
@@ -63,6 +64,17 @@ def _validate_list_item_word_limit(
 
 def _nonempty_text(value: Any) -> str:
     return str(value or "").strip()
+
+
+def _slugify_text(value: str) -> str:
+    text = re.sub(r"[^a-z0-9]+", "_", _nonempty_text(value).lower()).strip("_")
+    return text or "item"
+
+
+def _legacy_continuity_item_id(label: str) -> str:
+    normalized = _nonempty_text(label)
+    digest = sha1(normalized.encode("utf-8")).hexdigest()[:8]
+    return f"legacy_{_slugify_text(normalized)}_{digest}"
 
 
 def _has_evidence_backed_actor_intro_payload(
@@ -346,7 +358,7 @@ class PipelineConfig(StrictModel):
     synthesis_axis_pct: float = Field(default=1.0, ge=0.0, le=1.0)
     synthesis_axis_min: int = Field(default=12, ge=0)
     synthesis_axis_max: int = Field(default=20, ge=1)
-    synthesis_total_passage_cap: int = Field(default=650, ge=1)
+    synthesis_total_passage_cap: int = Field(default=750, ge=1)
     synthesis_floor_budget_fraction: float = Field(default=0.0, ge=0.0, le=1.0)
     synthesis_axis_floor_min: int = Field(default=0, ge=0)
     synthesis_axis_floor_max: int = Field(default=0, ge=0)
@@ -367,22 +379,22 @@ class PipelineConfig(StrictModel):
     episode_architecture_concurrency: int = Field(default=12, ge=1)
     episode_planning_concurrency: int = Field(default=12, ge=1)
     episode_write_concurrency: int = Field(default=8, ge=1)
-    episode_writing_batch_count: int = Field(default=3, ge=1)
+    episode_writing_batch_count: int = Field(default=4, ge=1)
     spoken_delivery_concurrency: int | None = Field(default=8, ge=1)
-    architecture_section_target_min: int = Field(default=9, ge=1)
-    architecture_section_target_max: int = Field(default=12, ge=1)
-    episode_spine_core_primitive_target_min: int = Field(default=6, ge=1)
-    episode_spine_core_primitive_target_max: int = Field(default=8, ge=1)
-    episode_spine_support_primitive_target_min: int = Field(default=7, ge=1)
-    episode_spine_support_primitive_target_max: int = Field(default=10, ge=1)
-    episode_spine_recall_primitive_target_max: int = Field(default=2, ge=0)
-    narrative_strategy_episode_count_min: int = Field(default=10, ge=1)
-    narrative_strategy_episode_count_max: int = Field(default=16, ge=1)
-    min_episode_minutes: float = Field(default=100.0, gt=0.0)
-    max_episode_minutes: float = Field(default=115.0, gt=0.0)
+    architecture_section_target_min: int = Field(default=12, ge=1)
+    architecture_section_target_max: int = Field(default=16, ge=1)
+    episode_spine_core_primitive_target_min: int = Field(default=8, ge=1)
+    episode_spine_core_primitive_target_max: int = Field(default=11, ge=1)
+    episode_spine_support_primitive_target_min: int = Field(default=9, ge=1)
+    episode_spine_support_primitive_target_max: int = Field(default=13, ge=1)
+    episode_spine_recall_primitive_target_max: int = Field(default=3, ge=0)
+    narrative_strategy_episode_count_min: int = Field(default=8, ge=1)
+    narrative_strategy_episode_count_max: int = Field(default=12, ge=1)
+    min_episode_minutes: float = Field(default=130.0, gt=0.0)
+    max_episode_minutes: float = Field(default=150.0, gt=0.0)
     duration_shortfall_policy: Literal["warn"] = "warn"
-    scene_card_target_min: int = Field(default=30, ge=1)
-    scene_card_target_max: int = Field(default=36, ge=1)
+    scene_card_target_min: int = Field(default=40, ge=1)
+    scene_card_target_max: int = Field(default=48, ge=1)
     scene_card_target_policy: Literal["warn"] = "warn"
     scene_card_primitives_min: int = Field(default=1, ge=0)
     scene_card_primitives_max: int = Field(default=2, ge=1)
@@ -436,9 +448,9 @@ class PipelineConfig(StrictModel):
                 "episode_spine_support_primitive_target_max must be >= "
                 "episode_spine_support_primitive_target_min"
             )
-        if self.episode_spine_recall_primitive_target_max > 2:
+        if self.episode_spine_recall_primitive_target_max > 3:
             raise ValueError(
-                "episode_spine_recall_primitive_target_max must be <= 2"
+                "episode_spine_recall_primitive_target_max must be <= 3"
             )
         if (
             self.narrative_strategy_episode_count_max
@@ -479,77 +491,19 @@ def _scale_range_floor_by_ratio(
     return reduced_lower, max(reduced_lower, reduced_upper)
 
 
-FULL_SYNTHESIS_PRIMITIVE_TARGET_RANGES: dict[str, tuple[int, int]] = {
-    "epochal_turns": (43, 54),
-    "decisions_and_nondecisions": (29, 36),
-    "set_piece_scenes": (22, 36),
-    "telling_details": (8, 12),
-    "human_costs": (21, 27),
-    "character_engines": (18, 27),
-    "coalitions_and_fault_lines": (14, 19),
-    "systems_and_operating_logics": (15, 21),
-    "misreadings_and_fantasies": (7, 11),
-    "contested_explanations": (6, 10),
-    "perspective_windows": (5, 9),
-    "moral_traps": (7, 11),
-    "afterlives": (9, 13),
-    "recurring_images_and_symbols": (5, 9),
-    "ironies_and_reversals": (14, 17),
-}
-MINIFIED_SYNTHESIS_PRIMITIVE_TARGET_RANGES: dict[str, tuple[int, int]] = {
-    family: _divide_range_floor(lower_bound, upper_bound)
-    for family, (
-        lower_bound,
-        upper_bound,
-    ) in FULL_SYNTHESIS_PRIMITIVE_TARGET_RANGES.items()
-}
+MINIFIED_AUTHORIAL_PASSAGE_TARGET_RANGE: tuple[int, int] = (12, 16)
+MINIFIED_DENSE_SECTION_AUTHORIAL_PASSAGE_RANGE: tuple[int, int] = (2, 5)
 
 
-def synthesis_primitive_target_ranges_for_mode(
-    mode: PodcastMode | str,
-) -> dict[str, tuple[int, int]]:
-    if PodcastMode(mode) == PodcastMode.MINIFIED:
-        source = MINIFIED_SYNTHESIS_PRIMITIVE_TARGET_RANGES
-    else:
-        source = FULL_SYNTHESIS_PRIMITIVE_TARGET_RANGES
-    return dict(source)
-
-
-def synthesis_primitive_target_max_counts_for_mode(
-    mode: PodcastMode | str,
-) -> dict[str, int]:
-    return {
-        family: upper_bound
-        for family, (
-            _lower_bound,
-            upper_bound,
-        ) in synthesis_primitive_target_ranges_for_mode(mode).items()
-    }
-
-
-FULL_AUTHORIAL_PASSAGE_TARGET_RANGE: tuple[int, int] = (14, 18)
-FULL_DENSE_SECTION_AUTHORIAL_PASSAGE_RANGE: tuple[int, int] = (2, 4)
-_MINIFIED_AUTHORIAL_PASSAGE_SCALE = 0.65
-
-
-def _scale_range_by_ratio(
-    range_values: tuple[int, int], *, ratio: float
+def _scale_range_containing_span(
+    base_range: tuple[int, int], multiplier: float
 ) -> tuple[int, int]:
-    lower_bound, upper_bound = range_values
-    return (
-        max(0, math.floor(lower_bound * ratio)),
-        max(0, math.ceil(upper_bound * ratio)),
-    )
+    lower_bound, upper_bound = base_range
+    return math.floor(lower_bound * multiplier), math.ceil(upper_bound * multiplier)
 
 
-MINIFIED_AUTHORIAL_PASSAGE_TARGET_RANGE: tuple[int, int] = _scale_range_by_ratio(
-    FULL_AUTHORIAL_PASSAGE_TARGET_RANGE,
-    ratio=_MINIFIED_AUTHORIAL_PASSAGE_SCALE,
-)
-MINIFIED_DENSE_SECTION_AUTHORIAL_PASSAGE_RANGE: tuple[int, int] = _scale_range_by_ratio(
-    FULL_DENSE_SECTION_AUTHORIAL_PASSAGE_RANGE,
-    ratio=_MINIFIED_AUTHORIAL_PASSAGE_SCALE,
-)
+FULL_AUTHORIAL_PASSAGE_TARGET_RANGE: tuple[int, int] = (24, 36)
+FULL_DENSE_SECTION_AUTHORIAL_PASSAGE_RANGE: tuple[int, int] = (4, 12)
 
 
 def authorial_passage_target_range_for_mode(
@@ -577,11 +531,11 @@ def scene_job_budget_for_mode(mode: PodcastMode | str) -> dict[str, int]:
     if PodcastMode(mode) == PodcastMode.MINIFIED:
         return {
             "total_min": 18,
-            "total_max": 20,
+            "total_max": 21,
             "opening_min": 2,
             "opening_max": 2,
             "build_min": 11,
-            "build_max": 13,
+            "build_max": 14,
             "turn_min": 2,
             "turn_max": 2,
             "answer_min": 1,
@@ -593,12 +547,12 @@ def scene_job_budget_for_mode(mode: PodcastMode | str) -> dict[str, int]:
             "max_recap_build_scenes": 1,
         }
     return {
-        "total_min": 30,
-        "total_max": 36,
+        "total_min": 66,
+        "total_max": 80,
         "opening_min": 3,
         "opening_max": 3,
-        "build_min": 20,
-        "build_max": 25,
+        "build_min": 21,
+        "build_max": 26,
         "turn_min": 3,
         "turn_max": 4,
         "answer_min": 1,
@@ -629,10 +583,10 @@ def resolve_pipeline_config_for_mode(config: "PipelineConfig") -> "PipelineConfi
             "pre_axis_total_budget": 500,
             "synthesis_axis_min": 4,
             "synthesis_axis_max": 6,
-            "episode_spine_core_primitive_target_min": 2,
-            "episode_spine_core_primitive_target_max": 4,
-            "episode_spine_support_primitive_target_min": 2,
-            "episode_spine_support_primitive_target_max": 4,
+            "episode_spine_core_primitive_target_min": 3,
+            "episode_spine_core_primitive_target_max": 5,
+            "episode_spine_support_primitive_target_min": 4,
+            "episode_spine_support_primitive_target_max": 6,
             "episode_spine_recall_primitive_target_max": 1,
             "narrative_strategy_episode_count_min": 2,
             "narrative_strategy_episode_count_max": 4,
@@ -642,7 +596,7 @@ def resolve_pipeline_config_for_mode(config: "PipelineConfig") -> "PipelineConfi
             "min_episode_minutes": 54.0,
             "max_episode_minutes": 63.0,
             "scene_card_target_min": 18,
-            "scene_card_target_max": 20,
+            "scene_card_target_max": 21,
             "synthesis_total_passage_cap": 200,
         }
     else:
@@ -652,21 +606,21 @@ def resolve_pipeline_config_for_mode(config: "PipelineConfig") -> "PipelineConfi
             "max_axes": 20,
             "synthesis_axis_min": 12,
             "synthesis_axis_max": 20,
-            "episode_spine_core_primitive_target_min": 6,
-            "episode_spine_core_primitive_target_max": 8,
-            "episode_spine_support_primitive_target_min": 7,
-            "episode_spine_support_primitive_target_max": 10,
-            "episode_spine_recall_primitive_target_max": 2,
-            "narrative_strategy_episode_count_min": 10,
-            "narrative_strategy_episode_count_max": 16,
-            "episode_writing_batch_count": 3,
-            "architecture_section_target_min": 9,
-            "architecture_section_target_max": 12,
-            "min_episode_minutes": 100.0,
-            "max_episode_minutes": 115.0,
-            "scene_card_target_min": 30,
-            "scene_card_target_max": 36,
-            "synthesis_total_passage_cap": 650,
+            "episode_spine_core_primitive_target_min": 8,
+            "episode_spine_core_primitive_target_max": 11,
+            "episode_spine_support_primitive_target_min": 9,
+            "episode_spine_support_primitive_target_max": 13,
+            "episode_spine_recall_primitive_target_max": 3,
+            "narrative_strategy_episode_count_min": 8,
+            "narrative_strategy_episode_count_max": 12,
+            "episode_writing_batch_count": 4,
+            "architecture_section_target_min": 12,
+            "architecture_section_target_max": 16,
+            "min_episode_minutes": 130.0,
+            "max_episode_minutes": 150.0,
+            "scene_card_target_min": 40,
+            "scene_card_target_max": 48,
+            "synthesis_total_passage_cap": 750,
         }
     return config.model_copy(update=updates)
 
@@ -1859,53 +1813,6 @@ class SynthesisMap(PrimitiveArtifactBase):
     """Retained primitive artifact consumed by downstream stages."""
 
 
-# Compatibility aliases retained while downstream modules migrate off family-based
-# imports. The active pipeline now uses substrate/function primitives instead.
-SYNTHESIS_PRIMITIVE_FAMILIES: tuple[str, ...] = (
-    "epochal_turns",
-    "decisions_and_nondecisions",
-    "set_piece_scenes",
-    "telling_details",
-    "human_costs",
-    "character_engines",
-    "coalitions_and_fault_lines",
-    "systems_and_operating_logics",
-    "misreadings_and_fantasies",
-    "contested_explanations",
-    "perspective_windows",
-    "moral_traps",
-    "afterlives",
-    "recurring_images_and_symbols",
-    "ironies_and_reversals",
-)
-SYNTHESIS_PRIMITIVE_FAMILY_SET = set(SYNTHESIS_PRIMITIVE_FAMILIES)
-RICH_SYNTHESIS_PRIMITIVE_FAMILIES = frozenset(
-    {
-        "epochal_turns",
-        "decisions_and_nondecisions",
-        "set_piece_scenes",
-        "human_costs",
-        "character_engines",
-        "coalitions_and_fault_lines",
-        "systems_and_operating_logics",
-        "contested_explanations",
-        "moral_traps",
-        "ironies_and_reversals",
-    }
-)
-SynthesisPrimitive = BaseSynthesisPrimitive
-EpochalTurnPrimitive = EventPrimitive
-DecisionPrimitive = ActPrimitive
-SetPieceScenePrimitive = EventPrimitive
-HumanCostPrimitive = EventPrimitive
-CharacterEnginePrimitive = ActorPrimitive
-CoalitionFaultLinePrimitive = ConditionPrimitive
-SystemsOperatingLogicPrimitive = MechanismPrimitive
-ContestedExplanationPrimitive = ReadingPrimitive
-MoralTrapPrimitive = ConditionPrimitive
-IronyReversalPrimitive = EventPrimitive
-
-
 class EpisodeSpine(StrictModel):
     listener_problem: str = Field(
         min_length=1,
@@ -1949,13 +1856,13 @@ class EpisodeSpine(StrictModel):
             raise ValueError(
                 "core_primitive_ids must contain at least one primitive id"
             )
-        if len(self.core_primitive_ids) < 2 or len(self.core_primitive_ids) > 8:
-            raise ValueError("core_primitive_ids must contain 2-8 primitive ids")
+        if len(self.core_primitive_ids) < 2 or len(self.core_primitive_ids) > 11:
+            raise ValueError("core_primitive_ids must contain 2-11 primitive ids")
         if (
             len(self.support_primitive_roles) < 2
-            or len(self.support_primitive_roles) > 10
+            or len(self.support_primitive_roles) > 13
         ):
-            raise ValueError("support_primitive_roles must contain 2-10 primitive ids")
+            raise ValueError("support_primitive_roles must contain 2-13 primitive ids")
 
         overlap = sorted(
             set(self.core_primitive_ids).intersection(self.support_primitive_roles)
@@ -1980,9 +1887,9 @@ class EpisodeSpine(StrictModel):
             seen_recall_ids.add(primitive_id)
             recall_primitive_ids.append(primitive_id)
         self.recall_primitive_ids = recall_primitive_ids
-        if len(self.recall_primitive_ids) > 2:
+        if len(self.recall_primitive_ids) > 3:
             raise ValueError(
-                "recall_primitive_ids must contain at most 2 primitive ids"
+                "recall_primitive_ids must contain at most 3 primitive ids"
             )
         return self
 
@@ -2094,6 +2001,285 @@ class EpisodeAuthorialContract(StrictModel):
     introduce_actor_ids: list[str] = Field(default_factory=list, max_length=4)
     remind_actor_ids: list[str] = Field(default_factory=list, max_length=4)
     callback_obligations: list[str] = Field(default_factory=list, max_length=3)
+
+
+class EpisodeNarratorContract(StrictModel):
+    analysis_weight: Literal["light", "medium", "heavy"] = "medium"
+    priority_moves: list[
+        Literal[
+            "quote_then_gloss",
+            "doctrinal_unpack",
+            "institutional_clarifier",
+            "causal_compression",
+            "comparative_aside",
+            "verdict_landing",
+        ]
+    ] = Field(default_factory=list, max_length=3)
+    governing_lenses: list[str] = Field(default_factory=list, max_length=3)
+
+
+class ListenerQuestionMove(StrictModel):
+    question_id: str = Field(min_length=1)
+    action: Literal["open", "advance", "resolve", "reframe"]
+    text: str = ""
+
+    @model_validator(mode="after")
+    def validate_move(self) -> "ListenerQuestionMove":
+        if self.action == "open" and not _nonempty_text(self.text):
+            raise ValueError("listener question open moves must include text")
+        return self
+
+
+class ListenerMemoryThreadMove(StrictModel):
+    thread_id: str = Field(min_length=1)
+    action: Literal["open", "refresh", "payoff", "retire"]
+    label: str = ""
+    source_promised_beat_id: str | None = None
+
+    @model_validator(mode="after")
+    def validate_move(self) -> "ListenerMemoryThreadMove":
+        if self.action == "open" and not _nonempty_text(self.label):
+            raise ValueError("listener memory-thread open moves must include label")
+        return self
+
+
+class ContinuityCarryItem(StrictModel):
+    item_id: str = Field(min_length=1)
+    label: str = Field(min_length=1)
+    kind: Literal[
+        "takeaway",
+        "question",
+        "memory_thread",
+        "actor",
+        "institution",
+        "contrast",
+        "residue",
+    ] = "takeaway"
+    source_episode_number: int = Field(default=0, ge=0)
+    source_section_id: str | None = None
+    priority: Literal["high", "normal"] = "normal"
+    desired_surface: Literal["recap", "opening", "body", "closing"] = "body"
+    recommended_action: Literal["remind", "payoff", "keep_live"] = "keep_live"
+    source_promised_beat_id: str | None = None
+
+    @model_validator(mode="after")
+    def validate_payload(self) -> "ContinuityCarryItem":
+        self.item_id = _nonempty_text(self.item_id)
+        self.label = _nonempty_text(self.label)
+        self.source_section_id = _nonempty_text(self.source_section_id) or None
+        self.source_promised_beat_id = _nonempty_text(self.source_promised_beat_id) or None
+        if not self.item_id:
+            raise ValueError("continuity carry items must include item_id")
+        if not self.label:
+            raise ValueError("continuity carry items must include label")
+        return self
+
+    @classmethod
+    def from_legacy_string(
+        cls,
+        value: str,
+        *,
+        source_episode_number: int = 0,
+    ) -> "ContinuityCarryItem":
+        label = _nonempty_text(value)
+        return cls(
+            item_id=_legacy_continuity_item_id(label),
+            label=label,
+            kind="takeaway",
+            source_episode_number=source_episode_number,
+            priority="normal",
+            desired_surface="body",
+            recommended_action="keep_live",
+        )
+
+
+def _coerce_continuity_carry_items(
+    values: Any,
+    *,
+    source_episode_number: int = 0,
+) -> list[ContinuityCarryItem]:
+    coerced: list[ContinuityCarryItem] = []
+    for value in list(values or []):
+        if isinstance(value, ContinuityCarryItem):
+            coerced.append(value)
+            continue
+        if isinstance(value, str):
+            text = _nonempty_text(value)
+            if text:
+                coerced.append(
+                    ContinuityCarryItem.from_legacy_string(
+                        text, source_episode_number=source_episode_number
+                    )
+                )
+            continue
+        if isinstance(value, dict):
+            coerced.append(ContinuityCarryItem.model_validate(value))
+            continue
+        raise TypeError("continuity carry items must be strings, dicts, or ContinuityCarryItem values")
+    return coerced
+
+
+class ListenerEpisodeAgenda(StrictModel):
+    introduce_explanation_item_ids: list[str] = Field(default_factory=list, max_length=4)
+    remind_explanation_item_ids: list[str] = Field(default_factory=list, max_length=4)
+    introduce_actor_ids: list[str] = Field(default_factory=list, max_length=4)
+    remind_actor_ids: list[str] = Field(default_factory=list, max_length=4)
+    question_moves: list[ListenerQuestionMove] = Field(default_factory=list, max_length=6)
+    memory_thread_moves: list[ListenerMemoryThreadMove] = Field(
+        default_factory=list, max_length=6
+    )
+    carry_forward_memory: list[ContinuityCarryItem] = Field(default_factory=list, max_length=4)
+    episode_takeaway: str = ""
+
+    @field_validator("carry_forward_memory", mode="before")
+    @classmethod
+    def validate_carry_forward_memory(cls, value: Any) -> list[ContinuityCarryItem]:
+        return _coerce_continuity_carry_items(value)
+
+
+class HostMysteryMove(StrictModel):
+    mystery_id: str = Field(min_length=1)
+    action: Literal["open", "advance", "resolve", "reframe"]
+    text: str = ""
+
+    @model_validator(mode="after")
+    def validate_move(self) -> "HostMysteryMove":
+        if self.action == "open" and not _nonempty_text(self.text):
+            raise ValueError("host mystery open moves must include text")
+        return self
+
+
+class HostAssumptionMove(StrictModel):
+    assumption_id: str = Field(min_length=1)
+    action: Literal["introduce", "weaken", "revise", "drop"]
+    statement: str = ""
+    revised_statement: str = ""
+
+    @model_validator(mode="after")
+    def validate_move(self) -> "HostAssumptionMove":
+        if self.action in {"introduce", "revise"} and not _nonempty_text(self.statement):
+            raise ValueError("host assumption introduce/revise moves must include statement")
+        return self
+
+
+class HostTheoryMove(StrictModel):
+    theory_id: str = Field(min_length=1)
+    action: Literal["propose", "strengthen", "replace", "retire"]
+    statement: str = ""
+
+    @model_validator(mode="after")
+    def validate_move(self) -> "HostTheoryMove":
+        if self.action in {"propose", "replace"} and not _nonempty_text(self.statement):
+            raise ValueError("host theory propose/replace moves must include statement")
+        return self
+
+
+class HostEpisodeAgenda(StrictModel):
+    mystery_moves: list[HostMysteryMove] = Field(default_factory=list, max_length=6)
+    assumption_moves: list[HostAssumptionMove] = Field(default_factory=list, max_length=6)
+    theory_moves: list[HostTheoryMove] = Field(default_factory=list, max_length=6)
+    intended_revision_beats: list[str] = Field(default_factory=list, max_length=4)
+    episode_takeaway: str = ""
+
+
+class EpisodeNarrativeAgenda(StrictModel):
+    listener: ListenerEpisodeAgenda = Field(default_factory=ListenerEpisodeAgenda)
+    host: HostEpisodeAgenda = Field(default_factory=HostEpisodeAgenda)
+
+
+class ListenerQuestionState(StrictModel):
+    question_id: str = Field(min_length=1)
+    text: str = Field(min_length=1)
+    status: Literal["open", "advanced", "resolved", "reframed"] = "open"
+
+
+class ListenerMemoryThreadState(StrictModel):
+    thread_id: str = Field(min_length=1)
+    label: str = Field(min_length=1)
+    status: Literal["open", "refreshed", "paid_off", "retired"] = "open"
+    source_promised_beat_id: str | None = None
+
+
+class ListenerNarrativeState(StrictModel):
+    known_explanation_item_ids: list[str] = Field(default_factory=list)
+    known_actor_ids: list[str] = Field(default_factory=list)
+    questions: list[ListenerQuestionState] = Field(default_factory=list)
+    memory_threads: list[ListenerMemoryThreadState] = Field(default_factory=list)
+    carry_forward_memory: list[ContinuityCarryItem] = Field(default_factory=list, max_length=4)
+    last_episode_takeaway: str = ""
+
+    @field_validator("carry_forward_memory", mode="before")
+    @classmethod
+    def validate_carry_forward_memory(cls, value: Any) -> list[ContinuityCarryItem]:
+        return _coerce_continuity_carry_items(value)
+
+
+class HostMysteryState(StrictModel):
+    mystery_id: str = Field(min_length=1)
+    text: str = Field(min_length=1)
+    status: Literal["open", "advanced", "resolved", "reframed"] = "open"
+
+
+class HostAssumptionState(StrictModel):
+    assumption_id: str = Field(min_length=1)
+    statement: str = Field(min_length=1)
+    status: Literal["active", "weakened", "revised", "dropped"] = "active"
+
+
+class HostTheoryState(StrictModel):
+    theory_id: str = Field(min_length=1)
+    statement: str = Field(min_length=1)
+    status: Literal["proposed", "strengthened", "replaced", "retired"] = "proposed"
+
+
+class HostNarrativeState(StrictModel):
+    mysteries: list[HostMysteryState] = Field(default_factory=list)
+    assumptions: list[HostAssumptionState] = Field(default_factory=list)
+    working_theories: list[HostTheoryState] = Field(default_factory=list)
+    recent_revisions: list[str] = Field(default_factory=list, max_length=4)
+    confidence_posture: Literal["tentative", "mixed", "grounded"] = "mixed"
+    last_episode_takeaway: str = ""
+
+
+class NarrativeState(StrictModel):
+    project_id: str = Field(min_length=1)
+    next_episode_number: int = Field(default=1, ge=1)
+    listener: ListenerNarrativeState = Field(default_factory=ListenerNarrativeState)
+    host: HostNarrativeState = Field(default_factory=HostNarrativeState)
+
+
+class NarrativeStateDelta(StrictModel):
+    introduced_explanation_item_ids: list[str] = Field(default_factory=list)
+    introduced_actor_ids: list[str] = Field(default_factory=list)
+    listener_question_updates: list[ListenerQuestionState] = Field(default_factory=list)
+    listener_memory_thread_updates: list[ListenerMemoryThreadState] = Field(
+        default_factory=list
+    )
+    host_mystery_updates: list[HostMysteryState] = Field(default_factory=list)
+    host_assumption_updates: list[HostAssumptionState] = Field(default_factory=list)
+    host_theory_updates: list[HostTheoryState] = Field(default_factory=list)
+    listener_carry_forward_memory: list[ContinuityCarryItem] = Field(
+        default_factory=list, max_length=4
+    )
+    listener_episode_takeaway: str = ""
+    host_recent_revisions: list[str] = Field(default_factory=list, max_length=4)
+    host_episode_takeaway: str = ""
+    host_confidence_posture: Literal["tentative", "mixed", "grounded"] = "mixed"
+
+    @field_validator("listener_carry_forward_memory", mode="before")
+    @classmethod
+    def validate_listener_carry_forward_memory(
+        cls, value: Any
+    ) -> list[ContinuityCarryItem]:
+        return _coerce_continuity_carry_items(value)
+
+
+class NarrativeStateReconciliation(StrictModel):
+    episode_number: int = Field(ge=1)
+    state_post: NarrativeState
+    delta: NarrativeStateDelta = Field(default_factory=NarrativeStateDelta)
+    warnings: list[str] = Field(default_factory=list)
+    rationale: str = ""
 
 
 class SeriesExplanationItem(StrictModel):
@@ -2223,14 +2409,82 @@ class StrategyEpisode(StrictModel):
     actor_arc_directives: list[ActorArcDirective] = Field(
         default_factory=list, max_length=4
     )
+    narrator_contract: EpisodeNarratorContract = Field(
+        default_factory=EpisodeNarratorContract
+    )
     authorial_contract: EpisodeAuthorialContract = Field(
         default_factory=EpisodeAuthorialContract
+    )
+    narrative_agenda: EpisodeNarrativeAgenda = Field(
+        default_factory=EpisodeNarrativeAgenda
     )
     promised_beats: list[PromisedBeat] = Field(default_factory=list, max_length=12)
     negative_scope: NegativeScope = Field(default_factory=NegativeScope)
 
     @model_validator(mode="after")
     def validate_commitments(self) -> "StrategyEpisode":
+        if not self.narrator_contract.model_fields_set:
+            self.narrator_contract = EpisodeNarratorContract(
+                analysis_weight=self.authorial_contract.analysis_weight,
+                priority_moves=list(self.authorial_contract.priority_moves),
+                governing_lenses=list(self.authorial_contract.governing_lenses),
+            )
+        listener_agenda = self.narrative_agenda.listener
+        if not listener_agenda.model_fields_set:
+            question_moves = [
+                ListenerQuestionMove(
+                    question_id=f"episode_{self.episode_number}_question_{index}",
+                    action="open",
+                    text=question,
+                )
+                for index, question in enumerate(self.unresolved_questions, start=1)
+                if _nonempty_text(question)
+            ]
+            memory_thread_moves = [
+                ListenerMemoryThreadMove(
+                    thread_id=f"episode_{self.episode_number}_callback_{index}",
+                    action="open",
+                    label=callback,
+                )
+                for index, callback in enumerate(
+                    self.authorial_contract.callback_obligations, start=1
+                )
+                if _nonempty_text(callback)
+            ]
+            self.narrative_agenda = EpisodeNarrativeAgenda(
+                listener=ListenerEpisodeAgenda(
+                    introduce_explanation_item_ids=list(
+                        self.authorial_contract.introduce_explanation_item_ids
+                    ),
+                    remind_explanation_item_ids=list(
+                        self.authorial_contract.remind_explanation_item_ids
+                    ),
+                    introduce_actor_ids=list(self.authorial_contract.introduce_actor_ids),
+                    remind_actor_ids=list(self.authorial_contract.remind_actor_ids),
+                    question_moves=question_moves,
+                    memory_thread_moves=memory_thread_moves,
+                    carry_forward_memory=[
+                        ContinuityCarryItem(
+                            item_id=f"episode_{self.episode_number}_carry_term_{index}",
+                            label=item,
+                            kind="institution" if item in self.authorial_contract.must_clarify_institutions else "takeaway",
+                            source_episode_number=self.episode_number,
+                            priority="normal",
+                            desired_surface="body",
+                            recommended_action="keep_live",
+                        )
+                        for index, item in enumerate(
+                            [
+                                *list(self.authorial_contract.must_clarify_terms),
+                                *list(self.authorial_contract.must_clarify_institutions),
+                            ],
+                            start=1,
+                        )
+                        if _nonempty_text(item)
+                    ][:4],
+                ),
+                host=HostEpisodeAgenda(),
+            )
         beat_ids = [beat.beat_id for beat in self.promised_beats]
         if len(beat_ids) != len(set(beat_ids)):
             raise ValueError("promised_beats must use unique beat_id values")
@@ -2245,6 +2499,82 @@ class StrategyEpisode(StrictModel):
         if residue_count > 1:
             raise ValueError("promised_beats may contain at most one residue beat")
         return self
+
+
+class StrategyEpisodeSkeleton(StrictModel):
+    episode_number: int = Field(ge=1)
+    title: str = Field(min_length=1)
+    thematic_focus: str = Field(default="")
+    arc_summary: str = Field(min_length=1)
+    unresolved_questions: list[str] = Field(default_factory=list)
+    episode_spine: EpisodeSpine
+    actor_arc_directives: list[ActorArcDirective] = Field(
+        default_factory=list, max_length=4
+    )
+    negative_scope: NegativeScope = Field(default_factory=NegativeScope)
+
+
+class NarrativeStrategySkeleton(StrictModel):
+    strategy_type: Literal[
+        "thesis_driven", "debate", "chronological", "convergence", "mosaic"
+    ]
+    justification: str = Field(min_length=1)
+    series_arc: str = Field(min_length=1)
+    episode_arc_outline: list[str] = Field(default_factory=list)
+    recommended_episode_count: int | None = Field(default=None, ge=1)
+    episodes: list[StrategyEpisodeSkeleton] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_strategy(self) -> "NarrativeStrategySkeleton":
+        episode_numbers = [episode.episode_number for episode in self.episodes]
+        if len(episode_numbers) != len(set(episode_numbers)):
+            raise ValueError(
+                "episodes must not contain duplicate episode_number values"
+            )
+        if self.episode_arc_outline and len(self.episode_arc_outline) != len(
+            self.episodes
+        ):
+            raise ValueError(
+                "episode_arc_outline must align with episodes when provided"
+            )
+        if self.recommended_episode_count is not None and self.episodes:
+            if self.recommended_episode_count != len(self.episodes):
+                raise ValueError(
+                    "recommended_episode_count must match the number of episodes"
+                )
+        return self
+
+
+_DEFAULT_NARRATOR_ALLOWED_MOVES: tuple[str, ...] = (
+    "orient",
+    "clarify",
+    "evaluate",
+    "contrast",
+    "callback",
+    "light_aside",
+    "naming_note",
+    "uncertainty",
+    "revision",
+    "surprise",
+)
+
+COMPARATIVE_ASIDE_TOLERANCE: Literal["high"] = "high"
+
+
+def effective_narrator_allowed_moves(
+    allowed_moves: list[str] | tuple[str, ...] | None = None,
+) -> list[str]:
+    normalized = list(
+        dict.fromkeys(
+            str(move).strip() for move in (allowed_moves or []) if str(move).strip()
+        )
+    )
+    if not normalized:
+        return list(_DEFAULT_NARRATOR_ALLOWED_MOVES)
+    for move in ("uncertainty", "revision", "surprise"):
+        if move not in normalized:
+            normalized.append(move)
+    return [move for move in _DEFAULT_NARRATOR_ALLOWED_MOVES if move in normalized]
 
 
 class SeriesNarratorProfile(StrictModel):
@@ -2262,17 +2592,12 @@ class SeriesNarratorProfile(StrictModel):
             "callback",
             "light_aside",
             "naming_note",
+            "uncertainty",
+            "revision",
+            "surprise",
         ]
     ] = Field(
-        default_factory=lambda: [
-            "orient",
-            "clarify",
-            "evaluate",
-            "contrast",
-            "callback",
-            "light_aside",
-            "naming_note",
-        ]
+        default_factory=lambda: list(_DEFAULT_NARRATOR_ALLOWED_MOVES)
     )
     forbidden_moves: list[
         Literal["unsupported_psychology", "cheap_joke", "fake_banter", "teaser_hype"]
@@ -2292,9 +2617,10 @@ class SeriesNarratorProfile(StrictModel):
     analysis_density: Literal["light", "medium", "high"] = "medium"
     quote_gloss_preference: Literal["avoid", "allow", "prefer"] = "allow"
     clarifier_tolerance: Literal["low", "medium", "high"] = "medium"
-    comparative_aside_tolerance: Literal["none", "light", "medium", "high"] = "high"
     wit_ceiling: Literal["none", "dry", "wry"] = "dry"
-    target_authorial_passages_per_episode: int = Field(default=16, ge=0, le=24)
+    target_authorial_passages_per_episode: int = Field(
+        default=authorial_passage_target_for_mode(PodcastMode.FULL), ge=0, le=40
+    )
 
     @model_validator(mode="after")
     def validate_coverage_targets(self) -> "SeriesNarratorProfile":
@@ -2306,6 +2632,7 @@ class SeriesNarratorProfile(StrictModel):
                 "target_full_phase_scene_coverage_target must be greater than or "
                 "equal to target_full_phase_scene_coverage_min"
             )
+        self.allowed_moves = effective_narrator_allowed_moves(self.allowed_moves)
         return self
 
 
@@ -2390,9 +2717,13 @@ class NarrativeStrategy(StrictModel):
             }
             for episode in self.episodes:
                 introduce_item_ids = (
-                    episode.authorial_contract.introduce_explanation_item_ids
+                    episode.narrative_agenda.listener.introduce_explanation_item_ids
+                    or episode.authorial_contract.introduce_explanation_item_ids
                 )
-                remind_item_ids = episode.authorial_contract.remind_explanation_item_ids
+                remind_item_ids = (
+                    episode.narrative_agenda.listener.remind_explanation_item_ids
+                    or episode.authorial_contract.remind_explanation_item_ids
+                )
                 unknown_explanation_item_ids = sorted(
                     {
                         item_id
@@ -2410,8 +2741,180 @@ class NarrativeStrategy(StrictModel):
                         "episode authorial_contract explanation ids must not be both "
                         "introduced and reminded in the same episode"
                     )
-                introduce_actor_ids = episode.authorial_contract.introduce_actor_ids
-                remind_actor_ids = episode.authorial_contract.remind_actor_ids
+                introduce_actor_ids = (
+                    episode.narrative_agenda.listener.introduce_actor_ids
+                    or episode.authorial_contract.introduce_actor_ids
+                )
+                remind_actor_ids = (
+                    episode.narrative_agenda.listener.remind_actor_ids
+                    or episode.authorial_contract.remind_actor_ids
+                )
+                unknown_actor_ids = sorted(
+                    {
+                        actor_id
+                        for actor_id in [*introduce_actor_ids, *remind_actor_ids]
+                        if actor_id not in valid_actor_registry_ids
+                    }
+                )
+                if unknown_actor_ids:
+                    raise ValueError(
+                        "episode authorial_contract actor ids must reference "
+                        "series_actor_explanation_registry items"
+                    )
+                if set(introduce_actor_ids) & set(remind_actor_ids):
+                    raise ValueError(
+                        "episode authorial_contract actor ids must not be both "
+                        "introduced and reminded in the same episode"
+                    )
+                for actor_id in introduce_actor_ids:
+                    registry_item = actor_registry_by_id[actor_id]
+                    if (
+                        registry_item.introduction_episode_number
+                        != episode.episode_number
+                    ):
+                        raise ValueError(
+                            "introduced actor ids must match their canonical "
+                            "introduction_episode_number"
+                        )
+                for actor_id in remind_actor_ids:
+                    registry_item = actor_registry_by_id[actor_id]
+                    if (
+                        registry_item.introduction_episode_number
+                        > episode.episode_number
+                    ):
+                        raise ValueError(
+                            "remind actor ids must not appear before the actor's "
+                            "introduction episode"
+                        )
+        return self
+
+
+class StrategyEpisodeEnrichment(StrictModel):
+    episode_number: int = Field(ge=1)
+    narrator_contract: EpisodeNarratorContract = Field(
+        default_factory=EpisodeNarratorContract
+    )
+    authorial_contract: EpisodeAuthorialContract = Field(
+        default_factory=EpisodeAuthorialContract
+    )
+    narrative_agenda: EpisodeNarrativeAgenda = Field(
+        default_factory=EpisodeNarrativeAgenda
+    )
+    promised_beats: list[PromisedBeat] = Field(default_factory=list, max_length=12)
+
+    @model_validator(mode="after")
+    def validate_commitments(self) -> "StrategyEpisodeEnrichment":
+        beat_ids = [beat.beat_id for beat in self.promised_beats]
+        if len(beat_ids) != len(set(beat_ids)):
+            raise ValueError("promised_beats must use unique beat_id values")
+        answer_count = sum(
+            1 for beat in self.promised_beats if beat.intended_job == SceneJob.ANSWER
+        )
+        if answer_count > 1:
+            raise ValueError("promised_beats may contain at most one answer beat")
+        residue_count = sum(
+            1 for beat in self.promised_beats if beat.intended_job == SceneJob.RESIDUE
+        )
+        if residue_count > 1:
+            raise ValueError("promised_beats may contain at most one residue beat")
+        return self
+
+
+class NarrativeStrategyEnrichment(StrictModel):
+    narrator_profile: SeriesNarratorProfile = Field(
+        default_factory=SeriesNarratorProfile
+    )
+    series_explanation_registry: list[SeriesExplanationItem] = Field(
+        default_factory=list, max_length=12
+    )
+    series_actor_explanation_registry: list[SeriesActorExplanationItem] = Field(
+        default_factory=list, max_length=12
+    )
+    episodes: list[StrategyEpisodeEnrichment] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_strategy(self) -> "NarrativeStrategyEnrichment":
+        episode_numbers = [episode.episode_number for episode in self.episodes]
+        if len(episode_numbers) != len(set(episode_numbers)):
+            raise ValueError(
+                "episodes must not contain duplicate episode_number values"
+            )
+        registry_ids = [item.item_id for item in self.series_explanation_registry]
+        if len(registry_ids) != len(set(registry_ids)):
+            raise ValueError(
+                "series_explanation_registry must not contain duplicate item_id values"
+            )
+        actor_registry_ids = [
+            item.actor_id for item in self.series_actor_explanation_registry
+        ]
+        if len(actor_registry_ids) != len(set(actor_registry_ids)):
+            raise ValueError(
+                "series_actor_explanation_registry must not contain duplicate actor_id values"
+            )
+        if self.episodes and self.series_explanation_registry:
+            valid_episode_numbers = {
+                episode.episode_number for episode in self.episodes
+            }
+            for item in self.series_explanation_registry:
+                if item.introduction_episode_number not in valid_episode_numbers:
+                    raise ValueError(
+                        "series_explanation_registry introduction_episode_number "
+                        "must reference an existing episode"
+                    )
+        if self.episodes and self.series_actor_explanation_registry:
+            valid_episode_numbers = {
+                episode.episode_number for episode in self.episodes
+            }
+            for item in self.series_actor_explanation_registry:
+                if item.introduction_episode_number not in valid_episode_numbers:
+                    raise ValueError(
+                        "series_actor_explanation_registry introduction_episode_number "
+                        "must reference an existing episode"
+                    )
+        if self.episodes:
+            valid_actor_registry_ids = {
+                item.actor_id for item in self.series_actor_explanation_registry
+            }
+            actor_registry_by_id = {
+                item.actor_id: item for item in self.series_actor_explanation_registry
+            }
+            valid_explanation_registry_ids = {
+                item.item_id for item in self.series_explanation_registry
+            }
+            for episode in self.episodes:
+                introduce_item_ids = (
+                    episode.narrative_agenda.listener.introduce_explanation_item_ids
+                    or episode.authorial_contract.introduce_explanation_item_ids
+                )
+                remind_item_ids = (
+                    episode.narrative_agenda.listener.remind_explanation_item_ids
+                    or episode.authorial_contract.remind_explanation_item_ids
+                )
+                unknown_explanation_item_ids = sorted(
+                    {
+                        item_id
+                        for item_id in [*introduce_item_ids, *remind_item_ids]
+                        if item_id not in valid_explanation_registry_ids
+                    }
+                )
+                if unknown_explanation_item_ids:
+                    raise ValueError(
+                        "episode authorial_contract explanation ids must reference "
+                        "series_explanation_registry items"
+                    )
+                if set(introduce_item_ids) & set(remind_item_ids):
+                    raise ValueError(
+                        "episode authorial_contract explanation ids must not be both "
+                        "introduced and reminded in the same episode"
+                    )
+                introduce_actor_ids = (
+                    episode.narrative_agenda.listener.introduce_actor_ids
+                    or episode.authorial_contract.introduce_actor_ids
+                )
+                remind_actor_ids = (
+                    episode.narrative_agenda.listener.remind_actor_ids
+                    or episode.authorial_contract.remind_actor_ids
+                )
                 unknown_actor_ids = sorted(
                     {
                         actor_id
@@ -2537,7 +3040,7 @@ class AuthorialPassage(StrictModel):
     quote_anchor: str = ""
     gloss_seed: str = ""
     must_name_terms: list[str] = Field(default_factory=list, max_length=4)
-    budget_sentences: Literal[2, 3, 4, 5] = 3
+    budget_sentences: Literal[2, 3, 4, 5, 6] = 3
 
 
 class TermExplanationPlan(StrictModel):
@@ -2632,6 +3135,19 @@ class ArchitectureSection(StrictModel):
         default_factory=list, max_length=4
     )
     actor_explanations: list[ActorExplanationPlan] = Field(
+        default_factory=list, max_length=4
+    )
+    question_moves: list[ListenerQuestionMove] = Field(default_factory=list, max_length=4)
+    memory_thread_moves: list[ListenerMemoryThreadMove] = Field(
+        default_factory=list, max_length=4
+    )
+    host_mystery_moves: list[HostMysteryMove] = Field(
+        default_factory=list, max_length=4
+    )
+    host_assumption_moves: list[HostAssumptionMove] = Field(
+        default_factory=list, max_length=4
+    )
+    host_theory_moves: list[HostTheoryMove] = Field(
         default_factory=list, max_length=4
     )
 
@@ -2839,6 +3355,9 @@ class HostMoveCue(StrictModel):
         "callback",
         "light_aside",
         "naming_note",
+        "uncertainty",
+        "revision",
+        "surprise",
     ]
     target: str = ""
     surface_mode: Literal["woven", "distinct", "mixed"] = "mixed"

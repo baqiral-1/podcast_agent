@@ -66,6 +66,10 @@ class WritingAgent(Agent):
         episode_target_word_count_higher: int | None = None,
         skip_grounding: bool = False,
         host_policy: dict | None = None,
+        narrative_state_pre: dict | None = None,
+        narrative_state_post: dict | None = None,
+        continuity_contract_pre: dict | None = None,
+        continuity_contract_post: dict | None = None,
         scene_primitive_briefs: dict[str, list[dict[str, object]]] | None = None,
         actor_metadata: dict | None = None,
         writing_feedback: str | None = None,
@@ -83,6 +87,14 @@ class WritingAgent(Agent):
         }
         if host_policy is not None:
             payload["host_policy"] = host_policy
+        if narrative_state_pre is not None:
+            payload["narrative_state_pre"] = narrative_state_pre
+        if narrative_state_post is not None:
+            payload["narrative_state_post"] = narrative_state_post
+        if continuity_contract_pre is not None:
+            payload["continuity_contract_pre"] = continuity_contract_pre
+        if continuity_contract_post is not None:
+            payload["continuity_contract_post"] = continuity_contract_post
         if scene_primitive_briefs is not None:
             payload["scene_primitive_briefs"] = scene_primitive_briefs
         if actor_metadata is not None:

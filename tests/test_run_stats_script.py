@@ -5,8 +5,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-from podcast_agent.schemas.models import SYNTHESIS_PRIMITIVE_FAMILIES
-
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "generate_run_stats.py"
 
@@ -46,35 +44,24 @@ def _build_run(tmp_path: Path) -> Path:
         run_dir / "synthesis_primitives.json",
         {
             "project_id": "demo-run",
-            "primitives_by_family": {
-                **{family: [] for family in SYNTHESIS_PRIMITIVE_FAMILIES},
-                "epochal_turns": [
-                    {
-                        "id": "et_1",
-                        "family": "epochal_turns",
-                        "title": "Turn",
-                        "summary": "Summary",
-                        "core_passage_ids": ["p1"],
-                        "before_state": "Before",
-                        "after_state": "After",
-                        "change_driver": "Driver",
-                        "irreversibility_reason": "Reason",
-                    }
-                ],
-                "contested_explanations": [
-                    {
-                        "id": "cx_1",
-                        "family": "contested_explanations",
-                        "title": "Question",
-                        "summary": "Summary",
-                        "core_passage_ids": ["p2"],
-                        "candidate_readings": [
-                            {"label": "a", "summary": "A", "support_passage_ids": ["p2"]},
-                            {"label": "b", "summary": "B", "support_passage_ids": ["p1"]},
-                        ],
-                    }
-                ],
-            },
+            "primitives": [
+                {
+                    "id": "et_1",
+                    "substrate": "events",
+                    "title": "Turn",
+                    "core_passage_ids": ["p1"],
+                    "event_type": "political rupture",
+                    "what_happened": "A decisive turn lands.",
+                },
+                {
+                    "id": "cx_1",
+                    "substrate": "readings",
+                    "title": "Question",
+                    "core_passage_ids": ["p2"],
+                    "reading_type": "historiographical_dispute",
+                    "reading_summary": "Two explanations compete.",
+                },
+            ],
             "quality_score": 0.6,
             "quality_notes": [],
         },
@@ -83,35 +70,24 @@ def _build_run(tmp_path: Path) -> Path:
         run_dir / "synthesis_map.json",
         {
             "project_id": "demo-run",
-            "primitives_by_family": {
-                **{family: [] for family in SYNTHESIS_PRIMITIVE_FAMILIES},
-                "epochal_turns": [
-                    {
-                        "id": "et_1",
-                        "family": "epochal_turns",
-                        "title": "Turn",
-                        "summary": "Summary",
-                        "core_passage_ids": ["p1"],
-                        "before_state": "Before",
-                        "after_state": "After",
-                        "change_driver": "Driver",
-                        "irreversibility_reason": "Reason",
-                    }
-                ],
-                "contested_explanations": [
-                    {
-                        "id": "cx_1",
-                        "family": "contested_explanations",
-                        "title": "Question",
-                        "summary": "Summary",
-                        "core_passage_ids": ["p2"],
-                        "candidate_readings": [
-                            {"label": "a", "summary": "A", "support_passage_ids": ["p2"]},
-                            {"label": "b", "summary": "B", "support_passage_ids": ["p1"]},
-                        ],
-                    }
-                ],
-            },
+            "primitives": [
+                {
+                    "id": "et_1",
+                    "substrate": "events",
+                    "title": "Turn",
+                    "core_passage_ids": ["p1"],
+                    "event_type": "political rupture",
+                    "what_happened": "A decisive turn lands.",
+                },
+                {
+                    "id": "cx_1",
+                    "substrate": "readings",
+                    "title": "Question",
+                    "core_passage_ids": ["p2"],
+                    "reading_type": "historiographical_dispute",
+                    "reading_summary": "Two explanations compete.",
+                },
+            ],
             "quality_score": 0.7,
             "quality_notes": [],
         },
@@ -133,7 +109,7 @@ def _build_run(tmp_path: Path) -> Path:
                     "episode_spine": {
                         "listener_question": "Why does the order land so hard?",
                         "argument": "Opening rupture clarifies the proposition.",
-                        "core_primitive_ids": ["primitive_1"],
+                        "core_primitive_ids": ["et_1"],
                         "support_primitive_roles": {},
                         "recall_primitive_ids": [],
                     },
@@ -204,10 +180,11 @@ def test_generate_run_stats_html(tmp_path: Path):
 
     html = output_path.read_text(encoding="utf-8")
     assert "War on Terror" in html
-    assert "epochal_turns: 1" in html
+    assert "events: 1" in html
+    assert "readings: 1" in html
     assert "Synthesis Map" in html
     assert "Primitive Retention" in html
-    assert "* epochal_turns" in html
+    assert "<td>events</td>" in html
     assert "100.0%" in html
     assert "Core primitives:</strong> 1" in html
     assert "Driving question:" in html

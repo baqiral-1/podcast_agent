@@ -34,6 +34,15 @@ from podcast_agent.agents.book_summary import BookSummaryAgent
 from podcast_agent.agents.chapter_summary import ChapterSummaryAgent
 from podcast_agent.agents.episode_architecture import EpisodeArchitectureAgent
 from podcast_agent.agents.narrative_strategy import NarrativeStrategyAgent
+from podcast_agent.agents.narrative_strategy_enrichment import (
+    NarrativeStrategyEnrichmentAgent,
+)
+from podcast_agent.agents.narrative_strategy_skeleton import (
+    NarrativeStrategySkeletonAgent,
+)
+from podcast_agent.agents.narrative_state_reconciler import (
+    NarrativeStateReconcilerAgent,
+)
 from podcast_agent.agents.passage_extraction import PassageExtractionAgent
 from podcast_agent.agents.planning import EpisodePlanningAgent
 from podcast_agent.agents.primitive_function_tagging import (
@@ -69,29 +78,27 @@ from podcast_agent.schemas.models import (
     ArtifactPrimitive,
     BaseSynthesisPrimitive,
     BookRecord,
-    CharacterEnginePrimitive,
     Citation,
     ChapterInfo,
     ChunkingConfig,
-    CoalitionFaultLinePrimitive,
-    ContestedExplanationPrimitive,
+    COMPARATIVE_ASIDE_TOLERANCE,
+    ContinuityCarryItem,
     CoverageStats,
-    DecisionPrimitive,
     EpisodeArchitecture,
     EpisodePlan,
     EpisodeSpine,
     EpisodeScript,
-    EpochalTurnPrimitive,
     EventPrimitive,
     ExtractedArtifactPrimitive,
     ExtractedMechanismPrimitive,
     ExtractedPassage,
     GroundingReport,
-    HumanCostPrimitive,
-    IronyReversalPrimitive,
-    MoralTrapPrimitive,
     MustLandFacts,
     NarrativeStrategy,
+    NarrativeStrategyEnrichment,
+    NarrativeStrategySkeleton,
+    NarrativeState,
+    NarrativeStateReconciliation,
     PassagePair,
     PipelineConfig,
     ProseSection,
@@ -115,17 +122,16 @@ from podcast_agent.schemas.models import (
     SeriesActorExplanationItem,
     SeriesExplanationItem,
     SegmentDiff,
-    SetPieceScenePrimitive,
     StyleAuditResponse,
     SpokenSection,
     SpokenScript,
     StrategyEpisode,
+    StrategyEpisodeEnrichment,
+    StrategyEpisodeSkeleton,
     SynthesisMap,
     SynthesisPrimitiveBase,
-    SynthesisPrimitive,
     SynthesisPrimitivesArtifact,
     SynthesisTag,
-    SystemsOperatingLogicPrimitive,
     TextChunk,
     ThematicAxis,
     ThematicCorpus,
@@ -135,6 +141,7 @@ from podcast_agent.schemas.models import (
     PodcastMode,
     primitive_substrate_target_ranges_for_mode,
     apply_primitive_enrichment_overlay,
+    effective_narrator_allowed_moves,
     scene_discovery_candidate_range_for_mode,
     scene_job_budget_for_mode,
     UtterancePrimitive,
@@ -237,38 +244,6 @@ def _primitive_counts_by_substrate(
     for primitive in artifact.primitives:
         counts[primitive.substrate.value] = counts.get(primitive.substrate.value, 0) + 1
     return counts
-
-
-def _trim_synthesis_primitives_by_family_caps(
-    artifact: SynthesisPrimitivesArtifact,
-    *,
-    family_max_counts: dict[str, int] | None = None,
-) -> SynthesisPrimitivesArtifact:
-    capped_counts = family_max_counts or synthesis_primitive_target_max_counts_for_mode(
-        "full"
-    )
-    trimmed_by_family: dict[str, list[BaseSynthesisPrimitive]] = {}
-    changed = False
-    for family in SYNTHESIS_PRIMITIVE_FAMILIES:
-        items = list(artifact.primitives_by_family.get(family, []))
-        family_cap = capped_counts.get(family)
-        if family_cap is None or len(items) <= family_cap:
-            trimmed_by_family[family] = items
-            continue
-        changed = True
-        ranked_items = sorted(
-            items,
-            key=lambda primitive: (
-                -primitive.narrative_importance_score,
-                -len(primitive.core_passage_ids),
-                -len(primitive.support_passage_ids),
-                primitive.id,
-            ),
-        )
-        trimmed_by_family[family] = ranked_items[:family_cap]
-    if not changed:
-        return artifact
-    return artifact.model_copy(update={"primitives_by_family": trimmed_by_family})
 
 
 def _split_sentences(text: str) -> list[str]:
@@ -554,6 +529,7 @@ def _build_writer_strategy_episode_payload(
             "pressure_line": spine.pressure_line,
             "core_primitive_ids": list(spine.core_primitive_ids),
         },
+        "narrative_agenda": strategy_episode.narrative_agenda.model_dump(mode="json"),
     }
 
 
@@ -993,12 +969,24 @@ def _build_scene_primitive_briefs(
 
 def _build_host_policy_payload(
     narrator_profile: SeriesNarratorProfile,
+    narrative_state_pre: NarrativeState | None = None,
+    narrative_state_post: NarrativeState | None = None,
 ) -> dict[str, Any]:
+    allowed_moves = effective_narrator_allowed_moves(narrator_profile.allowed_moves)
+    host_posture = (
+        narrative_state_post.host.confidence_posture
+        if narrative_state_post is not None
+        else (
+            narrative_state_pre.host.confidence_posture
+            if narrative_state_pre is not None
+            else "mixed"
+        )
+    )
     return {
         "presence_mode": narrator_profile.presence_mode,
         "baseline_tone": narrator_profile.baseline_tone,
         "spoken_style_contract": narrator_profile.spoken_style_contract,
-        "allowed_moves": list(narrator_profile.allowed_moves),
+        "allowed_moves": allowed_moves,
         "forbidden_moves": list(narrator_profile.forbidden_moves),
         "target_full_phase_scene_coverage_min": (
             narrator_profile.target_full_phase_scene_coverage_min
@@ -1007,7 +995,13 @@ def _build_host_policy_payload(
             narrator_profile.target_full_phase_scene_coverage_target
         ),
         "pronoun_policy": {
-            "allow_first_person_singular": False,
+            "allow_first_person_singular": True,
+            "first_person_singular_allowed_for": [
+                "uncertainty",
+                "revision",
+                "surprise",
+                "closing_reflection",
+            ],
             "allow_first_person_plural_only_for": [
                 "handoff",
                 "callback",
@@ -1023,13 +1017,41 @@ def _build_host_policy_payload(
             "analysis_density": narrator_profile.analysis_density,
             "quote_gloss_preference": narrator_profile.quote_gloss_preference,
             "clarifier_tolerance": narrator_profile.clarifier_tolerance,
-            "comparative_aside_tolerance": narrator_profile.comparative_aside_tolerance,
+            "comparative_aside_tolerance": COMPARATIVE_ASIDE_TOLERANCE,
             "wit_ceiling": narrator_profile.wit_ceiling,
+            "host_confidence_posture": host_posture,
             "target_authorial_passages_per_episode": (
                 narrator_profile.target_authorial_passages_per_episode
             ),
         },
     }
+
+
+def _listener_agenda(strategy_episode: StrategyEpisode) -> Any:
+    return strategy_episode.narrative_agenda.listener
+
+
+def _host_agenda(strategy_episode: StrategyEpisode) -> Any:
+    return strategy_episode.narrative_agenda.host
+
+
+def _strategy_episode_question_texts(strategy_episode: StrategyEpisode) -> list[str]:
+    question_texts = [
+        move.text
+        for move in _listener_agenda(strategy_episode).question_moves
+        if move.action in {"open", "advance", "reframe"} and move.text
+    ]
+    if question_texts:
+        return question_texts
+    return [
+        str(question or "").strip()
+        for question in strategy_episode.unresolved_questions
+        if str(question or "").strip()
+    ]
+
+
+def _build_initial_narrative_state(project_id: str) -> NarrativeState:
+    return NarrativeState(project_id=project_id, next_episode_number=1)
 
 
 def _build_episode_explanation_registry_payload(
@@ -1042,14 +1064,21 @@ def _build_episode_explanation_registry_payload(
         return []
     referenced_item_ids: set[str] = set()
     if strategy_episode is not None:
+        listener_agenda = _listener_agenda(strategy_episode)
         referenced_item_ids.update(
             item_id
-            for item_id in strategy_episode.authorial_contract.introduce_explanation_item_ids
+            for item_id in (
+                listener_agenda.introduce_explanation_item_ids
+                or strategy_episode.authorial_contract.introduce_explanation_item_ids
+            )
             if item_id
         )
         referenced_item_ids.update(
             item_id
-            for item_id in strategy_episode.authorial_contract.remind_explanation_item_ids
+            for item_id in (
+                listener_agenda.remind_explanation_item_ids
+                or strategy_episode.authorial_contract.remind_explanation_item_ids
+            )
             if item_id
         )
     if architecture is not None:
@@ -1098,14 +1127,21 @@ def _build_episode_actor_explanation_registry_payload(
         return []
     referenced_actor_ids: set[str] = set()
     if strategy_episode is not None:
+        listener_agenda = _listener_agenda(strategy_episode)
         referenced_actor_ids.update(
             actor_id
-            for actor_id in strategy_episode.authorial_contract.introduce_actor_ids
+            for actor_id in (
+                listener_agenda.introduce_actor_ids
+                or strategy_episode.authorial_contract.introduce_actor_ids
+            )
             if actor_id
         )
         referenced_actor_ids.update(
             actor_id
-            for actor_id in strategy_episode.authorial_contract.remind_actor_ids
+            for actor_id in (
+                listener_agenda.remind_actor_ids
+                or strategy_episode.authorial_contract.remind_actor_ids
+            )
             if actor_id
         )
     if architecture is not None:
@@ -1146,12 +1182,18 @@ def _collect_episode_actor_ids(
     }
     actor_ids.update(
         actor_id
-        for actor_id in strategy_episode.authorial_contract.introduce_actor_ids
+        for actor_id in (
+            _listener_agenda(strategy_episode).introduce_actor_ids
+            or strategy_episode.authorial_contract.introduce_actor_ids
+        )
         if actor_id
     )
     actor_ids.update(
         actor_id
-        for actor_id in strategy_episode.authorial_contract.remind_actor_ids
+        for actor_id in (
+            _listener_agenda(strategy_episode).remind_actor_ids
+            or strategy_episode.authorial_contract.remind_actor_ids
+        )
         if actor_id
     )
     selected_primitives = [
@@ -1251,7 +1293,7 @@ def _build_prior_window_continuity(
 
     live_unresolved_questions: list[str] = []
     seen_questions: set[str] = set()
-    for question in strategy_episode.unresolved_questions:
+    for question in _strategy_episode_question_texts(strategy_episode):
         normalized_question = str(question or "").strip()
         if not normalized_question or normalized_question in seen_questions:
             continue
@@ -2883,53 +2925,22 @@ _NARRATIVE_STRATEGY_ACTOR_KEEP_FIELDS = {
     "transformations",
     "narrative_importance_score",
 }
+_NARRATIVE_STRATEGY_SCENE_KEEP_FIELDS = {
+    "candidate_id",
+    "primitive_ids",
+    "candidate_roles",
+    "scene_sketch",
+    "anchor_image",
+    "why_sceneable",
+    "quote_anchor",
+    "actor_ids",
+}
 _PRIMITIVE_ANNOTATION_ACTOR_KEEP_FIELDS = {
     "actor_id",
     "display_name",
     "aliases",
     "actor_type",
 }
-
-_CONSOLIDATION_PRIMITIVE_DROP_FIELDS = {
-    "family",
-    "core_passage_ids",
-    "support_passage_ids",
-    "actor_tags",
-    "institution_tags",
-}
-
-
-def _compact_primitives_for_consolidation(
-    artifact: SynthesisPrimitivesArtifact,
-) -> dict[str, Any]:
-    primitives_by_family: dict[str, list[dict[str, Any]]] = {}
-    for family in SYNTHESIS_PRIMITIVE_FAMILIES:
-        compacted_items: list[dict[str, Any]] = []
-        for primitive in artifact.primitives_by_family.get(family, []):
-            payload = {
-                key: value
-                for key, value in primitive.model_dump(mode="json").items()
-                if key not in _CONSOLIDATION_PRIMITIVE_DROP_FIELDS
-            }
-            if "candidate_readings" in payload:
-                payload["candidate_readings"] = [
-                    {
-                        "label": reading.get("label", ""),
-                        "claim": reading.get("claim", reading.get("summary", "")),
-                        "emphasizes": reading.get("emphasizes", ""),
-                        "downplays": reading.get("downplays", ""),
-                    }
-                    for reading in payload["candidate_readings"]
-                ]
-            compacted_items.append(payload)
-        primitives_by_family[family] = compacted_items
-    return {
-        "project_id": artifact.project_id,
-        "primitives_by_family": primitives_by_family,
-        "quality_score": artifact.quality_score,
-        "quality_notes": list(artifact.quality_notes),
-    }
-
 
 def _compact_narrative_strategy_runtime_value(value: Any) -> Any:
     if value is None:
@@ -3038,6 +3049,186 @@ def _build_narrative_strategy_actor_metadata_payload(
                 for actor in actor_metadata.actors
             ],
         }
+    )
+
+
+def _build_narrative_strategy_scene_discovery_payload(
+    scene_discovery: SceneDiscoveryArtifact | None,
+) -> dict[str, Any] | None:
+    if scene_discovery is None:
+        return None
+    candidates = [
+        {
+            key: value
+            for key, value in candidate.model_dump(mode="json").items()
+            if key in _NARRATIVE_STRATEGY_SCENE_KEEP_FIELDS
+        }
+        for candidate in scene_discovery.candidates
+    ]
+    return _compact_narrative_strategy_runtime_payload({"candidates": candidates})
+
+
+def _strategy_selected_primitive_ids_from_skeleton(
+    strategy: NarrativeStrategySkeleton,
+) -> list[str]:
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for episode in strategy.episodes:
+        for primitive_id in episode.episode_spine.assigned_primitive_ids:
+            if not primitive_id or primitive_id in seen:
+                continue
+            seen.add(primitive_id)
+            ordered.append(primitive_id)
+    return ordered
+
+
+def _build_strategy_selected_synthesis_map_preview(
+    *,
+    project_id: str,
+    synthesis_map: PrimitiveFunctionTaggingArtifact,
+    strategy: NarrativeStrategySkeleton,
+) -> SynthesisMap:
+    selected_ids = _strategy_selected_primitive_ids_from_skeleton(strategy)
+    primitive_by_id = _flatten_base_synthesis_primitives(synthesis_map)
+    selected_primitives = [
+        primitive_by_id[primitive_id]
+        for primitive_id in selected_ids
+        if primitive_id in primitive_by_id
+    ]
+    return SynthesisMap(
+        project_id=project_id,
+        primitives=selected_primitives,
+        quality_score=synthesis_map.quality_score,
+        quality_notes=list(synthesis_map.quality_notes),
+    )
+
+
+def _episode_scene_candidate_cap_for_mode(mode: PodcastMode) -> int:
+    return 8 if mode == PodcastMode.MINIFIED else 12
+
+
+def _build_episode_scene_candidate_payloads(
+    *,
+    strategy: NarrativeStrategySkeleton,
+    scene_discovery: SceneDiscoveryArtifact | None,
+    mode: PodcastMode,
+) -> list[dict[str, Any]]:
+    if scene_discovery is None:
+        return [
+            {"episode_number": episode.episode_number, "candidates": []}
+            for episode in strategy.episodes
+        ]
+    role_priority = {
+        "opening": 0,
+        "hinge": 1,
+        "answer": 2,
+        "residue": 3,
+        "callback": 4,
+        "mechanism": 5,
+    }
+    cap = _episode_scene_candidate_cap_for_mode(mode)
+    payloads: list[dict[str, Any]] = []
+    for episode in strategy.episodes:
+        assigned_ids = set(episode.episode_spine.assigned_primitive_ids)
+        core_ids = set(episode.episode_spine.core_primitive_ids)
+        ranked: list[tuple[tuple[int, int, int, int, int], dict[str, Any]]] = []
+        for idx, candidate in enumerate(scene_discovery.candidates):
+            overlap = assigned_ids.intersection(candidate.primitive_ids)
+            if not overlap:
+                continue
+            core_overlap = len(core_ids.intersection(candidate.primitive_ids))
+            role_rank = min(
+                role_priority.get(role, len(role_priority))
+                for role in candidate.candidate_roles
+            )
+            score = (
+                -core_overlap,
+                -len(overlap),
+                role_rank,
+                0 if candidate.quote_anchor.strip() else 1,
+                idx,
+            )
+            ranked.append(
+                (
+                    score,
+                    {
+                        key: value
+                        for key, value in candidate.model_dump(mode="json").items()
+                        if key in _NARRATIVE_STRATEGY_SCENE_KEEP_FIELDS
+                    },
+                )
+            )
+        ranked.sort(key=lambda item: item[0])
+        payloads.append(
+            {
+                "episode_number": episode.episode_number,
+                "candidates": [payload for _, payload in ranked[:cap]],
+            }
+        )
+    return payloads
+
+
+def _merge_narrative_strategy_parts(
+    *,
+    skeleton: NarrativeStrategySkeleton,
+    enrichment: NarrativeStrategyEnrichment,
+) -> NarrativeStrategy:
+    enrichment_by_number = {
+        episode.episode_number: episode for episode in enrichment.episodes
+    }
+    skeleton_numbers = [episode.episode_number for episode in skeleton.episodes]
+    enrichment_numbers = sorted(enrichment_by_number)
+    if sorted(skeleton_numbers) != enrichment_numbers:
+        raise RuntimeError(
+            "narrative strategy enrichment episode numbers must match skeleton episodes"
+        )
+    episodes: list[StrategyEpisode] = []
+    for skeleton_episode in skeleton.episodes:
+        enrichment_episode = enrichment_by_number[skeleton_episode.episode_number]
+        episodes.append(
+            StrategyEpisode(
+                episode_number=skeleton_episode.episode_number,
+                title=skeleton_episode.title,
+                thematic_focus=skeleton_episode.thematic_focus,
+                arc_summary=skeleton_episode.arc_summary,
+                unresolved_questions=list(skeleton_episode.unresolved_questions),
+                episode_spine=skeleton_episode.episode_spine.model_copy(deep=True),
+                actor_arc_directives=[
+                    directive.model_copy(deep=True)
+                    for directive in skeleton_episode.actor_arc_directives
+                ],
+                narrator_contract=enrichment_episode.narrator_contract.model_copy(
+                    deep=True
+                ),
+                authorial_contract=enrichment_episode.authorial_contract.model_copy(
+                    deep=True
+                ),
+                narrative_agenda=enrichment_episode.narrative_agenda.model_copy(
+                    deep=True
+                ),
+                promised_beats=[
+                    beat.model_copy(deep=True)
+                    for beat in enrichment_episode.promised_beats
+                ],
+                negative_scope=skeleton_episode.negative_scope.model_copy(deep=True),
+            )
+        )
+    return NarrativeStrategy(
+        strategy_type=skeleton.strategy_type,
+        justification=skeleton.justification,
+        series_arc=skeleton.series_arc,
+        episode_arc_outline=list(skeleton.episode_arc_outline),
+        recommended_episode_count=skeleton.recommended_episode_count,
+        narrator_profile=enrichment.narrator_profile.model_copy(deep=True),
+        series_explanation_registry=[
+            item.model_copy(deep=True)
+            for item in enrichment.series_explanation_registry
+        ],
+        series_actor_explanation_registry=[
+            item.model_copy(deep=True)
+            for item in enrichment.series_actor_explanation_registry
+        ],
+        episodes=episodes,
     )
 
 
@@ -3255,23 +3446,6 @@ def _build_scene_discovery_diagnostics(
     }
 
 
-_ENRICHED_PRIMITIVE_MODEL_BY_FAMILY: dict[str, type[SynthesisPrimitiveBase]] = {
-    "epochal_turns": EpochalTurnPrimitive,
-    "decisions_and_nondecisions": DecisionPrimitive,
-    "set_piece_scenes": SetPieceScenePrimitive,
-    "telling_details": SynthesisPrimitive,
-    "human_costs": HumanCostPrimitive,
-    "character_engines": CharacterEnginePrimitive,
-    "coalitions_and_fault_lines": CoalitionFaultLinePrimitive,
-    "systems_and_operating_logics": SystemsOperatingLogicPrimitive,
-    "misreadings_and_fantasies": SynthesisPrimitive,
-    "contested_explanations": ContestedExplanationPrimitive,
-    "perspective_windows": SynthesisPrimitive,
-    "moral_traps": MoralTrapPrimitive,
-    "afterlives": SynthesisPrimitive,
-    "recurring_images_and_symbols": SynthesisPrimitive,
-    "ironies_and_reversals": IronyReversalPrimitive,
-}
 _PRIMITIVE_ANNOTATION_BATCH_CONCURRENCY = 8
 _PRIMITIVE_ANNOTATION_BATCH_THRESHOLD = 30
 _PRIMITIVE_ANNOTATION_SPLIT_BATCH_COUNT = 2
@@ -4780,6 +4954,18 @@ def _compute_scene_word_count_bands(
     return widened_lower, widened_higher
 
 
+_HEAVY_AUTHORIAL_PASSAGE_MODES: frozenset[str] = frozenset(
+    {
+        "quote_then_gloss",
+        "doctrinal_unpack",
+        "institutional_clarifier",
+        "comparative_aside",
+        "verdict_landing",
+    }
+)
+_COMPARATIVE_ASIDE_MIN_WORDS_PER_SENTENCE = 18
+
+
 _PACK_ROLE_WEIGHTS: dict[str, float] = {
     "core": 1.75,
     "stakes": 0.95,
@@ -5258,7 +5444,7 @@ def _build_host_move_plan_diagnostics(
     host_phase_multiple_cues: list[str] = []
     host_phase_overcoverage_unjustified: list[str] = []
     host_target_closure_override_pressure: list[str] = []
-    allowed_moves = set(narrator_profile.allowed_moves)
+    allowed_moves = set(effective_narrator_allowed_moves(narrator_profile.allowed_moves))
 
     for scene in scene_cards:
         anchor_tokens = _scene_host_anchor_tokens(scene)
@@ -6162,6 +6348,67 @@ def _filter_primitive_ids_by_architecture(
     }
 
 
+def _build_architecture_narrative_state_coverage(
+    *,
+    strategy_episode: StrategyEpisode,
+    architecture: EpisodeArchitecture,
+) -> dict[str, list[str]]:
+    listener_agenda = _listener_agenda(strategy_episode)
+    host_agenda = _host_agenda(strategy_episode)
+    question_ids = {
+        move.question_id
+        for section in architecture.sections
+        for move in section.question_moves
+    }
+    memory_thread_ids = {
+        move.thread_id
+        for section in architecture.sections
+        for move in section.memory_thread_moves
+    }
+    host_mystery_ids = {
+        move.mystery_id
+        for section in architecture.sections
+        for move in section.host_mystery_moves
+    }
+    host_assumption_ids = {
+        move.assumption_id
+        for section in architecture.sections
+        for move in section.host_assumption_moves
+    }
+    host_theory_ids = {
+        move.theory_id
+        for section in architecture.sections
+        for move in section.host_theory_moves
+    }
+    return {
+        "listener_question_move_ids_missing_from_architecture": [
+            move.question_id
+            for move in listener_agenda.question_moves
+            if move.question_id not in question_ids
+        ],
+        "listener_memory_thread_move_ids_missing_from_architecture": [
+            move.thread_id
+            for move in listener_agenda.memory_thread_moves
+            if move.thread_id not in memory_thread_ids
+        ],
+        "host_mystery_move_ids_missing_from_architecture": [
+            move.mystery_id
+            for move in host_agenda.mystery_moves
+            if move.mystery_id not in host_mystery_ids
+        ],
+        "host_assumption_move_ids_missing_from_architecture": [
+            move.assumption_id
+            for move in host_agenda.assumption_moves
+            if move.assumption_id not in host_assumption_ids
+        ],
+        "host_theory_move_ids_missing_from_architecture": [
+            move.theory_id
+            for move in host_agenda.theory_moves
+            if move.theory_id not in host_theory_ids
+        ],
+    }
+
+
 def _build_episode_architecture_realization(
     *,
     strategy_episode: StrategyEpisode,
@@ -6211,6 +6458,10 @@ def _build_episode_architecture_realization(
     dropped_promised_beats_without_reason: list[str] = []
     negative_scope_violation_examples: list[str] = []
     warnings: list[str] = []
+    narrative_state_coverage = _build_architecture_narrative_state_coverage(
+        strategy_episode=strategy_episode,
+        architecture=architecture,
+    )
     warnings.extend(
         _build_architecture_section_count_warnings(
             section_count=section_count,
@@ -6249,7 +6500,16 @@ def _build_episode_architecture_realization(
         item.item_id: item for item in (series_explanation_registry or [])
     }
     missing_payoff_item_ids: list[str] = []
-    for item_id in strategy_episode.authorial_contract.introduce_explanation_item_ids:
+    listener_agenda = _listener_agenda(strategy_episode)
+    introduced_item_ids = (
+        listener_agenda.introduce_explanation_item_ids
+        or strategy_episode.authorial_contract.introduce_explanation_item_ids
+    )
+    reminded_item_ids = (
+        listener_agenda.remind_explanation_item_ids
+        or strategy_episode.authorial_contract.remind_explanation_item_ids
+    )
+    for item_id in introduced_item_ids:
         registry_item = registry_by_id.get(item_id)
         if registry_item is None or registry_item.importance != "foundational":
             continue
@@ -6268,7 +6528,7 @@ def _build_episode_architecture_realization(
 
     reminder_redefined_item_ids = [
         item_id
-        for item_id in strategy_episode.authorial_contract.remind_explanation_item_ids
+        for item_id in reminded_item_ids
         if any(
             plan.item_id == item_id and plan.stage == "define"
             for section in architecture.sections
@@ -6468,6 +6728,7 @@ def _build_episode_architecture_realization(
         "deferred_promised_beats_without_reason": deferred_promised_beats_without_reason,
         "dropped_promised_beats_without_reason": dropped_promised_beats_without_reason,
         "negative_scope_violation_examples": negative_scope_violation_examples,
+        "narrative_state_coverage": narrative_state_coverage,
         "target_authorial_passages_per_episode": target_authorial_passages,
         "authorial_passage_count": authorial_passage_count,
         "warning_count": len(warnings),
@@ -7190,6 +7451,84 @@ def _build_scene_job_budget_diagnostics(
     return diagnostics, warnings
 
 
+def _build_comparative_aside_scene_warnings(
+    *,
+    architecture: EpisodeArchitecture,
+    scene_cards: list[SceneCardDraft | SceneCard],
+) -> list[str]:
+    warnings: list[str] = []
+    scenes_by_section_id: dict[str, list[SceneCardDraft | SceneCard]] = {}
+    for scene in scene_cards:
+        scenes_by_section_id.setdefault(scene.section_id, []).append(scene)
+
+    for section in architecture.sections:
+        section_authorial_by_id = {
+            passage.authorial_passage_id: passage for passage in section.authorial_passages
+        }
+        for scene in scenes_by_section_id.get(section.section_id, []):
+            assigned_passages = [
+                section_authorial_by_id[authorial_passage_id]
+                for authorial_passage_id in scene.authorial_passage_ids
+                if authorial_passage_id in section_authorial_by_id
+            ]
+            comparative_asides = [
+                passage
+                for passage in assigned_passages
+                if passage.mode == "comparative_aside"
+            ]
+            if not comparative_asides:
+                continue
+
+            move_types = {
+                cue.move_type for _phase, cue in _iter_host_move_cues(scene)
+            }
+            has_return_move = bool({"callback", "evaluate"} & move_types)
+            heavy_non_aside_passages = [
+                passage
+                for passage in assigned_passages
+                if passage.mode in _HEAVY_AUTHORIAL_PASSAGE_MODES
+                and passage.mode != "comparative_aside"
+            ]
+            projected_words = _project_scene_word_count(scene, words_per_minute=145.0)
+
+            for passage in comparative_asides:
+                if passage.placement == "close" and passage.budget_sentences <= 3:
+                    warnings.append(
+                        "comparative_aside_close_underprovisioned: "
+                        f"{scene.scene_id}/{passage.authorial_passage_id}"
+                    )
+                if not has_return_move:
+                    warnings.append(
+                        "comparative_aside_missing_return_move: "
+                        f"{scene.scene_id}/{passage.authorial_passage_id}"
+                    )
+                if scene.word_count_priority == WordCountPriority.TIGHT:
+                    warnings.append(
+                        "comparative_aside_tight_priority: "
+                        f"{scene.scene_id}/{passage.authorial_passage_id}"
+                    )
+                if projected_words < (
+                    int(passage.budget_sentences)
+                    * _COMPARATIVE_ASIDE_MIN_WORDS_PER_SENTENCE
+                ):
+                    warnings.append(
+                        "comparative_aside_scene_too_short: "
+                        f"{scene.scene_id}/{passage.authorial_passage_id}"
+                    )
+            if scene.scene_job == SceneJob.ANSWER and heavy_non_aside_passages:
+                warnings.append(
+                    "comparative_aside_answer_scene_stacked: "
+                    f"{scene.scene_id}/"
+                    + ",".join(
+                        sorted(
+                            passage.authorial_passage_id
+                            for passage in heavy_non_aside_passages
+                        )
+                    )
+                )
+    return warnings
+
+
 def _build_architecture_section_count_warnings(
     *,
     section_count: int,
@@ -7385,6 +7724,195 @@ def _build_scene_card_primitive_warnings(
 def _normalize_section_text_tokens(text: str) -> set[str]:
     normalized = re.sub(r"[^a-z0-9]+", " ", (text or "").lower())
     return {token for token in normalized.split() if len(token) >= 4}
+
+
+def _continuity_item_sort_key(item: ContinuityCarryItem) -> tuple[int, int, str]:
+    return (
+        0 if item.priority == "high" else 1,
+        0 if item.desired_surface == "recap" else 1,
+        item.item_id,
+    )
+
+
+def _continuity_items_to_payload(
+    items: list[ContinuityCarryItem],
+) -> list[dict[str, Any]]:
+    return [item.model_dump(mode="json") for item in items]
+
+
+def _build_continuity_contract(
+    *,
+    narrative_state: NarrativeState | None,
+    episode_number: int,
+    phase: str,
+) -> dict[str, Any]:
+    if narrative_state is None:
+        return {
+            "phase": phase,
+            "episode_number": episode_number,
+            "last_episode_takeaway": "",
+            "recap_items": [],
+            "must_surface_early": [],
+            "must_leave_live": [],
+            "open_question_texts": [],
+            "open_memory_thread_labels": [],
+            "host_open_pressures": [],
+        }
+
+    carry_items = list(narrative_state.listener.carry_forward_memory)
+    if phase == "pre":
+        recap_items = sorted(carry_items, key=_continuity_item_sort_key)[:2]
+        if not recap_items and narrative_state.listener.last_episode_takeaway.strip():
+            recap_items = [
+                ContinuityCarryItem(
+                    item_id=f"takeaway_ep_{max(episode_number - 1, 0)}",
+                    label=narrative_state.listener.last_episode_takeaway.strip(),
+                    kind="takeaway",
+                    source_episode_number=max(episode_number - 1, 0),
+                    priority="normal",
+                    desired_surface="recap",
+                    recommended_action="remind",
+                )
+            ]
+        must_surface_early = [
+            item
+            for item in carry_items
+            if item.desired_surface in {"recap", "opening"}
+        ]
+        must_leave_live: list[ContinuityCarryItem] = []
+    else:
+        recap_items = []
+        must_surface_early = []
+        must_leave_live = sorted(carry_items, key=_continuity_item_sort_key)
+
+    open_question_texts = [
+        question.text
+        for question in narrative_state.listener.questions
+        if question.status in {"open", "advanced", "reframed"}
+    ]
+    open_memory_thread_labels = [
+        thread.label
+        for thread in narrative_state.listener.memory_threads
+        if thread.status in {"open", "refreshed"}
+    ]
+    host_open_pressures = [
+        mystery.text
+        for mystery in narrative_state.host.mysteries
+        if mystery.status in {"open", "advanced", "reframed"}
+    ]
+    return {
+        "phase": phase,
+        "episode_number": episode_number,
+        "last_episode_takeaway": narrative_state.listener.last_episode_takeaway,
+        "recap_items": _continuity_items_to_payload(recap_items),
+        "must_surface_early": _continuity_items_to_payload(
+            sorted(must_surface_early, key=_continuity_item_sort_key)
+        ),
+        "must_leave_live": _continuity_items_to_payload(must_leave_live),
+        "open_question_texts": open_question_texts,
+        "open_memory_thread_labels": open_memory_thread_labels,
+        "host_open_pressures": host_open_pressures,
+    }
+
+
+def _continuity_item_realized(item: dict[str, Any], observed_texts: list[str]) -> bool:
+    label = str(item.get("label", "") or "").strip()
+    if not label:
+        return True
+    normalized_label = " ".join(sorted(_normalize_section_text_tokens(label)))
+    normalized_texts = [" ".join(sorted(_normalize_section_text_tokens(text))) for text in observed_texts]
+    if any(label.lower() in (text or "").lower() for text in observed_texts):
+        return True
+    label_tokens = _normalize_section_text_tokens(normalized_label)
+    if not label_tokens:
+        return True
+    observed_tokens: set[str] = set()
+    for text in normalized_texts:
+        observed_tokens.update(_normalize_section_text_tokens(text))
+    overlap = label_tokens & observed_tokens
+    return len(overlap) >= min(2, len(label_tokens))
+
+
+def _build_continuity_realization_diagnostics(
+    *,
+    episode_number: int,
+    stage: str,
+    framing: dict[str, Any],
+    ordered_sections: list[dict[str, Any]],
+    continuity_contract_pre: dict[str, Any],
+    continuity_contract_post: dict[str, Any],
+) -> dict[str, Any]:
+    recap_text = str(framing.get("recap", "") or "")
+    opening_question = str(framing.get("opening_question", "") or "")
+    opening_zone_texts = [recap_text, opening_question]
+    if ordered_sections:
+        opening_zone_texts.append(str(ordered_sections[0].get("text", "") or ""))
+    closing_zone_sections = ordered_sections[-2:] if len(ordered_sections) >= 2 else ordered_sections
+    closing_zone_texts = [str(section.get("text", "") or "") for section in closing_zone_sections]
+    recap_items = list(continuity_contract_pre.get("recap_items", []) or [])
+    must_surface_early = list(continuity_contract_pre.get("must_surface_early", []) or [])
+    must_leave_live = list(continuity_contract_post.get("must_leave_live", []) or [])
+
+    per_item_results: list[dict[str, Any]] = []
+    realized_item_ids: list[str] = []
+    missed_item_ids: list[str] = []
+    warning_labels: list[str] = []
+    targeted_feedback: list[dict[str, str]] = []
+
+    def _record(item: dict[str, Any], zone: str, observed_texts: list[str]) -> None:
+        item_id = str(item.get("item_id", "") or "")
+        label = str(item.get("label", "") or "")
+        priority = str(item.get("priority", "normal") or "normal")
+        realized = _continuity_item_realized(item, observed_texts)
+        if realized:
+            realized_item_ids.append(item_id)
+        else:
+            missed_item_ids.append(item_id)
+            warning_labels.append(f"{zone}_miss:{item_id}")
+            if zone == "recap":
+                instruction = f"Restore `{label}` in framing.recap."
+            elif zone == "opening":
+                instruction = f"Re-surface `{label}` in the opening zone rather than only later exposition."
+            else:
+                instruction = f"Leave `{label}` live in the closing or residue zone so the next episode can inherit it."
+            targeted_feedback.append(
+                {
+                    "item_id": item_id,
+                    "label": label,
+                    "zone": zone,
+                    "priority": priority,
+                    "instruction": instruction,
+                }
+            )
+        per_item_results.append(
+            {
+                "item_id": item_id,
+                "label": label,
+                "zone": zone,
+                "priority": priority,
+                "realized": realized,
+            }
+        )
+
+    for item in recap_items:
+        _record(item, "recap", [recap_text])
+    for item in must_surface_early:
+        _record(item, "opening", opening_zone_texts)
+    for item in must_leave_live:
+        _record(item, "closing", closing_zone_texts)
+
+    return {
+        "episode_number": episode_number,
+        "stage": stage,
+        "expected_recap_items": recap_items,
+        "expected_opening_items": must_surface_early,
+        "expected_closing_items": must_leave_live,
+        "per_item_results": per_item_results,
+        "realized_item_ids": sorted(set(filter(None, realized_item_ids))),
+        "missed_item_ids": sorted(set(filter(None, missed_item_ids))),
+        "warning_labels": warning_labels,
+        "targeted_feedback": targeted_feedback,
+    }
 
 
 _HOST_CUE_PATTERNS: tuple[re.Pattern[str], ...] = (
@@ -7620,6 +8148,99 @@ def _build_section_plan_realization(
     return section_reports, all_warnings
 
 
+def _build_state_alignment_diagnostics(
+    *,
+    architecture: EpisodeArchitecture,
+    scene_cards: list[SceneCardDraft | SceneCard],
+) -> tuple[dict[str, Any], list[str]]:
+    host_change_section_ids = [
+        section.section_id
+        for section in architecture.sections
+        if section.host_mystery_moves
+        or section.host_assumption_moves
+        or section.host_theory_moves
+    ]
+    host_change_section_id_set = set(host_change_section_ids)
+    scene_cards_by_section: dict[str, list[SceneCardDraft | SceneCard]] = {}
+    for scene in scene_cards:
+        scene_cards_by_section.setdefault(scene.section_id, []).append(scene)
+    section_ids_missing_scene_host_moves = [
+        section_id
+        for section_id in host_change_section_ids
+        if not any(
+            _scene_host_phase_bucket_count(scene) > 0
+            for scene in scene_cards_by_section.get(section_id, [])
+        )
+    ]
+    scene_ids_with_epistemic_moves_outside_host_change_sections: list[str] = []
+    for scene in scene_cards:
+        if scene.section_id in host_change_section_id_set:
+            continue
+        scene_cues = [
+            cue
+            for phase in _HOST_MOVE_PHASE_ORDER
+            for cue in getattr(scene.host_moves, phase)
+        ]
+        if any(cue.move_type in {"uncertainty", "revision", "surprise"} for cue in scene_cues):
+            scene_ids_with_epistemic_moves_outside_host_change_sections.append(
+                scene.scene_id
+            )
+    warnings: list[str] = []
+    if section_ids_missing_scene_host_moves:
+        warnings.append(
+            "state_alignment_missing_scene_host_moves: "
+            f"{_preview_ids(section_ids_missing_scene_host_moves)}"
+        )
+    if scene_ids_with_epistemic_moves_outside_host_change_sections:
+        warnings.append(
+            "state_alignment_epistemic_moves_outside_host_change_sections: "
+            f"{_preview_ids(scene_ids_with_epistemic_moves_outside_host_change_sections)}"
+        )
+    diagnostics = {
+        "host_change_section_ids": host_change_section_ids,
+        "section_ids_missing_scene_host_moves": section_ids_missing_scene_host_moves,
+        "scene_ids_with_epistemic_moves_outside_host_change_sections": (
+            scene_ids_with_epistemic_moves_outside_host_change_sections
+        ),
+        "warning_count": len(warnings),
+        "warnings": warnings,
+    }
+    return diagnostics, warnings
+
+
+def _validate_continuity_recap_requirement(
+    *,
+    episode_number: int,
+    plan: EpisodePlanDraft,
+    continuity_contract_pre: dict[str, Any],
+) -> None:
+    recap_items = list(continuity_contract_pre.get("recap_items", []) or [])
+    recap_text = str(plan.framing.recap or "").strip()
+    if episode_number <= 1:
+        if recap_text:
+            raise ComplianceViolationError(
+                "Episode 1 must not emit framing.recap.",
+                data={
+                    "issue": "continuity_recap_forbidden",
+                    "episode_number": episode_number,
+                    "instruction": "Set framing.recap to null for episode 1.",
+                },
+            )
+        return
+    if recap_items and not recap_text:
+        raise ComplianceViolationError(
+            "Episode planning omitted framing.recap despite inherited continuity items.",
+            data={
+                "issue": "continuity_recap_missing",
+                "episode_number": episode_number,
+                "instruction": "Add a 1-2 sentence framing.recap that recalls inherited continuity burden before the new opening.",
+                "missing_item_ids": [
+                    str(item.get("item_id", "") or "") for item in recap_items
+                ],
+            },
+        )
+
+
 def _scene_counts_toward_spine(
     scene: SceneCardDraft | SceneCard,
     strategy_episode: StrategyEpisode,
@@ -7797,11 +8418,20 @@ class PipelineOrchestrator:
         self.narrative_strategy_agent = NarrativeStrategyAgent(
             self.llm, max_retry_attempts=_retries("narrative_strategy")
         )
+        self.narrative_strategy_skeleton_agent = NarrativeStrategySkeletonAgent(
+            self.llm, max_retry_attempts=_retries("narrative_strategy_skeleton")
+        )
+        self.narrative_strategy_enrichment_agent = NarrativeStrategyEnrichmentAgent(
+            self.llm, max_retry_attempts=_retries("narrative_strategy_enrichment")
+        )
         self.episode_architecture_agent = EpisodeArchitectureAgent(
             self.llm, max_retry_attempts=_retries("episode_architecture")
         )
         self.episode_planning_agent = EpisodePlanningAgent(
             self.llm, max_retry_attempts=_retries("episode_planning")
+        )
+        self.narrative_state_reconciler_agent = NarrativeStateReconcilerAgent(
+            self.llm, max_retry_attempts=_retries("narrative_state_reconciliation")
         )
         self.writing_agent = WritingAgent(
             self.llm, max_retry_attempts=_retries("episode_writing")
@@ -7988,8 +8618,11 @@ class PipelineOrchestrator:
             project = project.model_copy(update={"status": ProjectStatus.PLANNING})
             (
                 episode_architectures,
-                architecture_actor_metrics,
-            ) = await self._build_episode_architectures(
+                episode_plans,
+                narrative_state_pre_by_episode,
+                narrative_state_post_by_episode,
+                planning_state_metrics,
+            ) = await self._plan_series_with_narrative_state(
                 project,
                 synthesis_map,
                 strategy,
@@ -7998,17 +8631,12 @@ class PipelineOrchestrator:
                 actor_metadata,
                 scene_discovery,
             )
-            actor_metrics["episode_architecture"] = architecture_actor_metrics
-            episode_plans, planning_actor_metrics = await self._plan_series(
-                project,
-                synthesis_map,
-                strategy,
-                episode_architectures,
-                corpus,
-                project_dir,
-                actor_metadata,
+            actor_metrics["episode_architecture"] = planning_state_metrics.get(
+                "episode_architecture", {}
             )
-            actor_metrics["episode_planning"] = planning_actor_metrics
+            actor_metrics["episode_planning"] = planning_state_metrics.get(
+                "episode_planning", {}
+            )
 
             # Phase 3: Episode Production (parallel per episode)
             logger.info("Phase 3: Episode Production (%d episodes)", len(episode_plans))
@@ -8022,7 +8650,6 @@ class PipelineOrchestrator:
                     or pipeline_config.episode_write_concurrency,
                 )
             )
-            host_policy = _build_host_policy_payload(strategy.narrator_profile)
             retained_primitive_lookup = _flatten_synthesis_primitives(synthesis_map)
             strategy_episode_by_number = {
                 episode.episode_number: episode for episode in strategy.episodes
@@ -8040,11 +8667,21 @@ class PipelineOrchestrator:
                     corpus,
                     actor_metadata,
                     project_dir,
-                    host_policy,
+                    _build_host_policy_payload(
+                        strategy.narrator_profile,
+                        narrative_state_pre=narrative_state_pre_by_episode.get(
+                            plan.episode_number
+                        ),
+                        narrative_state_post=narrative_state_post_by_episode.get(
+                            plan.episode_number
+                        ),
+                    ),
                     retained_primitive_lookup,
                     sem,
                     spoken_sem,
                     strategy.series_explanation_registry,
+                    narrative_state_pre_by_episode.get(plan.episode_number),
+                    narrative_state_post_by_episode.get(plan.episode_number),
                 )
                 for plan in episode_plans
             ]
@@ -9643,18 +10280,16 @@ class PipelineOrchestrator:
             project_dir,
             primitive_count=len(_flatten_base_synthesis_primitives(synthesis_map)),
         ) as ctx:
-            payload = _compact_narrative_strategy_runtime_payload(
-                self.narrative_strategy_agent.build_payload(
+            skeleton_payload = _compact_narrative_strategy_runtime_payload(
+                self.narrative_strategy_skeleton_agent.build_payload(
                     synthesis_map=_build_narrative_strategy_synthesis_map_payload(
                         synthesis_map
                     ),
                     project_metadata=_build_narrative_strategy_project_metadata_payload(
                         project
                     ),
-                    scene_discovery=(
-                        scene_discovery.model_dump(mode="json")
-                        if scene_discovery is not None
-                        else None
+                    scene_discovery=_build_narrative_strategy_scene_discovery_payload(
+                        scene_discovery
                     ),
                     episode_count=project.requested_episode_count,
                     recommended_episode_count_min=(
@@ -9668,8 +10303,49 @@ class PipelineOrchestrator:
                     ),
                 )
             )
-            strategy = await asyncio.to_thread(
-                self.narrative_strategy_agent.run, payload
+            strategy_skeleton = await asyncio.to_thread(
+                self.narrative_strategy_skeleton_agent.run, skeleton_payload
+            )
+            _save_json(project_dir / "narrative_strategy_skeleton.json", strategy_skeleton)
+
+            selected_preview = _build_strategy_selected_synthesis_map_preview(
+                project_id=project.project_id,
+                synthesis_map=synthesis_map,
+                strategy=strategy_skeleton,
+            )
+            try:
+                mode = PodcastMode(project.config.podcast_mode.value)
+            except ValueError:
+                mode = PodcastMode.FULL
+            enrichment_payload = _compact_narrative_strategy_runtime_payload(
+                self.narrative_strategy_enrichment_agent.build_payload(
+                    strategy_skeleton=strategy_skeleton.model_dump(mode="json"),
+                    synthesis_map=_build_narrative_strategy_synthesis_map_payload(
+                        selected_preview
+                    ),
+                    project_metadata=_build_narrative_strategy_project_metadata_payload(
+                        project
+                    ),
+                    episode_scene_candidates=_build_episode_scene_candidate_payloads(
+                        strategy=strategy_skeleton,
+                        scene_discovery=scene_discovery,
+                        mode=mode,
+                    ),
+                    actor_metadata=_build_narrative_strategy_actor_metadata_payload(
+                        actor_metadata
+                    ),
+                )
+            )
+            strategy_enrichment = await asyncio.to_thread(
+                self.narrative_strategy_enrichment_agent.run, enrichment_payload
+            )
+            _save_json(
+                project_dir / "narrative_strategy_enrichment.json",
+                strategy_enrichment,
+            )
+            strategy = _merge_narrative_strategy_parts(
+                skeleton=strategy_skeleton,
+                enrichment=strategy_enrichment,
             )
             strategy, strategy_actor_metrics = clean_narrative_strategy_actor_links(
                 strategy,
@@ -9789,6 +10465,646 @@ class PipelineOrchestrator:
                 "episode_count": strategy.recommended_episode_count,
                 "recommended_episode_count": strategy.recommended_episode_count,
             }
+        )
+
+    async def _build_single_episode_architecture(
+        self,
+        *,
+        project: ThematicProject,
+        synthesis_map: SynthesisMap,
+        strategy: NarrativeStrategy,
+        strategy_episode: StrategyEpisode,
+        corpus: ThematicCorpus,
+        actor_metadata: ActorMetadata,
+        scene_discovery: SceneDiscoveryArtifact | None,
+        narrative_state_pre: NarrativeState,
+    ) -> tuple[EpisodeArchitecture, dict[str, Any]]:
+        primitive_lookup = _flatten_synthesis_primitives(synthesis_map)
+        passage_lookup = _build_passage_lookup(corpus)
+        primitive_ids_by_role = {
+            "core": list(strategy_episode.episode_spine.core_primitive_ids),
+            "support": list(strategy_episode.episode_spine.support_primitive_roles.keys()),
+            "recall": list(strategy_episode.episode_spine.recall_primitive_ids),
+        }
+        episode_synthesis_map_payload, primitive_ids = _build_episode_synthesis_map_payload(
+            synthesis_map,
+            primitive_ids_by_role,
+        )
+        episode_actor_ids = _collect_episode_actor_ids(
+            strategy_episode=strategy_episode,
+            primitive_ids=primitive_ids,
+            primitive_lookup=primitive_lookup,
+        )
+        episode_actor_metadata = select_actor_metadata_subset(
+            actor_metadata,
+            episode_actor_ids,
+        )
+        project_metadata = {
+            "podcast_mode": project.config.podcast_mode.value,
+            "theme": project.theme,
+            "sub_themes": project.sub_themes,
+            "book_count": len(project.books),
+            "books": [
+                {"book_id": b.book_id, "title": b.title, "author": b.author}
+                for b in project.books
+            ],
+            "architecture_section_target_min": (
+                project.config.architecture_section_target_min
+            ),
+            "architecture_section_target_max": (
+                project.config.architecture_section_target_max
+            ),
+            "min_episode_minutes": project.config.min_episode_minutes,
+            "max_episode_minutes": project.config.max_episode_minutes,
+        }
+        core_passages = _build_episode_architecture_core_passages(
+            driving_question=strategy_episode.episode_spine.listener_problem,
+            thematic_focus=strategy_episode.thematic_focus,
+            episode_spine=strategy_episode.episode_spine,
+            primitive_lookup=primitive_lookup,
+            passage_lookup=passage_lookup,
+        )
+        support_passages = _build_episode_architecture_support_passages(
+            driving_question=strategy_episode.episode_spine.listener_problem,
+            thematic_focus=strategy_episode.thematic_focus,
+            episode_spine=strategy_episode.episode_spine,
+            primitive_lookup=primitive_lookup,
+            passage_lookup=passage_lookup,
+        )
+        episode_scene_payload = _build_episode_scene_payload(
+            strategy_episode=strategy_episode,
+            scene_discovery=scene_discovery,
+        )
+        payload = self.episode_architecture_agent.build_payload(
+            episode=strategy_episode.model_dump(mode="json"),
+            synthesis_map=episode_synthesis_map_payload,
+            project_metadata=project_metadata,
+            core_passages=core_passages,
+            support_passages=support_passages,
+            episode_scenes=episode_scene_payload,
+            series_explanation_registry=[
+                item.model_dump(mode="json")
+                for item in strategy.series_explanation_registry
+            ],
+            series_actor_explanation_registry=[
+                item.model_dump(mode="json")
+                for item in strategy.series_actor_explanation_registry
+            ],
+            narrator_profile=strategy.narrator_profile.model_dump(mode="json"),
+            narrative_state=narrative_state_pre.model_dump(mode="json"),
+            actor_metadata=compact_actor_metadata(episode_actor_metadata),
+        )
+        architecture = await asyncio.to_thread(self.episode_architecture_agent.run, payload)
+        architecture = _validate_architecture_transition(
+            strategy_episode=strategy_episode,
+            architecture=architecture,
+        )
+        report = {
+            "episode_number": strategy_episode.episode_number,
+            "section_count": len(architecture.sections),
+            "major_turn_section_id": architecture.major_turn_section_id,
+            "core_primitive_count": len(strategy_episode.episode_spine.core_primitive_ids),
+            "episode_scene_candidate_count": len(episode_scene_payload),
+            "actor_directive_count": len(strategy_episode.actor_arc_directives),
+        }
+        return architecture, report
+
+    async def _plan_single_episode(
+        self,
+        *,
+        project: ThematicProject,
+        synthesis_map: SynthesisMap,
+        strategy: NarrativeStrategy,
+        strategy_episode: StrategyEpisode,
+        architecture: EpisodeArchitecture,
+        corpus: ThematicCorpus,
+        actor_metadata: ActorMetadata,
+        narrative_state_pre: NarrativeState,
+    ) -> tuple[EpisodePlan, dict[str, Any]]:
+        passage_lookup = _build_passage_lookup(corpus)
+        primitive_lookup = _flatten_synthesis_primitives(synthesis_map)
+        project_metadata = {
+            "podcast_mode": project.config.podcast_mode.value,
+            "theme": project.theme,
+            "sub_themes": project.sub_themes,
+            "book_count": len(project.books),
+            "books": [
+                {"book_id": b.book_id, "title": b.title, "author": b.author}
+                for b in project.books
+            ],
+            "scene_card_target_min": project.config.scene_card_target_min,
+            "scene_card_target_max": project.config.scene_card_target_max,
+            "min_episode_minutes": project.config.min_episode_minutes,
+            "max_episode_minutes": project.config.max_episode_minutes,
+        }
+        host_policy = _build_host_policy_payload(
+            strategy.narrator_profile,
+            narrative_state_pre=narrative_state_pre,
+        )
+        continuity_contract_pre = _build_continuity_contract(
+            narrative_state=narrative_state_pre,
+            episode_number=strategy_episode.episode_number,
+            phase="pre",
+        )
+        primitive_ids_by_role = _filter_primitive_ids_by_architecture(
+            strategy_episode,
+            architecture,
+        )
+        episode_synthesis_map_payload, primitive_ids = _build_episode_synthesis_map_payload(
+            synthesis_map,
+            primitive_ids_by_role,
+        )
+        episode_actor_ids = _collect_episode_actor_ids(
+            strategy_episode=strategy_episode,
+            primitive_ids=primitive_ids,
+            primitive_lookup=primitive_lookup,
+        )
+        episode_actor_metadata = select_actor_metadata_subset(
+            actor_metadata,
+            episode_actor_ids,
+        )
+        passage_ids: list[str] = []
+        seen_passage_ids: set[str] = set()
+        passage_keep_fraction_by_id: dict[str, float] = {}
+        planning_passage_refs = _build_episode_planning_passage_refs(
+            primitive_ids_by_role=primitive_ids_by_role,
+            primitive_lookup=primitive_lookup,
+        )
+        for passage_ref in planning_passage_refs:
+            passage_id = passage_ref["passage_id"]
+            if passage_id not in passage_lookup:
+                continue
+            keep_fraction = _planning_passage_keep_fraction(
+                passage_ref["episode_role"],
+                passage_ref["passage_kind"],
+            )
+            passage_keep_fraction_by_id[passage_id] = max(
+                keep_fraction,
+                passage_keep_fraction_by_id.get(passage_id, 0.0),
+            )
+            if passage_id in seen_passage_ids:
+                continue
+            seen_passage_ids.add(passage_id)
+            passage_ids.append(passage_id)
+        available_passages = [
+            {
+                "passage_id": passage_lookup[passage_id].passage_id,
+                "book_id": passage_lookup[passage_id].book_id,
+                "text": _resolve_writing_passage_text(passage_lookup[passage_id]),
+                "chapter_ref": passage_lookup[passage_id].chapter_ref,
+            }
+            for passage_id in passage_ids
+        ]
+        episode_query_parts = [
+            strategy_episode.title,
+            strategy_episode.episode_spine.listener_problem,
+            strategy_episode.thematic_focus,
+        ]
+        episode_query_parts.extend(_strategy_episode_question_texts(strategy_episode))
+        episode_query_parts.extend(
+            item.get("label", "")
+            for item in continuity_contract_pre.get("recap_items", [])
+            if isinstance(item, dict)
+        )
+        episode_query_parts.extend(
+            item.get("label", "")
+            for item in continuity_contract_pre.get("must_surface_early", [])
+            if isinstance(item, dict)
+        )
+        episode_query_parts.extend(
+            continuity_contract_pre.get("open_question_texts", [])
+        )
+        episode_query_parts.extend(
+            continuity_contract_pre.get("open_memory_thread_labels", [])
+        )
+        episode_query_parts.extend(
+            continuity_contract_pre.get("host_open_pressures", [])
+        )
+        episode_query_text = " ".join(part for part in episode_query_parts if part).strip()
+        passage_query_text_by_id = _build_episode_planning_passage_query_texts(
+            episode_query_text=episode_query_text,
+            passage_refs=planning_passage_refs,
+            primitive_lookup=primitive_lookup,
+        )
+        _trim_candidate_texts_by_bm25_query_text(
+            episode_query_text,
+            available_passages,
+            keep_fraction=0.5,
+            keep_fraction_by_passage_id=passage_keep_fraction_by_id,
+            query_text_by_passage_id=passage_query_text_by_id,
+        )
+        episode_payload = architecture.model_dump(mode="json")
+        compact_episode_actor_metadata = compact_actor_metadata(episode_actor_metadata)
+        plan_draft: EpisodePlanDraft | None = None
+        actor_link_metrics: dict[str, Any] = {}
+        actor_explanation_warnings: list[str] = []
+        planning_feedback: dict[str, Any] | None = None
+        max_attempts = self.episode_planning_agent.max_retry_attempts
+        for attempt in range(1, max_attempts + 1):
+            payload = self.episode_planning_agent.build_payload(
+                strategy_episode=strategy_episode.model_dump(mode="json"),
+                architecture=episode_payload,
+                synthesis_map=episode_synthesis_map_payload,
+                project_metadata=project_metadata,
+                scene_job_budget=scene_job_budget_for_mode(project.config.podcast_mode),
+                available_passages=available_passages,
+                host_policy=host_policy,
+                narrative_state_pre=narrative_state_pre.model_dump(mode="json"),
+                continuity_contract_pre=continuity_contract_pre,
+                actor_metadata=compact_episode_actor_metadata,
+                planning_feedback=planning_feedback,
+                field_semantics=_build_field_semantics_payload(),
+            )
+            try:
+                plan_draft = await asyncio.to_thread(self.episode_planning_agent.run, payload)
+                plan_draft = _validate_plan_transition(
+                    strategy_episode=strategy_episode,
+                    architecture=architecture,
+                    plan=plan_draft,
+                )
+                _validate_continuity_recap_requirement(
+                    episode_number=strategy_episode.episode_number,
+                    plan=plan_draft,
+                    continuity_contract_pre=continuity_contract_pre,
+                )
+                plan_draft, actor_link_metrics = clean_scene_actor_links(
+                    plan_draft,
+                    episode_actor_metadata,
+                    strategy_episode.actor_arc_directives,
+                )
+                actor_explanation_warnings = _validate_actor_explanation_scene_links(
+                    architecture=architecture,
+                    plan=plan_draft,
+                )
+                retry_host_moves_diagnostics, _retry_host_move_warnings = (
+                    _build_host_move_plan_diagnostics(
+                        scene_cards=plan_draft.scene_cards,
+                        architecture=architecture,
+                        narrator_profile=strategy.narrator_profile,
+                    )
+                )
+                if retry_host_moves_diagnostics["disallowed_move_scene_ids"]:
+                    raise ComplianceViolationError(
+                        "Episode plan used host move types that are not allowed by the narrator policy.",
+                        data={
+                            "issue": "host_move_allowed_move_mismatch",
+                            "episode_number": architecture.episode_number,
+                            "scene_ids": retry_host_moves_diagnostics["disallowed_move_scene_ids"],
+                            "instruction": "Use only move_type values allowed by host_policy.allowed_moves.",
+                        },
+                    )
+                break
+            except ComplianceViolationError as exc:
+                if attempt >= max_attempts:
+                    raise
+                backoff = min(2 ** (attempt - 1), 16) + (time.monotonic() % 1)
+                planning_feedback = _build_plan_transition_feedback(exc)
+                self.run_logger.log(
+                    "episode_planning_retry_scheduled",
+                    episode=architecture.episode_number,
+                    attempt=attempt,
+                    max_attempts=max_attempts,
+                    next_attempt=attempt + 1,
+                    backoff_seconds=backoff,
+                    error_type=type(exc).__name__,
+                    error_message=str(exc),
+                    issue=planning_feedback["issue"],
+                )
+                await asyncio.sleep(backoff)
+        if plan_draft is None:
+            raise RuntimeError(
+                f"Episode planning did not produce a plan draft for episode {architecture.episode_number}."
+            )
+        spine_diagnostics = _build_spine_plan_diagnostics(
+            strategy_episode=strategy_episode,
+            plan=plan_draft,
+            scene_job_budget=scene_job_budget_for_mode(project.config.podcast_mode),
+        )
+        host_moves_diagnostics, host_move_warnings = _build_host_move_plan_diagnostics(
+            scene_cards=plan_draft.scene_cards,
+            architecture=architecture,
+            narrator_profile=strategy.narrator_profile,
+        )
+        scene_card_count_warnings = _build_scene_card_count_warnings(
+            scene_card_count=len(plan_draft.scene_cards),
+            scene_card_target_min=project.config.scene_card_target_min,
+            scene_card_target_max=project.config.scene_card_target_max,
+        )
+        scene_card_primitive_warnings = _build_scene_card_primitive_warnings(
+            scene_cards=plan_draft.scene_cards,
+            primitive_pool_ids=set(primitive_ids),
+            primitive_by_id=primitive_lookup,
+            primitive_min=project.config.scene_card_primitives_min,
+            primitive_max=project.config.scene_card_primitives_max,
+        )
+        scene_card_family_warnings = _build_scene_card_family_warnings(
+            strategy_episode=strategy_episode,
+            primitive_pool_ids=set(primitive_ids),
+            primitive_by_id=primitive_lookup,
+        )
+        section_realization_reports, section_planning_warnings = _build_section_plan_realization(
+            episode=architecture,
+            scene_cards=plan_draft.scene_cards,
+            words_per_minute=float(self.settings.pipeline.spoken_words_per_minute),
+        )
+        state_alignment_diagnostics, state_alignment_warnings = (
+            _build_state_alignment_diagnostics(
+                architecture=architecture,
+                scene_cards=plan_draft.scene_cards,
+            )
+        )
+        structural_card_concreteness_warnings = _build_structural_card_concreteness_warnings(
+            scene_cards=plan_draft.scene_cards,
+        )
+        human_grounding_diagnostics, human_grounding_warnings = _build_human_grounding_warnings(
+            scene_cards=plan_draft.scene_cards,
+        )
+        comparative_aside_warnings = _build_comparative_aside_scene_warnings(
+            architecture=architecture,
+            scene_cards=plan_draft.scene_cards,
+        )
+        scene_job_counts = _build_scene_job_counts(plan_draft.scene_cards)
+        scene_role_counts: dict[str, int] = {}
+        for scene in plan_draft.scene_cards:
+            scene_role_counts[scene.scene_role] = scene_role_counts.get(scene.scene_role, 0) + 1
+        section_load_warnings = [
+            warning
+            for warning in section_planning_warnings
+            if warning.startswith("section_scene_card_load_high")
+            or warning.startswith("section_projected_word_count_high")
+        ]
+        planning_warnings = (
+            scene_card_count_warnings
+            + scene_card_primitive_warnings
+            + scene_card_family_warnings
+            + structural_card_concreteness_warnings
+            + human_grounding_warnings
+            + comparative_aside_warnings
+            + actor_explanation_warnings
+            + section_planning_warnings
+            + state_alignment_warnings
+            + list(spine_diagnostics.get("scene_job_budget_warnings", []))
+            + host_move_warnings
+        )
+        for warning in planning_warnings:
+            logger.warning(
+                "episode_planning_warning episode=%s %s",
+                architecture.episode_number,
+                warning,
+            )
+        target_word_count = int(
+            round(
+                float(architecture.runtime_minutes)
+                * float(self.settings.pipeline.spoken_words_per_minute)
+            )
+        )
+        plan_payload = plan_draft.model_dump(mode="json")
+        plan = EpisodePlan.model_validate(
+            {
+                **plan_payload,
+                "target_word_count": target_word_count,
+            }
+        )
+        report = {
+            "episode_number": architecture.episode_number,
+            "scene_card_count": len(plan.scene_cards),
+            "scene_card_target_min": project.config.scene_card_target_min,
+            "scene_card_target_max": project.config.scene_card_target_max,
+            "scene_card_target_policy": project.config.scene_card_target_policy,
+            "scene_card_primitives_min": project.config.scene_card_primitives_min,
+            "scene_card_primitives_max": project.config.scene_card_primitives_max,
+            "scene_card_primitive_policy": project.config.scene_card_primitive_policy,
+            "scene_card_count_warnings": scene_card_count_warnings,
+            "scene_card_primitive_warnings": scene_card_primitive_warnings,
+            "scene_card_family_warnings": scene_card_family_warnings,
+            "scene_job_budget_warnings": list(
+                spine_diagnostics.get("scene_job_budget_warnings", [])
+            ),
+            "structural_card_concreteness_warnings": structural_card_concreteness_warnings,
+            "human_grounding_warnings": human_grounding_warnings,
+            "section_load_warnings": section_load_warnings,
+            "section_realization": section_realization_reports,
+            "state_alignment": state_alignment_diagnostics,
+            "scene_card_warning_count": len(planning_warnings),
+            "scene_role_counts": scene_role_counts,
+            "scene_job_counts": scene_job_counts,
+            "human_grounding_diagnostics": human_grounding_diagnostics,
+            "section_count": len(architecture.sections),
+            "core_primitive_count": len(strategy_episode.episode_spine.core_primitive_ids),
+            "covered_core_primitive_count": len(strategy_episode.episode_spine.core_primitive_ids),
+            "missing_core_primitive_ids": [],
+            "spine_diagnostics": spine_diagnostics,
+            "host_moves_diagnostics": host_moves_diagnostics,
+            "actor_link_metrics": actor_link_metrics,
+            "allocated_duration_seconds": sum(
+                scene.estimated_duration_seconds for scene in plan.scene_cards
+            ),
+        }
+        return plan, report
+
+    async def _reconcile_narrative_state(
+        self,
+        *,
+        project: ThematicProject,
+        strategy_episode: StrategyEpisode,
+        architecture: EpisodeArchitecture,
+        narrative_state_pre: NarrativeState,
+    ) -> NarrativeStateReconciliation:
+        payload = self.narrative_state_reconciler_agent.build_payload(
+            episode_number=architecture.episode_number,
+            project_id=project.project_id,
+            narrative_state_pre=narrative_state_pre.model_dump(mode="json"),
+            strategy_episode=strategy_episode.model_dump(mode="json"),
+            architecture=architecture.model_dump(mode="json"),
+        )
+        reconciliation = await asyncio.to_thread(
+            self.narrative_state_reconciler_agent.run, payload
+        )
+        return reconciliation
+
+    async def _build_episode_architectures_with_narrative_state(
+        self,
+        project: ThematicProject,
+        synthesis_map: SynthesisMap,
+        strategy: NarrativeStrategy,
+        corpus: ThematicCorpus,
+        project_dir: Path,
+        actor_metadata: ActorMetadata | None = None,
+        scene_discovery: SceneDiscoveryArtifact | None = None,
+    ) -> tuple[
+        list[EpisodeArchitecture],
+        dict[int, NarrativeState],
+        dict[int, NarrativeState],
+        list[NarrativeStateReconciliation],
+        dict[str, Any],
+    ]:
+        actor_metadata = actor_metadata or ActorMetadata(project_id=project.project_id)
+        async with _stage_log(
+            self.run_logger,
+            "episode_architecture",
+            project_dir,
+            episode_count=project.episode_count,
+            strategy=strategy.strategy_type,
+        ) as ctx:
+            strategy_episode_map = {
+                episode.episode_number: episode for episode in strategy.episodes
+            }
+            missing_episodes = [
+                episode_number
+                for episode_number in range(1, project.episode_count + 1)
+                if episode_number not in strategy_episode_map
+            ]
+            if missing_episodes:
+                raise RuntimeError(
+                    "Narrative strategy did not assign episode spines for "
+                    f"episodes: {missing_episodes}"
+                )
+
+            current_state = _build_initial_narrative_state(project.project_id)
+            architectures: list[EpisodeArchitecture] = []
+            architecture_reports: list[dict[str, Any]] = []
+            state_pre_by_episode: dict[int, NarrativeState] = {}
+            state_post_by_episode: dict[int, NarrativeState] = {}
+            reconciliations: list[NarrativeStateReconciliation] = []
+
+            for episode_number in range(1, project.episode_count + 1):
+                strategy_episode = strategy_episode_map[episode_number]
+                state_pre_by_episode[episode_number] = current_state.model_copy(deep=True)
+                architecture, architecture_report = await self._build_single_episode_architecture(
+                    project=project,
+                    synthesis_map=synthesis_map,
+                    strategy=strategy,
+                    strategy_episode=strategy_episode,
+                    corpus=corpus,
+                    actor_metadata=actor_metadata,
+                    scene_discovery=scene_discovery,
+                    narrative_state_pre=current_state,
+                )
+                reconciliation = await self._reconcile_narrative_state(
+                    project=project,
+                    strategy_episode=strategy_episode,
+                    architecture=architecture,
+                    narrative_state_pre=current_state,
+                )
+                current_state = reconciliation.state_post
+                state_post_by_episode[episode_number] = current_state.model_copy(deep=True)
+                architectures.append(architecture)
+                architecture_reports.append(architecture_report)
+                reconciliations.append(reconciliation)
+
+                ep_dir = project_dir / "episodes" / str(episode_number)
+                _save_json(ep_dir / "narrative_state_pre.json", state_pre_by_episode[episode_number])
+                _save_json(ep_dir / "narrative_state_post.json", state_post_by_episode[episode_number])
+                _save_json(ep_dir / "narrative_state_reconciliation.json", reconciliation)
+
+            realization_reports = [
+                _build_episode_architecture_realization(
+                    strategy_episode=strategy_episode_map[architecture.episode_number],
+                    architecture=architecture,
+                    pipeline_config=project.config,
+                    narrator_profile=strategy.narrator_profile,
+                    primitive_lookup=_flatten_synthesis_primitives(synthesis_map),
+                    series_explanation_registry=strategy.series_explanation_registry,
+                )
+                for architecture in architectures
+            ]
+            for realization in realization_reports:
+                for warning in realization["warnings"]:
+                    logger.warning(
+                        "episode_architecture_warning episode=%s %s",
+                        realization["episode_number"],
+                        warning,
+                    )
+            _save_json(
+                project_dir / "episode_architectures.json",
+                {"episodes": [episode.model_dump(mode="json") for episode in architectures]},
+            )
+            _save_json(
+                project_dir / "architecture_realization.json",
+                {"episodes": realization_reports},
+            )
+            _save_json(
+                project_dir / "narrative_state_timeline.json",
+                {
+                    "episodes": [
+                        {
+                            "episode_number": episode_number,
+                            "pre": state_pre_by_episode[episode_number].model_dump(mode="json"),
+                            "post": state_post_by_episode[episode_number].model_dump(mode="json"),
+                        }
+                        for episode_number in range(1, project.episode_count + 1)
+                    ]
+                },
+            )
+            _save_json(project_dir / "narrative_state_latest.json", current_state)
+            ctx["output_summary"] = {
+                "episode_count": len(architectures),
+                "titles": [
+                    strategy_episode_map[n].title
+                    for n in range(1, project.episode_count + 1)
+                ],
+                "reconciliation_count": len(reconciliations),
+            }
+            architecture_actor_metrics = _merge_actor_metric_dicts(architecture_reports)
+            return (
+                architectures,
+                state_pre_by_episode,
+                state_post_by_episode,
+                reconciliations,
+                architecture_actor_metrics,
+            )
+
+    async def _plan_series_with_narrative_state(
+        self,
+        project: ThematicProject,
+        synthesis_map: SynthesisMap,
+        strategy: NarrativeStrategy,
+        corpus: ThematicCorpus,
+        project_dir: Path,
+        actor_metadata: ActorMetadata | None = None,
+        scene_discovery: SceneDiscoveryArtifact | None = None,
+    ) -> tuple[
+        list[EpisodeArchitecture],
+        list[EpisodePlan],
+        dict[int, NarrativeState],
+        dict[int, NarrativeState],
+        dict[str, Any],
+    ]:
+        (
+            architectures,
+            state_pre_by_episode,
+            state_post_by_episode,
+            reconciliations,
+            architecture_actor_metrics,
+        ) = await self._build_episode_architectures_with_narrative_state(
+            project=project,
+            synthesis_map=synthesis_map,
+            strategy=strategy,
+            corpus=corpus,
+            project_dir=project_dir,
+            actor_metadata=actor_metadata,
+            scene_discovery=scene_discovery,
+        )
+        plans, planning_actor_metrics = await self._plan_series(
+            project=project,
+            synthesis_map=synthesis_map,
+            strategy=strategy,
+            episode_architectures=architectures,
+            corpus=corpus,
+            project_dir=project_dir,
+            actor_metadata=actor_metadata,
+            narrative_state_pre_by_episode=state_pre_by_episode,
+        )
+        return (
+            architectures,
+            plans,
+            state_pre_by_episode,
+            state_post_by_episode,
+            {
+                "episode_architecture": architecture_actor_metrics,
+                "episode_planning": planning_actor_metrics,
+                "reconciliation_count": len(reconciliations),
+            },
         )
 
     async def _build_episode_architectures(
@@ -9991,6 +11307,7 @@ class PipelineOrchestrator:
         corpus: ThematicCorpus,
         project_dir: Path,
         actor_metadata: ActorMetadata | None = None,
+        narrative_state_pre_by_episode: dict[int, NarrativeState] | None = None,
     ) -> tuple[list[EpisodePlan], dict[str, Any]]:
         actor_metadata = actor_metadata or ActorMetadata(project_id=project.project_id)
         async with _stage_log(
@@ -10032,7 +11349,6 @@ class PipelineOrchestrator:
                 "min_episode_minutes": project.config.min_episode_minutes,
                 "max_episode_minutes": project.config.max_episode_minutes,
             }
-            host_policy = _build_host_policy_payload(strategy.narrator_profile)
             planning_sem = asyncio.Semaphore(
                 max(1, project.config.episode_planning_concurrency)
             )
@@ -10108,6 +11424,40 @@ class PipelineOrchestrator:
                         strategy_episode.thematic_focus,
                     ]
                     episode_query_parts.extend(strategy_episode.unresolved_questions)
+                    narrative_state_pre = (
+                        narrative_state_pre_by_episode.get(episode.episode_number)
+                        if narrative_state_pre_by_episode is not None
+                        else None
+                    )
+                    if narrative_state_pre is not None:
+                        continuity_contract_pre = _build_continuity_contract(
+                            narrative_state=narrative_state_pre,
+                            episode_number=episode.episode_number,
+                            phase="pre",
+                        )
+                        episode_query_parts.extend(
+                            item.get("label", "")
+                            for item in continuity_contract_pre.get("recap_items", [])
+                            if isinstance(item, dict)
+                        )
+                        episode_query_parts.extend(
+                            item.get("label", "")
+                            for item in continuity_contract_pre.get(
+                                "must_surface_early", []
+                            )
+                            if isinstance(item, dict)
+                        )
+                        episode_query_parts.extend(
+                            continuity_contract_pre.get("open_question_texts", [])
+                        )
+                        episode_query_parts.extend(
+                            continuity_contract_pre.get(
+                                "open_memory_thread_labels", []
+                            )
+                        )
+                        episode_query_parts.extend(
+                            continuity_contract_pre.get("host_open_pressures", [])
+                        )
                     episode_query_text = " ".join(
                         part for part in episode_query_parts if part
                     ).strip()
@@ -10133,6 +11483,10 @@ class PipelineOrchestrator:
                     actor_link_metrics: dict[str, Any] = {}
                     actor_explanation_warnings: list[str] = []
                     planning_feedback: dict[str, Any] | None = None
+                    host_policy = _build_host_policy_payload(
+                        strategy.narrator_profile,
+                        narrative_state_pre=narrative_state_pre,
+                    )
                     max_attempts = self.episode_planning_agent.max_retry_attempts
                     for attempt in range(1, max_attempts + 1):
                         payload = self.episode_planning_agent.build_payload(
@@ -10145,6 +11499,11 @@ class PipelineOrchestrator:
                             ),
                             available_passages=available_passages,
                             host_policy=host_policy,
+                            narrative_state_pre=(
+                                narrative_state_pre.model_dump(mode="json")
+                                if narrative_state_pre is not None
+                                else None
+                            ),
                             actor_metadata=compact_episode_actor_metadata,
                             planning_feedback=planning_feedback,
                             field_semantics=_build_field_semantics_payload(),
@@ -10257,6 +11616,12 @@ class PipelineOrchestrator:
                             ),
                         )
                     )
+                    state_alignment_diagnostics, state_alignment_warnings = (
+                        _build_state_alignment_diagnostics(
+                            architecture=episode,
+                            scene_cards=plan_draft.scene_cards,
+                        )
+                    )
                     structural_card_concreteness_warnings = (
                         _build_structural_card_concreteness_warnings(
                             scene_cards=plan_draft.scene_cards,
@@ -10264,6 +11629,12 @@ class PipelineOrchestrator:
                     )
                     human_grounding_diagnostics, human_grounding_warnings = (
                         _build_human_grounding_warnings(
+                            scene_cards=plan_draft.scene_cards,
+                        )
+                    )
+                    comparative_aside_warnings = (
+                        _build_comparative_aside_scene_warnings(
+                            architecture=episode,
                             scene_cards=plan_draft.scene_cards,
                         )
                     )
@@ -10287,8 +11658,10 @@ class PipelineOrchestrator:
                         + scene_card_family_warnings
                         + structural_card_concreteness_warnings
                         + human_grounding_warnings
+                        + comparative_aside_warnings
                         + actor_explanation_warnings
                         + section_planning_warnings
+                        + state_alignment_warnings
                         + list(spine_diagnostics.get("scene_job_budget_warnings", []))
                         + host_move_warnings
                     )
@@ -10330,6 +11703,7 @@ class PipelineOrchestrator:
                         "human_grounding_warnings": human_grounding_warnings,
                         "section_load_warnings": section_load_warnings,
                         "section_realization": section_realization_reports,
+                        "state_alignment": state_alignment_diagnostics,
                         "scene_card_warning_count": len(planning_warnings),
                         "scene_role_counts": scene_role_counts,
                         "scene_job_counts": scene_job_counts,
@@ -10491,10 +11865,22 @@ class PipelineOrchestrator:
         semaphore: asyncio.Semaphore,
         spoken_semaphore: asyncio.Semaphore | None = None,
         series_explanation_registry: list[Any] | None = None,
+        narrative_state_pre: NarrativeState | None = None,
+        narrative_state_post: NarrativeState | None = None,
     ) -> tuple[int, SpokenScript]:
         async with semaphore:
             ep_dir = project_dir / "episodes" / str(plan.episode_number)
             ep_dir.mkdir(parents=True, exist_ok=True)
+            continuity_contract_pre = _build_continuity_contract(
+                narrative_state=narrative_state_pre,
+                episode_number=plan.episode_number,
+                phase="pre",
+            )
+            continuity_contract_post = _build_continuity_contract(
+                narrative_state=narrative_state_post,
+                episode_number=plan.episode_number,
+                phase="post",
+            )
 
             script = await self._write_episode(
                 plan,
@@ -10506,7 +11892,11 @@ class PipelineOrchestrator:
                 project_dir,
                 actor_metadata,
                 host_policy,
-                primitive_lookup,
+                narrative_state_pre=narrative_state_pre,
+                narrative_state_post=narrative_state_post,
+                continuity_contract_pre=continuity_contract_pre,
+                continuity_contract_post=continuity_contract_post,
+                primitive_lookup=primitive_lookup,
             )
 
             if not project.config.skip_grounding:
@@ -10540,6 +11930,10 @@ class PipelineOrchestrator:
                 project_dir,
                 plan=plan,
                 host_policy=host_policy,
+                narrative_state_pre=narrative_state_pre,
+                narrative_state_post=narrative_state_post,
+                continuity_contract_pre=continuity_contract_pre,
+                continuity_contract_post=continuity_contract_post,
                 strategy_episode=strategy_episode,
                 series_explanation_registry=series_explanation_registry,
             )
@@ -10556,6 +11950,10 @@ class PipelineOrchestrator:
                     architecture=architecture,
                     plan=plan,
                     host_policy=host_policy,
+                    narrative_state_pre=narrative_state_pre,
+                    narrative_state_post=narrative_state_post,
+                    continuity_contract_pre=continuity_contract_pre,
+                    continuity_contract_post=continuity_contract_post,
                 )
         else:
             spoken = SpokenScript(
@@ -10584,6 +11982,10 @@ class PipelineOrchestrator:
         project_dir: Path,
         actor_metadata: ActorMetadata | None = None,
         host_policy: dict[str, Any] | None = None,
+        narrative_state_pre: NarrativeState | None = None,
+        narrative_state_post: NarrativeState | None = None,
+        continuity_contract_pre: dict[str, Any] | None = None,
+        continuity_contract_post: dict[str, Any] | None = None,
         primitive_lookup: dict[str, SynthesisPrimitiveBase] | None = None,
     ) -> EpisodeScript:
         actor_metadata = actor_metadata or ActorMetadata(project_id=project.project_id)
@@ -10609,6 +12011,13 @@ class PipelineOrchestrator:
                 for b in project.books
             ]
             (
+                scene_authorial_passages_by_scene_id,
+                section_authorial_passages_by_section_id,
+            ) = _resolve_authorial_passages(
+                architecture=architecture,
+                plan=plan,
+            )
+            (
                 scene_word_count_targets_lower,
                 scene_word_count_targets_higher,
             ) = _compute_scene_word_count_bands(
@@ -10616,13 +12025,6 @@ class PipelineOrchestrator:
                 plan.target_word_count,
             )
             full_episode_plan_payload = plan.model_dump(mode="json")
-            (
-                scene_authorial_passages_by_scene_id,
-                section_authorial_passages_by_section_id,
-            ) = _resolve_authorial_passages(
-                architecture=architecture,
-                plan=plan,
-            )
             scene_payload_by_id: dict[str, dict[str, Any]] = {}
             for scene_payload in full_episode_plan_payload.get("scene_cards", []):
                 scene_id = scene_payload.get("scene_id")
@@ -10749,6 +12151,18 @@ class PipelineOrchestrator:
                                 episode_target_word_count_higher=part_target_word_count_higher,
                                 skip_grounding=project.config.skip_grounding,
                                 host_policy=host_policy,
+                                narrative_state_pre=(
+                                    narrative_state_pre.model_dump(mode="json")
+                                    if narrative_state_pre is not None
+                                    else None
+                                ),
+                                narrative_state_post=(
+                                    narrative_state_post.model_dump(mode="json")
+                                    if narrative_state_post is not None
+                                    else None
+                                ),
+                                continuity_contract_pre=continuity_contract_pre,
+                                continuity_contract_post=continuity_contract_post,
                                 scene_primitive_briefs=window_scene_primitive_briefs,
                                 actor_metadata=window_actor_metadata,
                                 writing_feedback=writing_feedback_by_part.get(
@@ -11129,6 +12543,10 @@ class PipelineOrchestrator:
         project_dir: Path,
         plan: EpisodePlan | None = None,
         host_policy: dict[str, Any] | None = None,
+        narrative_state_pre: NarrativeState | None = None,
+        narrative_state_post: NarrativeState | None = None,
+        continuity_contract_pre: dict[str, Any] | None = None,
+        continuity_contract_post: dict[str, Any] | None = None,
         strategy_episode: StrategyEpisode | None = None,
         series_explanation_registry: list[Any] | None = None,
     ) -> EpisodeScript:
@@ -11148,6 +12566,18 @@ class PipelineOrchestrator:
                     plan=plan,
                 ),
                 host_policy=host_policy,
+                narrative_state_pre=(
+                    narrative_state_pre.model_dump(mode="json")
+                    if narrative_state_pre is not None
+                    else None
+                ),
+                narrative_state_post=(
+                    narrative_state_post.model_dump(mode="json")
+                    if narrative_state_post is not None
+                    else None
+                ),
+                continuity_contract_pre=continuity_contract_pre,
+                continuity_contract_post=continuity_contract_post,
                 series_explanation_registry=_build_episode_explanation_registry_payload(
                     strategy_episode=strategy_episode,
                     architecture=architecture,
@@ -11176,6 +12606,29 @@ class PipelineOrchestrator:
                 ep_dir / "host_moves_script_diagnostics.json",
                 host_moves_text_diagnostics,
             )
+            continuity_script_diagnostics = _build_continuity_realization_diagnostics(
+                episode_number=episode_number,
+                stage="script",
+                framing=audited_script.framing.model_dump(mode="json"),
+                ordered_sections=[
+                    {"section_id": section.section_id, "text": section.text}
+                    for section in audited_script.prose_sections
+                ],
+                continuity_contract_pre=continuity_contract_pre or {},
+                continuity_contract_post=continuity_contract_post or {},
+            )
+            _save_json(
+                ep_dir / "continuity_script_diagnostics.json",
+                continuity_script_diagnostics,
+            )
+            if continuity_script_diagnostics["missed_item_ids"]:
+                self.run_logger.log(
+                    "continuity_script_diagnostics",
+                    episode=episode_number,
+                    stage="script",
+                    missed_item_ids=continuity_script_diagnostics["missed_item_ids"],
+                    warning_labels=continuity_script_diagnostics["warning_labels"],
+                )
             ctx["output_summary"] = {
                 "sections": len(audit.sections),
                 "warnings": len(audit.episode_warnings),
@@ -11186,6 +12639,9 @@ class PipelineOrchestrator:
                 "approx_realized_host_phases": host_moves_text_diagnostics[
                     "approx_realized_host_phase_count"
                 ],
+                "continuity_misses": len(
+                    continuity_script_diagnostics["missed_item_ids"]
+                ),
             }
             return audited_script
 
@@ -11199,6 +12655,10 @@ class PipelineOrchestrator:
         architecture: EpisodeArchitecture | None = None,
         plan: EpisodePlan | None = None,
         host_policy: dict[str, Any] | None = None,
+        narrative_state_pre: NarrativeState | None = None,
+        narrative_state_post: NarrativeState | None = None,
+        continuity_contract_pre: dict[str, Any] | None = None,
+        continuity_contract_post: dict[str, Any] | None = None,
     ) -> SpokenScript:
         batches = _build_spoken_delivery_batches(script.prose_sections)
         async with _stage_log(
@@ -11235,6 +12695,18 @@ class PipelineOrchestrator:
                     max_words_per_segment=project.config.spoken_chunk_max_words,
                     tts_provider=project.config.tts_provider,
                     host_policy=host_policy,
+                    narrative_state_pre=(
+                        narrative_state_pre.model_dump(mode="json")
+                        if narrative_state_pre is not None
+                        else None
+                    ),
+                    narrative_state_post=(
+                        narrative_state_post.model_dump(mode="json")
+                        if narrative_state_post is not None
+                        else None
+                    ),
+                    continuity_contract_pre=continuity_contract_pre,
+                    continuity_contract_post=continuity_contract_post,
                     previous_spoken_tail=previous_spoken_tail,
                     field_semantics=_build_field_semantics_payload(),
                 )
@@ -11286,6 +12758,29 @@ class PipelineOrchestrator:
                 ep_dir / "spoken_host_moves_diagnostics.json",
                 spoken_host_moves_diagnostics,
             )
+            continuity_spoken_diagnostics = _build_continuity_realization_diagnostics(
+                episode_number=episode_number,
+                stage="spoken",
+                framing=spoken.framing.model_dump(mode="json"),
+                ordered_sections=[
+                    {"section_id": section.section_id, "text": section.text}
+                    for section in spoken.sections
+                ],
+                continuity_contract_pre=continuity_contract_pre or {},
+                continuity_contract_post=continuity_contract_post or {},
+            )
+            _save_json(
+                ep_dir / "continuity_spoken_diagnostics.json",
+                continuity_spoken_diagnostics,
+            )
+            if continuity_spoken_diagnostics["missed_item_ids"]:
+                self.run_logger.log(
+                    "continuity_spoken_diagnostics",
+                    episode=episode_number,
+                    stage="spoken",
+                    missed_item_ids=continuity_spoken_diagnostics["missed_item_ids"],
+                    warning_labels=continuity_spoken_diagnostics["warning_labels"],
+                )
 
             ctx["output_summary"] = {
                 "sections": len(spoken.sections),
@@ -11296,6 +12791,9 @@ class PipelineOrchestrator:
                 "approx_realized_host_phases": spoken_host_moves_diagnostics[
                     "approx_realized_host_phase_count"
                 ],
+                "continuity_misses": len(
+                    continuity_spoken_diagnostics["missed_item_ids"]
+                ),
             }
             return spoken
 

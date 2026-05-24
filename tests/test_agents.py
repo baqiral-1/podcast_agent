@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pydantic import ValidationError
 
 from podcast_agent.agents.book_summary import BookSummaryAgent
 from podcast_agent.agents.chapter_summary import (
@@ -12,7 +13,13 @@ from podcast_agent.agents.chapter_summary import (
     ChapterSummaryResponse,
 )
 from podcast_agent.agents.episode_architecture import EpisodeArchitectureAgent
+from podcast_agent.agents.narrative_strategy_enrichment import (
+    NarrativeStrategyEnrichmentAgent,
+)
 from podcast_agent.agents.narrative_strategy import NarrativeStrategyAgent
+from podcast_agent.agents.narrative_strategy_skeleton import (
+    NarrativeStrategySkeletonAgent,
+)
 from podcast_agent.agents.passage_extraction import PassageExtractionAgent
 from podcast_agent.agents.planning import EpisodePlanningAgent
 from podcast_agent.agents.primitive_function_tagging import PrimitiveFunctionTaggingAgent
@@ -410,19 +417,240 @@ class TestRedesignedAgents:
             "`allowed_moves` must contain only: `orient`, `clarify`, `evaluate`, `contrast`,"
             in instructions
         )
-        assert "`callback`, `light_aside`, or `naming_note`." in instructions
+        assert (
+            "`callback`, `light_aside`, `naming_note`, `uncertainty`, `revision`, or `surprise`."
+            in instructions
+        )
         assert "`actor_arc_summary`" not in instructions
+
+    def test_narrative_strategy_skeleton_agent_payload(self):
+        agent = NarrativeStrategySkeletonAgent(_mock_llm())
+        payload = agent.build_payload(
+            synthesis_map={"primitives": []},
+            project_metadata={"theme": "War on terror"},
+            scene_discovery={"candidates": [{"candidate_id": "c1"}]},
+            episode_count=3,
+            recommended_episode_count_min=10,
+            recommended_episode_count_max=16,
+            actor_metadata={"actors": [{"actor_id": "actor_1"}]},
+            strategy_skeleton_feedback={"issue": "weak_episode"},
+        )
+        instructions = agent.build_instructions(payload)
+        assert agent.schema_name == "narrative_strategy_skeleton"
+        assert payload["strategy_skeleton_feedback"]["issue"] == "weak_episode"
+        assert "`promised_beats`" in instructions
+        assert "Do NOT include:" in instructions
+        assert "`narrative_agenda`" in instructions
+        assert "`core_primitive_ids` must contain 8–11 primitives." in instructions
+        assert "`negative_scope -> scope`" not in instructions
+        assert "prefer canonical field names" in instructions
+        assert "not a holding area for every later-useful primitive" in instructions
+        assert "Do not let tail episodes become everything left over." in instructions
+        assert "trim or demote primitives rather than adding more" in instructions
+
+    def test_narrative_strategy_skeleton_agent_prepare_retry_payload_adds_targeted_feedback(
+        self,
+    ):
+        agent = NarrativeStrategySkeletonAgent(_mock_llm())
+        payload = agent.build_payload(
+            synthesis_map={"primitives": []},
+            project_metadata={
+                "theme": "War on terror",
+                "episode_spine_core_primitive_target_min": 8,
+                "episode_spine_core_primitive_target_max": 11,
+                "episode_spine_support_primitive_target_min": 9,
+                "episode_spine_support_primitive_target_max": 13,
+                "episode_spine_recall_primitive_target_max": 3,
+            },
+            scene_discovery=None,
+            episode_count=None,
+            recommended_episode_count_min=8,
+            recommended_episode_count_max=12,
+        )
+        raw_payload = {
+            "episodes": [
+                {
+                    "episode_number": 1,
+                    "scope": {"boundary": "Wrong key"},
+                    "spine": {
+                        "core_prims": ["e1"],
+                        "support_roles": {"s1": "mechanism"},
+                        "recall_prims": [],
+                    },
+                }
+            ]
+        }
+        exc = RetryableGenerationError(
+            "Schema validation failed for narrative_strategy_skeleton",
+            data={"raw_payload": raw_payload},
+        )
+        exc.__cause__ = ValidationError.from_exception_data(
+            "NarrativeStrategySkeleton",
+            [
+                {
+                    "type": "value_error",
+                    "loc": ("episodes", 0, "episode_spine"),
+                    "msg": "Value error, core_primitive_ids must contain 2-11 primitive ids",
+                    "input": raw_payload["episodes"][0]["spine"],
+                    "ctx": {"error": ValueError("core_primitive_ids must contain 2-11 primitive ids")},
+                },
+                {
+                    "type": "extra_forbidden",
+                    "loc": ("episodes", 0, "scope"),
+                    "msg": "Extra inputs are not permitted",
+                    "input": raw_payload["episodes"][0]["scope"],
+                },
+            ],
+        )
+
+        next_payload = agent.prepare_retry_payload(payload, exc)
+
+        feedback = next_payload["strategy_skeleton_feedback"]
+        assert feedback["required_ranges"]["core_primitive_ids"] == "8-11"
+        assert feedback["canonical_field_names"]["negative_scope"] == "negative_scope"
+        assert feedback["episode_constraints_by_number"][0]["episode_number"] == 1
+        assert (
+            feedback["episode_constraints_by_number"][0]["direction_by_field"][
+                "core_primitive_ids"
+            ]
+            == "underfull"
+        )
+        assert (
+            feedback["episode_constraints_by_number"][0]["direction_by_field"][
+                "support_primitive_roles"
+            ]
+            == "underfull"
+        )
+        assert (
+            feedback["episode_constraints_by_number"][0]["recommended_action"]
+            == "merge_episode"
+        )
+        assert "Use `negative_scope`, not `scope`." in feedback[
+            "episode_constraints_by_number"
+        ][0]["required_fix"]
+        assert "forbidden_scope_alias" in feedback["episode_constraints_by_number"][0]["issue_types"]
+        assert "core_primitive_count_underfull" in feedback["episode_constraints_by_number"][0]["issue_types"]
+        assert (
+            "support_primitive_count_underfull"
+            in feedback["episode_constraints_by_number"][0]["issue_types"]
+        )
+        assert feedback["issues"][0]["issue"] == "core_primitive_count_underfull"
+
+    def test_narrative_strategy_skeleton_agent_prepare_retry_payload_marks_overfull_episodes(
+        self,
+    ):
+        agent = NarrativeStrategySkeletonAgent(_mock_llm())
+        payload = agent.build_payload(
+            synthesis_map={"primitives": []},
+            project_metadata={
+                "theme": "Iranian Revolution",
+                "episode_spine_core_primitive_target_min": 8,
+                "episode_spine_core_primitive_target_max": 11,
+                "episode_spine_support_primitive_target_min": 9,
+                "episode_spine_support_primitive_target_max": 13,
+                "episode_spine_recall_primitive_target_max": 3,
+            },
+            scene_discovery=None,
+            episode_count=None,
+            recommended_episode_count_min=8,
+            recommended_episode_count_max=12,
+        )
+        raw_payload = {
+            "episodes": [
+                {
+                    "episode_number": 8,
+                    "spine": {
+                        "core_prims": [f"e{i}" for i in range(12)],
+                        "support_roles": {
+                            f"s{i}": "mechanism" for i in range(14)
+                        },
+                        "recall_prims": ["r1", "r2", "r3"],
+                    },
+                }
+            ]
+        }
+        exc = RetryableGenerationError(
+            "Schema validation failed for narrative_strategy_skeleton",
+            data={"raw_payload": raw_payload},
+        )
+        exc.__cause__ = ValidationError.from_exception_data(
+            "NarrativeStrategySkeleton",
+            [
+                {
+                    "type": "value_error",
+                    "loc": ("episodes", 0, "episode_spine"),
+                    "msg": "Value error, core_primitive_ids must contain 2-11 primitive ids",
+                    "input": raw_payload["episodes"][0]["spine"],
+                    "ctx": {"error": ValueError("core_primitive_ids must contain 2-11 primitive ids")},
+                },
+            ],
+        )
+
+        next_payload = agent.prepare_retry_payload(payload, exc)
+
+        feedback = next_payload["strategy_skeleton_feedback"]
+        assert (
+            feedback["episode_constraints_by_number"][0]["direction_by_field"][
+                "core_primitive_ids"
+            ]
+            == "overfull"
+        )
+        assert (
+            feedback["episode_constraints_by_number"][0]["direction_by_field"][
+                "support_primitive_roles"
+            ]
+            == "overfull"
+        )
+        assert (
+            feedback["episode_constraints_by_number"][0]["recommended_action"]
+            == "trim_core"
+        )
+        assert "Demote or remove non-thesis primitives from core." in feedback[
+            "episode_constraints_by_number"
+        ][0]["required_fix"]
+        assert "core_primitive_count_overfull" in feedback[
+            "episode_constraints_by_number"
+        ][0]["issue_types"]
+        assert "support_primitive_count_overfull" in feedback[
+            "episode_constraints_by_number"
+        ][0]["issue_types"]
+        assert "If an episode is overfull, trim or demote primitives rather than adding more." in feedback[
+            "instruction"
+        ]
+
+    def test_narrative_strategy_enrichment_agent_payload(self):
+        agent = NarrativeStrategyEnrichmentAgent(_mock_llm())
+        payload = agent.build_payload(
+            strategy_skeleton={"episodes": [{"episode_number": 1}]},
+            synthesis_map={"primitives": [{"id": "primitive_1"}]},
+            project_metadata={"podcast_mode": "minified"},
+            episode_scene_candidates=[
+                {"episode_number": 1, "candidates": [{"candidate_id": "c1"}]}
+            ],
+            actor_metadata={"actors": [{"actor_id": "actor_1"}]},
+            strategy_enrichment_feedback={"issue": "bad_registry"},
+        )
+        instructions = agent.build_instructions(payload)
+        assert agent.schema_name == "narrative_strategy_enrichment"
+        assert payload["strategy_enrichment_feedback"]["issue"] == "bad_registry"
+        assert "The skeleton is binding." in instructions
+        assert "`episode_scene_candidates`" in instructions
+        assert "`series_explanation_registry` is top-level output" in instructions
+        assert (
+            "`target_authorial_passages_per_episode` should usually land around 12–16."
+            in instructions
+        )
 
     def test_narrative_strategy_agent_builds_minified_instructions_from_payload(self):
         agent = NarrativeStrategyAgent(_mock_llm())
         payload = agent.build_payload(
-            synthesis_map={"primitives_by_family": {"epochal_turns": []}},
+            synthesis_map={"primitives": []},
             project_metadata={
                 "podcast_mode": "minified",
-                "episode_spine_core_primitive_target_min": 2,
-                "episode_spine_core_primitive_target_max": 4,
-                "episode_spine_support_primitive_target_min": 2,
-                "episode_spine_support_primitive_target_max": 4,
+                "episode_spine_core_primitive_target_min": 3,
+                "episode_spine_core_primitive_target_max": 5,
+                "episode_spine_support_primitive_target_min": 4,
+                "episode_spine_support_primitive_target_max": 6,
                 "episode_spine_recall_primitive_target_max": 1,
             },
             scene_discovery=None,
@@ -433,14 +661,14 @@ class TestRedesignedAgents:
 
         instructions = agent.build_instructions(payload)
 
-        assert "`core_primitive_ids` must contain 2–4 primitives." in instructions
-        assert "`support_primitive_roles` must contain 2–4 primitives." in instructions
+        assert "`core_primitive_ids` must contain 3–5 primitives." in instructions
+        assert "`support_primitive_roles` must contain 4–6 primitives." in instructions
         assert (
             "`recall_primitive_ids` are optional and must contain at most 1 primitive."
             in instructions
         )
         assert (
-            "`target_authorial_passages_per_episode` should usually land around 9–12."
+            "`target_authorial_passages_per_episode` should usually land around 12–16."
             in instructions
         )
 
@@ -471,10 +699,16 @@ class TestRedesignedAgents:
                             "listener_problem": "Problem",
                             "episode_answer": "Answer",
                             "pressure_line": "Pressure",
-                            "core_primitive_ids": ["primitive_1", "primitive_2"],
+                            "core_primitive_ids": [
+                                "primitive_1",
+                                "primitive_2",
+                                "primitive_3",
+                            ],
                             "support_primitive_roles": {
-                                "primitive_3": "mechanism",
-                                "primitive_4": "stakes",
+                                "primitive_4": "mechanism",
+                                "primitive_5": "stakes",
+                                "primitive_6": "consequence",
+                                "primitive_7": "texture",
                             },
                             "recall_primitive_ids": [],
                         },
@@ -497,10 +731,16 @@ class TestRedesignedAgents:
                             "listener_problem": "Problem 2",
                             "episode_answer": "Answer 2",
                             "pressure_line": "Pressure 2",
-                            "core_primitive_ids": ["primitive_5", "primitive_6"],
+                            "core_primitive_ids": [
+                                "primitive_6",
+                                "primitive_7",
+                                "primitive_8",
+                            ],
                             "support_primitive_roles": {
-                                "primitive_7": "mechanism",
-                                "primitive_8": "stakes",
+                                "primitive_1": "mechanism",
+                                "primitive_2": "stakes",
+                                "primitive_3": "consequence",
+                                "primitive_4": "texture",
                             },
                             "recall_primitive_ids": ["primitive_1"],
                         },
@@ -534,10 +774,10 @@ class TestRedesignedAgents:
                 },
                 project_metadata={
                     "podcast_mode": "minified",
-                    "episode_spine_core_primitive_target_min": 2,
-                    "episode_spine_core_primitive_target_max": 4,
-                    "episode_spine_support_primitive_target_min": 2,
-                    "episode_spine_support_primitive_target_max": 4,
+                    "episode_spine_core_primitive_target_min": 3,
+                    "episode_spine_core_primitive_target_max": 5,
+                    "episode_spine_support_primitive_target_min": 4,
+                    "episode_spine_support_primitive_target_max": 6,
                     "episode_spine_recall_primitive_target_max": 1,
                 },
                 scene_discovery=None,
@@ -547,7 +787,7 @@ class TestRedesignedAgents:
             )
         )
 
-        assert result.narrator_profile.target_authorial_passages_per_episode == 10
+        assert result.narrator_profile.target_authorial_passages_per_episode == 14
         assert result.narrator_profile.spoken_style_contract == "anti_academic_oral"
 
     def test_primitive_function_tagging_agent_payload(self):
@@ -764,7 +1004,7 @@ class TestRedesignedAgents:
         agent = EpisodeArchitectureAgent(_mock_llm())
         payload = agent.build_payload(
             episode={"episode_number": 1, "title": "Episode 1"},
-            synthesis_map={"primitives_by_family": {"epochal_turns": []}},
+            synthesis_map={"primitives": []},
             project_metadata={"theme": "War on terror"},
             core_passages=[{"passage_id": "p1"}],
             support_passages=[{"passage_id": "p2"}],
@@ -801,7 +1041,7 @@ class TestRedesignedAgents:
         assert payload["actor_metadata"]["actors"][0]["actor_id"] == "actor_1"
         assert payload["architecture_feedback"]["issue"] == "missing_turn"
         assert (
-            "Convert the episode spine into 9–12 binding sections."
+            "Convert the episode spine into 12–16 binding sections."
             in instructions
         )
         assert "The final section must use `purpose` = `closing`." in instructions
@@ -830,10 +1070,17 @@ class TestRedesignedAgents:
         assert "`series_actor_explanation_registry`" in instructions
         assert "`term_explanations`" in instructions
         assert "`actor_explanations`" in instructions
-        assert "14–18 total `authorial_passages`" in instructions
+        assert "`question_moves`" in instructions
+        assert "`memory_thread_moves`" in instructions
+        assert "`host_mystery_moves`" in instructions
+        assert "`host_assumption_moves`" in instructions
+        assert "`host_theory_moves`" in instructions
+        assert "24–36 total `authorial_passages`" in instructions
         assert "are not scene cards, scene counts" in instructions
         assert "The first `must_stage_beats` item should usually open from the section" in instructions
         assert "The last `must_stage_beats` item should usually imply the section's" in instructions
+        assert "last stage allowed to mutate season state" in instructions
+        assert "Do not leave state changes implicit inside `must_stage_beats`." in instructions
         assert (
             "Use `series_actor_explanation_registry`, `introduce_actor_ids`, and `remind_actor_ids`"
             in instructions
@@ -852,7 +1099,7 @@ class TestRedesignedAgents:
         agent = EpisodeArchitectureAgent(_mock_llm())
         payload = agent.build_payload(
             episode={"episode_number": 1, "title": "Episode 1"},
-            synthesis_map={"primitives_by_family": {"epochal_turns": []}},
+            synthesis_map={"primitives": []},
             project_metadata={
                 "podcast_mode": "minified",
                 "architecture_section_target_min": 6,
@@ -865,8 +1112,8 @@ class TestRedesignedAgents:
         instructions = agent.build_instructions(payload)
 
         assert "Convert the episode spine into 6–8 binding sections." in instructions
-        assert "Most minified episodes should carry 9–12 total `authorial_passages`." in instructions
-        assert "Dense minified sections may use 1–3 `authorial_passages`" in instructions
+        assert "Most minified episodes should carry 12–16 total `authorial_passages`." in instructions
+        assert "Dense minified sections may use 2–5 `authorial_passages`" in instructions
 
     def test_episode_planning_agent_payload(self):
         agent = EpisodePlanningAgent(_mock_llm())
@@ -876,13 +1123,14 @@ class TestRedesignedAgents:
                 "episode_spine": {"listener_question": "Question?"},
             },
             architecture={"episode_number": 1},
-            synthesis_map={"primitives_by_family": {"epochal_turns": []}},
+            synthesis_map={"primitives": []},
             project_metadata={"theme": "War on terror"},
             scene_job_budget=None,
             available_passages=[{"passage_id": "p1"}],
             host_policy={
                 "target_full_phase_scene_coverage_target": 0.8,
             },
+            continuity_contract_pre={"recap_items": [{"item_id": "carry_1"}]},
             actor_metadata={"actors": [{"actor_id": "actor_1"}]},
             planning_feedback={"issue": "missing_spine_coverage"},
         )
@@ -891,6 +1139,7 @@ class TestRedesignedAgents:
         assert payload["actor_metadata"]["actors"][0]["actor_id"] == "actor_1"
         assert payload["strategy_episode"]["episode_number"] == 1
         assert payload["host_policy"]["target_full_phase_scene_coverage_target"] == 0.8
+        assert payload["continuity_contract_pre"]["recap_items"][0]["item_id"] == "carry_1"
         assert payload["planning_feedback"]["issue"] == "missing_spine_coverage"
         assert "`available_passages`" in instructions
         assert "`estimated_duration_seconds`" in instructions
@@ -899,7 +1148,7 @@ class TestRedesignedAgents:
             "Every scene card must be grounded in provided `passage_ids`."
             in instructions
         )
-        assert "Target 34–44 scene cards" in instructions
+        assert "scene cards for this episode." in instructions
         assert "Build each section through accumulation." in instructions
         assert (
             "The final architecture `closing` section must expand to exactly one scene"
@@ -922,6 +1171,11 @@ class TestRedesignedAgents:
         )
         assert "When a section has `actor_explanations`" in instructions
         assert "`explanation_stage = introduce` or `reminder`." in instructions
+        assert "read-only continuity context" in instructions
+        assert "`continuity_contract_pre`" in instructions
+        assert "Episode 1, set this to null" in instructions
+        assert "may not invent new" in instructions
+        assert "listener-question, memory-thread, or host-state progression" in instructions
         assert (
             "Carry the section plan's `background_depth`, `role_label`,"
             in instructions
@@ -933,6 +1187,7 @@ class TestRedesignedAgents:
         assert "Copy the section plan's `background_depth`, `role_label`," not in instructions
         assert "`host_policy`" in instructions
         assert "Each scene card must include `host_moves` with phase buckets" in instructions
+        assert "If a section carries any `host_mystery_moves`" in instructions
         assert "Ordinary cards may use one or two" in instructions
         assert "Treat `must_land_facts` as the card's factual spine." in instructions
         assert "Every `note` must contain both:" in instructions
@@ -953,13 +1208,14 @@ class TestRedesignedAgents:
             "context_setup, actor_setup, action, shock, contestation, reaction,"
             in instructions
         )
+        assert "Target 40–48 scene cards for this episode." in agent.instructions
 
     def test_episode_planning_agent_builds_minified_instructions_from_payload(self):
         agent = EpisodePlanningAgent(_mock_llm())
         payload = agent.build_payload(
             strategy_episode={"episode_number": 1},
             architecture={"episode_number": 1},
-            synthesis_map={"primitives_by_family": {"epochal_turns": []}},
+            synthesis_map={"primitives": []},
             project_metadata={
                 "scene_card_target_min": 21,
                 "scene_card_target_max": 26,
@@ -998,6 +1254,8 @@ class TestRedesignedAgents:
                 }
             ],
             host_policy={"target_full_phase_scene_coverage_target": 0.75},
+            continuity_contract_pre={"recap_items": [{"item_id": "carry_1"}]},
+            continuity_contract_post={"must_leave_live": [{"item_id": "carry_2"}]},
             series_explanation_registry=[
                 {
                     "item_id": "registry_1",
@@ -1010,9 +1268,13 @@ class TestRedesignedAgents:
             ],
         )
         assert agent.schema_name == "style_audit"
+        assert payload["continuity_contract_pre"]["recap_items"][0]["item_id"] == "carry_1"
+        assert payload["continuity_contract_post"]["must_leave_live"][0]["item_id"] == "carry_2"
         assert payload["series_explanation_registry"][0]["item_id"] == "registry_1"
         assert payload["host_policy"]["target_full_phase_scene_coverage_target"] == 0.75
         assert "optional `series_explanation_registry`" in agent.instructions
+        assert "optional `continuity_contract_pre`" in agent.instructions
+        assert "optional `continuity_contract_post`" in agent.instructions
         assert "spoken_style_contract = anti_academic_oral" in agent.instructions
         assert "`term_explanations`" in agent.instructions
         assert "`actor_explanations`" in agent.instructions
@@ -1026,6 +1288,11 @@ class TestRedesignedAgents:
 
         assert payload["spoken_style_contract"] == "anti_academic_oral"
         assert payload["authorial_policy"]["comparative_aside_tolerance"] == "high"
+        assert payload["allowed_moves"][-3:] == [
+            "uncertainty",
+            "revision",
+            "surprise",
+        ]
 
     def test_writing_agent_payload(self):
         agent = WritingAgent(_mock_llm())
@@ -1040,12 +1307,16 @@ class TestRedesignedAgents:
             episode_target_word_count_higher=180,
             skip_grounding=True,
             host_policy={"target_full_phase_scene_coverage_target": 0.8},
+            continuity_contract_pre={"recap_items": [{"item_id": "carry_1"}]},
+            continuity_contract_post={"must_leave_live": [{"item_id": "carry_2"}]},
             actor_metadata={"actors": [{"actor_id": "actor_1"}]},
             prior_window_continuity={"completed_scene_count": 1},
         )
         assert agent.schema_name == "episode_writing"
         assert payload["actor_metadata"]["actors"][0]["actor_id"] == "actor_1"
         assert payload["host_policy"]["target_full_phase_scene_coverage_target"] == 0.8
+        assert payload["continuity_contract_pre"]["recap_items"][0]["item_id"] == "carry_1"
+        assert payload["continuity_contract_post"]["must_leave_live"][0]["item_id"] == "carry_2"
         assert payload["prior_window_continuity"]["completed_scene_count"] == 1
         assert payload["skip_grounding"] is True
         assert payload["episode_target_word_count_lower"] == 120
@@ -1085,6 +1356,8 @@ class TestRedesignedAgents:
         assert "Write this to be heard, not admired on the page." in agent.instructions
         assert "The target is not historical prose with some personality." in agent.instructions
         assert "Read each scene's phase buckets in order" in agent.instructions
+        assert "Optional `continuity_contract_pre`" in agent.instructions
+        assert "Optional `continuity_contract_post`" in agent.instructions
         assert "Optional `prior_window_continuity`" in agent.instructions
         assert (
             "reference-only guidance for handoff, pacing, and continuity"
@@ -1179,12 +1452,16 @@ class TestRedesignedAgents:
             episode_target_word_count_higher=220,
             skip_grounding=True,
             host_policy={"target_full_phase_scene_coverage_target": 0.8},
+            continuity_contract_pre={"recap_items": [{"item_id": "carry_1"}]},
+            continuity_contract_post={"must_leave_live": [{"item_id": "carry_2"}]},
             actor_metadata={"actors": [{"actor_id": "actor_1"}]},
             prior_window_continuity={"completed_scene_count": 1},
         )
         assert agent.schema_name == "episode_writing"
         assert payload["actor_metadata"]["actors"][0]["actor_id"] == "actor_1"
         assert payload["host_policy"]["target_full_phase_scene_coverage_target"] == 0.8
+        assert payload["continuity_contract_pre"]["recap_items"][0]["item_id"] == "carry_1"
+        assert payload["continuity_contract_post"]["must_leave_live"][0]["item_id"] == "carry_2"
         assert payload["prior_window_continuity"]["completed_scene_count"] == 1
         assert payload["skip_grounding"] is True
         assert payload["episode_target_word_count_lower"] == 140
@@ -1226,6 +1503,8 @@ class TestRedesignedAgents:
         assert "avoid filler" in agent.instructions
         assert "self-performance" in agent.instructions
         assert "Read the scene's `host_moves` phase buckets in order" in agent.instructions
+        assert "Optional `continuity_contract_pre`" in agent.instructions
+        assert "Optional `continuity_contract_post`" in agent.instructions
         assert "Optional `prior_window_continuity`" in agent.instructions
         assert (
             "`prior_window_continuity` is reference-only." in agent.instructions
@@ -1344,10 +1623,14 @@ class TestRedesignedAgents:
             max_words_per_segment=250,
             tts_provider="openai",
             host_policy={"target_full_phase_scene_coverage_target": 0.8},
+            continuity_contract_pre={"recap_items": [{"item_id": "carry_1"}]},
+            continuity_contract_post={"must_leave_live": [{"item_id": "carry_2"}]},
         )
         assert agent.schema_name == "spoken_delivery"
         assert payload["max_words_per_segment"] == 250
         assert payload["host_policy"]["target_full_phase_scene_coverage_target"] == 0.8
+        assert payload["continuity_contract_pre"]["recap_items"][0]["item_id"] == "carry_1"
+        assert payload["continuity_contract_post"]["must_leave_live"][0]["item_id"] == "carry_2"
         assert "You are the `oral_rewriter` stage" in agent.instructions
         assert "already-written batch of episode prose" in agent.instructions
         assert "spoken narration" in agent.instructions
@@ -1356,6 +1639,8 @@ class TestRedesignedAgents:
         assert "`term_explanations`" in agent.instructions
         assert "`actor_explanations`" in agent.instructions
         assert "`host_policy`" in agent.instructions
+        assert "optional `continuity_contract_pre`" in agent.instructions
+        assert "optional `continuity_contract_post`" in agent.instructions
         assert "TRANSFORMATION MANDATE" in agent.instructions
         assert (
             "Be faithful to the content. Do not be faithful to the delivery mechanism."
@@ -1427,6 +1712,8 @@ class TestRedesignedAgents:
         assert "`verdict_landing`" in prompt
         assert "`authorial_passages.placement` carries explanatory placement inside the" in prompt
         assert "section and must be one of: `open`, `mid`, `close`." in prompt
+        assert "Treat `comparative_aside` as comparison-with-return" in prompt
+        assert "Prefer `placement = mid` for `comparative_aside`" in prompt
         assert "prefer them in your JSON output when possible" not in prompt
         assert "`answer_section_id -> answer_section`" not in prompt
         assert "`residue_section_id -> residue_section`" not in prompt
@@ -1443,6 +1730,7 @@ class TestRedesignedAgents:
         assert "Treat `address_mode = we` and `address_mode = i` as stance signals" in prompt
         assert "Let the scene begin inside the world." in prompt
         assert "Treat `spoken_style_contract = anti_academic_oral` as the default narrator mode." in prompt
+        assert "For `comparative_aside`, prefer: scene fact -> carried comparison -> explicit snap-back." in prompt
         assert "Write this to be heard, not admired on the page." in prompt
         assert "forceful host explaining history out loud." in prompt
         assert "scene or factual pressure" in prompt
@@ -1558,18 +1846,14 @@ class TestHeuristicClient:
         result = agent.run(
             agent.build_payload(
                 synthesis_map={
-                    "primitives_by_family": {
-                        "epochal_turns": [
-                            {"id": f"primitive_{idx}"} for idx in range(1, 8)
-                        ]
-                    }
+                    "primitives": [{"id": f"primitive_{idx}"} for idx in range(1, 8)]
                 },
                 project_metadata={
                     "podcast_mode": "minified",
-                    "episode_spine_core_primitive_target_min": 2,
-                    "episode_spine_core_primitive_target_max": 4,
-                    "episode_spine_support_primitive_target_min": 2,
-                    "episode_spine_support_primitive_target_max": 4,
+                    "episode_spine_core_primitive_target_min": 3,
+                    "episode_spine_core_primitive_target_max": 5,
+                    "episode_spine_support_primitive_target_min": 4,
+                    "episode_spine_support_primitive_target_max": 6,
                     "episode_spine_recall_primitive_target_max": 1,
                 },
                 scene_discovery=None,
@@ -1579,20 +1863,16 @@ class TestHeuristicClient:
             )
         )
 
-        assert len(result.episodes[0].episode_spine.core_primitive_ids) == 2
-        assert len(result.episodes[0].episode_spine.support_primitive_roles) == 2
-        assert result.narrator_profile.target_authorial_passages_per_episode == 10
+        assert len(result.episodes[0].episode_spine.core_primitive_ids) == 3
+        assert len(result.episodes[0].episode_spine.support_primitive_roles) == 4
+        assert result.narrator_profile.target_authorial_passages_per_episode == 14
 
     def test_narrative_strategy_agent_run_uses_payload_min_when_no_override(self):
         agent = NarrativeStrategyAgent(HeuristicLLMClient())
         result = agent.run(
             agent.build_payload(
                 synthesis_map={
-                    "primitives_by_family": {
-                        "epochal_turns": [
-                            {"id": f"primitive_{idx}"} for idx in range(1, 8)
-                        ]
-                    }
+                    "primitives": [{"id": f"primitive_{idx}"} for idx in range(1, 8)]
                 },
                 project_metadata={"theme": "War on terror"},
                 scene_discovery=None,

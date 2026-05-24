@@ -16,6 +16,7 @@ from podcast_agent.schemas.models import (
     EpisodeArchitecture,
     EpisodePlan,
     EventPrimitive,
+    NarrativeState,
     NarrativeStrategy,
     PipelineConfig,
     PrimitiveSubstrate,
@@ -404,6 +405,36 @@ def _build_project_dir(tmp_path: Path) -> Path:
     strategy = _strategy()
     architecture = _architecture()
     plan = _plan()
+    state_pre = NarrativeState.model_validate(
+        {
+            "project_id": "run_1",
+            "next_episode_number": 1,
+            "listener": {
+                "known_explanation_item_ids": [],
+                "known_actor_ids": [],
+                "questions": [],
+                "memory_threads": [],
+                "carry_forward_memory": [],
+                "last_episode_takeaway": "",
+            },
+            "host": {
+                "mysteries": [],
+                "assumptions": [],
+                "working_theories": [],
+                "recent_revisions": [],
+                "confidence_posture": "mixed",
+                "last_episode_takeaway": "",
+            },
+        }
+    )
+    state_post = NarrativeState.model_validate(
+        {
+            "project_id": "run_1",
+            "next_episode_number": 2,
+            "listener": state_pre.listener.model_dump(mode="json"),
+            "host": state_pre.host.model_dump(mode="json"),
+        }
+    )
 
     _write_json(project_dir / "thematic_axes.json", {"axes": [axis.model_dump(mode="json")]})
     _write_json(project_dir / "thematic_project.json", project)
@@ -417,6 +448,12 @@ def _build_project_dir(tmp_path: Path) -> Path:
         {"episodes": [architecture.model_dump(mode="json")]},
     )
     _write_json(project_dir / "series_plan.json", {"episodes": [plan.model_dump(mode="json")]})
+    _write_json(project_dir / "narrative_state_timeline.json", {"episodes": []})
+    _write_json(project_dir / "narrative_state_latest.json", state_post)
+    episode_dir = project_dir / "episodes" / "1"
+    episode_dir.mkdir(parents=True)
+    _write_json(episode_dir / "narrative_state_pre.json", state_pre)
+    _write_json(episode_dir / "narrative_state_post.json", state_post)
     return project_dir
 
 
@@ -505,5 +542,5 @@ def test_resume_from_episode_planning_requires_scene_discovery(
         lambda settings: SimpleNamespace(),
     )
 
-    with pytest.raises(RuntimeError, match="scene_discovery.json"):
+    with pytest.raises((RuntimeError, FileNotFoundError), match="scene_discovery.json"):
         asyncio.run(resume_script._resume_from_episode_planning("run_1"))

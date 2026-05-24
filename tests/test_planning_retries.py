@@ -552,6 +552,165 @@ def test_plan_series_does_not_raise_on_legacy_scene_primitive_ids(
     assert len(captured_payloads) == 1
 
 
+def test_plan_series_accepts_surprise_move_after_narrator_profile_normalization(
+    monkeypatch, tmp_path
+):
+    async def fake_sleep(_seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr("podcast_agent.pipeline.orchestrator.asyncio.sleep", fake_sleep)
+    orchestrator = _build_orchestrator(monkeypatch)
+    orchestrator.episode_planning_agent.max_retry_attempts = 2
+    captured_payloads: list[dict] = []
+
+    def fake_planning_run(payload: dict):
+        captured_payloads.append(payload)
+        plan_payload = {
+            "episode_number": payload["strategy_episode"]["episode_number"],
+            "framing": {
+                "opening_image": "A corridor outside the chamber.",
+                "threat_or_unresolved_action": "The settlement is still being forced into shape.",
+                "opening_question": "What breaks first?",
+                "handoff_scene_card_id": "scene_1",
+            },
+            "scene_cards": [
+                {
+                    "scene_id": "scene_1",
+                    "section_id": "s01",
+                    "title": "Scene 1",
+                    "scene_role": "context_setup",
+                    "scene_job": "opening",
+                    "beat_change": "The opening condition becomes visible.",
+                    "must_land_facts": {"required": ["Fact 1"]},
+                    "primitive_ids": ["support_1"],
+                    "passage_ids": ["p_support_1"],
+                    "host_moves": {
+                        "open": [{"move_type": "orient", "target": "opening conditions"}]
+                    },
+                    "estimated_duration_seconds": 120,
+                },
+                {
+                    "scene_id": "scene_2",
+                    "section_id": "s02",
+                    "title": "Scene 2",
+                    "scene_role": "action",
+                    "scene_job": "answer",
+                    "beat_change": "The hinge arrives earlier than anyone expects.",
+                    "must_land_facts": {"required": ["Fact 2"]},
+                    "primitive_ids": ["core_1"],
+                    "passage_ids": ["p_core_1"],
+                    "host_moves": {
+                        "open": [{"move_type": "surprise", "target": "hinge arrives early"}]
+                    },
+                    "estimated_duration_seconds": 120,
+                },
+                {
+                    "scene_id": "scene_3",
+                    "section_id": "s03",
+                    "title": "Scene 3",
+                    "scene_role": "reaction",
+                    "scene_job": "residue",
+                    "beat_change": "The cost remains after the hinge lands.",
+                    "must_land_facts": {"required": ["Fact 3"]},
+                    "primitive_ids": ["support_2"],
+                    "passage_ids": ["p_support_2"],
+                    "host_moves": {
+                        "open": [{"move_type": "evaluate", "target": "visible fallout"}]
+                    },
+                    "estimated_duration_seconds": 120,
+                },
+                {
+                    "scene_id": "scene_4",
+                    "section_id": "s04",
+                    "title": "Scene 4",
+                    "scene_role": "implication",
+                    "scene_job": "close",
+                    "beat_change": "The close contains the residue.",
+                    "must_land_facts": {"required": ["Fact 4"]},
+                    "primitive_ids": ["support_3"],
+                    "passage_ids": ["p_support_3"],
+                    "host_moves": {
+                        "close": [{"move_type": "callback", "target": "opening image"}]
+                    },
+                    "estimated_duration_seconds": 120,
+                },
+            ],
+            "answer_scene_card_id": "scene_2",
+            "residue_scene_card_id": "scene_3",
+        }
+        return orchestrator.episode_planning_agent.response_model.model_validate(
+            plan_payload
+        )
+
+    orchestrator.episode_planning_agent.run = fake_planning_run
+    project = ThematicProject(
+        project_id="proj",
+        theme="Theme",
+        books=[
+            BookRecord(
+                book_id="b1",
+                title="Book 1",
+                author="Author",
+                source_path="/tmp/book.txt",
+                source_type="txt",
+            )
+        ],
+        episode_count=1,
+        config=PipelineConfig(),
+    )
+    strategy = NarrativeStrategy(
+        strategy_type="convergence",
+        justification="Because.",
+        series_arc="Arc.",
+        narrator_profile={
+            "allowed_moves": [
+                "orient",
+                "clarify",
+                "evaluate",
+                "contrast",
+                "callback",
+                "light_aside",
+                "naming_note",
+            ]
+        },
+        episodes=[_strategy_episode()],
+    )
+    synthesis_map = SynthesisMap(
+        project_id="proj",
+        primitives=[
+            _primitive("core_1", "Core", passage_id="p_core_1"),
+            _primitive("support_1", "Support 1", passage_id="p_support_1"),
+            _primitive("support_2", "Support 2", passage_id="p_support_2"),
+            _primitive("support_3", "Support 3", passage_id="p_support_3"),
+        ],
+    )
+    corpus = ThematicCorpus(project_id="proj")
+
+    plans, _metrics = asyncio.run(
+        orchestrator._plan_series(
+            project,
+            synthesis_map,
+            strategy,
+            [_episode_architecture()],
+            corpus,
+            tmp_path,
+        )
+    )
+
+    assert [plan.episode_number for plan in plans] == [1]
+    assert len(captured_payloads) == 1
+    assert captured_payloads[0]["host_policy"]["allowed_moves"][-3:] == [
+        "uncertainty",
+        "revision",
+        "surprise",
+    ]
+    assert strategy.narrator_profile.allowed_moves[-3:] == [
+        "uncertainty",
+        "revision",
+        "surprise",
+    ]
+
+
 def test_plan_series_warns_without_retry_on_late_actor_introduction(
     monkeypatch, tmp_path
 ):

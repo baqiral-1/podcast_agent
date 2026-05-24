@@ -473,10 +473,16 @@ def test_narrative_strategy_agent_rejects_missing_event_or_act_core(
                         "listener_problem": "What changes?",
                         "episode_answer": "A retained primitive answers it.",
                         "pressure_line": "The pressure tightens.",
-                        "core_primitive_ids": ["prim_artifact", "prim_reading"],
+                        "core_primitive_ids": [
+                            "prim_artifact",
+                            "prim_reading",
+                            "prim_support_1",
+                        ],
                         "support_primitive_roles": {
-                            "prim_support_1": "texture",
-                            "prim_support_2": "mechanism",
+                            "prim_support_2": "texture",
+                            "prim_support_3": "mechanism",
+                            "prim_support_4": "consequence",
+                            "prim_support_5": "stakes",
                         },
                         "recall_primitive_ids": [],
                     },
@@ -487,10 +493,10 @@ def test_narrative_strategy_agent_rejects_missing_event_or_act_core(
 
     payload = {
         "project": {
-            "episode_spine_core_primitive_target_min": 2,
-            "episode_spine_core_primitive_target_max": 4,
-            "episode_spine_support_primitive_target_min": 2,
-            "episode_spine_support_primitive_target_max": 4,
+            "episode_spine_core_primitive_target_min": 3,
+            "episode_spine_core_primitive_target_max": 5,
+            "episode_spine_support_primitive_target_min": 4,
+            "episode_spine_support_primitive_target_max": 6,
             "episode_spine_recall_primitive_target_max": 1,
         },
         "synthesis_map": {
@@ -505,6 +511,11 @@ def test_narrative_strategy_agent_rejects_missing_event_or_act_core(
                     "substrate": "readings",
                     "functions": ["contest"],
                 },
+                {
+                    "id": "prim_support_1",
+                    "substrate": "artifacts",
+                    "functions": ["texture"],
+                },
             ]
         },
     }
@@ -514,6 +525,7 @@ def test_narrative_strategy_agent_rejects_missing_event_or_act_core(
     assert result.episodes[0].episode_spine.core_primitive_ids == [
         "prim_artifact",
         "prim_reading",
+        "prim_support_1",
     ]
     assert "narrative_strategy_core_missing_event_or_act" in caplog.text
 
@@ -537,10 +549,16 @@ def test_narrative_strategy_agent_rejects_non_recurrence_recall(
                         "listener_problem": "What changes?",
                         "episode_answer": "A retained primitive answers it.",
                         "pressure_line": "The pressure tightens.",
-                        "core_primitive_ids": ["prim_event", "prim_artifact"],
+                        "core_primitive_ids": [
+                            "prim_event",
+                            "prim_artifact",
+                            "prim_support_1",
+                        ],
                         "support_primitive_roles": {
-                            "prim_support_1": "texture",
-                            "prim_support_2": "mechanism",
+                            "prim_support_2": "texture",
+                            "prim_support_3": "mechanism",
+                            "prim_support_4": "consequence",
+                            "prim_support_5": "stakes",
                         },
                         "recall_primitive_ids": ["prim_recall"],
                     },
@@ -551,10 +569,10 @@ def test_narrative_strategy_agent_rejects_non_recurrence_recall(
 
     payload = {
         "project": {
-            "episode_spine_core_primitive_target_min": 2,
-            "episode_spine_core_primitive_target_max": 4,
-            "episode_spine_support_primitive_target_min": 2,
-            "episode_spine_support_primitive_target_max": 4,
+            "episode_spine_core_primitive_target_min": 3,
+            "episode_spine_core_primitive_target_max": 5,
+            "episode_spine_support_primitive_target_min": 4,
+            "episode_spine_support_primitive_target_max": 6,
             "episode_spine_recall_primitive_target_max": 1,
         },
         "synthesis_map": {
@@ -566,6 +584,11 @@ def test_narrative_strategy_agent_rejects_non_recurrence_recall(
                 },
                 {
                     "id": "prim_artifact",
+                    "substrate": "artifacts",
+                    "functions": ["texture"],
+                },
+                {
+                    "id": "prim_support_1",
                     "substrate": "artifacts",
                     "functions": ["texture"],
                 },

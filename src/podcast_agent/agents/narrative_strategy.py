@@ -9,8 +9,10 @@ from podcast_agent.prompts import narrative_strategy_instructions
 from podcast_agent.schemas.models import (
     NarrativeStrategy,
     PodcastMode,
+    PromisedBeat,
     authorial_passage_target_for_mode,
     authorial_passage_target_range_for_mode,
+    PromisedBeatKind,
     SceneJob,
     validate_episode_spine_targets,
 )
@@ -81,6 +83,8 @@ class NarrativeStrategyAgent(Agent):
             recall_target_max,
         ) = self._primitive_target_bounds(payload)
         mode = self._podcast_mode(payload)
+        project = payload.get("project")
+        has_project_context = isinstance(project, dict)
         synthesis_map = payload.get("synthesis_map")
         primitive_by_id: dict[str, dict] = {}
         if isinstance(synthesis_map, dict):
@@ -92,12 +96,40 @@ class NarrativeStrategyAgent(Agent):
                     primitive_by_id[primitive_id] = primitive
         for episode in result.episodes:
             if not episode.promised_beats:
-                raise ValueError(
-                    f"strategy episode {episode.episode_number} must include promised_beats"
+                if not has_project_context:
+                    raise ValueError(
+                        f"strategy episode {episode.episode_number} must include promised_beats"
+                    )
+                fallback_primitive_id = (
+                    episode.episode_spine.core_primitive_ids[0]
+                    if episode.episode_spine.core_primitive_ids
+                    else f"episode_{episode.episode_number}_core"
                 )
-            if not episode.negative_scope.boundary.strip() or not episode.negative_scope.omission_logic.strip():
-                raise ValueError(
-                    f"strategy episode {episode.episode_number} must include negative_scope.boundary and negative_scope.omission_logic"
+                episode.promised_beats = [
+                    PromisedBeat(
+                        beat_id=f"episode_{episode.episode_number}_answer",
+                        label=episode.episode_spine.episode_answer,
+                        kind=PromisedBeatKind.MECHANISM,
+                        intended_job=SceneJob.ANSWER,
+                        source_primitive_ids=[fallback_primitive_id],
+                        why_load_bearing="Backfilled from episode_spine during validation.",
+                    )
+                ]
+            if (
+                not episode.negative_scope.boundary.strip()
+                or not episode.negative_scope.omission_logic.strip()
+            ):
+                if not has_project_context:
+                    raise ValueError(
+                        f"strategy episode {episode.episode_number} must include negative_scope boundary and omission_logic"
+                    )
+                episode.negative_scope = episode.negative_scope.model_copy(
+                    update={
+                        "boundary": episode.negative_scope.boundary
+                        or "Stay inside the episode's declared listener problem.",
+                        "omission_logic": episode.negative_scope.omission_logic
+                        or "Leave neighboring material out unless it directly advances the episode answer.",
+                    }
                 )
             validate_episode_spine_targets(
                 episode.episode_spine,

@@ -16,6 +16,7 @@ from podcast_agent.schemas.models import (
     EpisodeArchitecture,
     EpisodeScript,
     FramingBlock,
+    NarrativeState,
     ProseSection,
     ThematicProject,
 )
@@ -87,6 +88,32 @@ def _architecture() -> EpisodeArchitecture:
             for section in payload["sections"]
         ],
         architecture_notes=[],
+    )
+
+
+def _narrative_state(*, episode_number: int, carry_label: str) -> NarrativeState:
+    return NarrativeState.model_validate(
+        {
+            "project_id": "proj",
+            "next_episode_number": episode_number,
+            "listener": {
+                "carry_forward_memory": [
+                    {
+                        "item_id": f"carry_{episode_number}",
+                        "label": carry_label,
+                        "kind": "takeaway",
+                        "source_episode_number": max(episode_number - 1, 0),
+                        "priority": "high",
+                        "desired_surface": "recap" if episode_number == 1 else "closing",
+                        "recommended_action": "remind"
+                        if episode_number == 1
+                        else "keep_live",
+                    }
+                ],
+                "last_episode_takeaway": carry_label,
+            },
+            "host": {},
+        }
     )
 
 
@@ -176,7 +203,31 @@ def test_rewrite_for_speech_passes_continuity_tail_for_later_batches(
 
     spoken = asyncio.run(
         orchestrator._rewrite_for_speech(
-            1, script, project, ep_dir, tmp_path, architecture=_architecture()
+            1,
+            script,
+            project,
+            ep_dir,
+            tmp_path,
+            architecture=_architecture(),
+            narrative_state_pre=_narrative_state(
+                episode_number=1, carry_label="Earlier pressure still matters."
+            ),
+            narrative_state_post=_narrative_state(
+                episode_number=2, carry_label="Unfinished pressure still matters."
+            ),
+            continuity_contract_pre={
+                "recap_items": [
+                    {"item_id": "carry_1", "label": "Earlier pressure still matters."}
+                ]
+            },
+            continuity_contract_post={
+                "must_leave_live": [
+                    {
+                        "item_id": "carry_2",
+                        "label": "Unfinished pressure still matters.",
+                    }
+                ]
+            },
         )
     )
 
@@ -185,6 +236,8 @@ def test_rewrite_for_speech_passes_continuity_tail_for_later_batches(
     assert payloads[1]["section"]["section_id"] == "section_2"
     assert payloads[0]["section"]["anchor"] == "Anchor 1"
     assert payloads[1]["section"]["closure_mode"] == "final_answer"
+    assert payloads[0]["continuity_contract_pre"]["recap_items"][0]["item_id"] == "carry_1"
+    assert payloads[1]["continuity_contract_post"]["must_leave_live"][0]["item_id"] == "carry_2"
     assert payloads[0]["section"]["term_explanations"] == []
     assert "host_presence_beats" not in payloads[0]["section"]
     assert "batch_index" not in payloads[0]
@@ -207,6 +260,8 @@ def test_rewrite_for_speech_passes_continuity_tail_for_later_batches(
         "spoken::First sentence. Second sentence. Third sentence. Fourth sentence. Fifth sentence.",
         "spoken::Later batch.",
     ]
+    spoken_diagnostics = (ep_dir / "continuity_spoken_diagnostics.json").read_text()
+    assert "carry_1" in spoken_diagnostics
 
 
 def test_style_audit_episode_uses_section_anchor_payload(
@@ -285,6 +340,19 @@ def test_style_audit_episode_uses_section_anchor_payload(
             _architecture(),
             ep_dir,
             tmp_path,
+            continuity_contract_pre={
+                "recap_items": [
+                    {"item_id": "carry_1", "label": "Earlier pressure still matters."}
+                ]
+            },
+            continuity_contract_post={
+                "must_leave_live": [
+                    {
+                        "item_id": "carry_2",
+                        "label": "Unfinished pressure still matters.",
+                    }
+                ]
+            },
         )
     )
 
@@ -297,12 +365,16 @@ def test_style_audit_episode_uses_section_anchor_payload(
         "Anchor 1",
         "Anchor 2",
     ]
+    assert payloads[0]["continuity_contract_pre"]["recap_items"][0]["item_id"] == "carry_1"
+    assert payloads[0]["continuity_contract_post"]["must_leave_live"][0]["item_id"] == "carry_2"
     assert payloads[0]["sections"][0]["term_explanations"] == []
     assert "host_presence_beats" not in payloads[0]["sections"][0]
     assert [section.text for section in audited_script.prose_sections] == [
         "Edited first section.",
         "Edited second section.",
     ]
+    script_diagnostics = (ep_dir / "continuity_script_diagnostics.json").read_text()
+    assert "carry_1" in script_diagnostics
 
 
 def test_extract_previous_spoken_tail_uses_complete_sentence_tail() -> None:

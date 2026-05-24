@@ -13,16 +13,14 @@ from podcast_agent.schemas.models import (
     ActorMetadata,
     ActorProfile,
     ActorRelationship,
+    AuthorialPassage,
     ArchitectureSection,
-    CandidateReading,
     ChapterAnalysis,
-    EvidencePack,
     EpisodeArchitecture,
     EpisodePlan,
     EpisodePlanDraft,
     EpisodeSpine,
-    ContestedExplanationPrimitive,
-    EpochalTurnPrimitive,
+    EventPrimitive,
     FramingBlock,
     HostPresenceBeat,
     HostMoveCue,
@@ -39,11 +37,8 @@ from podcast_agent.schemas.models import (
     SpokenScript,
     SpokenSection,
     StrategyEpisode,
-    SupportPackRole,
-    SYNTHESIS_PRIMITIVE_FAMILIES,
-    SynthesisConsolidationResult,
+    SupportPrimitiveRole,
     SynthesisMap,
-    SynthesisPrimitiveBase,
     SynthesisPrimitivesArtifact,
     ThematicProject,
     PipelineConfig,
@@ -53,7 +48,6 @@ from podcast_agent.schemas.models import (
     dense_section_authorial_passage_range_for_mode,
     primitive_substrate_target_ranges_for_mode,
     resolve_pipeline_config_for_mode,
-    synthesis_primitive_target_ranges_for_mode,
     validate_episode_architecture_targets,
     validate_episode_spine_targets,
 )
@@ -67,45 +61,16 @@ from podcast_agent.utils.actor_metadata import (
 )
 
 
-def _epochal_turn(primitive_id: str = "et_1") -> EpochalTurnPrimitive:
-    return EpochalTurnPrimitive(
+def _event_primitive(primitive_id: str = "e1") -> EventPrimitive:
+    return EventPrimitive(
         id=primitive_id,
-        family="epochal_turns",
+        substrate="events",
         title="Threshold breaks",
         core_passage_ids=["p1"],
         support_passage_ids=["p2"],
-        before_state="The prior balance still holds.",
-        after_state="A new political order is now in effect.",
-        change_driver="A decision forces the transition.",
-        irreversibility_reason="The institutions and actors cannot easily return to the old arrangement.",
+        event_type="political rupture",
+        what_happened="A new political order takes effect.",
     )
-
-
-def _contested_explanation(primitive_id: str = "cx_1") -> ContestedExplanationPrimitive:
-    return ContestedExplanationPrimitive(
-        id=primitive_id,
-        family="contested_explanations",
-        title="Competing readings",
-        core_passage_ids=["p1"],
-        candidate_readings=[
-            CandidateReading(
-                label="reading_a",
-                support_passage_ids=["p1"],
-            ),
-            CandidateReading(
-                label="reading_b",
-                support_passage_ids=["p2"],
-            ),
-        ],
-    )
-
-
-def _family_map(
-    **overrides: list[SynthesisPrimitiveBase],
-) -> dict[str, list[SynthesisPrimitiveBase]]:
-    payload = {family: [] for family in SYNTHESIS_PRIMITIVE_FAMILIES}
-    payload.update(overrides)
-    return payload
 
 
 def _framing() -> FramingBlock:
@@ -177,9 +142,9 @@ def _normal_scene_draft(
 def _episode_spine(pack_id: str = "pack_1") -> EpisodeSpine:
     core_primitive_ids = [pack_id, *[f"core_{idx}" for idx in range(2, 8)]]
     support_primitive_roles = {
-        f"support_{idx}": SupportPackRole.MECHANISM
+        f"support_{idx}": SupportPrimitiveRole.MECHANISM
         if idx % 2 == 0
-        else SupportPackRole.TEXTURE
+        else SupportPrimitiveRole.TEXTURE
         for idx in range(1, 8)
     }
     return EpisodeSpine(
@@ -210,8 +175,8 @@ class TestThematicProject:
         assert config.max_axes == 20
         assert config.synthesis_axis_min == 12
         assert config.synthesis_axis_max == 20
-        assert config.narrative_strategy_episode_count_min == 10
-        assert config.narrative_strategy_episode_count_max == 16
+        assert config.narrative_strategy_episode_count_min == 8
+        assert config.narrative_strategy_episode_count_max == 12
 
     def test_pipeline_config_rejects_narrative_strategy_episode_count_bound_inversion(
         self,
@@ -232,9 +197,9 @@ class TestThematicProject:
         with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
             PipelineConfig(scene_batch_min_cards=1)
 
-    def test_pipeline_config_defaults_synthesis_cap_to_650(self):
+    def test_pipeline_config_defaults_synthesis_cap_to_750(self):
         config = PipelineConfig()
-        assert config.synthesis_total_passage_cap == 650
+        assert config.synthesis_total_passage_cap == 750
         assert config.synthesis_floor_budget_fraction == 0.0
         assert config.synthesis_axis_floor_min == 0
         assert config.synthesis_axis_floor_max == 0
@@ -246,19 +211,19 @@ class TestThematicProject:
         assert config.synthesis_trim_tail_keep_fraction == 0.15
         assert config.passage_extraction_concurrency == 16
         assert config.episode_write_concurrency == 8
-        assert config.episode_writing_batch_count == 3
+        assert config.episode_writing_batch_count == 4
         assert config.spoken_delivery_concurrency == 8
-        assert config.min_episode_minutes == 100.0
-        assert config.max_episode_minutes == 115.0
-        assert config.architecture_section_target_min == 9
-        assert config.architecture_section_target_max == 12
-        assert config.episode_spine_core_primitive_target_min == 6
-        assert config.episode_spine_core_primitive_target_max == 8
-        assert config.episode_spine_support_primitive_target_min == 7
-        assert config.episode_spine_support_primitive_target_max == 10
-        assert config.episode_spine_recall_primitive_target_max == 2
-        assert config.scene_card_target_min == 34
-        assert config.scene_card_target_max == 44
+        assert config.min_episode_minutes == 130.0
+        assert config.max_episode_minutes == 150.0
+        assert config.architecture_section_target_min == 12
+        assert config.architecture_section_target_max == 16
+        assert config.episode_spine_core_primitive_target_min == 8
+        assert config.episode_spine_core_primitive_target_max == 11
+        assert config.episode_spine_support_primitive_target_min == 9
+        assert config.episode_spine_support_primitive_target_max == 13
+        assert config.episode_spine_recall_primitive_target_max == 3
+        assert config.scene_card_target_min == 40
+        assert config.scene_card_target_max == 48
 
     def test_resolve_pipeline_config_for_mode_applies_minified_profile(self):
         config = resolve_pipeline_config_for_mode(
@@ -274,42 +239,42 @@ class TestThematicProject:
         assert config.narrative_strategy_episode_count_max == 4
         assert config.synthesis_total_passage_cap == 200
         assert config.episode_writing_batch_count == 2
-        assert config.episode_spine_core_primitive_target_min == 2
-        assert config.episode_spine_core_primitive_target_max == 4
-        assert config.episode_spine_support_primitive_target_min == 2
-        assert config.episode_spine_support_primitive_target_max == 4
+        assert config.episode_spine_core_primitive_target_min == 3
+        assert config.episode_spine_core_primitive_target_max == 5
+        assert config.episode_spine_support_primitive_target_min == 4
+        assert config.episode_spine_support_primitive_target_max == 6
         assert config.episode_spine_recall_primitive_target_max == 1
         assert config.architecture_section_target_min == 6
         assert config.architecture_section_target_max == 8
         assert config.min_episode_minutes == 54.0
         assert config.max_episode_minutes == 63.0
-        assert config.scene_card_target_min == 21
-        assert config.scene_card_target_max == 26
+        assert config.scene_card_target_min == 18
+        assert config.scene_card_target_max == 21
 
-    def test_authorial_passage_target_ranges_for_minified_mode_derive_by_ratio(self):
-        assert authorial_passage_target_range_for_mode(PodcastMode.FULL) == (14, 18)
-        assert authorial_passage_target_range_for_mode(PodcastMode.MINIFIED) == (9, 12)
+    def test_authorial_passage_target_ranges_for_modes(self):
+        assert authorial_passage_target_range_for_mode(PodcastMode.FULL) == (24, 36)
+        assert authorial_passage_target_range_for_mode(PodcastMode.MINIFIED) == (12, 16)
         assert dense_section_authorial_passage_range_for_mode(PodcastMode.FULL) == (
-            2,
             4,
+            12,
         )
         assert dense_section_authorial_passage_range_for_mode(
             PodcastMode.MINIFIED
-        ) == (1, 3)
-        assert authorial_passage_target_for_mode(PodcastMode.FULL) == 16
-        assert authorial_passage_target_for_mode(PodcastMode.MINIFIED) == 10
+        ) == (2, 5)
+        assert authorial_passage_target_for_mode(PodcastMode.FULL) == 30
+        assert authorial_passage_target_for_mode(PodcastMode.MINIFIED) == 14
 
-    def test_synthesis_primitive_target_ranges_for_minified_mode_floor_by_thirds(self):
-        target_ranges = synthesis_primitive_target_ranges_for_mode(PodcastMode.MINIFIED)
-        assert target_ranges["epochal_turns"] == (14, 18)
-        assert target_ranges["telling_details"] == (2, 4)
-        assert target_ranges["perspective_windows"] == (1, 3)
-        assert target_ranges["recurring_images_and_symbols"] == (1, 3)
-
-    def test_synthesis_primitive_target_ranges_for_full_mode_preserve_total_counts(self):
-        target_ranges = synthesis_primitive_target_ranges_for_mode(PodcastMode.FULL)
-        assert sum(lower for lower, _ in target_ranges.values()) == 223
-        assert sum(upper for _, upper in target_ranges.values()) == 312
+    def test_authorial_passage_allows_six_sentence_budget(self):
+        passage = AuthorialPassage.model_validate(
+            {
+                "passage_id": "p1",
+                "mode": "comparative_aside",
+                "claim": "A scene fact turns into a brief benchmark.",
+                "source_primitive_ids": ["primitive_1"],
+                "budget_sentences": 6,
+            }
+        )
+        assert passage.budget_sentences == 6
 
     def test_primitive_substrate_target_ranges_for_full_mode_match_rebalanced_table(self):
         target_ranges = primitive_substrate_target_ranges_for_mode(PodcastMode.FULL)
@@ -378,8 +343,7 @@ class TestThematicProject:
         assert profile.spoken_style_contract == "anti_academic_oral"
         assert profile.analysis_mode == "hybrid"
         assert profile.analysis_density == "medium"
-        assert profile.comparative_aside_tolerance == "high"
-        assert profile.target_authorial_passages_per_episode == 16
+        assert profile.target_authorial_passages_per_episode == 30
 
     def test_host_presence_beat_normalizes_legacy_term_reminder(self):
         beat = HostPresenceBeat.model_validate(
@@ -647,21 +611,16 @@ class TestSynthesisModels:
         )
         artifact = SynthesisPrimitivesArtifact(
             project_id="proj",
-            primitives_by_family=_family_map(
-                epochal_turns=[
-                    _epochal_turn("et_1").model_copy(
-                        update={"actor_tags": ["Nehru", "Unknown actor"]}
-                    )
-                ]
-            ),
+            primitives=[
+                _event_primitive("e1").model_copy(
+                    update={"actor_ids": ["jawaharlal_nehru", "unknown_actor"]}
+                )
+            ],
         )
         cleaned, metrics = clean_synthesis_primitive_actor_links(artifact, metadata)
-        primitive = cleaned.primitives_by_family["epochal_turns"][0]
+        primitive = cleaned.primitives[0]
         assert primitive.actor_ids == ["jawaharlal_nehru"]
-        assert primitive.actor_tags == []
-        assert primitive.unresolved_actor_tags == ["Unknown actor"]
-        assert metrics["exact_actor_tag_matches"] == 1
-        assert metrics["unmatched_actor_tags"] == 1
+        assert metrics["unknown_actor_ids"] == 1
 
     def test_compact_consolidation_actor_metadata_keeps_minimal_actor_and_relationship_fields(
         self,
@@ -719,182 +678,10 @@ class TestSynthesisModels:
             ],
         }
 
-    def test_importance_fields_default_and_roundtrip(self):
-        primitive = _epochal_turn("et_1")
-        pack = EvidencePack(
-            pack_id="pack_1",
-            title="Pack",
-            local_summary="Summary",
-            primitive_ids=["et_1"],
-        )
+    def test_narrative_importance_score_defaults_to_zero_without_salience(self):
+        primitive = _event_primitive("e1")
 
-        assert primitive.narrative_importance_score == 0.5
-        assert pack.primitive_ids == ["et_1"]
-
-        restored = EvidencePack.model_validate(
-            {
-                **pack.model_dump(mode="json"),
-                "actor_ids": ["actor_1", "actor_1", ""],
-            }
-        )
-        assert restored.actor_ids == ["actor_1"]
-
-    def test_synthesis_map_rejects_unknown_pack_primitive_ids(self):
-        with pytest.raises(ValidationError, match="unknown primitive_ids"):
-            SynthesisMap(
-                project_id="proj",
-                primitives_by_family=_family_map(epochal_turns=[_epochal_turn("et_1")]),
-                evidence_packs=[
-                    EvidencePack(
-                        pack_id="pack_1",
-                        title="Pack",
-                        local_summary="Summary",
-                        primitive_ids=["et_1", "tp_999"],
-                    )
-                ],
-            )
-
-    def test_contested_explanations_with_fewer_than_two_candidate_readings_are_dropped(
-        self,
-    ):
-        invalid_contested_explanation = ContestedExplanationPrimitive(
-            id="cx_invalid",
-            family="contested_explanations",
-            title="Single reading",
-            core_passage_ids=["p1"],
-            candidate_readings=[
-                CandidateReading(
-                    label="reading_a",
-                    support_passage_ids=["p1"],
-                )
-            ],
-        )
-
-        artifact = SynthesisPrimitivesArtifact(
-            project_id="proj",
-            primitives_by_family=_family_map(
-                epochal_turns=[_epochal_turn("et_1")],
-                contested_explanations=[
-                    invalid_contested_explanation,
-                    _contested_explanation("cx_valid"),
-                ],
-            ),
-        )
-        synthesis_map = SynthesisMap(
-            project_id="proj",
-            primitives_by_family=_family_map(
-                epochal_turns=[_epochal_turn("et_1")],
-                contested_explanations=[
-                    invalid_contested_explanation,
-                    _contested_explanation("cx_valid"),
-                ],
-            ),
-        )
-
-        assert [
-            item.id for item in artifact.primitives_by_family["contested_explanations"]
-        ] == ["cx_valid"]
-        assert [
-            item.id
-            for item in synthesis_map.primitives_by_family["contested_explanations"]
-        ] == ["cx_valid"]
-        assert [item.id for item in artifact.primitives_by_family["epochal_turns"]] == [
-            "et_1"
-        ]
-
-    def test_synthesis_map_rejects_pack_references_to_dropped_contested_explanations(
-        self,
-    ):
-        with pytest.raises(ValidationError, match="unknown primitive_ids"):
-            SynthesisMap(
-                project_id="proj",
-                primitives_by_family=_family_map(
-                    epochal_turns=[_epochal_turn("et_1")],
-                    contested_explanations=[
-                        ContestedExplanationPrimitive(
-                            id="cx_invalid",
-                            family="contested_explanations",
-                            title="Single reading",
-                            core_passage_ids=["p1"],
-                            candidate_readings=[
-                                CandidateReading(
-                                    label="reading_a",
-                                    support_passage_ids=["p1"],
-                                )
-                            ],
-                        )
-                    ],
-                ),
-                evidence_packs=[
-                    EvidencePack(
-                        pack_id="pack_1",
-                        title="Opening pack",
-                        local_summary="A compact causal chain.",
-                        primitive_ids=["et_1", "cx_invalid"],
-                    )
-                ],
-            )
-
-    def test_synthesis_map_roundtrip_preserves_evidence_pack_shape(self):
-        synthesis_map = SynthesisMap(
-            project_id="proj",
-            primitives_by_family=_family_map(
-                epochal_turns=[_epochal_turn("et_1")],
-                contested_explanations=[_contested_explanation("cx_1")],
-            ),
-            evidence_packs=[
-                EvidencePack(
-                    pack_id="pack_1",
-                    title="Opening pack",
-                    local_summary="A compact causal chain.",
-                    primitive_ids=["et_1", "cx_1"],
-                )
-            ],
-            quality_score=0.7,
-        )
-        restored = SynthesisMap.model_validate(
-            json.loads(synthesis_map.model_dump_json())
-        )
-        assert restored.evidence_packs[0].primitive_ids[0] == "et_1"
-        assert (
-            restored.primitives_by_family["contested_explanations"][0]
-            .candidate_readings[1]
-            .label
-            == "reading_b"
-        )
-
-    def test_synthesis_consolidation_result_rejects_unknown_pack_primitive_ids(self):
-        with pytest.raises(ValidationError, match="unknown primitive_ids"):
-            SynthesisConsolidationResult(
-                project_id="proj",
-                primitive_ids_by_family={"epochal_turns": ["et_1"]},
-                evidence_packs=[
-                    EvidencePack(
-                        pack_id="pack_1",
-                        title="Pack",
-                        local_summary="Summary",
-                        primitive_ids=["et_1", "tp_999"],
-                    )
-                ],
-            )
-
-    def test_synthesis_consolidation_result_accepts_family_id_universe(self):
-        result = SynthesisConsolidationResult(
-            project_id="proj",
-            primitive_ids_by_family={
-                "epochal_turns": ["et_1"],
-                "contested_explanations": ["cx_1"],
-            },
-            evidence_packs=[
-                EvidencePack(
-                    pack_id="pack_1",
-                    title="Pack",
-                    local_summary="Summary",
-                    primitive_ids=["et_1", "cx_1"],
-                )
-            ],
-        )
-        assert result.evidence_packs[0].primitive_ids == ["et_1", "cx_1"]
+        assert primitive.narrative_importance_score == 0.0
 
 
 class TestNarrativeStrategy:
@@ -1068,12 +855,12 @@ class TestNarrativeStrategy:
 
     def test_episode_spine_rejects_support_overlap_with_spine(self):
         support_primitive_roles = {
-            "pack_1": SupportPackRole.STAKES,
+            "pack_1": SupportPrimitiveRole.STAKES,
             **{
                 f"support_{idx}": (
-                    SupportPackRole.MECHANISM
+                    SupportPrimitiveRole.MECHANISM
                     if idx % 2 == 0
-                    else SupportPackRole.TEXTURE
+                    else SupportPrimitiveRole.TEXTURE
                 )
                 for idx in range(1, 8)
             },
@@ -1089,43 +876,32 @@ class TestNarrativeStrategy:
                 support_primitive_roles=support_primitive_roles,
             )
 
-    def test_episode_spine_rejects_core_primitive_count_outside_shared_range(self):
-        with pytest.raises(
-            ValidationError, match="core_primitive_ids must contain 2-8"
-        ):
-            EpisodeSpine(
-                listener_question="What changed?",
-                argument="A claim",
-                core_primitive_ids=["core_1", "core_2"],
-                support_primitive_roles={
-                    f"support_{idx}": SupportPackRole.MECHANISM for idx in range(1, 8)
-                },
-            )
-
     def test_episode_spine_rejects_support_primitive_count_outside_shared_range(self):
         with pytest.raises(
-            ValidationError, match="support_primitive_roles must contain 2-10"
+            ValidationError, match="support_primitive_roles must contain 2-13"
         ):
             EpisodeSpine(
                 listener_question="What changed?",
                 argument="A claim",
                 core_primitive_ids=[f"core_{idx}" for idx in range(1, 8)],
                 support_primitive_roles={
-                    "support_1": SupportPackRole.MECHANISM,
+                    "support_1": SupportPrimitiveRole.MECHANISM,
                 },
             )
 
-    def test_episode_spine_accepts_shared_upper_bound_of_ten_for_support(self):
+    def test_episode_spine_accepts_shared_upper_bounds_for_full_mode(self):
         spine = EpisodeSpine(
             listener_question="What changed?",
             argument="A claim",
-            core_primitive_ids=[f"core_{idx}" for idx in range(1, 9)],
+            core_primitive_ids=[f"core_{idx}" for idx in range(1, 12)],
             support_primitive_roles={
-                f"support_{idx}": SupportPackRole.MECHANISM for idx in range(1, 11)
+                f"support_{idx}": SupportPrimitiveRole.MECHANISM for idx in range(1, 14)
             },
+            recall_primitive_ids=["recall_1", "recall_2", "recall_3"],
         )
-        assert len(spine.core_primitive_ids) == 8
-        assert len(spine.support_primitive_roles) == 10
+        assert len(spine.core_primitive_ids) == 11
+        assert len(spine.support_primitive_roles) == 13
+        assert len(spine.recall_primitive_ids) == 3
 
     def test_validate_episode_spine_targets_enforces_full_mode_counts(self):
         spine = EpisodeSpine(
@@ -1133,57 +909,59 @@ class TestNarrativeStrategy:
             argument="A claim",
             core_primitive_ids=[f"core_{idx}" for idx in range(1, 5)],
             support_primitive_roles={
-                f"support_{idx}": SupportPackRole.MECHANISM for idx in range(1, 5)
+                f"support_{idx}": SupportPrimitiveRole.MECHANISM for idx in range(1, 5)
             },
         )
 
-        with pytest.raises(ValueError, match="core_primitive_ids must contain 6-8"):
+        with pytest.raises(ValueError, match="core_primitive_ids must contain 8-11"):
             validate_episode_spine_targets(
                 spine,
-                core_target_min=6,
-                core_target_max=8,
-                support_target_min=7,
-                support_target_max=10,
-                recall_target_max=2,
+                core_target_min=8,
+                core_target_max=11,
+                support_target_min=9,
+                support_target_max=13,
+                recall_target_max=3,
             )
 
     def test_validate_episode_spine_targets_accepts_full_mode_support_range(self):
         spine = EpisodeSpine(
             listener_question="What changed?",
             argument="A claim",
-            core_primitive_ids=[f"core_{idx}" for idx in range(1, 7)],
+            core_primitive_ids=[f"core_{idx}" for idx in range(1, 9)],
             support_primitive_roles={
-                f"support_{idx}": SupportPackRole.MECHANISM for idx in range(1, 8)
+                f"support_{idx}": SupportPrimitiveRole.MECHANISM for idx in range(1, 10)
             },
         )
 
         validate_episode_spine_targets(
             spine,
-            core_target_min=6,
-            core_target_max=8,
-            support_target_min=7,
-            support_target_max=10,
-            recall_target_max=2,
+            core_target_min=8,
+            core_target_max=11,
+            support_target_min=9,
+            support_target_max=13,
+            recall_target_max=3,
         )
 
     def test_validate_episode_spine_targets_accepts_minified_counts(self):
         spine = EpisodeSpine(
             listener_question="What changed?",
             argument="A claim",
-            core_primitive_ids=["core_1", "core_2"],
+            core_primitive_ids=["core_1", "core_2", "core_3"],
             support_primitive_roles={
-                "support_1": SupportPackRole.MECHANISM,
-                "support_2": SupportPackRole.TEXTURE,
+                "support_1": SupportPrimitiveRole.MECHANISM,
+                "support_2": SupportPrimitiveRole.TEXTURE,
+                "support_3": SupportPrimitiveRole.STAKES,
+                "support_4": SupportPrimitiveRole.CONSEQUENCE,
             },
             recall_primitive_ids=["recall_1"],
         )
 
         validate_episode_spine_targets(
             spine,
-            core_target_min=2,
-            core_target_max=4,
-            support_target_min=2,
-            support_target_max=4,
+            core_target_min=3,
+            core_target_max=5,
+            support_target_min=4,
+            support_target_max=6,
             recall_target_max=1,
         )
 
@@ -1191,10 +969,12 @@ class TestNarrativeStrategy:
         spine = EpisodeSpine(
             listener_question="What changed?",
             argument="A claim",
-            core_primitive_ids=["core_1", "core_2"],
+            core_primitive_ids=["core_1", "core_2", "core_3"],
             support_primitive_roles={
-                "support_1": SupportPackRole.MECHANISM,
-                "support_2": SupportPackRole.TEXTURE,
+                "support_1": SupportPrimitiveRole.MECHANISM,
+                "support_2": SupportPrimitiveRole.TEXTURE,
+                "support_3": SupportPrimitiveRole.STAKES,
+                "support_4": SupportPrimitiveRole.CONSEQUENCE,
             },
             recall_primitive_ids=["recall_1", "recall_2"],
         )
@@ -1204,10 +984,10 @@ class TestNarrativeStrategy:
         ):
             validate_episode_spine_targets(
                 spine,
-                core_target_min=2,
-                core_target_max=4,
-                support_target_min=2,
-                support_target_max=4,
+                core_target_min=3,
+                core_target_max=5,
+                support_target_min=4,
+                support_target_max=6,
                 recall_target_max=1,
             )
 
@@ -1235,29 +1015,6 @@ class TestNarrativeStrategy:
                     "support_pack_roles": {},
                     "allowed_recalls": [],
                 }
-            )
-
-    def test_narrative_strategy_rejects_pack_home_collision(self):
-        with pytest.raises(ValidationError, match="multiple primary home episodes"):
-            NarrativeStrategy(
-                strategy_type="convergence",
-                justification="Use converging local causal chains.",
-                series_arc="Each episode carries one pack home.",
-                episode_arc_outline=["Ep 1", "Ep 2"],
-                episodes=[
-                    StrategyEpisode(
-                        episode_number=1,
-                        title="Episode 1",
-                        arc_summary="Arc 1",
-                        episode_spine=_episode_spine("pack_1"),
-                    ),
-                    StrategyEpisode(
-                        episode_number=2,
-                        title="Episode 2",
-                        arc_summary="Arc 2",
-                        episode_spine=_episode_spine("pack_1"),
-                    ),
-                ],
             )
 
     def test_narrative_strategy_requires_at_least_one_spine_pack_per_episode(self):
@@ -1341,26 +1098,6 @@ class TestPlanningModels:
                 }
             )
 
-    def test_scene_actor_uses_arc_bindings(self):
-        actor = SceneActor(
-            name="Mahatma Gandhi",
-            actor_id="mahatma_gandhi",
-            presence="primary",
-            arc_bindings=[
-                SceneActorArcBinding(
-                    thread_id="gandhi_tension_1",
-                    scene_role="blocked",
-                    scene_use="complicate",
-                    weight="strong",
-                )
-            ],
-        )
-
-        assert actor.presence == "primary"
-        assert actor.arc_bindings[0].thread_id == "gandhi_tension_1"
-        assert actor.arc_bindings[0].scene_role == "blocked"
-        assert actor.arc_bindings[0].scene_use == "complicate"
-
     def test_scene_actor_rejects_old_actor_aspect_fields(self):
         with pytest.raises(ValidationError):
             SceneActor.model_validate(
@@ -1376,187 +1113,6 @@ class TestPlanningModels:
                     "scene_actor_work": ["Old directive."],
                 }
             )
-
-    def test_clean_scene_actor_links_filters_unknown_arc_bindings(self):
-        actor_directive = ActorArcDirective(
-            actor_id="mahatma_gandhi",
-            arc_threads=[
-                ActorArcThread(
-                    thread_id="gandhi_tension_1",
-                    arc_type="tension",
-                    label="tension line",
-                    premise="Public discipline collides with escalating violence.",
-                ),
-                ActorArcThread(
-                    thread_id="gandhi_guardrail_1",
-                    arc_type="guardrail",
-                    label="guardrail",
-                    premise="Do not repeat the actor function without change.",
-                ),
-            ],
-        )
-        scene = _normal_scene_draft()
-        scene.actors = [
-            SceneActor(
-                name="Mahatma Gandhi",
-                actor_id="mahatma_gandhi",
-                arc_bindings=[
-                    SceneActorArcBinding(
-                        thread_id="gandhi_tension_1",
-                        scene_role="blocked",
-                        scene_use="complicate",
-                    ),
-                    SceneActorArcBinding(
-                        thread_id="missing_thread",
-                        scene_role="blocked",
-                        scene_use="complicate",
-                    ),
-                ],
-            )
-        ]
-        plan = EpisodePlanDraft(
-            episode_number=1,
-            title="Episode 1",
-            driving_question="Why begin here?",
-            episode_spine=_episode_spine("pack_1"),
-            actor_arc_directives=[actor_directive],
-            framing=_framing(),
-            scene_cards=[scene],
-        )
-        metadata = ActorMetadata(
-            actors=[
-                ActorProfile(
-                    actor_id="mahatma_gandhi",
-                    display_name="Mahatma Gandhi",
-                    actor_type="person",
-                )
-            ]
-        )
-
-        cleaned, metrics = clean_scene_actor_links(plan, metadata)
-
-        cleaned_actor = cleaned.scene_cards[0].actors[0]
-        assert [binding.thread_id for binding in cleaned_actor.arc_bindings] == [
-            "gandhi_tension_1"
-        ]
-        assert metrics["unknown_actor_arc_thread_ids"] == 1
-
-    def test_scene_card_allows_noncanonical_scene_role(self):
-        card = SceneCard(
-            scene_id="scene_reveal",
-            title="A hidden mechanism surfaces",
-            scene_role="reveal",
-            dominant_pack_id="pack_1",
-            spine_relation=SpineRelation.SPINE_ADVANCE,
-            state_effect="The mechanism becomes visible.",
-            entry_image="The ledger opens.",
-            local_question="What finally becomes visible?",
-            observable_detail="A missing column is now clear.",
-            intended_move="Expose the mechanism.",
-            passage_ids=["p1"],
-            host_moves=_host_moves_payload(),
-            estimated_duration_seconds=90,
-        )
-        assert card.scene_role == "reveal"
-        assert "coverage_depth" not in card.model_dump()
-
-    def test_scene_card_draft_drops_coverage_depth_on_load(self):
-        card = SceneCardDraft.model_validate(
-            {
-                "scene_id": "scene_draft",
-                "section_id": "section_1",
-                "title": "A hidden mechanism surfaces",
-                "scene_role": "reveal",
-                "dominant_pack_id": "pack_1",
-                "spine_relation": "spine_advance",
-                "state_effect": "The mechanism becomes visible.",
-                "entry_image": "The ledger opens.",
-                "local_question": "What finally becomes visible?",
-                "observable_detail": "A missing column is now clear.",
-                "intended_move": "Expose the mechanism.",
-                "passage_ids": ["p1"],
-                "host_moves": _host_moves_payload().model_dump(mode="json"),
-                "coverage_depth": "deep",
-            }
-        )
-        assert "coverage_depth" not in card.model_dump()
-
-    def test_scene_card_draft_aliases_process_to_action(self):
-        card = SceneCardDraft.model_validate(
-            {
-                "scene_id": "scene_action",
-                "section_id": "section_1",
-                "title": "A hidden mechanism surfaces",
-                "scene_role": "process",
-                "dominant_pack_id": "pack_1",
-                "spine_relation": "spine_advance",
-                "state_effect": "The mechanism becomes visible.",
-                "entry_image": "The ledger opens.",
-                "local_question": "What finally becomes visible?",
-                "observable_detail": "A missing column is now clear.",
-                "intended_move": "Expose the mechanism.",
-                "passage_ids": ["p1"],
-                "host_moves": _host_moves_payload().model_dump(mode="json"),
-            }
-        )
-        assert card.scene_role == "action"
-
-    def test_scene_card_draft_fixes_perspective_shift_typo(self):
-        card = SceneCardDraft.model_validate(
-            {
-                "scene_id": "scene_shift",
-                "section_id": "section_1",
-                "title": "A hidden mechanism surfaces",
-                "scene_role": "perspective shift",
-                "dominant_pack_id": "pack_1",
-                "spine_relation": "spine_advance",
-                "state_effect": "The mechanism becomes visible.",
-                "entry_image": "The ledger opens.",
-                "local_question": "What finally becomes visible?",
-                "observable_detail": "A missing column is now clear.",
-                "intended_move": "Expose the mechanism.",
-                "passage_ids": ["p1"],
-                "host_moves": _host_moves_payload().model_dump(mode="json"),
-            }
-        )
-        assert card.scene_role == "perspective_shift"
-
-    def test_scene_card_draft_does_not_require_duration(self):
-        card = SceneCardDraft(
-            scene_id="scene_draft",
-            title="A hidden mechanism surfaces",
-            scene_role="reveal",
-            dominant_pack_id="pack_1",
-            spine_relation=SpineRelation.SPINE_ADVANCE,
-            state_effect="The mechanism becomes visible.",
-            entry_image="The ledger opens.",
-            local_question="What finally becomes visible?",
-            observable_detail="A missing column is now clear.",
-            intended_move="Expose the mechanism.",
-            passage_ids=["p1"],
-            host_moves=_host_moves_payload(),
-        )
-        assert "estimated_duration_seconds" not in card.model_dump()
-
-    def test_scene_card_draft_discards_legacy_duration(self):
-        card = SceneCardDraft.model_validate(
-            {
-                "scene_id": "scene_draft",
-                "title": "A hidden mechanism surfaces",
-                "scene_role": "reveal",
-                "dominant_pack_id": "pack_1",
-                "spine_relation": "spine_advance",
-                "state_effect": "The mechanism becomes visible.",
-                "entry_image": "The ledger opens.",
-                "local_question": "What finally becomes visible?",
-                "observable_detail": "A missing column is now clear.",
-                "intended_move": "Expose the mechanism.",
-                "passage_ids": ["p1"],
-                "host_moves": _host_moves_payload().model_dump(mode="json"),
-                "estimated_duration_seconds": 120,
-            }
-        )
-        assert "estimated_duration_seconds" not in card.model_dump()
 
     def test_scene_card_requires_duration(self):
         with pytest.raises(ValidationError, match="estimated_duration_seconds"):
@@ -1600,42 +1156,6 @@ class TestPlanningModels:
                 }
             )
 
-    def test_scene_card_rejects_blank_scene_role(self):
-        with pytest.raises(ValidationError, match="scene_role must not be blank"):
-            SceneCard(
-                scene_id="scene_blank",
-                section_id="section_1",
-                title="Invalid role",
-                scene_role="   ",
-                dominant_pack_id="pack_1",
-                spine_relation=SpineRelation.SPINE_ADVANCE,
-                state_effect="The mechanism becomes visible.",
-                entry_image="Image",
-                local_question="Question",
-                observable_detail="Detail",
-                intended_move="Move",
-                passage_ids=["p1"],
-                host_moves=_host_moves_payload(),
-                estimated_duration_seconds=60,
-            )
-
-    def test_normal_scene_card_requires_dominant_occurrence(self):
-        with pytest.raises(ValidationError, match="scene cards require"):
-            SceneCard(
-                scene_id="scene_1",
-                title="The order arrives",
-                scene_role="setup",
-                spine_relation=SpineRelation.SET_STAKES,
-                state_effect="The stakes become visible.",
-                entry_image="Envelope on desk.",
-                local_question="What changes first?",
-                observable_detail="Hands stop.",
-                intended_move="Set up the stakes.",
-                passage_ids=["p1"],
-                host_moves=_host_moves_payload(),
-                estimated_duration_seconds=60,
-            )
-
     def test_scene_card_rejects_bridge_card_fields(self):
         with pytest.raises(ValidationError):
             SceneCard(
@@ -1655,91 +1175,6 @@ class TestPlanningModels:
                 host_moves=_host_moves_payload(),
                 estimated_duration_seconds=60,
             )
-
-    def test_episode_plan_draft_validates_framing_handoff(self):
-        with pytest.raises(ValidationError, match="handoff_scene_card_id"):
-            EpisodePlanDraft(
-                episode_number=1,
-                title="Episode 1",
-                driving_question="Why begin here?",
-                episode_spine=_episode_spine("pack_1"),
-                framing=FramingBlock(
-                    opening_image="Image",
-                    threat_or_unresolved_action="Threat",
-                    opening_question="Question",
-                    handoff_scene_card_id="missing_scene",
-                ),
-                scene_cards=[_normal_scene_draft()],
-            )
-
-    def test_episode_plan_draft_allows_non_scene_withhold_until_reference(self):
-        scene = _normal_scene_draft()
-        scene.withhold_until = "Full consequences are developed in Episode 5."
-        draft = EpisodePlanDraft(
-            episode_number=1,
-            title="Episode 1",
-            driving_question="Why begin here?",
-            episode_spine=_episode_spine("pack_1"),
-            framing=_framing(),
-            scene_cards=[scene],
-        )
-        assert (
-            draft.scene_cards[0].withhold_until
-            == "Full consequences are developed in Episode 5."
-        )
-
-    def test_episode_plan_draft_defaults_target_duration_minutes_to_90(self):
-        draft = EpisodePlanDraft(
-            episode_number=1,
-            title="Episode 1",
-            driving_question="Why begin here?",
-            episode_spine=_episode_spine("pack_1"),
-            framing=_framing(),
-            scene_cards=[_normal_scene_draft()],
-        )
-        assert draft.target_duration_minutes == 100.0
-
-    def test_episode_plan_draft_rejects_noncontiguous_section_ids(self):
-        scene_one = _normal_scene_draft(scene_id="scene_1")
-        scene_one.section_id = "section_1"
-        scene_two = _normal_scene_draft(scene_id="scene_2")
-        scene_two.section_id = "section_2"
-        scene_three = _normal_scene_draft(scene_id="scene_3")
-        scene_three.section_id = "section_1"
-        with pytest.raises(
-            ValidationError, match="contiguous architecture section order"
-        ):
-            EpisodePlanDraft(
-                episode_number=1,
-                title="Episode 1",
-                driving_question="Why begin here?",
-                episode_spine=_episode_spine("pack_1"),
-                framing=FramingBlock(
-                    opening_image="Image",
-                    threat_or_unresolved_action="Threat",
-                    opening_question="Question",
-                    handoff_scene_card_id="scene_3",
-                ),
-                scene_cards=[scene_one, scene_two, scene_three],
-            )
-
-    def test_episode_plan_roundtrip(self):
-        draft = EpisodePlan(
-            episode_number=1,
-            title="Episode 1",
-            driving_question="Why begin here?",
-            thematic_focus="Opening moves",
-            arc_summary="The episode traces one local causal chain.",
-            unresolved_questions=["What still remains unclear?"],
-            episode_spine=_episode_spine("pack_1"),
-            framing=_framing(),
-            scene_cards=[_normal_scene()],
-            target_duration_minutes=140.0,
-            target_word_count=18900,
-        )
-        restored = EpisodePlan.model_validate(json.loads(draft.model_dump_json()))
-        assert restored.framing.handoff_scene_card_id == "scene_1"
-        assert restored.scene_cards[0].actors[0].name == "Clerk"
 
 
 class TestSpeechAndStyleModels:
@@ -1795,7 +1230,7 @@ class TestEpisodeArchitectureModels:
                     else "closing"
                     if idx == section_count - 1
                     else "setup",
-                    approx_runtime_minutes=100.0 / section_count,
+                    approx_runtime_minutes=130.0 / section_count,
                     primitive_ids=["et_1"],
                     section_anchor=f"Anchor {idx + 1}",
                     must_stage_beats=[
@@ -1845,14 +1280,6 @@ class TestEpisodeArchitectureModels:
             architecture_notes=[],
         )
 
-    def test_episode_architecture_accepts_nine_sections(self):
-        architecture = self._build_architecture(9)
-        assert len(architecture.sections) == 9
-
-    def test_episode_architecture_accepts_ten_sections(self):
-        architecture = self._build_architecture(10)
-        assert len(architecture.sections) == 10
-
     def test_episode_architecture_rejects_removed_target_section_count_field(self):
         with pytest.raises(ValidationError, match="target_section_count"):
             EpisodeArchitecture.model_validate(
@@ -1862,14 +1289,6 @@ class TestEpisodeArchitectureModels:
                 }
             )
 
-    def test_episode_architecture_accepts_twelve_sections(self):
-        architecture = self._build_architecture(12)
-        assert len(architecture.sections) == 12
-
-    def test_episode_architecture_accepts_six_sections(self):
-        architecture = self._build_architecture(6)
-        assert len(architecture.sections) == 6
-
     def test_episode_architecture_rejects_fewer_than_six_sections(self):
         with pytest.raises(ValidationError, match="at least 6 items"):
             self._build_architecture(5)
@@ -1877,25 +1296,6 @@ class TestEpisodeArchitectureModels:
     def test_episode_architecture_rejects_more_than_twelve_sections(self):
         with pytest.raises(ValidationError, match="at most 12 items"):
             self._build_architecture(13)
-
-    def test_validate_episode_architecture_targets_enforces_full_mode_counts(self):
-        architecture = self._build_architecture(8)
-
-        with pytest.raises(ValueError, match="sections must contain 9-12 items"):
-            validate_episode_architecture_targets(
-                architecture,
-                section_target_min=9,
-                section_target_max=12,
-            )
-
-    def test_validate_episode_architecture_targets_accepts_minified_counts(self):
-        architecture = self._build_architecture(6)
-
-        validate_episode_architecture_targets(
-            architecture,
-            section_target_min=6,
-            section_target_max=8,
-        )
 
     def test_architecture_section_migrates_legacy_anchor_field(self):
         section = ArchitectureSection.model_validate(

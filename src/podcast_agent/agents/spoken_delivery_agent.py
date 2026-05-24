@@ -43,6 +43,10 @@ class SpokenDeliveryAgent(Agent):
         max_words_per_segment: int,
         tts_provider: str,
         host_policy: dict | None = None,
+        narrative_state_pre: dict | None = None,
+        narrative_state_post: dict | None = None,
+        continuity_contract_pre: dict | None = None,
+        continuity_contract_post: dict | None = None,
         previous_spoken_tail: str | None = None,
         field_semantics: dict | None = None,
     ) -> dict:
@@ -54,6 +58,14 @@ class SpokenDeliveryAgent(Agent):
         }
         if host_policy is not None:
             payload["host_policy"] = host_policy
+        if narrative_state_pre is not None:
+            payload["narrative_state_pre"] = narrative_state_pre
+        if narrative_state_post is not None:
+            payload["narrative_state_post"] = narrative_state_post
+        if continuity_contract_pre is not None:
+            payload["continuity_contract_pre"] = continuity_contract_pre
+        if continuity_contract_post is not None:
+            payload["continuity_contract_post"] = continuity_contract_post
         prose_sections = list(script.get("prose_sections", []) or [])
         if len(prose_sections) == 1:
             payload["section"] = prose_sections[0]

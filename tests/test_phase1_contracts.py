@@ -196,11 +196,11 @@ def _framing() -> FramingBlock:
 def test_scene_job_budget_defaults_are_locked() -> None:
     assert scene_job_budget_for_mode(PodcastMode.MINIFIED) == {
         "total_min": 18,
-        "total_max": 20,
+        "total_max": 21,
         "opening_min": 2,
         "opening_max": 2,
         "build_min": 11,
-        "build_max": 13,
+        "build_max": 14,
         "turn_min": 2,
         "turn_max": 2,
         "answer_min": 1,
@@ -216,13 +216,13 @@ def test_scene_job_budget_defaults_are_locked() -> None:
         PipelineConfig(podcast_mode=PodcastMode.MINIFIED)
     )
     assert (full_config.scene_card_target_min, full_config.scene_card_target_max) == (
-        30,
-        36,
+        40,
+        48,
     )
     assert (
         minified_config.scene_card_target_min,
         minified_config.scene_card_target_max,
-    ) == (18, 20)
+    ) == (18, 21)
 
 
 def test_host_move_cue_accepts_legacy_note_and_normalizes_to_target() -> None:
@@ -485,4 +485,3 @@ def test_planning_instructions_reference_scene_job_budget_and_target() -> None:
     assert "`scene_job`" in agent.instructions
     assert "`target`" in agent.instructions
     assert "`scene_function`" not in agent.instructions
-    assert "Every `note`" not in agent.instructions

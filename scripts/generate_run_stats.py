@@ -9,10 +9,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from podcast_agent.schemas.models import (
-    RICH_SYNTHESIS_PRIMITIVE_FAMILIES,
-    SYNTHESIS_PRIMITIVE_FAMILIES,
-)
+from podcast_agent.schemas.models import PRIMITIVE_SUBSTRATES
 
 CORE_ARTIFACTS = (
     "thematic_project.json",
@@ -70,47 +67,56 @@ def _collect_retained_primitive_ids(series_plan: dict[str, Any]) -> set[str]:
     return retained_ids
 
 
+def _group_primitives_by_substrate(
+    primitives: list[dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    grouped = {substrate: [] for substrate in PRIMITIVE_SUBSTRATES}
+    for primitive in primitives:
+        substrate = str(primitive.get("substrate", "") or "").strip()
+        if substrate not in grouped:
+            continue
+        grouped[substrate].append(primitive)
+    return grouped
+
+
 def _render_retention_table(
-    primitives_by_family: dict[str, list[dict[str, Any]]],
+    primitives_by_substrate: dict[str, list[dict[str, Any]]],
     series_plan: dict[str, Any],
 ) -> str:
     retained_ids = _collect_retained_primitive_ids(series_plan)
     rows: list[tuple[str, int, int, float]] = []
-    for family in SYNTHESIS_PRIMITIVE_FAMILIES:
-        items = primitives_by_family.get(family, []) or []
+    for substrate in PRIMITIVE_SUBSTRATES:
+        items = primitives_by_substrate.get(substrate, []) or []
         primitive_ids = {str(item.get("id")) for item in items if item.get("id")}
         total = len(primitive_ids)
         retained = len(primitive_ids & retained_ids)
         rate = (retained / total) if total else 0.0
-        rows.append((family, retained, total, rate))
+        rows.append((substrate, retained, total, rate))
     rows.sort(key=lambda item: (-item[3], -item[2], item[0]))
 
     row_html = "".join(
         """
         <tr>
-          <td>{family}</td>
+          <td>{substrate}</td>
           <td>{retained}</td>
           <td>{total}</td>
           <td>{retention}</td>
         </tr>
         """.format(
-            family=_escape(
-                f"* {family}" if family in RICH_SYNTHESIS_PRIMITIVE_FAMILIES else family
-            ),
+            substrate=_escape(substrate),
             retained=retained,
             total=total,
             retention=_escape(f"{rate:.1%}"),
         )
-        for family, retained, total, rate in rows
+        for substrate, retained, total, rate in rows
     )
     return """
     <table>
       <thead>
-        <tr><th>Family</th><th>Retained</th><th>Total</th><th>Retention</th></tr>
+        <tr><th>Substrate</th><th>Retained</th><th>Total</th><th>Retention</th></tr>
       </thead>
       <tbody>{rows}</tbody>
     </table>
-    <p><small>* primitive enrichment family</small></p>
     """.format(rows=row_html)
 
 
@@ -151,18 +157,21 @@ def _render_html(run_dir: Path) -> str:
     series_plan = _load_json(run_dir / "series_plan.json")
     episodes = strategy.get("episodes", [])
     planned_episodes = series_plan.get("episodes", []) if isinstance(series_plan, dict) else []
-    primitives_by_family = (
-        primitives.get("primitives_by_family", {})
+    primitive_list = (
+        primitives.get("primitives", [])
         if isinstance(primitives, dict)
-        else {}
+        else []
+    )
+    primitives_by_substrate = _group_primitives_by_substrate(
+        primitive_list if isinstance(primitive_list, list) else []
     )
     primitive_count_rows = "".join(
-        f"<p>{_escape(family)}: {len(items)}</p>"
-        for family, items in primitives_by_family.items()
+        f"<p>{_escape(substrate)}: {len(items)}</p>"
+        for substrate, items in primitives_by_substrate.items()
     )
     if not primitive_count_rows:
-        primitive_count_rows = "<p>No family primitives found.</p>"
-    retention_table = _render_retention_table(primitives_by_family, series_plan)
+        primitive_count_rows = "<p>No substrate primitives found.</p>"
+    retention_table = _render_retention_table(primitives_by_substrate, series_plan)
 
     return f"""
 <!doctype html>

@@ -25,7 +25,6 @@ from podcast_agent.pipeline.orchestrator import (
     _build_scene_card_primitive_warnings,
     _build_passage_lookup,
     _build_episode_architecture_realization,
-    _compact_primitives_for_consolidation,
     _estimate_duration_seconds_from_words,
     _flatten_synthesis_primitives,
     _occurrence_spillover_weight,
@@ -39,7 +38,6 @@ from podcast_agent.pipeline.orchestrator import (
     _extract_previous_spoken_tail,
     _split_sentences,
     _script_total_word_count,
-    _trim_synthesis_primitives_by_family_caps,
     _trim_candidate_texts_by_bm25,
     _trim_candidate_texts_by_bm25_query_text,
 )
@@ -51,8 +49,6 @@ from podcast_agent.schemas.models import (
     ActorRelationship,
     ArchitectureSection,
     BookRecord,
-    CandidateReading,
-    EvidencePack,
     EpisodeScript,
     EpisodePlan,
     EpisodeSpine,
@@ -72,14 +68,9 @@ from podcast_agent.schemas.models import (
     SpokenScript,
     SpokenSection,
     StrategyEpisode,
-    SupportPackRole,
-    SYNTHESIS_PRIMITIVE_FAMILIES,
-    SynthesisConsolidationResult,
+    SupportPrimitiveRole,
     SynthesisMap,
-    SynthesisPrimitiveBase,
     SynthesisPrimitivesArtifact,
-    ContestedExplanationPrimitive,
-    EpochalTurnPrimitive,
     ThematicCorpus,
     ThematicAxis,
     ThematicProject,
@@ -99,7 +90,7 @@ def _framing() -> FramingBlock:
 
 def _episode_spine(
     *spine_pack_ids: str,
-    support_pack_roles: dict[str, SupportPackRole] | None = None,
+    support_pack_roles: dict[str, SupportPrimitiveRole] | None = None,
     allowed_recalls: list[str] | None = None,
 ) -> EpisodeSpine:
     provided_core_ids = list(spine_pack_ids) or ["pack_1"]
@@ -114,7 +105,7 @@ def _episode_spine(
         if support_id in core_primitive_ids or support_id in merged_support_roles:
             continue
         merged_support_roles[support_id] = (
-            SupportPackRole.MECHANISM if len(merged_support_roles) % 2 == 0 else SupportPackRole.TEXTURE
+            SupportPrimitiveRole.MECHANISM if len(merged_support_roles) % 2 == 0 else SupportPrimitiveRole.TEXTURE
         )
     return EpisodeSpine(
         listener_question="Question?",
@@ -127,7 +118,7 @@ def _episode_spine(
 
 def _strategy_episode(
     *spine_pack_ids: str,
-    support_pack_roles: dict[str, SupportPackRole] | None = None,
+    support_pack_roles: dict[str, SupportPrimitiveRole] | None = None,
     allowed_recalls: list[str] | None = None,
 ) -> StrategyEpisode:
     return StrategyEpisode(
@@ -385,18 +376,16 @@ class DummyTTSClient:
         return None
 
 
-def _primitive(primitive_id: str, title: str = "Title") -> EpochalTurnPrimitive:
+def _primitive(primitive_id: str, title: str = "Title") -> EventPrimitive:
     match = primitive_id.rsplit("_", 1)
     suffix = match[1] if len(match) == 2 and match[1].isdigit() else "1"
-    return EpochalTurnPrimitive(
+    return EventPrimitive(
         id=primitive_id,
-        family="epochal_turns",
+        substrate="events",
         title=title,
         core_passage_ids=[f"p{suffix}"],
-        before_state="The old arrangement still holds.",
-        after_state="The balance has changed.",
-        change_driver="A decisive move forces the turn.",
-        irreversibility_reason="The fallout cannot be reversed quickly.",
+        event_type="political rupture",
+        what_happened=f"Event {suffix} changes the balance.",
     )
 
 
@@ -425,183 +414,6 @@ def _actor_arc_directive(actor_id: str = "actor_primary") -> ActorArcDirective:
         ],
     )
 
-
-def _primitives_by_family(
-    **overrides: list[SynthesisPrimitiveBase],
-) -> dict[str, list[SynthesisPrimitiveBase]]:
-    payload = {family: [] for family in SYNTHESIS_PRIMITIVE_FAMILIES}
-    payload.update(overrides)
-    return payload
-
-
-def _generic_primitive(
-    primitive_id: str,
-    *,
-    family: str,
-    narrative_importance_score: float = 0.5,
-    core_passage_ids: list[str] | None = None,
-    support_passage_ids: list[str] | None = None,
-) -> SynthesisPrimitiveBase:
-    return SynthesisPrimitiveBase(
-        id=primitive_id,
-        family=family,
-        title=f"Primitive {primitive_id}",
-        core_passage_ids=list(core_passage_ids or []),
-        support_passage_ids=list(support_passage_ids or []),
-        narrative_importance_score=narrative_importance_score,
-    )
-
-
-def _epochal_turn(
-    primitive_id: str,
-    *,
-    narrative_importance_score: float = 0.5,
-    core_passage_ids: list[str] | None = None,
-    support_passage_ids: list[str] | None = None,
-) -> SynthesisPrimitiveBase:
-    return SynthesisPrimitiveBase(
-        id=primitive_id,
-        family="epochal_turns",
-        title=f"Primitive {primitive_id}",
-        core_passage_ids=list(core_passage_ids or []),
-        support_passage_ids=list(support_passage_ids or []),
-        narrative_importance_score=narrative_importance_score,
-    )
-
-
-def test_compact_primitives_for_consolidation_omits_passage_and_legacy_tag_fields():
-    artifact = SynthesisPrimitivesArtifact(
-        project_id="proj",
-        primitives_by_family=_primitives_by_family(
-            contested_explanations=[
-                ContestedExplanationPrimitive(
-                    id="cx_1",
-                    family="contested_explanations",
-                    title="Competing readings",
-                    core_passage_ids=["p1"],
-                    support_passage_ids=["p2"],
-                    timeframe="1947",
-                    geography="Delhi",
-                    primary_actor_ids=["actor_1"],
-                    affected_actor_ids=["actor_2"],
-                    actor_ids=["actor_1", "actor_2"],
-                    actor_tags=["Legacy actor"],
-                    institution_tags=["Congress"],
-                    unresolved_actor_tags=["Unknown actor"],
-                    narrative_importance_score=0.82,
-                    candidate_readings=[
-                        CandidateReading(
-                            label="reading_a",
-                            support_passage_ids=["p3"],
-                        ),
-                        CandidateReading(
-                            label="reading_b",
-                            support_passage_ids=["p4"],
-                        ),
-                    ],
-                )
-            ]
-        ),
-        quality_score=0.6,
-        quality_notes=["thin comparative grounding"],
-    )
-
-    payload = _compact_primitives_for_consolidation(artifact)
-    primitive = payload["primitives_by_family"]["contested_explanations"][0]
-
-    assert set(primitive) == {
-        "id",
-        "title",
-        "summary",
-        "axis_ids",
-        "timeframe",
-        "geography",
-        "primary_actor_ids",
-        "affected_actor_ids",
-        "actor_ids",
-        "unresolved_actor_tags",
-        "narrative_importance_score",
-        "candidate_readings",
-    }
-    assert primitive["candidate_readings"] == [
-        {
-            "label": "reading_a",
-        },
-        {
-            "label": "reading_b",
-        }
-    ]
-    assert payload["quality_score"] == 0.6
-    assert payload["quality_notes"] == ["thin comparative grounding"]
-
-
-def test_trim_synthesis_primitives_by_family_caps_trims_by_rank():
-    artifact = SynthesisPrimitivesArtifact(
-        project_id="proj",
-        primitives_by_family=_primitives_by_family(
-            epochal_turns=[
-                _epochal_turn(
-                    "et_high",
-                    narrative_importance_score=0.9,
-                    core_passage_ids=["p1", "p2"],
-                    support_passage_ids=["p3"],
-                ),
-                _epochal_turn(
-                    "et_mid",
-                    narrative_importance_score=0.8,
-                    core_passage_ids=["p1"],
-                    support_passage_ids=["p2", "p3"],
-                ),
-                _epochal_turn(
-                    "et_low",
-                    narrative_importance_score=0.3,
-                    core_passage_ids=["p1"],
-                ),
-            ],
-            telling_details=[
-                _generic_primitive(
-                    "td_keep",
-                    family="telling_details",
-                    narrative_importance_score=0.6,
-                    core_passage_ids=["p4"],
-                )
-            ],
-        ),
-        quality_score=0.7,
-        quality_notes=["keep strongest primitives only"],
-    )
-
-    trimmed = _trim_synthesis_primitives_by_family_caps(
-        artifact,
-        family_max_counts={"epochal_turns": 2, "telling_details": 1},
-    )
-
-    assert [item.id for item in trimmed.primitives_by_family["epochal_turns"]] == [
-        "et_high",
-        "et_mid",
-    ]
-    assert [item.id for item in trimmed.primitives_by_family["telling_details"]] == ["td_keep"]
-    assert trimmed.quality_score == artifact.quality_score
-    assert trimmed.quality_notes == artifact.quality_notes
-
-
-def test_trim_synthesis_primitives_by_family_caps_is_stable_when_counts_fit():
-    artifact = SynthesisPrimitivesArtifact(
-        project_id="proj",
-        primitives_by_family=_primitives_by_family(
-            epochal_turns=[_epochal_turn("et_1")],
-            telling_details=[_generic_primitive("td_1", family="telling_details")],
-        ),
-        quality_score=0.5,
-        quality_notes=[],
-    )
-
-    trimmed = _trim_synthesis_primitives_by_family_caps(
-        artifact,
-        family_max_counts={"epochal_turns": 2, "telling_details": 2},
-    )
-
-    assert trimmed is artifact
 
 
 def test_build_scene_card_count_warnings_for_under_target():
@@ -855,8 +667,8 @@ def test_occurrence_weight_uses_increased_spine_weight():
     episode = _strategy_episode(
         "pack_anchor",
         support_pack_roles={
-            "pack_major": SupportPackRole.MECHANISM,
-            "pack_supporting": SupportPackRole.TEXTURE,
+            "pack_major": SupportPrimitiveRole.MECHANISM,
+            "pack_supporting": SupportPrimitiveRole.TEXTURE,
         },
     )
 
@@ -869,8 +681,8 @@ def test_occurrence_spillover_weight_uses_increased_spine_weight():
     episode = _strategy_episode(
         "pack_anchor",
         support_pack_roles={
-            "pack_major": SupportPackRole.MECHANISM,
-            "pack_supporting": SupportPackRole.TEXTURE,
+            "pack_major": SupportPrimitiveRole.MECHANISM,
+            "pack_supporting": SupportPrimitiveRole.TEXTURE,
         },
     )
 
@@ -918,8 +730,8 @@ def test_allocate_scene_durations_spillover_goes_only_to_anchor_and_major():
     episode = _strategy_episode(
         "pack_anchor",
         support_pack_roles={
-            "pack_major": SupportPackRole.MECHANISM,
-            "pack_supporting": SupportPackRole.TEXTURE,
+            "pack_major": SupportPrimitiveRole.MECHANISM,
+            "pack_supporting": SupportPrimitiveRole.TEXTURE,
         },
     )
 
@@ -987,7 +799,7 @@ def test_allocate_scene_durations_totals_sum_to_target():
 def test_build_spine_plan_diagnostics_accepts_065_spine_share():
     episode = _strategy_episode(
         "pack_spine",
-        support_pack_roles={"pack_support": SupportPackRole.MECHANISM},
+        support_pack_roles={"pack_support": SupportPrimitiveRole.MECHANISM},
     )
     scene_cards = [
         _scene_card(f"spine_{idx}", "pack_spine")
@@ -1305,9 +1117,7 @@ def test_build_passage_lookup_and_flatten_primitives():
     )
     synthesis_map = SynthesisMap(
         project_id="proj",
-        primitives_by_family=_primitives_by_family(
-            epochal_turns=[_primitive("tp_1", "Turn")]
-        ),
+        primitives=[_primitive("tp_1", "Turn")],
     )
     assert _build_passage_lookup(corpus)["p1"].book_id == "b1"
     assert _flatten_synthesis_primitives(synthesis_map)["tp_1"].title == "Turn"
@@ -1383,8 +1193,10 @@ def test_orchestrator_initializes_redesigned_agents(monkeypatch):
 
     orchestrator = PipelineOrchestrator()
 
-    assert orchestrator.synthesis_primitives_agent.schema_name == "synthesis_primitives"
-    assert orchestrator.synthesis_consolidation_agent.schema_name == "synthesis_consolidation"
+    assert (
+        orchestrator.synthesis_primitives_agent.schema_name
+        == "primitive_substrate_extraction"
+    )
     assert not hasattr(orchestrator, "synthesis_mapping_agent")
 
 
@@ -1395,31 +1207,27 @@ def test_build_scene_card_family_warnings_reports_missing_mix():
         arc_summary="A1",
         episode_spine=_episode_spine(
             "pack_1",
-            support_pack_roles={"pack_2": SupportPackRole.MECHANISM},
+            support_pack_roles={"pack_2": SupportPrimitiveRole.MECHANISM},
             allowed_recalls=["pack_3"],
         ),
     )
 
     warnings = _build_scene_card_family_warnings(
-        episode=episode,
+        strategy_episode=episode,
         primitive_pool_ids={"et_1"},
-        primitive_family_by_id={"et_1": "epochal_turns"},
+        primitive_by_id={"et_1": _primitive("et_1", "Turn")},
     )
 
-    assert "primitive_family_missing_scene_or_detail" in warnings[0] or any(
-        warning.startswith("primitive_family_missing_scene_or_detail")
+    assert any(
+        warning.startswith("primitive_pool_missing_human_grounding")
         for warning in warnings
     )
     assert any(
-        warning.startswith("primitive_family_missing_human_grounding")
+        warning.startswith("primitive_pool_missing_system_or_context")
         for warning in warnings
     )
     assert any(
-        warning.startswith("primitive_family_missing_system_or_context")
-        for warning in warnings
-    )
-    assert any(
-        warning.startswith("primitive_family_missing_recurrence")
+        warning.startswith("primitive_pool_missing_recurrence")
         for warning in warnings
     )
 
@@ -1448,7 +1256,6 @@ def test_map_synthesis_caps_total_passages_and_keeps_cross_pair_priority(monkeyp
         return SynthesisPrimitivesArtifact(project_id="proj")
 
     orchestrator.synthesis_primitives_agent.run = fake_primitives_run
-    orchestrator.synthesis_consolidation_agent.run = lambda payload: SynthesisConsolidationResult(project_id="proj")
 
     project = ThematicProject(
         project_id="proj",
@@ -1521,8 +1328,6 @@ def test_map_synthesis_caps_total_passages_and_keeps_cross_pair_priority(monkeyp
         for item in book_group["passages"]
     }
     assert passage_text_by_id["p1"] == "P1 full text."
-    assert passage_text_by_id["p2"] == "P2"
-    assert passage_text_by_id["p4"] == "P4 full text."
     assert passage_text_by_id["p6"] == "P6 full text."
     assert payload["cross_book_pairs"] == [
         {
@@ -1532,189 +1337,6 @@ def test_map_synthesis_caps_total_passages_and_keeps_cross_pair_priority(monkeyp
             "strength": 0.9,
         }
     ]
-
-def test_map_synthesis_sends_compact_consolidation_payload_and_reconstructs_full_primitives(
-    monkeypatch,
-    tmp_path,
-):
-    heuristic = HeuristicLLMClient()
-    monkeypatch.setattr("podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic)
-    monkeypatch.setattr(
-        "podcast_agent.pipeline.orchestrator.PGVectorRetrieval",
-        lambda settings, run_logger=None: SimpleNamespace(),
-    )
-    monkeypatch.setattr(
-        "podcast_agent.pipeline.orchestrator.RetrievalService",
-        lambda settings, vector_store: SimpleNamespace(),
-    )
-    monkeypatch.setattr(
-        "podcast_agent.pipeline.orchestrator.build_tts_client",
-        lambda settings: DummyTTSClient(),
-    )
-
-    orchestrator = PipelineOrchestrator()
-    captured: dict[str, object] = {}
-
-    primitives = SynthesisPrimitivesArtifact(
-        project_id="proj",
-        primitives_by_family=_primitives_by_family(
-            contested_explanations=[
-                ContestedExplanationPrimitive(
-                    id="cx_1",
-                    family="contested_explanations",
-                    title="Competing readings",
-                    core_passage_ids=["p1"],
-                    support_passage_ids=["p2"],
-                    timeframe="1947",
-                    geography="Delhi",
-                    primary_actor_ids=["actor_1"],
-                    affected_actor_ids=["actor_2"],
-                    actor_ids=["actor_1", "actor_2"],
-                    unresolved_actor_tags=["Unknown actor"],
-                    narrative_importance_score=0.84,
-                    candidate_readings=[
-                        CandidateReading(
-                            label="reading_a",
-                            support_passage_ids=["p3"],
-                        ),
-                        CandidateReading(
-                            label="reading_b",
-                            support_passage_ids=["p4"],
-                        ),
-                    ],
-                )
-            ]
-        ),
-        quality_score=0.74,
-        quality_notes=["preserve contested readings"],
-    )
-
-    orchestrator.synthesis_primitives_agent.run = lambda _payload: primitives
-
-    def fake_consolidation_run(payload: dict):
-        captured["payload"] = payload
-        return SynthesisConsolidationResult(
-            project_id="proj",
-            evidence_packs=[
-                EvidencePack(
-                    pack_id="pack_1",
-                    title="Pack",
-                    local_summary="Summary",
-                    primitive_ids=["cx_1"],
-                    actor_ids=["actor_1"],
-                )
-            ],
-            primitive_ids_by_family={"contested_explanations": ["cx_1"]},
-            quality_score=0.91,
-            quality_notes=["kept one pack"],
-        )
-
-    orchestrator.synthesis_consolidation_agent.run = fake_consolidation_run
-
-    project = ThematicProject(
-        project_id="proj",
-        theme="War on terror",
-        books=[
-            BookRecord(
-                book_id="b1",
-                title="Book 1",
-                author="Author",
-                source_path="/tmp/book.txt",
-                source_type="txt",
-            )
-        ],
-    )
-    axis = ThematicAxis(
-        axis_id="axis_1",
-        name="Axis 1",
-        description="A1",
-        theme_importance_score=0.95,
-    )
-    corpus = ThematicCorpus(
-        project_id="proj",
-        axes=[axis],
-        passages_by_axis={
-            "axis_1": [
-                ExtractedPassage(
-                    passage_id="p1",
-                    book_id="b1",
-                    chunk_ids=["c1"],
-                    text="P1",
-                    axis_id="axis_1",
-                    relevance_score=0.9,
-                    quotability_score=0.8,
-                )
-            ]
-        },
-    )
-    actor_metadata = ActorMetadata(
-        project_id="proj",
-        actors=[
-            ActorProfile(
-                actor_id="actor_1",
-                display_name="Actor One",
-                actor_type="person",
-                description="Primary actor.",
-                aliases=["One"],
-                book_ids=["b1"],
-                goals_or_motivational_pressures=["Drive events"],
-            ),
-            ActorProfile(
-                actor_id="actor_2",
-                display_name="Actor Two",
-                actor_type="person",
-                description="Affected actor.",
-            ),
-        ],
-        relationships=[
-            ActorRelationship(
-                source_actor_id="actor_1",
-                target_actor_id="actor_2",
-                relationship_type="pressures",
-                description="Actor One pressures Actor Two.",
-                confidence="high",
-            )
-        ],
-        quality_notes=["verbose actor metadata"],
-    )
-
-    synthesis_map, _actor_metrics = asyncio.run(
-        orchestrator._map_synthesis(project, corpus, tmp_path, actor_metadata)
-    )
-
-    consolidation_payload = captured["payload"]
-    compact_primitive = (
-        consolidation_payload["primitives"]["primitives_by_family"]["contested_explanations"][0]
-    )
-    assert "core_passage_ids" not in compact_primitive
-    assert "support_passage_ids" not in compact_primitive
-    assert "actor_tags" not in compact_primitive
-    assert "institution_tags" not in compact_primitive
-    assert compact_primitive["candidate_readings"] == [
-        {"label": "reading_a", "summary": "One reading."},
-        {"label": "reading_b", "summary": "Another reading."},
-    ]
-    assert consolidation_payload["actor_metadata"] == {
-        "actors": [
-            {"actor_id": "actor_1", "display_name": "Actor One"},
-            {"actor_id": "actor_2", "display_name": "Actor Two"},
-        ],
-        "relationships": [
-            {
-                "source_actor_id": "actor_1",
-                "target_actor_id": "actor_2",
-                "relationship_type": "pressures",
-                "description": "Actor One pressures Actor Two.",
-            }
-        ],
-    }
-
-    restored = synthesis_map.primitives_by_family["contested_explanations"][0]
-    assert restored.core_passage_ids == ["p1"]
-    assert restored.support_passage_ids == ["p2"]
-    assert restored.candidate_readings[0].support_passage_ids == ["p3"]
-    assert restored.candidate_readings[1].support_passage_ids == ["p4"]
-    assert restored.unresolved_actor_tags == ["Unknown actor"]
 
 
 def test_write_episode_passes_full_text_to_writing_agent(monkeypatch, tmp_path):
@@ -3130,489 +2752,3 @@ def test_render_episode_audio_writes_section_only_manifest(monkeypatch, tmp_path
     warning_events = [payload for event_type, payload in logged_events if event_type == "spoken_transition_mismatch_warning"]
     assert not warning_events
     assert (tmp_path / "episodes" / "4" / "render_manifest.json").exists()
-
-
-def test_plan_series_parallelizes_episode_planning_with_configured_limit(monkeypatch, tmp_path):
-    heuristic = HeuristicLLMClient()
-    monkeypatch.setattr("podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic)
-    monkeypatch.setattr(
-        "podcast_agent.pipeline.orchestrator.PGVectorRetrieval",
-        lambda settings, run_logger=None: SimpleNamespace(),
-    )
-    monkeypatch.setattr(
-        "podcast_agent.pipeline.orchestrator.RetrievalService",
-        lambda settings, vector_store: SimpleNamespace(),
-    )
-    monkeypatch.setattr(
-        "podcast_agent.pipeline.orchestrator.build_tts_client",
-        lambda settings: DummyTTSClient(),
-    )
-
-    orchestrator = PipelineOrchestrator()
-    in_flight = 0
-    max_in_flight = 0
-    payloads_by_episode: dict[int, dict] = {}
-    lock = threading.Lock()
-
-    def fake_planning_run(payload: dict):
-        nonlocal in_flight, max_in_flight
-        episode_number = int(payload["episode"]["episode_number"])
-        with lock:
-            in_flight += 1
-            max_in_flight = max(max_in_flight, in_flight)
-            payloads_by_episode[episode_number] = payload
-        try:
-            time.sleep(0.05)
-            primary_pack_id = payload["episode"]["episode_spine"]["core_primitive_ids"][0]
-            return orchestrator.episode_planning_agent.response_model.model_validate(
-                {
-                    "episode_number": episode_number,
-                    "title": payload["episode"]["title"],
-                    "driving_question": payload["episode"]["episode_spine"]["listener_question"],
-                    "thematic_focus": payload["episode"]["thematic_focus"],
-                    "arc_summary": payload["episode"]["arc_summary"],
-                    "unresolved_questions": payload["episode"]["unresolved_questions"],
-                    "episode_spine": payload["episode"]["episode_spine"],
-                    "framing": {
-                        "opening_image": "Image",
-                        "threat_or_unresolved_action": "Threat",
-                        "opening_question": "Question",
-                        "handoff_scene_card_id": "scene_1",
-                    },
-                    "scene_cards": [
-                        {
-                            "scene_id": "scene_1",
-                            "title": "Scene 1",
-                            "scene_role": "setup",
-                            "dominant_pack_id": primary_pack_id,
-                            "spine_relation": "set_stakes",
-                            "state_effect": "The stakes become visible.",
-                            "passage_ids": [],
-                            "primitive_ids": [],
-                        }
-                    ],
-                    "target_duration_minutes": 140.0,
-                }
-            )
-        finally:
-            with lock:
-                in_flight -= 1
-
-    orchestrator.episode_planning_agent.run = fake_planning_run
-
-    project = ThematicProject(
-        project_id="proj",
-        theme="War on terror",
-        books=[
-            BookRecord(
-                book_id="b1",
-                title="Book 1",
-                author="Author",
-                source_path="/tmp/book.txt",
-                source_type="txt",
-            )
-        ],
-        episode_count=3,
-        config=PipelineConfig(episode_planning_concurrency=2),
-    )
-    strategy = NarrativeStrategy(
-        strategy_type="convergence",
-        justification="test",
-        series_arc="test arc",
-        episodes=[
-            StrategyEpisode(
-                episode_number=1,
-                title="Episode 1",
-                arc_summary="A1",
-                episode_spine=_episode_spine("ec_1"),
-            ),
-            StrategyEpisode(
-                episode_number=2,
-                title="Episode 2",
-                arc_summary="A2",
-                episode_spine=_episode_spine("ec_2"),
-            ),
-            StrategyEpisode(
-                episode_number=3,
-                title="Episode 3",
-                arc_summary="A3",
-                episode_spine=_episode_spine("ec_3"),
-            ),
-        ],
-    )
-    synthesis_map = SynthesisMap(
-        project_id="proj",
-        evidence_packs=[
-            EvidencePack(
-                pack_id="ec_1",
-                title="C1",
-                local_summary="S1",
-                primitive_ids=["tp_1"],
-            ),
-            EvidencePack(
-                pack_id="ec_2",
-                title="C2",
-                local_summary="S2",
-                primitive_ids=["tp_2"],
-            ),
-            EvidencePack(
-                pack_id="ec_3",
-                title="C3",
-                local_summary="S3",
-                primitive_ids=["tp_3"],
-            ),
-        ],
-        primitives_by_family=_primitives_by_family(
-            epochal_turns=[
-                _primitive("tp_1", "T1"),
-                _primitive("tp_2", "T2"),
-                _primitive("tp_3", "T3"),
-            ]
-        ),
-    )
-    corpus = ThematicCorpus(
-        project_id="proj",
-        passages_by_axis={
-            "axis_1": [
-                ExtractedPassage(
-                    passage_id="p1",
-                    book_id="b1",
-                    chunk_ids=["c1"],
-                    text="Trimmed planning text 1",
-                    full_text="Full planning text 1",
-                    chapter_ref="Chapter 1",
-                    axis_id="axis_1",
-                ),
-                ExtractedPassage(
-                    passage_id="p2",
-                    book_id="b1",
-                    chunk_ids=["c2"],
-                    text="Trimmed planning text 2",
-                    full_text="",
-                    chapter_ref="Chapter 2",
-                    axis_id="axis_1",
-                ),
-                ExtractedPassage(
-                    passage_id="p3",
-                    book_id="b1",
-                    chunk_ids=["c3"],
-                    text="Trimmed planning text 3",
-                    full_text="Full planning text 3",
-                    chapter_ref="Chapter 3",
-                    axis_id="axis_1",
-                ),
-            ]
-        },
-    )
-
-    plans, _actor_metrics = asyncio.run(
-        orchestrator._plan_series(project, synthesis_map, strategy, corpus, tmp_path)
-    )
-
-    assert [plan.episode_number for plan in plans] == [1, 2, 3]
-    assert all(
-        sum(scene.estimated_duration_seconds for scene in plan.scene_cards)
-        == int(round(plan.target_duration_minutes * 60.0))
-        for plan in plans
-    )
-    assert 1 < max_in_flight <= 2
-    assert sorted(payloads_by_episode) == [1, 2, 3]
-    expected_passage_text_by_episode = {
-        1: "Full planning text 1",
-        2: "Trimmed planning text 2",
-        3: "Full planning text 3",
-    }
-    for episode_number in [1, 2, 3]:
-        synthesis_payload = payloads_by_episode[episode_number]["synthesis_map"]
-        assert [pack["pack_id"] for pack in synthesis_payload["evidence_packs"]] == [f"ec_{episode_number}"]
-        assert [item["id"] for item in synthesis_payload["primitives_by_family"]["epochal_turns"]] == [
-            f"tp_{episode_number}"
-        ]
-        available_passages = payloads_by_episode[episode_number]["available_passages"]
-        assert [passage["passage_id"] for passage in available_passages] == [f"p{episode_number}"]
-        assert [passage["text"] for passage in available_passages] == [
-            expected_passage_text_by_episode[episode_number]
-        ]
-
-
-def test_plan_series_uses_actor_arc_directives_for_episode_metadata(monkeypatch, tmp_path):
-    heuristic = HeuristicLLMClient()
-    monkeypatch.setattr("podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic)
-    monkeypatch.setattr(
-        "podcast_agent.pipeline.orchestrator.PGVectorRetrieval",
-        lambda settings, run_logger=None: SimpleNamespace(),
-    )
-    monkeypatch.setattr(
-        "podcast_agent.pipeline.orchestrator.RetrievalService",
-        lambda settings, vector_store: SimpleNamespace(),
-    )
-    monkeypatch.setattr(
-        "podcast_agent.pipeline.orchestrator.build_tts_client",
-        lambda settings: DummyTTSClient(),
-    )
-
-    orchestrator = PipelineOrchestrator()
-    captured_payload: dict[str, object] = {}
-
-    def fake_planning_run(payload: dict):
-        captured_payload.update(payload)
-        primary_pack_id = payload["episode"]["episode_spine"]["core_primitive_ids"][0]
-        return orchestrator.episode_planning_agent.response_model.model_validate(
-            {
-                "episode_number": payload["episode"]["episode_number"],
-                "title": payload["episode"]["title"],
-                "driving_question": payload["episode"]["episode_spine"]["listener_question"],
-                "thematic_focus": payload["episode"]["thematic_focus"],
-                "arc_summary": payload["episode"]["arc_summary"],
-                "unresolved_questions": payload["episode"]["unresolved_questions"],
-                "episode_spine": payload["episode"]["episode_spine"],
-                "framing": {
-                    "opening_image": "Image",
-                    "threat_or_unresolved_action": "Threat",
-                    "opening_question": "Question",
-                    "handoff_scene_card_id": "scene_1",
-                },
-                "scene_cards": [
-                    {
-                        "scene_id": "scene_1",
-                        "title": "Scene 1",
-                        "scene_role": "setup",
-                        "dominant_pack_id": primary_pack_id,
-                        "spine_relation": "set_stakes",
-                        "state_effect": "The stakes become visible.",
-                        "passage_ids": ["p1"],
-                        "primitive_ids": ["tp_1"],
-                    }
-                ],
-                "target_duration_minutes": 140.0,
-            }
-        )
-
-    orchestrator.episode_planning_agent.run = fake_planning_run
-    strategy_actor = _actor_arc_directive("actor_primary")
-    strategy = NarrativeStrategy(
-        strategy_type="convergence",
-        justification="test",
-        series_arc="test arc",
-        episodes=[
-            StrategyEpisode(
-                episode_number=1,
-                title="Episode 1",
-                arc_summary="A1",
-                actor_arc_directives=[strategy_actor],
-                episode_spine=_episode_spine("ec_1"),
-            )
-        ],
-    )
-    primitive = _primitive("tp_1", "T1").model_copy(
-        update={
-            "actor_ids": ["actor_primitive"],
-            "primary_actor_ids": ["actor_primitive"],
-        }
-    )
-    synthesis_map = SynthesisMap(
-        project_id="proj",
-        evidence_packs=[
-            EvidencePack(
-                pack_id="ec_1",
-                title="C1",
-                local_summary="S1",
-                primitive_ids=["tp_1"],
-                actor_ids=["actor_cluster"],
-            )
-        ],
-        primitives_by_family=_primitives_by_family(epochal_turns=[primitive]),
-    )
-    project = ThematicProject(
-        project_id="proj",
-        theme="War on terror",
-        books=[
-            BookRecord(
-                book_id="b1",
-                title="Book 1",
-                author="Author",
-                source_path="/tmp/book.txt",
-                source_type="txt",
-            )
-        ],
-        episode_count=1,
-    )
-    corpus = ThematicCorpus(
-        project_id="proj",
-        passages_by_axis={
-            "axis_1": [
-                ExtractedPassage(
-                    passage_id="p1",
-                    book_id="b1",
-                    chunk_ids=["c1"],
-                    text="Trimmed planning text 1",
-                    full_text="Full planning text 1",
-                    chapter_ref="Chapter 1",
-                    axis_id="axis_1",
-                )
-            ]
-        },
-    )
-    actor_metadata = ActorMetadata(
-        project_id="proj",
-        actors=[
-            ActorProfile(actor_id="actor_primary", display_name="Primary Actor", actor_type="person"),
-            ActorProfile(actor_id="actor_cluster", display_name="Cluster Actor", actor_type="person"),
-            ActorProfile(actor_id="actor_primitive", display_name="Primitive Actor", actor_type="person"),
-        ],
-    )
-
-    plans, _actor_metrics = asyncio.run(
-        orchestrator._plan_series(
-            project,
-            synthesis_map,
-            strategy,
-            corpus,
-            tmp_path,
-            actor_metadata=actor_metadata,
-        )
-    )
-
-    assert [actor["actor_id"] for actor in captured_payload["actor_metadata"]["actors"]] == [
-        "actor_primary"
-    ]
-    assert [actor.actor_id for actor in plans[0].actor_arc_directives] == ["actor_primary"]
-
-
-def test_plan_series_trims_available_passages_for_planning_with_episode_context(
-    monkeypatch, tmp_path
-):
-    heuristic = HeuristicLLMClient()
-    monkeypatch.setattr("podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic)
-    monkeypatch.setattr(
-        "podcast_agent.pipeline.orchestrator.PGVectorRetrieval",
-        lambda settings, run_logger=None: SimpleNamespace(),
-    )
-    monkeypatch.setattr(
-        "podcast_agent.pipeline.orchestrator.RetrievalService",
-        lambda settings, vector_store: SimpleNamespace(),
-    )
-    monkeypatch.setattr(
-        "podcast_agent.pipeline.orchestrator.build_tts_client",
-        lambda settings: DummyTTSClient(),
-    )
-
-    orchestrator = PipelineOrchestrator()
-    captured_payload: dict[str, object] = {}
-
-    def fake_planning_run(payload: dict):
-        captured_payload.update(payload)
-        primary_pack_id = payload["episode"]["episode_spine"]["core_primitive_ids"][0]
-        return orchestrator.episode_planning_agent.response_model.model_validate(
-            {
-                "episode_number": payload["episode"]["episode_number"],
-                "title": payload["episode"]["title"],
-                "driving_question": payload["episode"]["episode_spine"]["listener_question"],
-                "thematic_focus": payload["episode"]["thematic_focus"],
-                "arc_summary": payload["episode"]["arc_summary"],
-                "unresolved_questions": payload["episode"]["unresolved_questions"],
-                "episode_spine": payload["episode"]["episode_spine"],
-                "framing": {
-                    "opening_image": "Image",
-                    "threat_or_unresolved_action": "Threat",
-                    "opening_question": "Question",
-                    "handoff_scene_card_id": "scene_1",
-                },
-                "scene_cards": [
-                    {
-                        "scene_id": "scene_1",
-                        "title": "Scene 1",
-                        "scene_role": "setup",
-                        "dominant_pack_id": primary_pack_id,
-                        "spine_relation": "set_stakes",
-                        "state_effect": "The stakes become visible.",
-                        "passage_ids": [],
-                        "primitive_ids": [],
-                    }
-                ],
-                "target_duration_minutes": 130.0,
-            }
-        )
-
-    orchestrator.episode_planning_agent.run = fake_planning_run
-
-    project = ThematicProject(
-        project_id="proj",
-        theme="themeomega",
-        sub_themes=["arcgamma"],
-        books=[
-            BookRecord(
-                book_id="b1",
-                title="Book 1",
-                author="Author",
-                source_path="/tmp/book.txt",
-                source_type="txt",
-            )
-        ],
-        episode_count=1,
-        config=PipelineConfig(),
-    )
-    strategy = NarrativeStrategy(
-        strategy_type="convergence",
-        justification="test",
-        series_arc="test arc",
-        episodes=[
-            StrategyEpisode(
-                episode_number=1,
-                title="Episode One",
-                thematic_focus="focusbeta",
-                arc_summary="arcgamma",
-                unresolved_questions=["unresolveddelta"],
-                episode_spine=_episode_spine("ec_1"),
-            )
-        ],
-    )
-    synthesis_map = SynthesisMap(
-        project_id="proj",
-        evidence_packs=[
-            EvidencePack(
-                pack_id="ec_1",
-                title="Cluster 1",
-                local_summary="Summary",
-                primitive_ids=["tp_1"],
-            )
-        ],
-        primitives_by_family=_primitives_by_family(
-            epochal_turns=[_primitive("tp_1", "T1")]
-        ),
-    )
-    corpus = ThematicCorpus(
-        project_id="proj",
-        passages_by_axis={
-            "axis_1": [
-                ExtractedPassage(
-                    passage_id="p1",
-                    book_id="b1",
-                    chunk_ids=["c1"],
-                    text="trimmed",
-                    full_text=(
-                        "Drivingalpha evidence appears first. "
-                        "Focusbeta evidence appears second. "
-                        "Arcgamma evidence appears third. "
-                        "Themeomega evidence appears fourth."
-                    ),
-                    chapter_ref="Chapter 1",
-                    axis_id="axis_1",
-                )
-            ]
-        },
-    )
-
-    plans, _actor_metrics = asyncio.run(
-        orchestrator._plan_series(project, synthesis_map, strategy, corpus, tmp_path)
-    )
-
-    assert [plan.episode_number for plan in plans] == [1]
-    available_passages = captured_payload["available_passages"]
-    assert isinstance(available_passages, list)
-    assert len(available_passages) == 1
-    kept_sentences = _split_sentences(available_passages[0]["text"])
-    assert kept_sentences == [
-        "Drivingalpha evidence appears first.",
-        "Focusbeta evidence appears second.",
-    ]

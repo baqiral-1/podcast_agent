@@ -24,10 +24,10 @@ class EpisodeArchitectureAgent(Agent):
     def _section_target_bounds(payload: dict) -> tuple[int, int]:
         project = payload.get("project")
         if not isinstance(project, dict):
-            return 9, 12
+            return 12, 16
         return (
-            int(project.get("architecture_section_target_min", 9)),
-            int(project.get("architecture_section_target_max", 12)),
+            int(project.get("architecture_section_target_min", 12)),
+            int(project.get("architecture_section_target_max", 16)),
         )
 
     @staticmethod
@@ -94,6 +94,7 @@ class EpisodeArchitectureAgent(Agent):
         series_explanation_registry: list[dict] | None = None,
         series_actor_explanation_registry: list[dict] | None = None,
         narrator_profile: dict | None = None,
+        narrative_state: dict | None = None,
         actor_metadata: dict | None = None,
         architecture_feedback: dict | None = None,
     ) -> dict:
@@ -108,6 +109,8 @@ class EpisodeArchitectureAgent(Agent):
             payload["episode_scenes"] = episode_scenes
         if narrator_profile is not None:
             payload["narrator_profile"] = narrator_profile
+        if narrative_state is not None:
+            payload["narrative_state"] = narrative_state
         if series_explanation_registry is not None:
             payload["series_explanation_registry"] = series_explanation_registry
         if series_actor_explanation_registry is not None:
