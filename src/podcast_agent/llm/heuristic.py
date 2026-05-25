@@ -938,8 +938,8 @@ class HeuristicLLMClient(LLMClient):
             primitive_ids = list(
                 episode_spine.get("core_primitive_ids") or ["primitive_001"]
             )
-        section_target_min = int(project.get("architecture_section_target_min", 12))
-        section_target_max = int(project.get("architecture_section_target_max", 16))
+        section_target_min = int(project.get("architecture_section_target_min", 11))
+        section_target_max = int(project.get("architecture_section_target_max", 14))
         section_count = (
             min(section_target_max, max(section_target_min, len(primitive_ids)))
             if primitive_ids

@@ -548,10 +548,10 @@ class PipelineRuntimeConfig(BaseModel):
     synthesis_quality_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
     passage_extraction_concurrency: int = Field(default=16, ge=1)
     spoken_chunk_max_words: int = Field(default=250, ge=50)
-    architecture_section_target_min: int = Field(default=12, ge=1)
-    architecture_section_target_max: int = Field(default=16, ge=1)
-    scene_card_target_min: int = Field(default=40, ge=1)
-    scene_card_target_max: int = Field(default=48, ge=1)
+    architecture_section_target_min: int = Field(default=11, ge=1)
+    architecture_section_target_max: int = Field(default=14, ge=1)
+    scene_card_target_min: int = Field(default=30, ge=1)
+    scene_card_target_max: int = Field(default=38, ge=1)
 
     @model_validator(mode="after")
     def validate_retrieval_budget_bounds(self) -> PipelineRuntimeConfig:

@@ -121,6 +121,10 @@ from podcast_agent.schemas.models import (
     SeriesActorExplanationItem,
     SeriesExplanationItem,
     SegmentDiff,
+    SectionSonicBeat,
+    SectionSonicObligation,
+    SectionSonicPlan,
+    SonicCue,
     StyleAuditResponse,
     SpokenSection,
     SpokenScript,
@@ -177,6 +181,35 @@ def _save_json(path: Path, data: Any) -> None:
     else:
         payload = data
     path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+
+
+def _architecture_section_sonic_plan_by_id(
+    architecture: EpisodeArchitecture | None,
+) -> dict[str, SectionSonicPlan]:
+    if architecture is None:
+        return {}
+    return {
+        section.section_id: section.section_sonic_plan
+        for section in architecture.sections
+        if section.section_sonic_plan is not None
+    }
+
+
+def _attach_section_sonic_plan_to_prose_sections(
+    sections: list[ProseSection],
+    architecture: EpisodeArchitecture | None,
+) -> list[ProseSection]:
+    section_sonic_plan_by_id = _architecture_section_sonic_plan_by_id(architecture)
+    if not section_sonic_plan_by_id:
+        return sections
+    return [
+        section.model_copy(
+            update={
+                "section_sonic_plan": section_sonic_plan_by_id.get(section.section_id)
+            }
+        )
+        for section in sections
+    ]
 
 
 def _load_json(path: Path) -> dict | None:
@@ -1392,6 +1425,11 @@ def _build_style_audit_sections_payload(
                     explanation.model_dump(mode="json")
                     for explanation in meta.actor_explanations
                 ],
+                "section_sonic_plan": (
+                    meta.section_sonic_plan.model_dump(mode="json")
+                    if meta.section_sonic_plan is not None
+                    else None
+                ),
                 "text": prose_section.text,
                 "actor_explanation_realizations": [
                     realization.model_dump(mode="json")
@@ -1418,10 +1456,24 @@ def _build_spoken_delivery_sections_payload(
             architecture=architecture,
             plan=plan,
         )
+    plan_scene_lookup: dict[str, SceneCard] = {
+        scene.scene_id: scene for scene in (plan.scene_cards if plan is not None else [])
+    }
     host_moves_by_section = _build_host_moves_by_section(plan)
     payload_sections: list[dict[str, Any]] = []
     for prose_section in script.prose_sections:
         architecture_section = architecture_section_lookup.get(prose_section.section_id)
+        scene_cues = [
+            SonicCue(
+                scene_id=scene.scene_id,
+                scene_job=scene.scene_job.value,
+                entry_image=scene.entry_image,
+                observable_detail=scene.observable_detail,
+                audible_detail=scene.audible_detail,
+            ).model_dump(mode="json")
+            for scene_id in prose_section.scene_card_ids
+            if (scene := plan_scene_lookup.get(scene_id)) is not None
+        ]
         payload_sections.append(
             {
                 "section_id": prose_section.section_id,
@@ -1436,8 +1488,17 @@ def _build_spoken_delivery_sections_payload(
                     if architecture_section and architecture_section.closure_mode
                     else ""
                 ),
+                "section_sonic_plan": (
+                    architecture_section.section_sonic_plan.model_dump(mode="json")
+                    if architecture_section is not None
+                    and architecture_section.section_sonic_plan is not None
+                    else prose_section.section_sonic_plan.model_dump(mode="json")
+                    if prose_section.section_sonic_plan is not None
+                    else None
+                ),
                 "movement_goal": prose_section.movement_goal,
                 "scene_card_ids": list(prose_section.scene_card_ids),
+                "scene_cues": scene_cues,
                 "host_moves": host_moves_by_section.get(prose_section.section_id, []),
                 "key_terms": (
                     list(architecture_section.key_terms)
@@ -1496,6 +1557,14 @@ def _build_script_sections_payload(
         payload_sections.append(
             {
                 **prose_section.model_dump(mode="json"),
+                "section_sonic_plan": (
+                    architecture_section.section_sonic_plan.model_dump(mode="json")
+                    if architecture_section is not None
+                    and architecture_section.section_sonic_plan is not None
+                    else prose_section.section_sonic_plan.model_dump(mode="json")
+                    if prose_section.section_sonic_plan is not None
+                    else None
+                ),
                 "key_terms": (
                     list(architecture_section.key_terms)
                     if architecture_section is not None
@@ -2245,6 +2314,78 @@ def _build_narrative_strategy_warnings(
             "authored_passage_target_low_for_runtime: compressed season still needs a higher authored passage budget for full-length episodes."
         )
     return warnings
+
+
+def _build_narrative_strategy_actor_arc_diagnostics(
+    *,
+    strategy: NarrativeStrategy,
+    synthesis_map: SynthesisMap,
+    scene_discovery: SceneDiscoveryArtifact | None,
+    actor_metadata: ActorMetadata,
+) -> dict[str, Any]:
+    primitive_lookup = _flatten_synthesis_primitives(synthesis_map)
+    known_actor_ids = {actor.actor_id for actor in actor_metadata.actors if actor.actor_id}
+    scene_candidates = list(scene_discovery.candidates) if scene_discovery is not None else []
+    episode_reports: list[dict[str, Any]] = []
+    warnings: list[str] = []
+
+    for episode in strategy.episodes:
+        assigned_primitive_ids = list(episode.episode_spine.assigned_primitive_ids)
+        assigned_primitive_id_set = set(assigned_primitive_ids)
+        primitive_actor_ids = sorted(
+            {
+                actor_id
+                for primitive_id in assigned_primitive_ids
+                for actor_id in primitive_lookup.get(primitive_id, SimpleNamespace(actor_ids=[])).actor_ids
+                if actor_id and actor_id in known_actor_ids
+            }
+        )
+        scene_candidate_actor_ids = sorted(
+            {
+                actor_id
+                for candidate in scene_candidates
+                if assigned_primitive_id_set.intersection(candidate.primitive_ids)
+                for actor_id in candidate.actor_ids
+                if actor_id and actor_id in known_actor_ids
+            }
+        )
+        evidence_actor_ids = sorted(set(primitive_actor_ids) | set(scene_candidate_actor_ids))
+        directive_actor_ids = [
+            directive.actor_id
+            for directive in episode.actor_arc_directives
+            if directive.actor_id
+        ]
+        clear_actor_evidence = bool(scene_candidate_actor_ids) or len(primitive_actor_ids) >= 2
+        actor_rich_episode = len(evidence_actor_ids) >= 2
+        episode_warnings: list[str] = []
+        if clear_actor_evidence and not directive_actor_ids:
+            episode_warnings.append(
+                f"actor_arc_directives_missing_with_actor_evidence: episode_{episode.episode_number}"
+            )
+        elif actor_rich_episode and len(directive_actor_ids) == 1:
+            episode_warnings.append(
+                f"actor_arc_directives_thin_for_actor_rich_episode: episode_{episode.episode_number}"
+            )
+        warnings.extend(episode_warnings)
+        episode_reports.append(
+            {
+                "episode_number": episode.episode_number,
+                "actor_directive_count": len(directive_actor_ids),
+                "directive_actor_ids": directive_actor_ids,
+                "primitive_actor_ids": primitive_actor_ids,
+                "scene_candidate_actor_ids": scene_candidate_actor_ids,
+                "evidence_actor_ids": evidence_actor_ids,
+                "clear_actor_evidence": clear_actor_evidence,
+                "actor_rich_episode": actor_rich_episode,
+                "warnings": episode_warnings,
+            }
+        )
+
+    return {
+        "episodes": episode_reports,
+        "warning_count": len(warnings),
+        "warnings": warnings,
+    }
 
 
 def _build_narration_hook_gloss_warnings(
@@ -4028,6 +4169,48 @@ def _build_plan_transition_feedback(exc: ComplianceViolationError) -> dict[str, 
     return feedback
 
 
+def _build_architecture_retry_feedback(exc: Exception) -> dict[str, Any]:
+    data = getattr(exc, "data", None) or {}
+    feedback = {
+        "issue": str(data.get("issue", "architecture_contract_invalid")),
+        "episode_number": data.get("episode_number"),
+        "instruction": data.get(
+            "instruction",
+            "Return a schema-valid episode architecture that satisfies section counts, "
+            "answer/residue placement, and promised-beat accounting.",
+        ),
+    }
+    for key in (
+        "section_id",
+        "section_ids",
+        "expected_section_count_range",
+        "promised_beat_ids",
+    ):
+        value = data.get(key)
+        if value:
+            feedback[key] = value
+    return feedback
+
+
+def _build_attempt_record(
+    *,
+    attempt: int,
+    status: str,
+    blocking_issue: str | None = None,
+    warnings: list[str] | None = None,
+    retry_feedback: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    warning_list = list(warnings or [])
+    return {
+        "attempt": attempt,
+        "status": status,
+        "blocking_issue": blocking_issue,
+        "warning_count": len(warning_list),
+        "warnings": warning_list,
+        "retry_feedback": retry_feedback,
+    }
+
+
 def _clamp(value: float, minimum: float, maximum: float) -> float:
     return max(minimum, min(maximum, value))
 
@@ -5614,6 +5797,82 @@ def _build_host_move_plan_diagnostics(
     return diagnostics, warnings
 
 
+def _section_has_host_state_moves(section: Any) -> bool:
+    return bool(
+        getattr(section, "host_mystery_moves", [])
+        or getattr(section, "host_assumption_moves", [])
+        or getattr(section, "host_theory_moves", [])
+    )
+
+
+def _build_host_density_diagnostics(
+    *,
+    scene_cards: list[SceneCardDraft | SceneCard],
+    architecture: EpisodeArchitecture,
+) -> tuple[dict[str, Any], list[str]]:
+    section_by_id = {section.section_id: section for section in architecture.sections}
+    verdict_authorial_ids = {
+        passage.authorial_passage_id
+        for section in architecture.sections
+        for passage in section.authorial_passages
+        if passage.mode == "verdict_landing"
+    }
+    build_scene_ids_with_three_populated_phases: list[str] = []
+    build_scene_ids_with_two_populated_phases_without_justification: list[str] = []
+    explicit_verdict_scene_ids: list[str] = []
+    for scene in scene_cards:
+        phase_count = _scene_host_phase_bucket_count(scene)
+        section = section_by_id.get(scene.section_id)
+        if scene.scene_job == SceneJob.BUILD:
+            if phase_count >= 3:
+                build_scene_ids_with_three_populated_phases.append(scene.scene_id)
+            elif phase_count == 2:
+                justified = bool(scene.authorial_passage_ids) or (
+                    section is not None and _section_has_host_state_moves(section)
+                )
+                if not justified:
+                    build_scene_ids_with_two_populated_phases_without_justification.append(
+                        scene.scene_id
+                    )
+        has_explicit_close_evaluate = any(
+            cue.move_type == "evaluate" and cue.surface_mode in {"mixed", "distinct"}
+            for cue in scene.host_moves.close
+        )
+        has_verdict_authorial = bool(
+            verdict_authorial_ids & set(scene.authorial_passage_ids)
+        )
+        if has_explicit_close_evaluate or has_verdict_authorial:
+            explicit_verdict_scene_ids.append(scene.scene_id)
+    warnings: list[str] = []
+    if build_scene_ids_with_three_populated_phases:
+        warnings.append(
+            "build_scene_phase_cap_exceeded: "
+            f"{_preview_ids(build_scene_ids_with_three_populated_phases)}"
+        )
+    if build_scene_ids_with_two_populated_phases_without_justification:
+        warnings.append(
+            "build_scene_phase_overcoverage_without_obligation: "
+            f"{_preview_ids(build_scene_ids_with_two_populated_phases_without_justification)}"
+        )
+    if len(explicit_verdict_scene_ids) > 4:
+        warnings.append(
+            "explicit_verdict_scene_cap_exceeded: "
+            f"count={len(explicit_verdict_scene_ids)} "
+            f"ids={_preview_ids(explicit_verdict_scene_ids)}"
+        )
+    diagnostics = {
+        "build_scene_ids_with_three_populated_phases": build_scene_ids_with_three_populated_phases,
+        "build_scene_ids_with_two_populated_phases_without_justification": (
+            build_scene_ids_with_two_populated_phases_without_justification
+        ),
+        "explicit_verdict_scene_ids": explicit_verdict_scene_ids,
+        "explicit_verdict_scene_count": len(explicit_verdict_scene_ids),
+        "warning_count": len(warnings),
+        "warnings": warnings,
+    }
+    return diagnostics, warnings
+
+
 def _no_actor_bucket(scene: SceneCardDraft | SceneCard) -> str:
     if (
         scene.scene_job in _ARGUMENT_SCENE_JOBS
@@ -6423,6 +6682,108 @@ def _build_architecture_narrative_state_coverage(
     }
 
 
+def _section_is_explanation_overloaded(section: Any) -> bool:
+    return bool(
+        (
+            any(
+                plan.stage in {"define", "payoff"}
+                for plan in getattr(section, "term_explanations", [])
+            )
+            and getattr(section, "approx_runtime_minutes", 0.0) >= 8.0
+        )
+        or (
+            len(getattr(section, "key_terms", [])) >= 4
+            and len(getattr(section, "authorial_passages", [])) <= 1
+            and len(getattr(section, "term_explanations", [])) >= 2
+        )
+    )
+
+
+def _overloaded_architecture_section_ids(
+    architecture: EpisodeArchitecture,
+) -> list[str]:
+    return [
+        section.section_id
+        for section in architecture.sections
+        if _section_is_explanation_overloaded(section)
+    ]
+
+
+def _build_architecture_grounding_diagnostics(
+    *,
+    strategy_episode: StrategyEpisode,
+    architecture: EpisodeArchitecture,
+) -> dict[str, Any]:
+    overloaded_set = set(_overloaded_architecture_section_ids(architecture))
+    directive_actor_ids = sorted(
+        {
+            directive.actor_id
+            for directive in strategy_episode.actor_arc_directives
+            if directive.actor_id
+        }
+    )
+    overloaded_runs: list[dict[str, Any]] = []
+    current_run: list[Any] = []
+    for section in architecture.sections:
+        if section.section_id in overloaded_set:
+            current_run.append(section)
+            continue
+        if len(current_run) >= 2:
+            overloaded_runs.append(
+                _build_overloaded_run_actor_arc_report(
+                    current_run=current_run,
+                    directive_actor_ids=directive_actor_ids,
+                )
+            )
+        current_run = []
+    if len(current_run) >= 2:
+        overloaded_runs.append(
+            _build_overloaded_run_actor_arc_report(
+                current_run=current_run,
+                directive_actor_ids=directive_actor_ids,
+            )
+        )
+    warnings: list[str] = []
+    for run in overloaded_runs:
+        if not run["directive_actor_ids"]:
+            warnings.append(
+                "overloaded_run_missing_actor_arc_directive: "
+                f"{_preview_ids(run['section_ids'])}"
+            )
+        elif not run["has_recurring_actor_arc_realization"]:
+            warnings.append(
+                "overloaded_run_missing_actor_arc_realization: "
+                f"{_preview_ids(run['section_ids'])}"
+            )
+    return {
+        "overloaded_runs": overloaded_runs,
+        "warning_count": len(warnings),
+        "warnings": warnings,
+    }
+
+
+def _build_overloaded_run_actor_arc_report(
+    *,
+    current_run: list[Any],
+    directive_actor_ids: list[str],
+) -> dict[str, Any]:
+    actor_counts: dict[str, int] = {}
+    for run_section in current_run:
+        for plan in run_section.actor_explanations:
+            if plan.actor_id in directive_actor_ids:
+                actor_counts[plan.actor_id] = actor_counts.get(plan.actor_id, 0) + 1
+    realized_directive_actor_ids = sorted(actor_counts)
+    recurring_directive_actor_ids = sorted(
+        actor_id for actor_id, count in actor_counts.items() if count >= 2
+    )
+    return {
+        "section_ids": [run_section.section_id for run_section in current_run],
+        "directive_actor_ids": list(directive_actor_ids),
+        "realized_directive_actor_ids": realized_directive_actor_ids,
+        "has_recurring_actor_arc_realization": bool(recurring_directive_actor_ids),
+    }
+
+
 def _build_episode_architecture_realization(
     *,
     strategy_episode: StrategyEpisode,
@@ -6575,28 +6936,16 @@ def _build_episode_architecture_realization(
                 "episode sections omit cost/stake or actor/event/act grounding."
             )
 
-    overloaded_section_ids = [
-        section.section_id
-        for section in architecture.sections
-        if (
-            (
-                any(
-                    plan.stage in {"define", "payoff"}
-                    for plan in section.term_explanations
-                )
-                and section.approx_runtime_minutes >= 8.0
-            )
-            or (
-                len(section.key_terms) >= 4
-                and len(section.authorial_passages) <= 1
-                and len(section.term_explanations) >= 2
-            )
-        )
-    ]
+    overloaded_section_ids = _overloaded_architecture_section_ids(architecture)
     if overloaded_section_ids:
         warnings.append(
             f"explanation_section_overloaded: {_preview_ids(overloaded_section_ids)}"
         )
+    grounding_diagnostics = _build_architecture_grounding_diagnostics(
+        strategy_episode=strategy_episode,
+        architecture=architecture,
+    )
+    warnings.extend(grounding_diagnostics["warnings"])
     if not answer_section_id:
         warnings.append("answer_section_missing")
     if not residue_section_id:
@@ -6745,6 +7094,7 @@ def _build_episode_architecture_realization(
         "narrative_state_coverage": narrative_state_coverage,
         "target_authorial_passages_per_episode": target_authorial_passages,
         "authorial_passage_count": authorial_passage_count,
+        "grounding_diagnostics": grounding_diagnostics,
         "warning_count": len(warnings),
         "warnings": warnings,
     }
@@ -7560,6 +7910,128 @@ def _is_human_grounding_scene_card(scene: SceneCardDraft | SceneCard) -> bool:
     )
 
 
+def _has_audible_anchor(scene: SceneCardDraft | SceneCard) -> bool:
+    return bool((scene.audible_detail or "").strip())
+
+
+_SECTION_SONIC_LEXICON = frozenset(
+    {
+        "alarm",
+        "bell",
+        "boots",
+        "broadcast",
+        "chant",
+        "cheer",
+        "clatter",
+        "crack",
+        "crowd",
+        "drum",
+        "echo",
+        "engine",
+        "engines",
+        "gunfire",
+        "gulls",
+        "hooves",
+        "hum",
+        "idle",
+        "loudspeaker",
+        "march",
+        "murmur",
+        "phone",
+        "prayer",
+        "quiet",
+        "radio",
+        "rattle",
+        "rifle",
+        "rifles",
+        "scream",
+        "shout",
+        "shutters",
+        "silence",
+        "singing",
+        "sirens",
+        "stamp",
+        "static",
+        "tearing",
+        "thud",
+        "volley",
+        "whisper",
+    }
+)
+
+
+def _normalize_sonic_text(text: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9]+", " ", (text or "").lower())).strip()
+
+
+def _normalize_sonic_tokens(text: str) -> list[str]:
+    return [token for token in _normalize_sonic_text(text).split() if len(token) >= 3]
+
+
+def _text_has_sound_lexicon(text: str) -> bool:
+    return bool(set(_normalize_sonic_tokens(text)) & _SECTION_SONIC_LEXICON)
+
+
+def _sonic_phrase_realized(target_text: str, observed_texts: list[str]) -> bool:
+    normalized_target = _normalize_sonic_text(target_text)
+    if not normalized_target:
+        return True
+    normalized_observed = [_normalize_sonic_text(text) for text in observed_texts]
+    if any(
+        normalized_target in observed_text
+        for observed_text in normalized_observed
+        if observed_text
+    ):
+        return True
+    target_tokens = set(_normalize_sonic_tokens(target_text))
+    if not target_tokens:
+        return True
+    observed_tokens: set[str] = set()
+    for text in observed_texts:
+        observed_tokens.update(_normalize_sonic_tokens(text))
+    overlap = len(target_tokens & observed_tokens)
+    required_overlap = 1 if len(target_tokens) <= 2 else 2
+    return overlap >= required_overlap
+
+
+def _scene_audible_detail_is_section_copy(
+    opening_anchor: str,
+    audible_detail: str,
+) -> bool:
+    normalized_anchor = _normalize_sonic_text(opening_anchor)
+    normalized_audible = _normalize_sonic_text(audible_detail)
+    if not normalized_anchor or not normalized_audible:
+        return False
+    if normalized_anchor == normalized_audible:
+        return True
+    anchor_tokens = _normalize_sonic_tokens(opening_anchor)
+    audible_tokens = _normalize_sonic_tokens(audible_detail)
+    if not anchor_tokens or not audible_tokens:
+        return False
+    overlap_ratio = len(set(anchor_tokens) & set(audible_tokens)) / max(
+        len(set(anchor_tokens)),
+        len(set(audible_tokens)),
+    )
+    return overlap_ratio >= 0.85 and abs(len(anchor_tokens) - len(audible_tokens)) <= 2
+
+
+def _find_later_beat_binding_scene_id(
+    beat: SectionSonicBeat,
+    scene_cards: list[SceneCardDraft | SceneCard],
+) -> str | None:
+    for scene in scene_cards[1:]:
+        observed_texts = [
+            scene.audible_detail,
+            scene.title,
+            scene.beat_change,
+            scene.entry_image,
+            scene.observable_detail,
+        ]
+        if _sonic_phrase_realized(beat.cue, observed_texts):
+            return scene.scene_id
+    return None
+
+
 def _build_scene_job_counts(
     scene_cards: list[SceneCardDraft | SceneCard],
 ) -> dict[str, int]:
@@ -8050,6 +8522,115 @@ def _section_text_realized(target_text: str, observed_texts: list[str]) -> bool:
     return bool(target_tokens & observed_tokens)
 
 
+def _opening_sentence_window(text: str, *, sentence_limit: int = 2) -> str:
+    sentences = [
+        sentence.strip()
+        for sentence in re.split(r"(?<=[.!?])\s+", str(text or "").strip())
+        if sentence.strip()
+    ]
+    return " ".join(sentences[:sentence_limit])
+
+
+def _build_section_sonic_realization_diagnostics(
+    *,
+    episode_number: int,
+    stage: str,
+    sections: list[ProseSection | SpokenSection],
+) -> dict[str, Any]:
+    section_reports: list[dict[str, Any]] = []
+    warning_labels: list[str] = []
+    targeted_feedback: list[dict[str, str]] = []
+
+    for section in sections:
+        section_sonic_plan = section.section_sonic_plan
+        if section_sonic_plan is None:
+            section_reports.append(
+                {
+                    "section_id": section.section_id,
+                    "has_section_sonic_plan": False,
+                    "opening_status": "no_plan",
+                    "later_beats": [],
+                    "warnings": [],
+                }
+            )
+            continue
+
+        opening_window = _opening_sentence_window(section.text, sentence_limit=2)
+        opening_anchor_realized = _sonic_phrase_realized(
+            section_sonic_plan.opening_anchor,
+            [opening_window],
+        )
+        if opening_anchor_realized:
+            opening_status = "realized"
+        elif _text_has_sound_lexicon(opening_window):
+            opening_status = "sonic_present_but_anchor_paraphrased"
+        else:
+            opening_status = "dry"
+
+        section_warnings: list[str] = []
+        if opening_status == "dry":
+            section_warnings.append(
+                f"section_sonic_opening_not_realized_early: {section.section_id}"
+            )
+            targeted_feedback.append(
+                {
+                    "section_id": section.section_id,
+                    "issue": "opening",
+                    "instruction": "Spend the section_sonic_plan opening anchor in the first 1-2 sentences.",
+                }
+            )
+            if section_sonic_plan.obligation == SectionSonicObligation.REQUIRED:
+                section_warnings.append(
+                    "section_opening_dry_despite_required_section_sonic_plan: "
+                    f"{section.section_id}"
+                )
+
+        later_beat_reports: list[dict[str, Any]] = []
+        for beat in section_sonic_plan.later_beats:
+            realized = _sonic_phrase_realized(beat.cue, [section.text])
+            later_beat_reports.append(
+                {
+                    "moment": beat.moment,
+                    "cue": beat.cue,
+                    "realized": realized,
+                }
+            )
+            if not realized:
+                section_warnings.append(
+                    f"section_sonic_later_beat_not_realized: {section.section_id} -> {beat.moment}"
+                )
+                targeted_feedback.append(
+                    {
+                        "section_id": section.section_id,
+                        "issue": "later_beat",
+                        "instruction": f"Realize the planned later sonic beat `{beat.moment}` inside the section body.",
+                    }
+                )
+
+        warning_labels.extend(section_warnings)
+        section_reports.append(
+            {
+                "section_id": section.section_id,
+                "has_section_sonic_plan": True,
+                "obligation": section_sonic_plan.obligation.value,
+                "opening_anchor": section_sonic_plan.opening_anchor,
+                "opening_pressure": section_sonic_plan.opening_pressure,
+                "opening_status": opening_status,
+                "later_beats": later_beat_reports,
+                "warnings": section_warnings,
+            }
+        )
+
+    return {
+        "episode_number": episode_number,
+        "stage": stage,
+        "section_reports": section_reports,
+        "warning_labels": warning_labels,
+        "warning_count": len(warning_labels),
+        "targeted_feedback": targeted_feedback,
+    }
+
+
 def _build_section_plan_realization(
     *,
     episode: EpisodeArchitecture,
@@ -8083,6 +8664,7 @@ def _build_section_plan_realization(
                     scene.title,
                     scene.entry_image,
                     scene.observable_detail,
+                    scene.audible_detail,
                     scene.beat_change,
                     *scene.must_land_facts.ordered_facts(),
                 ]
@@ -8125,11 +8707,47 @@ def _build_section_plan_realization(
                 "section_projected_word_count_high: "
                 f"{section.section_id} -> {projected_word_count} projected words"
             )
+        section_sonic_plan = section.section_sonic_plan
+        if section_sonic_plan is not None and section_scene_cards:
+            first_scene = section_scene_cards[0]
+            if not _has_audible_anchor(first_scene):
+                warning_name = (
+                    "section_sonic_plan_required_missing_first_scene_derivation"
+                    if section_sonic_plan.obligation
+                    == SectionSonicObligation.REQUIRED
+                    else "section_sonic_plan_preferred_but_first_scene_dry"
+                )
+                section_warnings.append(
+                    f"{warning_name}: {section.section_id} -> {first_scene.scene_id}"
+                )
+            elif _scene_audible_detail_is_section_copy(
+                section_sonic_plan.opening_anchor,
+                first_scene.audible_detail,
+            ):
+                section_warnings.append(
+                    "scene_audible_detail_verbatim_section_copy: "
+                    f"{section.section_id} -> {first_scene.scene_id}"
+                )
+            for beat in section_sonic_plan.later_beats:
+                binding_scene_id = _find_later_beat_binding_scene_id(
+                    beat,
+                    section_scene_cards,
+                )
+                if binding_scene_id is None:
+                    section_warnings.append(
+                        "section_sonic_plan_later_beat_unbound: "
+                        f"{section.section_id} -> {beat.moment}"
+                    )
 
         section_reports.append(
             {
                 "section_id": section.section_id,
                 "section_anchor": section.section_anchor,
+                "section_sonic_plan": (
+                    section_sonic_plan.model_dump(mode="json")
+                    if section_sonic_plan is not None
+                    else None
+                ),
                 "scene_card_count": scene_card_count,
                 "projected_word_count": projected_word_count,
                 "structural_card_count": structural_card_count,
@@ -10350,14 +10968,29 @@ class PipelineOrchestrator:
                 strategy=strategy,
                 requested_episode_count=project.requested_episode_count,
             )
-            for warning in strategy_warnings:
+            strategy_actor_arc_diagnostics = _build_narrative_strategy_actor_arc_diagnostics(
+                strategy=strategy,
+                synthesis_map=synthesis_map,
+                scene_discovery=scene_discovery,
+                actor_metadata=actor_metadata,
+            )
+            _save_json(
+                project_dir / "narrative_strategy_diagnostics.json",
+                strategy_actor_arc_diagnostics,
+            )
+            combined_strategy_warnings = [
+                *strategy_warnings,
+                *strategy_actor_arc_diagnostics["warnings"],
+            ]
+            for warning in combined_strategy_warnings:
                 logger.warning("narrative_strategy_warning %s", warning)
+                self.run_logger.log("narrative_strategy_warning", warning=warning)
 
             ctx["output_summary"] = {
                 "strategy": strategy.strategy_type,
                 "recommended_episode_count": strategy.recommended_episode_count,
                 "episodes": len(strategy.episodes),
-                "warning_count": len(strategy_warnings),
+                "warning_count": len(combined_strategy_warnings),
             }
             return strategy, strategy_actor_metrics
 
@@ -10472,7 +11105,7 @@ class PipelineOrchestrator:
         actor_metadata: ActorMetadata,
         scene_discovery: SceneDiscoveryArtifact | None,
         narrative_state_pre: NarrativeState,
-    ) -> tuple[EpisodeArchitecture, dict[str, Any]]:
+    ) -> tuple[EpisodeArchitecture, dict[str, Any], list[dict[str, Any]]]:
         primitive_lookup = _flatten_synthesis_primitives(synthesis_map)
         passage_lookup = _build_passage_lookup(corpus)
         primitive_ids_by_role = {
@@ -10529,30 +11162,155 @@ class PipelineOrchestrator:
             strategy_episode=strategy_episode,
             scene_discovery=scene_discovery,
         )
-        payload = self.episode_architecture_agent.build_payload(
-            episode=strategy_episode.model_dump(mode="json"),
-            synthesis_map=episode_synthesis_map_payload,
-            project_metadata=project_metadata,
-            core_passages=core_passages,
-            support_passages=support_passages,
-            episode_scenes=episode_scene_payload,
-            series_explanation_registry=[
-                item.model_dump(mode="json")
-                for item in strategy.series_explanation_registry
-            ],
-            series_actor_explanation_registry=[
-                item.model_dump(mode="json")
-                for item in strategy.series_actor_explanation_registry
-            ],
-            narrator_profile=strategy.narrator_profile.model_dump(mode="json"),
-            narrative_state=narrative_state_pre.model_dump(mode="json"),
-            actor_metadata=compact_actor_metadata(episode_actor_metadata),
-        )
-        architecture = await asyncio.to_thread(self.episode_architecture_agent.run, payload)
-        architecture = _validate_architecture_transition(
-            strategy_episode=strategy_episode,
-            architecture=architecture,
-        )
+        architecture_feedback: dict[str, Any] | None = None
+        attempts: list[dict[str, Any]] = []
+        max_attempts = self.episode_architecture_agent.max_retry_attempts
+        architecture: EpisodeArchitecture | None = None
+        for attempt in range(1, max_attempts + 1):
+            payload = self.episode_architecture_agent.build_payload(
+                episode=strategy_episode.model_dump(mode="json"),
+                synthesis_map=episode_synthesis_map_payload,
+                project_metadata=project_metadata,
+                core_passages=core_passages,
+                support_passages=support_passages,
+                episode_scenes=episode_scene_payload,
+                series_explanation_registry=[
+                    item.model_dump(mode="json")
+                    for item in strategy.series_explanation_registry
+                ],
+                series_actor_explanation_registry=[
+                    item.model_dump(mode="json")
+                    for item in strategy.series_actor_explanation_registry
+                ],
+                narrator_profile=strategy.narrator_profile.model_dump(mode="json"),
+                narrative_state=narrative_state_pre.model_dump(mode="json"),
+                actor_metadata=compact_actor_metadata(episode_actor_metadata),
+                architecture_feedback=architecture_feedback,
+            )
+            try:
+                architecture = await asyncio.to_thread(
+                    self.episode_architecture_agent.run, payload
+                )
+                architecture = _validate_architecture_transition(
+                    strategy_episode=strategy_episode,
+                    architecture=architecture,
+                )
+            except ComplianceViolationError as exc:
+                architecture_feedback = _build_architecture_retry_feedback(exc)
+                attempts.append(
+                    _build_attempt_record(
+                        attempt=attempt,
+                        status="rejected_contract",
+                        blocking_issue=architecture_feedback["issue"],
+                        retry_feedback=architecture_feedback,
+                    )
+                )
+                self.run_logger.log(
+                    "episode_architecture_attempt_warning",
+                    episode=strategy_episode.episode_number,
+                    attempt=attempt,
+                    status="rejected_contract",
+                    blocking_issue=architecture_feedback["issue"],
+                    warning_count=0,
+                    warnings=[],
+                )
+                if attempt >= max_attempts:
+                    raise
+                backoff = min(2 ** (attempt - 1), 16) + (time.monotonic() % 1)
+                self.run_logger.log(
+                    "episode_architecture_retry_scheduled",
+                    episode=strategy_episode.episode_number,
+                    attempt=attempt,
+                    max_attempts=max_attempts,
+                    next_attempt=attempt + 1,
+                    backoff_seconds=backoff,
+                    error_type=type(exc).__name__,
+                    error_message=str(exc),
+                    issue=architecture_feedback["issue"],
+                )
+                await asyncio.sleep(backoff)
+                continue
+            except (ValidationError, ValueError) as exc:
+                architecture_feedback = _build_architecture_retry_feedback(exc)
+                attempts.append(
+                    _build_attempt_record(
+                        attempt=attempt,
+                        status="rejected_validation",
+                        blocking_issue=architecture_feedback["issue"],
+                        retry_feedback=architecture_feedback,
+                    )
+                )
+                self.run_logger.log(
+                    "episode_architecture_attempt_warning",
+                    episode=strategy_episode.episode_number,
+                    attempt=attempt,
+                    status="rejected_validation",
+                    blocking_issue=architecture_feedback["issue"],
+                    warning_count=0,
+                    warnings=[],
+                )
+                if attempt >= max_attempts:
+                    raise
+                backoff = min(2 ** (attempt - 1), 16) + (time.monotonic() % 1)
+                self.run_logger.log(
+                    "episode_architecture_retry_scheduled",
+                    episode=strategy_episode.episode_number,
+                    attempt=attempt,
+                    max_attempts=max_attempts,
+                    next_attempt=attempt + 1,
+                    backoff_seconds=backoff,
+                    error_type=type(exc).__name__,
+                    error_message=str(exc),
+                    issue=architecture_feedback["issue"],
+                )
+                await asyncio.sleep(backoff)
+                continue
+            except Exception as exc:
+                architecture_feedback = _build_architecture_retry_feedback(exc)
+                attempts.append(
+                    _build_attempt_record(
+                        attempt=attempt,
+                        status="rejected_contract",
+                        blocking_issue=architecture_feedback["issue"],
+                        retry_feedback=architecture_feedback,
+                    )
+                )
+                self.run_logger.log(
+                    "episode_architecture_attempt_warning",
+                    episode=strategy_episode.episode_number,
+                    attempt=attempt,
+                    status="rejected_contract",
+                    blocking_issue=architecture_feedback["issue"],
+                    warning_count=0,
+                    warnings=[],
+                )
+                if attempt >= max_attempts:
+                    raise
+                backoff = min(2 ** (attempt - 1), 16) + (time.monotonic() % 1)
+                self.run_logger.log(
+                    "episode_architecture_retry_scheduled",
+                    episode=strategy_episode.episode_number,
+                    attempt=attempt,
+                    max_attempts=max_attempts,
+                    next_attempt=attempt + 1,
+                    backoff_seconds=backoff,
+                    error_type=type(exc).__name__,
+                    error_message=str(exc),
+                    issue=architecture_feedback["issue"],
+                )
+                await asyncio.sleep(backoff)
+                continue
+            attempts.append(
+                _build_attempt_record(
+                    attempt=attempt,
+                    status="accepted",
+                )
+            )
+            break
+        if architecture is None:
+            raise RuntimeError(
+                f"Episode architecture did not produce an architecture for episode {strategy_episode.episode_number}."
+            )
         report = {
             "episode_number": strategy_episode.episode_number,
             "section_count": len(architecture.sections),
@@ -10561,7 +11319,7 @@ class PipelineOrchestrator:
             "episode_scene_candidate_count": len(episode_scene_payload),
             "actor_directive_count": len(strategy_episode.actor_arc_directives),
         }
-        return architecture, report
+        return architecture, report, attempts
 
     async def _plan_single_episode(
         self,
@@ -10574,7 +11332,7 @@ class PipelineOrchestrator:
         corpus: ThematicCorpus,
         actor_metadata: ActorMetadata,
         narrative_state_pre: NarrativeState,
-    ) -> tuple[EpisodePlan, dict[str, Any]]:
+    ) -> tuple[EpisodePlan, dict[str, Any], list[dict[str, Any]]]:
         passage_lookup = _build_passage_lookup(corpus)
         primitive_lookup = _flatten_synthesis_primitives(synthesis_map)
         project_metadata = {
@@ -10693,6 +11451,7 @@ class PipelineOrchestrator:
         actor_link_metrics: dict[str, Any] = {}
         actor_explanation_warnings: list[str] = []
         planning_feedback: dict[str, Any] | None = None
+        planning_attempts: list[dict[str, Any]] = []
         max_attempts = self.episode_planning_agent.max_retry_attempts
         for attempt in range(1, max_attempts + 1):
             payload = self.episode_planning_agent.build_payload(
@@ -10747,12 +11506,33 @@ class PipelineOrchestrator:
                             "instruction": "Use only move_type values allowed by host_policy.allowed_moves.",
                         },
                     )
+                planning_attempts.append(
+                    _build_attempt_record(attempt=attempt, status="accepted")
+                )
                 break
             except ComplianceViolationError as exc:
+                attempt_feedback = _build_plan_transition_feedback(exc)
+                planning_attempts.append(
+                    _build_attempt_record(
+                        attempt=attempt,
+                        status="rejected_contract",
+                        blocking_issue=attempt_feedback["issue"],
+                        retry_feedback=attempt_feedback,
+                    )
+                )
+                self.run_logger.log(
+                    "episode_planning_attempt_warning",
+                    episode=architecture.episode_number,
+                    attempt=attempt,
+                    status="rejected_contract",
+                    blocking_issue=attempt_feedback["issue"],
+                    warning_count=0,
+                    warnings=[],
+                )
                 if attempt >= max_attempts:
                     raise
                 backoff = min(2 ** (attempt - 1), 16) + (time.monotonic() % 1)
-                planning_feedback = _build_plan_transition_feedback(exc)
+                planning_feedback = attempt_feedback
                 self.run_logger.log(
                     "episode_planning_retry_scheduled",
                     episode=architecture.episode_number,
@@ -10778,6 +11558,10 @@ class PipelineOrchestrator:
             scene_cards=plan_draft.scene_cards,
             architecture=architecture,
             narrator_profile=strategy.narrator_profile,
+        )
+        host_density_diagnostics, host_density_warnings = _build_host_density_diagnostics(
+            scene_cards=plan_draft.scene_cards,
+            architecture=architecture,
         )
         scene_card_count_warnings = _build_scene_card_count_warnings(
             scene_card_count=len(plan_draft.scene_cards),
@@ -10839,8 +11623,14 @@ class PipelineOrchestrator:
             + state_alignment_warnings
             + list(spine_diagnostics.get("scene_job_budget_warnings", []))
             + host_move_warnings
+            + host_density_warnings
         )
         for warning in planning_warnings:
+            self.run_logger.log(
+                "episode_planning_warning",
+                episode=architecture.episode_number,
+                warning=warning,
+            )
             logger.warning(
                 "episode_planning_warning episode=%s %s",
                 architecture.episode_number,
@@ -10868,6 +11658,8 @@ class PipelineOrchestrator:
             "scene_card_primitives_min": project.config.scene_card_primitives_min,
             "scene_card_primitives_max": project.config.scene_card_primitives_max,
             "scene_card_primitive_policy": project.config.scene_card_primitive_policy,
+            "accepted_warning_count": len(planning_warnings),
+            "accepted_warnings": planning_warnings,
             "scene_card_count_warnings": scene_card_count_warnings,
             "scene_card_primitive_warnings": scene_card_primitive_warnings,
             "scene_card_family_warnings": scene_card_family_warnings,
@@ -10879,6 +11671,7 @@ class PipelineOrchestrator:
             "section_load_warnings": section_load_warnings,
             "section_realization": section_realization_reports,
             "state_alignment": state_alignment_diagnostics,
+            "host_density_diagnostics": host_density_diagnostics,
             "scene_card_warning_count": len(planning_warnings),
             "scene_role_counts": scene_role_counts,
             "scene_job_counts": scene_job_counts,
@@ -10894,7 +11687,7 @@ class PipelineOrchestrator:
                 scene.estimated_duration_seconds for scene in plan.scene_cards
             ),
         }
-        return plan, report
+        return plan, report, planning_attempts
 
     async def _reconcile_narrative_state(
         self,
@@ -10957,6 +11750,7 @@ class PipelineOrchestrator:
             current_state = _build_initial_narrative_state(project.project_id)
             architectures: list[EpisodeArchitecture] = []
             architecture_reports: list[dict[str, Any]] = []
+            architecture_attempt_reports: list[dict[str, Any]] = []
             state_pre_by_episode: dict[int, NarrativeState] = {}
             state_post_by_episode: dict[int, NarrativeState] = {}
             reconciliations: list[NarrativeStateReconciliation] = []
@@ -10964,7 +11758,7 @@ class PipelineOrchestrator:
             for episode_number in range(1, project.episode_count + 1):
                 strategy_episode = strategy_episode_map[episode_number]
                 state_pre_by_episode[episode_number] = current_state.model_copy(deep=True)
-                architecture, architecture_report = await self._build_single_episode_architecture(
+                architecture, architecture_report, architecture_attempts = await self._build_single_episode_architecture(
                     project=project,
                     synthesis_map=synthesis_map,
                     strategy=strategy,
@@ -10984,6 +11778,20 @@ class PipelineOrchestrator:
                 state_post_by_episode[episode_number] = current_state.model_copy(deep=True)
                 architectures.append(architecture)
                 architecture_reports.append(architecture_report)
+                architecture_attempt_reports.append(
+                    {
+                        "episode_number": episode_number,
+                        "accepted_attempt": next(
+                            (
+                                item["attempt"]
+                                for item in architecture_attempts
+                                if item["status"] == "accepted"
+                            ),
+                            None,
+                        ),
+                        "attempts": architecture_attempts,
+                    }
+                )
                 reconciliations.append(reconciliation)
 
                 ep_dir = project_dir / "episodes" / str(episode_number)
@@ -11004,6 +11812,11 @@ class PipelineOrchestrator:
             ]
             for realization in realization_reports:
                 for warning in realization["warnings"]:
+                    self.run_logger.log(
+                        "episode_architecture_warning",
+                        episode=realization["episode_number"],
+                        warning=warning,
+                    )
                     logger.warning(
                         "episode_architecture_warning episode=%s %s",
                         realization["episode_number"],
@@ -11016,6 +11829,10 @@ class PipelineOrchestrator:
             _save_json(
                 project_dir / "architecture_realization.json",
                 {"episodes": realization_reports},
+            )
+            _save_json(
+                project_dir / "episode_architecture_attempts.json",
+                {"episodes": architecture_attempt_reports},
             )
             _save_json(
                 project_dir / "narrative_state_timeline.json",
@@ -11285,6 +12102,7 @@ class PipelineOrchestrator:
                     actor_link_metrics: dict[str, Any] = {}
                     actor_explanation_warnings: list[str] = []
                     planning_feedback: dict[str, Any] | None = None
+                    planning_attempts: list[dict[str, Any]] = []
                     host_policy = _build_host_policy_payload(
                         strategy.narrator_profile,
                         narrative_state_pre=narrative_state_pre,
@@ -11352,14 +12170,38 @@ class PipelineOrchestrator:
                                         "instruction": "Use only move_type values allowed by host_policy.allowed_moves.",
                                     },
                                 )
+                            planning_attempts.append(
+                                _build_attempt_record(
+                                    attempt=attempt,
+                                    status="accepted",
+                                )
+                            )
                             break
                         except ComplianceViolationError as exc:
+                            attempt_feedback = _build_plan_transition_feedback(exc)
+                            planning_attempts.append(
+                                _build_attempt_record(
+                                    attempt=attempt,
+                                    status="rejected_contract",
+                                    blocking_issue=attempt_feedback["issue"],
+                                    retry_feedback=attempt_feedback,
+                                )
+                            )
+                            self.run_logger.log(
+                                "episode_planning_attempt_warning",
+                                episode=episode.episode_number,
+                                attempt=attempt,
+                                status="rejected_contract",
+                                blocking_issue=attempt_feedback["issue"],
+                                warning_count=0,
+                                warnings=[],
+                            )
                             if attempt >= max_attempts:
                                 raise
                             backoff = min(2 ** (attempt - 1), 16) + (
                                 time.monotonic() % 1
                             )
-                            planning_feedback = _build_plan_transition_feedback(exc)
+                            planning_feedback = attempt_feedback
                             self.run_logger.log(
                                 "episode_planning_retry_scheduled",
                                 episode=episode.episode_number,
@@ -11388,6 +12230,12 @@ class PipelineOrchestrator:
                             scene_cards=plan_draft.scene_cards,
                             architecture=episode,
                             narrator_profile=strategy.narrator_profile,
+                        )
+                    )
+                    host_density_diagnostics, host_density_warnings = (
+                        _build_host_density_diagnostics(
+                            scene_cards=plan_draft.scene_cards,
+                            architecture=episode,
                         )
                     )
                     scene_card_count_warnings = _build_scene_card_count_warnings(
@@ -11466,8 +12314,14 @@ class PipelineOrchestrator:
                         + state_alignment_warnings
                         + list(spine_diagnostics.get("scene_job_budget_warnings", []))
                         + host_move_warnings
+                        + host_density_warnings
                     )
                     for warning in planning_warnings:
+                        self.run_logger.log(
+                            "episode_planning_warning",
+                            episode=episode.episode_number,
+                            warning=warning,
+                        )
                         logger.warning(
                             "episode_planning_warning episode=%s %s",
                             episode.episode_number,
@@ -11495,6 +12349,8 @@ class PipelineOrchestrator:
                         "scene_card_primitives_min": project.config.scene_card_primitives_min,
                         "scene_card_primitives_max": project.config.scene_card_primitives_max,
                         "scene_card_primitive_policy": project.config.scene_card_primitive_policy,
+                        "accepted_warning_count": len(planning_warnings),
+                        "accepted_warnings": planning_warnings,
                         "scene_card_count_warnings": scene_card_count_warnings,
                         "scene_card_primitive_warnings": scene_card_primitive_warnings,
                         "scene_card_family_warnings": scene_card_family_warnings,
@@ -11506,6 +12362,7 @@ class PipelineOrchestrator:
                         "section_load_warnings": section_load_warnings,
                         "section_realization": section_realization_reports,
                         "state_alignment": state_alignment_diagnostics,
+                        "host_density_diagnostics": host_density_diagnostics,
                         "scene_card_warning_count": len(planning_warnings),
                         "scene_role_counts": scene_role_counts,
                         "scene_job_counts": scene_job_counts,
@@ -11525,6 +12382,18 @@ class PipelineOrchestrator:
                             scene.estimated_duration_seconds
                             for scene in plan.scene_cards
                         ),
+                        "planning_attempts": {
+                            "episode_number": episode.episode_number,
+                            "accepted_attempt": next(
+                                (
+                                    item["attempt"]
+                                    for item in planning_attempts
+                                    if item["status"] == "accepted"
+                                ),
+                                None,
+                            ),
+                            "attempts": planning_attempts,
+                        },
                     }
                     return episode.episode_number, plan, report
 
@@ -11540,6 +12409,11 @@ class PipelineOrchestrator:
             planning_actor_metrics = _merge_actor_metric_dicts(
                 report.get("actor_link_metrics", {}) for report in planning_reports
             )
+            planning_attempt_reports = [
+                report.pop("planning_attempts")
+                for report in planning_reports
+                if "planning_attempts" in report
+            ]
 
             _save_json(
                 project_dir / "series_plan.json",
@@ -11552,6 +12426,10 @@ class PipelineOrchestrator:
             _save_json(
                 project_dir / "episode_plan_realization.json",
                 {"episodes": planning_reports},
+            )
+            _save_json(
+                project_dir / "episode_planning_attempts.json",
+                {"episodes": planning_attempt_reports},
             )
 
             ctx["output_summary"] = {
@@ -11763,7 +12641,11 @@ class PipelineOrchestrator:
                 title=script.title,
                 framing=script.framing,
                 sections=[
-                    SpokenSection(section_id=section.section_id, text=section.text)
+                    SpokenSection(
+                        section_id=section.section_id,
+                        text=section.text,
+                        section_sonic_plan=section.section_sonic_plan,
+                    )
                     for section in script.prose_sections
                 ],
                 tts_provider=project.config.tts_provider,
@@ -12013,6 +12895,10 @@ class PipelineOrchestrator:
                         ProseSection.model_validate(section_output)
                         for section_output in normalized_section_outputs
                     ]
+                    normalized_sections = _attach_section_sonic_plan_to_prose_sections(
+                        normalized_sections,
+                        architecture,
+                    )
                     script = EpisodeScript(
                         episode_number=plan.episode_number,
                         title=strategy_episode.title,
@@ -12423,6 +13309,17 @@ class PipelineOrchestrator:
                 ep_dir / "continuity_script_diagnostics.json",
                 continuity_script_diagnostics,
             )
+            section_sonic_script_diagnostics = (
+                _build_section_sonic_realization_diagnostics(
+                    episode_number=episode_number,
+                    stage="script",
+                    sections=list(audited_script.prose_sections),
+                )
+            )
+            _save_json(
+                ep_dir / "section_sonic_script_diagnostics.json",
+                section_sonic_script_diagnostics,
+            )
             if continuity_script_diagnostics["missed_item_ids"]:
                 self.run_logger.log(
                     "continuity_script_diagnostics",
@@ -12430,6 +13327,13 @@ class PipelineOrchestrator:
                     stage="script",
                     missed_item_ids=continuity_script_diagnostics["missed_item_ids"],
                     warning_labels=continuity_script_diagnostics["warning_labels"],
+                )
+            if section_sonic_script_diagnostics["warning_labels"]:
+                self.run_logger.log(
+                    "section_sonic_script_diagnostics",
+                    episode=episode_number,
+                    stage="script",
+                    warning_labels=section_sonic_script_diagnostics["warning_labels"],
                 )
             ctx["output_summary"] = {
                 "sections": len(audit.sections),
@@ -12444,6 +13348,9 @@ class PipelineOrchestrator:
                 "continuity_misses": len(
                     continuity_script_diagnostics["missed_item_ids"]
                 ),
+                "section_sonic_warnings": section_sonic_script_diagnostics[
+                    "warning_count"
+                ],
             }
             return audited_script
 
@@ -12530,11 +13437,22 @@ class PipelineOrchestrator:
                         )
                     ]
                 for rewritten in result_sections:
+                    source_section = section_payload_by_id.get(rewritten.section_id, {})
+                    sonic_cues = [
+                        SonicCue.model_validate(cue)
+                        for cue in source_section.get("scene_cues", []) or []
+                    ]
                     rewritten_sections.append(
                         SpokenSection(
                             section_id=rewritten.section_id,
                             text=rewritten.text,
                             speech_hints=rewritten.speech_hints,
+                            section_sonic_plan=SectionSonicPlan.model_validate(
+                                source_section["section_sonic_plan"]
+                            )
+                            if source_section.get("section_sonic_plan") is not None
+                            else None,
+                            sonic_cues=sonic_cues,
                         )
                     )
                 if result_sections:
@@ -12575,6 +13493,17 @@ class PipelineOrchestrator:
                 ep_dir / "continuity_spoken_diagnostics.json",
                 continuity_spoken_diagnostics,
             )
+            section_sonic_spoken_diagnostics = (
+                _build_section_sonic_realization_diagnostics(
+                    episode_number=episode_number,
+                    stage="spoken",
+                    sections=list(spoken.sections),
+                )
+            )
+            _save_json(
+                ep_dir / "section_sonic_spoken_diagnostics.json",
+                section_sonic_spoken_diagnostics,
+            )
             if continuity_spoken_diagnostics["missed_item_ids"]:
                 self.run_logger.log(
                     "continuity_spoken_diagnostics",
@@ -12582,6 +13511,13 @@ class PipelineOrchestrator:
                     stage="spoken",
                     missed_item_ids=continuity_spoken_diagnostics["missed_item_ids"],
                     warning_labels=continuity_spoken_diagnostics["warning_labels"],
+                )
+            if section_sonic_spoken_diagnostics["warning_labels"]:
+                self.run_logger.log(
+                    "section_sonic_spoken_diagnostics",
+                    episode=episode_number,
+                    stage="spoken",
+                    warning_labels=section_sonic_spoken_diagnostics["warning_labels"],
                 )
 
             ctx["output_summary"] = {
@@ -12596,6 +13532,9 @@ class PipelineOrchestrator:
                 "continuity_misses": len(
                     continuity_spoken_diagnostics["missed_item_ids"]
                 ),
+                "section_sonic_warnings": section_sonic_spoken_diagnostics[
+                    "warning_count"
+                ],
             }
             return spoken
 

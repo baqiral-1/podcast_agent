@@ -24,16 +24,23 @@ from .revolutions_similarity import (
     score_run_dir,
     score_text_against_benchmark,
 )
+from .scene_type_audit import (
+    DEFAULT_SCENE_AUDIT_ARTIFACTS,
+    build_scene_type_audit_payload,
+    render_scene_type_audit_html,
+)
 
 __all__ = [
     "EpisodeSimilarityScore",
     "FeatureVector",
     "RunSimilarityScore",
     "DEFAULT_SCRIPT_ARTIFACTS",
+    "DEFAULT_SCENE_AUDIT_ARTIFACTS",
     "build_actor_explanation_audit_payload",
     "build_audio_style_payload",
     "build_blind_comparison_payload",
     "build_review_payload",
+    "build_scene_type_audit_payload",
     "extract_feature_vector",
     "extract_host_snippets",
     "load_episode_body_text",
@@ -41,6 +48,7 @@ __all__ = [
     "render_audio_style_html",
     "render_blind_comparison_html",
     "render_review_html",
+    "render_scene_type_audit_html",
     "score_run_dir",
     "score_text_against_benchmark",
     "write_blind_comparison_outputs",

@@ -363,20 +363,20 @@ class PipelineConfig(StrictModel):
     episode_write_concurrency: int = Field(default=8, ge=1)
     episode_writing_batch_count: int = Field(default=5, ge=1)
     spoken_delivery_concurrency: int | None = Field(default=8, ge=1)
-    architecture_section_target_min: int = Field(default=12, ge=1)
-    architecture_section_target_max: int = Field(default=16, ge=1)
-    episode_spine_core_primitive_target_min: int = Field(default=8, ge=1)
-    episode_spine_core_primitive_target_max: int = Field(default=11, ge=1)
-    episode_spine_support_primitive_target_min: int = Field(default=9, ge=1)
-    episode_spine_support_primitive_target_max: int = Field(default=13, ge=1)
-    episode_spine_recall_primitive_target_max: int = Field(default=3, ge=0)
-    narrative_strategy_episode_count_min: int = Field(default=8, ge=1)
-    narrative_strategy_episode_count_max: int = Field(default=12, ge=1)
-    min_episode_minutes: float = Field(default=130.0, gt=0.0)
-    max_episode_minutes: float = Field(default=150.0, gt=0.0)
+    architecture_section_target_min: int = Field(default=11, ge=1)
+    architecture_section_target_max: int = Field(default=14, ge=1)
+    episode_spine_core_primitive_target_min: int = Field(default=6, ge=1)
+    episode_spine_core_primitive_target_max: int = Field(default=8, ge=1)
+    episode_spine_support_primitive_target_min: int = Field(default=6, ge=1)
+    episode_spine_support_primitive_target_max: int = Field(default=9, ge=1)
+    episode_spine_recall_primitive_target_max: int = Field(default=2, ge=0)
+    narrative_strategy_episode_count_min: int = Field(default=10, ge=1)
+    narrative_strategy_episode_count_max: int = Field(default=16, ge=1)
+    min_episode_minutes: float = Field(default=90.0, gt=0.0)
+    max_episode_minutes: float = Field(default=120.0, gt=0.0)
     duration_shortfall_policy: Literal["warn"] = "warn"
-    scene_card_target_min: int = Field(default=40, ge=1)
-    scene_card_target_max: int = Field(default=48, ge=1)
+    scene_card_target_min: int = Field(default=30, ge=1)
+    scene_card_target_max: int = Field(default=38, ge=1)
     scene_card_target_policy: Literal["warn"] = "warn"
     scene_card_primitives_min: int = Field(default=1, ge=0)
     scene_card_primitives_max: int = Field(default=2, ge=1)
@@ -484,8 +484,8 @@ def _scale_range_containing_span(
     return math.floor(lower_bound * multiplier), math.ceil(upper_bound * multiplier)
 
 
-FULL_AUTHORIAL_PASSAGE_TARGET_RANGE: tuple[int, int] = (24, 36)
-FULL_DENSE_SECTION_AUTHORIAL_PASSAGE_RANGE: tuple[int, int] = (4, 12)
+FULL_AUTHORIAL_PASSAGE_TARGET_RANGE: tuple[int, int] = (18, 28)
+FULL_DENSE_SECTION_AUTHORIAL_PASSAGE_RANGE: tuple[int, int] = (3, 8)
 
 
 def authorial_passage_target_range_for_mode(
@@ -529,14 +529,14 @@ def scene_job_budget_for_mode(mode: PodcastMode | str) -> dict[str, int]:
             "max_recap_build_scenes": 1,
         }
     return {
-        "total_min": 40,
-        "total_max": 48,
-        "opening_min": 3,
+        "total_min": 30,
+        "total_max": 38,
+        "opening_min": 2,
         "opening_max": 3,
-        "build_min": 28,
-        "build_max": 33,
-        "turn_min": 6,
-        "turn_max": 9,
+        "build_min": 21,
+        "build_max": 27,
+        "turn_min": 4,
+        "turn_max": 5,
         "answer_min": 1,
         "answer_max": 1,
         "residue_min": 1,
@@ -573,8 +573,8 @@ def resolve_pipeline_config_for_mode(config: "PipelineConfig") -> "PipelineConfi
             "narrative_strategy_episode_count_min": 2,
             "narrative_strategy_episode_count_max": 4,
             "episode_writing_batch_count": 2,
-            "architecture_section_target_min": 6,
-            "architecture_section_target_max": 8,
+            "architecture_section_target_min": 7,
+            "architecture_section_target_max": 9,
             "min_episode_minutes": 54.0,
             "max_episode_minutes": 63.0,
             "scene_card_target_min": 18,
@@ -588,20 +588,20 @@ def resolve_pipeline_config_for_mode(config: "PipelineConfig") -> "PipelineConfi
             "max_axes": 20,
             "synthesis_axis_min": 12,
             "synthesis_axis_max": 20,
-            "episode_spine_core_primitive_target_min": 8,
-            "episode_spine_core_primitive_target_max": 11,
-            "episode_spine_support_primitive_target_min": 9,
-            "episode_spine_support_primitive_target_max": 13,
-            "episode_spine_recall_primitive_target_max": 3,
-            "narrative_strategy_episode_count_min": 8,
-            "narrative_strategy_episode_count_max": 12,
+            "episode_spine_core_primitive_target_min": 6,
+            "episode_spine_core_primitive_target_max": 8,
+            "episode_spine_support_primitive_target_min": 6,
+            "episode_spine_support_primitive_target_max": 9,
+            "episode_spine_recall_primitive_target_max": 2,
+            "narrative_strategy_episode_count_min": 10,
+            "narrative_strategy_episode_count_max": 16,
             "episode_writing_batch_count": 5,
-            "architecture_section_target_min": 12,
-            "architecture_section_target_max": 16,
-            "min_episode_minutes": 130.0,
-            "max_episode_minutes": 150.0,
-            "scene_card_target_min": 40,
-            "scene_card_target_max": 48,
+            "architecture_section_target_min": 11,
+            "architecture_section_target_max": 14,
+            "min_episode_minutes": 90.0,
+            "max_episode_minutes": 120.0,
+            "scene_card_target_min": 30,
+            "scene_card_target_max": 38,
             "synthesis_total_passage_cap": 750,
         }
     return config.model_copy(update=updates)
@@ -3014,10 +3014,12 @@ class AuthorialPassage(StrictModel):
     ]
     placement: Literal["open", "mid", "close"] = "mid"
     claim: str = Field(min_length=1)
+    claim_certainty: Literal["settled", "probable", "contested_memory"] = "settled"
     source_primitive_ids: list[str] = Field(
         default_factory=list, min_length=1, max_length=3
     )
     source_passage_ids: list[str] = Field(default_factory=list, max_length=4)
+    counter_source_passage_ids: list[str] = Field(default_factory=list, max_length=4)
     quote_anchor: str = ""
     gloss_seed: str = ""
     must_name_terms: list[str] = Field(default_factory=list, max_length=4)
@@ -3095,6 +3097,40 @@ class HostPresenceBeat(StrictModel):
         return cleaned
 
 
+class SectionSonicObligation(str, Enum):
+    REQUIRED = "required"
+    PREFERRED = "preferred"
+
+
+class SectionSonicBeat(StrictModel):
+    moment: str = Field(min_length=1)
+    cue: str = Field(min_length=1)
+    why_here: str = ""
+
+    @field_validator("moment", "cue", "why_here", mode="before")
+    @classmethod
+    def normalize_text_fields(cls, value: Any) -> str:
+        return str(value or "").strip()
+
+
+class SectionSonicPlan(StrictModel):
+    obligation: SectionSonicObligation = SectionSonicObligation.PREFERRED
+    opening_anchor: str = Field(min_length=1)
+    opening_pressure: str = Field(min_length=1)
+    opening_realization_note: str = ""
+    later_beats: list[SectionSonicBeat] = Field(default_factory=list, max_length=2)
+
+    @field_validator(
+        "opening_anchor",
+        "opening_pressure",
+        "opening_realization_note",
+        mode="before",
+    )
+    @classmethod
+    def normalize_text_fields(cls, value: Any) -> str:
+        return str(value or "").strip()
+
+
 class ArchitectureSection(StrictModel):
     section_id: str = Field(min_length=1)
     purpose: SectionPurpose
@@ -3131,6 +3167,7 @@ class ArchitectureSection(StrictModel):
     host_theory_moves: list[HostTheoryMove] = Field(
         default_factory=list, max_length=4
     )
+    section_sonic_plan: SectionSonicPlan | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -3215,7 +3252,7 @@ class EpisodeArchitecture(StrictModel):
         default_factory=list
     )
     sections: list[ArchitectureSection] = Field(
-        default_factory=list, min_length=6, max_length=12
+        default_factory=list, min_length=6, max_length=13
     )
     architecture_notes: list[str] = Field(default_factory=list)
 
@@ -3372,15 +3409,6 @@ class HostMovesByPhase(StrictModel):
     pivot: list[HostMoveCue] = Field(default_factory=list, max_length=2)
     close: list[HostMoveCue] = Field(default_factory=list, max_length=2)
 
-    @model_validator(mode="after")
-    def validate_non_empty(self) -> "HostMovesByPhase":
-        populated_phase_count = sum(
-            1 for cues in (self.open, self.pivot, self.close) if cues
-        )
-        if populated_phase_count == 0:
-            raise ValueError("host_moves must populate at least one phase bucket")
-        return self
-
 
 class _SceneCardBase(StrictModel):
     scene_id: str = Field(default_factory=lambda: f"scene_{new_id()[:8]}")
@@ -3396,6 +3424,11 @@ class _SceneCardBase(StrictModel):
     must_land_facts: MustLandFacts
     entry_image: str = ""
     observable_detail: str = ""
+    audible_detail: str = Field(
+        default="",
+        validation_alias=AliasChoices("audible_detail", "what_we_hear"),
+        serialization_alias="audible_detail",
+    )
     withhold_until: WithholdUntil | None = None
     timeframe: str | None = None
     location: str | None = None
@@ -3702,6 +3735,7 @@ class ProseSection(StrictModel):
     text: str = ""
     citations: list[Citation] = Field(default_factory=list)
     source_book_ids: list[str] = Field(default_factory=list)
+    section_sonic_plan: SectionSonicPlan | None = None
     actor_explanation_realizations: list[ActorExplanationRealization] = Field(
         default_factory=list, max_length=4
     )
@@ -3805,10 +3839,20 @@ class SpeechHints(StrictModel):
     ] = "plain"
 
 
+class SonicCue(StrictModel):
+    scene_id: str = Field(min_length=1)
+    scene_job: str = Field(min_length=1)
+    entry_image: str = ""
+    observable_detail: str = ""
+    audible_detail: str = ""
+
+
 class SpokenSection(StrictModel):
     section_id: str
     text: str
     speech_hints: SpeechHints = Field(default_factory=SpeechHints)
+    section_sonic_plan: SectionSonicPlan | None = None
+    sonic_cues: list[SonicCue] = Field(default_factory=list)
 
 
 class SpokenScript(StrictModel):

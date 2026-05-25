@@ -11,6 +11,7 @@ from podcast_agent.langchain.runnables import ComplianceViolationError
 from podcast_agent.llm.heuristic import HeuristicLLMClient
 from podcast_agent.pipeline.orchestrator import (
     PipelineOrchestrator,
+    _build_architecture_retry_feedback,
     _build_plan_transition_feedback,
     _validate_plan_transition,
 )
@@ -181,6 +182,19 @@ def _episode_architecture() -> EpisodeArchitecture:
     )
 
 
+def test_build_architecture_retry_feedback_defaults_for_generic_exception() -> None:
+    feedback = _build_architecture_retry_feedback(ValueError("bad architecture"))
+
+    assert feedback == {
+        "issue": "architecture_contract_invalid",
+        "episode_number": None,
+        "instruction": (
+            "Return a schema-valid episode architecture that satisfies section counts, "
+            "answer/residue placement, and promised-beat accounting."
+        ),
+    }
+
+
 def _valid_plan_payload(payload: dict, *, use_invalid_section_primitive: bool) -> dict:
     section_two_primitives = ["core_1", "support_1"] if use_invalid_section_primitive else ["core_1"]
     return {
@@ -197,6 +211,7 @@ def _valid_plan_payload(payload: dict, *, use_invalid_section_primitive: bool) -
                 "section_id": "s01",
                 "title": "Scene 1",
                 "scene_role": "setup",
+                "scene_job": "build",
                 "dominant_primitive_id": "support_1",
                 "spine_relation": "set_stakes",
                 "state_effect": "State 1",
@@ -217,6 +232,7 @@ def _valid_plan_payload(payload: dict, *, use_invalid_section_primitive: bool) -
                 "section_id": "s02",
                 "title": "Scene 2",
                 "scene_role": "action",
+                "scene_job": "answer",
                 "dominant_primitive_id": "core_1",
                 "spine_relation": "spine_advance",
                 "state_effect": "State 2",
@@ -237,6 +253,7 @@ def _valid_plan_payload(payload: dict, *, use_invalid_section_primitive: bool) -
                 "section_id": "s03",
                 "title": "Scene 3",
                 "scene_role": "consequence",
+                "scene_job": "residue",
                 "dominant_primitive_id": "support_2",
                 "spine_relation": "show_consequence",
                 "state_effect": "State 3",
@@ -257,6 +274,7 @@ def _valid_plan_payload(payload: dict, *, use_invalid_section_primitive: bool) -
                 "section_id": "s04",
                 "title": "Scene 4",
                 "scene_role": "synthesis",
+                "scene_job": "close",
                 "dominant_primitive_id": "support_3",
                 "spine_relation": "show_consequence",
                 "state_effect": "State 4",
@@ -273,6 +291,8 @@ def _valid_plan_payload(payload: dict, *, use_invalid_section_primitive: bool) -
                 "estimated_duration_seconds": 120,
             },
         ],
+        "answer_scene_card_id": "scene_2",
+        "residue_scene_card_id": "scene_3",
     }
 
 
@@ -769,7 +789,7 @@ def test_plan_series_warns_without_retry_on_late_actor_introduction(
                         "section_id": "s01",
                         "title": "A face in the corridor",
                         "scene_role": "actor_setup",
-                        "scene_function": "scene",
+                        "scene_job": "build",
                         "beat_change": "The actor is visible before the formal introduction lands.",
                         "actors": [
                             {
@@ -799,7 +819,7 @@ def test_plan_series_warns_without_retry_on_late_actor_introduction(
                         "section_id": "s01",
                         "title": "The formal naming",
                         "scene_role": "actor_setup",
-                        "scene_function": "scene",
+                        "scene_job": "build",
                         "beat_change": "The same actor is now explicitly introduced.",
                         "actors": [
                             {
@@ -831,7 +851,7 @@ def test_plan_series_warns_without_retry_on_late_actor_introduction(
                         "section_id": "s02",
                         "title": "The turn gathers",
                         "scene_role": "action",
-                        "scene_function": "scene",
+                        "scene_job": "answer",
                         "beat_change": "The pressure starts to move.",
                         "passage_ids": ["p_core_1"],
                         "host_moves": {
@@ -844,7 +864,7 @@ def test_plan_series_warns_without_retry_on_late_actor_introduction(
                         "section_id": "s03",
                         "title": "The cost lands",
                         "scene_role": "fallout",
-                        "scene_function": "scene",
+                        "scene_job": "residue",
                         "beat_change": "The cost is now visible.",
                         "passage_ids": ["p_support_2"],
                         "host_moves": {
@@ -857,7 +877,7 @@ def test_plan_series_warns_without_retry_on_late_actor_introduction(
                         "section_id": "s04",
                         "title": "The residue remains",
                         "scene_role": "implication",
-                        "scene_function": "landing",
+                        "scene_job": "close",
                         "beat_change": "The residue is named.",
                         "passage_ids": ["p_support_3"],
                         "host_moves": {
@@ -866,6 +886,8 @@ def test_plan_series_warns_without_retry_on_late_actor_introduction(
                         "estimated_duration_seconds": 90,
                     },
                 ],
+                "answer_scene_card_id": "scene_2",
+                "residue_scene_card_id": "scene_3",
             }
         )
 
@@ -982,7 +1004,7 @@ def test_plan_series_warns_without_retry_on_missing_actor_explanation_link(
                         "section_id": "s01",
                         "title": "A face in the corridor",
                         "scene_role": "actor_setup",
-                        "scene_function": "scene",
+                        "scene_job": "build",
                         "beat_change": "The actor is visible before any formal explanation lands.",
                         "actors": [
                             {
@@ -1012,7 +1034,7 @@ def test_plan_series_warns_without_retry_on_missing_actor_explanation_link(
                         "section_id": "s02",
                         "title": "The turn gathers",
                         "scene_role": "action",
-                        "scene_function": "scene",
+                        "scene_job": "answer",
                         "beat_change": "The pressure starts to move.",
                         "passage_ids": ["p_core_1"],
                         "host_moves": {
@@ -1025,7 +1047,7 @@ def test_plan_series_warns_without_retry_on_missing_actor_explanation_link(
                         "section_id": "s03",
                         "title": "The cost lands",
                         "scene_role": "fallout",
-                        "scene_function": "scene",
+                        "scene_job": "residue",
                         "beat_change": "The cost is now visible.",
                         "passage_ids": ["p_support_2"],
                         "host_moves": {
@@ -1038,7 +1060,7 @@ def test_plan_series_warns_without_retry_on_missing_actor_explanation_link(
                         "section_id": "s04",
                         "title": "The residue remains",
                         "scene_role": "implication",
-                        "scene_function": "landing",
+                        "scene_job": "close",
                         "beat_change": "The residue is named.",
                         "passage_ids": ["p_support_3"],
                         "host_moves": {
@@ -1047,6 +1069,8 @@ def test_plan_series_warns_without_retry_on_missing_actor_explanation_link(
                         "estimated_duration_seconds": 90,
                     },
                 ],
+                "answer_scene_card_id": "scene_2",
+                "residue_scene_card_id": "scene_3",
             }
         )
 

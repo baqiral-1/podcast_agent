@@ -31,6 +31,8 @@ from podcast_agent.schemas.models import (
     SceneActorArcBinding,
     SceneCard,
     SceneCardDraft,
+    SectionSonicObligation,
+    SectionSonicPlan,
     SeriesNarratorProfile,
     SpineRelation,
     SpeechHints,
@@ -175,8 +177,8 @@ class TestThematicProject:
         assert config.max_axes == 20
         assert config.synthesis_axis_min == 12
         assert config.synthesis_axis_max == 20
-        assert config.narrative_strategy_episode_count_min == 8
-        assert config.narrative_strategy_episode_count_max == 12
+        assert config.narrative_strategy_episode_count_min == 10
+        assert config.narrative_strategy_episode_count_max == 16
 
     def test_pipeline_config_rejects_narrative_strategy_episode_count_bound_inversion(
         self,
@@ -213,17 +215,17 @@ class TestThematicProject:
         assert config.episode_write_concurrency == 8
         assert config.episode_writing_batch_count == 5
         assert config.spoken_delivery_concurrency == 8
-        assert config.min_episode_minutes == 130.0
-        assert config.max_episode_minutes == 150.0
-        assert config.architecture_section_target_min == 12
-        assert config.architecture_section_target_max == 16
-        assert config.episode_spine_core_primitive_target_min == 8
-        assert config.episode_spine_core_primitive_target_max == 11
-        assert config.episode_spine_support_primitive_target_min == 9
-        assert config.episode_spine_support_primitive_target_max == 13
-        assert config.episode_spine_recall_primitive_target_max == 3
-        assert config.scene_card_target_min == 40
-        assert config.scene_card_target_max == 48
+        assert config.min_episode_minutes == 90.0
+        assert config.max_episode_minutes == 120.0
+        assert config.architecture_section_target_min == 11
+        assert config.architecture_section_target_max == 14
+        assert config.episode_spine_core_primitive_target_min == 6
+        assert config.episode_spine_core_primitive_target_max == 8
+        assert config.episode_spine_support_primitive_target_min == 6
+        assert config.episode_spine_support_primitive_target_max == 9
+        assert config.episode_spine_recall_primitive_target_max == 2
+        assert config.scene_card_target_min == 30
+        assert config.scene_card_target_max == 38
 
     def test_resolve_pipeline_config_for_mode_applies_minified_profile(self):
         config = resolve_pipeline_config_for_mode(
@@ -244,8 +246,8 @@ class TestThematicProject:
         assert config.episode_spine_support_primitive_target_min == 4
         assert config.episode_spine_support_primitive_target_max == 6
         assert config.episode_spine_recall_primitive_target_max == 1
-        assert config.architecture_section_target_min == 6
-        assert config.architecture_section_target_max == 8
+        assert config.architecture_section_target_min == 7
+        assert config.architecture_section_target_max == 9
         assert config.min_episode_minutes == 54.0
         assert config.max_episode_minutes == 63.0
         assert config.scene_card_target_min == 18
@@ -261,28 +263,28 @@ class TestThematicProject:
         assert config.max_axes == 20
         assert config.synthesis_axis_min == 12
         assert config.synthesis_axis_max == 20
-        assert config.narrative_strategy_episode_count_min == 8
-        assert config.narrative_strategy_episode_count_max == 12
+        assert config.narrative_strategy_episode_count_min == 10
+        assert config.narrative_strategy_episode_count_max == 16
         assert config.synthesis_total_passage_cap == 750
         assert config.episode_writing_batch_count == 5
-        assert config.architecture_section_target_min == 12
-        assert config.architecture_section_target_max == 16
-        assert config.min_episode_minutes == 130.0
-        assert config.max_episode_minutes == 150.0
-        assert config.scene_card_target_min == 40
-        assert config.scene_card_target_max == 48
+        assert config.architecture_section_target_min == 11
+        assert config.architecture_section_target_max == 14
+        assert config.min_episode_minutes == 90.0
+        assert config.max_episode_minutes == 120.0
+        assert config.scene_card_target_min == 30
+        assert config.scene_card_target_max == 38
 
     def test_authorial_passage_target_ranges_for_modes(self):
-        assert authorial_passage_target_range_for_mode(PodcastMode.FULL) == (24, 36)
+        assert authorial_passage_target_range_for_mode(PodcastMode.FULL) == (18, 28)
         assert authorial_passage_target_range_for_mode(PodcastMode.MINIFIED) == (12, 16)
         assert dense_section_authorial_passage_range_for_mode(PodcastMode.FULL) == (
-            4,
-            12,
+            3,
+            8,
         )
         assert dense_section_authorial_passage_range_for_mode(
             PodcastMode.MINIFIED
         ) == (2, 5)
-        assert authorial_passage_target_for_mode(PodcastMode.FULL) == 30
+        assert authorial_passage_target_for_mode(PodcastMode.FULL) == 23
         assert authorial_passage_target_for_mode(PodcastMode.MINIFIED) == 14
 
     def test_authorial_passage_allows_six_sentence_budget(self):
@@ -366,7 +368,7 @@ class TestThematicProject:
         assert profile.spoken_style_contract == "anti_academic_oral"
         assert profile.analysis_mode == "hybrid"
         assert profile.analysis_density == "medium"
-        assert profile.target_authorial_passages_per_episode == 30
+        assert profile.target_authorial_passages_per_episode == 23
 
     def test_host_presence_beat_normalizes_legacy_term_reminder(self):
         beat = HostPresenceBeat.model_validate(
@@ -402,9 +404,25 @@ class TestThematicProject:
 
         assert cue.address_mode == "i"
 
-    def test_host_moves_require_at_least_one_phase_bucket(self):
-        with pytest.raises(ValidationError, match="at least one phase bucket"):
-            HostMovesByPhase()
+    def test_host_moves_allow_empty_phase_buckets(self):
+        moves = HostMovesByPhase()
+
+        assert moves.open == []
+        assert moves.pivot == []
+        assert moves.close == []
+
+    def test_authorial_passage_accepts_contested_claim_metadata(self):
+        passage = AuthorialPassage(
+            passage_id="p1",
+            mode="quote_then_gloss",
+            claim="Some accounts remember the scene differently.",
+            claim_certainty="contested_memory",
+            source_primitive_ids=["primitive_1"],
+            counter_source_passage_ids=["p2", "p3"],
+        )
+
+        assert passage.claim_certainty == "contested_memory"
+        assert passage.counter_source_passage_ids == ["p2", "p3"]
 
 
 class TestSynthesisModels:
@@ -1199,6 +1217,25 @@ class TestPlanningModels:
                 estimated_duration_seconds=60,
             )
 
+    def test_scene_card_accepts_what_we_hear_alias(self):
+        card = SceneCard.model_validate(
+            {
+                "scene_id": "scene_alias",
+                "section_id": "section_1",
+                "title": "Alias scene",
+                "scene_role": "action",
+                "beat_change": "The room changes.",
+                "entry_image": "A clerk opens the envelope.",
+                "observable_detail": "Hands freeze over the paper.",
+                "what_we_hear": "A stamp cracks onto the form.",
+                "passage_ids": ["p1"],
+                "host_moves": _host_moves_payload().model_dump(mode="json"),
+                "estimated_duration_seconds": 60,
+            }
+        )
+
+        assert card.audible_detail == "A stamp cracks onto the form."
+
 
 class TestSpeechAndStyleModels:
     def test_prose_section_accepts_non_enum_movement_goal(self):
@@ -1233,11 +1270,57 @@ class TestSpeechAndStyleModels:
                     section_id="section_1",
                     text="The convoy moves before dawn.",
                     speech_hints=SpeechHints(style="measured", pace="slower"),
+                    section_sonic_plan=SectionSonicPlan(
+                        obligation=SectionSonicObligation.REQUIRED,
+                        opening_anchor="Truck engines idle in the dark.",
+                        opening_pressure="The convoy's force arrives before daylight does.",
+                    ),
+                    sonic_cues=[
+                        {
+                            "scene_id": "scene_1",
+                            "scene_job": "build",
+                            "entry_image": "The convoy moves before dawn.",
+                            "observable_detail": "The headlamps sweep the wall.",
+                            "audible_detail": "Truck engines idle in the dark.",
+                        }
+                    ],
                 )
             ],
         )
         restored = SpokenScript.model_validate(json.loads(spoken.model_dump_json()))
         assert restored.sections[0].speech_hints.style == "measured"
+        assert restored.sections[0].section_sonic_plan is not None
+        assert restored.sections[0].section_sonic_plan.obligation == "required"
+        assert restored.sections[0].sonic_cues[0].audible_detail == (
+            "Truck engines idle in the dark."
+        )
+
+    def test_prose_section_accepts_section_sonic_plan(self):
+        section = ProseSection.model_validate(
+            {
+                "section_id": "section_1",
+                "scene_card_ids": ["scene_1"],
+                "movement_goal": "setup",
+                "text": "The engines sit there before anyone speaks.",
+                "section_sonic_plan": {
+                    "obligation": "required",
+                    "opening_anchor": "Truck engines idle in the dark.",
+                    "opening_pressure": "The convoy's force arrives before daylight does.",
+                    "later_beats": [
+                        {
+                            "moment": "the order hits the room",
+                            "cue": "a stamp cracks onto the paper",
+                        }
+                    ],
+                },
+            }
+        )
+
+        assert section.section_sonic_plan is not None
+        assert section.section_sonic_plan.obligation == "required"
+        assert section.section_sonic_plan.later_beats[0].cue == (
+            "a stamp cracks onto the paper"
+        )
 
 
 class TestEpisodeArchitectureModels:
@@ -1284,9 +1367,10 @@ class TestEpisodeArchitectureModels:
         with pytest.raises(ValidationError, match="at least 6 items"):
             self._build_architecture(5)
 
-    def test_episode_architecture_rejects_more_than_twelve_sections(self):
-        with pytest.raises(ValidationError, match="at most 12 items"):
-            self._build_architecture(13)
+    def test_episode_architecture_accepts_thirteen_sections(self):
+        architecture = self._build_architecture(13)
+
+        assert len(architecture.sections) == 13
 
     def test_architecture_section_migrates_legacy_anchor_field(self):
         section = ArchitectureSection.model_validate(
@@ -1335,5 +1419,46 @@ class TestEpisodeArchitectureModels:
                     "inference_mode": "scene_first",
                     "pressure_type": "mass_political",
                     "resolution_type": "redefinition",
+                }
+            )
+
+    def test_architecture_section_rejects_blank_section_sonic_plan_fields(self):
+        with pytest.raises(ValidationError):
+            ArchitectureSection.model_validate(
+                {
+                    "section_id": "section_01",
+                    "purpose": "opening",
+                    "approx_runtime_minutes": 10.0,
+                    "primitive_ids": ["et_1"],
+                    "section_anchor": "Anchor",
+                    "must_stage_beats": ["Beat one", "Beat two"],
+                    "section_sonic_plan": {
+                        "obligation": "required",
+                        "opening_anchor": "   ",
+                        "opening_pressure": "   ",
+                    },
+                }
+            )
+
+    def test_architecture_section_rejects_more_than_two_section_sonic_later_beats(self):
+        with pytest.raises(ValidationError, match="at most 2 items"):
+            ArchitectureSection.model_validate(
+                {
+                    "section_id": "section_01",
+                    "purpose": "opening",
+                    "approx_runtime_minutes": 10.0,
+                    "primitive_ids": ["et_1"],
+                    "section_anchor": "Anchor",
+                    "must_stage_beats": ["Beat one", "Beat two"],
+                    "section_sonic_plan": {
+                        "obligation": "preferred",
+                        "opening_anchor": "A crowd goes quiet.",
+                        "opening_pressure": "The silence marks organized refusal.",
+                        "later_beats": [
+                            {"moment": "m1", "cue": "c1"},
+                            {"moment": "m2", "cue": "c2"},
+                            {"moment": "m3", "cue": "c3"},
+                        ],
+                    },
                 }
             )

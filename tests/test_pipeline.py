@@ -18,6 +18,7 @@ from podcast_agent.pipeline.orchestrator import (
     _allocate_synthesis_passages_by_axis,
     _allocate_scene_durations,
     _build_spoken_delivery_batches,
+    _build_spoken_delivery_sections_payload,
     _build_spine_plan_diagnostics,
     _build_scene_card_family_warnings,
     _compute_scene_word_count_targets,
@@ -166,6 +167,7 @@ def _scene_card(
         entry_image="Image",
         local_question="Question",
         observable_detail="Detail",
+        audible_detail="The stamp snaps down.",
         intended_move="Move",
         passage_ids=["p1"],
         host_moves=_host_moves(),
@@ -2436,6 +2438,15 @@ def test_rewrite_for_speech_rewrites_each_section_individually(monkeypatch, tmp_
             ),
         ],
     )
+    plan = EpisodePlan.model_construct(
+        episode_number=1,
+        framing=_framing().model_copy(update={"handoff_scene_card_id": "scene_1"}),
+        scene_cards=[
+            _scene_card("scene_1", "pack_1", section_id="section_1"),
+            _scene_card("scene_2", "pack_1", section_id="section_2"),
+        ],
+        target_word_count=120,
+    )
     project = ThematicProject(
         project_id="proj",
         theme="War on terror",
@@ -2453,7 +2464,14 @@ def test_rewrite_for_speech_rewrites_each_section_individually(monkeypatch, tmp_
     ep_dir.mkdir(parents=True, exist_ok=True)
 
     spoken = asyncio.run(
-        orchestrator._rewrite_for_speech(1, script, project, ep_dir, tmp_path)
+        orchestrator._rewrite_for_speech(
+            1,
+            script,
+            project,
+            ep_dir,
+            tmp_path,
+            plan=plan,
+        )
     )
 
     assert len(payloads) == 2
@@ -2467,6 +2485,7 @@ def test_rewrite_for_speech_rewrites_each_section_individually(monkeypatch, tmp_
     assert "previous_spoken_text" not in payloads[1]
     assert "previous_spoken_tail" not in payloads[0]
     assert payloads[1]["previous_spoken_tail"] == "spoken::First section."
+    assert payloads[0]["section"]["scene_cues"][0]["audible_detail"] == "The stamp snaps down."
     assert "upcoming_batches_summary" not in payloads[0]
     assert "upcoming_batches_summary" not in payloads[1]
     assert [section.section_id for section in spoken.sections] == ["section_1", "section_2"]
@@ -2476,6 +2495,7 @@ def test_rewrite_for_speech_rewrites_each_section_individually(monkeypatch, tmp_
     ]
     assert spoken.sections[0].speech_hints.style == "measured"
     assert spoken.sections[0].speech_hints.pronunciation_hints[0].text == "Panipat"
+    assert spoken.sections[0].sonic_cues[0].audible_detail == "The stamp snaps down."
 
 
 def test_extract_previous_spoken_tail_prefers_last_four_complete_sentences():
@@ -2505,6 +2525,61 @@ def test_build_spoken_delivery_batches_uses_four_batches_when_four_sections_are_
         ["section_2"],
         ["section_3"],
         ["section_4"],
+    ]
+
+
+def test_spoken_delivery_payload_includes_scene_cues_from_plan():
+    script = EpisodeScript(
+        episode_number=1,
+        title="Episode 1",
+        framing=_framing(),
+        prose_sections=[
+            ProseSection(
+                section_id="section_1",
+                scene_card_ids=["scene_1"],
+                movement_goal="discover",
+                text="First section",
+            )
+        ],
+    )
+    architecture = EpisodeArchitecture.model_construct(
+        episode_number=1,
+        major_turn_section_id="section_1",
+        allowed_recurring_primitive_ids=[],
+        forbidden_redundancies=[],
+        sections=[
+            ArchitectureSection(
+                section_id="section_1",
+                purpose="opening",
+                approx_runtime_minutes=1.0,
+                primitive_ids=["pack_1"],
+                section_anchor="Anchor",
+                must_stage_beats=["Beat one", "Beat two"],
+            )
+        ],
+        architecture_notes=[],
+    )
+    plan = EpisodePlan.model_construct(
+        episode_number=1,
+        framing=_framing().model_copy(update={"handoff_scene_card_id": "scene_1"}),
+        scene_cards=[_scene_card("scene_1", "pack_1")],
+        target_word_count=120,
+    )
+
+    payload_sections = _build_spoken_delivery_sections_payload(
+        script=script,
+        architecture=architecture,
+        plan=plan,
+    )
+
+    assert payload_sections[0]["scene_cues"] == [
+        {
+            "scene_id": "scene_1",
+            "scene_job": "build",
+            "entry_image": "Image",
+            "observable_detail": "Detail",
+            "audible_detail": "The stamp snaps down.",
+        }
     ]
 
 def test_rewrite_for_speech_raises_on_invalid_section_contract(monkeypatch, tmp_path):

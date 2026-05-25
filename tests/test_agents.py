@@ -366,6 +366,8 @@ class TestRedesignedAgents:
         assert "not a holding area for every later-useful primitive" in instructions
         assert "Do not let tail episodes become everything left over." in instructions
         assert "trim or demote primitives rather than adding more" in instructions
+        assert "usually spend one directive slot on a human carrier" in instructions
+        assert "Sovereigns or state heads alone are not always a sufficient character spine" in instructions
 
     def test_narrative_strategy_skeleton_agent_prepare_retry_payload_adds_targeted_feedback(
         self,
@@ -904,7 +906,7 @@ class TestRedesignedAgents:
         assert payload["actor_metadata"]["actors"][0]["actor_id"] == "actor_1"
         assert payload["architecture_feedback"]["issue"] == "missing_turn"
         assert (
-            "Convert the episode spine into 12–16 binding sections."
+            "Convert the episode spine into 11–14 binding sections."
             in instructions
         )
         assert "The final section must use `purpose` = `closing`." in instructions
@@ -938,7 +940,7 @@ class TestRedesignedAgents:
         assert "`host_mystery_moves`" in instructions
         assert "`host_assumption_moves`" in instructions
         assert "`host_theory_moves`" in instructions
-        assert "24–36 total `authorial_passages`" in instructions
+        assert "18–28 total `authorial_passages`" in instructions
         assert "are not scene cards, scene counts" in instructions
         assert "The first `must_stage_beats` item should usually open from the section" in instructions
         assert "The last `must_stage_beats` item should usually imply the section's" in instructions
@@ -965,8 +967,8 @@ class TestRedesignedAgents:
             synthesis_map={"primitives": []},
             project_metadata={
                 "podcast_mode": "minified",
-                "architecture_section_target_min": 6,
-                "architecture_section_target_max": 8,
+                "architecture_section_target_min": 7,
+                "architecture_section_target_max": 9,
             },
             core_passages=[{"passage_id": "p1"}],
             support_passages=[],
@@ -974,7 +976,7 @@ class TestRedesignedAgents:
 
         instructions = agent.build_instructions(payload)
 
-        assert "Convert the episode spine into 6–8 binding sections." in instructions
+        assert "Convert the episode spine into 7–9 binding sections." in instructions
         assert "Most minified episodes should carry 12–16 total `authorial_passages`." in instructions
         assert "Dense minified sections may use 2–5 `authorial_passages`" in instructions
 
@@ -1026,6 +1028,10 @@ class TestRedesignedAgents:
             "Treat `architecture.section_anchor` as the section-local opening handle."
             in instructions
         )
+        assert "`section_sonic_plan`" in instructions
+        assert "`section_sonic_plan.obligation` may only be `required` or `preferred`." in instructions
+        assert "scene-local derived realization" in instructions
+        assert "should not repeat that anchor verbatim" in instructions
         assert "`must_stage_beats`, `closure_mode`, and any" in instructions
         assert "should create curiosity in the same territory as" in instructions
         assert (
@@ -1049,9 +1055,9 @@ class TestRedesignedAgents:
         )
         assert "Copy the section plan's `background_depth`, `role_label`," not in instructions
         assert "`host_policy`" in instructions
-        assert "Each scene card must include `host_moves` with phase buckets" in instructions
+        assert "Every scene card must include the `host_moves` object with phase buckets" in instructions
         assert "If a section carries any `host_mystery_moves`" in instructions
-        assert "Ordinary cards should usually use one populated phase." in instructions
+        assert "Ordinary cards with host shaping should usually use one populated phase." in instructions
         assert "Fresh plans should use at most one cue per phase." in instructions
         assert "Omit optional fields entirely instead of returning blank strings or empty arrays." in instructions
         assert "`estimated_duration_seconds -> dur`" in instructions
@@ -1074,7 +1080,10 @@ class TestRedesignedAgents:
             "context_setup, actor_setup, action, shock, contestation, reaction,"
             in instructions
         )
-        assert "Target 40–48 scene cards for this episode." in agent.instructions
+        assert "Ordinary sections should usually contain at most one `implication` card." in instructions
+        assert "When the real job is \"what changed because of this,\" prefer `fallout`." in instructions
+        assert "Sections that open in `context_setup` or `actor_setup` should usually pick up a concrete event, confrontation, or consequence beat inside the same section." in instructions
+        assert "Target 30–38 scene cards for this episode." in agent.instructions
 
     def test_episode_planning_agent_builds_minified_instructions_from_payload(self):
         agent = EpisodePlanningAgent(_mock_llm())
@@ -1106,6 +1115,7 @@ class TestRedesignedAgents:
             "Use `allowed_moves` from `host_policy` as binding." in agent.instructions
         )
         assert "Prefer `clarify` after complexity" in agent.instructions
+        assert "Avoid section shapes that are effectively `setup -> implication -> implication`" in agent.instructions
 
     def test_style_audit_agent_payload(self):
         agent = StyleAuditAgent(_mock_llm())
@@ -1241,6 +1251,9 @@ class TestRedesignedAgents:
         assert "Return one output item per input section" in agent.instructions
         assert "`architecture.sections[].must_stage_beats`" in agent.instructions
         assert "binding section-level obligations" in agent.instructions
+        assert "`section_sonic_plan`" in agent.instructions
+        assert "Spend `section_sonic_plan.opening_anchor` in the first 1-2" in agent.instructions
+        assert "Do not reproduce `section_sonic_plan.opening_anchor` verbatim" in agent.instructions
         assert "`term_explanations`" in agent.instructions
         assert "`actor_explanations`" in agent.instructions
         assert (
@@ -1262,11 +1275,11 @@ class TestRedesignedAgents:
         )
         assert "Target 8-12 prose sections for the episode" not in agent.instructions
         assert "`entry_image`" in agent.instructions
-        assert (
-            "Treat scene roles and scene jobs as concrete production constraints:"
-            in agent.instructions
-        )
-        assert "`action` scenes and `scene_job = build`" in agent.instructions
+        assert "`audible_detail`" in agent.instructions
+        assert "SCENE ROLE SEMANTICS" in agent.instructions
+        assert "SCENE JOB SEMANTICS" in agent.instructions
+        assert "`action`: stage a materially consequential move" in agent.instructions
+        assert "`build`: carry most accumulation, setup, mechanism, contest, reaction, and consequence work." in agent.instructions
         assert "Do not write standalone transition paragraphs" in agent.instructions
         assert "Structural cards should stay concrete and brief." in agent.instructions
         assert "Planned `host_moves` should shape the scene's narration" in agent.instructions
@@ -1407,9 +1420,16 @@ class TestRedesignedAgents:
         assert "For compact output, you may omit `section_id`, `scene_card_ids`, and" in agent.instructions
         assert "Target total narration for this call within" in agent.instructions
         assert "`entry_image`" in agent.instructions
+        assert "`audible_detail`" in agent.instructions
+        assert "`section_sonic_plan`" in agent.instructions
+        assert "`section_sonic_plan.obligation` may only be `required` or `preferred`." in agent.instructions
+        assert "Treat scene-level `audible_detail` as a local derived realization" in agent.instructions
         assert "SCENE ROLES AND JOBS" in agent.instructions
         assert "Structural cards must stay concrete and brief." in agent.instructions
-        assert "`action` scenes and `scene_job = build`" in agent.instructions
+        assert "SCENE ROLE SEMANTICS" in agent.instructions
+        assert "SCENE JOB SEMANTICS" in agent.instructions
+        assert "`action`: stage a materially consequential move" in agent.instructions
+        assert "`build`: carry most accumulation, setup, mechanism, contest, reaction, and consequence work." in agent.instructions
         assert "Do not expose scaffolding" in agent.instructions
         assert "no meta-transitions" in agent.instructions
         assert "let `surface_mode` and `address_mode` decide" in agent.instructions
@@ -1558,6 +1578,8 @@ class TestRedesignedAgents:
         assert "use `I`, `we`" in agent.instructions
         assert "SELF-CHECK BEFORE RETURNING" in agent.instructions
         assert "speech_hints" in agent.instructions
+        assert "`script.prose_sections[].scene_cues`" in agent.instructions
+        assert "`script.prose_sections[].section_sonic_plan`" in agent.instructions
         assert "Does the narration sound like a serious host carrying thought" in agent.instructions
         assert "`script.prose_sections`" in agent.instructions
         assert "`script.framing`" in agent.instructions
@@ -1600,6 +1622,13 @@ class TestRedesignedAgents:
         assert "`promised_beat_decisions -> promised_decisions`" not in prompt
         assert "`episode_spine -> spine`" in prompt
         assert "`major_turn_section_id -> major_turn`" in prompt
+        assert "`grounding_actor_candidates` (optional)" not in prompt
+        assert "Use `episode.actor_arc_directives` as the authoritative episode-level actor spine" in prompt
+        assert "Adjacent explanatory sections should usually differ in scene engine, not just topic label." in prompt
+        assert "Sections built mostly from `mechanisms`, `conditions`, or `readings` should usually tie those abstractions to an event, act, utterance, artifact, or recurring human pressure thread" in prompt
+        assert "Sections may additionally specify `section_sonic_plan`" in prompt
+        assert "`section_sonic_plan.obligation` must be exactly" in prompt
+        assert "`required` or `preferred`." in prompt
 
     @pytest.mark.parametrize(
         "prompt_builder",
@@ -1613,12 +1642,17 @@ class TestRedesignedAgents:
         assert "For `comparative_aside`, prefer: scene fact -> carried comparison -> explicit snap-back." in prompt
         assert "Write this to be heard, not admired on the page." in prompt
         assert "forceful host explaining history out loud." in prompt
+        assert "claim_certainty = probable" in prompt
         assert "scene or factual pressure" in prompt
         assert "plain-English interpretation" in prompt
         assert "Avoid companion-tour phrasing" in prompt
         assert "If a first-person clause adds no real insight, comparison, surprise," in prompt
         assert "Prefer one inhabited clause of judgment or comparison" in prompt
         assert "Do not become more oral by getting much shorter." in prompt
+        assert "`implication`: land earned interpretation after evidence or consequence has already become legible." in prompt
+        assert "Scene jobs are structural jobs, not licenses for abstraction." in prompt
+        assert "When the real job is materially staged disagreement or rival reading, prefer `contestation`." in prompt
+        assert "Do not restart consecutive scenes with the same explanatory frame" in prompt
 
 
 class TestHeuristicClient:

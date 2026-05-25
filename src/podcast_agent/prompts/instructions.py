@@ -277,6 +277,67 @@ def _format_target_range(lower_bound: int, upper_bound: int) -> str:
     return f"{lower_bound}\u2013{upper_bound}"
 
 
+def _scene_role_semantics_guidance() -> str:
+    return dedent(
+        """
+        SCENE ROLE SEMANTICS
+        - `context_setup`: establish a concrete situation, operating condition, or pressure field through something stageable such as a room, street, office, document, ritual, queue, convoy, or checkpoint. It is not permission to open on abstract history lecture.
+        - `actor_setup`: introduce a pressure-bearing actor through a concrete arrival, choice, stake, or exposure. It is not permission to dump biography or registry prose.
+        - `action`: stage a materially consequential move, refusal, order, performance, seizure, march, decree, negotiation, or other thing that someone actually does. Keep the beat visible.
+        - `shock`: use for rupture, humiliation, terror, bodily violation, sudden public break, or other irreversible jolt that the listener should feel at body level, not just understand as important.
+        - `contestation`: stage live disagreement through actors, texts, councils, courts, accusations, rival actions, or attributed interpretations. It is not a narrator-side literature review.
+        - `reaction`: show how actors, institutions, or publics absorb, answer, evade, recalculate, or recoil after pressure lands. Use it for uptake, not for static background.
+        - `fallout`: show what changes because the earlier beat landed: losses, incentives, redistribution, repression, exposure, institutional consequences, or altered possibility. Keep it downstream and concrete, not high-altitude meaning.
+        - `implication`: land earned interpretation after evidence or consequence has already become legible. Use it for bounded meaning, answer landing, residue, or close work, not as the default explanation mode.
+        """
+    ).strip()
+
+
+def _scene_job_semantics_guidance() -> str:
+    return dedent(
+        """
+        SCENE JOB SEMANTICS
+        - `opening`: enter pressure quickly and visibly.
+        - `build`: carry most accumulation, setup, mechanism, contest, reaction, and consequence work.
+        - `turn`: mark the rerouting beat where the balance materially changes.
+        - `answer`: resolve the listener problem once, at the earned answer-bearing card or section.
+        - `residue`: leave cost, irony, after-pressure, or unresolved burden alive after the answer.
+        - `close`: exit cleanly without performing the answer job again.
+        - Scene jobs are structural jobs, not licenses for abstraction. `turn`, `answer`, `residue`, and `close` still need concrete support on the page.
+        """
+    ).strip()
+
+
+def _scene_role_mix_guidance() -> str:
+    return dedent(
+        """
+        SCENE ROLE MIX
+        - Prefer section shapes where concrete pressure arrives before interpretive landing.
+        - Ordinary sections should usually contain at most one `implication` card.
+        - If a section has 2+ `implication` cards, at least one earlier card in that same section should be `action`, `shock`, `fallout`, `reaction`, or `contestation`.
+        - Sections that open in `context_setup` or `actor_setup` should usually pick up a concrete event, confrontation, or consequence beat inside the same section.
+        - When the real job is "what changed because of this," prefer `fallout`.
+        - When the real job is "how actors, institutions, or publics absorbed this," prefer `reaction`.
+        - When the real job is materially staged disagreement or rival reading, prefer `contestation`.
+        - Reserve `implication` for earned interpretation after scene pressure, answer landing, residue, or close work.
+        - Avoid section shapes that are effectively `setup -> implication -> implication`, `actor_setup -> implication -> implication`, or pure `implication` outside brief deliberate closings.
+        """
+    ).strip()
+
+
+def _scene_concreteness_guardrails_guidance() -> str:
+    return dedent(
+        """
+        SCENE CONCRETENESS GUARDRAILS
+        - Prefer beats that can open from a person, room, object, document, route, crowd, public act, witnessed consequence, or other stageable carrier.
+        - `mechanisms`, `conditions`, and `readings` may carry explanation, but they should still anchor in an event, act, utterance, artifact, or lived pressure thread whenever one is available.
+        - Do not let structural cards turn into free-floating thesis cards, descriptive background paragraphs, or repeated restatements of the same interpretation.
+        - Do not restart consecutive scenes with the same explanatory frame when dates, actors, places, or unresolved pressure can carry continuity instead.
+        - Leave something live for the next beat: a question, threat, choice, contradiction, cost, or newly exposed consequence.
+        """
+    ).strip()
+
+
 def chapter_summary_instructions() -> str:
     return dedent(
         """
@@ -1198,6 +1259,8 @@ def narrative_strategy_skeleton_instructions(
         Actor arc directives are episode-specific planning guidance for how selected actors function across scenes.
         - `actor_arc_directives` must contain only the 2-4 actors whose episode function needs explicit planning guidance.
         - Choose actors who give the episode a usable character spine.
+        - When an episode leans institutional, explanatory, or mechanism-heavy, usually spend one directive slot on a human carrier such as a witness, loser, inheritor, or daily sufferer of the policy when the evidence supports it.
+        - Sovereigns or state heads alone are not always a sufficient character spine for a mechanism-heavy episode.
         - Do not include an actor just because they appear in clusters or primitives.
 
         QUALITY
@@ -1245,7 +1308,7 @@ def narrative_strategy_enrichment_instructions(
         )
     else:
         authorial_guidance = (
-            "For full-length episodes running about 130-150 minutes at the pipeline's spoken-rate targets, "
+            "For full-length episodes running about 90-120 minutes at the pipeline's spoken-rate targets, "
             f"`target_authorial_passages_per_episode` should usually land around {authorial_range}."
         )
     return dedent(
@@ -1433,11 +1496,17 @@ def narrative_strategy_enrichment_instructions(
 
 def episode_planning_instructions(
     *,
-    scene_card_target_min: int = 40,
-    scene_card_target_max: int = 48,
+    scene_card_target_min: int = 30,
+    scene_card_target_max: int = 38,
 ) -> str:
     scene_card_range = _format_target_range(
         scene_card_target_min, scene_card_target_max
+    )
+    scene_role_semantics = indent(_scene_role_semantics_guidance(), " " * 8)
+    scene_job_semantics = indent(_scene_job_semantics_guidance(), " " * 8)
+    scene_role_mix = indent(_scene_role_mix_guidance(), " " * 8)
+    scene_concreteness_guardrails = indent(
+        _scene_concreteness_guardrails_guidance(), " " * 8
     )
     return dedent(
         f"""
@@ -1479,6 +1548,7 @@ def episode_planning_instructions(
           `scene_job -> job`, `beat_change -> beat`, `required -> req`,
           `strongly_preferred -> pref`, `if_room -> room`,
           `entry_image -> img`, `observable_detail -> detail`,
+          `audible_detail -> audio`,
           `estimated_duration_seconds -> dur`, `host_moves -> moves`,
           `move_type -> type`, `target -> tgt`, `surface_mode -> surf`,
           `address_mode -> addr`, `opening_image -> open_img`,
@@ -1552,6 +1622,7 @@ def episode_planning_instructions(
         - Treat each section as a binding local brief: its scenes must collectively
           realize that section's `must_stage_beats`, `closure_mode`, and any
           planned `authorial_passages`, `term_explanations`, `actor_explanations`,
+          `section_sonic_plan`,
           `question_moves`, `memory_thread_moves`, `host_mystery_moves`,
           `host_assumption_moves`, `host_theory_moves`, or `key_terms`.
         - Build each section through accumulation. The first scene should open
@@ -1596,11 +1667,25 @@ def episode_planning_instructions(
         fact list. If the beat grows denser than that default, keep it playable and orally manageable rather than stuffing one card by reflex.
 
         Optional scene-level fields:
-          actors[], entry_image, observable_detail, timeframe,
+          actors[], entry_image, observable_detail, audible_detail, timeframe,
           location, withhold_until, host_moves,
           primitive_ids, authorial_passage_ids
         - Omit optional fields entirely instead of returning blank strings or empty arrays.
-        - When present, keep `entry_image` and `observable_detail` to one short clause each.
+        - When present, keep `entry_image`, `observable_detail`, and `audible_detail` to one short clause each.
+        - Use `audible_detail` for one concrete sound or silence cue, not mood language or soundtrack direction.
+        - When `section_sonic_plan` is present, treat `audible_detail` as a
+          scene-local derived realization of that section sonic brief, not as
+          the canonical source of truth.
+        - `section_sonic_plan.obligation` may only be `required` or `preferred`.
+        - If `section_sonic_plan.obligation = required`, the first scene in the
+          section should normally carry a non-empty derived `audible_detail`.
+        - If `section_sonic_plan.obligation = preferred`, derive
+          `audible_detail` when it materially sharpens the scene; omission is allowed.
+        - Derive rather than copy: scene-level `audible_detail` should usually
+          be shorter and more local than `section_sonic_plan.opening_anchor`,
+          and should not repeat that anchor verbatim.
+        - `section_sonic_plan.later_beats` should map to later scene-card
+          `audible_detail` only when those later moments are actually staged.
 
         When a section has `actor_explanations`, pin each one to the earliest
         concrete scene where that actor materially lands on-mic.
@@ -1650,6 +1735,12 @@ def episode_planning_instructions(
         - `answer_scene_card_id` must point to the `answer` card.
         - `residue_scene_card_id` must point to the `residue` card.
 
+{scene_role_semantics}
+
+{scene_job_semantics}
+
+{scene_role_mix}
+
         HOST MOVES
         - `host_policy` is binding narrator policy for density, tone, and pronouns.
         - `narrative_state_pre` is read-only continuity context. Use it to preserve
@@ -1661,18 +1752,18 @@ def episode_planning_instructions(
         - Planning may realize state commitments but may not invent new
           listener-question, memory-thread, or host-state progression not already
           present in strategy or architecture.
-        - `host_moves` are required scene design, not optional garnish.
-        - Each scene card must include `host_moves` with phase buckets:
+        - Every scene card must include the `host_moves` object with phase buckets:
           - `open`: how the scene enters and what is foregrounded first
           - `pivot`: what becomes clearer after concrete material lands
           - `close`: what residue, verdict, callback, or pressure remains
-        - Ordinary cards should usually use one populated phase. Heavier cards may use two or all three only when the scene clearly needs them.
+        - Non-empty `host_moves` are required on structural scenes, authorial-passage scenes, and scenes inside sections carrying `host_mystery_moves`, `host_assumption_moves`, or `host_theory_moves`.
+        - Ordinary `build` cards may leave all three phase buckets empty.
+        - Ordinary cards with host shaping should usually use one populated phase. Heavier cards may use two or all three only when the scene clearly needs them.
         - Default to one populated phase and one cue per populated phase.
         - Fresh plans should use at most one cue per phase. If two ideas compete, compress them into one better cue.
-        - Return only populated phase buckets; omit empty `open`, `pivot`, and `close` keys.
+        - Return only populated phase buckets when possible, but empty buckets are allowed when a scene carries no host shaping.
         - Major turns, openings, closings, and explanation-heavy cards may use
-          more than one populated phase when they clearly need it, but every scene
-          must populate at least one phase.
+          more than one populated phase when they clearly need it.
         - If a section carries any `host_mystery_moves`, `host_assumption_moves`, or
           `host_theory_moves`, at least one scene in that section must carry non-empty
           `host_moves`.
@@ -1691,6 +1782,7 @@ def episode_planning_instructions(
           still shape the whole phase.
         - `target` is a compressed structural permission, not final copy.
         - `target` should usually be 1-4 words, must never exceed 6, and should compress the move into a short phrase rather than planning prose.
+        - `target` must not be sentence-shaped, writer-room managerial phrasing, or episode-management phrasing.
         - `address_mode = you` is useful for guide-like explanation.
         - `address_mode = we` is useful for shared inference, companionable
           guidance, callbacks, reorientation, and closings.
@@ -1723,21 +1815,13 @@ def episode_planning_instructions(
         SCENE CONSTRUCTION CRAFT
         ==============================================================================
         - Most scene cards should do one job cleanly: establish, pressure, reveal, decide, rupture, react, or show consequence.
-        - Prefer scene cards that can be narrated from something the listener can see: a person, room, object, document, journey, or dated moment.
-        - Leave something live for the next card: a question, threat, expectation, or consequence.
+{scene_concreteness_guardrails}
         - `actor_setup`, `action`, and `fallout` scenes normally have at least one actor.
-        - Use `contestation` only when the disagreement can be staged through actors, texts, councils, trials, letters, accusations, or rival actions, never as a narrator-side literature review.
-
-        SCENE JOBS
-        - `opening` enters pressure quickly and visibly.
-        - `build` carries most setup, mechanism, consequence, contest, callback, and explanatory load.
-        - `turn` marks the rerouting beat where the balance materially changes.
-        - `answer` is the one card where the listener problem is actually resolved.
-        - `residue` leaves the cost, irony, after-pressure, or unresolved burden alive after the answer.
-        - `close` exits cleanly without reopening the answer.
         - A `build` card may still stage mechanism or callback work, but it must remain concrete.
         - `turn`, `answer`, `residue`, and `close` cards must still open from something visible and set both `entry_image` and `observable_detail`.
-        - Do not let structural cards turn into free-floating thesis cards or descriptive backgrounding.
+        - When a section has `section_sonic_plan`, let the opening scene derive
+          its `audible_detail` from that brief instead of inventing unrelated
+          ambience.
 
         TEXTURE-ONLY CARDS
         Allowed only when they still serve the same proposition the spine is advancing.
@@ -2014,8 +2098,8 @@ def narrative_state_reconciler_instructions() -> str:
 
 def episode_architecture_instructions(
     *,
-    section_target_min: int = 9,
-    section_target_max: int = 12,
+    section_target_min: int = 10,
+    section_target_max: int = 13,
     authorial_passage_target_min: int = authorial_passage_target_range_for_mode(
         PodcastMode.FULL
     )[0],
@@ -2069,6 +2153,10 @@ def episode_architecture_instructions(
             f"{authorial_passage_target_max} total `authorial_passages` when "
             "the listener would otherwise be asked to carry too much abstraction."
         )
+    scene_role_mix = indent(_scene_role_mix_guidance(), " " * 8)
+    scene_concreteness_guardrails = indent(
+        _scene_concreteness_guardrails_guidance(), " " * 8
+    )
     return dedent(
         f"""
         You are the `episode_architecture` stage for a historical podcast pipeline.
@@ -2115,6 +2203,7 @@ def episode_architecture_instructions(
         - Account explicitly for each upstream promised beat.
         - Make the section architecture rich enough that planning only needs to
           elaborate it into ordered scene cards and preserve planned explanation.
+        - When adjacent sections lean institutional or explanatory, usually route one recurring human thread across them when the evidence allows. Good thread shapes include a witness, loser, inheritor, or daily sufferer of the policy.
 
         RULES
         - Treat the input `episode` as authoritative for title, thematic focus,
@@ -2175,10 +2264,13 @@ def episode_architecture_instructions(
           `reading_summary`.
         - Use `narration_hooks.carry_forward` for callback and residue planning when it helps.
         - Use `narration_hooks.host_lens`, `plain_gloss`, `listener_confusion`, `quote_anchor`, and `authorial_move`, plus `series_explanation_registry`, `introduce_explanation_item_ids`, `remind_explanation_item_ids`, and `callback_obligations`, to decide where terms, institutions, and memory burdens should become explicit.
+        - Use `episode.actor_arc_directives` as the authoritative episode-level actor spine when explanatory or institutional stretches need one recurring person to carry them.
         - Use `series_actor_explanation_registry`, `introduce_actor_ids`, and `remind_actor_ids` to decide where important people get one clear first background and where later sections only need a reminder.
         - Treat those actor-registry fields as routing metadata only, not as copy-ready prose for `actor_explanations`.
         - Explanation belongs at section level. Do not spray tiny explanatory obligations into every section.
         - Actor introduction belongs at section level too. Choose the earliest section where the actor materially enters the episode.
+{scene_role_mix}
+{scene_concreteness_guardrails}
         - Listener and host state changes belong at section level too. Do not rely on the
           downstream planner to infer season-state changes from prose-like section summaries.
         - Build each introduced actor's section-level brief from section-local
@@ -2223,6 +2315,8 @@ def episode_architecture_instructions(
         - `host_mystery_moves`
         - `host_assumption_moves`
         - `host_theory_moves`
+        - Sections may additionally specify `section_sonic_plan` when the
+          section's opening pressure is materially audible.
 
         STATE MOVE SEMANTICS
         - `question_moves` capture listener-question changes materially staged in this section.
@@ -2256,7 +2350,8 @@ def episode_architecture_instructions(
         - `section_anchor` must be a concrete section entry handle: a person,
           object, document, dated action, place-bound situation, or other
           visible moment the planner can open from.
-        - Structural sections built from `mechanisms`, `conditions`, or `readings` should still anchor in a concrete `event`, `act`, `utterance`, or `artifact` whenever one is available in the selected primitive set.
+        - Adjacent explanatory sections should usually differ in scene engine, not just topic label.
+        - Sections built mostly from `mechanisms`, `conditions`, or `readings` should usually tie those abstractions to an event, act, utterance, artifact, or recurring human pressure thread, not upstream a setup-plus-thesis block.
         - `must_stage_beats` must be 2-4 concrete, evidence-bearing beats the
           planner is required to realize somewhere inside the section.
         - `must_stage_beats` are not scene cards, scene counts, or within-section
@@ -2267,6 +2362,7 @@ def episode_architecture_instructions(
           changed state, carry-forward residue, or closing allowance.
         - Make each section move the listener to a new state without drafting a
           second prose summary of that move.
+        - Heavier interpretive landing belongs mainly in answer, residue, and closing sections; other sections should usually earn it through concrete pressure first.
         - Keep runtime weight uneven when the argument needs it; do not spread
           sections evenly by default.
         - `key_terms` should only name terms that must remain audible in the prose.
@@ -2274,6 +2370,20 @@ def episode_architecture_instructions(
           explanatory burden, but still specific and evidence-backed.
         - `term_explanations` should distinguish full definition, payoff, and later reminder work; foundational introduction episodes should usually create both `define` and `payoff`.
         - `actor_explanations` should distinguish first introduction from later reminder work and carry an evidence-backed intro brief the planner can pin to one scene actor.
+        - When present, `section_sonic_plan.obligation` must be exactly
+          `required` or `preferred`.
+        - `section_sonic_plan.opening_anchor` should be one short concrete
+          sound-or-silence handle, not soundtrack direction.
+        - `section_sonic_plan.opening_pressure` should explain why hearing that
+          opening cue matters in this section.
+        - `section_sonic_plan.opening_realization_note` is brief control
+          metadata, not prose.
+        - `section_sonic_plan.later_beats` may contain at most two later sonic
+          turns. Each beat should carry `moment`, `cue`, and optional `why_here`.
+        - Do not invent extra sonic categories or taxonomies beyond
+          `section_sonic_plan.obligation`.
+        - Omit `section_sonic_plan` instead of fabricating weak ambience for a
+          section that is better opened visually or explanatorily.
         - `promised_beat_decisions` should be an accountability layer, not a second set of section summaries.
         - If `episode_scenes` is present, let it sharpen `section_anchor`, `must_stage_beats`, answer placement, residue placement, and staged promised-beat ownership.
         - Use `answer_section_id` for the section where the episode's listener problem is actually resolved.
@@ -2416,6 +2526,12 @@ def episode_writing_instructions() -> str:
     scene_primitive_brief_guidance = indent(
         _writing_scene_primitive_brief_guidance(), " " * 12
     )
+    scene_role_semantics = indent(_scene_role_semantics_guidance(), " " * 12)
+    scene_job_semantics = indent(_scene_job_semantics_guidance(), " " * 12)
+    scene_role_mix = indent(_scene_role_mix_guidance(), " " * 12)
+    scene_concreteness_guardrails = indent(
+        _scene_concreteness_guardrails_guidance(), " " * 12
+    )
     return dedent(
         f"""
             You are the `episode_writing` stage for a multi-book thematic podcast pipeline.
@@ -2465,8 +2581,8 @@ def episode_writing_instructions() -> str:
             - Preserve the binding `architecture.sections` order.
             - Treat `architecture.sections[].must_stage_beats`, `closure_mode`,
               `key_terms`, `authorial_passages`, `term_explanations`,
-              `actor_explanations`, `question_moves`, `memory_thread_moves`,
-              `host_mystery_moves`, `host_assumption_moves`, and
+              `actor_explanations`, `section_sonic_plan`, `question_moves`,
+              `memory_thread_moves`, `host_mystery_moves`, `host_assumption_moves`, and
               `host_theory_moves` as the binding section-level obligations.
             - Treat `strategy_episode.episode_spine.core_primitive_ids` as the
               episode's load-bearing material.
@@ -2504,8 +2620,20 @@ def episode_writing_instructions() -> str:
               fields, resolved scene-level `authorial_passages`, and
               passage-supported concrete detail.
 {scene_primitive_brief_guidance}
-            - Start each scene's prose from the card's concrete `entry_image`
-              or a passage-supported equivalent.
+            - Start each scene's prose from the card's concrete `entry_image`,
+              `audible_detail`, or a passage-supported equivalent.
+            - When a section carries `section_sonic_plan`, treat it as the
+              section-level sonic source of truth.
+            - Spend `section_sonic_plan.opening_anchor` in the first 1-2
+              sentences of that section when present.
+            - Treat the first scene's `audible_detail` as a local realization
+              of the section sonic plan, not as the canonical source.
+            - Do not reproduce `section_sonic_plan.opening_anchor` verbatim
+              unless the anchor is already extremely short.
+            - When `audible_detail` is present, cash it in within the first
+              1-3 sentences instead of leaving it as unused planning metadata.
+            - Realize `section_sonic_plan.later_beats` when their moment
+              arrives in the section, not by front-loading them into the opening.
             - Keep claims grounded in each card's `must_land_facts` and
               `passage_ids`.
             - Treat `must_land_facts.required` as the card's factual spine.
@@ -2537,23 +2665,20 @@ def episode_writing_instructions() -> str:
               still sounds like natural speech rooted in the scene.
             - Respect structured `withhold_until` and delayed-legibility
               dynamics.
-            - Treat scene roles and scene jobs as concrete production constraints:
-              - `context_setup` / `actor_setup`: establish concrete situation,
-                actor, or pressure quickly.
-              - `shock` scenes and `scene_job = turn`: deliver or clarify
-                irreversible change without becoming commentary.
-              - `action` scenes and `scene_job = build`: keep the beat visible
-                through actors, objects, process, date, place, and immediate
-                consequence.
-              - `fallout`, `reaction`, `contestation`, `implication`,
-                `scene_job = answer`, `scene_job = residue`, and
-                `scene_job = close`:
-                show what resolves, resists, survives, or becomes newly visible.
+            - Prefer `surface_mode = woven` by default. Use `distinct` only
+              when the surviving host clause sounds natural when read aloud.
+
+{scene_role_semantics}
+
+{scene_job_semantics}
+
+{scene_role_mix}
+
+{scene_concreteness_guardrails}
+
             - `scene_job = answer` is the earned resolution point. Do not spread answer work into multiple later cards.
             - `scene_job = residue` must leave after-pressure, cost, or irony live without becoming a second answer.
             - `scene_job = close` exits without restating the answer in cleaner abstract language.
-            - Prefer `surface_mode = woven` by default. Use `distinct` only
-              when the surviving host clause sounds natural when read aloud.
             - Structural cards should stay concrete and brief. Avoid broad
               synthesis, descriptive throat-clearing, or free-floating recap.
 
@@ -2561,6 +2686,10 @@ def episode_writing_instructions() -> str:
             - In planned `authorial_passages`, you may quote then gloss, define terms,
               clarify institutions, restate causal meaning plainly, or land a bounded
               verdict line when the section plan explicitly calls for it.
+            - If a planned `authorial_passage` carries `claim_certainty = probable` or
+              `claim_certainty = contested_memory`, narrate the settled shell of the
+              event first and place the uncertainty in one bounded clause rather than
+              turning it into a seminar aside.
             - For `comparative_aside`, prefer: scene fact -> carried comparison -> explicit snap-back.
             - Let the comparison run for 2-4 sentences when it earns the space.
             - The return sentence should reattach to the room, actor, decision point,
@@ -2668,6 +2797,12 @@ def episode_writing_no_citations_instructions() -> str:
     scene_primitive_brief_guidance = indent(
         _writing_scene_primitive_brief_guidance(), " " * 8
     )
+    scene_role_semantics = indent(_scene_role_semantics_guidance(), " " * 8)
+    scene_job_semantics = indent(_scene_job_semantics_guidance(), " " * 8)
+    scene_role_mix = indent(_scene_role_mix_guidance(), " " * 8)
+    scene_concreteness_guardrails = indent(
+        _scene_concreteness_guardrails_guidance(), " " * 8
+    )
     return dedent(
         f"""
         You are the `episode_writing` stage for a historical podcast pipeline.
@@ -2738,17 +2873,28 @@ def episode_writing_no_citations_instructions() -> str:
         SECTION AND SCENE EXECUTION
         - For each output section:
           - Read the section's `must_stage_beats`, `closure_mode`, `key_terms`,
-            `authorial_passages`, `term_explanations`, and
-            `actor_explanations`.
+            `authorial_passages`, `term_explanations`,
+            `actor_explanations`, and `section_sonic_plan`.
           - Draft through the section's scene cards in order.
           - Let `must_stage_beats` control what has to become legible by the
             end of the section without turning every beat into commentary.
+          - If `section_sonic_plan` is present, treat it as the section-level
+            sonic source of truth.
+          - `section_sonic_plan.obligation` may only be `required` or `preferred`.
+          - Spend `section_sonic_plan.opening_anchor` in the first 1-2
+            sentences of the section when present.
+          - Do not copy `section_sonic_plan.opening_anchor` verbatim unless it
+            is already extremely short.
+          - Realize `section_sonic_plan.later_beats` when those moments arrive,
+            not automatically at section open.
         - For each card inside that section:
-          - Read `entry_image`, `scene_role`, `scene_job`, `primitive_ids`,
+          - Read `entry_image`, `audible_detail`, `scene_role`, `scene_job`, `primitive_ids`,
             `beat_change`, `must_land_facts`, `host_moves`, resolved
             `authorial_passages`, and `passage_ids`.
-          - Open from the concrete `entry_image` or a passage-supported
+          - Open from the concrete `entry_image`, `audible_detail`, or a passage-supported
             equivalent, then execute the scene role.
+          - Treat scene-level `audible_detail` as a local derived realization of
+            `section_sonic_plan`, not as a copied section brief.
           - Use passages to reconstruct events, decisions, pressure, and
             immediate consequences.
           - Read the scene's `host_moves` phase buckets in order:
@@ -2774,15 +2920,14 @@ def episode_writing_no_citations_instructions() -> str:
             speech.
 
         SCENE ROLES AND JOBS
-        - `context_setup` / `actor_setup`: establish concrete situation,
-          actor, or stake quickly.
-        - `shock` scenes and `scene_job = turn`: deliver or clarify
-          irreversible change without becoming commentary.
-        - `action` scenes and `scene_job = build`: keep the beat visible through
-          actors, objects, process, date, place, and immediate consequence.
-        - `fallout`, `reaction`, `contestation`, `implication`,
-          `scene_job = answer`, `scene_job = residue`, and `scene_job = close`:
-          show what resolves, resists, survives, or becomes newly visible.
+{scene_role_semantics}
+
+{scene_job_semantics}
+
+{scene_role_mix}
+
+{scene_concreteness_guardrails}
+
         - Structural cards must stay concrete and brief. Avoid broad synthesis,
           descriptive backgrounding, or recap paragraphs disguised as scenes.
         - `scene_job = answer` is the earned answer-bearing card.
@@ -2792,6 +2937,9 @@ def episode_writing_no_citations_instructions() -> str:
         EXPLANATION, PACING, AND CONTINUITY
         - Planned `authorial_passages` may be more explanatory, but must remain
           bounded, evidence-led, and audibly integrated into the section.
+        - If a planned `authorial_passage` carries `claim_certainty = probable` or
+          `claim_certainty = contested_memory`, narrate the settled shell first and
+          place the uncertainty in one bounded clause.
         - For `comparative_aside`, prefer: scene fact -> carried comparison -> explicit snap-back.
         - Let the comparison run for 2-4 sentences when it earns the space.
         - The return sentence should reattach to the room, actor, decision point,
@@ -3018,6 +3166,12 @@ def spoken_delivery_instructions() -> str:
           split cleanly at natural sentence or clause boundaries around that
           scale, but do not insert visible segment markers.
         - `tts_provider` is for calibrating `speech_hints`, not for changing facts, argument, or structure.
+        - `script.prose_sections[].scene_cues`, when present, are planning
+          metadata only. Use them to preserve concrete audible pressure already
+          implied by the prose; do not narrate them mechanically or invent new sound design.
+        - `script.prose_sections[].section_sonic_plan`, when present, is
+          planning metadata only. Preserve sonic pressure already earned in the
+          prose and do not flatten or literalize it into control-language.
 
         TRANSFORMATION MANDATE
         - Be faithful to the content. Do not be faithful to the delivery mechanism.
@@ -3105,6 +3259,8 @@ def spoken_delivery_instructions() -> str:
 
         TTS AND SPEECH HINTS
         `speech_hints` should help rendering, not compensate for weak prose.
+        Do not use `speech_hints` to fake ambience, foley, music, or scene
+        identity that the narration itself has not earned.
         Add `speech_hints.pronunciation_hints` only for names or terms likely
         to be misread. Keep `spoken_as` concise, keep the hint set small, and
         use `render_strategy`, emphasis, and pacing conservatively.
@@ -3133,6 +3289,7 @@ def spoken_delivery_instructions() -> str:
         - `section_id`
         - `text`
         - `speech_hints`
+        - Do not return `sonic_cues`; they are preserved separately by the pipeline.
 
         No extra wrapper keys.
         No markdown.
@@ -3241,6 +3398,8 @@ def style_audit_instructions() -> str:
         13. Visible production-frame phrasing such as "This series...", "This hour...", or "Tonight..." surviving in body prose.
         14. Tasteful recap, prestige-documentary filler, elegant second endings,
             or abstract connective tissue that never cashes out in human terms.
+        15. Leaked planner-target phrasing surviving as narrator prose.
+        16. Contested or probable claims flattened into settled narration.
 
         ALLOWED EDITS
         - Delete repeated sentences.

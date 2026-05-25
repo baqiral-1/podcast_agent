@@ -24,10 +24,10 @@ class EpisodeArchitectureAgent(Agent):
     def _section_target_bounds(payload: dict) -> tuple[int, int]:
         project = payload.get("project")
         if not isinstance(project, dict):
-            return 12, 16
+            return 11, 14
         return (
-            int(project.get("architecture_section_target_min", 12)),
-            int(project.get("architecture_section_target_max", 16)),
+            int(project.get("architecture_section_target_min", 11)),
+            int(project.get("architecture_section_target_max", 14)),
         )
 
     @staticmethod

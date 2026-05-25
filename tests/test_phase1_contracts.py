@@ -225,14 +225,14 @@ def test_scene_job_budget_defaults_are_locked() -> None:
     }
     full_budget = scene_job_budget_for_mode(PodcastMode.FULL)
     assert full_budget == {
-        "total_min": 40,
-        "total_max": 48,
-        "opening_min": 3,
+        "total_min": 30,
+        "total_max": 38,
+        "opening_min": 2,
         "opening_max": 3,
-        "build_min": 28,
-        "build_max": 33,
-        "turn_min": 6,
-        "turn_max": 9,
+        "build_min": 21,
+        "build_max": 27,
+        "turn_min": 4,
+        "turn_max": 5,
         "answer_min": 1,
         "answer_max": 1,
         "residue_min": 1,
@@ -262,8 +262,8 @@ def test_scene_job_budget_defaults_are_locked() -> None:
         PipelineConfig(podcast_mode=PodcastMode.MINIFIED)
     )
     assert (full_config.scene_card_target_min, full_config.scene_card_target_max) == (
-        40,
-        48,
+        30,
+        38,
     )
     assert (
         minified_config.scene_card_target_min,

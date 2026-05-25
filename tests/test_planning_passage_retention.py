@@ -458,7 +458,7 @@ def test_build_episode_architecture_realization_reports_omitted_support_and_reca
     assert realization["missing_recall_primitive_ids"] == ["recall_1"]
     assert realization["warning_count"] >= 4
     assert (
-        "architecture_section_count_below_target: 4 < 9 (target range 9-12)"
+        "architecture_section_count_below_target: 4 < 11 (target range 11-14)"
         in realization["warnings"]
     )
     assert any(
@@ -471,7 +471,7 @@ def test_build_episode_architecture_realization_skips_section_count_warning_insi
     None
 ):
     sections = []
-    section_count = 9
+    section_count = 11
     closing_idx = section_count - 1
     for idx in range(section_count):
         section_id = f"section_{idx + 1:02d}"
