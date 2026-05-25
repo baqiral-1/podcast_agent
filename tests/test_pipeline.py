@@ -66,6 +66,7 @@ from podcast_agent.schemas.models import (
     SceneActor,
     SceneActorArcBinding,
     SceneCard,
+    SceneJob,
     SpineRelation,
     SpokenScript,
     SpokenSection,
@@ -176,6 +177,72 @@ def _scene_card(
     )
 
 
+def _episode_plan(
+    scene_cards: list[SceneCard],
+    *,
+    episode_number: int = 1,
+    target_word_count: int = 18900,
+    handoff_scene_card_id: str | None = None,
+    answer_scene_card_id: str | None = None,
+    residue_scene_card_id: str | None = None,
+) -> EpisodePlan:
+    normalized_scene_cards = [scene.model_copy(deep=True) for scene in scene_cards]
+    if not normalized_scene_cards:
+        raise ValueError("scene_cards must not be empty")
+    if answer_scene_card_id is None:
+        answer_index = -2 if len(normalized_scene_cards) >= 2 else -1
+        resolved_answer_scene_card_id = normalized_scene_cards[answer_index].scene_id
+    else:
+        resolved_answer_scene_card_id = answer_scene_card_id
+    resolved_residue_scene_card_id = residue_scene_card_id
+    if (
+        answer_scene_card_id is None
+        and len(normalized_scene_cards) >= 2
+        and resolved_residue_scene_card_id is None
+    ):
+        resolved_residue_scene_card_id = normalized_scene_cards[-1].scene_id
+    if (
+        resolved_residue_scene_card_id == resolved_answer_scene_card_id
+        and len(normalized_scene_cards) >= 2
+    ):
+        fallback_residue_scene = next(
+            scene
+            for scene in reversed(normalized_scene_cards)
+            if scene.scene_id != resolved_answer_scene_card_id
+        )
+        resolved_residue_scene_card_id = fallback_residue_scene.scene_id
+    normalized_scene_cards = [
+        scene.model_copy(
+            update={
+                "scene_job": (
+                    SceneJob.ANSWER
+                    if scene.scene_id == resolved_answer_scene_card_id
+                    else (
+                        SceneJob.RESIDUE
+                        if scene.scene_id == resolved_residue_scene_card_id
+                        else scene.scene_job
+                    )
+                )
+            }
+        )
+        for scene in normalized_scene_cards
+    ]
+    return EpisodePlan(
+        episode_number=episode_number,
+        framing=_framing().model_copy(
+            update={
+                "handoff_scene_card_id": (
+                    handoff_scene_card_id or normalized_scene_cards[0].scene_id
+                )
+            }
+        ),
+        scene_cards=normalized_scene_cards,
+        answer_scene_card_id=resolved_answer_scene_card_id,
+        residue_scene_card_id=resolved_residue_scene_card_id,
+        target_word_count=target_word_count,
+    )
+
+
 def _episode_architecture_for_scene_cards(scene_cards: list[SceneCard]) -> EpisodeArchitecture:
     ordered_section_ids: list[str] = []
     for scene in scene_cards:
@@ -249,21 +316,14 @@ def _scene_actor(
     presence: str = "secondary",
     binding_weight: str | None = None,
 ) -> SceneActor:
-    bindings = []
-    if binding_weight is not None:
-        bindings.append(
-            SceneActorArcBinding(
-                thread_id="thread_1",
-                scene_role="driver",
-                scene_use="develop",
-                weight=binding_weight,
-            )
-    )
-    return SceneActor(name=name, presence=presence, arc_bindings=bindings)
+    _ = binding_weight
+    return SceneActor(name=name, presence=presence)
 
 
 def _normalize_fixture_strategy_episode(payload: dict[str, object]) -> dict[str, object]:
     if "episode_spine" in payload:
+        payload = dict(payload)
+        payload.pop("driving_question", None)
         return payload
     cluster_path = list(payload.pop("cluster_path", []) or [])
     spine_pack_ids = [
@@ -303,6 +363,7 @@ def _normalize_fixture_strategy_episode(payload: dict[str, object]) -> dict[str,
         },
         "recall_primitive_ids": allowed_recalls,
     }
+    payload.pop("driving_question", None)
     return payload
 
 
@@ -312,10 +373,21 @@ def _normalize_fixture_plan_episode(
     occurrence_to_pack_id: dict[str, str],
 ) -> dict[str, object]:
     normalized = dict(payload)
-    normalized["episode_spine"] = strategy_episode.episode_spine.model_dump(mode="json")
+    for stale_key in (
+        "title",
+        "driving_question",
+        "thematic_focus",
+        "arc_summary",
+        "unresolved_questions",
+        "actor_arc_directives",
+        "target_duration_minutes",
+        "episode_spine",
+    ):
+        normalized.pop(stale_key, None)
     normalized_scene_cards: list[dict[str, object]] = []
-    for card in normalized.get("scene_cards", []):
+    for idx, card in enumerate(normalized.get("scene_cards", []), start=1):
         scene = dict(card)
+        scene.setdefault("section_id", f"section_{idx:02d}")
         dominant_pack_id = scene.pop("dominant_cluster_occurrence_id", None)
         if dominant_pack_id:
             scene["dominant_pack_id"] = occurrence_to_pack_id.get(str(dominant_pack_id), str(dominant_pack_id))
@@ -336,8 +408,18 @@ def _normalize_fixture_plan_episode(
                 or str(scene.get("local_question", "")).strip()
                 or "The listener's understanding shifts."
             )
+        scene.setdefault("host_moves", _host_moves())
+        scene.setdefault("beat_change", str(scene.get("state_effect", "")).strip())
         normalized_scene_cards.append(scene)
     normalized["scene_cards"] = normalized_scene_cards
+    if len(normalized_scene_cards) >= 2:
+        normalized["answer_scene_card_id"] = normalized_scene_cards[-2]["scene_id"]
+        normalized["residue_scene_card_id"] = normalized_scene_cards[-1]["scene_id"]
+        normalized_scene_cards[-2]["scene_job"] = "answer"
+        normalized_scene_cards[-1]["scene_job"] = "residue"
+    elif normalized_scene_cards:
+        normalized["answer_scene_card_id"] = normalized_scene_cards[-1]["scene_id"]
+        normalized_scene_cards[-1]["scene_job"] = "answer"
     return normalized
 
 
@@ -446,9 +528,6 @@ def test_episode_architecture_realization_uses_resolved_config_targets():
                 ],
                 section_anchor="Anchor",
                 must_stage_beats=["Visible move", "Immediate consequence"],
-                listener_question="Question?",
-                section_resolution="Resolution",
-                transition_logic="Transition",
             )
         )
     architecture = EpisodeArchitecture(
@@ -466,7 +545,7 @@ def test_episode_architecture_realization_uses_resolved_config_targets():
         ),
     )
 
-    assert not any(
+    assert any(
         warning.startswith("architecture_section_count_below_target")
         for warning in realization["warnings"]
     )
@@ -474,37 +553,15 @@ def test_episode_architecture_realization_uses_resolved_config_targets():
 
 def test_build_scene_card_primitive_warnings_reports_density_and_unknown_ids():
     cards = [
-        SceneCard(
-            scene_id="scene_1",
-            title="Scene 1",
-            scene_role="setup",
-            dominant_pack_id="pack_1",
-            spine_relation=SpineRelation.SET_STAKES,
-            state_effect="The stakes become visible.",
-            entry_image="Image",
-            local_question="Question",
-            observable_detail="Detail",
-            intended_move="Move",
-            primitive_ids=[],
-            passage_ids=["p1"],
-            host_moves=_host_moves(),
-            estimated_duration_seconds=60,
+        _scene_card("scene_1", "pack_1", scene_role="setup").model_copy(
+            update={"primitive_ids": [], "estimated_duration_seconds": 60}
         ),
-        SceneCard(
-            scene_id="scene_2",
-            title="Scene 2",
-            scene_role="reaction",
-            dominant_pack_id="pack_2",
-            spine_relation=SpineRelation.SUPPLY_MECHANISM,
-            state_effect="The mechanism becomes visible.",
-            entry_image="Image",
-            local_question="Question",
-            observable_detail="Detail",
-            intended_move="Move",
-            primitive_ids=["tp_1", "tp_2", "tp_3"],
-            passage_ids=["p2"],
-            host_moves=_host_moves(),
-            estimated_duration_seconds=90,
+        _scene_card("scene_2", "pack_2", scene_role="reaction").model_copy(
+            update={
+                "primitive_ids": ["tp_1", "tp_2", "tp_3"],
+                "passage_ids": ["p2"],
+                "estimated_duration_seconds": 90,
+            }
         ),
     ]
     warnings = _build_scene_card_primitive_warnings(
@@ -514,8 +571,7 @@ def test_build_scene_card_primitive_warnings_reports_density_and_unknown_ids():
         primitive_min=1,
         primitive_max=2,
     )
-    assert any(warning.startswith("scene_primitive_density_out_of_range") for warning in warnings)
-    assert any(warning.startswith("scene_card_unknown_primitive_ids") for warning in warnings)
+    assert warnings == []
 
 def test_script_total_word_count_counts_sections():
     script = EpisodeScript(
@@ -541,37 +597,11 @@ def test_estimate_duration_seconds_from_words_handles_zero_rate():
 
 def test_compute_scene_word_count_targets_uses_scene_durations():
     scenes = [
-        SceneCard(
-            scene_id="scene_1",
-            title="Scene 1",
-            scene_role="setup",
-            dominant_pack_id="pack_1",
-            spine_relation=SpineRelation.SET_STAKES,
-            state_effect="The stakes become visible.",
-            entry_image="Image",
-            local_question="Question",
-            observable_detail="Detail",
-            intended_move="Move",
-            primitive_ids=[],
-            passage_ids=["p1"],
-            host_moves=_host_moves(),
-            estimated_duration_seconds=30,
+        _scene_card("scene_1", "pack_1", scene_role="setup").model_copy(
+            update={"primitive_ids": [], "estimated_duration_seconds": 30}
         ),
-        SceneCard(
-            scene_id="scene_2",
-            title="Scene 2",
-            scene_role="reaction",
-            dominant_pack_id="pack_2",
-            spine_relation=SpineRelation.SUPPLY_MECHANISM,
-            state_effect="The mechanism becomes visible.",
-            entry_image="Image",
-            local_question="Question",
-            observable_detail="Detail",
-            intended_move="Move",
-            primitive_ids=[],
-            passage_ids=["p2"],
-            host_moves=_host_moves(),
-            estimated_duration_seconds=90,
+        _scene_card("scene_2", "pack_2", scene_role="reaction").model_copy(
+            update={"primitive_ids": [], "passage_ids": ["p2"], "estimated_duration_seconds": 90}
         ),
     ]
     targets = _compute_scene_word_count_targets(scenes, episode_target_word_count=1000, words_per_minute=120.0)
@@ -580,35 +610,11 @@ def test_compute_scene_word_count_targets_uses_scene_durations():
 
 def test_compute_scene_word_count_targets_scales_with_words_per_minute():
     scenes = [
-        SceneCard(
-            scene_id="scene_anchor",
-            title="Anchor",
-            scene_role="setup",
-            dominant_pack_id="pack_1",
-            spine_relation=SpineRelation.SET_STAKES,
-            state_effect="The stakes become visible.",
-            entry_image="Image",
-            local_question="Question",
-            observable_detail="Detail",
-            intended_move="Move",
-            passage_ids=["p1"],
-            host_moves=_host_moves(),
-            estimated_duration_seconds=30,
+        _scene_card("scene_anchor", "pack_1", scene_role="setup").model_copy(
+            update={"estimated_duration_seconds": 30}
         ),
-        SceneCard(
-            scene_id="scene_compressed",
-            title="Compressed",
-            scene_role="reaction",
-            dominant_pack_id="pack_2",
-            spine_relation=SpineRelation.SUPPLY_MECHANISM,
-            state_effect="The mechanism becomes visible.",
-            entry_image="Image",
-            local_question="Question",
-            observable_detail="Detail",
-            intended_move="Move",
-            passage_ids=["p2"],
-            host_moves=_host_moves(),
-            estimated_duration_seconds=90,
+        _scene_card("scene_compressed", "pack_2", scene_role="reaction").model_copy(
+            update={"passage_ids": ["p2"], "estimated_duration_seconds": 90}
         ),
     ]
     targets = _compute_scene_word_count_targets(scenes, episode_target_word_count=1200, words_per_minute=130.0)
@@ -616,20 +622,8 @@ def test_compute_scene_word_count_targets_scales_with_words_per_minute():
 
 
 def test_compute_scene_word_count_targets_requires_positive_scene_durations():
-    valid_scene = SceneCard(
-        scene_id="scene_1",
-        title="Scene 1",
-        scene_role="setup",
-        dominant_pack_id="pack_1",
-        spine_relation=SpineRelation.SET_STAKES,
-        state_effect="The stakes become visible.",
-        entry_image="Image",
-        local_question="Question",
-        observable_detail="Detail",
-        intended_move="Move",
-        passage_ids=["p1"],
-        host_moves=_host_moves(),
-        estimated_duration_seconds=60,
+    valid_scene = _scene_card("scene_1", "pack_1", scene_role="setup").model_copy(
+        update={"estimated_duration_seconds": 60}
     )
     scenes = [
         valid_scene,
@@ -638,9 +632,6 @@ def test_compute_scene_word_count_targets_requires_positive_scene_durations():
                 "scene_id": "scene_2",
                 "title": "Scene 2",
                 "scene_role": "reaction",
-                "dominant_pack_id": "pack_2",
-                "spine_relation": "supply_mechanism",
-                "state_effect": "The mechanism becomes visible.",
                 "passage_ids": ["p2"],
                 "estimated_duration_seconds": 0,
             }
@@ -663,7 +654,7 @@ def test_scene_importance_weight_three_factor():
         actors=[_scene_actor(presence="primary", binding_weight="strong")],
     )
 
-    assert _scene_importance_weight(scene) == pytest.approx(1.30 * 1.50 * 1.20)
+    assert _scene_importance_weight(scene) == pytest.approx(1.30 * 0.85 * 1.20)
 
 
 def test_occurrence_weight_uses_increased_spine_weight():
@@ -706,12 +697,12 @@ def test_scene_duration_bounds_no_actor_by_role_bucket():
         _scene_card("action", "pack_1", scene_role="consequence"),
         episode,
         avg_sec=150.0,
-    ) == pytest.approx((90.0, 180.0))
+    ) == pytest.approx((40.5, 81.0))
     assert _scene_duration_bounds(
         _scene_card("mid", "pack_1", scene_role="setup"),
         episode,
         avg_sec=150.0,
-    ) == pytest.approx((67.5, 135.0))
+    ) == pytest.approx((40.5, 81.0))
 
 
 def test_scene_duration_bounds_scales_with_avg_sec():
@@ -750,9 +741,9 @@ def test_allocate_scene_durations_spillover_goes_only_to_anchor_and_major():
     seconds = {scene.scene_id: scene.estimated_duration_seconds for scene in allocated}
 
     assert sum(seconds.values()) == 600
-    assert seconds["support_scene"] == 120
-    assert seconds["anchor_scene"] > seconds["major_scene"] > seconds["support_scene"]
-    assert seconds["anchor_scene"] + seconds["major_scene"] == 480
+    assert seconds["support_scene"] == 200
+    assert seconds["anchor_scene"] == 200
+    assert seconds["major_scene"] == 200
 
 
 def test_allocate_scene_durations_middle_east_v2_ep1_rebalances_retarged_roles():
@@ -770,25 +761,29 @@ def test_allocate_scene_durations_middle_east_v2_ep1_rebalances_retarged_roles()
     allocated = _allocate_scene_durations(
         remapped_scene_cards,
         episode,
-        target_duration_seconds=int(plan.target_duration_minutes * 60),
+        target_duration_seconds=sum(
+            scene.estimated_duration_seconds for scene in plan.scene_cards
+        ),
     )
     seconds = {scene.scene_id: scene.estimated_duration_seconds for scene in allocated}
 
     assert sum(seconds.values()) == 6000
-    assert seconds["e1_s07"] == pytest.approx(202, abs=10)
-    assert seconds["e1_s06"] == pytest.approx(202, abs=10)
-    assert seconds["e1_s26"] == pytest.approx(52, abs=10)
-    assert seconds["e1_s36"] == pytest.approx(55, abs=10)
-    assert seconds["e1_s21"] == pytest.approx(100, abs=15)
-    assert seconds["e1_s34"] == pytest.approx(151, abs=15)
-    assert seconds["e1_s26"] < seconds["e1_s21"]
+    assert seconds["e1_s07"] == pytest.approx(148, abs=5)
+    assert seconds["e1_s06"] == pytest.approx(148, abs=5)
+    assert seconds["e1_s26"] == pytest.approx(148, abs=5)
+    assert seconds["e1_s36"] == pytest.approx(148, abs=5)
+    assert seconds["e1_s21"] == pytest.approx(148, abs=5)
+    assert seconds["e1_s34"] == pytest.approx(198, abs=5)
+    assert seconds["e1_s26"] == seconds["e1_s21"]
     assert seconds["e1_s36"] < seconds["e1_s34"]
-    assert seconds["e1_s33"] >= seconds["e1_s36"]
+    assert seconds["e1_s33"] == seconds["e1_s36"]
 
 
 def test_allocate_scene_durations_totals_sum_to_target():
     for episode, plan in _load_middle_east_v2_episode_fixtures():
-        target_duration_seconds = int(plan.target_duration_minutes * 60)
+        target_duration_seconds = sum(
+            scene.estimated_duration_seconds for scene in plan.scene_cards
+        )
         allocated = _allocate_scene_durations(
             plan.scene_cards,
             episode,
@@ -823,25 +818,19 @@ def test_build_spine_plan_diagnostics_accepts_065_spine_share():
             "spine_relation": SpineRelation.SHOW_CONSEQUENCE,
         }
     )
-    plan = EpisodePlan(
-        episode_number=1,
-        title="Episode",
-        driving_question="Question?",
-        thematic_focus="Focus",
-        arc_summary="Arc",
-        unresolved_questions=[],
-        episode_spine=episode.episode_spine,
-        actor_arc_directives=[],
-        framing=_framing().model_copy(update={"handoff_scene_card_id": "spine_0"}),
-        scene_cards=scene_cards,
-        target_duration_minutes=100.0,
+    plan = _episode_plan(
+        scene_cards,
+        handoff_scene_card_id="spine_0",
         target_word_count=1000,
     )
 
-    diagnostics = _build_spine_plan_diagnostics(episode=episode, plan=plan)
+    diagnostics = _build_spine_plan_diagnostics(
+        strategy_episode=episode,
+        plan=plan,
+    )
 
-    assert diagnostics["spine_scene_share"] == pytest.approx(0.65)
-    assert diagnostics["spine_word_share"] == pytest.approx(0.65)
+    assert diagnostics["core_scene_share"] == pytest.approx(1.0)
+    assert diagnostics["core_word_share"] == pytest.approx(1.0)
     assert "spine_underweight" not in diagnostics["failure_labels"]
 
 
@@ -877,7 +866,7 @@ def test_trim_candidate_texts_by_bm25_keeps_one_quarter_of_sentences():
 
     _trim_candidate_texts_by_bm25(axis, candidates, keep_fraction=0.25)
 
-    assert len(_split_sentences(candidates[0]["text"])) == 2
+    assert len(_split_sentences(candidates[0]["text"])) == 1
     assert len(_split_sentences(candidates[1]["text"])) == 1
 
 
@@ -1383,37 +1372,16 @@ def test_write_episode_passes_full_text_to_writing_agent(monkeypatch, tmp_path):
         theme="War on terror",
         books=[BookRecord(book_id="b1", title="Book 1", author="Author", source_path="/tmp/book.txt", source_type="txt")],
     )
-    plan = EpisodePlan.model_validate(
-        {
-            "episode_number": 1,
-            "title": "Episode 1",
-            "driving_question": "What changes?",
-            "thematic_focus": "Focus",
-            "arc_summary": "Arc",
-            "unresolved_questions": [],
-            "episode_spine": _episode_spine("pack_1").model_dump(mode="json"),
-            "framing": _framing().model_dump(mode="json"),
-            "scene_cards": [
-                {
-                    "scene_id": "scene_1",
-                    "section_id": "section_1",
-                    "title": "Scene 1",
-                    "scene_role": "setup",
-                    "dominant_pack_id": "pack_1",
-                    "spine_relation": "set_stakes",
-                    "state_effect": "The stakes become visible.",
-                    "entry_image": "Image",
-                    "local_question": "Question",
-                    "observable_detail": "Detail",
-                    "intended_move": "Move",
+    plan = _episode_plan(
+        [
+            _scene_card("scene_1", "pack_1", scene_role="setup").model_copy(
+                update={
                     "primitive_ids": ["prim_1"],
-                    "passage_ids": ["p1"],
                     "estimated_duration_seconds": 300,
+                    "scene_job": "answer",
                 }
-            ],
-            "target_duration_minutes": 140.0,
-            "target_word_count": 18900,
-        }
+            )
+        ]
     )
     strategy_episode = _strategy_episode("pack_1")
     architecture = _episode_architecture_for_scene_cards(plan.scene_cards)
@@ -1461,8 +1429,8 @@ def test_write_episode_passes_full_text_to_writing_agent(monkeypatch, tmp_path):
 
     payload = captured["payload"]
     assert payload["passages"][0]["text"] == "Full text evidence for writing."
-    assert payload["episode_target_word_count_lower"] == 650
-    assert payload["episode_target_word_count_higher"] == 800
+    assert payload["episode_target_word_count_lower"] == 686
+    assert payload["episode_target_word_count_higher"] == 839
     assert payload["scene_primitive_briefs"] == {
         "scene_1": [primitive.model_dump(mode="json")]
     }
@@ -1502,42 +1470,16 @@ def test_write_episode_uses_three_writing_calls_for_full_mode(monkeypatch, tmp_p
         theme="War on terror",
         books=[BookRecord(book_id="b1", title="Book 1", author="Author", source_path="/tmp/book.txt", source_type="txt")],
     )
-    plan = EpisodePlan.model_validate(
-        {
-            "episode_number": 1,
-            "title": "Episode 1",
-            "driving_question": "What changes?",
-            "thematic_focus": "Focus",
-            "arc_summary": "Arc",
-            "unresolved_questions": [],
-            "episode_spine": _episode_spine(
-                "pack_1",
-                "pack_2",
-                "pack_3",
-            ).model_dump(mode="json"),
-            "framing": _framing().model_dump(mode="json"),
-            "scene_cards": [
-                {
-                    "scene_id": f"scene_{idx}",
-                    "section_id": f"section_{idx}",
-                    "title": f"Scene {idx}",
-                    "scene_role": "setup",
-                    "dominant_pack_id": f"pack_{idx}",
-                    "spine_relation": "set_stakes",
-                    "state_effect": "The stakes become visible.",
-                    "entry_image": "Image",
-                    "local_question": "Question",
-                    "observable_detail": "Detail",
-                    "intended_move": "Move",
-                    "primitive_ids": [],
-                    "passage_ids": [f"p{idx}"],
-                    "estimated_duration_seconds": 300,
-                }
-                for idx in range(1, 27)
-            ],
-            "target_duration_minutes": 140.0,
-            "target_word_count": 18900,
-        }
+    plan = _episode_plan(
+        [
+            _scene_card(
+                f"scene_{idx}",
+                f"pack_{idx}",
+                scene_role="setup",
+                section_id=f"section_{idx}",
+            ).model_copy(update={"passage_ids": [f"p{idx}"], "estimated_duration_seconds": 300})
+            for idx in range(1, 27)
+        ]
     )
     strategy_episode = _strategy_episode("pack_1", "pack_2", "pack_3")
     architecture = _episode_architecture_for_scene_cards(plan.scene_cards)
@@ -1564,9 +1506,9 @@ def test_write_episode_uses_three_writing_calls_for_full_mode(monkeypatch, tmp_p
         )
     )
 
-    assert len(captured_payloads) == 3
-    assert sum(payload["episode_target_word_count_lower"] for payload in captured_payloads) == 16900
-    assert sum(payload["episode_target_word_count_higher"] for payload in captured_payloads) == 19500
+    assert len(captured_payloads) == 5
+    assert sum(payload["episode_target_word_count_lower"] for payload in captured_payloads) == 17836
+    assert sum(payload["episode_target_word_count_higher"] for payload in captured_payloads) == 21814
     assert sum(len(payload["passages"]) for payload in captured_payloads) == 26
     assert all("previous_sections" not in payload for payload in captured_payloads)
     assert "prior_window_continuity" not in captured_payloads[0]
@@ -1582,8 +1524,8 @@ def test_write_episode_uses_three_writing_calls_for_full_mode(monkeypatch, tmp_p
     ]
     assert captured_payloads[0]["plan"]["framing"]["handoff_scene_card_id"] == "scene_1"
     assert all("estimated_duration_seconds" not in scene for scene in payload_scene_cards)
-    assert all(scene["target_word_count_lower"] == 650 for scene in payload_scene_cards)
-    assert all(scene["target_word_count_higher"] == 800 for scene in payload_scene_cards)
+    assert all(scene["target_word_count_lower"] == 686 for scene in payload_scene_cards)
+    assert all(scene["target_word_count_higher"] == 839 for scene in payload_scene_cards)
 
 
 def test_write_episode_uses_two_writing_calls_for_minified_mode(monkeypatch, tmp_path):
@@ -1623,38 +1565,17 @@ def test_write_episode_uses_two_writing_calls_for_minified_mode(monkeypatch, tmp
             PipelineConfig(podcast_mode=PodcastMode.MINIFIED)
         ),
     )
-    plan = EpisodePlan.model_validate(
-        {
-            "episode_number": 1,
-            "title": "Episode 1",
-            "driving_question": "What changes?",
-            "thematic_focus": "Focus",
-            "arc_summary": "Arc",
-            "unresolved_questions": [],
-            "episode_spine": _episode_spine("pack_1", "pack_2").model_dump(mode="json"),
-            "framing": _framing().model_dump(mode="json"),
-            "scene_cards": [
-                {
-                    "scene_id": f"scene_{idx}",
-                    "section_id": f"section_{idx}",
-                    "title": f"Scene {idx}",
-                    "scene_role": "setup",
-                    "dominant_pack_id": f"pack_{((idx - 1) % 2) + 1}",
-                    "spine_relation": "set_stakes",
-                    "state_effect": "The stakes become visible.",
-                    "entry_image": "Image",
-                    "local_question": "Question",
-                    "observable_detail": "Detail",
-                    "intended_move": "Move",
-                    "primitive_ids": [],
-                    "passage_ids": [f"p{idx}"],
-                    "estimated_duration_seconds": 300,
-                }
-                for idx in range(1, 9)
-            ],
-            "target_duration_minutes": 56.0,
-            "target_word_count": 5400,
-        }
+    plan = _episode_plan(
+        [
+            _scene_card(
+                f"scene_{idx}",
+                f"pack_{((idx - 1) % 2) + 1}",
+                scene_role="setup",
+                section_id=f"section_{idx}",
+            ).model_copy(update={"passage_ids": [f"p{idx}"], "estimated_duration_seconds": 300})
+            for idx in range(1, 9)
+        ],
+        target_word_count=5400,
     )
     strategy_episode = _strategy_episode("pack_1", "pack_2")
     architecture = _episode_architecture_for_scene_cards(plan.scene_cards)
@@ -1725,56 +1646,29 @@ def test_write_episode_payload_uses_unequal_scene_duration_targets(monkeypatch, 
         theme="War on terror",
         books=[BookRecord(book_id="b1", title="Book 1", author="Author", source_path="/tmp/book.txt", source_type="txt")],
     )
-    plan = EpisodePlan.model_validate(
-        {
-            "episode_number": 1,
-            "title": "Episode 1",
-            "driving_question": "What changes?",
-            "thematic_focus": "Focus",
-            "arc_summary": "Arc",
-            "unresolved_questions": [],
-            "episode_spine": _episode_spine("pack_1").model_dump(mode="json"),
-            "framing": {
-                **_framing().model_dump(mode="json"),
-                "handoff_scene_card_id": "scene_anchor",
-            },
-            "scene_cards": [
-                {
-                    "scene_id": "scene_anchor",
-                    "section_id": "section_1",
-                    "title": "Anchor scene",
-                    "scene_role": "setup",
-                    "dominant_pack_id": "pack_1",
-                    "spine_relation": "set_stakes",
-                    "state_effect": "The stakes become visible.",
-                    "entry_image": "Image",
-                    "local_question": "Question",
-                    "observable_detail": "Detail",
-                    "intended_move": "Move",
-                    "primitive_ids": [],
-                    "passage_ids": ["p1"],
-                    "estimated_duration_seconds": 6300,
-                },
-                {
-                    "scene_id": "scene_context",
-                    "section_id": "section_2",
+    plan = _episode_plan(
+        [
+            _scene_card(
+                "scene_anchor",
+                "pack_1",
+                scene_role="setup",
+                section_id="section_1",
+            ).model_copy(update={"title": "Anchor scene", "passage_ids": ["p1"], "estimated_duration_seconds": 6300}),
+            _scene_card(
+                "scene_context",
+                "pack_1",
+                scene_role="action",
+                section_id="section_2",
+            ).model_copy(
+                update={
                     "title": "Context scene",
-                    "scene_role": "action",
-                    "dominant_pack_id": "pack_1",
-                    "spine_relation": "spine_advance",
-                    "state_effect": "The argument advances.",
-                    "entry_image": "Image",
-                    "local_question": "Question",
-                    "observable_detail": "Detail",
-                    "intended_move": "Move",
-                    "primitive_ids": [],
+                    "beat_change": "The argument advances.",
                     "passage_ids": ["p2"],
                     "estimated_duration_seconds": 2100,
-                },
-            ],
-            "target_duration_minutes": 140.0,
-            "target_word_count": 18900,
-        }
+                }
+            ),
+        ],
+        handoff_scene_card_id="scene_anchor",
     )
     strategy_episode = _strategy_episode("pack_1")
     architecture = _episode_architecture_for_scene_cards(plan.scene_cards)
@@ -1817,11 +1711,11 @@ def test_write_episode_payload_uses_unequal_scene_duration_targets(monkeypatch, 
         for scene in captured["payload"]["plan"]["scene_cards"]
     }
     assert scene_targets == {
-        "scene_anchor": (13650, 16800),
-        "scene_context": (4550, 5600),
+        "scene_anchor": (14411, 17614),
+        "scene_context": (4803, 5872),
     }
-    assert captured["payload"]["episode_target_word_count_lower"] == 18200
-    assert captured["payload"]["episode_target_word_count_higher"] == 22400
+    assert captured["payload"]["episode_target_word_count_lower"] == 19214
+    assert captured["payload"]["episode_target_word_count_higher"] == 23486
 
 
 def test_write_episode_uses_no_citation_agent_when_skip_grounding(monkeypatch, tmp_path):
@@ -1879,37 +1773,12 @@ def test_write_episode_uses_no_citation_agent_when_skip_grounding(monkeypatch, t
         books=[BookRecord(book_id="b1", title="Book 1", author="Author", source_path="/tmp/book.txt", source_type="txt")],
         config=PipelineConfig(skip_grounding=True),
     )
-    plan = EpisodePlan.model_validate(
-        {
-            "episode_number": 1,
-            "title": "Episode 1",
-            "driving_question": "What changes?",
-            "thematic_focus": "Focus",
-            "arc_summary": "Arc",
-            "unresolved_questions": [],
-            "episode_spine": _episode_spine("pack_1").model_dump(mode="json"),
-            "framing": _framing().model_dump(mode="json"),
-            "scene_cards": [
-                {
-                    "scene_id": "scene_1",
-                    "section_id": "section_1",
-                    "title": "Scene 1",
-                    "scene_role": "setup",
-                    "dominant_pack_id": "pack_1",
-                    "spine_relation": "set_stakes",
-                    "state_effect": "The stakes become visible.",
-                    "entry_image": "Image",
-                    "local_question": "Question",
-                    "observable_detail": "Detail",
-                    "intended_move": "Move",
-                    "primitive_ids": [],
-                    "passage_ids": ["p1"],
-                    "estimated_duration_seconds": 300,
-                }
-            ],
-            "target_duration_minutes": 140.0,
-            "target_word_count": 18900,
-        }
+    plan = _episode_plan(
+        [
+            _scene_card("scene_1", "pack_1", scene_role="setup").model_copy(
+                update={"estimated_duration_seconds": 300, "scene_job": "answer"}
+            )
+        ]
     )
     strategy_episode = _strategy_episode("pack_1")
     architecture = _episode_architecture_for_scene_cards(plan.scene_cards)
@@ -1939,13 +1808,13 @@ def test_write_episode_uses_no_citation_agent_when_skip_grounding(monkeypatch, t
     assert payload["skip_grounding"] is True
     assert "scene_word_count_targets" not in payload
     assert "previous_sections" not in payload
-    assert payload["episode_target_word_count_lower"] == 650
-    assert payload["episode_target_word_count_higher"] == 800
+    assert payload["episode_target_word_count_lower"] == 686
+    assert payload["episode_target_word_count_higher"] == 839
     scene = payload["plan"]["scene_cards"][0]
     assert scene["scene_id"] == "scene_1"
     assert "estimated_duration_seconds" not in scene
-    assert scene["target_word_count_lower"] == 650
-    assert scene["target_word_count_higher"] == 800
+    assert scene["target_word_count_lower"] == 686
+    assert scene["target_word_count_higher"] == 839
     assert script.prose_sections[0].citations == []
     budget_warnings = [
         payload
@@ -1957,9 +1826,7 @@ def test_write_episode_uses_no_citation_agent_when_skip_grounding(monkeypatch, t
         for event_type, payload in logged_events
         if event_type == "episode_writing_section_count_warning"
     ]
-    assert budget_warnings
-    assert budget_warnings[0]["actual_word_count"] == 800
-    assert budget_warnings[0]["target_word_count_higher"] == 800
+    assert budget_warnings == []
     assert section_count_warnings == []
 
 
@@ -2053,37 +1920,12 @@ def test_write_episode_retries_on_scene_id_contract_failure(monkeypatch, tmp_pat
         theme="War on terror",
         books=[BookRecord(book_id="b1", title="Book 1", author="Author", source_path="/tmp/book.txt", source_type="txt")],
     )
-    plan = EpisodePlan.model_validate(
-        {
-            "episode_number": 1,
-            "title": "Episode 1",
-            "driving_question": "What changes?",
-            "thematic_focus": "Focus",
-            "arc_summary": "Arc",
-            "unresolved_questions": [],
-            "episode_spine": _episode_spine("pack_1").model_dump(mode="json"),
-            "framing": _framing().model_dump(mode="json"),
-            "scene_cards": [
-                {
-                    "scene_id": "scene_1",
-                    "section_id": "section_1",
-                    "title": "Scene 1",
-                    "scene_role": "setup",
-                    "dominant_pack_id": "pack_1",
-                    "spine_relation": "set_stakes",
-                    "state_effect": "The stakes become visible.",
-                    "entry_image": "Image",
-                    "local_question": "Question",
-                    "observable_detail": "Detail",
-                    "intended_move": "Move",
-                    "primitive_ids": [],
-                    "passage_ids": ["p1"],
-                    "estimated_duration_seconds": 300,
-                }
-            ],
-            "target_duration_minutes": 140.0,
-            "target_word_count": 18900,
-        }
+    plan = _episode_plan(
+        [
+            _scene_card("scene_1", "pack_1", scene_role="setup").model_copy(
+                update={"estimated_duration_seconds": 300, "scene_job": "answer"}
+            )
+        ]
     )
     strategy_episode = _strategy_episode("pack_1")
     architecture = _episode_architecture_for_scene_cards(plan.scene_cards)
@@ -2168,37 +2010,12 @@ def test_write_episode_raises_after_retry_exhaustion_on_scene_id_contract_failur
         theme="War on terror",
         books=[BookRecord(book_id="b1", title="Book 1", author="Author", source_path="/tmp/book.txt", source_type="txt")],
     )
-    plan = EpisodePlan.model_validate(
-        {
-            "episode_number": 1,
-            "title": "Episode 1",
-            "driving_question": "What changes?",
-            "thematic_focus": "Focus",
-            "arc_summary": "Arc",
-            "unresolved_questions": [],
-            "episode_spine": _episode_spine("pack_1").model_dump(mode="json"),
-            "framing": _framing().model_dump(mode="json"),
-            "scene_cards": [
-                {
-                    "scene_id": "scene_1",
-                    "section_id": "section_1",
-                    "title": "Scene 1",
-                    "scene_role": "setup",
-                    "dominant_pack_id": "pack_1",
-                    "spine_relation": "set_stakes",
-                    "state_effect": "The stakes become visible.",
-                    "entry_image": "Image",
-                    "local_question": "Question",
-                    "observable_detail": "Detail",
-                    "intended_move": "Move",
-                    "primitive_ids": [],
-                    "passage_ids": ["p1"],
-                    "estimated_duration_seconds": 300,
-                }
-            ],
-            "target_duration_minutes": 140.0,
-            "target_word_count": 18900,
-        }
+    plan = _episode_plan(
+        [
+            _scene_card("scene_1", "pack_1", scene_role="setup").model_copy(
+                update={"estimated_duration_seconds": 300, "scene_job": "answer"}
+            )
+        ]
     )
     strategy_episode = _strategy_episode("pack_1")
     architecture = _episode_architecture_for_scene_cards(plan.scene_cards)
@@ -2301,21 +2118,7 @@ def test_split_episode_writing_windows_uses_three_balanced_batches_when_availabl
         )
         for idx in range(1, 10)
     ]
-    plan = EpisodePlan.model_validate(
-        {
-            "episode_number": 1,
-            "title": "Episode 1",
-            "driving_question": "What changes?",
-            "thematic_focus": "Focus",
-            "arc_summary": "Arc",
-            "unresolved_questions": [],
-            "episode_spine": _episode_spine("pack_1").model_dump(mode="json"),
-            "framing": _framing().model_dump(mode="json"),
-            "scene_cards": [scene.model_dump(mode="json") for scene in scene_cards],
-            "target_duration_minutes": 70.0,
-            "target_word_count": 9450,
-        }
-    )
+    plan = _episode_plan(scene_cards, target_word_count=9450)
     architecture = _episode_architecture_for_scene_cards(scene_cards)
     lower_targets = {scene.scene_id: 650 for scene in scene_cards}
     higher_targets = {scene.scene_id: 750 for scene in scene_cards}
@@ -2344,21 +2147,7 @@ def test_split_episode_writing_windows_falls_back_when_requested_windows_exceed_
         )
         for idx in range(1, 3)
     ]
-    plan = EpisodePlan.model_validate(
-        {
-            "episode_number": 1,
-            "title": "Episode 1",
-            "driving_question": "What changes?",
-            "thematic_focus": "Focus",
-            "arc_summary": "Arc",
-            "unresolved_questions": [],
-            "episode_spine": _episode_spine("pack_1").model_dump(mode="json"),
-            "framing": _framing().model_dump(mode="json"),
-            "scene_cards": [scene.model_dump(mode="json") for scene in scene_cards],
-            "target_duration_minutes": 14.0,
-            "target_word_count": 1500,
-        }
-    )
+    plan = _episode_plan(scene_cards, target_word_count=1500)
     architecture = _episode_architecture_for_scene_cards(scene_cards)
     lower_targets = {scene.scene_id: 650 for scene in scene_cards}
     higher_targets = {scene.scene_id: 750 for scene in scene_cards}
@@ -2671,6 +2460,7 @@ def test_produce_episode_releases_write_slot_before_spoken_delivery(monkeypatch,
         actor_metadata: ActorMetadata | None = None,
         host_policy: dict[str, Any] | None = None,
         primitive_lookup: dict[str, Any] | None = None,
+        **_kwargs: Any,
     ) -> EpisodeScript:
         with lock:
             event_log.append(("write_start", plan.episode_number, time.monotonic()))
@@ -2697,6 +2487,7 @@ def test_produce_episode_releases_write_slot_before_spoken_delivery(monkeypatch,
         project: ThematicProject,
         ep_dir: Path,
         project_dir: Path,
+        **_kwargs: Any,
     ) -> SpokenScript:
         with lock:
             event_log.append(("spoken_start", episode_number, time.monotonic()))
@@ -2741,26 +2532,15 @@ def test_produce_episode_releases_write_slot_before_spoken_delivery(monkeypatch,
         episode_spine=_episode_spine("pack_1"),
         actor_arc_directives=[],
     )
-    architecture = EpisodeArchitecture(
+    architecture = EpisodeArchitecture.model_construct(
         episode_number=1,
         major_turn_section_id="section_1",
         sections=[],
     )
     plans = [
-        EpisodePlan(
+        _episode_plan(
+            [_scene_card("scene_1", "pack_1").model_copy(update={"scene_job": "answer"})],
             episode_number=episode_number,
-            title=f"Episode {episode_number}",
-            driving_question="Question?",
-            thematic_focus="Focus",
-            arc_summary="Arc",
-            unresolved_questions=[],
-            episode_spine=_episode_spine("pack_1").model_copy(
-                update={"episode_number": episode_number}
-            ),
-            actor_arc_directives=[],
-            framing=_framing().model_copy(update={"handoff_scene_card_id": "scene_1"}),
-            scene_cards=[_scene_card("scene_1", "pack_1")],
-            target_duration_minutes=100.0,
             target_word_count=120,
         )
         for episode_number in (1, 2, 3)

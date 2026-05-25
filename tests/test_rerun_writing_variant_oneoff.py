@@ -548,8 +548,8 @@ def test_rerun_writing_variant_oneoff_writes_sidecar_outputs_only(monkeypatch, t
     assert calls["project_dir"] == project_dir / "writing_experiments" / variant_script.VARIANT_LABEL
     assert calls["ep_dir"] == experiment_ep_dir
     assert "Treat `address_mode = we` and `address_mode = i` as stance signals" in calls["instructions"]
-    assert "Do not open scenes with companion-tour phrasing" in calls["instructions"]
-    assert calls["host_policy"]["pronoun_policy"]["allow_first_person_singular"] is False
+    assert "Avoid companion-tour phrasing" in calls["instructions"]
+    assert calls["host_policy"]["pronoun_policy"]["allow_first_person_singular"] is True
     assert calls["resolved_model"] == variant_script.DEFAULT_WRITING_MODEL_NAME
 
     assert (experiment_ep_dir / "baseline_episode_script.json").exists()

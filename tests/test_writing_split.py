@@ -377,24 +377,26 @@ def test_write_episode_splits_large_episode_into_two_sequential_parts(
         )
     )
 
-    assert len(captured_payloads) == 2
-    first_payload, second_payload = captured_payloads
+    assert len(captured_payloads) == 4
+    first_payload, second_payload, third_payload, fourth_payload = captured_payloads
     assert [scene["scene_id"] for scene in first_payload["plan"]["scene_cards"]] == [
         "scene_1",
-        "scene_2",
     ]
     assert [scene["scene_id"] for scene in second_payload["plan"]["scene_cards"]] == [
+        "scene_2",
+    ]
+    assert [scene["scene_id"] for scene in third_payload["plan"]["scene_cards"]] == [
         "scene_3",
+    ]
+    assert [scene["scene_id"] for scene in fourth_payload["plan"]["scene_cards"]] == [
         "scene_4",
     ]
-    assert [passage["passage_id"] for passage in first_payload["passages"]] == ["p1", "p2"]
-    assert [passage["passage_id"] for passage in second_payload["passages"]] == ["p3", "p4"]
+    assert [passage["passage_id"] for passage in first_payload["passages"]] == ["p1"]
+    assert [passage["passage_id"] for passage in fourth_payload["passages"]] == ["p4"]
     assert [section["section_id"] for section in first_payload["architecture"]["sections"]] == [
         "section_1",
-        "section_2",
     ]
-    assert [section["section_id"] for section in second_payload["architecture"]["sections"]] == [
-        "section_3",
+    assert [section["section_id"] for section in fourth_payload["architecture"]["sections"]] == [
         "section_4",
     ]
     assert "state_effect" not in first_payload["plan"]["scene_cards"][0]
@@ -402,29 +404,30 @@ def test_write_episode_splits_large_episode_into_two_sequential_parts(
     assert "what_becomes_legible_later" not in second_payload["plan"]["scene_cards"][0]
     assert "prior_window_continuity" not in first_payload
     continuity = second_payload["prior_window_continuity"]
-    assert continuity["completed_scene_count"] == 2
-    assert continuity["completed_scene_ids"] == ["scene_1", "scene_2"]
+    assert continuity["completed_scene_count"] == 1
+    assert continuity["completed_scene_ids"] == ["scene_1"]
     assert set(continuity["last_completed_scene"]) == {
         "scene_id",
         "section_id",
         "scene_role",
-        "scene_function",
+        "scene_job",
         "spine_relation",
         "withhold_until",
         "intended_move",
     }
-    assert continuity["last_completed_scene"]["scene_id"] == "scene_2"
+    assert continuity["last_completed_scene"]["scene_id"] == "scene_1"
     assert continuity["live_unresolved_questions"] == ["What follows from the hinge?"]
     assert continuity["carry_forward_threads"][0].startswith(
         "Keep this tension live without restating it explicitly:"
     )
-    assert continuity["tail_excerpt"] == "Draft for scene_1. Draft for scene_2."
+    assert continuity["tail_excerpt"] == "Draft for scene_1."
     assert [actor["actor_id"] for actor in second_payload["actor_metadata"]["actors"]] == [
-        "actor_3",
-        "actor_4",
+        "actor_2",
     ]
     assert (tmp_path / "stage_artifacts" / "write_episode_1_part_1" / "input.json").exists()
     assert (tmp_path / "stage_artifacts" / "write_episode_1_part_2" / "input.json").exists()
+    assert (tmp_path / "stage_artifacts" / "write_episode_1_part_3" / "input.json").exists()
+    assert (tmp_path / "stage_artifacts" / "write_episode_1_part_4" / "input.json").exists()
     assert [scene_id for section in script.prose_sections for scene_id in section.scene_card_ids] == [
         "scene_1",
         "scene_2",
@@ -509,15 +512,19 @@ def test_write_episode_retries_failed_second_part_from_start(
         )
     )
 
-    assert len(captured_payloads) == 4
+    assert len(captured_payloads) == 6
     assert "prior_window_continuity" not in captured_payloads[0]
     assert "prior_window_continuity" in captured_payloads[1]
     assert "prior_window_continuity" not in captured_payloads[2]
     assert "prior_window_continuity" in captured_payloads[3]
+    assert "prior_window_continuity" in captured_payloads[4]
+    assert "prior_window_continuity" in captured_payloads[5]
     assert "writing_feedback" not in captured_payloads[0]
     assert "writing_feedback" not in captured_payloads[1]
     assert "writing_feedback" not in captured_payloads[2]
     assert "writing_feedback" in captured_payloads[3]
+    assert "writing_feedback" not in captured_payloads[4]
+    assert "writing_feedback" not in captured_payloads[5]
     assert "scene_renamed" in str(captured_payloads[3]["writing_feedback"])
     assert [scene_id for section in script.prose_sections for scene_id in section.scene_card_ids] == [
         "scene_1",
@@ -603,9 +610,11 @@ def test_write_episode_retries_transient_failure_for_second_part(
         )
 
     assert captured_calls == [
-        {"attempt": 1, "scene_ids": ["scene_1", "scene_2"]},
-        {"attempt": 1, "scene_ids": ["scene_3", "scene_4"]},
-        {"attempt": 2, "scene_ids": ["scene_3", "scene_4"]},
+        {"attempt": 1, "scene_ids": ["scene_1"]},
+        {"attempt": 1, "scene_ids": ["scene_2"]},
+        {"attempt": 2, "scene_ids": ["scene_2"]},
+        {"attempt": 1, "scene_ids": ["scene_3"]},
+        {"attempt": 1, "scene_ids": ["scene_4"]},
     ]
     assert [scene_id for section in script.prose_sections for scene_id in section.scene_card_ids] == [
         "scene_1",

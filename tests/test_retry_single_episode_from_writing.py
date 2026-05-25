@@ -19,6 +19,7 @@ from podcast_agent.schemas.models import (
     EpisodeScript,
     EventPrimitive,
     NarrativeStrategy,
+    NarrativeState,
     PipelineConfig,
     PrimitiveSubstrate,
     ProjectStatus,
@@ -478,6 +479,16 @@ def _build_project_dir(tmp_path: Path) -> tuple[Path, list[EpisodePlan]]:
         project_dir / "episodes" / "1" / "spoken_script.json",
         _spoken_script(existing_plan, "Episode 1"),
     )
+    for episode_number in (1, 2):
+        ep_dir = project_dir / "episodes" / str(episode_number)
+        _write_json(
+            ep_dir / "narrative_state_pre.json",
+            NarrativeState(project_id="run_1"),
+        )
+        _write_json(
+            ep_dir / "narrative_state_post.json",
+            NarrativeState(project_id="run_1"),
+        )
 
     return project_dir, plans
 
@@ -511,6 +522,7 @@ def test_retry_single_episode_from_writing_retries_target_episode_and_regenerate
             semaphore: asyncio.Semaphore,
             spoken_semaphore: asyncio.Semaphore | None = None,
             series_explanation_registry: list[Any] | None = None,
+            **_kwargs: Any,
         ) -> tuple[int, SpokenScript]:
             ep_dir = project_dir / "episodes" / str(plan.episode_number)
             ep_dir.mkdir(parents=True, exist_ok=True)

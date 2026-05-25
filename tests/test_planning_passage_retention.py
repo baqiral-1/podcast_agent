@@ -32,6 +32,7 @@ from podcast_agent.schemas.models import (
     ExtractedPassage,
     MechanismPrimitive,
     NarrativeStrategy,
+    NarrativeStateReconciliation,
     PipelineConfig,
     PrimitiveSubstrate,
     ReadingPrimitive,
@@ -184,6 +185,78 @@ def _planning_response(
         "listener_problem"
     )
     section_ids = [section["section_id"] for section in architecture["sections"]]
+    scene_cards: list[dict[str, object]] = []
+    for idx, section_id in enumerate(section_ids[:-2]):
+        scene_cards.append(
+            {
+                "scene_id": f"scene_{len(scene_cards) + 1}",
+                "section_id": section_id,
+                "title": f"Scene {len(scene_cards) + 1}",
+                "scene_role": "setup" if idx == 0 else "reaction",
+                "scene_job": "build",
+                "dominant_primitive_id": "core_1",
+                "spine_relation": "set_stakes" if idx == 0 else "spine_advance",
+                "state_effect": "The stakes become visible.",
+                "entry_image": "Image",
+                "local_question": "Question?",
+                "observable_detail": "Detail",
+                "intended_move": "Move",
+                "passage_ids": ["p_core"],
+                "host_moves": _host_moves_payload(),
+                "primitive_ids": list(architecture["sections"][idx]["primitive_ids"]),
+                "estimated_duration_seconds": 60,
+            }
+        )
+    if len(section_ids) >= 3:
+        answer_section_id = section_ids[-2]
+        answer_idx = len(section_ids) - 2
+        scene_cards.append(
+            {
+                "scene_id": f"scene_{len(scene_cards) + 1}",
+                "section_id": answer_section_id,
+                "title": f"Scene {len(scene_cards) + 1}",
+                "scene_role": "reaction",
+                "scene_job": "answer",
+                "dominant_primitive_id": "core_1",
+                "spine_relation": "spine_advance",
+                "state_effect": "The stakes become visible.",
+                "entry_image": "Image",
+                "local_question": "Question?",
+                "observable_detail": "Detail",
+                "intended_move": "Move",
+                "passage_ids": ["p_core"],
+                "host_moves": _host_moves_payload(),
+                "primitive_ids": list(architecture["sections"][answer_idx]["primitive_ids"]),
+                "estimated_duration_seconds": 60,
+            }
+        )
+    final_section_id = section_ids[-1]
+    final_idx = len(section_ids) - 1
+    final_scene_specs: list[str] = []
+    if len(section_ids) < 3:
+        final_scene_specs.append("answer")
+    final_scene_specs.extend(["residue", "close"])
+    for scene_job in final_scene_specs:
+        scene_cards.append(
+            {
+                "scene_id": f"scene_{len(scene_cards) + 1}",
+                "section_id": final_section_id,
+                "title": f"Scene {len(scene_cards) + 1}",
+                "scene_role": "reaction",
+                "scene_job": scene_job,
+                "dominant_primitive_id": "core_1",
+                "spine_relation": "spine_advance",
+                "state_effect": "The stakes become visible.",
+                "entry_image": "Image",
+                "local_question": "Question?",
+                "observable_detail": "Detail",
+                "intended_move": "Move",
+                "passage_ids": ["p_core"],
+                "host_moves": _host_moves_payload(),
+                "primitive_ids": list(architecture["sections"][final_idx]["primitive_ids"]),
+                "estimated_duration_seconds": 60,
+            }
+        )
     return orchestrator.episode_planning_agent.response_model.model_validate(
         {
             "episode_number": architecture["episode_number"],
@@ -193,28 +266,23 @@ def _planning_response(
                 "opening_question": opening_question or "Question?",
                 "handoff_scene_card_id": "scene_1",
             },
-            "scene_cards": [
-                {
-                    "scene_id": f"scene_{idx + 1}",
-                    "section_id": section_id,
-                    "title": f"Scene {idx + 1}",
-                    "scene_role": "setup" if idx == 0 else "reaction",
-                    "dominant_primitive_id": "core_1",
-                    "spine_relation": "set_stakes" if idx == 0 else "spine_advance",
-                    "state_effect": "The stakes become visible.",
-                    "entry_image": "Image",
-                    "local_question": "Question?",
-                    "observable_detail": "Detail",
-                    "intended_move": "Move",
-                    "passage_ids": ["p_core"],
-                    "host_moves": _host_moves_payload(),
-                    "primitive_ids": list(
-                        architecture["sections"][idx]["primitive_ids"]
-                    ),
-                    "estimated_duration_seconds": 60,
-                }
-                for idx, section_id in enumerate(section_ids)
-            ],
+            "scene_cards": scene_cards,
+            "answer_scene_card_id": next(
+                (
+                    scene["scene_id"]
+                    for scene in scene_cards
+                    if scene.get("scene_job") == "answer"
+                ),
+                None,
+            ),
+            "residue_scene_card_id": next(
+                (
+                    scene["scene_id"]
+                    for scene in scene_cards
+                    if scene.get("scene_job") == "residue"
+                ),
+                None,
+            ),
         }
     )
 
@@ -863,10 +931,8 @@ def test_build_host_move_plan_diagnostics_warns_on_low_coverage() -> None:
         narrator_profile=SeriesNarratorProfile(),
     )
 
-    assert any(
-        warning.startswith("host_full_phase_coverage_below_min:") for warning in warnings
-    )
-    assert diagnostics["full_phase_scene_coverage"] == pytest.approx(0.25)
+    assert "host_phase_overcoverage_unjustified: scene_1" in warnings
+    assert diagnostics["scenes_with_2_plus_phases_count"] == 1
 
 
 def test_build_host_move_text_diagnostics_warns_on_scene_collapse() -> None:
@@ -986,9 +1052,9 @@ def test_build_host_move_text_diagnostics_flags_editorial_scaffolding() -> None:
         "episode_management_phrase",
         "missing_scene_anchor_overlap",
     ]
-    assert diagnostics["editorial_host_note_count"] == 2
-    assert diagnostics["sections_with_editorial_host_note_pressure"] == ["section_01"]
-    assert diagnostics["editorial_host_note_examples"][0]["host_note"] == (
+    assert diagnostics["editorial_host_target_count"] == 2
+    assert diagnostics["sections_with_editorial_host_target_pressure"] == ["section_01"]
+    assert diagnostics["editorial_host_target_examples"][0]["host_target"] == (
         "State the through-line."
     )
 
@@ -1198,6 +1264,12 @@ def test_build_episode_architectures_uses_only_strategy_actor_directives(
     orchestrator = PipelineOrchestrator()
     captured_payload: dict[str, object] = {}
 
+    async def fake_reconcile_narrative_state(**kwargs) -> NarrativeStateReconciliation:
+        return NarrativeStateReconciliation(
+            episode_number=kwargs["strategy_episode"].episode_number,
+            state_post=kwargs["narrative_state_pre"].model_copy(deep=True),
+        )
+
     def fake_architecture_run(payload: dict) -> EpisodeArchitecture:
         captured_payload.update(payload)
         return _episode_architecture(
@@ -1240,6 +1312,7 @@ def test_build_episode_architectures_uses_only_strategy_actor_directives(
         )
 
     orchestrator.episode_architecture_agent.run = fake_architecture_run
+    orchestrator._reconcile_narrative_state = fake_reconcile_narrative_state  # type: ignore[method-assign]
 
     project = ThematicProject(
         project_id="proj",
@@ -1327,8 +1400,8 @@ def test_build_episode_architectures_uses_only_strategy_actor_directives(
         }
     )
 
-    architectures, _metrics = asyncio.run(
-        orchestrator._build_episode_architectures(
+    architectures, *_rest = asyncio.run(
+        orchestrator._build_episode_architectures_with_narrative_state(
             project,
             synthesis_map,
             strategy,
