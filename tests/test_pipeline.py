@@ -27,6 +27,7 @@ from podcast_agent.pipeline.orchestrator import (
     _build_episode_architecture_realization,
     _estimate_duration_seconds_from_words,
     _flatten_synthesis_primitives,
+    _normalize_writing_section_outputs,
     _occurrence_spillover_weight,
     _occurrence_weight,
     _prioritize_cross_book_pairs,
@@ -1958,6 +1959,35 @@ def test_write_episode_uses_no_citation_agent_when_skip_grounding(monkeypatch, t
     assert budget_warnings[0]["actual_word_count"] == 800
     assert budget_warnings[0]["target_word_count_higher"] == 800
     assert section_count_warnings == []
+
+
+def test_normalize_writing_section_outputs_backfills_compact_section_metadata():
+    scene_cards = [
+        _scene_card("scene_1", "pack_1", section_id="section_1"),
+        _scene_card("scene_2", "pack_2", section_id="section_2"),
+    ]
+    architecture = _episode_architecture_for_scene_cards(scene_cards)
+    result = SimpleNamespace(
+        prose_sections=[
+            SimpleNamespace(text="Opening text."),
+            SimpleNamespace(text="Closing text."),
+        ]
+    )
+
+    normalized = _normalize_writing_section_outputs(
+        result=result,
+        architecture=architecture,
+        scene_cards=scene_cards,
+        episode_number=1,
+        skip_grounding=True,
+    )
+
+    assert normalized[0]["section_id"] == "section_1"
+    assert normalized[0]["scene_card_ids"] == ["scene_1"]
+    assert normalized[0]["movement_goal"] == "opening"
+    assert normalized[1]["section_id"] == "section_2"
+    assert normalized[1]["scene_card_ids"] == ["scene_2"]
+    assert normalized[1]["movement_goal"] == "closing"
 
 
 def test_write_episode_retries_on_scene_id_contract_failure(monkeypatch, tmp_path):

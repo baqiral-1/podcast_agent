@@ -44,6 +44,19 @@ _TRANSIENT_API_STATUS_MESSAGE_SNIPPETS = (
 )
 
 
+def _contains_transient_api_status_snippet(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        haystack = value.lower()
+    else:
+        try:
+            haystack = json.dumps(value, default=str, sort_keys=True).lower()
+        except Exception:
+            haystack = str(value).lower()
+    return any(snippet in haystack for snippet in _TRANSIENT_API_STATUS_MESSAGE_SNIPPETS)
+
+
 def _iter_exception_chain(exc: Exception) -> Sequence[BaseException]:
     seen: set[int] = set()
     stack: list[BaseException] = [exc]
@@ -146,8 +159,19 @@ def is_api_status_transient_error(exc: Exception) -> bool:
     if "ratelimit" in error_name:
         return True
 
-    message = str(exc).lower()
-    if any(snippet in message for snippet in _TRANSIENT_API_STATUS_MESSAGE_SNIPPETS):
+    if _contains_transient_api_status_snippet(getattr(exc, "type", None)):
+        return True
+    if _contains_transient_api_status_snippet(getattr(exc, "body", None)):
+        return True
+    response = getattr(exc, "response", None)
+    if response is not None:
+        if _contains_transient_api_status_snippet(getattr(response, "text", None)):
+            return True
+        if _contains_transient_api_status_snippet(getattr(response, "content", None)):
+            return True
+
+    message = str(exc)
+    if _contains_transient_api_status_snippet(message):
         return True
     if "internalservererror" in error_name:
         return True

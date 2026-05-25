@@ -8,7 +8,6 @@ _TRANSPORT_SCHEMA_NAMES = {
     "primitive_substrate_extraction",
     "narrative_strategy_enrichment",
     "narrative_strategy_skeleton",
-    "narrative_strategy",
     "episode_architecture",
     "episode_planning",
 }
@@ -53,6 +52,42 @@ _BASE_CANONICAL_TO_ALIAS: dict[str, str] = {
     "strategy_skeleton": "skeleton",
     "episode_scene_candidates": "episode_scenes",
 }
+_SCHEMA_CANONICAL_TO_ALIAS: dict[str, dict[str, str]] = {
+    "episode_planning": {
+        "episode_number": "ep",
+        "framing": "frame",
+        "opening_image": "open_img",
+        "threat_or_unresolved_action": "threat",
+        "opening_question": "open_q",
+        "handoff_scene_card_id": "handoff",
+        "answer_scene_card_id": "answer_sid",
+        "residue_scene_card_id": "residue_sid",
+        "scene_id": "sid",
+        "section_id": "sec",
+        "title": "ttl",
+        "scene_role": "role",
+        "scene_job": "job",
+        "beat_change": "beat",
+        "required": "req",
+        "strongly_preferred": "pref",
+        "if_room": "room",
+        "entry_image": "img",
+        "observable_detail": "detail",
+        "estimated_duration_seconds": "dur",
+        "word_count_priority": "wc",
+        "host_moves": "moves",
+        "move_type": "type",
+        "target": "tgt",
+        "surface_mode": "surf",
+        "address_mode": "addr",
+        "withhold_until": "withhold",
+        "reveal_phase": "phase",
+        "reveal_scene_id": "reveal_sid",
+        "surrogate_label": "label",
+        "primitive_ids": "prims",
+        "authorial_passage_ids": "authorial_ids",
+    }
+}
 _PRIMITIVE_CANONICAL_TO_ALIAS: dict[str, str] = {
     **_BASE_CANONICAL_TO_ALIAS,
     "actor_ids": "actors",
@@ -77,7 +112,10 @@ def _transport_key_map(schema_name: str, *, reverse: bool) -> dict[str, str]:
     ):
         key_map = _PRIMITIVE_CANONICAL_TO_ALIAS
     else:
-        key_map = _BASE_CANONICAL_TO_ALIAS
+        key_map = {
+            **_BASE_CANONICAL_TO_ALIAS,
+            **_SCHEMA_CANONICAL_TO_ALIAS.get(schema_name, {}),
+        }
     if reverse:
         return {alias: canonical for canonical, alias in key_map.items()}
     return key_map

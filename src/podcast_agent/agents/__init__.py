@@ -3,7 +3,6 @@
 from podcast_agent.agents.book_summary import BookSummaryAgent
 from podcast_agent.agents.chapter_summary import ChapterSummaryAgent
 from podcast_agent.agents.episode_architecture import EpisodeArchitectureAgent
-from podcast_agent.agents.narrative_strategy import NarrativeStrategyAgent
 from podcast_agent.agents.narrative_strategy_enrichment import (
     NarrativeStrategyEnrichmentAgent,
 )
@@ -33,7 +32,6 @@ __all__ = [
     "EpisodeArchitectureAgent",
     "EpisodePlanningAgent",
     "GroundingValidationAgent",
-    "NarrativeStrategyAgent",
     "NarrativeStrategyEnrichmentAgent",
     "NarrativeStrategySkeletonAgent",
     "PassageExtractionAgent",

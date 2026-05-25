@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import inspect
 import json
 import logging
 from pathlib import Path
@@ -67,6 +66,13 @@ STRICT_TRACKED_FILES_WITH_PLAN_INPUTS = (
     "narrative_strategy.json",
     "episode_architectures.json",
     "series_plan.json",
+)
+STRICT_TRACKED_FILES_WITH_EPISODE_PLANNING_INPUTS = (
+    *STRICT_TRACKED_FILES,
+    "scene_discovery.json",
+    "retained_primitives.json",
+    "narrative_strategy.json",
+    "episode_architectures.json",
 )
 STRICT_TRACKED_FILES_WITH_RETAINED_PRIMITIVES = (
     *STRICT_TRACKED_FILES,
@@ -268,78 +274,14 @@ async def _plan_series_for_resume(
     dict[int, NarrativeState],
     dict[str, Any],
 ]:
-    if hasattr(orchestrator, "_plan_series_with_narrative_state"):
-        return await orchestrator._plan_series_with_narrative_state(
-            project=project,
-            synthesis_map=synthesis_map,
-            strategy=strategy,
-            corpus=corpus,
-            project_dir=project_dir,
-            actor_metadata=actor_metadata,
-            scene_discovery=scene_discovery,
-        )
-
-    build_architectures_kwargs: dict[str, Any] = {
-        "project": project,
-        "synthesis_map": synthesis_map,
-        "strategy": strategy,
-        "corpus": corpus,
-        "project_dir": project_dir,
-        "actor_metadata": actor_metadata,
-    }
-    build_architectures_signature = inspect.signature(
-        orchestrator._build_episode_architectures
-    )
-    if "scene_discovery" in build_architectures_signature.parameters:
-        build_architectures_kwargs["scene_discovery"] = scene_discovery
-    episode_architectures, architecture_metrics = await orchestrator._build_episode_architectures(
-        **build_architectures_kwargs
-    )
-    episode_numbers = [episode.episode_number for episode in episode_architectures]
-    try:
-        narrative_state_pre_by_episode, narrative_state_post_by_episode = (
-            _load_episode_narrative_states(project_dir, episode_numbers)
-        )
-    except RuntimeError:
-        current_state = NarrativeState(project_id=project.project_id, next_episode_number=1)
-        narrative_state_pre_by_episode = {}
-        narrative_state_post_by_episode = {}
-        for episode_number in episode_numbers:
-            narrative_state_pre_by_episode[episode_number] = current_state.model_copy(
-                deep=True
-            )
-            current_state = current_state.model_copy(
-                update={"next_episode_number": episode_number + 1}
-            )
-            narrative_state_post_by_episode[episode_number] = current_state.model_copy(
-                deep=True
-            )
-    plan_series_kwargs: dict[str, Any] = {
-        "project": project,
-        "synthesis_map": synthesis_map,
-        "strategy": strategy,
-        "episode_architectures": episode_architectures,
-        "corpus": corpus,
-        "project_dir": project_dir,
-        "actor_metadata": actor_metadata,
-    }
-    plan_series_signature = inspect.signature(orchestrator._plan_series)
-    if "narrative_state_pre_by_episode" in plan_series_signature.parameters:
-        plan_series_kwargs["narrative_state_pre_by_episode"] = (
-            narrative_state_pre_by_episode
-        )
-    episode_plans, planning_metrics = await orchestrator._plan_series(
-        **plan_series_kwargs
-    )
-    return (
-        episode_architectures,
-        episode_plans,
-        narrative_state_pre_by_episode,
-        narrative_state_post_by_episode,
-        {
-            "episode_architecture": architecture_metrics,
-            "episode_planning": planning_metrics,
-        },
+    return await orchestrator._plan_series_with_narrative_state(
+        project=project,
+        synthesis_map=synthesis_map,
+        strategy=strategy,
+        corpus=corpus,
+        project_dir=project_dir,
+        actor_metadata=actor_metadata,
+        scene_discovery=scene_discovery,
     )
 
 
@@ -536,11 +478,6 @@ async def _produce_from_persisted_plan(
         )
     )
     retained_primitive_lookup = _flatten_synthesis_primitives(synthesis_map)
-    produce_episode_signature = inspect.signature(orchestrator._produce_episode)
-    produce_episode_supports_state = (
-        "narrative_state_pre" in produce_episode_signature.parameters
-        and "narrative_state_post" in produce_episode_signature.parameters
-    )
     ep_tasks = [
         orchestrator._produce_episode(
             plan,
@@ -559,18 +496,8 @@ async def _produce_from_persisted_plan(
             semaphore=sem,
             spoken_semaphore=spoken_sem,
             series_explanation_registry=strategy.series_explanation_registry,
-            **(
-                {
-                    "narrative_state_pre": narrative_state_pre_by_episode[
-                        plan.episode_number
-                    ],
-                    "narrative_state_post": narrative_state_post_by_episode[
-                        plan.episode_number
-                    ],
-                }
-                if produce_episode_supports_state
-                else {}
-            ),
+            narrative_state_pre=narrative_state_pre_by_episode[plan.episode_number],
+            narrative_state_post=narrative_state_post_by_episode[plan.episode_number],
         )
         for plan in episode_plans
     ]
@@ -720,6 +647,13 @@ async def resume_from_synthesis_stage(
                 threshold=project.config.synthesis_quality_threshold,
             )
 
+        scene_discovery = await orchestrator._discover_scenes(
+            project=project,
+            synthesis_map=synthesis_primitives,
+            corpus=corpus,
+            project_dir=project_dir,
+            actor_metadata=actor_metadata,
+        )
         (
             strategy,
             strategy_actor_metrics,
@@ -727,6 +661,7 @@ async def resume_from_synthesis_stage(
             project=project,
             synthesis_map=synthesis_primitives,
             project_dir=project_dir,
+            scene_discovery=scene_discovery,
             actor_metadata=actor_metadata,
         )
         actor_metrics["narrative_strategy"] = strategy_actor_metrics
@@ -757,6 +692,7 @@ async def resume_from_synthesis_stage(
             corpus=corpus,
             project_dir=project_dir,
             actor_metadata=actor_metadata,
+            scene_discovery=scene_discovery,
         )
         actor_metrics["episode_architecture"] = planning_state_metrics.get(
             "episode_architecture", {}
@@ -1024,6 +960,13 @@ async def resume_from_substrate_function_tagging_stage(
         )
         actor_metrics["substrate_function_tagging"] = tagging_metrics
 
+        scene_discovery = await orchestrator._discover_scenes(
+            project=project,
+            synthesis_map=synthesis_primitives,
+            corpus=corpus,
+            project_dir=project_dir,
+            actor_metadata=actor_metadata,
+        )
         (
             strategy,
             strategy_actor_metrics,
@@ -1031,6 +974,7 @@ async def resume_from_substrate_function_tagging_stage(
             project=project,
             synthesis_map=synthesis_primitives,
             project_dir=project_dir,
+            scene_discovery=scene_discovery,
             actor_metadata=actor_metadata,
         )
         actor_metrics["narrative_strategy"] = strategy_actor_metrics
@@ -1061,6 +1005,7 @@ async def resume_from_substrate_function_tagging_stage(
             corpus=corpus,
             project_dir=project_dir,
             actor_metadata=actor_metadata,
+            scene_discovery=scene_discovery,
         )
         actor_metrics["episode_architecture"] = planning_state_metrics.get(
             "episode_architecture", {}
@@ -1530,13 +1475,14 @@ async def resume_from_episode_planning_stage(
     )
     strategy = _load_narrative_strategy(project_dir)
     episode_architectures = _load_episode_architectures(project_dir)
-    episode_plans = _load_episode_plans(project_dir)
-    episode_numbers = [plan.episode_number for plan in episode_plans]
+    episode_numbers = [
+        architecture.episode_number for architecture in episode_architectures
+    ]
     strict_snapshots = _capture_snapshots(
         project_dir,
         tracked_files=_tracked_files_with_narrative_states(
             project_dir,
-            tracked_files=STRICT_TRACKED_FILES_WITH_PLAN_INPUTS,
+            tracked_files=STRICT_TRACKED_FILES_WITH_EPISODE_PLANNING_INPUTS,
             episode_numbers=episode_numbers,
         ),
     )
@@ -1557,11 +1503,6 @@ async def resume_from_episode_planning_stage(
         strategy=strategy,
         episode_architectures=episode_architectures,
     )
-    _verify_plans_against_strategy_and_architecture(
-        strategy=strategy,
-        episode_architectures=episode_architectures,
-        episode_plans=episode_plans,
-    )
 
     orchestrator._bind_run_logger(project_dir)
 
@@ -1575,16 +1516,28 @@ async def resume_from_episode_planning_stage(
     project = project.model_copy(
         update={
             "config": forced_config,
-            "episode_count": len(episode_plans),
+            "episode_count": len(episode_architectures),
             "recommended_episode_count": strategy.recommended_episode_count
             or project.recommended_episode_count,
-            "status": ProjectStatus.PRODUCING,
+            "status": ProjectStatus.PLANNING,
         }
     )
     _save_json(project_dir / "thematic_project.json", project)
 
     actor_metrics = _load_existing_stage_metrics(project_dir)
     try:
+        episode_plans, planning_actor_metrics = await orchestrator._plan_series(
+            project=project,
+            synthesis_map=synthesis_map,
+            strategy=strategy,
+            episode_architectures=episode_architectures,
+            corpus=corpus,
+            project_dir=project_dir,
+            actor_metadata=actor_metadata,
+            narrative_state_pre_by_episode=narrative_state_pre_by_episode,
+        )
+        actor_metrics["episode_planning"] = planning_actor_metrics
+
         await _produce_from_persisted_plan(
             orchestrator=orchestrator,
             project=project,

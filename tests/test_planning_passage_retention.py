@@ -1318,7 +1318,7 @@ def test_build_episode_architectures_uses_only_strategy_actor_directives(
                     "primitive_ids": ["core_1"],
                     "passage_ids": ["p_core"],
                     "scene_sketch": "A decisive visible turn.",
-                    "candidate_roles": ["opening", "answer"],
+                    "scene_jobs": ["opening", "answer"],
                     "anchor_image": "A decree lands in the room.",
                     "why_sceneable": "The turn is concrete and audible.",
                     "actor_ids": ["actor_strategy"],

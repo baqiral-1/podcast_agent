@@ -56,11 +56,6 @@ def _resolve_default_provider(config: LLMConfig) -> str:
         return "openai-compatible"
     raise ValueError(f"Unsupported LLM provider '{config.llm_provider}'.")
 
-
-def _resolve_model(config: LLMConfig, schema_name: str) -> str:
-    return config.model_overrides.get(schema_name, config.model_name)
-
-
 def _is_claude_opus_4_7(model_name: str) -> bool:
     normalized = model_name.strip().lower()
     return normalized == "claude-opus-4-7" or normalized.startswith("claude-opus-4-7-")
@@ -378,11 +373,10 @@ class LangChainLLMClient(LLMClient):
         return client
 
     def _provider_for_schema(self, schema_name: str) -> str:
-        overrides = {
-            key: _normalize_provider(value) for key, value in self.config.provider_overrides.items()
-        }
-        default_provider = _resolve_default_provider(self.config)
-        return overrides.get(schema_name, default_provider)
+        resolved = self.config.resolve_provider(schema_name)
+        if resolved != self.config.provider:
+            return _normalize_provider(resolved)
+        return _resolve_default_provider(self.config)
 
     def _build_model(self, schema_name: str) -> Any:
         provider = self._provider_for_schema(schema_name)

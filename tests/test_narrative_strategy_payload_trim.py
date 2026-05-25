@@ -249,7 +249,7 @@ def test_build_narrative_strategy_scene_discovery_payload_drops_passage_ids():
                     "primitive_ids": ["p1"],
                     "passage_ids": ["passage_1"],
                     "scene_sketch": "A decree lands.",
-                    "candidate_roles": ["opening"],
+                    "scene_jobs": ["opening"],
                     "anchor_image": "A sheet of paper on a desk.",
                     "why_sceneable": "The action is visible.",
                     "quote_anchor": "The room goes quiet.",
@@ -341,7 +341,6 @@ def test_choose_narrative_strategy_uses_trimmed_runtime_payload(
                             {
                                 "beat_id": "beat_1",
                                 "label": "Opening beat",
-                                "kind": "scene",
                                 "intended_job": "opening",
                                 "source_candidate_ids": ["candidate_01"],
                                 "source_primitive_ids": ["et_1"],
@@ -423,7 +422,7 @@ def test_choose_narrative_strategy_uses_trimmed_runtime_payload(
                     "primitive_ids": ["et_1"],
                     "passage_ids": ["passage_1"],
                     "scene_sketch": "A decree lands.",
-                    "candidate_roles": ["opening"],
+                    "scene_jobs": ["opening"],
                     "anchor_image": "A decree on a desk.",
                     "why_sceneable": "The act is visible.",
                 }

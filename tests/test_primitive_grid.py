@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-import logging
-
 import pytest
 from pydantic import ValidationError
 
-from podcast_agent.agents.narrative_strategy import NarrativeStrategyAgent
 from podcast_agent.agents.writing import WritingAgent
 from podcast_agent.config import LLMConfig
 from podcast_agent.llm.heuristic import HeuristicLLMClient
@@ -18,7 +15,6 @@ from podcast_agent.prompts import (
 )
 from podcast_agent.schemas.models import (
     EventPrimitive,
-    NarrativeStrategy,
     NarrationHooks,
     PivotJustification,
     PrimitiveFunction,
@@ -93,8 +89,8 @@ def test_primitive_extraction_prompt_is_rich_and_schema_safe() -> None:
     assert "Do not emit primitive `id`; local code will assign ids after extraction." in extraction
     assert "Do not emit per-item `substrate`" in extraction
     assert "The top-level output must be a substrate map" in extraction
-    assert "events (100–137)" in extraction
-    assert "readings (8–9)" in extraction
+    assert "events (87–120)" in extraction
+    assert "readings (11–13)" in extraction
     assert "`project_id`, `events`, `acts`, `utterances`, `actor_portraits`, `mechanisms`, `conditions`, `artifacts`, `readings`, `quality_score`, `quality_notes`." in extraction
     assert "- `id`" not in extraction
     assert "- `substrate`" not in extraction
@@ -452,156 +448,3 @@ def test_scene_primitive_briefs_are_window_scoped() -> None:
     assert scene_outside_window.scene_id not in briefs
     assert [item["id"] for item in briefs["scene_01"]] == ["prim_event"]
     assert briefs["scene_01"][0] == primitive.model_dump(mode="json")
-
-
-def test_narrative_strategy_agent_rejects_missing_event_or_act_core(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    agent = NarrativeStrategyAgent(HeuristicLLMClient())
-    strategy = NarrativeStrategy.model_validate(
-        {
-            "strategy_type": "convergence",
-            "justification": "A flat heuristic strategy.",
-            "series_arc": "The arc converges.",
-            "recommended_episode_count": 1,
-            "episodes": [
-                {
-                    "episode_number": 1,
-                    "title": "Episode 1",
-                    "arc_summary": "A single pressure line.",
-                    "episode_spine": {
-                        "listener_problem": "What changes?",
-                        "episode_answer": "A retained primitive answers it.",
-                        "pressure_line": "The pressure tightens.",
-                        "core_primitive_ids": [
-                            "prim_artifact",
-                            "prim_reading",
-                            "prim_support_1",
-                        ],
-                        "support_primitive_roles": {
-                            "prim_support_2": "texture",
-                            "prim_support_3": "mechanism",
-                            "prim_support_4": "consequence",
-                            "prim_support_5": "stakes",
-                        },
-                        "recall_primitive_ids": [],
-                    },
-                }
-            ],
-        }
-    )
-
-    payload = {
-        "project": {
-            "episode_spine_core_primitive_target_min": 3,
-            "episode_spine_core_primitive_target_max": 5,
-            "episode_spine_support_primitive_target_min": 4,
-            "episode_spine_support_primitive_target_max": 6,
-            "episode_spine_recall_primitive_target_max": 1,
-        },
-        "synthesis_map": {
-            "primitives": [
-                {
-                    "id": "prim_artifact",
-                    "substrate": "artifacts",
-                    "functions": ["texture"],
-                },
-                {
-                    "id": "prim_reading",
-                    "substrate": "readings",
-                    "functions": ["contest"],
-                },
-                {
-                    "id": "prim_support_1",
-                    "substrate": "artifacts",
-                    "functions": ["texture"],
-                },
-            ]
-        },
-    }
-
-    with caplog.at_level(logging.WARNING):
-        result = agent.validate_result(strategy, payload)
-    assert result.episodes[0].episode_spine.core_primitive_ids == [
-        "prim_artifact",
-        "prim_reading",
-        "prim_support_1",
-    ]
-    assert "narrative_strategy_core_missing_event_or_act" in caplog.text
-
-
-def test_narrative_strategy_agent_rejects_non_recurrence_recall(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    agent = NarrativeStrategyAgent(HeuristicLLMClient())
-    strategy = NarrativeStrategy.model_validate(
-        {
-            "strategy_type": "convergence",
-            "justification": "A flat heuristic strategy.",
-            "series_arc": "The arc converges.",
-            "recommended_episode_count": 1,
-            "episodes": [
-                {
-                    "episode_number": 1,
-                    "title": "Episode 1",
-                    "arc_summary": "A single pressure line.",
-                    "episode_spine": {
-                        "listener_problem": "What changes?",
-                        "episode_answer": "A retained primitive answers it.",
-                        "pressure_line": "The pressure tightens.",
-                        "core_primitive_ids": [
-                            "prim_event",
-                            "prim_artifact",
-                            "prim_support_1",
-                        ],
-                        "support_primitive_roles": {
-                            "prim_support_2": "texture",
-                            "prim_support_3": "mechanism",
-                            "prim_support_4": "consequence",
-                            "prim_support_5": "stakes",
-                        },
-                        "recall_primitive_ids": ["prim_recall"],
-                    },
-                }
-            ],
-        }
-    )
-
-    payload = {
-        "project": {
-            "episode_spine_core_primitive_target_min": 3,
-            "episode_spine_core_primitive_target_max": 5,
-            "episode_spine_support_primitive_target_min": 4,
-            "episode_spine_support_primitive_target_max": 6,
-            "episode_spine_recall_primitive_target_max": 1,
-        },
-        "synthesis_map": {
-            "primitives": [
-                {
-                    "id": "prim_event",
-                    "substrate": "events",
-                    "functions": ["pivot"],
-                },
-                {
-                    "id": "prim_artifact",
-                    "substrate": "artifacts",
-                    "functions": ["texture"],
-                },
-                {
-                    "id": "prim_support_1",
-                    "substrate": "artifacts",
-                    "functions": ["texture"],
-                },
-                {
-                    "id": "prim_recall",
-                    "substrate": "artifacts",
-                    "functions": ["texture"],
-                },
-            ]
-        },
-    }
-
-    with caplog.at_level(logging.WARNING):
-        result = agent.validate_result(strategy, payload)
-    assert result.episodes[0].episode_spine.recall_primitive_ids == ["prim_recall"]
-    assert "narrative_strategy_recall_missing_recurrence" in caplog.text

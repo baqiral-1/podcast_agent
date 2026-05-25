@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+from typing import Any
+
+from pydantic import ValidationError
+
 from podcast_agent.agents.base import Agent
+from podcast_agent.langchain.runnables import RetryableGenerationError
 from podcast_agent.prompts import narrative_strategy_enrichment_instructions
 from podcast_agent.schemas.models import (
     NarrativeStrategyEnrichment,
     PodcastMode,
     PromisedBeat,
-    PromisedBeatKind,
     SceneJob,
     authorial_passage_target_for_mode,
     authorial_passage_target_range_for_mode,
@@ -82,7 +86,6 @@ class NarrativeStrategyEnrichmentAgent(Agent):
                     PromisedBeat(
                         beat_id=f"episode_{episode.episode_number}_answer",
                         label=f"Episode {episode.episode_number} answer commitment",
-                        kind=PromisedBeatKind.MECHANISM,
                         intended_job=SceneJob.ANSWER,
                         source_primitive_ids=[fallback_primitive_id],
                         why_load_bearing="Backfilled during enrichment validation.",
@@ -105,6 +108,147 @@ class NarrativeStrategyEnrichmentAgent(Agent):
                 }
             )
         return result
+
+    def prepare_retry_payload(
+        self,
+        payload: dict,
+        exc: RetryableGenerationError,
+    ) -> dict:
+        feedback = self._build_retry_feedback(exc)
+        if feedback is None:
+            return payload
+        next_payload = dict(payload)
+        next_payload["strategy_enrichment_feedback"] = feedback
+        return next_payload
+
+    def _build_retry_feedback(
+        self,
+        exc: RetryableGenerationError,
+    ) -> dict[str, Any] | None:
+        validation_exc = exc.__cause__
+        raw_payload = exc.data.get("raw_payload")
+        if not isinstance(validation_exc, ValidationError) or not isinstance(
+            raw_payload, dict
+        ):
+            return None
+
+        episode_constraints: list[dict[str, Any]] = []
+        issues: list[dict[str, Any]] = []
+        episodes = raw_payload.get("episodes")
+        if not isinstance(episodes, list):
+            return None
+
+        for episode_index, episode in enumerate(episodes):
+            if not isinstance(episode, dict):
+                continue
+            episode_number = episode.get("episode_number", episode_index + 1)
+            issue_types: list[str] = []
+            required_fixes: list[str] = []
+
+            host = (
+                (episode.get("narrative_agenda") or {}).get("host")
+                if isinstance(episode.get("narrative_agenda"), dict)
+                else {}
+            )
+            if isinstance(host, dict):
+                assumption_moves = host.get("assumption_moves")
+                if isinstance(assumption_moves, list):
+                    for move_index, move in enumerate(assumption_moves):
+                        if not isinstance(move, dict):
+                            continue
+                        action = str(move.get("action", "") or "").strip()
+                        statement = str(move.get("statement", "") or "").strip()
+                        revised_statement = str(
+                            move.get("revised_statement", "") or ""
+                        ).strip()
+                        assumption_id = str(move.get("assumption_id", "") or "").strip()
+                        if action == "introduce" and not statement:
+                            issue = {
+                                "issue": "host_assumption_introduce_missing_statement",
+                                "episode_number": episode_number,
+                                "episode_index": episode_index,
+                                "move_index": move_index,
+                                "assumption_id": assumption_id,
+                                "required_fix": "Include `statement` for assumption_moves.introduce.",
+                            }
+                            issues.append(issue)
+                            issue_types.append(issue["issue"])
+                            required_fixes.append(issue["required_fix"])
+                        if action == "revise":
+                            if not statement:
+                                issue = {
+                                    "issue": "host_assumption_revise_missing_statement",
+                                    "episode_number": episode_number,
+                                    "episode_index": episode_index,
+                                    "move_index": move_index,
+                                    "assumption_id": assumption_id,
+                                    "required_fix": "Include both `statement` and `revised_statement` for assumption_moves.revise.",
+                                }
+                                issues.append(issue)
+                                issue_types.append(issue["issue"])
+                                required_fixes.append(issue["required_fix"])
+                            elif not revised_statement:
+                                issue = {
+                                    "issue": "host_assumption_revise_missing_revised_statement",
+                                    "episode_number": episode_number,
+                                    "episode_index": episode_index,
+                                    "move_index": move_index,
+                                    "assumption_id": assumption_id,
+                                    "required_fix": "Include both `statement` and `revised_statement` for assumption_moves.revise.",
+                                }
+                                issues.append(issue)
+                                issue_types.append(issue["issue"])
+                                required_fixes.append(issue["required_fix"])
+
+            promised_beats = episode.get("promised_beats")
+            if isinstance(promised_beats, list):
+                for beat_index, beat in enumerate(promised_beats):
+                    if not isinstance(beat, dict) or "kind" not in beat:
+                        continue
+                    beat_id = str(beat.get("beat_id", "") or "").strip()
+                    issue = {
+                        "issue": "forbidden_promised_beat_kind_field",
+                        "episode_number": episode_number,
+                        "episode_index": episode_index,
+                        "beat_index": beat_index,
+                        "beat_id": beat_id,
+                        "required_fix": "Remove `kind`; promised beats now use only `intended_job` plus sources and `why_load_bearing`.",
+                    }
+                    issues.append(issue)
+                    issue_types.append(issue["issue"])
+                    required_fixes.append(issue["required_fix"])
+
+            if issue_types:
+                episode_constraints.append(
+                    {
+                        "episode_number": episode_number,
+                        "episode_index": episode_index,
+                        "issue_types": issue_types,
+                        "required_fix": " ".join(dict.fromkeys(required_fixes)),
+                    }
+                )
+
+        if not issues:
+            return None
+
+        return {
+            "issue": "schema_validation_failed",
+            "issues": issues,
+            "episode_constraints_by_number": episode_constraints,
+            "canonical_field_names": {
+                "scene_jobs": "scene_jobs",
+                "promised_beats[].intended_job": "intended_job",
+                "promised_beats[].kind": "remove this field",
+                "narrative_agenda.host.assumption_moves[].statement": "statement",
+                "narrative_agenda.host.assumption_moves[].revised_statement": "revised_statement",
+            },
+            "instruction": (
+                "Revise only the invalid episodes or invalid items. Keep unaffected "
+                "content unchanged. For `assumption_moves.revise`, include both "
+                "`statement` and `revised_statement`. Do not emit promised-beat "
+                "`kind`; use only `intended_job`, source ids, and `why_load_bearing`."
+            ),
+        }
 
     def build_payload(
         self,

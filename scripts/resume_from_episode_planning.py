@@ -22,8 +22,8 @@ def _parse_args() -> argparse.Namespace:
         description=(
             "Resume an existing run from episode planning onward using persisted "
             "scene discovery, retained primitives, strategy, architecture, "
-            "series plan, and narrative-state artifacts with strict integrity "
-            "checks."
+            "and narrative-state artifacts to rerun planning and continue "
+            "through downstream production with strict integrity checks."
         )
     )
     parser.add_argument(

@@ -20,29 +20,35 @@ class TestLLMConfig:
         assert config.timeout_seconds == 600.0
         assert config.base_url == "https://api.openai.com/v1"
         assert config.reasoning_effort == "xhigh"
-        assert config.provider_overrides["synthesis_primitives"] == "anthropic"
+        assert (
+            config.provider_overrides["primitive_substrate_extraction"] == "anthropic"
+        )
 
     def test_resolve_temperature_with_agent_config(self):
         config = LLMConfig(
             agent_configs={
                 "chapter_summary": AgentConfig(temperature=0.3),
-                "synthesis_primitives": AgentConfig(temperature=0.8),
+                "primitive_substrate_extraction": AgentConfig(temperature=0.8),
             }
         )
         assert config.resolve_temperature("chapter_summary") == 0.3
         assert config.resolve_temperature("synthesis_primitives") == 0.8
+        assert config.resolve_temperature("primitive_substrate_extraction") == 0.8
         assert config.resolve_temperature("unknown_agent") == 1.0
 
     def test_default_agent_temperatures(self):
         config = LLMConfig()
         assert config.resolve_temperature("chapter_summary") == 0.3
         assert config.resolve_temperature("synthesis_primitives") == 0.8
+        assert config.resolve_temperature("narrative_strategy_skeleton") == 0.5
+        assert config.resolve_temperature("narrative_strategy_enrichment") == 0.5
         assert config.resolve_temperature("grounding_validation") == 0.2
 
     def test_resolve_model_defaults(self):
         config = LLMConfig()
         assert config.resolve_model("chapter_summary") == "claude-haiku-4-5"
         assert config.resolve_model("synthesis_primitives") == "claude-opus-4-7"
+        assert config.resolve_model("narrative_strategy") == "claude-opus-4-7"
         assert config.resolve_model("theme_decomposition") == "claude-sonnet-4-6"
 
     def test_resolve_max_retry_attempts_defaults(self):
@@ -50,6 +56,7 @@ class TestLLMConfig:
         assert config.resolve_max_retry_attempts("chapter_summary") == 3
         assert config.resolve_max_retry_attempts("passage_extraction") == 4
         assert config.resolve_max_retry_attempts("synthesis_primitives") == 2
+        assert config.resolve_max_retry_attempts("narrative_strategy_enrichment") == 2
         assert config.resolve_max_retry_attempts("episode_planning") == 3
         assert config.resolve_max_retry_attempts("unknown_agent") == 2
 
@@ -57,6 +64,8 @@ class TestLLMConfig:
         config = LLMConfig()
         assert config.resolve_timeout_seconds("passage_extraction") == 480.0
         assert config.resolve_timeout_seconds("synthesis_primitives") == 3360.0
+        assert config.resolve_timeout_seconds("narrative_strategy") == 900.0
+        assert config.resolve_timeout_seconds("narrative_state_reconciliation") == 900.0
         assert config.resolve_timeout_seconds("unknown_agent") == 600.0
 
     def test_resolve_concurrency_limit_defaults(self):
@@ -75,6 +84,7 @@ class TestLLMConfig:
         config = LLMConfig()
         assert config.resolve_thinking_budget("theme_decomposition") == 30_000
         assert config.resolve_thinking_budget("synthesis_primitives") == 30_000
+        assert config.resolve_thinking_budget("narrative_strategy") == 30_000
         assert config.resolve_thinking_budget("episode_planning") == 30_000
         assert config.resolve_thinking_budget("chapter_summary") is None
 
@@ -87,7 +97,16 @@ class TestLLMConfig:
         assert (
             config.resolve_anthropic_thinking_effort("synthesis_primitives") == "xhigh"
         )
+        assert (
+            config.resolve_anthropic_thinking_effort("narrative_strategy")
+            == "xhigh"
+        )
         assert config.resolve_anthropic_thinking_effort("chapter_summary") is None
+
+    def test_resolve_provider_uses_canonical_aliases(self):
+        config = LLMConfig()
+        assert config.resolve_provider("primitive_substrate_extraction") == "anthropic"
+        assert config.resolve_provider("synthesis_primitives") == "anthropic"
 
     def test_resolve_anthropic_thinking_effort_prefers_explicit_override(self):
         config = LLMConfig(

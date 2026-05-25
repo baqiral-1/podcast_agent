@@ -5,12 +5,12 @@ from unittest.mock import Mock
 import pytest
 
 from podcast_agent.agents.episode_architecture import EpisodeArchitectureAgent
-from podcast_agent.agents.narrative_strategy import NarrativeStrategyAgent
 from podcast_agent.agents.planning import EpisodePlanningAgent
 from podcast_agent.agents.scene_discovery import SceneDiscoveryAgent
 from podcast_agent.langchain.runnables import ComplianceViolationError, RetryableGenerationError
 from podcast_agent.llm.base import LLMClient
 from podcast_agent.pipeline.orchestrator import (
+    _build_host_move_plan_diagnostics,
     _build_spine_plan_diagnostics,
     _validate_plan_transition,
 )
@@ -26,6 +26,7 @@ from podcast_agent.schemas.models import (
     PromisedBeatDecisionRecord,
     SceneCardDraft,
     SceneDiscoveryArtifact,
+    SeriesNarratorProfile,
     StrategyEpisode,
     SupportPrimitiveRole,
     resolve_pipeline_config_for_mode,
@@ -62,7 +63,6 @@ def _strategy_episode() -> StrategyEpisode:
                 {
                     "beat_id": "beat_open",
                     "label": "Open on the visible pressure",
-                    "kind": "scene",
                     "intended_job": "opening",
                     "source_candidate_ids": ["candidate_1"],
                     "source_primitive_ids": ["core_1"],
@@ -71,7 +71,6 @@ def _strategy_episode() -> StrategyEpisode:
                 {
                     "beat_id": "beat_answer",
                     "label": "Resolve the listener problem",
-                    "kind": "scene",
                     "intended_job": "answer",
                     "source_candidate_ids": ["candidate_2"],
                     "source_primitive_ids": ["core_2"],
@@ -80,7 +79,6 @@ def _strategy_episode() -> StrategyEpisode:
                 {
                     "beat_id": "beat_residue",
                     "label": "Leave a remainder",
-                    "kind": "callback",
                     "intended_job": "residue",
                     "source_candidate_ids": ["candidate_3"],
                     "source_primitive_ids": ["support_1"],
@@ -193,8 +191,22 @@ def _framing() -> FramingBlock:
     )
 
 
+def _scene_with_two_phase_cues(
+    scene: SceneCardDraft,
+    *,
+    phase: str,
+) -> SceneCardDraft:
+    payload = scene.model_dump(mode="json")
+    payload["host_moves"][phase] = [
+        {"move_type": "callback", "target": "keep the older thread visible"},
+        {"move_type": "naming_note", "target": "name the pressure explicitly"},
+    ]
+    return SceneCardDraft.model_validate(payload)
+
+
 def test_scene_job_budget_defaults_are_locked() -> None:
-    assert scene_job_budget_for_mode(PodcastMode.MINIFIED) == {
+    minified_budget = scene_job_budget_for_mode(PodcastMode.MINIFIED)
+    assert minified_budget == {
         "total_min": 18,
         "total_max": 21,
         "opening_min": 2,
@@ -211,6 +223,40 @@ def test_scene_job_budget_defaults_are_locked() -> None:
         "close_max": 1,
         "max_recap_build_scenes": 1,
     }
+    full_budget = scene_job_budget_for_mode(PodcastMode.FULL)
+    assert full_budget == {
+        "total_min": 40,
+        "total_max": 48,
+        "opening_min": 3,
+        "opening_max": 3,
+        "build_min": 28,
+        "build_max": 33,
+        "turn_min": 6,
+        "turn_max": 9,
+        "answer_min": 1,
+        "answer_max": 1,
+        "residue_min": 1,
+        "residue_max": 1,
+        "close_min": 1,
+        "close_max": 1,
+        "max_recap_build_scenes": 1,
+    }
+    assert (
+        full_budget["opening_min"]
+        + full_budget["build_min"]
+        + full_budget["turn_min"]
+        + full_budget["answer_min"]
+        + full_budget["residue_min"]
+        + full_budget["close_min"]
+    ) == full_budget["total_min"]
+    assert (
+        full_budget["opening_max"]
+        + full_budget["build_max"]
+        + full_budget["turn_max"]
+        + full_budget["answer_max"]
+        + full_budget["residue_max"]
+        + full_budget["close_max"]
+    ) == full_budget["total_max"]
     full_config = resolve_pipeline_config_for_mode(PipelineConfig())
     minified_config = resolve_pipeline_config_for_mode(
         PipelineConfig(podcast_mode=PodcastMode.MINIFIED)
@@ -265,7 +311,7 @@ def test_scene_discovery_agent_builds_payload_and_uses_mode_range() -> None:
         project_metadata={"podcast_mode": "minified"},
         actor_metadata={"actors": [{"actor_id": "actor_1"}]},
         passage_list=[{"passage_id": "passage_1", "text": "Room detail."}],
-        scene_discovery_feedback={"issue": "invalid_candidate_roles"},
+        scene_discovery_feedback={"issue": "invalid_scene_jobs"},
     )
     artifact = SceneDiscoveryArtifact.model_validate(
         {
@@ -275,7 +321,7 @@ def test_scene_discovery_agent_builds_payload_and_uses_mode_range() -> None:
                     "primitive_ids": ["p1"],
                     "passage_ids": ["passage_1"],
                     "scene_sketch": "A room becomes a decision point.",
-                    "candidate_roles": ["opening"],
+                    "scene_jobs": ["opening"],
                     "anchor_image": "A room and a file.",
                     "why_sceneable": "The beat is visible and oral.",
                 }
@@ -288,8 +334,8 @@ def test_scene_discovery_agent_builds_payload_and_uses_mode_range() -> None:
 
     assert payload["project"]["podcast_mode"] == "minified"
     assert "actor_metadata" in payload
-    assert payload["scene_discovery_feedback"]["issue"] == "invalid_candidate_roles"
-    assert len(validated.candidates) == 16
+    assert payload["scene_discovery_feedback"]["issue"] == "invalid_scene_jobs"
+    assert len(validated.candidates) == 18
 
 
 def test_scene_discovery_agent_builds_richer_mode_specific_instructions() -> None:
@@ -303,14 +349,14 @@ def test_scene_discovery_agent_builds_richer_mode_specific_instructions() -> Non
     )
 
     assert "This is a `minified` run." in minified_instructions
-    assert "Return 16–24 candidates." in minified_instructions
+    assert "Return 18–26 candidates." in minified_instructions
     assert "DISCOVERY WORKFLOW" in minified_instructions
     assert "MERGE VS SEPARATE" in minified_instructions
     assert "`scene_discovery_feedback` (optional): retry feedback" in minified_instructions
     assert "visible consequence, irreversible turn, or immediate aftermath" in minified_instructions
     assert "SELF-CHECK BEFORE RETURNING" in minified_instructions
     assert "This is a `full` run." in full_instructions
-    assert "Return 48–72 candidates." in full_instructions
+    assert "Return 53–79 candidates." in full_instructions
 
 
 def test_scene_discovery_agent_prepare_retry_payload_adds_role_feedback() -> None:
@@ -325,7 +371,7 @@ def test_scene_discovery_agent_prepare_retry_payload_adds_role_feedback() -> Non
                     "candidates": [
                         {
                             "candidate_id": "candidate_01",
-                            "candidate_roles": ["opening", "cost", "complication"],
+                            "scene_jobs": ["opening", "cost", "complication"],
                         }
                     ]
                 }
@@ -333,7 +379,7 @@ def test_scene_discovery_agent_prepare_retry_payload_adds_role_feedback() -> Non
         ),
     )
 
-    assert next_payload["scene_discovery_feedback"]["issue"] == "invalid_candidate_roles"
+    assert next_payload["scene_discovery_feedback"]["issue"] == "invalid_scene_jobs"
     assert next_payload["scene_discovery_feedback"]["candidate_ids"] == ["candidate_01"]
     assert next_payload["scene_discovery_feedback"]["invalid_roles"] == [
         "complication",
@@ -357,7 +403,7 @@ def test_scene_discovery_agent_retries_when_candidate_count_out_of_range() -> No
                     "primitive_ids": ["p1"],
                     "passage_ids": ["passage_1"],
                     "scene_sketch": "A room becomes a decision point.",
-                    "candidate_roles": ["opening"],
+                    "scene_jobs": ["opening"],
                     "anchor_image": "A room and a file.",
                     "why_sceneable": "The beat is visible and oral.",
                 }
@@ -367,30 +413,6 @@ def test_scene_discovery_agent_retries_when_candidate_count_out_of_range() -> No
 
     with pytest.raises(RetryableGenerationError, match="candidate count"):
         agent.validate_result(artifact, payload)
-
-
-def test_narrative_strategy_agent_requires_commitment_fields() -> None:
-    agent = NarrativeStrategyAgent(_mock_llm())
-    payload = {"recommended_episode_count_min": 1, "recommended_episode_count_max": 1}
-    strategy = agent.response_model.model_validate(
-        {
-            "strategy_type": "convergence",
-            "justification": "Test",
-            "series_arc": "Arc",
-            "recommended_episode_count": 1,
-            "episodes": [
-                {
-                    "episode_number": 1,
-                    "title": "Episode 1",
-                    "arc_summary": "Arc",
-                    "episode_spine": _episode_spine().model_dump(mode="json"),
-                }
-            ],
-        }
-    )
-
-    with pytest.raises(ValueError, match="promised_beats"):
-        agent.validate_result(strategy, payload)
 
 
 def test_episode_architecture_agent_requires_answer_residue_and_promised_beat_accounting() -> None:
@@ -485,3 +507,67 @@ def test_planning_instructions_reference_scene_job_budget_and_target() -> None:
     assert "`scene_job`" in agent.instructions
     assert "`target`" in agent.instructions
     assert "`scene_function`" not in agent.instructions
+
+
+def test_episode_planning_agent_allows_two_host_cues_in_one_phase() -> None:
+    agent = EpisodePlanningAgent(_mock_llm())
+    payload = {"project": {"podcast_mode": "full"}}
+    artifact = EpisodePlanDraft(
+        episode_number=1,
+        framing=_framing(),
+        scene_cards=[
+            _scene("scene_01", section_id="section_01", scene_job="opening"),
+            _scene("scene_02", section_id="section_02", scene_job="build"),
+            _scene("scene_03", section_id="section_03", scene_job="turn"),
+            _scene("scene_04", section_id="section_04", scene_job="answer"),
+            _scene("scene_05", section_id="section_05", scene_job="residue"),
+            _scene_with_two_phase_cues(
+                _scene("scene_06", section_id="section_06", scene_job="close"),
+                phase="close",
+            ),
+        ],
+        answer_scene_card_id="scene_04",
+        residue_scene_card_id="scene_05",
+    )
+
+    validated = agent.validate_result(artifact, payload)
+
+    assert len(validated.scene_cards[-1].host_moves.close) == 2
+
+
+def test_validate_plan_transition_allows_two_host_cues_and_keeps_diagnostics() -> None:
+    architecture = _architecture()
+    strategy_episode = _strategy_episode()
+    plan = EpisodePlanDraft(
+        episode_number=1,
+        framing=_framing(),
+        scene_cards=[
+            _scene("scene_01", section_id="section_01", scene_job="opening"),
+            _scene("scene_02", section_id="section_02", scene_job="build"),
+            _scene("scene_03", section_id="section_03", scene_job="turn"),
+            _scene("scene_04", section_id="section_04", scene_job="build"),
+            _scene("scene_05", section_id="section_05", scene_job="answer"),
+            _scene("scene_06", section_id="section_06", scene_job="residue"),
+            _scene_with_two_phase_cues(
+                _scene("scene_07", section_id="section_06", scene_job="close"),
+                phase="close",
+            ),
+        ],
+        answer_scene_card_id="scene_05",
+        residue_scene_card_id="scene_06",
+        dropped_support_primitive_reasons={},
+    )
+
+    validated = _validate_plan_transition(
+        strategy_episode=strategy_episode,
+        architecture=architecture,
+        plan=plan,
+    )
+    diagnostics, warnings = _build_host_move_plan_diagnostics(
+        scene_cards=validated.scene_cards,
+        architecture=architecture,
+        narrator_profile=SeriesNarratorProfile(),
+    )
+
+    assert diagnostics["host_phase_multiple_cues"] == ["scene_07:close"]
+    assert any("host_phase_multiple_cues" in warning for warning in warnings)

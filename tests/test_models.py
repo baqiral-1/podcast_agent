@@ -211,7 +211,7 @@ class TestThematicProject:
         assert config.synthesis_trim_tail_keep_fraction == 0.15
         assert config.passage_extraction_concurrency == 16
         assert config.episode_write_concurrency == 8
-        assert config.episode_writing_batch_count == 4
+        assert config.episode_writing_batch_count == 5
         assert config.spoken_delivery_concurrency == 8
         assert config.min_episode_minutes == 130.0
         assert config.max_episode_minutes == 150.0
@@ -251,6 +251,27 @@ class TestThematicProject:
         assert config.scene_card_target_min == 18
         assert config.scene_card_target_max == 21
 
+    def test_resolve_pipeline_config_for_mode_applies_full_profile(self):
+        config = resolve_pipeline_config_for_mode(
+            PipelineConfig(podcast_mode=PodcastMode.FULL)
+        )
+
+        assert config.podcast_mode == PodcastMode.FULL
+        assert config.min_axes == 12
+        assert config.max_axes == 20
+        assert config.synthesis_axis_min == 12
+        assert config.synthesis_axis_max == 20
+        assert config.narrative_strategy_episode_count_min == 8
+        assert config.narrative_strategy_episode_count_max == 12
+        assert config.synthesis_total_passage_cap == 750
+        assert config.episode_writing_batch_count == 5
+        assert config.architecture_section_target_min == 12
+        assert config.architecture_section_target_max == 16
+        assert config.min_episode_minutes == 130.0
+        assert config.max_episode_minutes == 150.0
+        assert config.scene_card_target_min == 40
+        assert config.scene_card_target_max == 48
+
     def test_authorial_passage_target_ranges_for_modes(self):
         assert authorial_passage_target_range_for_mode(PodcastMode.FULL) == (24, 36)
         assert authorial_passage_target_range_for_mode(PodcastMode.MINIFIED) == (12, 16)
@@ -276,33 +297,35 @@ class TestThematicProject:
         )
         assert passage.budget_sentences == 6
 
-    def test_primitive_substrate_target_ranges_for_full_mode_match_rebalanced_table(self):
+    def test_primitive_substrate_target_ranges_for_full_mode_match_expanded_table(self):
         target_ranges = primitive_substrate_target_ranges_for_mode(PodcastMode.FULL)
         assert target_ranges == {
-            "events": (82, 113),
-            "acts": (42, 56),
-            "utterances": (11, 16),
-            "actor_portraits": (11, 15),
-            "mechanisms": (35, 48),
-            "conditions": (20, 25),
-            "artifacts": (17, 23),
-            "readings": (10, 12),
+            "events": (87, 120),
+            "acts": (45, 59),
+            "utterances": (12, 17),
+            "actor_portraits": (12, 16),
+            "mechanisms": (37, 51),
+            "conditions": (21, 27),
+            "artifacts": (18, 24),
+            "readings": (11, 13),
         }
-        assert sum(lower for lower, _ in target_ranges.values()) == 228
-        assert sum(upper for _, upper in target_ranges.values()) == 308
+        assert sum(lower for lower, _ in target_ranges.values()) == 243
+        assert sum(upper for _, upper in target_ranges.values()) == 327
 
-    def test_primitive_substrate_target_ranges_for_minified_mode_reduce_current_ranges_by_thirty_percent(self):
+    def test_primitive_substrate_target_ranges_for_minified_mode_match_expanded_table(self):
         target_ranges = primitive_substrate_target_ranges_for_mode(PodcastMode.MINIFIED)
         assert target_ranges == {
-            "events": (18, 25),
-            "acts": (9, 12),
+            "events": (19, 27),
+            "acts": (10, 13),
             "utterances": (2, 3),
             "actor_portraits": (2, 3),
-            "mechanisms": (7, 11),
+            "mechanisms": (7, 12),
             "conditions": (4, 5),
             "artifacts": (3, 4),
             "readings": (2, 2),
         }
+        assert sum(lower for lower, _ in target_ranges.values()) == 49
+        assert sum(upper for _, upper in target_ranges.values()) == 69
 
     def test_thematic_project_accepts_forty_sub_themes(self):
         project = ThematicProject(
@@ -1237,42 +1260,10 @@ class TestEpisodeArchitectureModels:
                         f"Beat {idx + 1}A",
                         f"Beat {idx + 1}B",
                     ],
-                    section_question=f"Question {idx + 1}?",
-                    section_resolution=f"Resolution {idx + 1}",
-                    entry_state=f"Entry {idx + 1}",
-                    exit_state=f"Exit {idx + 1}",
-                    transition_logic=f"Transition {idx + 1}",
-                    depends_on_section_ids=[f"section_{idx:02d}"] if idx > 0 else [],
-                    sets_up_section_ids=[f"section_{idx + 2:02d}"]
-                    if idx < section_count - 1
-                    else [],
-                    argument_role="frame"
-                    if idx == 0
-                    else "close"
-                    if idx == section_count - 1
-                    else "establish_mechanism",
-                    inference_mode="scene_first" if idx == 0 else "mechanism_first",
-                    recurrence_role="plant"
-                    if idx == 0
-                    else "payoff"
-                    if idx == section_count - 1
-                    else "deepen",
-                    pressure_type="mass_political",
-                    resolution_type="containment"
-                    if idx == section_count - 1
-                    else "escalation",
-                    closure_level="high" if idx == section_count - 1 else "low",
                 )
             )
         return EpisodeArchitecture(
             episode_number=1,
-            title="Episode 1",
-            driving_question="Why begin here?",
-            thematic_focus="Opening moves",
-            arc_summary="The episode traces one local causal chain.",
-            unresolved_questions=[],
-            episode_spine=_episode_spine("et_1"),
-            actor_arc_directives=[],
             major_turn_section_id=sections[min(2, len(sections) - 1)].section_id,
             allowed_recurring_primitive_ids=[],
             forbidden_redundancies=[],

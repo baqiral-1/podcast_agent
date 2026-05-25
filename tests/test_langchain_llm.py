@@ -384,6 +384,21 @@ class _FakeAPIStatusError(Exception):
         self.status_code = status_code
 
 
+class _FakeStructuredAPIStatusError(Exception):
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        body: object | None = None,
+        error_type: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.body = body
+        self.type = error_type
+
+
 class _DummySchema(BaseModel):
     k: int
 
@@ -654,6 +669,57 @@ def test_generate_json_logs_transient_provider_failure_as_retryable(
     error_events = [p for (t, p) in run_logger.events if t == "llm_error"]
     assert len(retryable_events) == 1
     assert retryable_events[0]["error_type"] == "_FakeAPIStatusError"
+    assert retryable_events[0]["will_retry"] is True
+    assert error_events == []
+
+
+def test_generate_json_logs_structured_overload_failure_as_retryable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(
+        llm=LLMConfig(
+            llm_provider="anthropic",
+            provider="anthropic",
+            model_name="claude-opus-4-7",
+            anthropic_api_key="test-key",
+            provider_overrides={"custom_schema": "anthropic"},
+        )
+    )
+    client = llm_module.LangChainLLMClient(settings)
+    run_logger = _StubRunLogger()
+    client.set_run_logger(run_logger)
+    monkeypatch.setattr(
+        client,
+        "_build_model",
+        lambda _schema: _FakeInvokeClient(
+            _FakeStructuredAPIStatusError(
+                "provider status failure",
+                body={
+                    "type": "error",
+                    "error": {
+                        "details": None,
+                        "type": "overloaded_error",
+                        "message": "Overloaded",
+                    },
+                },
+            )
+        ),
+    )
+
+    with pytest.raises(llm_module.TransientLLMError, match="provider status failure"):
+        client.generate_json(
+            schema_name="custom_schema",
+            instructions="x",
+            payload={"user_text": "y"},
+            response_model=_DummySchema,
+            attempt=1,
+            max_attempts=2,
+        )
+
+    retryable_events = [p for (t, p) in run_logger.events if t == "llm_retryable_error"]
+    error_events = [p for (t, p) in run_logger.events if t == "llm_error"]
+    assert len(retryable_events) == 1
+    assert retryable_events[0]["error_type"] == "_FakeStructuredAPIStatusError"
     assert retryable_events[0]["will_retry"] is True
     assert error_events == []
 

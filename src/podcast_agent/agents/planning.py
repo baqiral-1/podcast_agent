@@ -73,12 +73,6 @@ class EpisodePlanningAgent(Agent):
         )
         if close_scene_count != 1:
             raise ValueError("episode plan must include exactly one close scene")
-        for scene in result.scene_cards:
-            for phase in ("open", "pivot", "close"):
-                if len(getattr(scene.host_moves, phase)) > 1:
-                    raise ValueError(
-                        "fresh episode plans must use at most one host cue per phase"
-                    )
         return result
 
     def build_payload(

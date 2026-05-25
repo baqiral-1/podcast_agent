@@ -14,9 +14,9 @@ from podcast_agent.schemas.models import ActorExplanationRealization, Citation
 
 class SectionProse(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    section_id: str
-    scene_card_ids: list[str]
-    movement_goal: str
+    section_id: str = ""
+    scene_card_ids: list[str] = Field(default_factory=list)
+    movement_goal: str = ""
     text: str
     citations: list[Citation] = Field(default_factory=list)
     source_book_ids: list[str] = Field(default_factory=list)
@@ -32,9 +32,9 @@ class EpisodeWritingResponse(BaseModel):
 
 class SectionProseNoCitations(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    section_id: str
-    scene_card_ids: list[str]
-    movement_goal: str
+    section_id: str = ""
+    scene_card_ids: list[str] = Field(default_factory=list)
+    movement_goal: str = ""
     text: str
     source_book_ids: list[str] = Field(default_factory=list)
     actor_explanation_realizations: list[ActorExplanationRealization] = Field(

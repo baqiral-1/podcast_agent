@@ -17,6 +17,7 @@ from podcast_agent.schemas.models import (
     BookRecord,
     EpisodeArchitecture,
     EventPrimitive,
+    NarrativeState,
     NarrativeStrategy,
     PipelineConfig,
     PrimitiveFunctionTaggingArtifact,
@@ -91,13 +92,47 @@ def _build_scene_discovery() -> SceneDiscoveryArtifact:
                     "primitive_ids": ["primitive_1"],
                     "passage_ids": ["passage_1"],
                     "scene_sketch": "A staged turning point becomes legible.",
-                    "candidate_roles": ["opening"],
+                    "scene_jobs": ["opening"],
                     "anchor_image": "A file on a desk.",
                     "why_sceneable": "The shift is concrete and audible.",
                 }
             ]
         }
     )
+
+
+def _build_narrative_states() -> tuple[NarrativeState, NarrativeState]:
+    state_pre = NarrativeState.model_validate(
+        {
+            "project_id": "run_1",
+            "next_episode_number": 1,
+            "listener": {
+                "known_explanation_item_ids": [],
+                "known_actor_ids": [],
+                "questions": [],
+                "memory_threads": [],
+                "carry_forward_memory": [],
+                "last_episode_takeaway": "",
+            },
+            "host": {
+                "mysteries": [],
+                "assumptions": [],
+                "working_theories": [],
+                "recent_revisions": [],
+                "confidence_posture": "mixed",
+                "last_episode_takeaway": "",
+            },
+        }
+    )
+    state_post = NarrativeState.model_validate(
+        {
+            "project_id": "run_1",
+            "next_episode_number": 2,
+            "listener": state_pre.listener.model_dump(mode="json"),
+            "host": state_pre.host.model_dump(mode="json"),
+        }
+    )
+    return state_pre, state_post
 
 
 def _build_strategy(*, title: str = "Episode") -> NarrativeStrategy:
@@ -374,45 +409,40 @@ def test_resume_from_scene_discovery_reruns_from_scene_discovery_and_downstream(
                 }
             )
 
-        async def _build_episode_architectures(
-            self,
-            *,
-            project: ThematicProject,
-            synthesis_map: SynthesisMap,
-            strategy: NarrativeStrategy,
-            corpus: ThematicCorpus,
-            project_dir: Path,
-            actor_metadata: ActorMetadata,
-            scene_discovery: SceneDiscoveryArtifact | None = None,
-        ) -> tuple[list[EpisodeArchitecture], dict[str, Any]]:
+        async def _plan_series_with_narrative_state(
+            self, **kwargs: Any
+        ) -> tuple[
+            list[EpisodeArchitecture],
+            list[Any],
+            dict[int, NarrativeState],
+            dict[int, NarrativeState],
+            dict[str, Any],
+        ]:
             calls["order"].append("episode_architecture")
-            calls["architecture_actor_metadata"] = actor_metadata
-            calls["architecture_scene_discovery"] = scene_discovery
+            calls["architecture_actor_metadata"] = kwargs["actor_metadata"]
+            calls["architecture_scene_discovery"] = kwargs["scene_discovery"]
             architecture = _episode_architecture()
             _write_json(
                 project_dir / "episode_architectures.json",
                 {"episodes": [architecture.model_dump(mode="json")]},
             )
-            return [architecture], {"unknown_actor_ids": 0}
-
-        async def _plan_series(
-            self,
-            *,
-            project: ThematicProject,
-            synthesis_map: SynthesisMap,
-            strategy: NarrativeStrategy,
-            episode_architectures: list[EpisodeArchitecture],
-            corpus: ThematicCorpus,
-            project_dir: Path,
-            actor_metadata: ActorMetadata,
-        ) -> tuple[list[Any], dict[str, Any]]:
             calls["order"].append("plan_series")
-            calls["planning_actor_metadata"] = actor_metadata
+            calls["planning_actor_metadata"] = kwargs["actor_metadata"]
             _write_json(
                 project_dir / "series_plan.json",
                 {"episodes": [{"episode_number": 1}]},
             )
-            return [SimpleNamespace(episode_number=1)], {"unknown_actor_ids": 0}
+            state_pre, state_post = _build_narrative_states()
+            return (
+                [architecture],
+                [SimpleNamespace(episode_number=1)],
+                {1: state_pre},
+                {1: state_post},
+                {
+                    "episode_architecture": {"unknown_actor_ids": 0},
+                    "episode_planning": {"unknown_actor_ids": 0},
+                },
+            )
 
         async def _produce_episode(
             self,
@@ -428,6 +458,8 @@ def test_resume_from_scene_discovery_reruns_from_scene_discovery_and_downstream(
             semaphore: asyncio.Semaphore,
             spoken_semaphore: asyncio.Semaphore | None = None,
             series_explanation_registry: list[Any] | None = None,
+            narrative_state_pre: NarrativeState | None = None,
+            narrative_state_post: NarrativeState | None = None,
         ) -> tuple[int, Any]:
             calls["order"].append("produce_episode")
             calls["production_config"] = project.config
@@ -711,31 +743,26 @@ def test_resume_from_scene_discovery_fails_when_upstream_artifact_changes(
         ) -> ThematicProject:
             return project.model_copy(update={"episode_count": 1})
 
-        async def _build_episode_architectures(
-            self,
-            *,
-            project: ThematicProject,
-            synthesis_map: SynthesisMap,
-            strategy: NarrativeStrategy,
-            corpus: ThematicCorpus,
-            project_dir: Path,
-            actor_metadata: ActorMetadata,
-            scene_discovery: SceneDiscoveryArtifact | None = None,
-        ) -> tuple[list[EpisodeArchitecture], dict[str, Any]]:
-            return [_episode_architecture()], {"unknown_actor_ids": 0}
-
-        async def _plan_series(
-            self,
-            *,
-            project: ThematicProject,
-            synthesis_map: SynthesisMap,
-            strategy: NarrativeStrategy,
-            episode_architectures: list[EpisodeArchitecture],
-            corpus: ThematicCorpus,
-            project_dir: Path,
-            actor_metadata: ActorMetadata,
-        ) -> tuple[list[Any], dict[str, Any]]:
-            return [SimpleNamespace(episode_number=1)], {"unknown_actor_ids": 0}
+        async def _plan_series_with_narrative_state(
+            self, **_: Any
+        ) -> tuple[
+            list[EpisodeArchitecture],
+            list[Any],
+            dict[int, NarrativeState],
+            dict[int, NarrativeState],
+            dict[str, Any],
+        ]:
+            state_pre, state_post = _build_narrative_states()
+            return (
+                [_episode_architecture()],
+                [SimpleNamespace(episode_number=1)],
+                {1: state_pre},
+                {1: state_post},
+                {
+                    "episode_architecture": {"unknown_actor_ids": 0},
+                    "episode_planning": {"unknown_actor_ids": 0},
+                },
+            )
 
         async def _produce_episode(
             self,
@@ -751,6 +778,8 @@ def test_resume_from_scene_discovery_fails_when_upstream_artifact_changes(
             semaphore: asyncio.Semaphore,
             spoken_semaphore: asyncio.Semaphore | None = None,
             series_explanation_registry: list[Any] | None = None,
+            narrative_state_pre: NarrativeState | None = None,
+            narrative_state_post: NarrativeState | None = None,
         ) -> tuple[int, Any]:
             return plan.episode_number, SimpleNamespace(
                 episode_number=plan.episode_number
@@ -855,31 +884,26 @@ def test_resume_from_scene_discovery_uses_stage_label_in_resume_failures(
         ) -> ThematicProject:
             return project.model_copy(update={"episode_count": 1})
 
-        async def _build_episode_architectures(
-            self,
-            *,
-            project: ThematicProject,
-            synthesis_map: SynthesisMap,
-            strategy: NarrativeStrategy,
-            corpus: ThematicCorpus,
-            project_dir: Path,
-            actor_metadata: ActorMetadata,
-            scene_discovery: SceneDiscoveryArtifact | None = None,
-        ) -> tuple[list[EpisodeArchitecture], dict[str, Any]]:
-            return [_episode_architecture()], {"unknown_actor_ids": 0}
-
-        async def _plan_series(
-            self,
-            *,
-            project: ThematicProject,
-            synthesis_map: SynthesisMap,
-            strategy: NarrativeStrategy,
-            episode_architectures: list[EpisodeArchitecture],
-            corpus: ThematicCorpus,
-            project_dir: Path,
-            actor_metadata: ActorMetadata,
-        ) -> tuple[list[Any], dict[str, Any]]:
-            return [SimpleNamespace(episode_number=1)], {"unknown_actor_ids": 0}
+        async def _plan_series_with_narrative_state(
+            self, **_: Any
+        ) -> tuple[
+            list[EpisodeArchitecture],
+            list[Any],
+            dict[int, NarrativeState],
+            dict[int, NarrativeState],
+            dict[str, Any],
+        ]:
+            state_pre, state_post = _build_narrative_states()
+            return (
+                [_episode_architecture()],
+                [SimpleNamespace(episode_number=1)],
+                {1: state_pre},
+                {1: state_post},
+                {
+                    "episode_architecture": {"unknown_actor_ids": 0},
+                    "episode_planning": {"unknown_actor_ids": 0},
+                },
+            )
 
         async def _produce_episode(
             self,
@@ -895,6 +919,8 @@ def test_resume_from_scene_discovery_uses_stage_label_in_resume_failures(
             semaphore: asyncio.Semaphore,
             spoken_semaphore: asyncio.Semaphore | None = None,
             series_explanation_registry: list[Any] | None = None,
+            narrative_state_pre: NarrativeState | None = None,
+            narrative_state_post: NarrativeState | None = None,
         ) -> tuple[int, Any]:
             raise RuntimeError("boom")
 

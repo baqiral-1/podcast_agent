@@ -16,6 +16,31 @@ def _env_bool(name: str, default: bool) -> bool:
 
 _ANTHROPIC_THINKING_EFFORTS = {"low", "medium", "high", "xhigh", "max"}
 
+_SCHEMA_ALIAS_FALLBACKS: dict[str, tuple[str, ...]] = {
+    "primitive_substrate_extraction": ("synthesis_primitives",),
+    "synthesis_primitives": ("primitive_substrate_extraction",),
+    "narrative_strategy_skeleton": ("narrative_strategy",),
+    "narrative_strategy_enrichment": ("narrative_strategy",),
+    "narrative_strategy": ("narrative_strategy_skeleton",),
+}
+
+
+def _schema_lookup_order(schema_name: str) -> tuple[str, ...]:
+    normalized = str(schema_name or "").strip()
+    if not normalized:
+        return ("",)
+    fallback_names = _SCHEMA_ALIAS_FALLBACKS.get(normalized, ())
+    ordered: list[str] = [normalized]
+    ordered.extend(name for name in fallback_names if name not in ordered)
+    return tuple(ordered)
+
+
+def _resolve_override(mapping: dict[str, object], schema_name: str) -> object | None:
+    for candidate in _schema_lookup_order(schema_name):
+        if candidate in mapping:
+            return mapping[candidate]
+    return None
+
 
 class DatabaseConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
@@ -68,7 +93,6 @@ class LLMConfig(BaseModel):
             "primitive_function_tagging_conditions": "anthropic",
             "primitive_function_tagging_artifacts": "anthropic",
             "primitive_function_tagging_readings": "anthropic",
-            "synthesis_primitives": "anthropic",
         },
         description="Per-schema LLM provider overrides keyed by schema_name.",
     )
@@ -120,20 +144,20 @@ class LLMConfig(BaseModel):
             "primitive_function_tagging_conditions": 1200.0,
             "primitive_function_tagging_artifacts": 1200.0,
             "primitive_function_tagging_readings": 1200.0,
-            "synthesis_primitives": 3360.0,
-            "narrative_strategy": 900.0,
+            "narrative_strategy_skeleton": 900.0,
+            "narrative_strategy_enrichment": 900.0,
             "episode_architecture": 900.0,
             "theme_decomposition": 900.0,
             "episode_planning": 1500.0,
             "episode_writing": 1500.0,
             "style_audit": 900.0,
             "spoken_delivery": 1200.0,
+            "narrative_state_reconciliation": 900.0,
         },
         description="Per-schema timeout overrides in seconds.",
     )
     thinking_budget_tokens: dict[str, int] = Field(
         default_factory=lambda: {
-            "narrative_strategy": 30000,
             "primitive_substrate_extraction": 30000,
             "primitive_function_tagging_events": 20000,
             "primitive_function_tagging_acts": 20000,
@@ -143,12 +167,13 @@ class LLMConfig(BaseModel):
             "primitive_function_tagging_conditions": 20000,
             "primitive_function_tagging_artifacts": 20000,
             "primitive_function_tagging_readings": 20000,
+            "narrative_strategy_skeleton": 30000,
+            "narrative_strategy_enrichment": 30000,
             "episode_architecture": 30000,
             "episode_planning": 30000,
             "episode_writing": 30000,
             "style_audit": 16000,
             "spoken_delivery": 30000,
-            "synthesis_primitives": 30000,
             "theme_decomposition": 30000,
             "scene_discovery": 30000,
         },
@@ -265,7 +290,13 @@ class LLMConfig(BaseModel):
                 max_retry_attempts=2,
                 concurrency_limit=3,
             ),
-            "narrative_strategy": AgentConfig(
+            "narrative_strategy_skeleton": AgentConfig(
+                model_name="claude-opus-4-7",
+                temperature=0.5,
+                max_retry_attempts=2,
+                concurrency_limit=6,
+            ),
+            "narrative_strategy_enrichment": AgentConfig(
                 model_name="claude-opus-4-7",
                 temperature=0.5,
                 max_retry_attempts=2,
@@ -313,23 +344,29 @@ class LLMConfig(BaseModel):
                 max_retry_attempts=2,
                 concurrency_limit=9,
             ),
+            "narrative_state_reconciliation": AgentConfig(
+                model_name="claude-sonnet-4-6",
+                temperature=0.3,
+                max_retry_attempts=2,
+                concurrency_limit=6,
+            ),
         },
         description="Per-agent LLM config overrides keyed by schema_name.",
     )
 
     def resolve_anthropic_max_tokens(self, schema_name: str) -> int:
-        override = self.anthropic_max_tokens_overrides.get(schema_name)
+        override = _resolve_override(self.anthropic_max_tokens_overrides, schema_name)
         if override is None:
             resolved = self.anthropic_max_tokens
         else:
-            resolved = override
+            resolved = int(override)
         model_name = self.resolve_model(schema_name)
         if model_name and model_name.strip().lower().startswith("claude-haiku"):
             resolved = min(64000, resolved)
         return max(1, resolved)
 
     def resolve_temperature(self, schema_name: str) -> float:
-        agent_cfg = self.agent_configs.get(schema_name)
+        agent_cfg = _resolve_override(self.agent_configs, schema_name)
         if agent_cfg and agent_cfg.temperature is not None:
             return agent_cfg.temperature
         return self.temperature
@@ -345,29 +382,34 @@ class LLMConfig(BaseModel):
         return value
 
     def resolve_model(self, schema_name: str) -> str:
-        agent_cfg = self.agent_configs.get(schema_name)
+        agent_cfg = _resolve_override(self.agent_configs, schema_name)
         if agent_cfg and agent_cfg.model_name is not None:
             return agent_cfg.model_name
-        return self.model_overrides.get(schema_name, self.model_name)
+        override = _resolve_override(self.model_overrides, schema_name)
+        if override is not None:
+            return str(override)
+        return self.model_name
 
     def resolve_max_retry_attempts(self, schema_name: str) -> int:
-        agent_cfg = self.agent_configs.get(schema_name)
+        agent_cfg = _resolve_override(self.agent_configs, schema_name)
         if agent_cfg and agent_cfg.max_retry_attempts is not None:
             return agent_cfg.max_retry_attempts
         return 2
 
     def resolve_concurrency_limit(self, schema_name: str) -> int | None:
-        agent_cfg = self.agent_configs.get(schema_name)
+        agent_cfg = _resolve_override(self.agent_configs, schema_name)
         if agent_cfg and agent_cfg.concurrency_limit is not None:
             return agent_cfg.concurrency_limit
         return None
 
     def resolve_timeout_seconds(self, schema_name: str) -> float:
-        return self.timeout_seconds_overrides.get(schema_name, self.timeout_seconds)
+        override = _resolve_override(self.timeout_seconds_overrides, schema_name)
+        return float(override) if override is not None else self.timeout_seconds
 
     def resolve_thinking_budget(self, schema_name: str) -> int | None:
         """Return the extended-thinking token budget for *schema_name*, or None if disabled."""
-        return self.thinking_budget_tokens.get(schema_name)
+        override = _resolve_override(self.thinking_budget_tokens, schema_name)
+        return int(override) if override is not None else None
 
     @field_validator("anthropic_thinking_effort_overrides", mode="before")
     @classmethod
@@ -389,9 +431,12 @@ class LLMConfig(BaseModel):
         return normalized
 
     def resolve_anthropic_thinking_effort(self, schema_name: str) -> str | None:
-        override = self.anthropic_thinking_effort_overrides.get(schema_name)
+        override = _resolve_override(
+            self.anthropic_thinking_effort_overrides,
+            schema_name,
+        )
         if override is not None:
-            return override
+            return str(override)
         budget_tokens = self.resolve_thinking_budget(schema_name)
         if budget_tokens is None:
             return None
@@ -400,6 +445,12 @@ class LLMConfig(BaseModel):
         if budget_tokens <= 25_000:
             return "high"
         return "xhigh"
+
+    def resolve_provider(self, schema_name: str) -> str:
+        override = _resolve_override(self.provider_overrides, schema_name)
+        if override is not None:
+            return str(override)
+        return self.provider
 
 
 class TTSConfig(BaseModel):

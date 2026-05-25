@@ -91,7 +91,6 @@ def _strategy() -> NarrativeStrategy:
                     {
                         "beat_id": "beat_1",
                         "label": "Open from the decree",
-                        "kind": "scene",
                         "intended_job": "opening",
                         "source_candidate_ids": ["candidate_01"],
                         "source_primitive_ids": ["primitive_1"],
@@ -385,7 +384,7 @@ def _build_project_dir(tmp_path: Path) -> Path:
                     "primitive_ids": ["primitive_1"],
                     "passage_ids": ["passage_1"],
                     "scene_sketch": "A decree lands and the field changes.",
-                    "candidate_roles": ["opening"],
+                    "scene_jobs": ["opening"],
                     "anchor_image": "A document hits the desk.",
                     "why_sceneable": "The shift is concrete and audible.",
                     "actor_ids": ["actor_1"],
@@ -457,11 +456,12 @@ def _build_project_dir(tmp_path: Path) -> Path:
     return project_dir
 
 
-def test_resume_from_episode_planning_uses_persisted_plan_only(
+def test_resume_from_episode_planning_reruns_planning_then_production(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     project_dir = _build_project_dir(tmp_path)
+    project_dir.joinpath("series_plan.json").unlink()
     calls: dict[str, Any] = {}
 
     class FakeOrchestrator:
@@ -471,15 +471,28 @@ def test_resume_from_episode_planning_uses_persisted_plan_only(
         def _bind_run_logger(self, bound_project_dir: Path) -> None:
             calls["bound_project_dir"] = bound_project_dir
 
-        async def _build_episode_architectures(self, **_: Any) -> None:
+        async def _plan_series_with_narrative_state(self, **_: Any) -> None:
             raise AssertionError("episode architecture should not rerun")
 
-        async def _plan_series(self, **_: Any) -> None:
-            raise AssertionError("episode planning should not rerun")
+        async def _plan_series(self, **kwargs: Any) -> tuple[list[EpisodePlan], dict[str, Any]]:
+            calls["planning_status"] = kwargs["project"].status
+            calls["planning_architecture_episode"] = kwargs["episode_architectures"][
+                0
+            ].episode_number
+            calls["planning_narrative_pre"] = kwargs["narrative_state_pre_by_episode"][
+                1
+            ].next_episode_number
+            plan = _plan()
+            _write_json(
+                project_dir / "series_plan.json",
+                {"episodes": [plan.model_dump(mode="json")]},
+            )
+            return [plan], {"unknown_actor_ids": 0}
 
         async def _produce_episode(self, plan: EpisodePlan, *args: Any, **kwargs: Any) -> tuple[int, SpokenScript]:
             calls["planned_episode_number"] = plan.episode_number
             calls["produce_config"] = kwargs["semaphore"] is not None
+            calls["host_policy"] = kwargs["host_policy"]
             return (
                 1,
                 SpokenScript(
@@ -502,6 +515,7 @@ def test_resume_from_episode_planning_uses_persisted_plan_only(
 
         async def _render_episode_audio(self, *args: Any, **kwargs: Any) -> None:
             calls["audio_rendered"] = True
+            calls["audio_skip"] = kwargs["skip_audio"]
 
     monkeypatch.setattr(
         resume_script,
@@ -516,10 +530,42 @@ def test_resume_from_episode_planning_uses_persisted_plan_only(
 
     assert project_dir.joinpath("tagged_primitives.json").exists() is False
     assert calls["bound_project_dir"] == project_dir
+    assert calls["planning_status"] == ProjectStatus.PLANNING
+    assert calls["planning_architecture_episode"] == 1
+    assert calls["planning_narrative_pre"] == 1
     assert calls["planned_episode_number"] == 1
+    assert calls["host_policy"]["allowed_moves"]
     assert calls["passage_utilization_written"] is True
     assert calls["actor_metrics_written"] is True
     assert calls["audio_rendered"] is True
+    assert calls["audio_skip"] is True
+    assert project_dir.joinpath("series_plan.json").exists() is True
+
+
+def test_resume_from_episode_planning_requires_architecture(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    project_dir = _build_project_dir(tmp_path)
+    project_dir.joinpath("episode_architectures.json").unlink()
+
+    monkeypatch.setattr(
+        resume_script,
+        "Settings",
+        lambda: SimpleNamespace(
+            pipeline=SimpleNamespace(artifact_root=tmp_path),
+        ),
+    )
+    monkeypatch.setattr(
+        resume_script,
+        "PipelineOrchestrator",
+        lambda settings: SimpleNamespace(),
+    )
+
+    with pytest.raises(
+        (RuntimeError, FileNotFoundError), match="episode_architectures.json"
+    ):
+        asyncio.run(resume_script._resume_from_episode_planning("run_1"))
 
 
 def test_resume_from_episode_planning_requires_scene_discovery(

@@ -23,6 +23,21 @@ class APIStatusError(Exception):
         self.status_code = status_code
 
 
+class StructuredAPIStatusError(Exception):
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        body: object | None = None,
+        error_type: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.body = body
+        self.type = error_type
+
+
 class ProviderWrapperError(Exception):
     pass
 
@@ -86,6 +101,29 @@ def test_transient_error_true_for_wrapped_api_status_error() -> None:
 def test_transient_error_true_for_api_overloaded_message_without_status() -> None:
     exc = APIStatusError(
         "{'type': 'error', 'error': {'details': None, 'type': 'overloaded_error', 'message': 'Overloaded'}}"
+    )
+    assert is_transient_error(exc)
+
+
+def test_transient_error_true_for_api_overloaded_body_without_status_or_message() -> None:
+    exc = StructuredAPIStatusError(
+        "provider status failure",
+        body={
+            "type": "error",
+            "error": {
+                "details": None,
+                "type": "overloaded_error",
+                "message": "Overloaded",
+            },
+        },
+    )
+    assert is_transient_error(exc)
+
+
+def test_transient_error_true_for_api_overloaded_type_without_status_or_message() -> None:
+    exc = StructuredAPIStatusError(
+        "provider status failure",
+        error_type="overloaded_error",
     )
     assert is_transient_error(exc)
 

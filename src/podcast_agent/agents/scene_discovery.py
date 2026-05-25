@@ -13,11 +13,10 @@ from podcast_agent.schemas.models import (
 
 _ALLOWED_CANDIDATE_ROLES = {
     "opening",
-    "hinge",
+    "build",
+    "turn",
     "answer",
     "residue",
-    "mechanism",
-    "callback",
 }
 
 
@@ -97,12 +96,19 @@ class SceneDiscoveryAgent(Agent):
 
         invalid_roles: set[str] = set()
         candidate_ids: list[str] = []
+        legacy_field_candidate_ids: list[str] = []
         for candidate in candidates:
             if not isinstance(candidate, dict):
                 continue
-            roles = candidate.get("candidate_roles")
+            used_legacy_field = "candidate_roles" in candidate
+            roles = candidate.get("scene_jobs")
+            if roles is None and used_legacy_field:
+                roles = candidate.get("candidate_roles")
             if not isinstance(roles, list):
                 continue
+            candidate_id = str(candidate.get("candidate_id", "") or "").strip()
+            if used_legacy_field and candidate_id:
+                legacy_field_candidate_ids.append(candidate_id)
             current_invalid_roles = [
                 str(role).strip()
                 for role in roles
@@ -111,19 +117,29 @@ class SceneDiscoveryAgent(Agent):
             if not current_invalid_roles:
                 continue
             invalid_roles.update(current_invalid_roles)
-            candidate_id = str(candidate.get("candidate_id", "") or "").strip()
             if candidate_id:
                 candidate_ids.append(candidate_id)
 
+        if legacy_field_candidate_ids and not invalid_roles:
+            return {
+                "issue": "forbidden_candidate_roles_field",
+                "candidate_ids": legacy_field_candidate_ids,
+                "instruction": (
+                    "Revise only scene_jobs. Do not emit candidate_roles. Every "
+                    "scene_jobs entry must be one of `opening`, `build`, `turn`, "
+                    "`answer`, or `residue`. Keep valid candidates, scene sketches, "
+                    "images, and references unchanged."
+                ),
+            }
         if not invalid_roles:
             return None
         return {
-            "issue": "invalid_candidate_roles",
+            "issue": "invalid_scene_jobs",
             "candidate_ids": candidate_ids,
             "invalid_roles": sorted(invalid_roles),
             "instruction": (
-                "Revise only candidate_roles. Every entry must be one of "
-                "`opening`, `hinge`, `answer`, `residue`, `mechanism`, or `callback`. "
+                "Revise only scene_jobs. Every entry must be one of "
+                "`opening`, `build`, `turn`, `answer`, or `residue`. "
                 "Keep valid candidates, scene sketches, images, and references unchanged."
             ),
         }

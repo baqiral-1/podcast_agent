@@ -16,6 +16,7 @@ from podcast_agent.schemas.models import (
     BookRecord,
     EpisodeArchitecture,
     EventPrimitive,
+    NarrativeState,
     NarrativeStrategy,
     PipelineConfig,
     PrimitiveFunctionTaggingArtifact,
@@ -91,7 +92,6 @@ def _strategy() -> NarrativeStrategy:
                     {
                         "beat_id": "beat_1",
                         "label": "Open from the decree",
-                        "kind": "scene",
                         "intended_job": "opening",
                         "source_candidate_ids": ["candidate_01"],
                         "source_primitive_ids": ["primitive_1"],
@@ -204,6 +204,40 @@ def _architecture() -> EpisodeArchitecture:
     )
 
 
+def _build_narrative_states() -> tuple[NarrativeState, NarrativeState]:
+    state_pre = NarrativeState.model_validate(
+        {
+            "project_id": "run_1",
+            "next_episode_number": 1,
+            "listener": {
+                "known_explanation_item_ids": [],
+                "known_actor_ids": [],
+                "questions": [],
+                "memory_threads": [],
+                "carry_forward_memory": [],
+                "last_episode_takeaway": "",
+            },
+            "host": {
+                "mysteries": [],
+                "assumptions": [],
+                "working_theories": [],
+                "recent_revisions": [],
+                "confidence_posture": "mixed",
+                "last_episode_takeaway": "",
+            },
+        }
+    )
+    state_post = NarrativeState.model_validate(
+        {
+            "project_id": "run_1",
+            "next_episode_number": 2,
+            "listener": state_pre.listener.model_dump(mode="json"),
+            "host": state_pre.host.model_dump(mode="json"),
+        }
+    )
+    return state_pre, state_post
+
+
 def _build_project_dir(tmp_path: Path) -> Path:
     project_dir = tmp_path / "run_1"
     project_dir.mkdir()
@@ -262,7 +296,7 @@ def _build_project_dir(tmp_path: Path) -> Path:
                     "primitive_ids": ["primitive_1"],
                     "passage_ids": ["passage_1"],
                     "scene_sketch": "A decree lands and the field changes.",
-                    "candidate_roles": ["opening", "answer"],
+                    "scene_jobs": ["opening", "answer"],
                     "anchor_image": "A document hits the desk.",
                     "why_sceneable": "The shift is concrete and audible.",
                     "actor_ids": ["actor_1"],
@@ -342,29 +376,34 @@ def test_resume_from_narrative_strategy_uses_scene_discovery_and_current_artifac
                 }
             )
 
-        async def _build_episode_architectures(
-            self,
-            *,
-            project: ThematicProject,
-            synthesis_map: SynthesisMap,
-            strategy: NarrativeStrategy,
-            corpus: ThematicCorpus,
-            project_dir: Path,
-            actor_metadata: ActorMetadata,
-            scene_discovery: SceneDiscoveryArtifact | None = None,
-        ) -> tuple[list[EpisodeArchitecture], dict[str, Any]]:
-            calls["architecture_scene_discovery"] = scene_discovery
+        async def _plan_series_with_narrative_state(
+            self, **kwargs: Any
+        ) -> tuple[
+            list[EpisodeArchitecture],
+            list[Any],
+            dict[int, NarrativeState],
+            dict[int, NarrativeState],
+            dict[str, Any],
+        ]:
+            calls["architecture_scene_discovery"] = kwargs["scene_discovery"]
             architecture = _architecture()
             _write_json(
                 project_dir / "episode_architectures.json",
                 {"episodes": [architecture.model_dump(mode="json")]},
             )
-            return [architecture], {"unknown_actor_ids": 0}
-
-        async def _plan_series(self, **_: Any) -> tuple[list[Any], dict[str, Any]]:
             plan = SimpleNamespace(episode_number=1)
             _write_json(project_dir / "series_plan.json", {"episodes": [{"episode_number": 1}]})
-            return [plan], {"unknown_actor_ids": 0}
+            state_pre, state_post = _build_narrative_states()
+            return (
+                [architecture],
+                [plan],
+                {1: state_pre},
+                {1: state_post},
+                {
+                    "episode_architecture": {"unknown_actor_ids": 0},
+                    "episode_planning": {"unknown_actor_ids": 0},
+                },
+            )
 
         async def _produce_episode(self, *args: Any, **kwargs: Any) -> tuple[int, SpokenScript]:
             return (

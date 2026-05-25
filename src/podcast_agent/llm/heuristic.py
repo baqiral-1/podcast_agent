@@ -617,17 +617,17 @@ class HeuristicLLMClient(LLMClient):
             passage_id = str(passage.get("passage_id", f"passage_{idx + 1:03d}"))
             actor_ids = list(primitive.get("actors", primitive.get("actor_ids", [])) or [])
             if idx == 0:
-                candidate_roles = ["opening"]
+                scene_jobs = ["opening"]
             elif idx == target_min - 3:
-                candidate_roles = ["turn", "hinge"]
+                scene_jobs = ["turn"]
             elif idx == target_min - 2:
-                candidate_roles = ["answer"]
+                scene_jobs = ["answer"]
             elif idx == target_min - 1:
-                candidate_roles = ["residue", "callback"]
+                scene_jobs = ["residue"]
             else:
-                candidate_roles = ["mechanism" if idx % 4 == 0 else "opening"]
-            normalized_roles = [
-                role for role in candidate_roles if role in {"opening", "hinge", "answer", "residue", "mechanism", "callback"}
+                scene_jobs = ["build" if idx % 4 == 0 else "opening"]
+            normalized_scene_jobs = [
+                role for role in scene_jobs if role in {"opening", "build", "turn", "answer", "residue"}
             ] or ["opening"]
             candidates.append(
                 {
@@ -635,7 +635,7 @@ class HeuristicLLMClient(LLMClient):
                     "primitive_ids": [primitive_id],
                     "passage_ids": [passage_id],
                     "scene_sketch": f"Candidate scene {idx + 1} stages one load-bearing historical beat.",
-                    "candidate_roles": normalized_roles[:2],
+                    "scene_jobs": normalized_scene_jobs[:2],
                     "anchor_image": "A concrete room, object, or public act anchors the beat.",
                     "why_sceneable": "The beat has a visible carrier and a clear oral payoff.",
                     "quote_anchor": "A short line can survive on air." if idx % 3 == 0 else "",
@@ -813,7 +813,6 @@ class HeuristicLLMClient(LLMClient):
                     {
                         "beat_id": f"episode_{episode_number:02d}_opening",
                         "label": f"Episode {episode_number} opening promise",
-                        "kind": "scene",
                         "intended_job": "opening",
                         "source_candidate_ids": [
                             str(opening_candidate.get("candidate_id", ""))
@@ -829,7 +828,6 @@ class HeuristicLLMClient(LLMClient):
                     {
                         "beat_id": f"episode_{episode_number:02d}_answer",
                         "label": f"Episode {episode_number} answer promise",
-                        "kind": "scene",
                         "intended_job": "answer",
                         "source_candidate_ids": [
                             str(answer_candidate.get("candidate_id", ""))
@@ -845,7 +843,6 @@ class HeuristicLLMClient(LLMClient):
                     {
                         "beat_id": f"episode_{episode_number:02d}_residue",
                         "label": f"Episode {episode_number} residue promise",
-                        "kind": "callback",
                         "intended_job": "residue",
                         "source_candidate_ids": [
                             str(residue_candidate.get("candidate_id", ""))
@@ -925,51 +922,6 @@ class HeuristicLLMClient(LLMClient):
                 ),
             },
             "episodes": enriched_episodes,
-        }
-
-    def _generate_narrative_strategy(self, payload: PromptPayload) -> dict[str, Any]:
-        skeleton = self._generate_narrative_strategy_skeleton(payload)
-        enrichment = self._generate_narrative_strategy_enrichment(
-            {
-                "strategy_skeleton": skeleton,
-                "project": payload.get("project", {}),
-                "episode_scene_candidates": [
-                    {
-                        "episode_number": episode["episode_number"],
-                        "candidates": list(
-                            (payload.get("scene_discovery", {}) or {}).get(
-                                "candidates", []
-                            )
-                        )[:3],
-                    }
-                    for episode in skeleton.get("episodes", [])
-                ],
-            }
-        )
-        merged_episodes: list[dict[str, Any]] = []
-        enrichment_by_number = {
-            int(episode.get("episode_number", 0)): episode
-            for episode in enrichment.get("episodes", [])
-            if isinstance(episode, dict)
-        }
-        for skeleton_episode in skeleton.get("episodes", []):
-            if not isinstance(skeleton_episode, dict):
-                continue
-            episode_number = int(skeleton_episode.get("episode_number", 0) or 0)
-            merged_episodes.append(
-                {
-                    **skeleton_episode,
-                    **enrichment_by_number.get(episode_number, {}),
-                }
-            )
-        return {
-            "strategy_type": skeleton["strategy_type"],
-            "justification": skeleton["justification"],
-            "series_arc": skeleton["series_arc"],
-            "episode_arc_outline": skeleton["episode_arc_outline"],
-            "recommended_episode_count": skeleton["recommended_episode_count"],
-            "narrator_profile": enrichment["narrator_profile"],
-            "episodes": merged_episodes,
         }
 
     def _generate_episode_architecture(self, payload: PromptPayload) -> dict[str, Any]:

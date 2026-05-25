@@ -122,15 +122,6 @@ class SynthesisTag(str, Enum):
     CONTEXTUALIZES = "contextualizes"
     INDEPENDENT = "independent"
 
-
-class InsightType(str, Enum):
-    SYNCHRONICITY = "synchronicity"
-    PRODUCTIVE_FRICTION = "productive_friction"
-    INTELLECTUAL_SCAFFOLDING = "intellectual_scaffolding"
-    LATENT_PATTERN = "latent_pattern"
-    EPISTEMIC_DRIFT = "epistemic_drift"
-
-
 class SupportPrimitiveRole(str, Enum):
     STAKES = "stakes"
     MECHANISM = "mechanism"
@@ -269,15 +260,6 @@ class SceneFunction(str, Enum):
     AFTERLIFE = "afterlife"
 
 
-class PromisedBeatKind(str, Enum):
-    SCENE = "scene"
-    IMAGE = "image"
-    ACTOR_TURN = "actor_turn"
-    MECHANISM = "mechanism"
-    CALLBACK = "callback"
-    QUOTE = "quote"
-
-
 class PromisedBeatDecision(str, Enum):
     STAGE = "stage"
     DEFER = "defer"
@@ -379,7 +361,7 @@ class PipelineConfig(StrictModel):
     episode_architecture_concurrency: int = Field(default=12, ge=1)
     episode_planning_concurrency: int = Field(default=12, ge=1)
     episode_write_concurrency: int = Field(default=8, ge=1)
-    episode_writing_batch_count: int = Field(default=4, ge=1)
+    episode_writing_batch_count: int = Field(default=5, ge=1)
     spoken_delivery_concurrency: int | None = Field(default=8, ge=1)
     architecture_section_target_min: int = Field(default=12, ge=1)
     architecture_section_target_max: int = Field(default=16, ge=1)
@@ -547,14 +529,14 @@ def scene_job_budget_for_mode(mode: PodcastMode | str) -> dict[str, int]:
             "max_recap_build_scenes": 1,
         }
     return {
-        "total_min": 66,
-        "total_max": 80,
+        "total_min": 40,
+        "total_max": 48,
         "opening_min": 3,
         "opening_max": 3,
-        "build_min": 21,
-        "build_max": 26,
-        "turn_min": 3,
-        "turn_max": 4,
+        "build_min": 28,
+        "build_max": 33,
+        "turn_min": 6,
+        "turn_max": 9,
         "answer_min": 1,
         "answer_max": 1,
         "residue_min": 1,
@@ -569,8 +551,8 @@ def scene_discovery_candidate_range_for_mode(
     mode: PodcastMode | str,
 ) -> tuple[int, int]:
     if PodcastMode(mode) == PodcastMode.MINIFIED:
-        return 16, 24
-    return 48, 72
+        return 18, 26
+    return 53, 79
 
 
 def resolve_pipeline_config_for_mode(config: "PipelineConfig") -> "PipelineConfig":
@@ -613,7 +595,7 @@ def resolve_pipeline_config_for_mode(config: "PipelineConfig") -> "PipelineConfi
             "episode_spine_recall_primitive_target_max": 3,
             "narrative_strategy_episode_count_min": 8,
             "narrative_strategy_episode_count_max": 12,
-            "episode_writing_batch_count": 4,
+            "episode_writing_batch_count": 5,
             "architecture_section_target_min": 12,
             "architecture_section_target_max": 16,
             "min_episode_minutes": 130.0,
@@ -1412,25 +1394,24 @@ PRIMITIVE_SUBSTRATE_SET = set(PRIMITIVE_SUBSTRATES)
 PRIMITIVE_FUNCTION_SET = set(PRIMITIVE_FUNCTIONS)
 
 FULL_PRIMITIVE_SUBSTRATE_TARGET_RANGES: dict[str, tuple[int, int]] = {
-    "events": (82, 113),
-    "acts": (42, 56),
-    "utterances": (11, 16),
-    "actor_portraits": (11, 15),
-    "mechanisms": (35, 48),
-    "conditions": (20, 25),
-    "artifacts": (17, 23),
-    "readings": (10, 12),
-}
-_BASE_MINIFIED_PRIMITIVE_SUBSTRATE_TARGET_RANGES: dict[str, tuple[int, int]] = {
-    substrate: _divide_range_floor(lower_bound, upper_bound)
-    for substrate, (
-        lower_bound,
-        upper_bound,
-    ) in FULL_PRIMITIVE_SUBSTRATE_TARGET_RANGES.items()
+    "events": (87, 120),
+    "acts": (45, 59),
+    "utterances": (12, 17),
+    "actor_portraits": (12, 16),
+    "mechanisms": (37, 51),
+    "conditions": (21, 27),
+    "artifacts": (18, 24),
+    "readings": (11, 13),
 }
 MINIFIED_PRIMITIVE_SUBSTRATE_TARGET_RANGES: dict[str, tuple[int, int]] = {
-    substrate: _scale_range_floor_by_ratio(range_values, ratio=0.7)
-    for substrate, range_values in _BASE_MINIFIED_PRIMITIVE_SUBSTRATE_TARGET_RANGES.items()
+    "events": (19, 27),
+    "acts": (10, 13),
+    "utterances": (2, 3),
+    "actor_portraits": (2, 3),
+    "mechanisms": (7, 12),
+    "conditions": (4, 5),
+    "artifacts": (3, 4),
+    "readings": (2, 2),
 }
 
 
@@ -2308,9 +2289,7 @@ class SceneDiscoveryCandidate(StrictModel):
     primitive_ids: list[str] = Field(default_factory=list, min_length=1)
     passage_ids: list[str] = Field(default_factory=list, min_length=1)
     scene_sketch: str = Field(min_length=1)
-    candidate_roles: list[
-        Literal["opening", "hinge", "answer", "residue", "mechanism", "callback"]
-    ] = Field(default_factory=list, min_length=1, max_length=4)
+    scene_jobs: list[SceneJob] = Field(default_factory=list, min_length=1, max_length=2)
     anchor_image: str = Field(min_length=1)
     why_sceneable: str = Field(min_length=1)
     quote_anchor: str = ""
@@ -2321,10 +2300,13 @@ class SceneDiscoveryCandidate(StrictModel):
         self.primitive_ids = list(dict.fromkeys(_nonempty_text(item) for item in self.primitive_ids if _nonempty_text(item)))
         self.passage_ids = list(dict.fromkeys(_nonempty_text(item) for item in self.passage_ids if _nonempty_text(item)))
         self.actor_ids = list(dict.fromkeys(_nonempty_text(item) for item in self.actor_ids if _nonempty_text(item)))
+        self.scene_jobs = list(dict.fromkeys(self.scene_jobs))
         if not self.primitive_ids:
             raise ValueError("scene discovery candidates must reference primitive_ids")
         if not self.passage_ids:
             raise ValueError("scene discovery candidates must reference passage_ids")
+        if any(scene_job == SceneJob.CLOSE for scene_job in self.scene_jobs):
+            raise ValueError("scene discovery candidates may not use close scene_jobs")
         return self
 
 
@@ -2342,7 +2324,6 @@ class SceneDiscoveryArtifact(StrictModel):
 class PromisedBeat(StrictModel):
     beat_id: str = Field(min_length=1)
     label: str = Field(min_length=1)
-    kind: PromisedBeatKind
     intended_job: SceneJob
     source_candidate_ids: list[str] = Field(default_factory=list, max_length=4)
     source_primitive_ids: list[str] = Field(default_factory=list, max_length=6)

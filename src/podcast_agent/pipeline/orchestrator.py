@@ -33,7 +33,6 @@ from pydantic import ValidationError
 from podcast_agent.agents.book_summary import BookSummaryAgent
 from podcast_agent.agents.chapter_summary import ChapterSummaryAgent
 from podcast_agent.agents.episode_architecture import EpisodeArchitectureAgent
-from podcast_agent.agents.narrative_strategy import NarrativeStrategyAgent
 from podcast_agent.agents.narrative_strategy_enrichment import (
     NarrativeStrategyEnrichmentAgent,
 )
@@ -2928,7 +2927,7 @@ _NARRATIVE_STRATEGY_ACTOR_KEEP_FIELDS = {
 _NARRATIVE_STRATEGY_SCENE_KEEP_FIELDS = {
     "candidate_id",
     "primitive_ids",
-    "candidate_roles",
+    "scene_jobs",
     "scene_sketch",
     "anchor_image",
     "why_sceneable",
@@ -3120,11 +3119,10 @@ def _build_episode_scene_candidate_payloads(
         ]
     role_priority = {
         "opening": 0,
-        "hinge": 1,
+        "turn": 1,
         "answer": 2,
         "residue": 3,
-        "callback": 4,
-        "mechanism": 5,
+        "build": 4,
     }
     cap = _episode_scene_candidate_cap_for_mode(mode)
     payloads: list[dict[str, Any]] = []
@@ -3139,7 +3137,7 @@ def _build_episode_scene_candidate_payloads(
             core_overlap = len(core_ids.intersection(candidate.primitive_ids))
             role_rank = min(
                 role_priority.get(role, len(role_priority))
-                for role in candidate.candidate_roles
+                for role in candidate.scene_jobs
             )
             score = (
                 -core_overlap,
@@ -5768,6 +5766,17 @@ def _writing_result_word_count(result: Any) -> int:
     )
 
 
+def _default_writing_movement_goal(
+    *,
+    architecture: EpisodeArchitecture,
+    section_id: str,
+) -> str:
+    for section in architecture.sections:
+        if section.section_id == section_id:
+            return section.purpose.value
+    return "continue"
+
+
 def _normalize_writing_section_outputs(
     *,
     result: Any,
@@ -5789,42 +5798,32 @@ def _normalize_writing_section_outputs(
     if current_section_id is not None:
         expected_sections.append((current_section_id, list(current_scene_ids)))
 
-    returned_sections = [
-        (
-            str(getattr(section_output, "section_id", "") or ""),
-            [
-                str(scene_id)
-                for scene_id in list(
-                    getattr(section_output, "scene_card_ids", []) or []
-                )
-            ],
-        )
-        for section_output in prose_sections
-    ]
-    if returned_sections != expected_sections:
-        raise ComplianceViolationError(
-            "Episode writing must return exactly one prose section per planned section window, with exact scene_card_ids in order "
-            f"(episode {episode_number}); expected {expected_sections}, received {returned_sections}.",
-            data={
-                "episode_number": episode_number,
-                "expected_sections": expected_sections,
-                "returned_sections": returned_sections,
-                "failed_part_number": None,
-            },
-        )
-
     normalized: list[dict[str, Any]] = []
-    for section_output in prose_sections:
-        section_id = str(section_output.section_id)
+    for index, section_output in enumerate(prose_sections):
+        expected_section_id = ""
+        expected_scene_ids: list[str] = []
+        if index < len(expected_sections):
+            expected_section_id, expected_scene_ids = expected_sections[index]
+
+        section_id = str(getattr(section_output, "section_id", "") or "").strip()
+        if not section_id:
+            section_id = expected_section_id
+        scene_card_ids = [
+            str(scene_id)
+            for scene_id in list(getattr(section_output, "scene_card_ids", []) or [])
+        ]
+        if not scene_card_ids:
+            scene_card_ids = list(expected_scene_ids)
+        movement_goal = str(getattr(section_output, "movement_goal", "") or "").strip()
+        if not movement_goal:
+            movement_goal = _default_writing_movement_goal(
+                architecture=architecture,
+                section_id=section_id,
+            )
         payload = {
             "section_id": section_id,
-            "scene_card_ids": [
-                str(scene_id)
-                for scene_id in list(
-                    getattr(section_output, "scene_card_ids", []) or []
-                )
-            ],
-            "movement_goal": str(section_output.movement_goal),
+            "scene_card_ids": scene_card_ids,
+            "movement_goal": movement_goal,
             "text": str(section_output.text),
             "source_book_ids": list(
                 getattr(section_output, "source_book_ids", []) or []
@@ -5849,6 +5848,21 @@ def _normalize_writing_section_outputs(
                 for citation in getattr(section_output, "citations", []) or []
             ]
         normalized.append(payload)
+    returned_sections = [
+        (payload["section_id"], list(payload["scene_card_ids"]))
+        for payload in normalized
+    ]
+    if returned_sections != expected_sections:
+        raise ComplianceViolationError(
+            "Episode writing must return exactly one prose section per planned section window, with exact scene_card_ids in order "
+            f"(episode {episode_number}); expected {expected_sections}, received {returned_sections}.",
+            data={
+                "episode_number": episode_number,
+                "expected_sections": expected_sections,
+                "returned_sections": returned_sections,
+                "failed_part_number": None,
+            },
+        )
     return normalized
 
 
@@ -7044,23 +7058,6 @@ def _validate_plan_transition(
                 "episode_number": plan.episode_number,
                 "close_scene_card_id": close_scene_id,
                 "instruction": "Make the close scene the final scene card in the episode.",
-            },
-        )
-
-    overfull_host_phases = [
-        f"{scene.scene_id}:{phase}"
-        for scene in plan.scene_cards
-        for phase in _HOST_MOVE_PHASE_ORDER
-        if len(getattr(scene.host_moves, phase)) > 1
-    ]
-    if overfull_host_phases:
-        raise ComplianceViolationError(
-            "Episode plan must use at most one host cue per populated phase.",
-            data={
-                "issue": "host_phase_multiple_cues",
-                "episode_number": plan.episode_number,
-                "phase_ids": overfull_host_phases,
-                "instruction": "Compress host cues so each populated phase has at most one cue.",
             },
         )
 
@@ -8414,9 +8411,6 @@ class PipelineOrchestrator:
         }
         self.scene_discovery_agent = SceneDiscoveryAgent(
             self.llm, max_retry_attempts=_retries("scene_discovery")
-        )
-        self.narrative_strategy_agent = NarrativeStrategyAgent(
-            self.llm, max_retry_attempts=_retries("narrative_strategy")
         )
         self.narrative_strategy_skeleton_agent = NarrativeStrategySkeletonAgent(
             self.llm, max_retry_attempts=_retries("narrative_strategy_skeleton")
@@ -11106,198 +11100,6 @@ class PipelineOrchestrator:
                 "reconciliation_count": len(reconciliations),
             },
         )
-
-    async def _build_episode_architectures(
-        self,
-        project: ThematicProject,
-        synthesis_map: SynthesisMap,
-        strategy: NarrativeStrategy,
-        corpus: ThematicCorpus,
-        project_dir: Path,
-        actor_metadata: ActorMetadata | None = None,
-        scene_discovery: SceneDiscoveryArtifact | None = None,
-    ) -> tuple[list[EpisodeArchitecture], dict[str, Any]]:
-        actor_metadata = actor_metadata or ActorMetadata(project_id=project.project_id)
-        async with _stage_log(
-            self.run_logger,
-            "episode_architecture",
-            project_dir,
-            episode_count=project.episode_count,
-            strategy=strategy.strategy_type,
-        ) as ctx:
-            episode_map = {
-                episode.episode_number: episode for episode in strategy.episodes
-            }
-            missing_episodes = [
-                episode_number
-                for episode_number in range(1, project.episode_count + 1)
-                if episode_number not in episode_map
-            ]
-            if missing_episodes:
-                raise RuntimeError(
-                    "Narrative strategy did not assign episode spines for "
-                    f"episodes: {missing_episodes}"
-                )
-
-            primitive_lookup = _flatten_synthesis_primitives(synthesis_map)
-            passage_lookup = _build_passage_lookup(corpus)
-            project_metadata = {
-                "podcast_mode": project.config.podcast_mode.value,
-                "theme": project.theme,
-                "sub_themes": project.sub_themes,
-                "book_count": len(project.books),
-                "books": [
-                    {"book_id": b.book_id, "title": b.title, "author": b.author}
-                    for b in project.books
-                ],
-                "architecture_section_target_min": (
-                    project.config.architecture_section_target_min
-                ),
-                "architecture_section_target_max": (
-                    project.config.architecture_section_target_max
-                ),
-                "min_episode_minutes": project.config.min_episode_minutes,
-                "max_episode_minutes": project.config.max_episode_minutes,
-            }
-            architecture_sem = asyncio.Semaphore(
-                max(1, project.config.episode_architecture_concurrency)
-            )
-            ordered_episodes = [
-                episode_map[episode_number]
-                for episode_number in range(1, project.episode_count + 1)
-            ]
-
-            async def _build_episode_architecture(
-                episode: StrategyEpisode,
-            ) -> tuple[int, StrategyEpisode, EpisodeArchitecture, dict[str, Any]]:
-                async with architecture_sem:
-                    primitive_ids_by_role = {
-                        "core": list(episode.episode_spine.core_primitive_ids),
-                        "support": list(
-                            episode.episode_spine.support_primitive_roles.keys()
-                        ),
-                        "recall": list(episode.episode_spine.recall_primitive_ids),
-                    }
-                    episode_synthesis_map_payload, primitive_ids = (
-                        _build_episode_synthesis_map_payload(
-                            synthesis_map,
-                            primitive_ids_by_role,
-                        )
-                    )
-                    episode_actor_ids = _collect_episode_actor_ids(
-                        strategy_episode=episode,
-                        primitive_ids=primitive_ids,
-                        primitive_lookup=primitive_lookup,
-                    )
-                    episode_actor_metadata = select_actor_metadata_subset(
-                        actor_metadata,
-                        episode_actor_ids,
-                    )
-                    core_passages = _build_episode_architecture_core_passages(
-                        driving_question=episode.episode_spine.listener_problem,
-                        thematic_focus=episode.thematic_focus,
-                        episode_spine=episode.episode_spine,
-                        primitive_lookup=primitive_lookup,
-                        passage_lookup=passage_lookup,
-                    )
-                    support_passages = _build_episode_architecture_support_passages(
-                        driving_question=episode.episode_spine.listener_problem,
-                        thematic_focus=episode.thematic_focus,
-                        episode_spine=episode.episode_spine,
-                        primitive_lookup=primitive_lookup,
-                        passage_lookup=passage_lookup,
-                    )
-                    episode_scene_payload = _build_episode_scene_payload(
-                        strategy_episode=episode,
-                        scene_discovery=scene_discovery,
-                    )
-                    payload = self.episode_architecture_agent.build_payload(
-                        episode=episode.model_dump(mode="json"),
-                        synthesis_map=episode_synthesis_map_payload,
-                        project_metadata=project_metadata,
-                        core_passages=core_passages,
-                        support_passages=support_passages,
-                        episode_scenes=episode_scene_payload,
-                        series_explanation_registry=[
-                            item.model_dump(mode="json")
-                            for item in strategy.series_explanation_registry
-                        ],
-                        series_actor_explanation_registry=[
-                            item.model_dump(mode="json")
-                            for item in strategy.series_actor_explanation_registry
-                        ],
-                        narrator_profile=strategy.narrator_profile.model_dump(
-                            mode="json"
-                        ),
-                        actor_metadata=compact_actor_metadata(episode_actor_metadata),
-                    )
-                    architecture = await asyncio.to_thread(
-                        self.episode_architecture_agent.run, payload
-                    )
-                    architecture = _validate_architecture_transition(
-                        strategy_episode=episode,
-                        architecture=architecture,
-                    )
-                    report = {
-                        "episode_number": episode.episode_number,
-                        "section_count": len(architecture.sections),
-                        "major_turn_section_id": architecture.major_turn_section_id,
-                        "core_primitive_count": len(
-                            episode.episode_spine.core_primitive_ids
-                        ),
-                        "episode_scene_candidate_count": len(episode_scene_payload),
-                        "actor_directive_count": len(episode.actor_arc_directives),
-                    }
-                    return episode.episode_number, episode, architecture, report
-
-            architecture_results = await asyncio.gather(
-                *[_build_episode_architecture(episode) for episode in ordered_episodes]
-            )
-            architecture_results.sort(key=lambda item: item[0])
-            architectures = [
-                architecture for _, _, architecture, _ in architecture_results
-            ]
-            reports = [report for _, _, _, report in architecture_results]
-            realization_reports = [
-                _build_episode_architecture_realization(
-                    strategy_episode=episode,
-                    architecture=architecture,
-                    pipeline_config=project.config,
-                    narrator_profile=strategy.narrator_profile,
-                    primitive_lookup=primitive_lookup,
-                    series_explanation_registry=strategy.series_explanation_registry,
-                )
-                for _, episode, architecture, _ in architecture_results
-            ]
-            for realization in realization_reports:
-                for warning in realization["warnings"]:
-                    logger.warning(
-                        "episode_architecture_warning episode=%s %s",
-                        realization["episode_number"],
-                        warning,
-                    )
-
-            _save_json(
-                project_dir / "episode_architectures.json",
-                {
-                    "episodes": [
-                        episode.model_dump(mode="json") for episode in architectures
-                    ]
-                },
-            )
-            _save_json(
-                project_dir / "architecture_realization.json",
-                {"episodes": realization_reports},
-            )
-            ctx["output_summary"] = {
-                "episode_count": len(architectures),
-                "titles": [episode.title for episode in ordered_episodes],
-                "warning_count": sum(
-                    realization["warning_count"] for realization in realization_reports
-                ),
-            }
-            return architectures, _merge_actor_metric_dicts(reports)
-
     async def _plan_series(
         self,
         project: ThematicProject,
