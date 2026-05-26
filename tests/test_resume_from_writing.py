@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+from _section_progression_helpers import make_section_progression
 from podcast_agent.schemas.models import (
     ActorMetadata,
     ActorProfile,
@@ -99,6 +100,7 @@ def _episode_architecture() -> EpisodeArchitecture:
         "sections": [
             {
                 "section_id": "section_1",
+                "section_progression": make_section_progression("setup", label="section_1"),
                 "purpose": "opening",
                 "approx_runtime_minutes": 0.25,
                 "primitive_ids": ["primitive_1"],
@@ -118,6 +120,7 @@ def _episode_architecture() -> EpisodeArchitecture:
             },
             {
                 "section_id": "section_2",
+                "section_progression": make_section_progression("advance", label="section_2"),
                 "purpose": "setup",
                 "approx_runtime_minutes": 0.25,
                 "primitive_ids": ["primitive_1"],
@@ -137,6 +140,7 @@ def _episode_architecture() -> EpisodeArchitecture:
             },
             {
                 "section_id": "section_3",
+                "section_progression": make_section_progression("advance", label="section_3"),
                 "purpose": "turn",
                 "approx_runtime_minutes": 0.25,
                 "primitive_ids": ["primitive_1"],
@@ -156,6 +160,7 @@ def _episode_architecture() -> EpisodeArchitecture:
             },
             {
                 "section_id": "section_4",
+                "section_progression": make_section_progression("advance", label="section_4"),
                 "purpose": "setup",
                 "approx_runtime_minutes": 0.25,
                 "primitive_ids": ["primitive_1"],
@@ -175,6 +180,7 @@ def _episode_architecture() -> EpisodeArchitecture:
             },
             {
                 "section_id": "section_5",
+                "section_progression": make_section_progression("advance", label="section_5"),
                 "purpose": "setup",
                 "approx_runtime_minutes": 0.25,
                 "primitive_ids": ["primitive_1"],
@@ -194,6 +200,7 @@ def _episode_architecture() -> EpisodeArchitecture:
             },
             {
                 "section_id": "section_6",
+                "section_progression": make_section_progression("advance", label="section_6"),
                 "purpose": "setup",
                 "approx_runtime_minutes": 0.25,
                 "primitive_ids": ["primitive_1"],
@@ -213,6 +220,7 @@ def _episode_architecture() -> EpisodeArchitecture:
             },
             {
                 "section_id": "section_7",
+                "section_progression": make_section_progression("advance", label="section_7"),
                 "purpose": "setup",
                 "approx_runtime_minutes": 0.125,
                 "primitive_ids": ["primitive_1"],
@@ -232,6 +240,7 @@ def _episode_architecture() -> EpisodeArchitecture:
             },
             {
                 "section_id": "section_8",
+                "section_progression": make_section_progression("answer", label="section_8"),
                 "purpose": "setup",
                 "approx_runtime_minutes": 0.125,
                 "primitive_ids": ["primitive_1"],
@@ -251,6 +260,7 @@ def _episode_architecture() -> EpisodeArchitecture:
             },
             {
                 "section_id": "section_9",
+                "section_progression": make_section_progression("close", label="section_9"),
                 "purpose": "closing",
                 "approx_runtime_minutes": 0.25,
                 "primitive_ids": ["primitive_1"],

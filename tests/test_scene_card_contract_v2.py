@@ -10,6 +10,7 @@ from podcast_agent.pipeline.orchestrator import (
     _build_structural_card_concreteness_warnings,
     _build_style_audit_sections_payload,
 )
+from _section_progression_helpers import make_section_progression
 from podcast_agent.schemas.models import (
     ActorArcDirective,
     ActorArcThread,
@@ -44,9 +45,10 @@ def _framing() -> FramingBlock:
 
 
 def _section(section_id: str) -> ArchitectureSection:
+    is_close = section_id == "section_close"
     return ArchitectureSection(
         section_id=section_id,
-        purpose="setup" if section_id != "section_close" else "closing",
+        purpose="setup" if not is_close else "closing",
         approx_runtime_minutes=12.0,
         primitive_ids=["core_1"],
         section_anchor="A folder opens.",
@@ -54,6 +56,9 @@ def _section(section_id: str) -> ArchitectureSection:
         listener_tension="What changes now?",
         section_turn="The pressure becomes visible.",
         transition_logic="The paper trail becomes public.",
+        section_progression=make_section_progression(
+            "close" if is_close else "setup", label=section_id
+        ),
     )
 
 
@@ -455,6 +460,7 @@ def test_host_density_diagnostics_flag_build_scene_overcoverage_and_verdict_dens
             ArchitectureSection(
                 section_id="section_1",
                 purpose="setup",
+                section_progression=make_section_progression("setup", label="section_1"),
                 approx_runtime_minutes=10.0,
                 primitive_ids=["core_1"],
                 section_anchor="A file opens.",
@@ -463,6 +469,7 @@ def test_host_density_diagnostics_flag_build_scene_overcoverage_and_verdict_dens
             ArchitectureSection(
                 section_id="section_close",
                 purpose="closing",
+                section_progression=make_section_progression("close", label="section_close"),
                 approx_runtime_minutes=2.0,
                 primitive_ids=["core_1"],
                 section_anchor="A final folder closes.",
@@ -535,6 +542,7 @@ def test_architecture_grounding_diagnostics_flag_overloaded_run_without_actor_ar
             ArchitectureSection(
                 section_id="section_1",
                 purpose="setup",
+                section_progression=make_section_progression("setup", label="section_1"),
                 approx_runtime_minutes=9.0,
                 primitive_ids=["core_1"],
                 section_anchor="Ledger one.",
@@ -548,6 +556,7 @@ def test_architecture_grounding_diagnostics_flag_overloaded_run_without_actor_ar
             ArchitectureSection(
                 section_id="section_2",
                 purpose="setup",
+                section_progression=make_section_progression("setup", label="section_2"),
                 approx_runtime_minutes=9.0,
                 primitive_ids=["core_2"],
                 section_anchor="Ledger two.",
@@ -585,6 +594,7 @@ def test_architecture_grounding_diagnostics_flag_missing_directive_realization()
             ArchitectureSection(
                 section_id="section_1",
                 purpose="setup",
+                section_progression=make_section_progression("setup", label="section_1"),
                 approx_runtime_minutes=9.0,
                 primitive_ids=["core_1"],
                 section_anchor="Ledger one.",
@@ -601,6 +611,7 @@ def test_architecture_grounding_diagnostics_flag_missing_directive_realization()
             ArchitectureSection(
                 section_id="section_2",
                 purpose="setup",
+                section_progression=make_section_progression("setup", label="section_2"),
                 approx_runtime_minutes=9.0,
                 primitive_ids=["core_2"],
                 section_anchor="Ledger two.",

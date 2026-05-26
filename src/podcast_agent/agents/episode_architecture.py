@@ -69,10 +69,6 @@ class EpisodeArchitectureAgent(Agent):
             section_target_min=section_target_min,
             section_target_max=section_target_max,
         )
-        if not result.answer_section_id:
-            raise ValueError("episode architecture must include answer_section_id")
-        if not result.residue_section_id:
-            raise ValueError("episode architecture must include residue_section_id")
         episode = payload.get("episode")
         promised_beats = []
         if isinstance(episode, dict):

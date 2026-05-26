@@ -35,7 +35,7 @@ class EpisodePlanningAgent(Agent):
         "- Phase-specific note rules:\n"
         "  - `open` should foreground entry, not conclusion.\n"
         "  - `pivot` should say what becomes newly legible after the material lands.\n"
-        "  - `close` should leave residue, pressure, verdict, or return, not re-explain setup.\n"
+        "  - `close` should leave after-pressure, verdict, or return, not re-explain setup.\n"
         "- Weak vs. strong note examples:\n"
         '  - Weak: `target = state the through-line`; note = "State the through-line."\n'
         '  - Strong: `target = hidden ministries`; note = "Use Bazargan\'s office and the hidden ministries to show that the Council is already governing behind the cabinet."'
@@ -66,8 +66,6 @@ class EpisodePlanningAgent(Agent):
     def validate_result(self, result: EpisodePlanDraft, payload: dict) -> EpisodePlanDraft:
         if not result.answer_scene_card_id:
             raise ValueError("episode plan must include answer_scene_card_id")
-        if not result.residue_scene_card_id:
-            raise ValueError("episode plan must include residue_scene_card_id")
         close_scene_count = sum(
             1 for scene in result.scene_cards if scene.scene_job == SceneJob.CLOSE
         )

@@ -280,3 +280,76 @@ def test_decoded_planning_payload_with_scene_actors_validates() -> None:
     validated = EpisodePlanDraft.model_validate(decoded)
 
     assert validated.scene_cards[0].actors[0].actor_id == "actor_1"
+
+
+def test_planning_transport_has_no_residue_alias_and_round_trips() -> None:
+    # The residue concept was removed: residue_scene_card_id/residue_sid must not
+    # survive encode/decode, and the canonical answer_scene_card_id round-trips.
+    payload = {
+        "episode_number": 1,
+        "framing": {
+            "opening_image": "A crowded gate.",
+            "threat_or_unresolved_action": "No one knows who will fire first.",
+            "opening_question": "Who actually controls the square?",
+            "handoff_scene_card_id": "scene_1",
+        },
+        "scene_cards": [
+            {
+                "scene_id": "scene_1",
+                "section_id": "sec_1",
+                "title": "Arrival",
+                "scene_role": "actor_setup",
+                "scene_job": "opening",
+                "beat_change": "The room is now charged.",
+                "must_land_facts": {"required": ["The crowd is waiting."]},
+                "entry_image": "A crowded gate.",
+                "observable_detail": "The gate is still shut.",
+                "estimated_duration_seconds": 45,
+                "host_moves": {"open": [{"move_type": "orient", "target": "crowd"}]},
+                "passage_ids": ["000001"],
+            },
+            {
+                "scene_id": "scene_2",
+                "section_id": "sec_2",
+                "title": "The answer",
+                "scene_role": "implication",
+                "scene_job": "answer",
+                "beat_change": "The answer becomes clear.",
+                "must_land_facts": {"required": ["The decision lands."]},
+                "entry_image": "A signed order on the desk.",
+                "observable_detail": "Ink still wet.",
+                "estimated_duration_seconds": 60,
+                "host_moves": {"pivot": [{"move_type": "clarify", "target": "the decision"}]},
+                "passage_ids": ["000002"],
+            },
+            {
+                "scene_id": "scene_3",
+                "section_id": "sec_3",
+                "title": "Exit",
+                "scene_role": "implication",
+                "scene_job": "close",
+                "beat_change": "The episode exits.",
+                "must_land_facts": {"required": ["Nothing reopens."]},
+                "entry_image": "Lights down.",
+                "observable_detail": "An empty hall.",
+                "estimated_duration_seconds": 30,
+                "host_moves": {"close": [{"move_type": "callback", "target": "clean exit"}]},
+                "passage_ids": ["000003"],
+            },
+        ],
+        "answer_scene_card_id": "scene_2",
+    }
+
+    encoded = encode_transport_payload("episode_planning", payload)
+    assert "residue_scene_card_id" not in encoded
+    assert "residue_sid" not in encoded
+    assert encoded["answer_sid"] == "scene_2"
+
+    decoded = decode_transport_payload("episode_planning", encoded)
+    assert "residue_sid" not in decoded
+    assert "residue_scene_card_id" not in decoded
+    assert decoded["answer_scene_card_id"] == "scene_2"
+
+    validated = EpisodePlanDraft.model_validate(decoded)
+    assert validated.answer_scene_card_id == "scene_2"
+    assert not hasattr(validated, "residue_scene_card_id")

@@ -16,7 +16,6 @@ _ALLOWED_CANDIDATE_ROLES = {
     "build",
     "turn",
     "answer",
-    "residue",
 }
 
 
@@ -127,7 +126,7 @@ class SceneDiscoveryAgent(Agent):
                 "instruction": (
                     "Revise only scene_jobs. Do not emit candidate_roles. Every "
                     "scene_jobs entry must be one of `opening`, `build`, `turn`, "
-                    "`answer`, or `residue`. Keep valid candidates, scene sketches, "
+                    "or `answer`. Keep valid candidates, scene sketches, "
                     "images, and references unchanged."
                 ),
             }
@@ -139,7 +138,7 @@ class SceneDiscoveryAgent(Agent):
             "invalid_roles": sorted(invalid_roles),
             "instruction": (
                 "Revise only scene_jobs. Every entry must be one of "
-                "`opening`, `build`, `turn`, `answer`, or `residue`. "
+                "`opening`, `build`, `turn`, or `answer`. "
                 "Keep valid candidates, scene sketches, images, and references unchanged."
             ),
         }

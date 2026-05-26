@@ -61,7 +61,6 @@ _SCHEMA_CANONICAL_TO_ALIAS: dict[str, dict[str, str]] = {
         "opening_question": "open_q",
         "handoff_scene_card_id": "handoff",
         "answer_scene_card_id": "answer_sid",
-        "residue_scene_card_id": "residue_sid",
         "scene_id": "sid",
         "section_id": "sec",
         "title": "ttl",

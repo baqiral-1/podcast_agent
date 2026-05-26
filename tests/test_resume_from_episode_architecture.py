@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 
+from _section_progression_helpers import make_section_progression
 from podcast_agent.schemas.models import (
     ActorMetadata,
     ActorProfile,
@@ -106,8 +107,6 @@ def _architecture() -> EpisodeArchitecture:
         {
             "episode_number": 1,
             "major_turn_section_id": "section_03",
-            "answer_section_id": "section_04",
-            "residue_section_id": "section_05",
             "promised_beat_decisions": [
                 {"beat_id": "beat_1", "decision": "stage", "section_id": "section_01"}
             ],
@@ -119,7 +118,7 @@ def _architecture() -> EpisodeArchitecture:
                     "must_stage_beats": ["The decree lands.", "Everyone recalculates."],
                     "approx_runtime_minutes": 1.0,
                     "primitive_ids": ["primitive_1"],
-                    "closure_mode": "residue",
+                    "section_progression": make_section_progression("setup", label="section_01"),
                     "priority_core_passage_ids": [],
                     "key_terms": [],
                     "authorial_passages": [],
@@ -133,7 +132,7 @@ def _architecture() -> EpisodeArchitecture:
                     "must_stage_beats": ["Actors align.", "Pressure sharpens."],
                     "approx_runtime_minutes": 1.0,
                     "primitive_ids": ["core_2"],
-                    "closure_mode": "residue",
+                    "section_progression": make_section_progression("advance", label="section_02"),
                     "priority_core_passage_ids": [],
                     "key_terms": [],
                     "authorial_passages": [],
@@ -147,7 +146,7 @@ def _architecture() -> EpisodeArchitecture:
                     "must_stage_beats": ["A line is crossed.", "The balance shifts."],
                     "approx_runtime_minutes": 1.0,
                     "primitive_ids": ["support_1"],
-                    "closure_mode": "turn",
+                    "section_progression": make_section_progression("advance", label="section_03"),
                     "priority_core_passage_ids": [],
                     "key_terms": [],
                     "authorial_passages": [],
@@ -161,7 +160,7 @@ def _architecture() -> EpisodeArchitecture:
                     "must_stage_beats": ["The mechanism is named.", "Its result becomes clear."],
                     "approx_runtime_minutes": 1.0,
                     "primitive_ids": ["support_2"],
-                    "closure_mode": "residue",
+                    "section_progression": make_section_progression("advance", label="section_04"),
                     "priority_core_passage_ids": [],
                     "key_terms": [],
                     "authorial_passages": [],
@@ -175,7 +174,7 @@ def _architecture() -> EpisodeArchitecture:
                     "must_stage_beats": ["The answer carries cost.", "The burden remains."],
                     "approx_runtime_minutes": 1.0,
                     "primitive_ids": ["primitive_1"],
-                    "closure_mode": "residue",
+                    "section_progression": make_section_progression("answer", label="section_05"),
                     "priority_core_passage_ids": [],
                     "key_terms": [],
                     "authorial_passages": [],
@@ -189,7 +188,7 @@ def _architecture() -> EpisodeArchitecture:
                     "must_stage_beats": ["The final image lands.", "The pressure stays alive."],
                     "approx_runtime_minutes": 1.0,
                     "primitive_ids": ["primitive_1"],
-                    "closure_mode": "final_answer",
+                    "section_progression": make_section_progression("close", label="section_06"),
                     "priority_core_passage_ids": [],
                     "key_terms": [],
                     "authorial_passages": [],
@@ -538,3 +537,36 @@ def test_resume_from_episode_architecture_does_not_require_persisted_architectur
     assert calls["bound_project_dir"] == project_dir
     assert calls["architecture_called"] is True
     assert project_dir.joinpath("episode_architectures.json").exists() is True
+
+
+def test_validate_architecture_transition_accepts_staged_promised_beats():
+    """Regression: the staged-promised-beat check must not raise NameError.
+
+    Reproduces the v61 failure where removing the answer/residue block dropped the
+    `section_order`/`valid_section_ids` definition that this check relies on.
+    """
+    from podcast_agent.pipeline.orchestrator import _validate_architecture_transition
+
+    strategy_episode = _strategy().episodes[0]
+    architecture = _architecture()  # stages beat_1 into the real section_01
+
+    result = _validate_architecture_transition(
+        strategy_episode=strategy_episode,
+        architecture=architecture,
+    )
+    assert result is architecture
+
+
+def test_validate_architecture_transition_rejects_unknown_staged_section():
+    from podcast_agent.pipeline.orchestrator import _validate_architecture_transition
+
+    strategy_episode = _strategy().episodes[0]
+    architecture = _architecture()
+    # Point the staged decision at a section that does not exist.
+    architecture.promised_beat_decisions[0].section_id = "section_99"
+
+    with pytest.raises(RuntimeError, match="staged promised beats into unknown sections"):
+        _validate_architecture_transition(
+            strategy_episode=strategy_episode,
+            architecture=architecture,
+        )

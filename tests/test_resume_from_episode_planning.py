@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 
+from _section_progression_helpers import make_section_progression
 from podcast_agent.schemas.models import (
     ActorMetadata,
     ActorProfile,
@@ -107,10 +108,12 @@ def _architecture() -> EpisodeArchitecture:
         {
             "episode_number": 1,
             "major_turn_section_id": "section_03",
-            "answer_section_id": "section_04",
-            "residue_section_id": "section_05",
             "promised_beat_decisions": [
-                {"beat_id": "beat_1", "decision": "stage", "section_id": "section_01"}
+                {
+                    "beat_id": "beat_1",
+                    "decision": "defer",
+                    "reason": "Deferred to a later episode after the opening lands.",
+                }
             ],
             "sections": [
                 {
@@ -120,7 +123,7 @@ def _architecture() -> EpisodeArchitecture:
                     "must_stage_beats": ["The decree lands.", "Everyone recalculates."],
                     "approx_runtime_minutes": 1.0,
                     "primitive_ids": ["primitive_1"],
-                    "closure_mode": "residue",
+                    "section_progression": make_section_progression("setup", label="section_01"),
                     "priority_core_passage_ids": [],
                     "key_terms": [],
                     "authorial_passages": [],
@@ -134,7 +137,7 @@ def _architecture() -> EpisodeArchitecture:
                     "must_stage_beats": ["Actors align.", "Pressure sharpens."],
                     "approx_runtime_minutes": 1.0,
                     "primitive_ids": ["core_2"],
-                    "closure_mode": "residue",
+                    "section_progression": make_section_progression("advance", label="section_02"),
                     "priority_core_passage_ids": [],
                     "key_terms": [],
                     "authorial_passages": [],
@@ -148,7 +151,7 @@ def _architecture() -> EpisodeArchitecture:
                     "must_stage_beats": ["A line is crossed.", "The balance shifts."],
                     "approx_runtime_minutes": 1.0,
                     "primitive_ids": ["support_1"],
-                    "closure_mode": "turn",
+                    "section_progression": make_section_progression("advance", label="section_03"),
                     "priority_core_passage_ids": [],
                     "key_terms": [],
                     "authorial_passages": [],
@@ -162,7 +165,7 @@ def _architecture() -> EpisodeArchitecture:
                     "must_stage_beats": ["The mechanism is named.", "Its result becomes clear."],
                     "approx_runtime_minutes": 1.0,
                     "primitive_ids": ["support_2"],
-                    "closure_mode": "residue",
+                    "section_progression": make_section_progression("answer", label="section_04"),
                     "priority_core_passage_ids": [],
                     "key_terms": [],
                     "authorial_passages": [],
@@ -176,7 +179,7 @@ def _architecture() -> EpisodeArchitecture:
                     "must_stage_beats": ["The answer carries cost.", "The burden remains."],
                     "approx_runtime_minutes": 1.0,
                     "primitive_ids": ["primitive_1"],
-                    "closure_mode": "residue",
+                    "section_progression": make_section_progression("advance", label="section_05"),
                     "priority_core_passage_ids": [],
                     "key_terms": [],
                     "authorial_passages": [],
@@ -190,7 +193,7 @@ def _architecture() -> EpisodeArchitecture:
                     "must_stage_beats": ["The final image lands.", "The pressure stays alive."],
                     "approx_runtime_minutes": 1.0,
                     "primitive_ids": ["primitive_1"],
-                    "closure_mode": "final_answer",
+                    "section_progression": make_section_progression("close", label="section_06"),
                     "priority_core_passage_ids": [],
                     "key_terms": [],
                     "authorial_passages": [],
@@ -292,9 +295,9 @@ def _plan() -> EpisodePlan:
                 {
                     "scene_id": "scene_05",
                     "section_id": "section_05",
-                    "title": "Residue",
+                    "title": "Aftermath",
                     "scene_role": "fallout",
-                    "scene_job": "residue",
+                    "scene_job": "build",
                     "beat_change": "The cost remains.",
                     "must_land_facts": {"required": ["The cost remains."]},
                     "entry_image": "The room empties.",
@@ -329,7 +332,6 @@ def _plan() -> EpisodePlan:
                 },
             ],
             "answer_scene_card_id": "scene_04",
-            "residue_scene_card_id": "scene_05",
             "dropped_support_primitive_reasons": {},
             "target_word_count": 1200,
         }
@@ -462,6 +464,7 @@ def test_resume_from_episode_planning_reruns_planning_then_production(
 ) -> None:
     project_dir = _build_project_dir(tmp_path)
     project_dir.joinpath("series_plan.json").unlink()
+    assert not (project_dir / "stage_artifacts" / "episode_planning" / "input.json").exists()
     calls: dict[str, Any] = {}
 
     class FakeOrchestrator:

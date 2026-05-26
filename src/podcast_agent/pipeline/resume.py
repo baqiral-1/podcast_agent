@@ -1486,6 +1486,10 @@ async def resume_from_episode_planning_stage(
             episode_numbers=episode_numbers,
         ),
     )
+    # Strict resume rebuilds planning inputs from the canonical persisted stage
+    # outputs plus per-episode narrative-state snapshots. The lightweight stage
+    # summary under stage_artifacts/episode_planning/input.json is not the
+    # authoritative planning payload.
     (
         narrative_state_pre_by_episode,
         narrative_state_post_by_episode,

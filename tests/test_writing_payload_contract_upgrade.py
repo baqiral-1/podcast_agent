@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from _section_progression_helpers import make_section_progression
 from podcast_agent.langchain.runnables import ComplianceViolationError
 from podcast_agent.pipeline.orchestrator import (
     _build_comparative_aside_scene_warnings,
@@ -70,7 +71,7 @@ def _architecture() -> EpisodeArchitecture:
                 "The order becomes public.",
                 "The pressure changes shape.",
             ],
-            "closure_mode": "turn",
+            "section_progression": make_section_progression("answer", label="section_1"),
             "authorial_passages": [
                 {
                     "authorial_passage_id": "ap_1",
@@ -86,8 +87,6 @@ def _architecture() -> EpisodeArchitecture:
     return EpisodeArchitecture.model_construct(
         episode_number=1,
         major_turn_section_id="section_1",
-        answer_section_id="section_1",
-        residue_section_id="section_1",
         allowed_recurring_primitive_ids=[],
         forbidden_redundancies=[],
         promised_beat_decisions=[],
@@ -169,10 +168,9 @@ def test_scene_card_validates_tiered_facts_and_forward_withholding() -> None:
                             "reveal_phase": "open",
                         },
                     ),
-                    _scene_card("scene_3", "residue"),
+                    _scene_card("scene_3", "close"),
                 ],
                 "answer_scene_card_id": "scene_2",
-                "residue_scene_card_id": "scene_3",
             }
         )
 
@@ -205,11 +203,10 @@ def test_validate_plan_transition_requires_scene_pinned_authorial_passages() -> 
                 "scene_cards": [
                     _scene_card("scene_1", "build"),
                     _scene_card("scene_2", "answer"),
-                    _scene_card("scene_3", "residue"),
+                    _scene_card("scene_3", "build"),
                     _scene_card("scene_4", "close"),
                 ],
                 "answer_scene_card_id": "scene_2",
-                "residue_scene_card_id": "scene_3",
         }
     )
 
@@ -229,11 +226,10 @@ def test_validate_plan_transition_requires_scene_pinned_authorial_passages() -> 
                 "scene_cards": [
                     _scene_card("scene_1", "build", authorial_passage_ids=["ap_1"]),
                     _scene_card("scene_2", "answer"),
-                    _scene_card("scene_3", "residue"),
+                    _scene_card("scene_3", "build"),
                     _scene_card("scene_4", "close"),
                 ],
                 "answer_scene_card_id": "scene_2",
-                "residue_scene_card_id": "scene_3",
         }
     )
 
@@ -271,6 +267,7 @@ def test_build_writer_scene_brief_preserves_new_scene_contract() -> None:
     ]
     scene_payload["target_word_count_lower"] = 120
     scene_payload["target_word_count_higher"] = 140
+    scene_payload["audible_detail"] = "Boots scrape across the stone."
 
     brief = _build_writer_scene_brief(scene_payload)
 
@@ -280,6 +277,7 @@ def test_build_writer_scene_brief_preserves_new_scene_contract() -> None:
     assert brief["authorial_passages"][0]["scene_id"] == "scene_1"
     assert brief["word_count_priority"] == "tight"
     assert brief["withhold_until"]["reveal_scene_id"] == "scene_2"
+    assert brief["audible_detail"] == "Boots scrape across the stone."
 
 
 def test_compute_scene_word_count_bands_uses_default_and_tight_ranges() -> None:
@@ -300,8 +298,6 @@ def test_comparative_aside_scene_warnings_flag_tight_close_answer_stack() -> Non
     architecture = EpisodeArchitecture.model_construct(
         episode_number=1,
         major_turn_section_id="section_1",
-        answer_section_id="section_1",
-        residue_section_id="section_1",
         allowed_recurring_primitive_ids=[],
         forbidden_redundancies=[],
         promised_beat_decisions=[],
@@ -317,7 +313,7 @@ def test_comparative_aside_scene_warnings_flag_tight_close_answer_stack() -> Non
                         "The order becomes public.",
                         "The pressure changes shape.",
                     ],
-                    "closure_mode": "turn",
+                    "section_progression": make_section_progression("answer", label="section_1"),
                     "authorial_passages": [
                         {
                             "authorial_passage_id": "ap_quote",
@@ -373,10 +369,9 @@ def test_style_audit_payload_enriches_authorial_passages_with_scene_id() -> None
             "scene_cards": [
                 _scene_card("scene_1", "build", authorial_passage_ids=["ap_1"]),
                 _scene_card("scene_2", "answer"),
-                _scene_card("scene_3", "residue"),
+                _scene_card("scene_3", "close"),
             ],
             "answer_scene_card_id": "scene_2",
-            "residue_scene_card_id": "scene_3",
             "target_word_count": 600,
         }
     )

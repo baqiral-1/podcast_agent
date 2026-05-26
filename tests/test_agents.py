@@ -694,6 +694,10 @@ class TestRedesignedAgents:
         assert "SELF-CHECK BEFORE RETURNING" in instructions
         assert "narration_hooks" in instructions
         assert "overlays_by_id" in instructions
+        # A set authorial_move must carry a spoken plain_gloss (see
+        # _build_narration_hook_gloss_warnings).
+        assert "whenever `authorial_move` is set" in instructions
+        assert "without a usable spoken `plain_gloss` is not allowed" in instructions
 
     def test_primitive_function_tagging_retry_feedback_includes_invalid_hook_path(self):
         llm = _mock_llm()
@@ -909,7 +913,10 @@ class TestRedesignedAgents:
             "Convert the episode spine into 11–14 binding sections."
             in instructions
         )
-        assert "The final section must use `purpose` = `closing`." in instructions
+        assert (
+            "The final section must use `purpose` = `closing` (aligned with `stage = close`)."
+            in instructions
+        )
         assert "approx_runtime_minutes` at or below 2.0" in instructions
         assert "Do not build a second ending." in instructions
         assert (
@@ -943,7 +950,9 @@ class TestRedesignedAgents:
         assert "18–28 total `authorial_passages`" in instructions
         assert "are not scene cards, scene counts" in instructions
         assert "The first `must_stage_beats` item should usually open from the section" in instructions
-        assert "The last `must_stage_beats` item should usually imply the section's" in instructions
+        assert "`section_progression`" in instructions
+        assert "Exactly one section must use `section_progression.stage = answer`." in instructions
+        assert "`closure_mode`" not in instructions
         assert "last stage allowed to mutate season state" in instructions
         assert "Do not leave state changes implicit inside `must_stage_beats`." in instructions
         assert (
@@ -1025,14 +1034,15 @@ class TestRedesignedAgents:
             in instructions
         )
         assert (
-            "Treat `architecture.section_anchor` as the section-local opening handle."
+            "Treat `architecture.section_anchor` as the section-local opening handle,"
             in instructions
         )
         assert "`section_sonic_plan`" in instructions
         assert "`section_sonic_plan.obligation` may only be `required` or `preferred`." in instructions
         assert "scene-local derived realization" in instructions
         assert "should not repeat that anchor verbatim" in instructions
-        assert "`must_stage_beats`, `closure_mode`, and any" in instructions
+        assert "`must_stage_beats`, `section_progression`" in instructions
+        assert "`closure_mode`" not in instructions
         assert "should create curiosity in the same territory as" in instructions
         assert (
             "When a section has `priority_core_passage_ids`, prefer those passages"
@@ -1040,11 +1050,11 @@ class TestRedesignedAgents:
         )
         assert "When a section has `actor_explanations`" in instructions
         assert "`explanation_stage = introduce` or `reminder`." in instructions
-        assert "read-only continuity context" in instructions
+        assert "`continuity_contract_pre` are read-only" in instructions
         assert "`continuity_contract_pre`" in instructions
         assert "Episode 1, set this to null" in instructions
         assert "may not invent new" in instructions
-        assert "listener-question, memory-thread, or host-state progression" in instructions
+        assert "memory-thread, or host-state progression not already in strategy" in instructions
         assert (
             "Carry the section plan's `background_depth`, `role_label`,"
             in instructions
@@ -1055,12 +1065,13 @@ class TestRedesignedAgents:
         )
         assert "Copy the section plan's `background_depth`, `role_label`," not in instructions
         assert "`host_policy`" in instructions
-        assert "Every scene card must include the `host_moves` object with phase buckets" in instructions
-        assert "If a section carries any `host_mystery_moves`" in instructions
-        assert "Ordinary cards with host shaping should usually use one populated phase." in instructions
-        assert "Fresh plans should use at most one cue per phase." in instructions
+        assert "Every scene card carries a `host_moves` object with" in instructions
+        assert "`host_moves` must be non-empty on structural scenes" in instructions
+        assert "Default to one populated phase with one cue." in instructions
+        assert "Ordinary `build` cards may leave all buckets empty." in instructions
         assert "Omit optional fields entirely instead of returning blank strings or empty arrays." in instructions
         assert "`estimated_duration_seconds -> dur`" in instructions
+        assert "`audible_detail -> audio`" not in instructions
         assert "Treat `must_land_facts` as the card's factual spine." in instructions
         assert "Every `note` must contain both:" in instructions
         assert "Write notes anchor-first." in instructions
@@ -1072,10 +1083,15 @@ class TestRedesignedAgents:
             in instructions
         )
         assert "State the through-line." in instructions
-        assert "`address_mode = i` is useful for taste-bearing evaluation" in instructions
-        assert "First- and second-person language is allowed throughout" in instructions
+        assert "`i` for taste, candid uncertainty, or comparison" in instructions
+        assert "Use `i` / `we` / `you` when brief, scene-rooted, and earning their keep" in instructions
         assert "`section_id`" in instructions
         assert "`scene_function`" in instructions
+        assert "The answer card must live inside the section whose `section_progression.stage`" in instructions
+        assert "After-pressure content" in instructions
+        assert "`afterpressure`-stage sections" in instructions
+        assert "If `planning_feedback.issue = answer_scene_wrong_section`" in instructions
+        assert "residue_scene_wrong_section" not in instructions
         assert (
             "context_setup, actor_setup, action, shock, contestation, reaction,"
             in instructions
@@ -1112,9 +1128,9 @@ class TestRedesignedAgents:
         assert "Move-type-specific note rules:" in agent.instructions
         assert "Phase-specific note rules:" in agent.instructions
         assert (
-            "Use `allowed_moves` from `host_policy` as binding." in agent.instructions
+            "Use its `allowed_moves` as binding" in agent.instructions
         )
-        assert "Prefer `clarify` after complexity" in agent.instructions
+        assert "`clarify` after complexity, `contrast` to kill a false reading" in agent.instructions
         assert "Avoid section shapes that are effectively `setup -> implication -> implication`" in agent.instructions
 
     def test_style_audit_agent_payload(self):
@@ -1250,7 +1266,9 @@ class TestRedesignedAgents:
         )
         assert "Return one output item per input section" in agent.instructions
         assert "`architecture.sections[].must_stage_beats`" in agent.instructions
-        assert "binding section-level obligations" in agent.instructions
+        assert "section-level obligations" in agent.instructions
+        assert "`section_progression`" in agent.instructions
+        assert "`inherited_pressure`" in agent.instructions
         assert "`section_sonic_plan`" in agent.instructions
         assert "Spend `section_sonic_plan.opening_anchor` in the first 1-2" in agent.instructions
         assert "Do not reproduce `section_sonic_plan.opening_anchor` verbatim" in agent.instructions
@@ -1624,7 +1642,8 @@ class TestRedesignedAgents:
         assert "`major_turn_section_id -> major_turn`" in prompt
         assert "`grounding_actor_candidates` (optional)" not in prompt
         assert "Use `episode.actor_arc_directives` as the authoritative episode-level actor spine" in prompt
-        assert "Adjacent explanatory sections should usually differ in scene engine, not just topic label." in prompt
+        assert "Adjacent explanatory sections should usually differ in `open_mode`" in prompt
+        assert "`open_mode` sets the rhetorical shape of the section's opening" in prompt
         assert "Sections built mostly from `mechanisms`, `conditions`, or `readings` should usually tie those abstractions to an event, act, utterance, artifact, or recurring human pressure thread" in prompt
         assert "Sections may additionally specify `section_sonic_plan`" in prompt
         assert "`section_sonic_plan.obligation` must be exactly" in prompt

@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 
+from _section_progression_helpers import make_section_progression
 from podcast_agent.schemas.models import (
     ActorMetadata,
     ActorProfile,
@@ -112,6 +113,7 @@ def _episode_architecture(episode_number: int) -> EpisodeArchitecture:
         "sections": [
             {
                 "section_id": f"{prefix}1",
+                "section_progression": make_section_progression("setup", label=f"{prefix}1"),
                 "purpose": "opening",
                 "approx_runtime_minutes": 0.25,
                 "primitive_ids": ["primitive_1"],
@@ -131,6 +133,7 @@ def _episode_architecture(episode_number: int) -> EpisodeArchitecture:
             },
             {
                 "section_id": f"{prefix}2",
+                "section_progression": make_section_progression("advance", label=f"{prefix}2"),
                 "purpose": "setup",
                 "approx_runtime_minutes": 0.25,
                 "primitive_ids": ["primitive_1"],
@@ -150,6 +153,7 @@ def _episode_architecture(episode_number: int) -> EpisodeArchitecture:
             },
             {
                 "section_id": f"{prefix}3",
+                "section_progression": make_section_progression("advance", label=f"{prefix}3"),
                 "purpose": "turn",
                 "approx_runtime_minutes": 0.25,
                 "primitive_ids": ["primitive_1"],
@@ -169,6 +173,7 @@ def _episode_architecture(episode_number: int) -> EpisodeArchitecture:
             },
             {
                 "section_id": f"{prefix}4",
+                "section_progression": make_section_progression("advance", label=f"{prefix}4"),
                 "purpose": "setup",
                 "approx_runtime_minutes": 0.25,
                 "primitive_ids": ["primitive_1"],
@@ -188,6 +193,7 @@ def _episode_architecture(episode_number: int) -> EpisodeArchitecture:
             },
             {
                 "section_id": f"{prefix}5",
+                "section_progression": make_section_progression("advance", label=f"{prefix}5"),
                 "purpose": "setup",
                 "approx_runtime_minutes": 0.25,
                 "primitive_ids": ["primitive_1"],
@@ -207,6 +213,7 @@ def _episode_architecture(episode_number: int) -> EpisodeArchitecture:
             },
             {
                 "section_id": f"{prefix}6",
+                "section_progression": make_section_progression("advance", label=f"{prefix}6"),
                 "purpose": "setup",
                 "approx_runtime_minutes": 0.25,
                 "primitive_ids": ["primitive_1"],
@@ -226,6 +233,7 @@ def _episode_architecture(episode_number: int) -> EpisodeArchitecture:
             },
             {
                 "section_id": f"{prefix}7",
+                "section_progression": make_section_progression("advance", label=f"{prefix}7"),
                 "purpose": "setup",
                 "approx_runtime_minutes": 0.125,
                 "primitive_ids": ["primitive_1"],
@@ -245,6 +253,7 @@ def _episode_architecture(episode_number: int) -> EpisodeArchitecture:
             },
             {
                 "section_id": f"{prefix}8",
+                "section_progression": make_section_progression("answer", label=f"{prefix}8"),
                 "purpose": "setup",
                 "approx_runtime_minutes": 0.125,
                 "primitive_ids": ["primitive_1"],
@@ -264,6 +273,7 @@ def _episode_architecture(episode_number: int) -> EpisodeArchitecture:
             },
             {
                 "section_id": f"{prefix}9",
+                "section_progression": make_section_progression("close", label=f"{prefix}9"),
                 "purpose": "closing",
                 "approx_runtime_minutes": 0.25,
                 "primitive_ids": ["primitive_1"],

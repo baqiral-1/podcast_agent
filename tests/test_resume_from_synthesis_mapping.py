@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 
+from _section_progression_helpers import make_section_progression
 from podcast_agent.schemas.models import (
     ActorMetadata,
     ActorProfile,
@@ -310,6 +311,7 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
                     for section in [
                         {
                             "section_id": "section_01",
+                            "section_progression": make_section_progression("setup", label="section_01"),
                             "purpose": "opening",
                             "approx_runtime_minutes": 10.0,
                             "primitive_ids": ["primitive_1"],
@@ -330,6 +332,7 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
                         },
                         {
                             "section_id": "section_02",
+                            "section_progression": make_section_progression("advance", label="section_02"),
                             "purpose": "setup",
                             "approx_runtime_minutes": 10.0,
                             "primitive_ids": ["primitive_1"],
@@ -350,6 +353,7 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
                         },
                         {
                             "section_id": "section_03",
+                            "section_progression": make_section_progression("advance", label="section_03"),
                             "purpose": "turn",
                             "approx_runtime_minutes": 12.5,
                             "primitive_ids": ["primitive_1"],
@@ -370,6 +374,7 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
                         },
                         {
                             "section_id": "section_04",
+                            "section_progression": make_section_progression("advance", label="section_04"),
                             "purpose": "setup",
                             "approx_runtime_minutes": 12.5,
                             "primitive_ids": ["primitive_1"],
@@ -390,6 +395,7 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
                         },
                         {
                             "section_id": "section_05",
+                            "section_progression": make_section_progression("advance", label="section_05"),
                             "purpose": "setup",
                             "approx_runtime_minutes": 10.0,
                             "primitive_ids": ["primitive_1"],
@@ -410,6 +416,7 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
                         },
                         {
                             "section_id": "section_06",
+                            "section_progression": make_section_progression("advance", label="section_06"),
                             "purpose": "setup",
                             "approx_runtime_minutes": 10.0,
                             "primitive_ids": ["primitive_1"],
@@ -430,6 +437,7 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
                         },
                         {
                             "section_id": "section_07",
+                            "section_progression": make_section_progression("advance", label="section_07"),
                             "purpose": "setup",
                             "approx_runtime_minutes": 7.5,
                             "primitive_ids": ["primitive_1"],
@@ -450,6 +458,7 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
                         },
                         {
                             "section_id": "section_08",
+                            "section_progression": make_section_progression("answer", label="section_08"),
                             "purpose": "setup",
                             "approx_runtime_minutes": 7.5,
                             "primitive_ids": ["primitive_1"],
@@ -470,6 +479,7 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
                         },
                         {
                             "section_id": "section_09",
+                            "section_progression": make_section_progression("close", label="section_09"),
                             "purpose": "closing",
                             "approx_runtime_minutes": 10.0,
                             "primitive_ids": ["primitive_1"],

@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
+from _section_progression_helpers import make_section_progression
 from podcast_agent.llm.heuristic import HeuristicLLMClient
 from podcast_agent.pipeline.orchestrator import PipelineOrchestrator
 from podcast_agent.schemas.models import (
@@ -100,6 +101,7 @@ def _episode_architecture() -> EpisodeArchitecture:
                 "pressure_type": "constitutional",
                 "resolution_type": "redefinition",
                 "closure_level": "low",
+                "section_progression": make_section_progression("setup", label="section_1"),
             },
             {
                 "section_id": "section_2",
@@ -119,6 +121,7 @@ def _episode_architecture() -> EpisodeArchitecture:
                 "pressure_type": "constitutional",
                 "resolution_type": "escalation",
                 "closure_level": "low",
+                "section_progression": make_section_progression("answer", label="section_2"),
             },
             {
                 "section_id": "section_3",
@@ -138,6 +141,7 @@ def _episode_architecture() -> EpisodeArchitecture:
                 "pressure_type": "constitutional",
                 "resolution_type": "reversal",
                 "closure_level": "medium",
+                "section_progression": make_section_progression("advance", label="section_3"),
             },
             {
                 "section_id": "section_4",
@@ -157,6 +161,7 @@ def _episode_architecture() -> EpisodeArchitecture:
                 "pressure_type": "constitutional",
                 "resolution_type": "containment",
                 "closure_level": "high",
+                "section_progression": make_section_progression("close", label="section_4"),
             },
         ],
         "architecture_notes": [],

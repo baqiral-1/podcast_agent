@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from _section_progression_helpers import make_section_progression
 from podcast_agent.pipeline.orchestrator import (
     _build_window_actor_metadata,
     _build_writer_scene_brief,
@@ -43,6 +44,7 @@ def _section(*, actor_id: str = "mossadeq", stage: str = "introduce") -> Archite
         listener_tension="Can the government keep control of the crisis it has opened?",
         section_turn="The political fight now has a single public face.",
         transition_logic="Move from institutional pressure to a named political actor.",
+        section_progression=make_section_progression("setup", label="section_1"),
         actor_explanations=[
             ActorExplanationPlan(
                 actor_id=actor_id,
@@ -74,6 +76,7 @@ def _architecture_with_actor_explanation(
             listener_tension="Can the old order absorb the challenge?",
             section_turn="The state begins to harden.",
             transition_logic="Move from public naming to institutional reaction.",
+            section_progression=make_section_progression("advance", label="section_2"),
         ),
         ArchitectureSection(
             section_id="section_3",
@@ -85,6 +88,7 @@ def _architecture_with_actor_explanation(
             listener_tension="How does the pressure actually work?",
             section_turn="The mechanism becomes audible.",
             transition_logic="Show how the pressure moves through the system.",
+            section_progression=make_section_progression("advance", label="section_3"),
         ),
         ArchitectureSection(
             section_id="section_4",
@@ -96,6 +100,7 @@ def _architecture_with_actor_explanation(
             listener_tension="Can the confrontation stay contained?",
             section_turn="The confrontation breaks the old balance.",
             transition_logic="Escalate toward the visible turn.",
+            section_progression=make_section_progression("advance", label="section_4"),
         ),
         ArchitectureSection(
             section_id="section_5",
@@ -107,6 +112,7 @@ def _architecture_with_actor_explanation(
             listener_tension="What survives the break?",
             section_turn="The consequences stop looking temporary.",
             transition_logic="Show the immediate fallout of the turn.",
+            section_progression=make_section_progression("answer", label="section_5"),
         ),
         ArchitectureSection(
             section_id="section_6",
@@ -118,6 +124,7 @@ def _architecture_with_actor_explanation(
             listener_tension="What remains unresolved?",
             section_turn="The answer lands with residue.",
             transition_logic="Land the closing residue without reopening the argument.",
+            section_progression=make_section_progression("close", label="section_6"),
         ),
     ]
     return EpisodeArchitecture(

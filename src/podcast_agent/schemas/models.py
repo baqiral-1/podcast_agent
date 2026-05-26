@@ -218,11 +218,12 @@ class ClosureLevel(str, Enum):
     HIGH = "high"
 
 
-class ClosureMode(str, Enum):
-    RESIDUE = "residue"
-    TURN = "turn"
-    PARTIAL_ANSWER = "partial_answer"
-    FINAL_ANSWER = "final_answer"
+class ProgressionStage(str, Enum):
+    SETUP = "setup"
+    ADVANCE = "advance"
+    ANSWER = "answer"
+    AFTERPRESSURE = "afterpressure"
+    CLOSE = "close"
 
 
 class WordCountPriority(str, Enum):
@@ -246,7 +247,6 @@ class SceneJob(str, Enum):
     BUILD = "build"
     TURN = "turn"
     ANSWER = "answer"
-    RESIDUE = "residue"
     CLOSE = "close"
 
 
@@ -516,14 +516,12 @@ def scene_job_budget_for_mode(mode: PodcastMode | str) -> dict[str, int]:
             "total_max": 21,
             "opening_min": 2,
             "opening_max": 2,
-            "build_min": 11,
-            "build_max": 14,
+            "build_min": 12,
+            "build_max": 15,
             "turn_min": 2,
             "turn_max": 2,
             "answer_min": 1,
             "answer_max": 1,
-            "residue_min": 1,
-            "residue_max": 1,
             "close_min": 1,
             "close_max": 1,
             "max_recap_build_scenes": 1,
@@ -533,14 +531,12 @@ def scene_job_budget_for_mode(mode: PodcastMode | str) -> dict[str, int]:
         "total_max": 38,
         "opening_min": 2,
         "opening_max": 3,
-        "build_min": 21,
-        "build_max": 27,
+        "build_min": 22,
+        "build_max": 28,
         "turn_min": 4,
         "turn_max": 5,
         "answer_min": 1,
         "answer_max": 1,
-        "residue_min": 1,
-        "residue_max": 1,
         "close_min": 1,
         "close_max": 1,
         "max_recap_build_scenes": 1,
@@ -2474,11 +2470,6 @@ class StrategyEpisode(StrictModel):
         )
         if answer_count > 1:
             raise ValueError("promised_beats may contain at most one answer beat")
-        residue_count = sum(
-            1 for beat in self.promised_beats if beat.intended_job == SceneJob.RESIDUE
-        )
-        if residue_count > 1:
-            raise ValueError("promised_beats may contain at most one residue beat")
         return self
 
 
@@ -2793,11 +2784,6 @@ class StrategyEpisodeEnrichment(StrictModel):
         )
         if answer_count > 1:
             raise ValueError("promised_beats may contain at most one answer beat")
-        residue_count = sum(
-            1 for beat in self.promised_beats if beat.intended_job == SceneJob.RESIDUE
-        )
-        if residue_count > 1:
-            raise ValueError("promised_beats may contain at most one residue beat")
         return self
 
 
@@ -3131,29 +3117,9 @@ class SectionSonicPlan(StrictModel):
         return str(value or "").strip()
 
 
-class ArchitectureSection(StrictModel):
-    section_id: str = Field(min_length=1)
-    purpose: SectionPurpose
-    approx_runtime_minutes: float = Field(gt=0.0)
-    primitive_ids: list[str] = Field(default_factory=list, min_length=1)
-    section_anchor: str = Field(
-        default="",
-        validation_alias=AliasChoices("section_anchor", "anchor"),
-        serialization_alias="section_anchor",
-    )
-    must_stage_beats: list[str] = Field(default_factory=list, max_length=4)
-    closure_mode: ClosureMode | None = None
-    priority_core_passage_ids: list[str] = Field(default_factory=list)
-    key_terms: list[str] = Field(default_factory=list, max_length=6)
-    authorial_passages: list[AuthorialPassage] = Field(
-        default_factory=list, max_length=4
-    )
-    term_explanations: list[TermExplanationPlan] = Field(
-        default_factory=list, max_length=4
-    )
-    actor_explanations: list[ActorExplanationPlan] = Field(
-        default_factory=list, max_length=4
-    )
+class SectionStateEffects(StrictModel):
+    """Continuity/state mutations a section causes, nested under section_progression."""
+
     question_moves: list[ListenerQuestionMove] = Field(default_factory=list, max_length=4)
     memory_thread_moves: list[ListenerMemoryThreadMove] = Field(
         default_factory=list, max_length=4
@@ -3167,6 +3133,57 @@ class ArchitectureSection(StrictModel):
     host_theory_moves: list[HostTheoryMove] = Field(
         default_factory=list, max_length=4
     )
+
+
+class SectionProgression(StrictModel):
+    """How one section advances the episode's answer and hands pressure forward."""
+
+    stage: ProgressionStage
+    becomes_obvious: str = Field(min_length=1)
+    answer_contribution: str = Field(min_length=1)
+    theme_link: str = Field(min_length=1)
+    what_remains_live: str = Field(min_length=1)
+    state_effects: SectionStateEffects = Field(default_factory=SectionStateEffects)
+
+    @field_validator(
+        "becomes_obvious", "answer_contribution", "theme_link", "what_remains_live"
+    )
+    @classmethod
+    def _strip_required_prose(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError(
+                "section_progression prose fields must not be blank"
+            )
+        return cleaned
+
+
+class ArchitectureSection(StrictModel):
+    section_id: str = Field(min_length=1)
+    purpose: SectionPurpose
+    approx_runtime_minutes: float = Field(gt=0.0)
+    primitive_ids: list[str] = Field(default_factory=list, min_length=1)
+    open_mode: Literal[
+        "scene_anchor", "voice_first", "question_first", "condition_first"
+    ] = "scene_anchor"
+    section_anchor: str = Field(
+        default="",
+        validation_alias=AliasChoices("section_anchor", "anchor"),
+        serialization_alias="section_anchor",
+    )
+    must_stage_beats: list[str] = Field(default_factory=list, max_length=4)
+    priority_core_passage_ids: list[str] = Field(default_factory=list)
+    key_terms: list[str] = Field(default_factory=list, max_length=6)
+    authorial_passages: list[AuthorialPassage] = Field(
+        default_factory=list, max_length=4
+    )
+    term_explanations: list[TermExplanationPlan] = Field(
+        default_factory=list, max_length=4
+    )
+    actor_explanations: list[ActorExplanationPlan] = Field(
+        default_factory=list, max_length=4
+    )
+    section_progression: SectionProgression
     section_sonic_plan: SectionSonicPlan | None = None
 
     @model_validator(mode="before")
@@ -3228,24 +3245,10 @@ class ArchitectureSection(StrictModel):
             seen_ids.add(passage.authorial_passage_id)
         return self
 
-    @model_validator(mode="after")
-    def populate_closure_mode(self) -> "ArchitectureSection":
-        if self.closure_mode is not None:
-            return self
-        if self.purpose == SectionPurpose.CLOSING:
-            self.closure_mode = ClosureMode.FINAL_ANSWER
-        elif self.purpose == SectionPurpose.TURN:
-            self.closure_mode = ClosureMode.TURN
-        else:
-            self.closure_mode = ClosureMode.RESIDUE
-        return self
-
 
 class EpisodeArchitecture(StrictModel):
     episode_number: int = Field(ge=1)
     major_turn_section_id: str = Field(min_length=1)
-    answer_section_id: str | None = None
-    residue_section_id: str | None = None
     allowed_recurring_primitive_ids: list[str] = Field(default_factory=list)
     forbidden_redundancies: list[str] = Field(default_factory=list)
     promised_beat_decisions: list[PromisedBeatDecisionRecord] = Field(
@@ -3279,16 +3282,58 @@ class EpisodeArchitecture(StrictModel):
 
         if self.major_turn_section_id not in section_by_id:
             raise ValueError("major_turn_section_id must reference an existing section")
-        if self.answer_section_id is not None and self.answer_section_id not in section_by_id:
-            raise ValueError("answer_section_id must reference an existing section")
-        if self.residue_section_id is not None and self.residue_section_id not in section_by_id:
-            raise ValueError("residue_section_id must reference an existing section")
-        if self.answer_section_id and self.residue_section_id:
-            ordered_section_ids = [section.section_id for section in self.sections]
-            if ordered_section_ids.index(self.residue_section_id) <= ordered_section_ids.index(
-                self.answer_section_id
+
+        # Section progression stage contract (replaces answer/residue pointers).
+        answer_indices = [
+            idx
+            for idx, section in enumerate(self.sections)
+            if section.section_progression.stage == ProgressionStage.ANSWER
+        ]
+        close_indices = [
+            idx
+            for idx, section in enumerate(self.sections)
+            if section.section_progression.stage == ProgressionStage.CLOSE
+        ]
+        if len(answer_indices) != 1:
+            raise ValueError(
+                "exactly one section must have section_progression.stage='answer'"
+            )
+        if len(close_indices) != 1:
+            raise ValueError(
+                "exactly one section must have section_progression.stage='close'"
+            )
+        answer_idx = answer_indices[0]
+        close_idx = close_indices[0]
+        if close_idx != len(self.sections) - 1:
+            raise ValueError(
+                "the close stage must be on the final section"
+            )
+        if answer_idx >= close_idx:
+            raise ValueError("the answer stage must occur before the close stage")
+        for idx, section in enumerate(self.sections):
+            stage = section.section_progression.stage
+            if stage == ProgressionStage.AFTERPRESSURE and not (
+                answer_idx < idx < close_idx
             ):
-                raise ValueError("residue_section_id must occur after answer_section_id")
+                raise ValueError(
+                    "afterpressure sections must occur after the answer stage "
+                    "and before the close stage"
+                )
+        answer_section = self.sections[answer_idx]
+        if answer_section.purpose == SectionPurpose.OPENING:
+            raise ValueError(
+                "the answer stage must not be on an opening-purpose section"
+            )
+        for section in self.sections:
+            is_close_stage = (
+                section.section_progression.stage == ProgressionStage.CLOSE
+            )
+            is_closing_purpose = section.purpose == SectionPurpose.CLOSING
+            if is_close_stage != is_closing_purpose:
+                raise ValueError(
+                    "purpose='closing' must align with section_progression.stage='close'"
+                )
+
         beat_ids = [record.beat_id for record in self.promised_beat_decisions]
         if len(beat_ids) != len(set(beat_ids)):
             raise ValueError(
@@ -3426,7 +3471,7 @@ class _SceneCardBase(StrictModel):
     observable_detail: str = ""
     audible_detail: str = Field(
         default="",
-        validation_alias=AliasChoices("audible_detail", "what_we_hear"),
+        validation_alias=AliasChoices("audible_detail", "what_we_hear", "audio"),
         serialization_alias="audible_detail",
     )
     withhold_until: WithholdUntil | None = None
@@ -3487,7 +3532,7 @@ _LEGACY_SCENE_FUNCTION_TO_JOB: dict[str, str] = {
     SceneFunction.TURN.value: SceneJob.TURN.value,
     SceneFunction.LANDING.value: SceneJob.BUILD.value,
     SceneFunction.CALLBACK.value: SceneJob.BUILD.value,
-    SceneFunction.AFTERLIFE.value: SceneJob.RESIDUE.value,
+    SceneFunction.AFTERLIFE.value: SceneJob.BUILD.value,
 }
 
 _SCENE_JOB_DEFAULT_BY_ROLE: dict[str, str] = {
@@ -3627,7 +3672,6 @@ class EpisodePlanDraft(StrictModel):
     framing: FramingBlock
     scene_cards: list[SceneCardDraft] = Field(default_factory=list, min_length=1)
     answer_scene_card_id: str | None = None
-    residue_scene_card_id: str | None = None
     dropped_support_primitive_reasons: dict[str, str] = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -3649,24 +3693,6 @@ class EpisodePlanDraft(StrictModel):
             if answer_scene.scene_job != SceneJob.ANSWER:
                 raise ValueError(
                     "answer_scene_card_id must reference a scene card with scene_job='answer'"
-                )
-        if self.residue_scene_card_id is not None:
-            residue_scene = scene_by_id.get(self.residue_scene_card_id)
-            if residue_scene is None:
-                raise ValueError(
-                    "residue_scene_card_id must reference an existing scene card"
-                )
-            if residue_scene.scene_job != SceneJob.RESIDUE:
-                raise ValueError(
-                    "residue_scene_card_id must reference a scene card with scene_job='residue'"
-                )
-        if self.answer_scene_card_id and self.residue_scene_card_id:
-            ordered_scene_ids = [scene.scene_id for scene in self.scene_cards]
-            if ordered_scene_ids.index(self.residue_scene_card_id) <= ordered_scene_ids.index(
-                self.answer_scene_card_id
-            ):
-                raise ValueError(
-                    "residue_scene_card_id must occur after answer_scene_card_id"
                 )
         scene_index_by_id = {
             scene.scene_id: idx for idx, scene in enumerate(self.scene_cards)

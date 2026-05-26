@@ -15,6 +15,7 @@ from podcast_agent.pipeline.orchestrator import (
     _build_plan_transition_feedback,
     _validate_plan_transition,
 )
+from _section_progression_helpers import make_section_progression
 from podcast_agent.schemas.models import (
     ActorExplanationPlan,
     ActorPrimitive,
@@ -118,6 +119,7 @@ def _episode_architecture() -> EpisodeArchitecture:
             ArchitectureSection(
                 section_id="s01",
                 purpose="opening",
+                section_progression=make_section_progression("setup", label="s01"),
                 approx_runtime_minutes=10.0,
                 primitive_ids=["support_1"],
                 section_question="Q1?",
@@ -133,6 +135,7 @@ def _episode_architecture() -> EpisodeArchitecture:
             ArchitectureSection(
                 section_id="s02",
                 purpose="turn",
+                section_progression=make_section_progression("answer", label="s02"),
                 approx_runtime_minutes=30.0,
                 primitive_ids=["core_1"],
                 section_question="Q2?",
@@ -149,6 +152,7 @@ def _episode_architecture() -> EpisodeArchitecture:
             ArchitectureSection(
                 section_id="s03",
                 purpose="counterpressure",
+                section_progression=make_section_progression("advance", label="s03"),
                 approx_runtime_minutes=30.0,
                 primitive_ids=["support_2"],
                 section_question="Q3?",
@@ -165,6 +169,7 @@ def _episode_architecture() -> EpisodeArchitecture:
             ArchitectureSection(
                 section_id="s04",
                 purpose="closing",
+                section_progression=make_section_progression("close", label="s04"),
                 approx_runtime_minutes=30.0,
                 primitive_ids=["support_3"],
                 section_question="Q4?",
@@ -190,7 +195,7 @@ def test_build_architecture_retry_feedback_defaults_for_generic_exception() -> N
         "episode_number": None,
         "instruction": (
             "Return a schema-valid episode architecture that satisfies section counts, "
-            "answer/residue placement, and promised-beat accounting."
+            "answer/close stage placement, and promised-beat accounting."
         ),
     }
 
@@ -253,7 +258,7 @@ def _valid_plan_payload(payload: dict, *, use_invalid_section_primitive: bool) -
                 "section_id": "s03",
                 "title": "Scene 3",
                 "scene_role": "consequence",
-                "scene_job": "residue",
+                "scene_job": "build",
                 "dominant_primitive_id": "support_2",
                 "spine_relation": "show_consequence",
                 "state_effect": "State 3",
@@ -292,7 +297,6 @@ def _valid_plan_payload(payload: dict, *, use_invalid_section_primitive: bool) -
             },
         ],
         "answer_scene_card_id": "scene_2",
-        "residue_scene_card_id": "scene_3",
     }
 
 
@@ -456,7 +460,7 @@ def test_validate_plan_transition_allows_dense_scene_fact_cards():
                     "section_id": "s03",
                     "title": "Scene 3",
                     "scene_role": "fallout",
-                    "scene_job": "residue",
+                    "scene_job": "build",
                     "beat_change": "The cost becomes visible.",
                     "must_land_facts": {"required": ["Fact 8"]},
                     "passage_ids": ["p_support_2"],
@@ -481,7 +485,6 @@ def test_validate_plan_transition_allows_dense_scene_fact_cards():
                 },
             ],
             "answer_scene_card_id": "scene_2",
-            "residue_scene_card_id": "scene_3",
         }
     )
 
@@ -629,7 +632,7 @@ def test_plan_series_accepts_surprise_move_after_narrator_profile_normalization(
                     "section_id": "s03",
                     "title": "Scene 3",
                     "scene_role": "reaction",
-                    "scene_job": "residue",
+                    "scene_job": "build",
                     "beat_change": "The cost remains after the hinge lands.",
                     "must_land_facts": {"required": ["Fact 3"]},
                     "primitive_ids": ["support_2"],
@@ -656,7 +659,6 @@ def test_plan_series_accepts_surprise_move_after_narrator_profile_normalization(
                 },
             ],
             "answer_scene_card_id": "scene_2",
-            "residue_scene_card_id": "scene_3",
         }
         return orchestrator.episode_planning_agent.response_model.model_validate(
             plan_payload
@@ -864,7 +866,7 @@ def test_plan_series_warns_without_retry_on_late_actor_introduction(
                         "section_id": "s03",
                         "title": "The cost lands",
                         "scene_role": "fallout",
-                        "scene_job": "residue",
+                        "scene_job": "build",
                         "beat_change": "The cost is now visible.",
                         "passage_ids": ["p_support_2"],
                         "host_moves": {
@@ -887,7 +889,6 @@ def test_plan_series_warns_without_retry_on_late_actor_introduction(
                     },
                 ],
                 "answer_scene_card_id": "scene_2",
-                "residue_scene_card_id": "scene_3",
             }
         )
 
@@ -1047,7 +1048,7 @@ def test_plan_series_warns_without_retry_on_missing_actor_explanation_link(
                         "section_id": "s03",
                         "title": "The cost lands",
                         "scene_role": "fallout",
-                        "scene_job": "residue",
+                        "scene_job": "build",
                         "beat_change": "The cost is now visible.",
                         "passage_ids": ["p_support_2"],
                         "host_moves": {
@@ -1070,7 +1071,6 @@ def test_plan_series_warns_without_retry_on_missing_actor_explanation_link(
                     },
                 ],
                 "answer_scene_card_id": "scene_2",
-                "residue_scene_card_id": "scene_3",
             }
         )
 

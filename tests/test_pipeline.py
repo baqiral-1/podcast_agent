@@ -43,6 +43,7 @@ from podcast_agent.pipeline.orchestrator import (
     _trim_candidate_texts_by_bm25,
     _trim_candidate_texts_by_bm25_query_text,
 )
+from _section_progression_helpers import make_section_progression
 from podcast_agent.schemas.models import (
     ActorArcDirective,
     ActorArcThread,
@@ -184,42 +185,33 @@ def _episode_plan(
     target_word_count: int = 18900,
     handoff_scene_card_id: str | None = None,
     answer_scene_card_id: str | None = None,
-    residue_scene_card_id: str | None = None,
 ) -> EpisodePlan:
     normalized_scene_cards = [scene.model_copy(deep=True) for scene in scene_cards]
     if not normalized_scene_cards:
         raise ValueError("scene_cards must not be empty")
+    multi_scene = len(normalized_scene_cards) >= 2
+    # With at least two scenes the final scene is the close scene; with a single
+    # scene the lone card serves as the answer scene.
+    resolved_close_scene_card_id = (
+        normalized_scene_cards[-1].scene_id if multi_scene else None
+    )
     if answer_scene_card_id is None:
-        answer_index = -2 if len(normalized_scene_cards) >= 2 else -1
-        resolved_answer_scene_card_id = normalized_scene_cards[answer_index].scene_id
+        # Pick the last scene before the close scene as the answer scene.
+        if multi_scene:
+            resolved_answer_scene_card_id = normalized_scene_cards[-2].scene_id
+        else:
+            resolved_answer_scene_card_id = normalized_scene_cards[-1].scene_id
     else:
         resolved_answer_scene_card_id = answer_scene_card_id
-    resolved_residue_scene_card_id = residue_scene_card_id
-    if (
-        answer_scene_card_id is None
-        and len(normalized_scene_cards) >= 2
-        and resolved_residue_scene_card_id is None
-    ):
-        resolved_residue_scene_card_id = normalized_scene_cards[-1].scene_id
-    if (
-        resolved_residue_scene_card_id == resolved_answer_scene_card_id
-        and len(normalized_scene_cards) >= 2
-    ):
-        fallback_residue_scene = next(
-            scene
-            for scene in reversed(normalized_scene_cards)
-            if scene.scene_id != resolved_answer_scene_card_id
-        )
-        resolved_residue_scene_card_id = fallback_residue_scene.scene_id
     normalized_scene_cards = [
         scene.model_copy(
             update={
                 "scene_job": (
-                    SceneJob.ANSWER
-                    if scene.scene_id == resolved_answer_scene_card_id
+                    SceneJob.CLOSE
+                    if scene.scene_id == resolved_close_scene_card_id
                     else (
-                        SceneJob.RESIDUE
-                        if scene.scene_id == resolved_residue_scene_card_id
+                        SceneJob.ANSWER
+                        if scene.scene_id == resolved_answer_scene_card_id
                         else scene.scene_job
                     )
                 )
@@ -238,7 +230,6 @@ def _episode_plan(
         ),
         scene_cards=normalized_scene_cards,
         answer_scene_card_id=resolved_answer_scene_card_id,
-        residue_scene_card_id=resolved_residue_scene_card_id,
         target_word_count=target_word_count,
     )
 
@@ -248,9 +239,32 @@ def _episode_architecture_for_scene_cards(scene_cards: list[SceneCard]) -> Episo
     for scene in scene_cards:
         if scene.section_id not in ordered_section_ids:
             ordered_section_ids.append(scene.section_id)
+    # The answer-stage section is the section that owns the answer scene; the
+    # final section is always the close stage (closing purpose).
+    answer_section_id = next(
+        (
+            scene.section_id
+            for scene in scene_cards
+            if scene.scene_job == SceneJob.ANSWER
+        ),
+        None,
+    )
+    close_section_id = ordered_section_ids[-1]
+    if answer_section_id is None or answer_section_id == close_section_id:
+        # Fall back to the section just before the close section.
+        answer_section_id = ordered_section_ids[max(0, len(ordered_section_ids) - 2)]
     sections = []
     for idx, section_id in enumerate(ordered_section_ids, start=1):
-        purpose = "closing" if idx == len(ordered_section_ids) else ("opening" if idx == 1 else "setup")
+        is_close = section_id == close_section_id and idx == len(ordered_section_ids)
+        if is_close:
+            stage = "close"
+            purpose = "closing"
+        elif section_id == answer_section_id:
+            stage = "answer"
+            purpose = "opening" if idx == 1 else "setup"
+        else:
+            stage = "setup" if idx == 1 else "advance"
+            purpose = "opening" if idx == 1 else "setup"
         sections.append(
             ArchitectureSection.model_validate(
                 {
@@ -267,9 +281,14 @@ def _episode_architecture_for_scene_cards(scene_cards: list[SceneCard]) -> Episo
                     "sets_up_section_ids": [ordered_section_ids[idx]] if idx < len(ordered_section_ids) else [],
                     "recurrence_role": "none",
                     "priority_core_passage_ids": [],
+                    "section_progression": make_section_progression(stage, label=section_id),
                 }
             )
         )
+    # When there is only one section it must serve as the close stage; ensure a
+    # valid two-section minimum is not required by these single-section fixtures
+    # by leaving the answer stage on the same section is impossible, so callers
+    # that need a valid architecture pass at least two distinct sections.
     return EpisodeArchitecture.model_construct(
         episode_number=1,
         major_turn_section_id=ordered_section_ids[min(len(ordered_section_ids), 2) - 1],
@@ -414,9 +433,8 @@ def _normalize_fixture_plan_episode(
     normalized["scene_cards"] = normalized_scene_cards
     if len(normalized_scene_cards) >= 2:
         normalized["answer_scene_card_id"] = normalized_scene_cards[-2]["scene_id"]
-        normalized["residue_scene_card_id"] = normalized_scene_cards[-1]["scene_id"]
         normalized_scene_cards[-2]["scene_job"] = "answer"
-        normalized_scene_cards[-1]["scene_job"] = "residue"
+        normalized_scene_cards[-1]["scene_job"] = "close"
     elif normalized_scene_cards:
         normalized["answer_scene_card_id"] = normalized_scene_cards[-1]["scene_id"]
         normalized_scene_cards[-1]["scene_job"] = "answer"
@@ -516,6 +534,14 @@ def test_episode_architecture_realization_uses_resolved_config_targets():
     sections = []
     for idx in range(6):
         section_id = f"section_{idx + 1:02d}"
+        if idx == 5:
+            stage = "close"
+        elif idx == 4:
+            stage = "answer"
+        elif idx == 0:
+            stage = "setup"
+        else:
+            stage = "advance"
         sections.append(
             ArchitectureSection(
                 section_id=section_id,
@@ -528,6 +554,7 @@ def test_episode_architecture_realization_uses_resolved_config_targets():
                 ],
                 section_anchor="Anchor",
                 must_stage_beats=["Visible move", "Immediate consequence"],
+                section_progression=make_section_progression(stage, label=section_id),
             )
         )
     architecture = EpisodeArchitecture(
@@ -2344,6 +2371,7 @@ def test_spoken_delivery_payload_includes_scene_cues_from_plan():
                 primitive_ids=["pack_1"],
                 section_anchor="Anchor",
                 must_stage_beats=["Beat one", "Beat two"],
+                section_progression=make_section_progression("setup", label="section_1"),
             )
         ],
         architecture_notes=[],

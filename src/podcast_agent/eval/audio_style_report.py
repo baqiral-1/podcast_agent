@@ -387,6 +387,7 @@ class AutoMetrics:
     abstract_opener_rate: float
     opening_anchor_density: float
     entity_load_per_200_words: float
+    verdict_parallel_density: float
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -509,6 +510,41 @@ def _per_thousand(count: float, word_count: int) -> float:
     if word_count <= 0:
         return 0.0
     return (count * 1000.0) / word_count
+
+
+# Antithetical-parallel verdict frame: the "It is not X. It is Y." /
+# "X is real, Y is not." / "Not A. B." structure this kind of writing falls into
+# as its near-exclusive way to land a claim. Tracked as a diagnostic so the tic
+# is measurable across runs (see verdict_parallel_density); not wired into the
+# weighted AFS/TSS composite, to avoid disturbing the calibrated anchors.
+_VERDICT_NEGATED_PREDICATE_RE = re.compile(
+    r"\b(?:is|are|was|were|it's|that's|isn't|aren't|wasn't|weren't)\s+not\b",
+    re.IGNORECASE,
+)
+_VERDICT_NOT_OPENER_RE = re.compile(r"(?:^|[.?!]\s+)not\s+[a-z]", re.IGNORECASE)
+
+
+def _verdict_parallel_count(text: str) -> int:
+    """Count antithetical-parallel verdict landings.
+
+    Two markers: a short sentence (<=12 words) built on a negated predicate
+    ("the mandate is real, the state is not"), and a sentence opening on a bare
+    "Not ..." ("Not force. Silence."). Both are signatures of the single verdict
+    frame the prose overuses.
+    """
+    sentences = [
+        segment.strip()
+        for segment in SENTENCE_SPLIT_RE.split(text.strip())
+        if segment.strip()
+    ]
+    negated_short = sum(
+        1
+        for sentence in sentences
+        if len(_tokenize(sentence)) <= 12
+        and _VERDICT_NEGATED_PREDICATE_RE.search(sentence)
+    )
+    not_openers = len(_VERDICT_NOT_OPENER_RE.findall(text))
+    return negated_short + not_openers
 
 
 def _paragraphs_from_script(script_payload: dict[str, object]) -> list[str]:
@@ -707,6 +743,8 @@ def extract_auto_metrics(text: str, *, paragraphs: Sequence[str], opening_text: 
     entity_count = len(CAPITALIZED_ENTITY_RE.findall(text))
     entity_load_per_200_words = entity_count * 200.0 / word_count if word_count else 0.0
 
+    verdict_parallel_density = _per_thousand(_verdict_parallel_count(text), word_count)
+
     return AutoMetrics(
         word_count=word_count,
         sentence_count=sentence_count,
@@ -733,6 +771,7 @@ def extract_auto_metrics(text: str, *, paragraphs: Sequence[str], opening_text: 
         abstract_opener_rate=_round_score(abstract_opener_rate),
         opening_anchor_density=_round_score(opening_anchor_density),
         entity_load_per_200_words=_round_score(entity_load_per_200_words),
+        verdict_parallel_density=_round_score(verdict_parallel_density),
     )
 
 
@@ -1124,6 +1163,7 @@ def _combine_metrics(metrics_list: Sequence[AutoMetrics]) -> AutoMetrics:
         abstract_opener_rate=_round_score(weighted("abstract_opener_rate", "paragraph_count")),
         opening_anchor_density=_round_score(weighted("opening_anchor_density")),
         entity_load_per_200_words=_round_score(weighted("entity_load_per_200_words")),
+        verdict_parallel_density=_round_score(weighted("verdict_parallel_density")),
     )
 
 

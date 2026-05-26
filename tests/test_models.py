@@ -7,6 +7,7 @@ import json
 import pytest
 from pydantic import ValidationError
 
+from _section_progression_helpers import make_section_progression
 from podcast_agent.schemas.models import (
     ActorArcDirective,
     ActorArcThread,
@@ -1236,6 +1237,25 @@ class TestPlanningModels:
 
         assert card.audible_detail == "A stamp cracks onto the form."
 
+    def test_scene_card_accepts_audio_alias(self):
+        card = SceneCard.model_validate(
+            {
+                "scene_id": "scene_audio_alias",
+                "section_id": "section_1",
+                "title": "Audio alias scene",
+                "scene_role": "action",
+                "beat_change": "The room changes again.",
+                "entry_image": "A file lands on the desk.",
+                "observable_detail": "Eyes move toward the doorway.",
+                "audio": "A chair leg scrapes the tile.",
+                "passage_ids": ["p1"],
+                "host_moves": _host_moves_payload().model_dump(mode="json"),
+                "estimated_duration_seconds": 60,
+            }
+        )
+
+        assert card.audible_detail == "A chair leg scrapes the tile."
+
 
 class TestSpeechAndStyleModels:
     def test_prose_section_accepts_non_enum_movement_goal(self):
@@ -1328,6 +1348,14 @@ class TestEpisodeArchitectureModels:
         sections = []
         for idx in range(section_count):
             section_id = f"section_{idx + 1:02d}"
+            if idx == section_count - 1:
+                stage = "close"
+            elif idx == section_count - 2:
+                stage = "answer"
+            elif idx == 0:
+                stage = "setup"
+            else:
+                stage = "advance"
             sections.append(
                 ArchitectureSection(
                     section_id=section_id,
@@ -1343,6 +1371,7 @@ class TestEpisodeArchitectureModels:
                         f"Beat {idx + 1}A",
                         f"Beat {idx + 1}B",
                     ],
+                    section_progression=make_section_progression(stage, label=section_id),
                 )
             )
         return EpisodeArchitecture(
@@ -1390,6 +1419,7 @@ class TestEpisodeArchitectureModels:
                 "inference_mode": "scene_first",
                 "pressure_type": "mass_political",
                 "resolution_type": "redefinition",
+                "section_progression": make_section_progression("setup", label="section_01"),
             }
         )
 
@@ -1397,6 +1427,32 @@ class TestEpisodeArchitectureModels:
         assert section.section_anchor == "Legacy anchor"
         assert payload["section_anchor"] == "Legacy anchor"
         assert "anchor" not in payload
+
+    def test_architecture_section_open_mode_defaults_and_round_trips(self):
+        base = {
+            "section_id": "section_01",
+            "purpose": "opening",
+            "approx_runtime_minutes": 10.0,
+            "primitive_ids": ["et_1"],
+            "section_anchor": "Anchor",
+            "must_stage_beats": ["Visible move", "Immediate consequence"],
+            "section_progression": make_section_progression("setup", label="section_01"),
+        }
+
+        default_section = ArchitectureSection.model_validate(base)
+        assert default_section.open_mode == "scene_anchor"
+        assert default_section.model_dump(mode="json")["open_mode"] == "scene_anchor"
+
+        question_section = ArchitectureSection.model_validate(
+            {**base, "open_mode": "question_first"}
+        )
+        assert question_section.open_mode == "question_first"
+        assert (
+            question_section.model_dump(mode="json")["open_mode"] == "question_first"
+        )
+
+        with pytest.raises(ValidationError):
+            ArchitectureSection.model_validate({**base, "open_mode": "montage"})
 
     def test_architecture_section_rejects_single_must_stage_beat_when_provided(self):
         with pytest.raises(
@@ -1462,3 +1518,54 @@ class TestEpisodeArchitectureModels:
                     },
                 }
             )
+
+
+def test_episode_planning_transport_roundtrip_preserves_answer_scene_and_drops_residue():
+    from podcast_agent.llm.transport import (
+        decode_transport_payload,
+        encode_transport_payload,
+    )
+
+    scene_card = SceneCardDraft.model_validate(
+        {
+            "scene_id": "scene_1",
+            "section_id": "section_1",
+            "title": "The order arrives",
+            "scene_role": "setup",
+            "scene_job": "answer",
+            "beat_change": "The stakes become legible.",
+            "entry_image": "A clerk opens the envelope.",
+            "observable_detail": "Hands freeze over the paper.",
+            "intended_move": "Move from abstract policy to lived consequence.",
+            "primitive_ids": ["et_1"],
+            "passage_ids": ["p1", "p2"],
+            "host_moves": _host_moves_payload().model_dump(mode="json"),
+            "estimated_duration_seconds": 600,
+        }
+    )
+    draft = EpisodePlanDraft(
+        episode_number=1,
+        framing=_framing(),
+        scene_cards=[scene_card],
+        answer_scene_card_id="scene_1",
+    )
+    canonical_payload = draft.model_dump(mode="json")
+    assert "answer_scene_card_id" in canonical_payload
+    assert "residue_scene_card_id" not in canonical_payload
+
+    encoded = encode_transport_payload("episode_planning", canonical_payload)
+    # The canonical answer key is aliased; no residue alias is emitted.
+    assert encoded["answer_sid"] == "scene_1"
+    assert "answer_scene_card_id" not in encoded
+    assert "residue_sid" not in encoded
+    assert "residue_scene_card_id" not in encoded
+
+    decoded = decode_transport_payload("episode_planning", encoded)
+    assert decoded["answer_scene_card_id"] == "scene_1"
+    assert "answer_sid" not in decoded
+    assert "residue_sid" not in decoded
+    assert "residue_scene_card_id" not in decoded
+
+    # The decoded payload still validates under the strict (extra="forbid") model.
+    revalidated = EpisodePlanDraft.model_validate(decoded)
+    assert revalidated.answer_scene_card_id == "scene_1"

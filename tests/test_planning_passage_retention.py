@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from _section_progression_helpers import make_section_progression
 from podcast_agent.pipeline.orchestrator import (
     PipelineOrchestrator,
     _build_host_move_plan_diagnostics,
@@ -235,7 +236,7 @@ def _planning_response(
     final_scene_specs: list[str] = []
     if len(section_ids) < 3:
         final_scene_specs.append("answer")
-    final_scene_specs.extend(["residue", "close"])
+    final_scene_specs.append("close")
     for scene_job in final_scene_specs:
         scene_cards.append(
             {
@@ -272,14 +273,6 @@ def _planning_response(
                     scene["scene_id"]
                     for scene in scene_cards
                     if scene.get("scene_job") == "answer"
-                ),
-                None,
-            ),
-            "residue_scene_card_id": next(
-                (
-                    scene["scene_id"]
-                    for scene in scene_cards
-                    if scene.get("scene_job") == "residue"
                 ),
                 None,
             ),
@@ -431,6 +424,7 @@ def test_build_episode_architecture_realization_reports_omitted_support_and_reca
             ArchitectureSection(
                 section_id="section_01",
                 purpose="opening",
+                section_progression=make_section_progression("setup", label="section_01"),
                 approx_runtime_minutes=20.0,
                 primitive_ids=_core_primitive_ids(),
                 section_question="Q1?",
@@ -450,6 +444,7 @@ def test_build_episode_architecture_realization_reports_omitted_support_and_reca
             ArchitectureSection(
                 section_id="section_02",
                 purpose="setup",
+                section_progression=make_section_progression("setup", label="section_02"),
                 approx_runtime_minutes=20.0,
                 primitive_ids=["core_1"],
                 section_question="Q2?",
@@ -469,6 +464,7 @@ def test_build_episode_architecture_realization_reports_omitted_support_and_reca
             ArchitectureSection(
                 section_id="section_03",
                 purpose="turn",
+                section_progression=make_section_progression("setup", label="section_03"),
                 approx_runtime_minutes=25.0,
                 primitive_ids=["core_1"],
                 section_question="Q3?",
@@ -488,6 +484,7 @@ def test_build_episode_architecture_realization_reports_omitted_support_and_reca
             ArchitectureSection(
                 section_id="section_04",
                 purpose="closing",
+                section_progression=make_section_progression("close", label="section_04"),
                 approx_runtime_minutes=25.0,
                 primitive_ids=["core_1"],
                 section_question="Q4?",
@@ -576,6 +573,16 @@ def test_build_episode_architecture_realization_skips_section_count_warning_insi
                 pressure_type="mass_political",
                 resolution_type="containment" if idx == closing_idx else "escalation",
                 closure_level="high" if idx == closing_idx else "low",
+                section_progression=make_section_progression(
+                    "close"
+                    if idx == closing_idx
+                    else "answer"
+                    if idx == closing_idx - 1
+                    else "setup"
+                    if idx == 0
+                    else "advance",
+                    label=section_id,
+                ),
             )
         )
     architecture = _episode_architecture(sections=sections)
@@ -612,6 +619,7 @@ def test_build_episode_architecture_realization_warns_for_missing_payoff_and_low
             ArchitectureSection(
                 section_id="section_01",
                 purpose="opening",
+                section_progression=make_section_progression("setup", label="section_01"),
                 approx_runtime_minutes=8.5,
                 primitive_ids=["core_1", "core_2", "core_3", "core_4"],
                 section_question="Q1?",
@@ -656,6 +664,7 @@ def test_build_episode_architecture_realization_warns_for_missing_payoff_and_low
             ArchitectureSection(
                 section_id="section_02",
                 purpose="closing",
+                section_progression=make_section_progression("close", label="section_02"),
                 approx_runtime_minutes=2.0,
                 primitive_ids=["core_1"],
                 section_question="Q2?",
@@ -738,6 +747,7 @@ def test_build_host_move_plan_diagnostics_warns_on_disallowed_move_type() -> Non
             ArchitectureSection(
                 section_id="section_01",
                 purpose="closing",
+                section_progression=make_section_progression("close", label="section_01"),
                 approx_runtime_minutes=2.0,
                 primitive_ids=["core_1"],
                 section_question="Q1?",
@@ -795,6 +805,7 @@ def test_build_host_move_plan_diagnostics_flags_long_sentence_shaped_targets() -
             ArchitectureSection(
                 section_id="section_01",
                 purpose="setup",
+                section_progression=make_section_progression("setup", label="section_01"),
                 approx_runtime_minutes=2.0,
                 primitive_ids=["core_1"],
                 section_question="Q1?",
@@ -856,6 +867,7 @@ def test_build_host_move_plan_diagnostics_warns_on_low_coverage() -> None:
             ArchitectureSection(
                 section_id="section_01",
                 purpose="setup",
+                section_progression=make_section_progression("setup", label="section_01"),
                 approx_runtime_minutes=2.0,
                 primitive_ids=["core_1"],
                 section_question="Q1?",
@@ -1300,13 +1312,21 @@ def test_build_episode_architectures_uses_only_strategy_actor_directives(
                     pressure_type="mass_political",
                     resolution_type="escalation" if idx < 4 else "containment",
                     closure_level="high" if idx == 4 else "low",
+                    section_progression=make_section_progression(
+                        "setup"
+                        if idx == 1
+                        else "answer"
+                        if idx == 2
+                        else "close"
+                        if idx == 4
+                        else "advance",
+                        label=f"section_0{idx}",
+                    ),
                 )
                 for idx in range(1, 5)
             ],
         ).model_copy(
             update={
-                "answer_section_id": "section_03",
-                "residue_section_id": "section_04",
                 "promised_beat_decisions": [],
             }
         )
@@ -1433,6 +1453,7 @@ def test_build_section_plan_realization_reports_section_drift_and_unused_priorit
             ArchitectureSection(
                 section_id="section_01",
                 purpose="opening",
+                section_progression=make_section_progression("setup", label="section_01"),
                 approx_runtime_minutes=20.0,
                 primitive_ids=["core_1"],
                 section_question="What breaks first?",
@@ -1453,6 +1474,7 @@ def test_build_section_plan_realization_reports_section_drift_and_unused_priorit
             ArchitectureSection(
                 section_id="section_02",
                 purpose="setup",
+                section_progression=make_section_progression("setup", label="section_02"),
                 approx_runtime_minutes=20.0,
                 primitive_ids=["core_1", "support_1"],
                 section_question="Q2?",
@@ -1472,6 +1494,7 @@ def test_build_section_plan_realization_reports_section_drift_and_unused_priorit
             ArchitectureSection(
                 section_id="section_03",
                 purpose="turn",
+                section_progression=make_section_progression("setup", label="section_03"),
                 approx_runtime_minutes=25.0,
                 primitive_ids=["core_1"],
                 section_question="Q3?",
@@ -1491,6 +1514,7 @@ def test_build_section_plan_realization_reports_section_drift_and_unused_priorit
             ArchitectureSection(
                 section_id="section_04",
                 purpose="closing",
+                section_progression=make_section_progression("close", label="section_04"),
                 approx_runtime_minutes=25.0,
                 primitive_ids=["core_1"],
                 section_question="Q4?",
@@ -1603,6 +1627,7 @@ def test_build_section_plan_realization_reports_unrealized_must_stage_beats() ->
             ArchitectureSection(
                 section_id="section_01",
                 purpose="opening",
+                section_progression=make_section_progression("setup", label="section_01"),
                 approx_runtime_minutes=20.0,
                 primitive_ids=["core_1"],
                 section_anchor="A cable lands on a desk.",
@@ -1627,6 +1652,7 @@ def test_build_section_plan_realization_reports_unrealized_must_stage_beats() ->
             ArchitectureSection(
                 section_id="section_02",
                 purpose="closing",
+                section_progression=make_section_progression("close", label="section_02"),
                 approx_runtime_minutes=20.0,
                 primitive_ids=["core_1"],
                 section_anchor="The square is empty by dawn.",
@@ -1707,6 +1733,7 @@ def test_validate_architecture_transition_rejects_missing_section_seed_fields() 
             ArchitectureSection(
                 section_id="section_01",
                 purpose="opening",
+                section_progression=make_section_progression("setup", label="section_01"),
                 approx_runtime_minutes=20.0,
                 primitive_ids=_core_primitive_ids(),
                 section_question="Q1?",
@@ -1724,6 +1751,7 @@ def test_validate_architecture_transition_rejects_missing_section_seed_fields() 
             ArchitectureSection(
                 section_id="section_02",
                 purpose="closing",
+                section_progression=make_section_progression("close", label="section_02"),
                 approx_runtime_minutes=20.0,
                 primitive_ids=_core_primitive_ids(),
                 section_question="Q2?",
@@ -1836,6 +1864,7 @@ def test_plan_series_trims_core_support_and_recall_by_passage_role(
             ArchitectureSection(
                 section_id="section_01",
                 purpose="opening",
+                section_progression=make_section_progression("setup", label="section_01"),
                 approx_runtime_minutes=20.0,
                 primitive_ids=[*_core_primitive_ids(), "support_1"],
                 section_question="Q1?",
@@ -1855,6 +1884,7 @@ def test_plan_series_trims_core_support_and_recall_by_passage_role(
             ArchitectureSection(
                 section_id="section_02",
                 purpose="setup",
+                section_progression=make_section_progression("setup", label="section_02"),
                 approx_runtime_minutes=20.0,
                 primitive_ids=["core_1", "support_1"],
                 section_question="Q2?",
@@ -1874,6 +1904,7 @@ def test_plan_series_trims_core_support_and_recall_by_passage_role(
             ArchitectureSection(
                 section_id="section_03",
                 purpose="turn",
+                section_progression=make_section_progression("setup", label="section_03"),
                 approx_runtime_minutes=25.0,
                 primitive_ids=["core_1"],
                 section_question="Q3?",
@@ -1893,6 +1924,7 @@ def test_plan_series_trims_core_support_and_recall_by_passage_role(
             ArchitectureSection(
                 section_id="section_04",
                 purpose="closing",
+                section_progression=make_section_progression("close", label="section_04"),
                 approx_runtime_minutes=25.0,
                 primitive_ids=["core_1", "recall_1"],
                 section_question="Q4?",
@@ -2112,6 +2144,7 @@ def test_plan_series_uses_primitive_aware_queries_for_reused_passages(
             ArchitectureSection(
                 section_id="section_01",
                 purpose="opening",
+                section_progression=make_section_progression("setup", label="section_01"),
                 approx_runtime_minutes=20.0,
                 primitive_ids=[*_core_primitive_ids(), "support_1"],
                 section_question="Q1?",
@@ -2131,6 +2164,7 @@ def test_plan_series_uses_primitive_aware_queries_for_reused_passages(
             ArchitectureSection(
                 section_id="section_02",
                 purpose="setup",
+                section_progression=make_section_progression("setup", label="section_02"),
                 approx_runtime_minutes=10.0,
                 primitive_ids=["core_1"],
                 section_question="Q2?",
@@ -2150,6 +2184,7 @@ def test_plan_series_uses_primitive_aware_queries_for_reused_passages(
             ArchitectureSection(
                 section_id="section_03",
                 purpose="turn",
+                section_progression=make_section_progression("setup", label="section_03"),
                 approx_runtime_minutes=10.0,
                 primitive_ids=["core_1"],
                 section_question="Q3?",
@@ -2169,6 +2204,7 @@ def test_plan_series_uses_primitive_aware_queries_for_reused_passages(
             ArchitectureSection(
                 section_id="section_04",
                 purpose="closing",
+                section_progression=make_section_progression("close", label="section_04"),
                 approx_runtime_minutes=10.0,
                 primitive_ids=["core_1"],
                 section_question="Q4?",

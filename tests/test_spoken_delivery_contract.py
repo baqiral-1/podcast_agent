@@ -4,6 +4,7 @@ import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 
+from _section_progression_helpers import make_section_progression
 from podcast_agent.llm.heuristic import HeuristicLLMClient
 from podcast_agent.pipeline.orchestrator import (
     PipelineOrchestrator,
@@ -56,7 +57,7 @@ def _architecture() -> EpisodeArchitecture:
                 "inference_mode": "scene_first",
                 "pressure_type": "mass_political",
                 "resolution_type": "escalation",
-                "closure_mode": "residue",
+                "section_progression": make_section_progression("setup", label="section_1"),
             },
             {
                 "section_id": "section_2",
@@ -74,7 +75,7 @@ def _architecture() -> EpisodeArchitecture:
                 "inference_mode": "aftermath_first",
                 "pressure_type": "mass_political",
                 "resolution_type": "containment",
-                "closure_mode": "final_answer",
+                "section_progression": make_section_progression("close", label="section_2"),
             },
         ],
     }
@@ -235,7 +236,7 @@ def test_rewrite_for_speech_passes_continuity_tail_for_later_batches(
     assert payloads[0]["section"]["section_id"] == "section_1"
     assert payloads[1]["section"]["section_id"] == "section_2"
     assert payloads[0]["section"]["anchor"] == "Anchor 1"
-    assert payloads[1]["section"]["closure_mode"] == "final_answer"
+    assert payloads[1]["section"]["section_progression"]["stage"] == "close"
     assert payloads[0]["continuity_contract_pre"]["recap_items"][0]["item_id"] == "carry_1"
     assert payloads[1]["continuity_contract_post"]["must_leave_live"][0]["item_id"] == "carry_2"
     assert payloads[0]["section"]["term_explanations"] == []

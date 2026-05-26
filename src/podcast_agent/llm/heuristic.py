@@ -622,12 +622,10 @@ class HeuristicLLMClient(LLMClient):
                 scene_jobs = ["turn"]
             elif idx == target_min - 2:
                 scene_jobs = ["answer"]
-            elif idx == target_min - 1:
-                scene_jobs = ["residue"]
             else:
                 scene_jobs = ["build" if idx % 4 == 0 else "opening"]
             normalized_scene_jobs = [
-                role for role in scene_jobs if role in {"opening", "build", "turn", "answer", "residue"}
+                role for role in scene_jobs if role in {"opening", "build", "turn", "answer"}
             ] or ["opening"]
             candidates.append(
                 {
@@ -838,21 +836,6 @@ class HeuristicLLMClient(LLMClient):
                         "why_load_bearing": "The episode needs one explicit answer-bearing scene commitment.",
                     }
                 )
-                residue_candidate = candidates[min(2, len(candidates) - 1)]
-                promised_beats.append(
-                    {
-                        "beat_id": f"episode_{episode_number:02d}_residue",
-                        "label": f"Episode {episode_number} residue promise",
-                        "intended_job": "residue",
-                        "source_candidate_ids": [
-                            str(residue_candidate.get("candidate_id", ""))
-                        ],
-                        "source_primitive_ids": list(
-                            residue_candidate.get("primitive_ids", []) or []
-                        )[:2],
-                        "why_load_bearing": "The episode should leave one clear remainder live after the answer.",
-                    }
-                )
             enriched_episodes.append(
                 {
                     "episode_number": episode_number,
@@ -965,6 +948,16 @@ class HeuristicLLMClient(LLMClient):
             local_primitive_ids = [primitive_ids[min(idx, len(primitive_ids) - 1)]]
             is_closing = idx == section_count - 1
             is_turn = idx == turn_section_idx
+            if is_closing:
+                section_stage = "close"
+            elif idx == answer_section_idx:
+                section_stage = "answer"
+            elif idx == residue_section_idx:
+                section_stage = "afterpressure"
+            elif idx == 0:
+                section_stage = "setup"
+            else:
+                section_stage = "advance"
             section_question_moves = []
             section_memory_thread_moves = []
             section_host_mystery_moves = []
@@ -1060,6 +1053,7 @@ class HeuristicLLMClient(LLMClient):
                     if is_closing
                     else non_closing_minutes,
                     "primitive_ids": local_primitive_ids,
+                    "open_mode": "scene_anchor",
                     "section_anchor": "A concrete section anchor keeps the listener oriented.",
                     "must_stage_beats": [
                         f"Stage the visible move that defines section {idx + 1}.",
@@ -1077,19 +1071,33 @@ class HeuristicLLMClient(LLMClient):
                     else "payoff"
                     if idx == section_count - 1
                     else "deepen",
-                    "closure_mode": (
-                        "final_answer"
-                        if is_closing
-                        else "partial_answer"
-                        if idx == answer_section_idx
-                        else "residue"
-                    ),
                     "priority_core_passage_ids": [],
-                    "question_moves": section_question_moves,
-                    "memory_thread_moves": section_memory_thread_moves,
-                    "host_mystery_moves": section_host_mystery_moves,
-                    "host_assumption_moves": section_host_assumption_moves,
-                    "host_theory_moves": section_host_theory_moves,
+                    "section_progression": {
+                        "stage": section_stage,
+                        "becomes_obvious": (
+                            f"By the end of section {idx + 1} the listener can see "
+                            "the next move in the episode's answer."
+                        ),
+                        "answer_contribution": (
+                            f"Section {idx + 1} advances the episode answer at the "
+                            f"{section_stage} stage."
+                        ),
+                        "theme_link": (
+                            "Ties this section's pressure to the episode's overall theme."
+                        ),
+                        "what_remains_live": (
+                            "The episode exits without reopening the answer."
+                            if is_closing
+                            else f"Section {idx + 1} hands its live pressure forward."
+                        ),
+                        "state_effects": {
+                            "question_moves": section_question_moves,
+                            "memory_thread_moves": section_memory_thread_moves,
+                            "host_mystery_moves": section_host_mystery_moves,
+                            "host_assumption_moves": section_host_assumption_moves,
+                            "host_theory_moves": section_host_theory_moves,
+                        },
+                    },
                     "analysis_goal": (
                         "Cash out the main pressure line in plain terms."
                         if idx in (1, section_count - 1)
@@ -1124,8 +1132,6 @@ class HeuristicLLMClient(LLMClient):
             intended_job = str(beat.get("intended_job", "") or "")
             if intended_job == "answer":
                 section_id = sections[answer_section_idx]["section_id"]
-            elif intended_job == "residue":
-                section_id = sections[residue_section_idx]["section_id"]
             else:
                 section_id = sections[min(1, len(sections) - 1)]["section_id"]
             promised_beat_decisions.append(
@@ -1139,8 +1145,6 @@ class HeuristicLLMClient(LLMClient):
         return {
             "episode_number": int(episode.get("episode_number", 1)),
             "major_turn_section_id": sections[turn_section_idx]["section_id"],
-            "answer_section_id": sections[answer_section_idx]["section_id"],
-            "residue_section_id": sections[residue_section_idx]["section_id"],
             "allowed_recurring_primitive_ids": primitive_ids[:2],
             "forbidden_redundancies": [],
             "promised_beat_decisions": promised_beat_decisions,
@@ -1174,23 +1178,29 @@ class HeuristicLLMClient(LLMClient):
             + [("build", "action")] * build_count
             + [("turn", "shock")] * turn_count
             + [("answer", "implication")]
-            + [("residue", "fallout")]
             + [("close", "implication")]
         )
         scene_count = len(job_sequence)
-        answer_section_id = str(architecture.get("answer_section_id") or sections[max(0, len(sections) - 3)].get("section_id", "section_01"))
-        residue_section_id = str(architecture.get("residue_section_id") or sections[max(0, len(sections) - 2)].get("section_id", "section_01"))
+
+        def _section_id_for_stage(stage: str) -> str | None:
+            for section in sections:
+                progression = section.get("section_progression") or {}
+                if progression.get("stage") == stage:
+                    return str(section.get("section_id"))
+            return None
+
+        answer_section_id = str(
+            _section_id_for_stage("answer")
+            or sections[max(0, len(sections) - 3)].get("section_id", "section_01")
+        )
         close_section_id = str(sections[-1].get("section_id", "section_01"))
         answer_scene_card_id = None
-        residue_scene_card_id = None
         for idx in range(scene_count):
             scene_job, scene_role = job_sequence[idx]
             source_section = sections[min(idx, len(sections) - 1)]
             section_id = str(source_section.get("section_id", "section_01"))
             if scene_job == "answer":
                 section_id = answer_section_id
-            elif scene_job == "residue":
-                section_id = residue_section_id
             elif scene_job == "close":
                 section_id = close_section_id
             section_primitive_ids = list(source_section.get("primitive_ids", []) or [])
@@ -1198,8 +1208,6 @@ class HeuristicLLMClient(LLMClient):
             scene_id = f"scene_{idx + 1:02d}"
             if scene_job == "answer":
                 answer_scene_card_id = scene_id
-            elif scene_job == "residue":
-                residue_scene_card_id = scene_id
             scene_cards.append(
                 {
                     "scene_id": scene_id,
@@ -1213,8 +1221,6 @@ class HeuristicLLMClient(LLMClient):
                     if scene_job in {"build", "turn"}
                     else "The answer becomes clear without abstraction."
                     if scene_job == "answer"
-                    else "A cost or ambiguity remains after the answer lands."
-                    if scene_job == "residue"
                     else "The close exits the episode without reopening the answer.",
                     "must_land_facts": {
                         "required": [
@@ -1265,13 +1271,13 @@ class HeuristicLLMClient(LLMClient):
                         "close": (
                             [
                                 {
-                                    "move_type": "evaluate" if scene_job != "close" else "callback",
-                                    "target": "leave residue" if scene_job != "close" else "clean exit",
+                                    "move_type": "callback",
+                                    "target": "clean exit",
                                     "surface_mode": "mixed",
                                     "address_mode": "implicit",
                                 }
                             ]
-                            if scene_job in {"residue", "close"}
+                            if scene_job == "close"
                             else []
                         ),
                     },
@@ -1294,7 +1300,6 @@ class HeuristicLLMClient(LLMClient):
             },
             "scene_cards": scene_cards,
             "answer_scene_card_id": answer_scene_card_id or "scene_01",
-            "residue_scene_card_id": residue_scene_card_id or "scene_02",
             "dropped_support_primitive_reasons": {},
         }
 

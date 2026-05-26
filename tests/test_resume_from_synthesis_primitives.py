@@ -9,6 +9,10 @@ from typing import Any
 
 import pytest
 
+from _section_progression_helpers import (
+    make_section_progression,
+    stages_for_purposes,
+)
 from podcast_agent.schemas.models import (
     ActorMetadata,
     ActorProfile,
@@ -181,9 +185,14 @@ def _episode_architecture() -> EpisodeArchitecture:
                 "sets_up_section_ids": (
                     [] if index == len(purposes) - 1 else [f"section_{index + 2}"]
                 ),
+                "section_progression": make_section_progression(
+                    stage, label=f"section_{index + 1}"
+                ),
             }
         )
-        for index, purpose in enumerate(purposes)
+        for index, (purpose, stage) in enumerate(
+            zip(purposes, stages_for_purposes(purposes))
+        )
     ]
     return EpisodeArchitecture.model_validate(
         {
