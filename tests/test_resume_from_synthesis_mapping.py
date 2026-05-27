@@ -225,8 +225,8 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
                         title="Episode",
                         arc_summary="Arc summary",
                         episode_spine={
-                            "listener_question": "Question?",
-                            "argument": "A working claim.",
+                            "listener_problem": "Question?",
+                            "episode_answer": "A working claim.",
                             "core_primitive_ids": [
                                 "primitive_1",
                                 "core_2",
@@ -740,8 +740,8 @@ def test_resume_from_synthesis_mapping_fails_when_upstream_artifact_changes(
                         title="Episode",
                         arc_summary="Arc summary",
                         episode_spine={
-                            "listener_question": "Question?",
-                            "argument": "A working claim.",
+                            "listener_problem": "Question?",
+                            "episode_answer": "A working claim.",
                             "core_primitive_ids": [
                                 "primitive_1",
                                 "core_2",

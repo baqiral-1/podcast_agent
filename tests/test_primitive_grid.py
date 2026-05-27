@@ -83,8 +83,7 @@ def test_primitive_extraction_prompt_is_rich_and_schema_safe() -> None:
     assert "specificity_anchors" not in extraction
     assert "`events`: required `event_type`, required `what_happened`" in extraction
     assert "`events`: required `event_type`, required `what_happened`, optional `event_result`" not in extraction
-    assert "COMPACT TRANSPORT KEYS" in extraction
-    assert "`substrate -> sub`, `core_passage_ids -> core`, `support_passage_ids -> supp`" in extraction
+    assert "COMPACT TRANSPORT KEYS" not in extraction
     assert "Do not treat `title` as a substitute for subtype-required fields." in extraction
     assert "Do not emit primitive `id`; local code will assign ids after extraction." in extraction
     assert "Do not emit per-item `substrate`" in extraction
@@ -127,7 +126,7 @@ def test_primitive_function_tagging_prompt_is_rich_and_substrate_specific() -> N
     assert "BORDERLINE CASES AND TIE-BREAKS" in tagging
     assert "FAILURE MODES" in tagging
     assert "OUTPUT CONTRACT" in tagging
-    assert "COMPACT TRANSPORT KEYS" in tagging
+    assert "COMPACT TRANSPORT KEYS" not in tagging
     assert "Assign between 0 and 3 function tags per primitive" in tagging
     assert "Do not use substrate identity as a proxy for function." in tagging
     assert "A primitive is not automatically entitled to a tag just because of its substrate." in tagging
@@ -147,7 +146,7 @@ def test_primitive_function_tagging_prompt_is_rich_and_substrate_specific() -> N
     assert "First resolve any deferred substrate-detail fields for this substrate" in tagging
     assert "DEFERRED SUBSTRATE DETAIL COMPLETION" in tagging
     assert "`events.event_result`" in tagging
-    assert "`event_type -> etype`, `what_happened -> event`." in tagging
+    assert "`event_type -> etype`, `what_happened -> event`." not in tagging
     assert "`condition_summary -> cond`" not in tagging
     assert "`mechanisms.operating_chain`, `mechanisms.inputs`, and `mechanisms.outputs`" not in tagging
     assert "`artifacts.artifact_detail`" not in tagging
@@ -162,7 +161,7 @@ def test_primitive_function_tagging_prompt_for_conditions_is_family_clean() -> N
     tagging = primitive_function_tagging_instructions("conditions")
 
     assert "primitive_function_tagging_conditions" in tagging
-    assert "`condition_summary -> cond`." in tagging
+    assert "`condition_summary -> cond`." not in tagging
     assert "`conditions.active_tension`" in tagging
     assert "This `conditions` batch may add only deferred substrate-detail fields owned by `conditions`." in tagging
     assert "`event_type -> etype`" not in tagging
@@ -175,7 +174,7 @@ def test_primitive_function_tagging_prompt_for_readings_has_no_foreign_deferred_
     tagging = primitive_function_tagging_instructions("readings")
 
     assert "primitive_function_tagging_readings" in tagging
-    assert "`reading_summary -> read`." in tagging
+    assert "`reading_summary -> read`." not in tagging
     assert "There are no deferred substrate-detail fields to fill for this substrate in this pass." in tagging
     assert "This `readings` batch may not add deferred substrate-detail fields owned by other substrates." in tagging
     assert "`events.event_result`" not in tagging

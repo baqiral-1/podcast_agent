@@ -112,8 +112,8 @@ def _episode_spine(
             SupportPrimitiveRole.MECHANISM if len(merged_support_roles) % 2 == 0 else SupportPrimitiveRole.TEXTURE
         )
     return EpisodeSpine(
-        listener_question="Question?",
-        argument="A working claim.",
+        listener_problem="Question?",
+        episode_answer="A working claim.",
         core_primitive_ids=core_primitive_ids,
         support_primitive_roles=merged_support_roles,
         recall_primitive_ids=list(allowed_recalls or []),
@@ -165,7 +165,7 @@ def _scene_card(
         scene_role=scene_role,
         dominant_pack_id=pack_id,
         spine_relation=SpineRelation.SPINE_ADVANCE,
-        state_effect="The listener's understanding moves forward.",
+        beat_change="The listener's understanding moves forward.",
         entry_image="Image",
         local_question="Question",
         observable_detail="Detail",
@@ -364,13 +364,13 @@ def _normalize_fixture_strategy_episode(payload: dict[str, object]) -> dict[str,
         support_pack_roles[cluster_id] = (
             "texture" if item.get("emphasis") == "compressed" else "mechanism"
         )
-    listener_question = str(payload.get("driving_question", "What changes here?"))
-    thematic_focus = str(payload.get("thematic_focus", "") or listener_question)
+    listener_problem = str(payload.get("driving_question", "What changes here?"))
+    thematic_focus = str(payload.get("thematic_focus", "") or listener_problem)
     arc_summary = str(payload.get("arc_summary", "") or thematic_focus)
     unresolved_questions = list(payload.get("unresolved_questions", []) or [])
     payload["episode_spine"] = {
-        "listener_question": listener_question,
-        "argument": thematic_focus,
+        "listener_problem": listener_problem,
+        "episode_answer": thematic_focus,
         "core_primitive_ids": (spine_pack_ids[:3] or [cluster_path[0]["cluster_id"]])
         + [f"core_{idx}" for idx in range(4, 8)],
         "support_primitive_roles": {

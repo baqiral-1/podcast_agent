@@ -15,6 +15,8 @@ from podcast_agent.schemas.models import (
     ActorMetadata,
     ActorProfile,
     ActorRelationship,
+    ActorSeriesScope,
+    ActorTier,
     BaseSynthesisPrimitive,
     EpisodePlan,
     EpisodePlanDraft,
@@ -27,6 +29,17 @@ from podcast_agent.schemas.models import (
     SynthesisPrimitivesArtifact,
     ThematicAxis,
 )
+
+_ACTOR_TIER_RANK = {
+    ActorTier.MAJOR: 0,
+    ActorTier.SUPPORTING: 1,
+    ActorTier.MINOR: 2,
+}
+_ACTOR_SCOPE_RANK = {
+    ActorSeriesScope.SERIES_WIDE: 0,
+    ActorSeriesScope.RECURRING: 1,
+    ActorSeriesScope.LOCAL: 2,
+}
 
 _VALID_RELATIONSHIP_TYPES = {
     "enables",
@@ -158,7 +171,7 @@ def sanitize_actor_metadata_payload(
     payload: dict[str, Any] | None,
     *,
     project_id: str,
-    max_actors: int = 40,
+    max_actors: int = 60,
 ) -> tuple[ActorMetadata, dict[str, Any]]:
     raw = payload or {}
     metrics: dict[str, Any] = {
@@ -233,7 +246,13 @@ def sanitize_actor_metadata_payload(
         seen_actor_ids.add(actor.actor_id)
         indexed_actors.append((index, actor))
 
-    indexed_actors.sort(key=lambda item: (-item[1].narrative_importance_score, item[0]))
+    indexed_actors.sort(
+        key=lambda item: (
+            _ACTOR_TIER_RANK[item[1].narrative_tier],
+            _ACTOR_SCOPE_RANK[item[1].series_scope],
+            item[0],
+        )
+    )
     metrics["dropped_over_cap_actor_count"] = max(0, len(indexed_actors) - max_actors)
     actors = [actor for _, actor in indexed_actors[:max_actors]]
     actor_ids = {actor.actor_id for actor in actors}
@@ -369,7 +388,7 @@ def clean_strategy_actor_links(
     actor_metadata: ActorMetadata,
 ) -> tuple[list[StrategyEpisode], dict[str, Any]]:
     valid_actor_ids = {actor.actor_id for actor in actor_metadata.actors}
-    metrics = {"unknown_actor_ids": 0}
+    metrics = {"unknown_actor_ids": 0, "unknown_thread_actor_ids": 0}
     cleaned: list[StrategyEpisode] = []
     for episode in strategy_episodes:
         actor_arc_directives = []
@@ -382,13 +401,29 @@ def clean_strategy_actor_links(
                 continue
             seen_actor_ids.add(actor.actor_id)
             actor_arc_directives.append(actor)
-        cleaned.append(
-            episode.model_copy(
-                update={
-                    "actor_arc_directives": actor_arc_directives,
-                }
-            )
-        )
+        update: dict[str, Any] = {"actor_arc_directives": actor_arc_directives}
+        thread = episode.human_thread
+        if thread is not None:
+            directive_actor_ids = {d.actor_id for d in actor_arc_directives}
+            members = []
+            for member in thread.members:
+                member_update: dict[str, Any] = {}
+                if member.actor_id is not None and member.actor_id not in valid_actor_ids:
+                    metrics["unknown_thread_actor_ids"] += 1
+                    member_update["actor_id"] = None
+                if (
+                    member.arc_actor_id is not None
+                    and member.arc_actor_id not in directive_actor_ids
+                ):
+                    metrics["unknown_thread_actor_ids"] += 1
+                    member_update["arc_actor_id"] = None
+                members.append(
+                    member.model_copy(update=member_update)
+                    if member_update
+                    else member
+                )
+            update["human_thread"] = thread.model_copy(update={"members": members})
+        cleaned.append(episode.model_copy(update=update))
     return cleaned, metrics
 
 
@@ -555,7 +590,9 @@ def compact_actor_metadata(actor_metadata: ActorMetadata) -> dict[str, Any]:
                 "transformations": actor.transformations,
                 "uncertainty_notes": actor.uncertainty_notes,
                 "evidence_confidence": actor.evidence_confidence,
-                "narrative_importance_score": actor.narrative_importance_score,
+                "narrative_tier": actor.narrative_tier.value,
+                "series_scope": actor.series_scope.value,
+                "relevant_episode_numbers": actor.relevant_episode_numbers,
             }
             for actor in actor_metadata.actors
         ],

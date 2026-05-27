@@ -161,8 +161,8 @@ def _build_strategy(*, title: str = "Episode") -> NarrativeStrategy:
                 title=title,
                 arc_summary="Arc summary",
                 episode_spine={
-                    "listener_question": "Question?",
-                    "argument": "A working claim.",
+                    "listener_problem": "Question?",
+                    "episode_answer": "A working claim.",
                     "core_primitive_ids": [
                         "primitive_1",
                         "core_2",

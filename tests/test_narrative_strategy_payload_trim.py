@@ -126,7 +126,8 @@ def test_build_narrative_strategy_payload_helpers_trim_fields():
                 stakes=["Dynasty"],
                 transformations=["Hardens"],
                 uncertainty_notes="Sparse on motive.",
-                narrative_importance_score=0.7,
+                narrative_tier="major",
+                series_scope="series_wide",
             )
         ],
         relationships=[
@@ -166,7 +167,8 @@ def test_build_narrative_strategy_payload_helpers_trim_fields():
                 "constraints": ["Weak treasury"],
                 "stakes": ["Dynasty"],
                 "transformations": ["Hardens"],
-                "narrative_importance_score": 0.7,
+                "narrative_tier": "major",
+                "series_scope": "series_wide",
             }
         ],
     }
@@ -303,8 +305,8 @@ def test_choose_narrative_strategy_uses_trimmed_runtime_payload(
                         "title": "Episode 1",
                         "arc_summary": "Arc",
                         "episode_spine": {
-                            "listener_question": "Question?",
-                            "argument": "Claim",
+                            "listener_problem": "Question?",
+                            "episode_answer": "Claim",
                             "core_primitive_ids": [
                                 "et_1",
                                 "core_2",
@@ -401,7 +403,8 @@ def test_choose_narrative_strategy_uses_trimmed_runtime_payload(
                 stakes=["Dynasty"],
                 transformations=["Hardens"],
                 uncertainty_notes="Sparse on motive.",
-                narrative_importance_score=0.7,
+                narrative_tier="major",
+                series_scope="series_wide",
             )
         ],
         relationships=[
@@ -493,8 +496,8 @@ def test_narrative_strategy_accepts_series_explanation_registry_contract() -> No
                     "title": "Episode 1",
                     "arc_summary": "Arc",
                     "episode_spine": {
-                        "listener_question": "Question?",
-                        "argument": "Claim",
+                        "listener_problem": "Question?",
+                        "episode_answer": "Claim",
                         "core_primitive_ids": [
                             "core_1",
                             "core_2",

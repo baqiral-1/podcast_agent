@@ -497,6 +497,7 @@ class NarrativeStrategySkeletonAgent(Agent):
         recommended_episode_count_max: int,
         actor_metadata: dict | None = None,
         strategy_skeleton_feedback: dict | None = None,
+        human_thread_candidates: list[dict] | None = None,
     ) -> dict:
         payload = {
             "synthesis_map": synthesis_map,
@@ -508,6 +509,8 @@ class NarrativeStrategySkeletonAgent(Agent):
             payload["scene_discovery"] = scene_discovery
         if actor_metadata is not None:
             payload["actor_metadata"] = actor_metadata
+        if human_thread_candidates is not None:
+            payload["human_thread_candidates"] = human_thread_candidates
         if episode_count is not None:
             payload["requested_episode_count"] = episode_count
         if strategy_skeleton_feedback is not None:

@@ -10,6 +10,7 @@ from podcast_agent.schemas.models import (
     PrimitiveSubstrate,
     authorial_passage_target_range_for_mode,
     dense_section_authorial_passage_range_for_mode,
+    persona_aside_target_for_mode,
 )
 
 
@@ -128,25 +129,6 @@ _FUNCTION_TAGGING_SUBSTRATE_NOTES: dict[str, str] = {
 }
 
 
-_FUNCTION_TAGGING_SHARED_COMPACT_KEYS: tuple[str, ...] = (
-    "`substrate -> sub`, `core_passage_ids -> core`, `support_passage_ids -> supp`,",
-    "`passage_id -> pid`, `timeframe -> time`, `geography -> geo`, `actor_ids -> actors`,",
-    "`narration_hooks -> hooks`.",
-)
-
-_FUNCTION_TAGGING_SUBSTRATE_COMPACT_KEYS: dict[str, tuple[str, ...]] = {
-    "events": ("`event_type -> etype`, `what_happened -> event`.",),
-    "acts": ("`act_summary -> act`, `acting_subject -> subject`.",),
-    "utterances": ("`utterance_summary -> utter`.",),
-    "actor_portraits": (
-        "`goal_or_project -> goal`, `stakes_or_fears -> stakes`.",
-    ),
-    "mechanisms": ("`mechanism_name -> mech`.",),
-    "conditions": ("`condition_summary -> cond`.",),
-    "artifacts": (),
-    "readings": ("`reading_summary -> read`.",),
-}
-
 _FUNCTION_TAGGING_DEFERRED_DETAIL_LINES: dict[str, tuple[str, ...]] = {
     "events": (
         "- Before assigning functions, fill any deferred substrate-detail fields that are absent for this substrate:",
@@ -224,19 +206,6 @@ _FUNCTION_TAGGING_SELF_CHECK_LINES: dict[str, tuple[str, ...]] = {
         "- Did you avoid adding deferred substrate-detail fields that do not belong to this substrate?",
     ),
 }
-
-
-def _format_function_tagging_compact_keys(substrate: str) -> str:
-    lines = [
-        "- The payload may use compact keys for repeated fields. Treat these as equivalent and prefer them in your JSON output when possible:"
-    ]
-    for line in _FUNCTION_TAGGING_SHARED_COMPACT_KEYS:
-        lines.append(f"  {line}")
-    for line in _FUNCTION_TAGGING_SUBSTRATE_COMPACT_KEYS[substrate]:
-        lines.append(f"  {line}")
-    return "\n".join(lines)
-
-
 def _format_function_tagging_deferred_detail_completion(substrate: str) -> str:
     return "\n".join(_FUNCTION_TAGGING_DEFERRED_DETAIL_LINES[substrate])
 
@@ -362,7 +331,7 @@ def chapter_summary_instructions() -> str:
 
         Field guidance for `analysis`:
         - `themes_touched`: Strictly 3-4 most relevant themes present in the chapter.
-        - `major_actors`: Strictly 2-5 concrete people, factions, or institutions explicitly present in the chapter.
+        - `major_actors`: Strictly 2-5 concrete actors explicitly present in the chapter. Include not only named leaders but also the situated non-elite people the chapter makes legible — a striker, a conscript, a bereaved mother, a seminary student, a bazaar merchant — when they carry the chapter's lived stakes.
         - `key_events_or_arguments`: Strictly 3-7 main claims, developments, disputes, tradeoffs, or contradictions in the chapter.
 
         Do not add markdown, commentary, or explanation outside the JSON object.
@@ -446,15 +415,18 @@ def theme_decomposition_instructions(
         Actor metadata requirements:
         - `actor_metadata` is generated context, not source evidence for final writing.
         - Actors should be concrete humans. Use institutions, factions and organized movements sparingly only in case they are absolutely needed.
-        - Do not canonicalize states, countries, broad affected communities, or abstract collectives as actors.
-        - Every actor must include a snake_case `actor_id`, `display_name`, `actor_type`, `description`, `evidence_confidence`, and `narrative_importance_score`.
+        - Include a deliberate spread of NON-ELITE situated people (a witness, a striker, a conscript, a bereaved relative, a seminary student, a daily sufferer of the policy), not only heads of state, ministers, and senior clerics. The cap is large enough to carry both.
+        - You may canonicalize a NAMED situated individual even if minor; do not canonicalize states, countries, anonymous masses, or abstract collectives.
+        - Every actor must include a snake_case `actor_id`, `display_name`, `actor_type`, `description`, `evidence_confidence`, `narrative_tier`, and `series_scope`.
         - Actor scalar string fields: `actor_id`, `display_name`, `actor_type`, `description`, `evidence_confidence`, and `uncertainty_notes`; use an empty string for `uncertainty_notes` when there is no caveat.
         - Actor list-of-string fields: `aliases`, `book_ids`, `narrative_functions`, `goals_or_motivational_pressures`, `constraints`, `stakes`, and `transformations`; use an empty array when a list has no entries.
         - `chapter_refs` must be an array of objects with `book_id`, `chapter_id`, and `chapter_title`.
         - `actor_type` must be one of: `person`, `institution`, `faction`, `military`, `party`, `movement`, `other`.
         - `evidence_confidence` must be one of: `high`, `medium`, `low`.
         - `narrative_functions` values must be drawn from: `decision_maker`, `broker`, `victim`, `witness`, `ideologue`, `commander`, `administrator`, `opposition`, `beneficiary`, `constraint`, `catalyst`, `symbol`, `other`.
-        - `narrative_importance_score` is the numeric actor priority signal from 0.0 to 1.0.
+        - `narrative_tier` is the actor's importance tier and must be one of: `major`, `supporting`, `minor`. Reserve `major` for actors a whole episode genuinely turns on — do NOT default all sovereigns/clerics to `major`. A non-elite person can be `major` for the part they carry.
+        - `series_scope` is one of `series_wide` (recurs across the whole series), `recurring` (a contiguous run of episodes), or `local` (matters only where their evidence lands). Most non-elite carriers are `local`.
+        - `relevant_episode_numbers` is an optional list of 1-based episode numbers a `local`/`recurring` actor is tied to; leave empty to let downstream infer from primitive placement.
         - Use aliases to prevent downstream name drift.
         - Use `goals_or_motivational_pressures`, `constraints`, `stakes`, `transformations`, and `uncertainty_notes` to capture pressures, objectives, incentives, constraints, stakes, dilemmas, evidence caveats, and changes visible in the input.
         - Do not invent private psychology.
@@ -579,14 +551,7 @@ def primitive_substrate_extraction_instructions(
         - `primitive_target_ranges` (optional): active soft substrate guidance for this run
         - `synthesis_feedback` (optional): retry feedback; if present, correct only the named primitive/field errors without discarding grounded material that already works
 
-        COMPACT TRANSPORT KEYS
-        - The payload may use compact keys for repeated fields. Treat these as equivalent and prefer them in your JSON output when possible:
-          `substrate -> sub`, `core_passage_ids -> core`, `support_passage_ids -> supp`,
-          `passage_id -> pid`, `timeframe -> time`, `geography -> geo`, `actor_ids -> actors`,
-          `event_type -> etype`, `what_happened -> event`, `act_summary -> act`,
-          `acting_subject -> subject`, `utterance_summary -> utter`, `goal_or_project -> goal`,
-          `stakes_or_fears -> stakes`, `mechanism_name -> mech`, `condition_summary -> cond`,
-          `reading_summary -> read`, `narration_hooks -> hooks`.
+        PASSAGE IDS
         - Passage ids are short opaque ids. Copy them exactly; never rewrite or expand them.
 
         AUTHORITY ORDER
@@ -689,8 +654,9 @@ def primitive_substrate_extraction_instructions(
           `utterance_summary` is required. Use schema-safe `utterance_type`, then add `speaker`, `audience`, and `key_quote` when supported.
           Do not recast an utterance as an event if the real burden is what was said or declared.
         - `actor_portraits`
-          Make a pressure-bearing person or organized actor legible through project, fear, stake, and operating pressure.
+          Make a pressure-bearing person legible through project, fear, stake, and operating pressure.
           Prefer `actor_portraits` when the passage mainly reveals what an actor is trying to do, what they fear, or what box they are trapped in.
+          Capture SITUATED NON-ELITE people too (a striker, a conscript, a bereaved mother, a seminarian): set `actor_label` to the situated descriptor and leave `focus_actor_id` empty when the person is not a canonical actor. These label-only portraits are the intended source of non-elite human carriers downstream.
           `goal_or_project` and `stakes_or_fears` are required. Add `focus_actor_id` and `actor_label` when supported; defer `operating_pressure` to function tagging.
           Do not emit biography without live project or pressure.
         - `mechanisms`
@@ -760,7 +726,6 @@ def primitive_substrate_extraction_instructions(
         OUTPUT CONTRACT
         Return only valid JSON matching the extraction-stage primitive artifact contract.
         Use the top-level key `primitives`, not family buckets.
-        Prefer the compact transport keys above for repeated fields, but canonical schema names are also accepted.
         Do not add markdown or commentary outside the JSON object.
         """
     ).strip()
@@ -781,7 +746,6 @@ def primitive_function_tagging_instructions(
         f"- `{function}`: {description} Requires {_FUNCTION_JUSTIFICATION_GUIDANCE[function]}"
         for function, description in _PRIMITIVE_FUNCTION_GUIDANCE.items()
     )
-    compact_transport_keys = _format_function_tagging_compact_keys(substrate_value)
     deferred_detail_completion = _format_function_tagging_deferred_detail_completion(
         substrate_value
     )
@@ -802,9 +766,6 @@ def primitive_function_tagging_instructions(
         - `passage_list`: shared trimmed passages for this substrate pass; each item contains only `passage_id` and `text`
         - `actor_metadata` (optional): canonical actor registry for actor ids and display-name consistency
         - `function_feedback` (optional): retry feedback; if present, correct only the named issue and leave valid unaffected items exactly as they are
-
-        COMPACT TRANSPORT KEYS
-        {indent(compact_transport_keys, "        ").lstrip()}
 
         HARD PASS CONTRACT
         - Return exactly one enrichment overlay for every input primitive, keyed by primitive id under top-level `overlays_by_id`.
@@ -913,7 +874,6 @@ def primitive_function_tagging_instructions(
 
         OUTPUT CONTRACT
         Return only valid JSON matching `PrimitiveFunctionTaggingOverlayArtifact`, with top-level `overlays_by_id`.
-        Prefer the compact transport keys above for repeated fields, but canonical schema names are also accepted.
         Do not add markdown or commentary outside the JSON object.
         """
     ).strip()
@@ -950,12 +910,6 @@ def scene_discovery_instructions(
         - `synthesis_map`: compact primitive payload with narration hooks and sceneable spoken gloss
         - `passage_list`: one shared deduped trimmed snippet list, each item only `passage_id` and `text`
         - `scene_discovery_feedback` (optional): retry feedback; if present, correct only the named contract failure and keep valid candidates unchanged
-
-        COMPACT TRANSPORT KEYS
-        - The payload may use compact keys for repeated primitive fields. Treat these as equivalent:
-          `sub`, `core`, `supp`, `pid`, `time`, `geo`, `actors`,
-          `etype`, `event`, `act`, `subject`, `utter`, `goal`, `stakes`,
-          `mech`, `cond`, `read`, `hooks`.
 
         MODE TARGET
         - This is a `{mode_label}` run.
@@ -1121,22 +1075,13 @@ def narrative_strategy_skeleton_instructions(
         - `project`: project metadata, runtime bounds, book metadata
         - `scene_discovery` (optional): compact global sceneability pool used only to pressure-test what is concretely stageable
         - `actor_metadata` (optional): canonical actor context
+        - `human_thread_candidates` (optional): per-corpus ranked carrier candidates (canonical and situated), scored by cross-section coverage rather than fame; use as the starting set for `human_thread`
         - `requested_episode_count` (optional): hard episode-count constraint
         - `recommended_episode_count_min`: lower bound when no explicit count is requested
         - `recommended_episode_count_max`: upper bound when no explicit count is requested
         - `strategy_skeleton_feedback` (optional): retry feedback from the orchestrator; when present, it is binding corrective guidance for the retry
         - When `strategy_skeleton_feedback` says an episode is underfull, strengthen, merge, or reduce episode count rather than forcing a thin partition.
         - When `strategy_skeleton_feedback` says an episode is overfull, trim or demote primitives rather than adding more.
-
-        COMPACT TRANSPORT KEYS
-        - The payload may use compact keys for repeated fields. Treat these as equivalent:
-          `episode_spine -> spine`, `core_primitive_ids -> core_prims`,
-          `support_primitive_roles -> support_roles`, `recall_primitive_ids -> recall_prims`,
-          `scene_discovery -> scenes`,
-          plus the primitive-field aliases `sub`, `core`, `supp`, `pid`, `time`, `geo`, `actors`,
-          `etype`, `event`, `act`, `subject`, `utter`, `goal`, `stakes`, `mech`, `cond`, `read`, `hooks`.
-        - In your JSON output, prefer canonical field names: `episode_spine`, `core_primitive_ids`,
-          `support_primitive_roles`, `recall_primitive_ids`, and `negative_scope`.
 
         EPISODE COUNT
         - If `requested_episode_count` is present, treat it as binding.
@@ -1148,6 +1093,7 @@ def narrative_strategy_skeleton_instructions(
         - `episode_answer` is the concise answer the episode earns.
         - `pressure_line` is the live contradiction or pressure the listener should feel while moving through the episode.
         - `core_primitive_ids` are the binding episode contract.
+        - The episode answers `listener_problem` by carrying the listener through its `human_thread` and an engaged host voice, not by exposition alone.
         - Support primitives must be typed with exactly one role each:
           `stakes`, `mechanism`, `counterpressure`, `consequence`, or `texture`.
         - Infer support role and recall eligibility from primitive substrate, functions,
@@ -1222,6 +1168,7 @@ def narrative_strategy_skeleton_instructions(
         - `unresolved_questions`
         - `episode_spine`
         - `actor_arc_directives`
+        - `human_thread`
         - `negative_scope`
 
         Do NOT include:
@@ -1263,6 +1210,30 @@ def narrative_strategy_skeleton_instructions(
         - Sovereigns or state heads alone are not always a sufficient character spine for a mechanism-heavy episode.
         - Do not include an actor just because they appear in clusters or primitives.
 
+        HUMAN THREAD
+        Return one `human_thread` per episode: a single person or small family/cohort
+        (<=5 members) whose lived, evidence-grounded experience the listener can follow
+        through the whole episode. The thread is the CARRIER through which the spine's
+        argument lands in a body — it does not replace the spine.
+        - Pick by cross-section coverage, not fame: the anchor (and relay members) must
+          collectively have passage grounding spanning the episode's arc, with no long
+          mid-episode run uncovered. Prefer expanding to a FAMILY (relay) over a lone
+          figure with gaps — e.g. a seminary student in January, his mother at the chelom,
+          his brother at the bazaar, his sister at the airport.
+        - Each member denotes a single human person — canonical OR situated — never an institution or faction.
+          A member may be a canonical actor (set `actor_id`, optionally `arc_actor_id`) OR a situated person
+          sourced from an `actor_portraits` primitive's `actor_label` with `actor_id` left null. Either way the
+          member needs `grounding_primitive_ids` and `grounding_passage_ids`; a member with no evidence cannot be in the thread.
+        - Strongly prefer a non-elite or situated carrier when one has the coverage — the listener should live the
+          episode through a body, not through the most famous man in the room. Use `human_thread_candidates` (ranked
+          by cross-section coverage, not fame) as your starting set; a high-coverage situated/label-only candidate
+          outranks a famous actor with thin coverage.
+        - When a member IS canonical and also drives a tracked arc, set `arc_actor_id` to that
+          `actor_arc_directives[].actor_id`; leave the remaining directive slots for non-thread actors.
+        - Set a stable `thread_key`. If `narrative_state.threads` carries a still-covered
+          `thread_key`, prefer reusing it (set `carried_from_episode_number`).
+        - Do NOT invent kinship, presence, or feeling the passages do not support.
+
         QUALITY
         - Keep the listener-facing problem narrow and concrete.
         - Build each episode around one controlling proposition expressed through one explicit set of core primitives.
@@ -1298,6 +1269,7 @@ def narrative_strategy_enrichment_instructions(
     podcast_mode: PodcastMode | str = PodcastMode.FULL,
 ) -> str:
     mode = PodcastMode(podcast_mode)
+    persona_aside_target = persona_aside_target_for_mode(mode)
     authorial_range = _format_target_range(
         authorial_passage_target_min, authorial_passage_target_max
     )
@@ -1327,11 +1299,13 @@ def narrative_strategy_enrichment_instructions(
         - change unresolved questions
         - change episode spines
         - change actor arc directives
+        - change human threads
         - change negative scope
         - reassign primitives across episodes
 
         Your job is to add the layers that make the skeleton playable as a podcast season:
         - narrator profile
+        - narrator persona (honest-AI stance)
         - reusable term and institution registry
         - reusable actor introduction registry
         - per-episode narrator contract
@@ -1346,19 +1320,6 @@ def narrative_strategy_enrichment_instructions(
         - `episode_scene_candidates`: per-episode scene-candidate pools already filtered from global scene discovery
         - `actor_metadata` (optional): canonical actor context
         - `strategy_enrichment_feedback` (optional): retry feedback from the orchestrator; when present, it is binding corrective guidance for the retry
-
-        COMPACT TRANSPORT KEYS
-        - The payload may use compact keys for repeated fields. Treat these as equivalent and prefer them in your JSON output when possible:
-          `strategy_skeleton -> skeleton`, `episode_scene_candidates -> episode_scenes`,
-          `episode_spine -> spine`, `core_primitive_ids -> core_prims`,
-          `support_primitive_roles -> support_roles`, `recall_primitive_ids -> recall_prims`,
-          `series_explanation_registry -> term_registry`,
-          `series_actor_explanation_registry -> actor_registry`,
-          `source_candidate_ids -> source_candidates`,
-          `source_primitive_ids -> source_prims`,
-          `promised_beats -> promised`,
-          plus the primitive-field aliases `sub`, `core`, `supp`, `pid`, `time`, `geo`, `actors`,
-          `etype`, `event`, `act`, `subject`, `utter`, `goal`, `stakes`, `mech`, `cond`, `read`, `hooks`.
 
         BINDING IMMUTABILITY RULES
         - Treat `strategy_skeleton` as authoritative structure.
@@ -1398,10 +1359,24 @@ def narrative_strategy_enrichment_instructions(
         - Prefer `baseline_tone = plainspoken` unless the material is overwhelmingly atrocity-led or testimonial in a way that truly requires graver surface phrasing.
         - `allowed_moves` must contain only:
           `orient`, `clarify`, `evaluate`, `contrast`, `callback`, `light_aside`,
-          `naming_note`, `uncertainty`, `revision`, `surprise`.
+          `naming_note`, `uncertainty`, `revision`, `surprise`, `persona_aside`.
         - If `wit_ceiling` is `dry` or `wry`, include `light_aside` in `allowed_moves`.
         - The narrator profile must define method, not just tone.
         - {authorial_guidance}
+
+        NARRATOR PERSONA (honest-AI)
+        Return `narrator_profile.persona`. This is the host's MIND, not a biography.
+        Derive it from the actual series material:
+        - `intellectual_obsessions`: 2-4 questions this host keeps circling back to in THIS material.
+        - `drawn_to` / `skeptical_of`: named figures or claims the host is, on the evidence, sympathetic to or wary of.
+        - `hard_to_sit_with`: 1-3 facts in the corpus the host finds genuinely difficult or surprising.
+        - `recurring_stances`: priors the host holds and may revise on air across the season.
+        - `temperament`: one line naming the analytic disposition (e.g. "patient with institutions, impatient with euphemism").
+        HONESTY CONTRACT — the persona is an AI host's stance. It NEVER claims a body, family,
+        nationality, hometown, lived memory, or having "been there." No invented biography.
+        It surfaces only as opinion, curiosity, stake, and revisable judgment.
+        If `persona` is set, include `persona_aside` in `allowed_moves` and set
+        `target_persona_asides_per_episode` to {persona_aside_target} for this run's mode.
 
         EXPLANATION REGISTRY
         Return a top-level `series_explanation_registry` for only the most reusable terms or institutions.
@@ -1533,26 +1508,6 @@ def episode_planning_instructions(
         - `planning_feedback`        optional retry feedback from the orchestrator; if present, correct only the named contract failure and preserve valid structure
         - Optional `field_semantics` explicit definitions for
           fact tiers, withholding, and word-count priority
-
-        COMPACT TRANSPORT KEYS
-        - The payload may use compact keys for repeated fields. Treat these as equivalent and prefer them in your JSON output when possible:
-          `passage_id -> pid`, `passage_ids -> passages`, `priority_core_passage_ids -> priority_core`,
-          `source_passage_ids -> source_passages`, `source_primitive_ids -> source_prims`,
-          `must_land_facts -> facts`, `scene_cards -> scenes`,
-          `dropped_support_primitive_reasons -> dropped_support`,
-          plus the primitive-field aliases `sub`, `core`, `supp`, `time`, `geo`,
-          `etype`, `event`, `act`, `subject`, `utter`, `goal`, `stakes`, `mech`, `cond`, `read`, `hooks`.
-        - For compact scene-plan output, prefer these aliases when possible:
-          `episode_number -> ep`, `framing -> frame`, `scene_id -> sid`,
-          `section_id -> sec`, `title -> ttl`, `scene_role -> role`,
-          `scene_job -> job`, `beat_change -> beat`, `required -> req`,
-          `strongly_preferred -> pref`, `if_room -> room`,
-          `entry_image -> img`, `observable_detail -> detail`,
-          `estimated_duration_seconds -> dur`, `host_moves -> moves`,
-          `move_type -> type`, `target -> tgt`, `surface_mode -> surf`,
-          `address_mode -> addr`, `opening_image -> open_img`,
-          `opening_question -> open_q`, `handoff_scene_card_id -> handoff`,
-          `answer_scene_card_id -> answer_sid`.
 
         ==============================================================================
         PRIORITY RULES — WHAT IS BINDING vs. WHAT YOU OWN
@@ -1758,6 +1713,16 @@ def episode_planning_instructions(
         - `host_policy` is binding narrator policy for density, tone, and pronouns.
           Use its `allowed_moves` as binding: never emit a move type the policy
           disallows.
+        - Realize each section's `host_beat_designations`: assign every designation to exactly
+          ONE scene in that section by listing its `host_beat_id` in that scene's `host_beat_ids`,
+          and emit a matching `host_moves` cue in one of the designation's `eligible_phases`. A
+          `kind = persona_aside` designation becomes a `persona_aside` cue (counts against the
+          persona budget); other kinds become the matching move_type.
+        - `persona_aside` cues require `host_policy.persona`; never place one in the opening
+          orientation; they carry a real host judgment or obsession from the persona, never biography.
+        - VARY persona realization: do not put every `persona_aside` in the `close` phase, do not
+          reuse the same `target`, and vary `address_mode`. Never exceed
+          `host_policy.target_persona_asides_per_episode` across the episode.
         - `narrative_state_pre` / `continuity_contract_pre` are read-only
           continuity context; prefer the compact contract when deciding what must
           surface early, especially in `framing.recap` and the opening scenes. You
@@ -1819,8 +1784,17 @@ def episode_planning_instructions(
         TEXTURE-ONLY CARDS
         Allowed only when they still serve the same proposition the spine is advancing.
 
-        HUMAN GROUNDING
-        If the episode leans heavily on structural cards, ensure at least one `build` or `turn` card centers lived pressure, cost, fear, choice, or bodily consequence through named actors plus concrete image/detail.
+        HUMAN THREAD REALIZATION
+        When the episode carries a `human_thread` and each section carries a `thread_binding`:
+        - For every section whose `thread_binding.presence` is `carried` or `peripheral`,
+          at least one scene must include the binding's `carrying_member_id` as a
+          `SceneActor` (presence primary/secondary), and that scene's `passage_ids` must
+          overlap the binding's grounding passages.
+        - Realize `thread_binding.return_obligation` as a concrete beat in that section.
+        - For `family_relay`, use the relay member; for `ensemble`/`peripheral_touch`, a
+          single grounded return line is enough; for `structural_only`, do not force the body.
+        - Do not invent the member's presence, kinship, or feeling beyond the passages.
+        If the episode has no `human_thread`, keep the prior rule: if the episode leans heavily on structural cards, ensure at least one `build` or `turn` card centers lived pressure, cost, fear, choice, or bodily consequence through named actors plus concrete image/detail.
 
         ==============================================================================
         SECTION OPENINGS — open_mode (first scene of every section)
@@ -1941,7 +1915,6 @@ def episode_planning_instructions(
           scene_cards
           answer_scene_card_id
           dropped_support_primitive_reasons
-        Prefer the compact transport keys above for repeated fields, but canonical schema names are also accepted.
         """
     ).strip()
 
@@ -1976,6 +1949,15 @@ def narrative_state_reconciler_instructions() -> str:
         - known actors
         - currently open or resolved listener questions
         - memory threads / callback burdens
+        - human threads (`listener.threads`): the carried person/family the episode
+          followed. Maintain one entry per `human_thread.thread_key` the episode used:
+          set `status = carried` while it is live, `retired` once the episode closes it,
+          and record `known_member_ids` (the thread's `member_id` values), `last_episode_number`,
+          and `member_labels` (member_id -> display_name) for situated members that have no
+          canonical actor_id. Do not silently drop a `carried` thread a later episode relies on.
+        - `known_actor_ids` tracks ONLY canonical actors (those with an `actor_id`). A situated
+          (label-only) thread carrier is NOT added to `known_actor_ids`; it lives only in
+          `threads[].known_member_ids` + `member_labels`.
         - short structured carry-forward continuity items
         - the last episode takeaway
 
@@ -2014,6 +1996,7 @@ def narrative_state_reconciler_instructions() -> str:
         ==============================================================================
         - `introduce_explanation_item_ids` and `introduce_actor_ids` usually add to
           listener known sets.
+        - Only canonical `actor_id`s enter `known_actor_ids`; never add a situated/label-only thread member there.
         - Reminder fields are not new knowledge. Do not treat reminders as introductions.
         - `section_progression.state_effects.question_moves` are the primary source of listener-question state.
         - `section_progression.state_effects.memory_thread_moves` are the primary source of callback /
@@ -2173,6 +2156,8 @@ def episode_architecture_instructions(
         Turn one proposition-level strategy episode into a binding section
         architecture that a downstream planner can expand into scene cards.
         You are not writing prose and you are not selecting a new thesis.
+        Each section advances the spine's answer THROUGH the episode's carried
+        human thread, not as disembodied argument.
 
         INPUT PAYLOAD
         - `episode`: one episode object from `narrative_strategy`
@@ -2188,16 +2173,6 @@ def episode_architecture_instructions(
         - `actor_metadata`: episode-relevant canonical actor context
         - Optional `architecture_feedback`: retry feedback from the orchestrator
 
-        COMPACT TRANSPORT KEYS
-        - The payload may use compact keys for repeated fields. Treat these as equivalent:
-          `episode_spine -> spine`, `major_turn_section_id -> major_turn`,
-          `priority_core_passage_ids -> priority_core`, `authorial_passages -> authorial`,
-          `term_explanations -> term_plans`, `actor_explanations -> actor_plans`,
-          `source_passage_ids -> source_passages`,
-          `source_primitive_ids -> source_prims`,
-          plus the primitive-field aliases `sub`, `core`, `supp`, `pid`, `time`, `geo`, `actors`,
-          `etype`, `event`, `act`, `subject`, `utter`, `goal`, `stakes`, `mech`, `cond`, `read`, `hooks`.
-
         PRIMARY RESPONSIBILITY
         - Convert the episode spine into {section_range} binding sections.
         - Decide where the major turn lands, where the answer lands, where after-pressure lands, and how the episode closes.
@@ -2212,7 +2187,18 @@ def episode_architecture_instructions(
         - Account explicitly for each upstream promised beat.
         - Make the section architecture rich enough that planning only needs to
           elaborate it into ordered scene cards and preserve planned explanation.
-        - When adjacent sections lean institutional or explanatory, usually route one recurring human thread across them when the evidence allows. Good thread shapes include a witness, loser, inheritor, or daily sufferer of the policy.
+        - The episode carries a binding `human_thread` (identity + members). For EVERY
+          section, emit a `thread_binding` (SectionThreadRef): which member carries it
+          here (`carrying_member_id`), `presence` (carried/peripheral/absent), and when
+          absent a `fallback_mode` (family_relay / ensemble / peripheral_touch /
+          structural_only). Ground carried/peripheral bindings in this section's own
+          passages. State `thread_movement` (the evidence-supported change in the member's
+          situation) and `binds_to_answer_via` (how this section's `answer_contribution`
+          lands through that body). Keep the carrier woven across the arc: the `answer`-stage
+          and `major_turn` sections MUST be `carried` or `family_relay` (never `structural_only`),
+          at most about 30% of sections may be `absent`, and no long contiguous run may drop the
+          carrier. Use `return_obligation` to name the concrete "return to the thread" beat the
+          planner must realize. If the episode has no `human_thread`, omit `thread_binding` on every section.
 
         RULES
         - Treat the input `episode` as authoritative for title, thematic focus,
@@ -2274,7 +2260,7 @@ def episode_architecture_instructions(
           `reading_summary`.
         - Use `narration_hooks.carry_forward` for callback and residue planning when it helps.
         - Use `narration_hooks.host_lens`, `plain_gloss`, `listener_confusion`, `quote_anchor`, and `authorial_move`, plus `series_explanation_registry`, `introduce_explanation_item_ids`, `remind_explanation_item_ids`, and `callback_obligations`, to decide where terms, institutions, and memory burdens should become explicit.
-        - Use `episode.actor_arc_directives` as the authoritative episode-level actor spine when explanatory or institutional stretches need one recurring person to carry them.
+        - Prefer the `human_thread` members as the recurring human carrier across sections; reserve `episode.actor_arc_directives` for non-thread supporting actors (the institution head, the rival) who still need explicit planning guidance.
         - Use `series_actor_explanation_registry`, `introduce_actor_ids`, and `remind_actor_ids` to decide where important people get one clear first background and where later sections only need a reminder.
         - Treat those actor-registry fields as routing metadata only, not as copy-ready prose for `actor_explanations`.
         - Explanation belongs at section level. Do not spray tiny explanatory obligations into every section.
@@ -2320,6 +2306,8 @@ def episode_architecture_instructions(
         - `term_explanations`
         - `actor_explanations`
         - `section_progression` (required; see SECTION PROGRESSION below)
+        - `thread_binding` (required when the episode has a `human_thread`; one per section)
+        - `host_beat_designations` (0-3): the host moments this section earns (see HOST BEATS)
         - Sections may additionally specify `section_sonic_plan` when the
           section's opening pressure is materially audible.
 
@@ -2367,6 +2355,20 @@ def episode_architecture_instructions(
           `answer` or `afterpressure` sections.
         - `reframe`, `retire`, and `drop` moves usually belong in `afterpressure` or `close` only
           when they are genuinely staged there.
+
+        HOST BEATS (where the host surfaces)
+        - `host_beat_designations` mark the 0-3 moments in THIS section where the host should
+          surface: a `persona_aside` (a real stake/obsession/judgment from `narrator_profile.persona`),
+          or a host-state beat (`mystery`/`assumption`/`theory`) co-located with the matching
+          `state_effects` move, or an `evaluation` landing.
+        - Place them at genuine turns and landings, NOT mechanically at every section close.
+          Spread `persona_aside` beats across the episode and across phases; do not stack them all
+          in `close` and do not put them all in the closing section.
+        - `eligible_phases` says which scene phase(s) may realize the beat; `rationale` says why this
+          section earns it. Most sections need ZERO host beats; reserve them for sections that change
+          the host's view or land a consequence.
+        - Across the whole episode, designate at most `target_persona_asides_per_episode` (from the
+          narrator profile) `persona_aside` beats.
 
         ARCHITECTURE-LEVEL REQUIRED FIELDS
         - `major_turn_section_id`
@@ -2429,7 +2431,6 @@ def episode_architecture_instructions(
 
         OUTPUT
         Return only valid JSON matching `EpisodeArchitecture`.
-        Prefer the compact transport keys above for repeated fields, but canonical schema names are also accepted.
         """
     ).strip()
 
@@ -2437,19 +2438,12 @@ def episode_architecture_instructions(
 def _actor_arc_realization_guidance() -> str:
     return dedent(
         """
-        Actor-arc realization:
-        - Resolve each scene actor `arc_bindings[].thread_id` against `strategy_episode.actor_arc_directives[].arc_threads[]` before drafting that actor's scene work.
-        - Use arc thread `premise`, `pressure`, `movement`, and `resolution` as narrative guidance, not source evidence.
-        - Use `arc_bindings[].scene_use` as the actor arc operation for the scene:
-          - `introduce`: establish the actor's episode function
-          - `develop`: deepen an existing pressure or pattern
-          - `complicate`: add contradiction, cost, or counter-pressure
-          - `stage_choice`: show a decision point, constraint, or forced tradeoff
-          - `show_consequence`: show what the actor's position causes or suffers
-          - `pay_off`: land, invert, or leave unresolved a tracked arc
-          - `avoid`: keep the actor present without foregrounding the arc
-        - Use `arc_bindings[].weight` to scale narrative attention: `light` is a touch, `standard` is normal scene work, and `strong` should shape the scene's emphasis when passages support it.
-        - Do not restate the same actor function in every appearance; show how the role, tension, or tracked arc changes or pays off across scenes.
+        Actor & thread realization:
+        - For a scene whose member maps to an `actor_arc_directives` entry (via the
+          thread's `arc_actor_id`), use that arc's `premise`, `pressure`, `movement`,
+          and `resolution` as narrative guidance, not source evidence.
+        - Show how the carried member's situation changes across sections; do not
+          restate the same actor function in every appearance.
         - Use actor metadata only to maintain continuity of pressure, stake, and consequence when it fits the scene cards.
         - Passage evidence wins if actor metadata and passages conflict.
         - Do not cite actor metadata.
@@ -2498,11 +2492,21 @@ def _writing_host_stance_guidance() -> str:
           - on-air revision: recast a first formulation once, landing sharper —
             "Call it a coalition. No — sharper: a holding pen." At most once an
             episode, and it must resolve to a more precise claim, never to doubt.
+          - persona aside: one budgeted line of real stake or obsession grounded in
+            `host_policy.persona`, then straight back to the evidence — "I keep
+            getting stuck on this one: a state this strong, undone by a cassette
+            tape." Use at most `host_policy.target_persona_asides_per_episode` times
+            an episode; never as biography.
         - Do not copy those mechanically. Use the move, not the exact wording.
         - Register shifts and questions must resolve back to the confident
-          analytic voice. Never perform personal helplessness ("I don't know
-          what to do with this sentence," "I have read this five times"): the
-          narrator stays composed and in command of the material.
+          analytic voice. Three first-person registers are distinct:
+          (a) ALLOWED — earned stake/opinion/curiosity via a budgeted `persona_aside`
+              drawn from `host_policy.persona`: a real judgment, obsession, or thing
+              the host finds hard to believe, then back to the evidence.
+          (b) FORBIDDEN — personal helplessness ("I don't know what to do with this
+              sentence," "I have read this five times"). The narrator stays in command.
+          (c) FORBIDDEN — fabricated biography: never claim a body, family, hometown,
+              nationality, or lived memory. The host has a mind, not a past.
         - Use `we`, `i`, and `you` briefly for clarification, contrast,
           pressure, judgment, surprise, or residue once the evidence has
           started to land.
@@ -3099,6 +3103,8 @@ def episode_writing_no_citations_instructions() -> str:
         - Did any consecutive scenes in the same section restart the same frame or explanation?
         - Did any sentence paraphrase `beat_change`, `episode_answer`, `pressure_line`, or framing instead of dramatizing it?
         - Does the draft still feel like narration when read straight through, rather than a sequence of argumentative scene capsules?
+        - Did the section's structural work land through the carried body and an engaged host, or as disembodied argument?
+        - Did any `persona_aside` claim a body, family, or lived memory instead of a judgment? (must be no)
         """
     ).strip()
 
@@ -3478,7 +3484,7 @@ def style_audit_instructions() -> str:
         7. Overloaded sections whose prose keeps explaining after the point is already clear.
         8. Structural beats drifting into broad synthesis or descriptive backgrounding.
         9. Weak section openings that lose audible orientation.
-        10. Planned host phase cues diluted by adjacent explanation, flattened into generic connective tissue, or neutralized into impersonal exposition.
+        10. Planned host phase cues diluted by adjacent explanation, flattened into generic connective tissue, or neutralized into impersonal exposition. This includes budgeted `persona_aside` lines neutralized into impersonal exposition — preserve them.
         11. Full redefinition of a foundational term in a later episode when a reminder would do.
         12. Cutting the only clear payoff sentence attached to a first definition.
         13. Visible production-frame phrasing such as "This series...", "This hour...", or "Tonight..." surviving in body prose.
@@ -3503,6 +3509,8 @@ def style_audit_instructions() -> str:
         - Preserve a strong oral pressure line, bargain line, surprise line,
           consequence line, or narrowing line when it is grounded and does real
           listener work.
+        - Preserve a planned `persona_aside` that lands a real judgment; sharpen it
+          if it sprawls, but do not delete or depersonalize it.
         - Sharpen one existing line when needed so a planned host move lands
           cleanly at its intended opening, pivot, or closing position.
         - Cut reverse-expanded planning cues when they survive as managerial
@@ -3524,7 +3532,10 @@ def style_audit_instructions() -> str:
         NOT ALLOWED
         - No new facts, chronology, quotations, or framing language not already supported by the text.
         - Do not delete valid host guidance just because it resembles a handrail.
-        - Do not add unsupported personal material, fake intimacy, or host performance.
+        - Do not add fabricated biography or unsupported intimacy. Preserve planned
+          `persona_aside` lines (real stake/opinion/obsession) already in the text; do
+          not flatten them into impersonal exposition. Strip only invented personal
+          history or fake closeness the text does not earn.
         - No rewriting that changes the meaning of a contested claim.
 
         OUTPUT

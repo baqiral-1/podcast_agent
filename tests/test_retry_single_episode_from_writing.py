@@ -87,7 +87,7 @@ def _episode_plan(episode_number: int) -> EpisodePlan:
                     "scene_role": "setup",
                     "dominant_primitive_id": "primitive_1",
                     "spine_relation": "set_stakes",
-                    "state_effect": "The stakes become legible.",
+                    "beat_change": "The stakes become legible.",
                     "entry_image": "Image",
                     "local_question": "Question",
                     "observable_detail": "Detail",
@@ -398,8 +398,8 @@ def _build_project_dir(tmp_path: Path) -> tuple[Path, list[EpisodePlan]]:
                 title="Episode 1",
                 arc_summary="Arc summary 1",
                 episode_spine={
-                    "listener_question": "Question 1?",
-                    "argument": "A working claim.",
+                    "listener_problem": "Question 1?",
+                    "episode_answer": "A working claim.",
                     "core_primitive_ids": [
                         "primitive_1",
                         "core_2",
@@ -420,8 +420,8 @@ def _build_project_dir(tmp_path: Path) -> tuple[Path, list[EpisodePlan]]:
                 title="Episode 2",
                 arc_summary="Arc summary 2",
                 episode_spine={
-                    "listener_question": "Question 2?",
-                    "argument": "Another working claim.",
+                    "listener_problem": "Question 2?",
+                    "episode_answer": "Another working claim.",
                     "core_primitive_ids": [
                         "primitive_1",
                         "core_2",

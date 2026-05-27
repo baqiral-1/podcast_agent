@@ -362,7 +362,8 @@ class TestRedesignedAgents:
         assert "`narrative_agenda`" in instructions
         assert "`core_primitive_ids` must contain 8–11 primitives." in instructions
         assert "`negative_scope -> scope`" not in instructions
-        assert "prefer canonical field names" in instructions
+        assert "COMPACT TRANSPORT KEYS" not in instructions
+        assert "prefer canonical field names" not in instructions
         assert "not a holding area for every later-useful primitive" in instructions
         assert "Do not let tail episodes become everything left over." in instructions
         assert "trim or demote primitives rather than adding more" in instructions
@@ -1070,7 +1071,7 @@ class TestRedesignedAgents:
         assert "Default to one populated phase with one cue." in instructions
         assert "Ordinary `build` cards may leave all buckets empty." in instructions
         assert "Omit optional fields entirely instead of returning blank strings or empty arrays." in instructions
-        assert "`estimated_duration_seconds -> dur`" in instructions
+        assert "COMPACT TRANSPORT KEYS" not in instructions
         assert "`audible_detail -> audio`" not in instructions
         assert "Treat `must_land_facts` as the card's factual spine." in instructions
         assert "Every `note` must contain both:" in instructions
@@ -1100,6 +1101,27 @@ class TestRedesignedAgents:
         assert "When the real job is \"what changed because of this,\" prefer `fallout`." in instructions
         assert "Sections that open in `context_setup` or `actor_setup` should usually pick up a concrete event, confrontation, or consequence beat inside the same section." in instructions
         assert "Target 30–38 scene cards for this episode." in agent.instructions
+
+    def test_episode_planning_agent_build_llm_payload_keeps_canonical_keys(self):
+        agent = EpisodePlanningAgent(_mock_llm())
+        payload = {
+            "episode_number": 1,
+            "framing": {"opening_image": "A crowded gate."},
+            "scene_cards": [
+                {
+                    "scene_id": "scene_1",
+                    "estimated_duration_seconds": 45,
+                }
+            ],
+        }
+
+        llm_payload = agent.build_llm_payload(payload)
+
+        assert llm_payload == payload
+        assert "scene_cards" in llm_payload
+        assert "scenes" not in llm_payload
+        assert llm_payload["scene_cards"][0]["estimated_duration_seconds"] == 45
+        assert "dur" not in llm_payload["scene_cards"][0]
 
     def test_episode_planning_agent_builds_minified_instructions_from_payload(self):
         agent = EpisodePlanningAgent(_mock_llm())
@@ -1635,13 +1657,16 @@ class TestRedesignedAgents:
         assert "Treat `comparative_aside` as comparison-with-return" in prompt
         assert "Prefer `placement = mid` for `comparative_aside`" in prompt
         assert "prefer them in your JSON output when possible" not in prompt
+        assert "COMPACT TRANSPORT KEYS" not in prompt
         assert "`answer_section_id -> answer_section`" not in prompt
         assert "`residue_section_id -> residue_section`" not in prompt
         assert "`promised_beat_decisions -> promised_decisions`" not in prompt
-        assert "`episode_spine -> spine`" in prompt
-        assert "`major_turn_section_id -> major_turn`" in prompt
+        assert "`episode_spine -> spine`" not in prompt
+        assert "`major_turn_section_id -> major_turn`" not in prompt
         assert "`grounding_actor_candidates` (optional)" not in prompt
-        assert "Use `episode.actor_arc_directives` as the authoritative episode-level actor spine" in prompt
+        assert "Prefer the `human_thread` members as the recurring human carrier across sections" in prompt
+        assert "reserve `episode.actor_arc_directives` for non-thread supporting actors" in prompt
+        assert "`thread_binding` (required when the episode has a `human_thread`" in prompt
         assert "Adjacent explanatory sections should usually differ in `open_mode`" in prompt
         assert "`open_mode` sets the rhetorical shape of the section's opening" in prompt
         assert "Sections built mostly from `mechanisms`, `conditions`, or `readings` should usually tie those abstractions to an event, act, utterance, artifact, or recurring human pressure thread" in prompt

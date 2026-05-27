@@ -107,8 +107,8 @@ def _build_run(tmp_path: Path) -> Path:
                     "arc_summary": "Follow the local consequences.",
                     "unresolved_questions": [],
                     "episode_spine": {
-                        "listener_question": "Why does the order land so hard?",
-                        "argument": "Opening rupture clarifies the proposition.",
+                        "listener_problem": "Why does the order land so hard?",
+                        "episode_answer": "Opening rupture clarifies the proposition.",
                         "core_primitive_ids": ["et_1"],
                         "support_primitive_roles": {},
                         "recall_primitive_ids": [],

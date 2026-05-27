@@ -11,7 +11,6 @@ from typing import Annotated, Any, Literal
 from uuid import uuid4
 
 from pydantic import (
-    AliasChoices,
     BaseModel,
     ConfigDict,
     Field,
@@ -496,6 +495,16 @@ def authorial_passage_target_range_for_mode(
     return FULL_AUTHORIAL_PASSAGE_TARGET_RANGE
 
 
+MINIFIED_PERSONA_ASIDE_TARGET: int = 3
+FULL_PERSONA_ASIDE_TARGET: int = 6
+
+
+def persona_aside_target_for_mode(mode: PodcastMode | str) -> int:
+    if PodcastMode(mode) == PodcastMode.MINIFIED:
+        return MINIFIED_PERSONA_ASIDE_TARGET
+    return FULL_PERSONA_ASIDE_TARGET
+
+
 def dense_section_authorial_passage_range_for_mode(
     mode: PodcastMode | str,
 ) -> tuple[int, int]:
@@ -686,6 +695,18 @@ class ActorChapterRef(StrictModel):
     chapter_title: str = ""
 
 
+class ActorTier(str, Enum):
+    MAJOR = "major"
+    SUPPORTING = "supporting"
+    MINOR = "minor"
+
+
+class ActorSeriesScope(str, Enum):
+    SERIES_WIDE = "series_wide"   # recurs across the whole series
+    RECURRING = "recurring"       # spans a contiguous run of episodes
+    LOCAL = "local"               # relevant only where its primitives land
+
+
 class ActorProfile(StrictModel):
     actor_id: str = Field(min_length=1)
     display_name: str = Field(min_length=1)
@@ -725,7 +746,9 @@ class ActorProfile(StrictModel):
     transformations: list[str] = Field(default_factory=list)
     uncertainty_notes: str = ""
     evidence_confidence: Literal["high", "medium", "low"] = "medium"
-    narrative_importance_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    narrative_tier: ActorTier = ActorTier.SUPPORTING
+    series_scope: ActorSeriesScope = ActorSeriesScope.LOCAL
+    relevant_episode_numbers: list[int] = Field(default_factory=list)
 
     @field_validator("actor_id")
     @classmethod
@@ -1393,7 +1416,7 @@ FULL_PRIMITIVE_SUBSTRATE_TARGET_RANGES: dict[str, tuple[int, int]] = {
     "events": (87, 120),
     "acts": (45, 59),
     "utterances": (12, 17),
-    "actor_portraits": (12, 16),
+    "actor_portraits": (18, 24),
     "mechanisms": (37, 51),
     "conditions": (21, 27),
     "artifacts": (18, 24),
@@ -1403,7 +1426,7 @@ MINIFIED_PRIMITIVE_SUBSTRATE_TARGET_RANGES: dict[str, tuple[int, int]] = {
     "events": (19, 27),
     "acts": (10, 13),
     "utterances": (2, 3),
-    "actor_portraits": (2, 3),
+    "actor_portraits": (6, 8),
     "mechanisms": (7, 12),
     "conditions": (4, 5),
     "artifacts": (3, 4),
@@ -1791,16 +1814,8 @@ class SynthesisMap(PrimitiveArtifactBase):
 
 
 class EpisodeSpine(StrictModel):
-    listener_problem: str = Field(
-        min_length=1,
-        validation_alias=AliasChoices("listener_problem", "listener_question"),
-        serialization_alias="listener_problem",
-    )
-    episode_answer: str = Field(
-        min_length=1,
-        validation_alias=AliasChoices("episode_answer", "argument"),
-        serialization_alias="episode_answer",
-    )
+    listener_problem: str = Field(min_length=1)
+    episode_answer: str = Field(min_length=1)
     pressure_line: str = ""
     core_primitive_ids: list[str] = Field(min_length=1)
     support_primitive_roles: dict[str, SupportPrimitiveRole] = Field(
@@ -1935,11 +1950,7 @@ class ActorArcThread(StrictModel):
     premise: str = Field(min_length=1)
     pressure: str = ""
     movement: str = ""
-    resolution: str = Field(
-        default="",
-        validation_alias=AliasChoices("resolution", "payoff"),
-        serialization_alias="resolution",
-    )
+    resolution: str = Field(default="")
 
 
 class ActorArcDirective(StrictModel):
@@ -1953,6 +1964,160 @@ class ActorArcDirective(StrictModel):
         thread_ids = [thread.thread_id for thread in self.arc_threads]
         if len(thread_ids) != len(set(thread_ids)):
             raise ValueError("actor arc directive thread ids must be unique")
+        return self
+
+
+class ThreadKind(str, Enum):
+    PERSON = "person"
+    FAMILY = "family"
+    COHORT = "cohort"
+
+
+class ThreadMemberRole(str, Enum):
+    ANCHOR = "anchor"
+    KIN = "kin"
+    ASSOCIATE = "associate"
+
+
+class ThreadSectionPresence(str, Enum):
+    CARRIED = "carried"
+    PERIPHERAL = "peripheral"
+    ABSENT = "absent"
+
+
+class ThreadFallbackMode(str, Enum):
+    NONE = "none"
+    FAMILY_RELAY = "family_relay"
+    ENSEMBLE = "ensemble"
+    PERIPHERAL_TOUCH = "peripheral_touch"
+    STRUCTURAL_ONLY = "structural_only"
+
+
+class HumanThreadMember(StrictModel):
+    """One carried person inside an episode's human thread.
+
+    A member cannot exist without evidence: it must carry at least one
+    grounding primitive and one grounding passage that actually place the
+    person in the episode's events.
+    """
+
+    member_id: str = Field(min_length=1)
+    display_name: str = Field(min_length=1)
+    actor_id: str | None = None
+    arc_actor_id: str | None = None
+    role: ThreadMemberRole = ThreadMemberRole.KIN
+    relation_to_anchor: str = ""
+    grounding_primitive_ids: list[str] = Field(default_factory=list)
+    grounding_passage_ids: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_member_grounding(self) -> "HumanThreadMember":
+        if not self.grounding_primitive_ids or not self.grounding_passage_ids:
+            raise ValueError(
+                "human thread member must carry at least one grounding primitive "
+                "and one grounding passage"
+            )
+        return self
+
+
+class HumanThread(StrictModel):
+    """The single person or small family/cohort carried through an episode.
+
+    The thread is the evidence-grounded CARRIER through which the episode
+    spine's argument lands in a body. It does not replace the spine. The
+    per-section presence ledger lives on each ArchitectureSection.thread_binding,
+    not here, mirroring how actor_explanations and section_progression already
+    distribute per-section obligations.
+    """
+
+    thread_id: str = Field(min_length=1)
+    thread_key: str = Field(min_length=1)
+    kind: ThreadKind
+    label: str = Field(min_length=1)
+    premise: str = Field(min_length=1)
+    members: list[HumanThreadMember] = Field(min_length=1, max_length=5)
+    anchor_member_id: str = Field(min_length=1)
+    family_grounding_passage_ids: list[str] = Field(default_factory=list)
+    why_this_thread: str = ""
+    carried_from_episode_number: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def validate_thread(self) -> "HumanThread":
+        member_ids = [member.member_id for member in self.members]
+        if len(member_ids) != len(set(member_ids)):
+            raise ValueError("human thread member_id values must be unique")
+        anchors = [
+            member
+            for member in self.members
+            if member.role == ThreadMemberRole.ANCHOR
+        ]
+        if len(anchors) != 1:
+            raise ValueError("human thread must have exactly one anchor member")
+        if self.anchor_member_id not in member_ids:
+            raise ValueError("anchor_member_id must reference a thread member")
+        if anchors[0].member_id != self.anchor_member_id:
+            raise ValueError(
+                "anchor_member_id must reference the member whose role is anchor"
+            )
+        if self.kind == ThreadKind.PERSON and len(self.members) != 1:
+            raise ValueError("a person thread must contain exactly one member")
+        if self.kind in (ThreadKind.FAMILY, ThreadKind.COHORT) and len(
+            self.members
+        ) < 2:
+            raise ValueError("a family/cohort thread must contain at least two members")
+        arc_actor_ids = [
+            member.arc_actor_id
+            for member in self.members
+            if member.arc_actor_id is not None
+        ]
+        if len(arc_actor_ids) != len(set(arc_actor_ids)):
+            raise ValueError("arc_actor_id values must be unique across members")
+        return self
+
+
+class SectionThreadRef(StrictModel):
+    """Per-section ledger entry: how the human thread is present in ONE section.
+
+    Architecture-owned. Evidence-gated by presence/fallback so the thread is
+    never asserted beyond what the section's passages support.
+    """
+
+    carrying_member_id: str | None = None
+    presence: ThreadSectionPresence
+    fallback_mode: ThreadFallbackMode = ThreadFallbackMode.NONE
+    thread_movement: str = Field(min_length=1)
+    binds_to_answer_via: str = Field(min_length=1)
+    return_obligation: str = ""
+    grounding_primitive_ids: list[str] = Field(default_factory=list)
+    grounding_passage_ids: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_thread_binding(self) -> "SectionThreadRef":
+        if self.presence == ThreadSectionPresence.CARRIED:
+            if not self.grounding_primitive_ids or not self.grounding_passage_ids:
+                raise ValueError(
+                    "a carried thread binding must ground in at least one primitive "
+                    "and one passage"
+                )
+            if self.carrying_member_id is None:
+                raise ValueError("a carried thread binding must name a carrying member")
+        elif self.presence == ThreadSectionPresence.PERIPHERAL:
+            if not self.grounding_passage_ids:
+                raise ValueError(
+                    "a peripheral thread binding must ground in at least one passage"
+                )
+        else:  # ABSENT
+            if self.fallback_mode == ThreadFallbackMode.NONE:
+                raise ValueError(
+                    "an absent thread binding must declare a non-none fallback_mode"
+                )
+            if (
+                self.fallback_mode == ThreadFallbackMode.PERIPHERAL_TOUCH
+                and not self.grounding_passage_ids
+            ):
+                raise ValueError(
+                    "a peripheral_touch fallback must ground in at least one passage"
+                )
         return self
 
 
@@ -2177,11 +2342,22 @@ class ListenerMemoryThreadState(StrictModel):
     source_promised_beat_id: str | None = None
 
 
+class ListenerThreadState(StrictModel):
+    thread_key: str = Field(min_length=1)
+    label: str = Field(min_length=1)
+    kind: ThreadKind = ThreadKind.PERSON
+    known_member_ids: list[str] = Field(default_factory=list)
+    member_labels: dict[str, str] = Field(default_factory=dict)
+    status: Literal["open", "carried", "retired"] = "open"
+    last_episode_number: int = Field(default=0, ge=0)
+
+
 class ListenerNarrativeState(StrictModel):
     known_explanation_item_ids: list[str] = Field(default_factory=list)
     known_actor_ids: list[str] = Field(default_factory=list)
     questions: list[ListenerQuestionState] = Field(default_factory=list)
     memory_threads: list[ListenerMemoryThreadState] = Field(default_factory=list)
+    threads: list[ListenerThreadState] = Field(default_factory=list)
     carry_forward_memory: list[ContinuityCarryItem] = Field(default_factory=list, max_length=4)
     last_episode_takeaway: str = ""
 
@@ -2235,6 +2411,7 @@ class NarrativeStateDelta(StrictModel):
     host_mystery_updates: list[HostMysteryState] = Field(default_factory=list)
     host_assumption_updates: list[HostAssumptionState] = Field(default_factory=list)
     host_theory_updates: list[HostTheoryState] = Field(default_factory=list)
+    thread_updates: list[ListenerThreadState] = Field(default_factory=list)
     listener_carry_forward_memory: list[ContinuityCarryItem] = Field(
         default_factory=list, max_length=4
     )
@@ -2386,6 +2563,7 @@ class StrategyEpisode(StrictModel):
     actor_arc_directives: list[ActorArcDirective] = Field(
         default_factory=list, max_length=4
     )
+    human_thread: HumanThread | None = None
     narrator_contract: EpisodeNarratorContract = Field(
         default_factory=EpisodeNarratorContract
     )
@@ -2483,6 +2661,7 @@ class StrategyEpisodeSkeleton(StrictModel):
     actor_arc_directives: list[ActorArcDirective] = Field(
         default_factory=list, max_length=4
     )
+    human_thread: HumanThread | None = None
     negative_scope: NegativeScope = Field(default_factory=NegativeScope)
 
 
@@ -2528,6 +2707,7 @@ _DEFAULT_NARRATOR_ALLOWED_MOVES: tuple[str, ...] = (
     "uncertainty",
     "revision",
     "surprise",
+    "persona_aside",
 )
 
 COMPARATIVE_ASIDE_TOLERANCE: Literal["high"] = "high"
@@ -2549,6 +2729,22 @@ def effective_narrator_allowed_moves(
     return [move for move in _DEFAULT_NARRATOR_ALLOWED_MOVES if move in normalized]
 
 
+class NarratorPersona(StrictModel):
+    """Honest-AI narrator stance: a mind, not a biography.
+
+    These fields surface as opinion, curiosity, stake, and revisable judgment.
+    They NEVER license a claimed body, family, nationality, hometown, lived
+    memory, or having "been there." The host has a mind, not a past.
+    """
+
+    intellectual_obsessions: list[str] = Field(default_factory=list, max_length=5)
+    drawn_to: list[str] = Field(default_factory=list, max_length=5)
+    skeptical_of: list[str] = Field(default_factory=list, max_length=5)
+    hard_to_sit_with: list[str] = Field(default_factory=list, max_length=5)
+    recurring_stances: list[str] = Field(default_factory=list, max_length=5)
+    temperament: str = Field(default="")
+
+
 class SeriesNarratorProfile(StrictModel):
     presence_mode: Literal["visible_host"] = "visible_host"
     baseline_tone: Literal["dry", "plainspoken", "wry", "grave"] = "plainspoken"
@@ -2567,6 +2763,7 @@ class SeriesNarratorProfile(StrictModel):
             "uncertainty",
             "revision",
             "surprise",
+            "persona_aside",
         ]
     ] = Field(
         default_factory=lambda: list(_DEFAULT_NARRATOR_ALLOWED_MOVES)
@@ -2593,6 +2790,8 @@ class SeriesNarratorProfile(StrictModel):
     target_authorial_passages_per_episode: int = Field(
         default=authorial_passage_target_for_mode(PodcastMode.FULL), ge=0, le=40
     )
+    persona: NarratorPersona | None = None
+    target_persona_asides_per_episode: int = Field(default=3, ge=0, le=6)
 
     @model_validator(mode="after")
     def validate_coverage_targets(self) -> "SeriesNarratorProfile":
@@ -3117,6 +3316,17 @@ class SectionSonicPlan(StrictModel):
         return str(value or "").strip()
 
 
+class HostBeatDesignation(StrictModel):
+    """An architecture-designated moment where the host should surface, assigned to a scene at planning."""
+
+    host_beat_id: str = Field(min_length=1)
+    kind: Literal["persona_aside", "mystery", "assumption", "theory", "evaluation"]
+    eligible_phases: list[Literal["open", "pivot", "close"]] = Field(
+        default_factory=lambda: ["pivot", "close"]
+    )
+    rationale: str = Field(min_length=1)
+
+
 class SectionStateEffects(StrictModel):
     """Continuity/state mutations a section causes, nested under section_progression."""
 
@@ -3166,11 +3376,7 @@ class ArchitectureSection(StrictModel):
     open_mode: Literal[
         "scene_anchor", "voice_first", "question_first", "condition_first"
     ] = "scene_anchor"
-    section_anchor: str = Field(
-        default="",
-        validation_alias=AliasChoices("section_anchor", "anchor"),
-        serialization_alias="section_anchor",
-    )
+    section_anchor: str = Field(default="")
     must_stage_beats: list[str] = Field(default_factory=list, max_length=4)
     priority_core_passage_ids: list[str] = Field(default_factory=list)
     key_terms: list[str] = Field(default_factory=list, max_length=6)
@@ -3185,6 +3391,10 @@ class ArchitectureSection(StrictModel):
     )
     section_progression: SectionProgression
     section_sonic_plan: SectionSonicPlan | None = None
+    thread_binding: SectionThreadRef | None = None
+    host_beat_designations: list[HostBeatDesignation] = Field(
+        default_factory=list, max_length=3
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -3269,6 +3479,19 @@ class EpisodeArchitecture(StrictModel):
     @property
     def runtime_minutes(self) -> float:
         return sum(section.approx_runtime_minutes for section in self.sections)
+
+    @model_validator(mode="after")
+    def validate_thread_binding_coverage(self) -> "EpisodeArchitecture":
+        # All-or-none: if any section binds the human thread, every section must.
+        # Full member-resolution and section-coverage cross-checks against the
+        # owning StrategyEpisode.human_thread happen in the orchestrator.
+        bound = [s for s in self.sections if s.thread_binding is not None]
+        if bound and len(bound) != len(self.sections):
+            raise ValueError(
+                "thread_binding must be present on every section or none "
+                f"({len(bound)}/{len(self.sections)} sections bound)"
+            )
+        return self
 
     @model_validator(mode="after")
     def validate_architecture(self) -> "EpisodeArchitecture":
@@ -3421,6 +3644,7 @@ class HostMoveCue(StrictModel):
         "uncertainty",
         "revision",
         "surprise",
+        "persona_aside",
     ]
     target: str = ""
     surface_mode: Literal["woven", "distinct", "mixed"] = "mixed"
@@ -3461,19 +3685,11 @@ class _SceneCardBase(StrictModel):
     title: str = Field(min_length=1)
     scene_role: SceneRole
     scene_job: SceneJob
-    beat_change: str = Field(
-        min_length=1,
-        validation_alias=AliasChoices("beat_change", "state_effect"),
-        serialization_alias="beat_change",
-    )
+    beat_change: str = Field(min_length=1)
     must_land_facts: MustLandFacts
     entry_image: str = ""
     observable_detail: str = ""
-    audible_detail: str = Field(
-        default="",
-        validation_alias=AliasChoices("audible_detail", "what_we_hear", "audio"),
-        serialization_alias="audible_detail",
-    )
+    audible_detail: str = ""
     withhold_until: WithholdUntil | None = None
     timeframe: str | None = None
     location: str | None = None
@@ -3481,6 +3697,7 @@ class _SceneCardBase(StrictModel):
     primitive_ids: list[str] = Field(default_factory=list)
     passage_ids: list[str] = Field(default_factory=list)
     authorial_passage_ids: list[str] = Field(default_factory=list, max_length=4)
+    host_beat_ids: list[str] = Field(default_factory=list, max_length=2)
     word_count_priority: WordCountPriority = WordCountPriority.DEFAULT
     host_moves: HostMovesByPhase
 

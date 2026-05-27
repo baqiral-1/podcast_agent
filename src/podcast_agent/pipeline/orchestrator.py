@@ -118,6 +118,8 @@ from podcast_agent.schemas.models import (
     SceneDiscoveryArtifact,
     EpisodePlanDraft,
     SceneJob,
+    ThreadSectionPresence,
+    ThreadFallbackMode,
     SeriesNarratorProfile,
     SeriesActorExplanationItem,
     SeriesExplanationItem,
@@ -165,6 +167,7 @@ from podcast_agent.utils.actor_metadata import (
     compact_actor_registry,
     compact_actor_metadata,
     collect_actor_ids_for_primitives,
+    normalize_actor_name,
     sanitize_actor_metadata_payload,
     select_actor_metadata_subset,
 )
@@ -1002,6 +1005,13 @@ def _build_host_policy_payload(
     narrative_state_post: NarrativeState | None = None,
 ) -> dict[str, Any]:
     allowed_moves = effective_narrator_allowed_moves(narrator_profile.allowed_moves)
+    has_persona = narrator_profile.persona is not None
+    # Gate persona_aside on an authored persona: a default profile keeps the move
+    # in its allowed list for schema stability, but we only license it at runtime
+    # when the enrichment stage actually produced a persona.
+    if not has_persona:
+        allowed_moves = [move for move in allowed_moves if move != "persona_aside"]
+    persona_singular_moves = ["persona_aside"] if has_persona else []
     host_posture = (
         narrative_state_post.host.confidence_posture
         if narrative_state_post is not None
@@ -1017,6 +1027,14 @@ def _build_host_policy_payload(
         "spoken_style_contract": narrator_profile.spoken_style_contract,
         "allowed_moves": allowed_moves,
         "forbidden_moves": list(narrator_profile.forbidden_moves),
+        "persona": (
+            narrator_profile.persona.model_dump(mode="json")
+            if narrator_profile.persona is not None
+            else None
+        ),
+        "target_persona_asides_per_episode": (
+            narrator_profile.target_persona_asides_per_episode if has_persona else 0
+        ),
         "target_full_phase_scene_coverage_min": (
             narrator_profile.target_full_phase_scene_coverage_min
         ),
@@ -1030,6 +1048,7 @@ def _build_host_policy_payload(
                 "revision",
                 "surprise",
                 "closing_reflection",
+                *persona_singular_moves,
             ],
             "allow_first_person_plural_only_for": [
                 "handoff",
@@ -3214,7 +3233,9 @@ _NARRATIVE_STRATEGY_ACTOR_KEEP_FIELDS = {
     "constraints",
     "stakes",
     "transformations",
-    "narrative_importance_score",
+    "narrative_tier",
+    "series_scope",
+    "relevant_episode_numbers",
 }
 _NARRATIVE_STRATEGY_SCENE_KEEP_FIELDS = {
     "candidate_id",
@@ -3341,6 +3362,92 @@ def _build_narrative_strategy_actor_metadata_payload(
             ],
         }
     )
+
+
+def _build_human_thread_candidate_index(
+    synthesis_map: SynthesisMap | PrimitiveFunctionTaggingArtifact,
+    actor_metadata: ActorMetadata,
+    *,
+    top_n: int,
+) -> list[dict[str, Any]]:
+    """Project-level ranking of human-thread carrier candidates by cross-section
+    coverage (not fame). Includes canonical person-actors and situated label-only
+    people from actor_portraits primitives so the skeleton can prefer coverage."""
+    primitives = _flatten_base_synthesis_primitives(synthesis_map)
+    actors_by_id = {actor.actor_id: actor for actor in actor_metadata.actors}
+    candidates: dict[tuple[str, str], dict[str, Any]] = {}
+
+    def _ensure(key, *, kind, label, actor_id, tier, scope):
+        existing = candidates.get(key)
+        if existing is None:
+            existing = {
+                "kind": kind,
+                "label": label,
+                "actor_id": actor_id,
+                "narrative_tier": tier,
+                "series_scope": scope,
+                "_prims": set(),
+                "_pass": set(),
+            }
+            candidates[key] = existing
+        return existing
+
+    for pid, prim in primitives.items():
+        passage_ids = set(getattr(prim, "passage_ids", []) or [])
+        for aid in getattr(prim, "actor_ids", []) or []:
+            actor = actors_by_id.get(aid)
+            if actor is None or actor.actor_type != "person":
+                continue
+            cand = _ensure(
+                ("canonical", aid),
+                kind="canonical",
+                label=actor.display_name,
+                actor_id=aid,
+                tier=actor.narrative_tier.value,
+                scope=actor.series_scope.value,
+            )
+            cand["_prims"].add(pid)
+            cand["_pass"].update(passage_ids)
+        if getattr(prim, "substrate", None) == PrimitiveSubstrate.ACTOR_PORTRAITS:
+            label = (getattr(prim, "actor_label", "") or "").strip()
+            focus = getattr(prim, "focus_actor_id", None)
+            if label and (focus is None or focus not in actors_by_id):
+                cand = _ensure(
+                    ("situated", normalize_actor_name(label)),
+                    kind="situated",
+                    label=label,
+                    actor_id=None,
+                    tier="supporting",
+                    scope="local",
+                )
+                cand["_prims"].add(pid)
+                cand["_pass"].update(passage_ids)
+
+    ranked: list[dict[str, Any]] = []
+    for cand in candidates.values():
+        passage_count = len(cand["_pass"])
+        coverage_score = passage_count + len(cand["_prims"])
+        # Down-weight a famous, series-wide major actor whose passage coverage is thin.
+        if (
+            cand["narrative_tier"] == "major"
+            and cand["series_scope"] == "series_wide"
+            and passage_count < 3
+        ):
+            coverage_score -= 2
+        ranked.append(
+            {
+                "kind": cand["kind"],
+                "actor_id": cand["actor_id"],
+                "label": cand["label"],
+                "narrative_tier": cand["narrative_tier"],
+                "series_scope": cand["series_scope"],
+                "primitive_ids": sorted(cand["_prims"]),
+                "passage_count": passage_count,
+                "coverage_score": coverage_score,
+            }
+        )
+    ranked.sort(key=lambda item: (-item["coverage_score"], item["label"]))
+    return ranked[:top_n]
 
 
 def _build_narrative_strategy_scene_discovery_payload(
@@ -3486,6 +3593,11 @@ def _merge_narrative_strategy_parts(
                     directive.model_copy(deep=True)
                     for directive in skeleton_episode.actor_arc_directives
                 ],
+                human_thread=(
+                    skeleton_episode.human_thread.model_copy(deep=True)
+                    if skeleton_episode.human_thread is not None
+                    else None
+                ),
                 narrator_contract=enrichment_episode.narrator_contract.model_copy(
                     deep=True
                 ),
@@ -6646,6 +6758,63 @@ def _overloaded_architecture_section_ids(
     ]
 
 
+def _build_thread_architecture_warnings(
+    *,
+    strategy_episode: StrategyEpisode,
+    architecture: EpisodeArchitecture,
+    answer_section_id: str | None,
+) -> list[str]:
+    """Non-blocking checks that the binding human thread is carried, grounded, and
+    not silently dropped across the architecture's sections."""
+    thread = strategy_episode.human_thread
+    warnings: list[str] = []
+    if thread is None:
+        return warnings
+    member_ids = {member.member_id for member in thread.members}
+    sections = architecture.sections
+    bound = [s for s in sections if s.thread_binding is not None]
+    if not bound:
+        warnings.append("thread_binding_missing_all_sections")
+        return warnings
+    if len(bound) != len(sections):
+        missing = [s.section_id for s in sections if s.thread_binding is None]
+        warnings.append(f"thread_dropped_in_section: {_preview_ids(missing)}")
+    structural_only = 0
+    carried_like = 0
+    absent = 0
+    pivot_section_ids = {answer_section_id, architecture.major_turn_section_id}
+    for section in sections:
+        binding = section.thread_binding
+        if binding is None:
+            continue
+        if (
+            binding.carrying_member_id is not None
+            and binding.carrying_member_id not in member_ids
+        ):
+            warnings.append(f"thread_relay_orphan: {section.section_id}")
+        presence = binding.presence
+        fallback = binding.fallback_mode
+        carried_or_relay = (
+            presence == ThreadSectionPresence.CARRIED
+            or fallback == ThreadFallbackMode.FAMILY_RELAY
+        )
+        if carried_or_relay:
+            carried_like += 1
+        if presence == ThreadSectionPresence.ABSENT:
+            absent += 1
+        if fallback == ThreadFallbackMode.STRUCTURAL_ONLY:
+            structural_only += 1
+        if section.section_id in pivot_section_ids and not carried_or_relay:
+            warnings.append(f"thread_pivot_not_carried: {section.section_id}")
+    if sections and structural_only / len(sections) > 0.4:
+        warnings.append("thread_structural_only_streak")
+    if sections and absent / len(sections) > 0.3:
+        warnings.append("thread_too_many_absent")
+    if sections and carried_like / len(sections) < 0.6:
+        warnings.append("thread_continuity_share_low")
+    return warnings
+
+
 def _build_architecture_grounding_diagnostics(
     *,
     strategy_episode: StrategyEpisode,
@@ -6889,6 +7058,13 @@ def _build_episode_architecture_realization(
         architecture=architecture,
     )
     warnings.extend(grounding_diagnostics["warnings"])
+    warnings.extend(
+        _build_thread_architecture_warnings(
+            strategy_episode=strategy_episode,
+            architecture=architecture,
+            answer_section_id=answer_section_id,
+        )
+    )
     if not answer_section_id:
         warnings.append("answer_section_missing")
     if answer_section_id and answer_section_id == architecture.major_turn_section_id:
@@ -8769,6 +8945,96 @@ def _scene_counts_toward_spine(
     return bool(scene.must_land_facts.ordered_facts() or scene.beat_change.strip())
 
 
+def _build_thread_plan_warnings(
+    *,
+    strategy_episode: StrategyEpisode,
+    architecture: EpisodeArchitecture,
+    scene_cards: list[SceneCardDraft] | list[SceneCard],
+) -> list[str]:
+    """Planning-stage checks that the carried human thread is actually realized in scenes."""
+    thread = strategy_episode.human_thread
+    warnings: list[str] = []
+    if thread is None:
+        return warnings
+    members_by_id = {member.member_id: member for member in thread.members}
+    cards_by_section: dict[str, list] = {}
+    for card in scene_cards:
+        cards_by_section.setdefault(card.section_id, []).append(card)
+    bound = 0
+    carried_or_relay = 0
+    for section in architecture.sections:
+        binding = section.thread_binding
+        if binding is None:
+            continue
+        bound += 1
+        if (
+            binding.presence == ThreadSectionPresence.CARRIED
+            or binding.fallback_mode == ThreadFallbackMode.FAMILY_RELAY
+        ):
+            carried_or_relay += 1
+        if binding.presence not in (
+            ThreadSectionPresence.CARRIED,
+            ThreadSectionPresence.PERIPHERAL,
+        ):
+            continue
+        member = members_by_id.get(binding.carrying_member_id or "")
+        placed = False
+        for card in cards_by_section.get(section.section_id, []):
+            for actor in card.actors or []:
+                if member is None:
+                    continue
+                if member.actor_id and actor.actor_id == member.actor_id:
+                    placed = True
+                elif actor.name and normalize_actor_name(actor.name) == normalize_actor_name(
+                    member.display_name
+                ):
+                    placed = True
+                if placed:
+                    break
+            if placed:
+                break
+        if not placed:
+            warnings.append(f"thread_section_missing_scene_carrier: {section.section_id}")
+    if bound and carried_or_relay / bound < 0.6:
+        warnings.append("thread_plan_continuity_share_low")
+    return warnings
+
+
+def _build_host_beat_placement_warnings(
+    *,
+    architecture: EpisodeArchitecture,
+    scene_cards: list[SceneCardDraft] | list[SceneCard],
+) -> list[str]:
+    """Planning-stage checks for architecture-designated host beats and persona variety."""
+    warnings: list[str] = []
+    designation_ids = {
+        designation.host_beat_id
+        for section in architecture.sections
+        for designation in section.host_beat_designations
+    }
+    assigned_ids: set[str] = set()
+    persona_phases: list[str] = []
+    persona_targets: list[str] = []
+    for card in scene_cards:
+        assigned_ids.update(card.host_beat_ids or [])
+        for phase in ("open", "pivot", "close"):
+            for cue in getattr(card.host_moves, phase, []) or []:
+                if cue.move_type == "persona_aside":
+                    persona_phases.append(phase)
+                    persona_targets.append(cue.target.strip().lower())
+    for beat_id in sorted(designation_ids - assigned_ids):
+        warnings.append(f"host_beat_unassigned: {beat_id}")
+    if len(persona_phases) >= 3 and len(set(persona_phases)) == 1:
+        warnings.append("persona_aside_phase_monotony")
+    seen: set[str] = set()
+    for target in persona_targets:
+        if target and target in seen:
+            warnings.append("persona_aside_repeat_target")
+            break
+        seen.add(target)
+    return warnings
+
+
 def _build_spine_plan_diagnostics(
     *,
     strategy_episode: StrategyEpisode,
@@ -9557,10 +9823,10 @@ class PipelineOrchestrator:
                 axis_count_min=project.config.min_axes,
                 axis_count_max=project.config.max_axes,
                 actor_count_min=(
-                    5 if project.config.podcast_mode == PodcastMode.MINIFIED else 10
+                    8 if project.config.podcast_mode == PodcastMode.MINIFIED else 16
                 ),
                 actor_count_max=(
-                    12 if project.config.podcast_mode == PodcastMode.MINIFIED else 40
+                    24 if project.config.podcast_mode == PodcastMode.MINIFIED else 60
                 ),
                 book_summaries=book_summaries,
             )
@@ -10818,6 +11084,15 @@ class PipelineOrchestrator:
                     actor_metadata=_build_narrative_strategy_actor_metadata_payload(
                         actor_metadata
                     ),
+                    human_thread_candidates=_build_human_thread_candidate_index(
+                        synthesis_map,
+                        actor_metadata,
+                        top_n=(
+                            6
+                            if project.config.podcast_mode == PodcastMode.MINIFIED
+                            else 12
+                        ),
+                    ),
                 )
             )
             strategy_skeleton = await asyncio.to_thread(
@@ -11383,6 +11658,15 @@ class PipelineOrchestrator:
             architecture=architecture,
             scene_cards=plan_draft.scene_cards,
         )
+        thread_plan_warnings = _build_thread_plan_warnings(
+            strategy_episode=strategy_episode,
+            architecture=architecture,
+            scene_cards=plan_draft.scene_cards,
+        )
+        host_beat_placement_warnings = _build_host_beat_placement_warnings(
+            architecture=architecture,
+            scene_cards=plan_draft.scene_cards,
+        )
         scene_job_counts = _build_scene_job_counts(plan_draft.scene_cards)
         scene_role_counts: dict[str, int] = {}
         for scene in plan_draft.scene_cards:
@@ -11406,6 +11690,8 @@ class PipelineOrchestrator:
             + list(spine_diagnostics.get("scene_job_budget_warnings", []))
             + host_move_warnings
             + host_density_warnings
+            + thread_plan_warnings
+            + host_beat_placement_warnings
         )
         for warning in planning_warnings:
             self.run_logger.log(

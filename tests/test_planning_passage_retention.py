@@ -182,7 +182,7 @@ def _planning_response(
     architecture = payload["architecture"]
     strategy_episode = payload["strategy_episode"]
     episode_spine = strategy_episode.get("episode_spine", {})
-    opening_question = episode_spine.get("listener_question") or episode_spine.get(
+    opening_question = episode_spine.get("listener_problem") or episode_spine.get(
         "listener_problem"
     )
     section_ids = [section["section_id"] for section in architecture["sections"]]
@@ -197,7 +197,7 @@ def _planning_response(
                 "scene_job": "build",
                 "dominant_primitive_id": "core_1",
                 "spine_relation": "set_stakes" if idx == 0 else "spine_advance",
-                "state_effect": "The stakes become visible.",
+                "beat_change": "The stakes become visible.",
                 "entry_image": "Image",
                 "local_question": "Question?",
                 "observable_detail": "Detail",
@@ -220,7 +220,7 @@ def _planning_response(
                 "scene_job": "answer",
                 "dominant_primitive_id": "core_1",
                 "spine_relation": "spine_advance",
-                "state_effect": "The stakes become visible.",
+                "beat_change": "The stakes become visible.",
                 "entry_image": "Image",
                 "local_question": "Question?",
                 "observable_detail": "Detail",
@@ -247,7 +247,7 @@ def _planning_response(
                 "scene_job": scene_job,
                 "dominant_primitive_id": "core_1",
                 "spine_relation": "spine_advance",
-                "state_effect": "The stakes become visible.",
+                "beat_change": "The stakes become visible.",
                 "entry_image": "Image",
                 "local_question": "Question?",
                 "observable_detail": "Detail",
@@ -283,7 +283,7 @@ def _planning_response(
 def _strategy_episode(
     *,
     title: str = "Episode One",
-    listener_question: str = "Question?",
+    listener_problem: str = "Question?",
     thematic_focus: str = "",
     arc_summary: str = "Arc",
     unresolved_questions: list[str] | None = None,
@@ -300,8 +300,8 @@ def _strategy_episode(
         unresolved_questions=list(unresolved_questions or []),
         actor_arc_directives=list(actor_arc_directives or []),
         episode_spine=EpisodeSpine(
-            listener_question=listener_question,
-            argument="Claim",
+            listener_problem=listener_problem,
+            episode_answer="Claim",
             core_primitive_ids=list(core_primitive_ids or _core_primitive_ids()),
             support_primitive_roles=dict(
                 support_primitive_roles or _support_primitive_roles()
@@ -1076,8 +1076,8 @@ def test_build_episode_architecture_core_passages_uses_full_text_bm25_trim() -> 
         driving_question="Drivingalpha",
         thematic_focus="Focusbeta",
         episode_spine=EpisodeSpine(
-            listener_question="Drivingalpha",
-            argument="Claim",
+            listener_problem="Drivingalpha",
+            episode_answer="Claim",
             core_primitive_ids=_core_primitive_ids(),
             support_primitive_roles=_support_primitive_roles(),
             recall_primitive_ids=[],
@@ -1129,8 +1129,8 @@ def test_build_episode_architecture_core_passages_merges_query_text_across_primi
         driving_question="Drivingalpha",
         thematic_focus="Focusbeta",
         episode_spine=EpisodeSpine(
-            listener_question="Drivingalpha",
-            argument="Claim",
+            listener_problem="Drivingalpha",
+            episode_answer="Claim",
             core_primitive_ids=["alpha", "beta"],
             support_primitive_roles={
                 "support_unused_1": SupportPrimitiveRole.MECHANISM,
@@ -1173,8 +1173,8 @@ def test_build_episode_architecture_support_passages_use_support_refs_and_core_p
     None
 ):
     episode_spine = EpisodeSpine(
-        listener_question="Drivingalpha",
-        argument="Claim",
+        listener_problem="Drivingalpha",
+        episode_answer="Claim",
         core_primitive_ids=["core_1", "core_unused_2"],
         support_primitive_roles={
             "support_1": SupportPrimitiveRole.MECHANISM,
@@ -1361,8 +1361,8 @@ def test_build_episode_architectures_uses_only_strategy_actor_directives(
                 arc_summary="Arc",
                 actor_arc_directives=[_actor_arc_directive("actor_strategy")],
                 episode_spine=EpisodeSpine(
-                    listener_question="Question?",
-                    argument="Claim",
+                    listener_problem="Question?",
+                    episode_answer="Claim",
                     core_primitive_ids=_core_primitive_ids(),
                     support_primitive_roles=_support_primitive_roles(),
                     recall_primitive_ids=[],
@@ -1541,7 +1541,7 @@ def test_build_section_plan_realization_reports_section_drift_and_unused_priorit
             scene_role="setup",
             dominant_primitive_id="support_1",
             spine_relation="set_stakes",
-            state_effect="The crowd panics.",
+            beat_change="The crowd panics.",
             entry_image="Image",
             local_question="Who will hold the line?",
             observable_detail="Detail",
@@ -1558,7 +1558,7 @@ def test_build_section_plan_realization_reports_section_drift_and_unused_priorit
             scene_role="reaction",
             dominant_primitive_id="support_1",
             spine_relation="supply_mechanism",
-            state_effect="R2 becomes legible.",
+            beat_change="R2 becomes legible.",
             entry_image="Image",
             local_question="Q2?",
             observable_detail="Detail",
@@ -1575,7 +1575,7 @@ def test_build_section_plan_realization_reports_section_drift_and_unused_priorit
             scene_role="reaction",
             dominant_primitive_id="core_1",
             spine_relation="turn",
-            state_effect="R3 becomes clear.",
+            beat_change="R3 becomes clear.",
             entry_image="Image",
             local_question="Q3?",
             observable_detail="Detail",
@@ -1592,7 +1592,7 @@ def test_build_section_plan_realization_reports_section_drift_and_unused_priorit
             scene_role="consequence",
             dominant_primitive_id="core_1",
             spine_relation="show_consequence",
-            state_effect="R4 settles in.",
+            beat_change="R4 settles in.",
             entry_image="Image",
             local_question="Q4?",
             observable_detail="Detail",
@@ -1684,7 +1684,7 @@ def test_build_section_plan_realization_reports_unrealized_must_stage_beats() ->
             scene_role="setup",
             dominant_primitive_id="core_1",
             spine_relation="set_stakes",
-            state_effect="The room now knows the order has arrived.",
+            beat_change="The room now knows the order has arrived.",
             entry_image="A cable lands on a desk.",
             local_question="What breaks first?",
             observable_detail="The paper is still warm from the machine.",
@@ -1701,7 +1701,7 @@ def test_build_section_plan_realization_reports_unrealized_must_stage_beats() ->
             scene_role="consequence",
             dominant_primitive_id="core_1",
             spine_relation="show_consequence",
-            state_effect="R2 settles in.",
+            beat_change="R2 settles in.",
             entry_image="The square is empty by dawn.",
             local_question="Q2?",
             observable_detail="Paper banners stick to the pavement.",
@@ -1846,7 +1846,7 @@ def test_plan_series_trims_core_support_and_recall_by_passage_role(
         episodes=[
             _strategy_episode(
                 title="Episode One",
-                listener_question="drivingalpha",
+                listener_problem="drivingalpha",
                 thematic_focus="focusbeta",
                 arc_summary="arcgamma",
                 unresolved_questions=["unresolveddelta"],
@@ -2131,7 +2131,7 @@ def test_plan_series_uses_primitive_aware_queries_for_reused_passages(
         episodes=[
             _strategy_episode(
                 title="Episode One",
-                listener_question="What matters here?",
+                listener_problem="What matters here?",
                 thematic_focus="Episodefocus should dominate the base query.",
                 unresolved_questions=["Which evidence matters most?"],
                 core_primitive_ids=_core_primitive_ids(),

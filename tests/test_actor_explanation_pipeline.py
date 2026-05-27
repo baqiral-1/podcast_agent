@@ -209,8 +209,8 @@ def test_clean_narrative_strategy_actor_links_fills_actor_gloss_and_filters_regi
                     "title": "Episode 1",
                     "arc_summary": "Arc",
                     "episode_spine": {
-                        "listener_question": "Why does the crisis take this shape?",
-                        "argument": "A claim",
+                        "listener_problem": "Why does the crisis take this shape?",
+                        "episode_answer": "A claim",
                         "core_primitive_ids": ["core_1", "core_2", "core_3", "core_4", "core_5"],
                         "support_primitive_roles": {
                             "support_1": "mechanism",
@@ -308,8 +308,8 @@ def test_build_window_actor_metadata_includes_section_actor_explanations() -> No
         title="Episode 1",
         arc_summary="Arc",
         episode_spine=EpisodeSpine(
-            listener_question="Question?",
-            argument="Claim",
+            listener_problem="Question?",
+            episode_answer="Claim",
             core_primitive_ids=["core_1", "core_2", "core_3", "core_4", "core_5"],
             support_primitive_roles={"support_1": "mechanism", "support_2": "texture"},
         ),

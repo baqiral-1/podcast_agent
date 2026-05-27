@@ -47,8 +47,8 @@ def _strategy_episode() -> StrategyEpisode:
         thematic_focus="Focus",
         arc_summary="Arc",
         episode_spine=EpisodeSpine.model_construct(
-            listener_question="What happened?",
-            argument="A working claim.",
+            listener_problem="What happened?",
+            episode_answer="A working claim.",
             core_primitive_ids=["core_1"],
             support_primitive_roles={
                 "support_1": SupportPrimitiveRole.MECHANISM,
@@ -219,7 +219,7 @@ def _valid_plan_payload(payload: dict, *, use_invalid_section_primitive: bool) -
                 "scene_job": "build",
                 "dominant_primitive_id": "support_1",
                 "spine_relation": "set_stakes",
-                "state_effect": "State 1",
+                "beat_change": "State 1",
                 "primitive_ids": ["support_1"],
                 "passage_ids": ["p_support_1"],
                 "host_moves": {
@@ -240,7 +240,7 @@ def _valid_plan_payload(payload: dict, *, use_invalid_section_primitive: bool) -
                 "scene_job": "answer",
                 "dominant_primitive_id": "core_1",
                 "spine_relation": "spine_advance",
-                "state_effect": "State 2",
+                "beat_change": "State 2",
                 "primitive_ids": section_two_primitives,
                 "passage_ids": ["p_core_1"],
                 "host_moves": {
@@ -261,7 +261,7 @@ def _valid_plan_payload(payload: dict, *, use_invalid_section_primitive: bool) -
                 "scene_job": "build",
                 "dominant_primitive_id": "support_2",
                 "spine_relation": "show_consequence",
-                "state_effect": "State 3",
+                "beat_change": "State 3",
                 "primitive_ids": ["support_2"],
                 "passage_ids": ["p_support_2"],
                 "host_moves": {
@@ -282,7 +282,7 @@ def _valid_plan_payload(payload: dict, *, use_invalid_section_primitive: bool) -
                 "scene_job": "close",
                 "dominant_primitive_id": "support_3",
                 "spine_relation": "show_consequence",
-                "state_effect": "State 4",
+                "beat_change": "State 4",
                 "primitive_ids": ["support_3"],
                 "passage_ids": ["p_support_3"],
                 "host_moves": {

@@ -15,7 +15,6 @@ from podcast_agent.langchain.runnables import (
 )
 from podcast_agent.llm.base import LLMClient
 from podcast_agent.llm.concurrency import llm_semaphore_for
-from podcast_agent.llm.transport import encode_transport_payload
 
 logger = logging.getLogger(__name__)
 
@@ -88,10 +87,9 @@ class Agent(ABC):
         return payload
 
     def build_llm_payload(self, payload: dict) -> dict:
-        """Build the transport payload sent to the model."""
+        """Build the payload sent to the model."""
 
-        encoded = encode_transport_payload(self.schema_name, payload)
-        return encoded if isinstance(encoded, dict) else payload
+        return payload
 
     def run(self, payload: dict) -> BaseModel:
         """Execute the agent with retry and concurrency gating."""

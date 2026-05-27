@@ -9,7 +9,6 @@ from uuid import uuid4
 from pydantic import BaseModel
 
 from podcast_agent.llm.base import LLMClient, PromptPayload, prompt_log_metadata
-from podcast_agent.llm.transport import decode_transport_payload
 from podcast_agent.schemas.models import (
     PodcastMode,
     authorial_passage_target_for_mode,
@@ -40,13 +39,12 @@ class HeuristicLLMClient(LLMClient):
                 schema_name=schema_name,
                 **prompt_log_metadata(instructions, payload),
             )
-        decoded_payload = decode_transport_payload(schema_name, payload)
         try:
             generator = getattr(self, f"_generate_{schema_name}", None)
             if generator is None:
-                response = self._generate_default(schema_name, decoded_payload)
+                response = self._generate_default(schema_name, payload)
             else:
-                response = generator(decoded_payload)
+                response = generator(payload)
             if self.run_logger is not None:
                 self.run_logger.log(
                     "llm_response",
@@ -170,9 +168,8 @@ class HeuristicLLMClient(LLMClient):
                             "transformations": [],
                             "uncertainty_notes": "",
                             "evidence_confidence": "medium",
-                            "narrative_importance_score": max(
-                                0.1, 1.0 - (len(actors) * 0.03)
-                            ),
+                            "narrative_tier": "supporting",
+                            "series_scope": "local",
                         }
                     )
                     if len(actors) >= 20:
@@ -202,7 +199,8 @@ class HeuristicLLMClient(LLMClient):
                     "transformations": [],
                     "uncertainty_notes": "No chapter actor candidates were available.",
                     "evidence_confidence": "low",
-                    "narrative_importance_score": 0.1,
+                    "narrative_tier": "minor",
+                    "series_scope": "local",
                 }
             )
         return actors

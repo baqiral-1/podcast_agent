@@ -106,7 +106,7 @@ def _normal_scene(scene_id: str = "scene_1", pack_id: str = "pack_1") -> SceneCa
         scene_role="setup",
         dominant_pack_id=pack_id,
         spine_relation=SpineRelation.SET_STAKES,
-        state_effect="The stakes become legible.",
+        beat_change="The stakes become legible.",
         entry_image="A clerk opens the envelope.",
         local_question="What changes first?",
         observable_detail="Hands freeze over the paper.",
@@ -130,7 +130,7 @@ def _normal_scene_draft(
         scene_role="setup",
         dominant_pack_id=pack_id,
         spine_relation=SpineRelation.SET_STAKES,
-        state_effect="The stakes become legible.",
+        beat_change="The stakes become legible.",
         entry_image="A clerk opens the envelope.",
         local_question="What changes first?",
         observable_detail="Hands freeze over the paper.",
@@ -151,8 +151,8 @@ def _episode_spine(pack_id: str = "pack_1") -> EpisodeSpine:
         for idx in range(1, 8)
     }
     return EpisodeSpine(
-        listener_question="Why does this decision land so hard?",
-        argument="This episode tests one controlling proposition.",
+        listener_problem="Why does this decision land so hard?",
+        episode_answer="This episode tests one controlling proposition.",
         core_primitive_ids=core_primitive_ids,
         support_primitive_roles=support_primitive_roles,
         recall_primitive_ids=[],
@@ -306,14 +306,14 @@ class TestThematicProject:
             "events": (87, 120),
             "acts": (45, 59),
             "utterances": (12, 17),
-            "actor_portraits": (12, 16),
+            "actor_portraits": (18, 24),
             "mechanisms": (37, 51),
             "conditions": (21, 27),
             "artifacts": (18, 24),
             "readings": (11, 13),
         }
-        assert sum(lower for lower, _ in target_ranges.values()) == 243
-        assert sum(upper for _, upper in target_ranges.values()) == 327
+        assert sum(lower for lower, _ in target_ranges.values()) == 249
+        assert sum(upper for _, upper in target_ranges.values()) == 335
 
     def test_primitive_substrate_target_ranges_for_minified_mode_match_expanded_table(self):
         target_ranges = primitive_substrate_target_ranges_for_mode(PodcastMode.MINIFIED)
@@ -321,14 +321,14 @@ class TestThematicProject:
             "events": (19, 27),
             "acts": (10, 13),
             "utterances": (2, 3),
-            "actor_portraits": (2, 3),
+            "actor_portraits": (6, 8),
             "mechanisms": (7, 12),
             "conditions": (4, 5),
             "artifacts": (3, 4),
             "readings": (2, 2),
         }
-        assert sum(lower for lower, _ in target_ranges.values()) == 49
-        assert sum(upper for _, upper in target_ranges.values()) == 69
+        assert sum(lower for lower, _ in target_ranges.values()) == 53
+        assert sum(upper for _, upper in target_ranges.values()) == 74
 
     def test_thematic_project_accepts_forty_sub_themes(self):
         project = ThematicProject(
@@ -435,13 +435,11 @@ class TestSynthesisModels:
                     actor_id="jawaharlal_nehru",
                     display_name="Jawaharlal Nehru",
                     actor_type="person",
-                    narrative_importance_score=0.9,
                 ),
                 ActorProfile(
                     actor_id="indian_national_congress",
                     display_name="Indian National Congress",
                     actor_type="party",
-                    narrative_importance_score=0.8,
                 ),
             ],
             relationships=[
@@ -500,7 +498,7 @@ class TestSynthesisModels:
                     "actor_type": "state" if idx == 0 else "person",
                     "narrative_importance_score": 1.0 - (idx * 0.01),
                 }
-                for idx in range(45)
+                for idx in range(65)
             ],
             "relationships": [
                 {
@@ -516,7 +514,7 @@ class TestSynthesisModels:
             ],
         }
         metadata, metrics = sanitize_actor_metadata_payload(raw, project_id="proj")
-        assert len(metadata.actors) == 40
+        assert len(metadata.actors) == 60
         assert metadata.actors[0].actor_type == "other"
         assert metadata.relationships[0].relationship_type == "other"
         assert metrics["dropped_over_cap_actor_count"] == 5
@@ -845,21 +843,6 @@ class TestNarrativeStrategy:
         )
         assert thread.arc_type == "ideologue"
 
-    def test_actor_arc_thread_accepts_legacy_payoff_alias(self):
-        thread = ActorArcThread.model_validate(
-            {
-                "thread_id": "gandhi_turn_1",
-                "arc_type": "turn",
-                "label": "turning point",
-                "premise": "An event forces a revised stance.",
-                "payoff": "Legacy field remains readable.",
-            }
-        )
-        assert thread.resolution == "Legacy field remains readable."
-        dumped = thread.model_dump(mode="json")
-        assert "payoff" not in dumped
-        assert dumped["resolution"] == "Legacy field remains readable."
-
     def test_actor_arc_thread_ignores_extra_fields(self):
         thread = ActorArcThread.model_validate(
             {
@@ -912,8 +895,8 @@ class TestNarrativeStrategy:
             match="support primitives cannot also appear in core_primitive_ids",
         ):
             EpisodeSpine(
-                listener_question="What changed?",
-                argument="A claim",
+                listener_problem="What changed?",
+                episode_answer="A claim",
                 core_primitive_ids=["pack_1", *[f"core_{idx}" for idx in range(2, 8)]],
                 support_primitive_roles=support_primitive_roles,
             )
@@ -923,8 +906,8 @@ class TestNarrativeStrategy:
             ValidationError, match="support_primitive_roles must contain 2-13"
         ):
             EpisodeSpine(
-                listener_question="What changed?",
-                argument="A claim",
+                listener_problem="What changed?",
+                episode_answer="A claim",
                 core_primitive_ids=[f"core_{idx}" for idx in range(1, 8)],
                 support_primitive_roles={
                     "support_1": SupportPrimitiveRole.MECHANISM,
@@ -933,8 +916,8 @@ class TestNarrativeStrategy:
 
     def test_episode_spine_accepts_shared_upper_bounds_for_full_mode(self):
         spine = EpisodeSpine(
-            listener_question="What changed?",
-            argument="A claim",
+            listener_problem="What changed?",
+            episode_answer="A claim",
             core_primitive_ids=[f"core_{idx}" for idx in range(1, 12)],
             support_primitive_roles={
                 f"support_{idx}": SupportPrimitiveRole.MECHANISM for idx in range(1, 14)
@@ -947,8 +930,8 @@ class TestNarrativeStrategy:
 
     def test_validate_episode_spine_targets_enforces_full_mode_counts(self):
         spine = EpisodeSpine(
-            listener_question="What changed?",
-            argument="A claim",
+            listener_problem="What changed?",
+            episode_answer="A claim",
             core_primitive_ids=[f"core_{idx}" for idx in range(1, 5)],
             support_primitive_roles={
                 f"support_{idx}": SupportPrimitiveRole.MECHANISM for idx in range(1, 5)
@@ -967,8 +950,8 @@ class TestNarrativeStrategy:
 
     def test_validate_episode_spine_targets_accepts_full_mode_support_range(self):
         spine = EpisodeSpine(
-            listener_question="What changed?",
-            argument="A claim",
+            listener_problem="What changed?",
+            episode_answer="A claim",
             core_primitive_ids=[f"core_{idx}" for idx in range(1, 9)],
             support_primitive_roles={
                 f"support_{idx}": SupportPrimitiveRole.MECHANISM for idx in range(1, 10)
@@ -986,8 +969,8 @@ class TestNarrativeStrategy:
 
     def test_validate_episode_spine_targets_accepts_minified_counts(self):
         spine = EpisodeSpine(
-            listener_question="What changed?",
-            argument="A claim",
+            listener_problem="What changed?",
+            episode_answer="A claim",
             core_primitive_ids=["core_1", "core_2", "core_3"],
             support_primitive_roles={
                 "support_1": SupportPrimitiveRole.MECHANISM,
@@ -1009,8 +992,8 @@ class TestNarrativeStrategy:
 
     def test_validate_episode_spine_targets_rejects_minified_recall_overflow(self):
         spine = EpisodeSpine(
-            listener_question="What changed?",
-            argument="A claim",
+            listener_problem="What changed?",
+            episode_answer="A claim",
             core_primitive_ids=["core_1", "core_2", "core_3"],
             support_primitive_roles={
                 "support_1": SupportPrimitiveRole.MECHANISM,
@@ -1037,7 +1020,7 @@ class TestNarrativeStrategy:
         with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
             EpisodeSpine.model_validate(
                 {
-                    "listener_question": "What changed?",
+                    "listener_problem": "What changed?",
                     "argument": "A claim",
                     "spine_pack_ids": ["pack_1"],
                     "support_pack_roles": {},
@@ -1051,7 +1034,7 @@ class TestNarrativeStrategy:
             EpisodeSpine.model_validate(
                 {
                     "episode_number": 1,
-                    "listener_question": "What changed?",
+                    "listener_problem": "What changed?",
                     "argument": "A claim",
                     "spine_pack_ids": ["pack_1"],
                     "support_pack_roles": {},
@@ -1166,7 +1149,7 @@ class TestPlanningModels:
                     "scene_role": "reveal",
                     "dominant_pack_id": "pack_1",
                     "spine_relation": "spine_advance",
-                    "state_effect": "The mechanism becomes visible.",
+                    "beat_change": "The mechanism becomes visible.",
                     "entry_image": "The ledger opens.",
                     "local_question": "What finally becomes visible?",
                     "observable_detail": "A missing column is now clear.",
@@ -1186,7 +1169,7 @@ class TestPlanningModels:
                     "scene_role": "reveal",
                     "dominant_pack_id": "pack_1",
                     "spine_relation": "spine_advance",
-                    "state_effect": "The mechanism becomes visible.",
+                    "beat_change": "The mechanism becomes visible.",
                     "entry_image": "The ledger opens.",
                     "local_question": "What finally becomes visible?",
                     "observable_detail": "A missing column is now clear.",
@@ -1208,7 +1191,7 @@ class TestPlanningModels:
                 scene_role="synthesis",
                 dominant_pack_id="pack_1",
                 spine_relation=SpineRelation.SPINE_ADVANCE,
-                state_effect="The argument advances.",
+                beat_change="The argument advances.",
                 entry_image="The silence shifts.",
                 local_question="How do we move forward?",
                 observable_detail="A messenger leaves.",
@@ -1217,44 +1200,6 @@ class TestPlanningModels:
                 host_moves=_host_moves_payload(),
                 estimated_duration_seconds=60,
             )
-
-    def test_scene_card_accepts_what_we_hear_alias(self):
-        card = SceneCard.model_validate(
-            {
-                "scene_id": "scene_alias",
-                "section_id": "section_1",
-                "title": "Alias scene",
-                "scene_role": "action",
-                "beat_change": "The room changes.",
-                "entry_image": "A clerk opens the envelope.",
-                "observable_detail": "Hands freeze over the paper.",
-                "what_we_hear": "A stamp cracks onto the form.",
-                "passage_ids": ["p1"],
-                "host_moves": _host_moves_payload().model_dump(mode="json"),
-                "estimated_duration_seconds": 60,
-            }
-        )
-
-        assert card.audible_detail == "A stamp cracks onto the form."
-
-    def test_scene_card_accepts_audio_alias(self):
-        card = SceneCard.model_validate(
-            {
-                "scene_id": "scene_audio_alias",
-                "section_id": "section_1",
-                "title": "Audio alias scene",
-                "scene_role": "action",
-                "beat_change": "The room changes again.",
-                "entry_image": "A file lands on the desk.",
-                "observable_detail": "Eyes move toward the doorway.",
-                "audio": "A chair leg scrapes the tile.",
-                "passage_ids": ["p1"],
-                "host_moves": _host_moves_payload().model_dump(mode="json"),
-                "estimated_duration_seconds": 60,
-            }
-        )
-
-        assert card.audible_detail == "A chair leg scrapes the tile."
 
 
 class TestSpeechAndStyleModels:
@@ -1401,14 +1346,14 @@ class TestEpisodeArchitectureModels:
 
         assert len(architecture.sections) == 13
 
-    def test_architecture_section_migrates_legacy_anchor_field(self):
+    def test_architecture_section_drops_legacy_fields(self):
         section = ArchitectureSection.model_validate(
             {
                 "section_id": "section_01",
                 "purpose": "opening",
                 "approx_runtime_minutes": 10.0,
                 "primitive_ids": ["et_1"],
-                "anchor": "Legacy anchor",
+                "section_anchor": "Opening anchor",
                 "must_stage_beats": ["Visible move", "Immediate consequence"],
                 "section_question": "Question?",
                 "section_resolution": "Resolution",
@@ -1424,9 +1369,9 @@ class TestEpisodeArchitectureModels:
         )
 
         payload = section.model_dump(mode="json")
-        assert section.section_anchor == "Legacy anchor"
-        assert payload["section_anchor"] == "Legacy anchor"
-        assert "anchor" not in payload
+        assert section.section_anchor == "Opening anchor"
+        assert payload["section_anchor"] == "Opening anchor"
+        assert "section_question" not in payload
 
     def test_architecture_section_open_mode_defaults_and_round_trips(self):
         base = {
@@ -1520,12 +1465,7 @@ class TestEpisodeArchitectureModels:
             )
 
 
-def test_episode_planning_transport_roundtrip_preserves_answer_scene_and_drops_residue():
-    from podcast_agent.llm.transport import (
-        decode_transport_payload,
-        encode_transport_payload,
-    )
-
+def test_episode_planning_model_dump_preserves_answer_scene_and_drops_residue():
     scene_card = SceneCardDraft.model_validate(
         {
             "scene_id": "scene_1",
@@ -1553,19 +1493,5 @@ def test_episode_planning_transport_roundtrip_preserves_answer_scene_and_drops_r
     assert "answer_scene_card_id" in canonical_payload
     assert "residue_scene_card_id" not in canonical_payload
 
-    encoded = encode_transport_payload("episode_planning", canonical_payload)
-    # The canonical answer key is aliased; no residue alias is emitted.
-    assert encoded["answer_sid"] == "scene_1"
-    assert "answer_scene_card_id" not in encoded
-    assert "residue_sid" not in encoded
-    assert "residue_scene_card_id" not in encoded
-
-    decoded = decode_transport_payload("episode_planning", encoded)
-    assert decoded["answer_scene_card_id"] == "scene_1"
-    assert "answer_sid" not in decoded
-    assert "residue_sid" not in decoded
-    assert "residue_scene_card_id" not in decoded
-
-    # The decoded payload still validates under the strict (extra="forbid") model.
-    revalidated = EpisodePlanDraft.model_validate(decoded)
+    revalidated = EpisodePlanDraft.model_validate(canonical_payload)
     assert revalidated.answer_scene_card_id == "scene_1"

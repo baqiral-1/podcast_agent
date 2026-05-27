@@ -32,7 +32,6 @@ from podcast_agent.llm.base import (
 )
 from podcast_agent.llm.heuristic import HeuristicLLMClient
 from podcast_agent.llm.json_utils import normalize_json_content, unwrap_response_payload
-from podcast_agent.llm.transport import decode_transport_payload
 from podcast_agent.schemas.models import ChapterAnalysis
 
 logger = logging.getLogger(__name__)
@@ -777,9 +776,6 @@ class LangChainLLMClient(LLMClient):
                         },
                     ) from parse_exc
                 raise
-            normalized_payload = decode_transport_payload(
-                schema_name, normalized_payload
-            )
             normalized_payload, cap_truncations = _apply_schema_caps(
                 normalized_payload, response_model, schema_name
             )

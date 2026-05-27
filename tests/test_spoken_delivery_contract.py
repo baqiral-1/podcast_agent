@@ -45,7 +45,7 @@ def _architecture() -> EpisodeArchitecture:
             {
                 "section_id": "section_1",
                 "purpose": "opening",
-                "anchor": "Anchor 1",
+                "section_anchor": "Anchor 1",
                 "approx_runtime_minutes": 1.0,
                 "primitive_ids": ["primitive_1"],
                 "section_question": "Q1",
@@ -62,7 +62,7 @@ def _architecture() -> EpisodeArchitecture:
             {
                 "section_id": "section_2",
                 "purpose": "closing",
-                "anchor": "Anchor 2",
+                "section_anchor": "Anchor 2",
                 "approx_runtime_minutes": 1.0,
                 "primitive_ids": ["primitive_1"],
                 "section_question": "Q2",

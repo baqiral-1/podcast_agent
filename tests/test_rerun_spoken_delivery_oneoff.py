@@ -231,7 +231,7 @@ def test_build_spoken_section_maps_section_local_response():
         "section": {
             "section_id": "section_2",
             "purpose": "closing",
-            "anchor": "Anchor",
+            "section_anchor": "Anchor",
             "closure_mode": "final_answer",
             "movement_goal": "extend",
             "text": "More narration",

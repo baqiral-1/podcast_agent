@@ -78,8 +78,8 @@ def _strategy() -> NarrativeStrategy:
                 title="Episode 1",
                 arc_summary="Arc summary",
                 episode_spine={
-                    "listener_question": "What changed?",
-                    "argument": "A working claim.",
+                    "listener_problem": "What changed?",
+                    "episode_answer": "A working claim.",
                     "core_primitive_ids": ["primitive_1", "core_2"],
                     "support_primitive_roles": {
                         "support_1": "mechanism",
