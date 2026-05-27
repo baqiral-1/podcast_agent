@@ -64,6 +64,7 @@ from podcast_agent.langchain.llm import build_llm_client
 from podcast_agent.langchain.runnables import ComplianceViolationError
 from podcast_agent.llm.base import LLMClient
 from podcast_agent.llm.concurrency import configure_llm_semaphore
+from podcast_agent.narrative_state import fold_planned_pre_states
 from podcast_agent.retrieval.search import RetrievalService
 from podcast_agent.retrieval.vector_store import PGVectorRetrieval
 from podcast_agent.run_logging import RunLogger
@@ -3503,6 +3504,10 @@ def _build_strategy_selected_synthesis_map_preview(
 
 def _episode_scene_candidate_cap_for_mode(mode: PodcastMode) -> int:
     return 8 if mode == PodcastMode.MINIFIED else 12
+
+
+def _human_thread_candidate_cap_for_mode(mode: PodcastMode) -> int:
+    return 12 if mode == PodcastMode.MINIFIED else 40
 
 
 def _build_episode_scene_candidate_payloads(
@@ -8301,7 +8306,7 @@ def _build_continuity_contract(
         return {
             "phase": phase,
             "episode_number": episode_number,
-            "last_episode_takeaway": "",
+            "last_episode_takeaway": None,
             "recap_items": [],
             "must_surface_early": [],
             "must_leave_live": [],
@@ -8313,11 +8318,15 @@ def _build_continuity_contract(
     carry_items = list(narrative_state.listener.carry_forward_memory)
     if phase == "pre":
         recap_items = sorted(carry_items, key=_continuity_item_sort_key)[:2]
-        if not recap_items and narrative_state.listener.last_episode_takeaway.strip():
+        takeaway = narrative_state.listener.last_episode_takeaway
+        if not recap_items and takeaway is not None:
             recap_items = [
                 ContinuityCarryItem(
                     item_id=f"takeaway_ep_{max(episode_number - 1, 0)}",
-                    label=narrative_state.listener.last_episode_takeaway.strip(),
+                    label=(
+                        f"{takeaway.inherited_condition} — and the choice still in play: "
+                        f"{takeaway.proximate_contingency}"
+                    ),
                     kind="takeaway",
                     source_episode_number=max(episode_number - 1, 0),
                     priority="normal",
@@ -8354,7 +8363,11 @@ def _build_continuity_contract(
     return {
         "phase": phase,
         "episode_number": episode_number,
-        "last_episode_takeaway": narrative_state.listener.last_episode_takeaway,
+        "last_episode_takeaway": (
+            narrative_state.listener.last_episode_takeaway.model_dump()
+            if narrative_state.listener.last_episode_takeaway is not None
+            else None
+        ),
         "recap_items": _continuity_items_to_payload(recap_items),
         "must_surface_early": _continuity_items_to_payload(
             sorted(must_surface_early, key=_continuity_item_sort_key)
@@ -11087,10 +11100,8 @@ class PipelineOrchestrator:
                     human_thread_candidates=_build_human_thread_candidate_index(
                         synthesis_map,
                         actor_metadata,
-                        top_n=(
-                            6
-                            if project.config.podcast_mode == PodcastMode.MINIFIED
-                            else 12
+                        top_n=_human_thread_candidate_cap_for_mode(
+                            project.config.podcast_mode
                         ),
                     ),
                 )
@@ -11815,35 +11826,77 @@ class PipelineOrchestrator:
                     f"episodes: {missing_episodes}"
                 )
 
-            current_state = _build_initial_narrative_state(project.project_id)
+            episode_numbers = list(range(1, project.episode_count + 1))
+
+            # Pre-states are a deterministic fold of the planned cross-episode agenda.
+            # This removes the serial dependency on the previous episode's reconciled
+            # post-state, so every episode's architecture (and reconciliation) is
+            # independent and can run in parallel.
+            state_pre_by_episode: dict[int, NarrativeState] = fold_planned_pre_states(
+                strategy, project.project_id
+            )
+
+            arch_sem = asyncio.Semaphore(
+                max(1, project.config.episode_architecture_concurrency)
+            )
+
+            async def _architect(
+                episode_number: int,
+            ) -> tuple[EpisodeArchitecture, dict[str, Any], list[dict[str, Any]]]:
+                async with arch_sem:
+                    return await self._build_single_episode_architecture(
+                        project=project,
+                        synthesis_map=synthesis_map,
+                        strategy=strategy,
+                        strategy_episode=strategy_episode_map[episode_number],
+                        corpus=corpus,
+                        actor_metadata=actor_metadata,
+                        scene_discovery=scene_discovery,
+                        narrative_state_pre=state_pre_by_episode[episode_number],
+                    )
+
+            architecture_results = await asyncio.gather(
+                *(_architect(n) for n in episode_numbers)
+            )
+            architecture_by_episode = {
+                n: result[0] for n, result in zip(episode_numbers, architecture_results)
+            }
+
+            # Reconcile each episode independently from its folded pre-state + its own
+            # architecture (realized state moves live only on the architecture). Each
+            # call is ready as soon as its architecture completes, so this is parallel.
+            async def _reconcile(
+                episode_number: int,
+            ) -> NarrativeStateReconciliation:
+                async with arch_sem:
+                    return await self._reconcile_narrative_state(
+                        project=project,
+                        strategy_episode=strategy_episode_map[episode_number],
+                        architecture=architecture_by_episode[episode_number],
+                        narrative_state_pre=state_pre_by_episode[episode_number],
+                    )
+
+            reconciliation_results = await asyncio.gather(
+                *(_reconcile(n) for n in episode_numbers)
+            )
+            reconciliation_by_episode = dict(
+                zip(episode_numbers, reconciliation_results)
+            )
+
             architectures: list[EpisodeArchitecture] = []
             architecture_reports: list[dict[str, Any]] = []
             architecture_attempt_reports: list[dict[str, Any]] = []
-            state_pre_by_episode: dict[int, NarrativeState] = {}
             state_post_by_episode: dict[int, NarrativeState] = {}
             reconciliations: list[NarrativeStateReconciliation] = []
 
-            for episode_number in range(1, project.episode_count + 1):
-                strategy_episode = strategy_episode_map[episode_number]
-                state_pre_by_episode[episode_number] = current_state.model_copy(deep=True)
-                architecture, architecture_report, architecture_attempts = await self._build_single_episode_architecture(
-                    project=project,
-                    synthesis_map=synthesis_map,
-                    strategy=strategy,
-                    strategy_episode=strategy_episode,
-                    corpus=corpus,
-                    actor_metadata=actor_metadata,
-                    scene_discovery=scene_discovery,
-                    narrative_state_pre=current_state,
+            for episode_number in episode_numbers:
+                architecture, architecture_report, architecture_attempts = (
+                    architecture_results[episode_number - 1]
                 )
-                reconciliation = await self._reconcile_narrative_state(
-                    project=project,
-                    strategy_episode=strategy_episode,
-                    architecture=architecture,
-                    narrative_state_pre=current_state,
+                reconciliation = reconciliation_by_episode[episode_number]
+                state_post_by_episode[episode_number] = reconciliation.state_post.model_copy(
+                    deep=True
                 )
-                current_state = reconciliation.state_post
-                state_post_by_episode[episode_number] = current_state.model_copy(deep=True)
                 architectures.append(architecture)
                 architecture_reports.append(architecture_report)
                 architecture_attempt_reports.append(
@@ -11866,6 +11919,8 @@ class PipelineOrchestrator:
                 _save_json(ep_dir / "narrative_state_pre.json", state_pre_by_episode[episode_number])
                 _save_json(ep_dir / "narrative_state_post.json", state_post_by_episode[episode_number])
                 _save_json(ep_dir / "narrative_state_reconciliation.json", reconciliation)
+
+            current_state = state_post_by_episode[episode_numbers[-1]]
 
             realization_reports = [
                 _build_episode_architecture_realization(

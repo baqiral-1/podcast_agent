@@ -9,6 +9,12 @@ from uuid import uuid4
 from pydantic import BaseModel
 
 from podcast_agent.llm.base import LLMClient, PromptPayload, prompt_log_metadata
+from podcast_agent.narrative_state import (
+    ASSUMPTION_STATUS_BY_ACTION,
+    MEMORY_THREAD_STATUS_BY_ACTION,
+    QUESTION_STATUS_BY_ACTION,
+    THEORY_STATUS_BY_ACTION,
+)
 from podcast_agent.schemas.models import (
     PodcastMode,
     authorial_passage_target_for_mode,
@@ -858,14 +864,20 @@ class HeuristicLLMClient(LLMClient):
                             "question_moves": [],
                             "memory_thread_moves": [],
                             "carry_forward_memory": [],
-                            "episode_takeaway": "The episode sharpens one pressure line.",
+                            "episode_takeaway": {
+                                "inherited_condition": "A prior structural condition has narrowed the field.",
+                                "proximate_contingency": "A choice still on the table tips it this way.",
+                            },
                         },
                         "host": {
                             "mystery_moves": [],
                             "assumption_moves": [],
                             "theory_moves": [],
                             "intended_revision_beats": [],
-                            "episode_takeaway": "The host leaves with a clearer sense of the governing pressure.",
+                            "episode_takeaway": {
+                                "inherited_condition": "The governing pressure was set up earlier.",
+                                "proximate_contingency": "What the host cannot yet settle is how it was used.",
+                            },
                         },
                     },
                     "promised_beats": promised_beats,
@@ -1453,12 +1465,9 @@ class HeuristicLLMClient(LLMClient):
                 )
                 if text:
                     entry["text"] = text
-                entry["status"] = {
-                    "open": "open",
-                    "advance": "advanced",
-                    "resolve": "resolved",
-                    "reframe": "reframed",
-                }.get(action, entry.get("status", "open"))
+                entry["status"] = QUESTION_STATUS_BY_ACTION.get(
+                    action, entry.get("status", "open")
+                )
                 questions_by_id[question_id] = entry
 
         memory_threads_by_id = {
@@ -1484,12 +1493,9 @@ class HeuristicLLMClient(LLMClient):
                 )
                 if label:
                     entry["label"] = label
-                entry["status"] = {
-                    "open": "open",
-                    "refresh": "refreshed",
-                    "payoff": "paid_off",
-                    "retire": "retired",
-                }.get(action, entry.get("status", "open"))
+                entry["status"] = MEMORY_THREAD_STATUS_BY_ACTION.get(
+                    action, entry.get("status", "open")
+                )
                 memory_threads_by_id[thread_id] = entry
 
         mysteries_by_id = {
@@ -1514,12 +1520,9 @@ class HeuristicLLMClient(LLMClient):
                 )
                 if text:
                     entry["text"] = text
-                entry["status"] = {
-                    "open": "open",
-                    "advance": "advanced",
-                    "resolve": "resolved",
-                    "reframe": "reframed",
-                }.get(action, entry.get("status", "open"))
+                entry["status"] = QUESTION_STATUS_BY_ACTION.get(
+                    action, entry.get("status", "open")
+                )
                 mysteries_by_id[mystery_id] = entry
 
         assumptions_by_id = {
@@ -1547,12 +1550,9 @@ class HeuristicLLMClient(LLMClient):
                     entry["statement"] = revised_statement
                 elif statement:
                     entry["statement"] = statement
-                entry["status"] = {
-                    "introduce": "active",
-                    "weaken": "weakened",
-                    "revise": "revised",
-                    "drop": "dropped",
-                }.get(action, entry.get("status", "active"))
+                entry["status"] = ASSUMPTION_STATUS_BY_ACTION.get(
+                    action, entry.get("status", "active")
+                )
                 assumptions_by_id[assumption_id] = entry
 
         theories_by_id = {
@@ -1577,12 +1577,9 @@ class HeuristicLLMClient(LLMClient):
                 )
                 if statement:
                     entry["statement"] = statement
-                entry["status"] = {
-                    "propose": "proposed",
-                    "strengthen": "strengthened",
-                    "replace": "replaced",
-                    "retire": "retired",
-                }.get(action, entry.get("status", "proposed"))
+                entry["status"] = THEORY_STATUS_BY_ACTION.get(
+                    action, entry.get("status", "proposed")
+                )
                 theories_by_id[theory_id] = entry
 
         recent_revisions = list(host_pre.get("recent_revisions", []) or [])
@@ -1610,8 +1607,8 @@ class HeuristicLLMClient(LLMClient):
                     recent_revisions.append(statement or theory_id)
         recent_revisions = recent_revisions[-4:]
 
-        listener_takeaway = str(listener_agenda.get("episode_takeaway", "") or "").strip()
-        host_takeaway = str(host_agenda.get("episode_takeaway", "") or "").strip()
+        listener_takeaway = listener_agenda.get("episode_takeaway") or None
+        host_takeaway = host_agenda.get("episode_takeaway") or None
         unresolved_mysteries = [
             item
             for item in mysteries_by_id.values()

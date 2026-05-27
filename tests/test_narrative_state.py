@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from podcast_agent.agents.narrative_state_reconciler import (
@@ -16,11 +18,19 @@ from podcast_agent.pipeline.orchestrator import (
 )
 from podcast_agent.schemas.models import (
     ContinuityCarryItem,
+    EpisodeNarrativeAgenda,
+    EpisodeTakeaway,
+    HostEpisodeAgenda,
     HostMoveCue,
+    HostMysteryMove,
+    HostTheoryMove,
+    ListenerEpisodeAgenda,
+    ListenerQuestionMove,
     NarrativeState,
     StrategyEpisode,
 )
 from podcast_agent.schemas.models import SeriesNarratorProfile
+from podcast_agent.narrative_state import apply_agenda_moves, fold_planned_pre_states
 
 
 def test_strategy_episode_backfills_narrative_agenda_from_legacy_contract() -> None:
@@ -113,7 +123,10 @@ def test_build_host_policy_payload_uses_narrative_state_context() -> None:
                 "working_theories": [],
                 "recent_revisions": ["one bad ruler story"],
                 "confidence_posture": "tentative",
-                "last_episode_takeaway": "The institutions were weaker than they looked.",
+                "last_episode_takeaway": {
+                    "inherited_condition": "The institutions were weaker than they looked.",
+                    "proximate_contingency": "Whether anyone would test them was still open.",
+                },
             },
         }
     )
@@ -150,7 +163,10 @@ def test_heuristic_reconciler_updates_listener_and_host_state() -> None:
                     "introduce_explanation_item_ids": ["velayat_faqih"],
                     "introduce_actor_ids": ["bazargan"],
                     "carry_forward_memory": ["The state is weaker than it looks."],
-                    "episode_takeaway": "Parallel institutions are already constraining the cabinet.",
+                    "episode_takeaway": {
+                        "inherited_condition": "Parallel institutions were built before the cabinet sat.",
+                        "proximate_contingency": "Whether the cabinet would defer to them was still being decided.",
+                    },
                 },
                 "host": {
                     "mystery_moves": [
@@ -174,7 +190,10 @@ def test_heuristic_reconciler_updates_listener_and_host_state() -> None:
                             "statement": "The system may have been hollow before it visibly fell.",
                         }
                     ],
-                    "episode_takeaway": "The host now suspects institutional brittleness mattered more than personal unpopularity.",
+                    "episode_takeaway": {
+                        "inherited_condition": "The institutions were brittle before the crisis.",
+                        "proximate_contingency": "The host cannot yet settle how much that, versus unpopularity, decided it.",
+                    },
                 },
             },
         },
@@ -291,7 +310,10 @@ def test_continuity_contract_builds_recap_items_from_state() -> None:
                         "recommended_action": "remind",
                     }
                 ],
-                "last_episode_takeaway": "Earlier pressure still matters.",
+                "last_episode_takeaway": {
+                    "inherited_condition": "Earlier pressure still matters.",
+                    "proximate_contingency": "How it gets used is still open.",
+                },
             },
             "host": {},
         }
@@ -368,3 +390,115 @@ def test_continuity_diagnostics_track_realized_and_missed_items() -> None:
     assert "carry_1" in diagnostics["realized_item_ids"]
     assert "carry_2" in diagnostics["missed_item_ids"]
     assert diagnostics["targeted_feedback"][0]["item_id"] == "carry_2"
+
+
+# ---------------------------------------------------------------------------
+# Deterministic agenda fold (parallel architecture support)
+# ---------------------------------------------------------------------------
+
+
+def test_apply_agenda_moves_transitions_and_preserves_prior() -> None:
+    state = NarrativeState(project_id="proj")
+    a1 = EpisodeNarrativeAgenda(
+        listener=ListenerEpisodeAgenda(
+            question_moves=[
+                ListenerQuestionMove(question_id="q1", action="open", text="Why?")
+            ]
+        ),
+        host=HostEpisodeAgenda(
+            mystery_moves=[HostMysteryMove(mystery_id="m1", action="open", text="Hmm?")],
+            theory_moves=[HostTheoryMove(theory_id="t1", action="propose", statement="T")],
+        ),
+    )
+    s1 = apply_agenda_moves(state, a1)
+    assert [(q.question_id, q.status) for q in s1.listener.questions] == [("q1", "open")]
+    # open mystery -> tentative posture
+    assert s1.host.confidence_posture == "tentative"
+
+    # Next episode resolves q1 and makes no move for m1.
+    a2 = EpisodeNarrativeAgenda(
+        listener=ListenerEpisodeAgenda(
+            question_moves=[ListenerQuestionMove(question_id="q1", action="resolve")]
+        )
+    )
+    s2 = apply_agenda_moves(s1, a2)
+    assert {q.question_id: q.status for q in s2.listener.questions}["q1"] == "resolved"
+    # m1 had no move this episode -> preserved as open.
+    assert {m.mystery_id: m.status for m in s2.host.mysteries}["m1"] == "open"
+
+    # A later episode with no move for q1 must not un-resolve it.
+    s3 = apply_agenda_moves(s2, EpisodeNarrativeAgenda())
+    assert {q.question_id: q.status for q in s3.listener.questions}["q1"] == "resolved"
+
+
+def test_apply_agenda_moves_reframe_stays_live_and_takeaway_propagates() -> None:
+    state = NarrativeState(project_id="proj")
+    agenda = EpisodeNarrativeAgenda(
+        listener=ListenerEpisodeAgenda(
+            question_moves=[
+                ListenerQuestionMove(question_id="q1", action="reframe", text="recast")
+            ],
+            episode_takeaway=EpisodeTakeaway(
+                inherited_condition="IC", proximate_contingency="PC"
+            ),
+        )
+    )
+    s = apply_agenda_moves(state, agenda)
+    assert {q.question_id: q.status for q in s.listener.questions}["q1"] == "reframed"
+    assert s.listener.last_episode_takeaway is not None
+    assert s.listener.last_episode_takeaway.inherited_condition == "IC"
+    assert s.listener.last_episode_takeaway.proximate_contingency == "PC"
+
+
+def _fold_episode(episode_number: int, agenda: dict) -> StrategyEpisode:
+    return StrategyEpisode.model_validate(
+        {
+            "episode_number": episode_number,
+            "title": f"E{episode_number}",
+            "thematic_focus": "focus",
+            "arc_summary": "arc",
+            "unresolved_questions": [],
+            "episode_spine": {
+                "listener_problem": "Who governs?",
+                "episode_answer": "Parallel institutions overrule the cabinet.",
+                "pressure_line": "Offices lose ground to shadow authority.",
+                "core_primitive_ids": [f"p{i}" for i in range(1, 7)],
+                "support_primitive_roles": {"p7": "mechanism", "p8": "stakes"},
+                "recall_primitive_ids": [],
+            },
+            "narrative_agenda": agenda,
+        }
+    )
+
+
+def test_fold_planned_pre_states_is_cumulative_and_deterministic() -> None:
+    eps = [
+        _fold_episode(
+            1,
+            {"listener": {"question_moves": [{"question_id": "q1", "action": "open", "text": "Why?"}]}},
+        ),
+        _fold_episode(
+            2,
+            {"listener": {"question_moves": [{"question_id": "q1", "action": "resolve"}]}},
+        ),
+        _fold_episode(
+            3,
+            {"listener": {"question_moves": [{"question_id": "q2", "action": "open", "text": "And?"}]}},
+        ),
+    ]
+    # Pass episodes out of order to confirm the fold sorts by episode_number.
+    strategy = SimpleNamespace(episodes=list(reversed(eps)))
+
+    pre = fold_planned_pre_states(strategy, "proj")
+
+    # pre[1] is the empty entry state; pre[2] reflects ep1; pre[3] reflects ep1+ep2.
+    assert pre[1].listener.questions == []
+    assert pre[1].next_episode_number == 1
+    assert {q.question_id: q.status for q in pre[2].listener.questions} == {"q1": "open"}
+    assert pre[2].next_episode_number == 2
+    assert {q.question_id: q.status for q in pre[3].listener.questions} == {"q1": "resolved"}
+    assert pre[3].next_episode_number == 3
+
+    # Deterministic: same inputs -> identical fold.
+    pre_again = fold_planned_pre_states(strategy, "proj")
+    assert pre[3].model_dump(mode="json") == pre_again[3].model_dump(mode="json")

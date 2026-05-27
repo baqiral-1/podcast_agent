@@ -111,7 +111,10 @@ def _narrative_state(*, episode_number: int, carry_label: str) -> NarrativeState
                         else "keep_live",
                     }
                 ],
-                "last_episode_takeaway": carry_label,
+                "last_episode_takeaway": {
+                    "inherited_condition": carry_label,
+                    "proximate_contingency": "what came next was not yet settled",
+                },
             },
             "host": {},
         }

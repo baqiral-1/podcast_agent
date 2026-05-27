@@ -21,6 +21,7 @@ from podcast_agent.schemas.models import (
     EpisodePlan,
     EpisodePlanDraft,
     EpisodeSpine,
+    EpisodeTakeaway,
     EventPrimitive,
     FramingBlock,
     HostPresenceBeat,
@@ -424,6 +425,18 @@ class TestThematicProject:
 
         assert passage.claim_certainty == "contested_memory"
         assert passage.counter_source_passage_ids == ["p2", "p3"]
+
+    def test_episode_takeaway_requires_both_agency_parts(self):
+        takeaway = EpisodeTakeaway(
+            inherited_condition="The rival bodies had already been stripped.",
+            proximate_contingency="A printed insult still had to summon the one left standing.",
+        )
+        assert takeaway.inherited_condition
+        assert takeaway.proximate_contingency
+        with pytest.raises(ValidationError):
+            EpisodeTakeaway(inherited_condition="Only the structural half.")
+        with pytest.raises(ValidationError):
+            EpisodeTakeaway(proximate_contingency="Only the choice half.")
 
 
 class TestSynthesisModels:
@@ -1327,6 +1340,63 @@ class TestEpisodeArchitectureModels:
             sections=sections,
             architecture_notes=[],
         )
+
+    @staticmethod
+    def _ap(mode: str, placement: str = "mid") -> dict:
+        return {
+            "passage_id": "p1",
+            "mode": mode,
+            "placement": placement,
+            "claim": "x",
+            "source_primitive_ids": ["et_1"],
+        }
+
+    def _architecture_with_passage_in(
+        self, *, stage_index_from_end: int, mode: str, placement: str = "mid"
+    ) -> dict:
+        """Return an architecture payload (dict) with one authorial passage injected
+        into the section `stage_index_from_end` from the end (1 = close, 2 = answer)."""
+        payload = self._build_architecture(9).model_dump(mode="json")
+        target = payload["sections"][len(payload["sections"]) - stage_index_from_end]
+        target["authorial_passages"] = [self._ap(mode, placement)]
+        return payload
+
+    def test_authorial_passage_rejects_verdict_landing_at_close(self):
+        with pytest.raises(ValidationError, match="placement='close'"):
+            AuthorialPassage.model_validate(self._ap("verdict_landing", "close"))
+
+    def test_authorial_passage_rejects_causal_compression_at_close(self):
+        with pytest.raises(ValidationError, match="placement='close'"):
+            AuthorialPassage.model_validate(self._ap("causal_compression", "close"))
+
+    def test_architecture_accepts_single_verdict_in_answer_section(self):
+        payload = self._architecture_with_passage_in(
+            stage_index_from_end=2, mode="verdict_landing"
+        )
+        architecture = EpisodeArchitecture.model_validate(payload)
+        answer_section = architecture.sections[-2]
+        assert answer_section.authorial_passages[0].mode == "verdict_landing"
+
+    def test_architecture_rejects_verdict_landing_outside_answer_section(self):
+        # section index 1 (from start) is an `advance` stage, not the answer section.
+        payload = self._build_architecture(9).model_dump(mode="json")
+        payload["sections"][1]["authorial_passages"] = [self._ap("verdict_landing")]
+        with pytest.raises(ValidationError, match="answer-stage section"):
+            EpisodeArchitecture.model_validate(payload)
+
+    def test_architecture_rejects_verdict_landing_in_close_section(self):
+        payload = self._architecture_with_passage_in(
+            stage_index_from_end=1, mode="verdict_landing"
+        )
+        with pytest.raises(ValidationError, match="answer-stage section"):
+            EpisodeArchitecture.model_validate(payload)
+
+    def test_architecture_rejects_causal_compression_in_close_section(self):
+        payload = self._architecture_with_passage_in(
+            stage_index_from_end=1, mode="causal_compression"
+        )
+        with pytest.raises(ValidationError, match="close section may not carry"):
+            EpisodeArchitecture.model_validate(payload)
 
     def test_episode_architecture_rejects_removed_target_section_count_field(self):
         with pytest.raises(ValidationError, match="target_section_count"):

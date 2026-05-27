@@ -2261,6 +2261,15 @@ def _coerce_continuity_carry_items(
     return coerced
 
 
+class EpisodeTakeaway(StrictModel):
+    """Two-part takeaway that distributes agency: the inherited structural condition that
+    made an outcome available, and the proximate, still-live choice(s) that had to be made
+    for it to occur. Two required parts forbid a single 'not-X, it was-Y' totalization."""
+
+    inherited_condition: str = Field(min_length=1)
+    proximate_contingency: str = Field(min_length=1)
+
+
 class ListenerEpisodeAgenda(StrictModel):
     introduce_explanation_item_ids: list[str] = Field(default_factory=list, max_length=4)
     remind_explanation_item_ids: list[str] = Field(default_factory=list, max_length=4)
@@ -2271,7 +2280,7 @@ class ListenerEpisodeAgenda(StrictModel):
         default_factory=list, max_length=6
     )
     carry_forward_memory: list[ContinuityCarryItem] = Field(default_factory=list, max_length=4)
-    episode_takeaway: str = ""
+    episode_takeaway: EpisodeTakeaway | None = None
 
     @field_validator("carry_forward_memory", mode="before")
     @classmethod
@@ -2321,7 +2330,7 @@ class HostEpisodeAgenda(StrictModel):
     assumption_moves: list[HostAssumptionMove] = Field(default_factory=list, max_length=6)
     theory_moves: list[HostTheoryMove] = Field(default_factory=list, max_length=6)
     intended_revision_beats: list[str] = Field(default_factory=list, max_length=4)
-    episode_takeaway: str = ""
+    episode_takeaway: EpisodeTakeaway | None = None
 
 
 class EpisodeNarrativeAgenda(StrictModel):
@@ -2359,7 +2368,7 @@ class ListenerNarrativeState(StrictModel):
     memory_threads: list[ListenerMemoryThreadState] = Field(default_factory=list)
     threads: list[ListenerThreadState] = Field(default_factory=list)
     carry_forward_memory: list[ContinuityCarryItem] = Field(default_factory=list, max_length=4)
-    last_episode_takeaway: str = ""
+    last_episode_takeaway: EpisodeTakeaway | None = None
 
     @field_validator("carry_forward_memory", mode="before")
     @classmethod
@@ -2391,7 +2400,7 @@ class HostNarrativeState(StrictModel):
     working_theories: list[HostTheoryState] = Field(default_factory=list)
     recent_revisions: list[str] = Field(default_factory=list, max_length=4)
     confidence_posture: Literal["tentative", "mixed", "grounded"] = "mixed"
-    last_episode_takeaway: str = ""
+    last_episode_takeaway: EpisodeTakeaway | None = None
 
 
 class NarrativeState(StrictModel):
@@ -2415,9 +2424,9 @@ class NarrativeStateDelta(StrictModel):
     listener_carry_forward_memory: list[ContinuityCarryItem] = Field(
         default_factory=list, max_length=4
     )
-    listener_episode_takeaway: str = ""
+    listener_episode_takeaway: EpisodeTakeaway | None = None
     host_recent_revisions: list[str] = Field(default_factory=list, max_length=4)
-    host_episode_takeaway: str = ""
+    host_episode_takeaway: EpisodeTakeaway | None = None
     host_confidence_posture: Literal["tentative", "mixed", "grounded"] = "mixed"
 
     @field_validator("listener_carry_forward_memory", mode="before")
@@ -3210,6 +3219,18 @@ class AuthorialPassage(StrictModel):
     must_name_terms: list[str] = Field(default_factory=list, max_length=4)
     budget_sentences: Literal[2, 3, 4, 5, 6] = 3
 
+    @model_validator(mode="after")
+    def validate_placement_for_mode(self) -> "AuthorialPassage":
+        if self.placement == "close" and self.mode in {
+            "verdict_landing",
+            "causal_compression",
+        }:
+            raise ValueError(
+                "verdict_landing/causal_compression may not use placement='close'; "
+                "the section close carries live pressure, not a landed verdict"
+            )
+        return self
+
 
 class TermExplanationPlan(StrictModel):
     item_id: str = Field(min_length=1)
@@ -3547,6 +3568,24 @@ class EpisodeArchitecture(StrictModel):
             raise ValueError(
                 "the answer stage must not be on an opening-purpose section"
             )
+        # One verdict, only at the answer section; the close section exits on live pressure.
+        for section in self.sections:
+            stage = section.section_progression.stage
+            has_verdict = any(
+                ap.mode == "verdict_landing" for ap in section.authorial_passages
+            )
+            if has_verdict and stage != ProgressionStage.ANSWER:
+                raise ValueError(
+                    "verdict_landing may only appear in the answer-stage section; "
+                    f"found in {section.section_id}"
+                )
+            if stage == ProgressionStage.CLOSE and any(
+                ap.mode == "causal_compression" for ap in section.authorial_passages
+            ):
+                raise ValueError(
+                    "the close section may not carry causal_compression; "
+                    "it hands off section_progression.what_remains_live"
+                )
         for section in self.sections:
             is_close_stage = (
                 section.section_progression.stage == ProgressionStage.CLOSE

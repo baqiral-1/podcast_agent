@@ -850,7 +850,10 @@ def primitive_function_tagging_instructions(
         BORDERLINE CASES AND TIE-BREAKS
         - If choosing between `stake` and `cost`, use `stake` for exposure, risk, or what can still be lost; use `cost` for damage, payment, injury, humiliation, or foreclosed possibility already borne.
         - If choosing between `complication` and `contest`, use `contest` only when there are genuinely competing readings; otherwise use `complication` for a clean judgment that will not hold.
-        - If choosing between `pivot` and high salience, reserve `pivot` for a primitive that materially changes later possibility rather than one that is merely central.
+        - If choosing between `pivot` and high salience, reserve `pivot` for a primitive that
+          opened a fork later action took — not for an outcome treated as foreordained, and not for
+          one merely central; prefer `complication` or `contest` when the real job is that a clean
+          judgment will not hold or readings genuinely compete.
         - If tempted to assign `recurrence`, require plausible callback, residue, repetition, or memory burden beyond conceptual resemblance.
         - If a primitive is vivid but not structurally meaningful, `texture` may fit while salience stays modest.
 
@@ -1370,7 +1373,8 @@ def narrative_strategy_enrichment_instructions(
         - `intellectual_obsessions`: 2-4 questions this host keeps circling back to in THIS material.
         - `drawn_to` / `skeptical_of`: named figures or claims the host is, on the evidence, sympathetic to or wary of.
         - `hard_to_sit_with`: 1-3 facts in the corpus the host finds genuinely difficult or surprising.
-        - `recurring_stances`: priors the host holds and may revise on air across the season.
+        - `recurring_stances`: priors that shape how the host reads — surfaced as opinion or
+          revised on air, never recited verbatim as a section-closing maxim.
         - `temperament`: one line naming the analytic disposition (e.g. "patient with institutions, impatient with euphemism").
         HONESTY CONTRACT — the persona is an AI host's stance. It NEVER claims a body, family,
         nationality, hometown, lived memory, or having "been there." No invented biography.
@@ -1429,10 +1433,14 @@ def narrative_strategy_enrichment_instructions(
         - what the listener is newly allowed to understand
         - which terms/institutions get introduced versus merely reminded
         - which actors get a real first introduction versus only a reminder
-        - what question is opened, advanced, resolved, or reframed
+        - what question is opened, advanced, resolved, or reframed — a question about whether an
+          outcome was inevitable, necessary, or foreordained must terminate in `reframe`
+          (dissolve the binary into inherited condition + proximate contingency), never `resolve`
         - what memory thread is opened, refreshed, paid off, or retired
         - what carry-forward memory burden the next episode should inherit
-        - what the listener’s episode takeaway should be
+        - the listener’s episode takeaway as two parts: `inherited_condition` (what made the outcome
+          available) and `proximate_contingency` (the still-live choice(s) that had to be made for it
+          to occur) — never one “not-X, it was-Y / residue of” verdict
 
         HOST AGENDA
         The host side must answer:
@@ -1440,7 +1448,8 @@ def narrative_strategy_enrichment_instructions(
         - what assumption is being weakened or revised
         - what working theory is being proposed, strengthened, replaced, or retired
         - what explicit revision beats should be felt across the season
-        - what the host’s episode takeaway is
+        - the host’s episode takeaway, in the same two-part `inherited_condition` /
+          `proximate_contingency` shape
 
         HOST MOVE OUTPUT RULES
         - `mystery_moves.open` must include `text`
@@ -1502,7 +1511,7 @@ def episode_planning_instructions(
         - `scene_job_budget`         explicit scene-job allocation contract for this mode
         - `available_passages`       evidence available to this episode
         - `host_policy`              series-level narrator policy for host moves
-        - `narrative_state_pre`      authoritative listener/host state entering this episode, already reconciled after the previous episode's architecture
+        - `narrative_state_pre`      listener/host state entering this episode, folded deterministically from the planned cross-episode agenda (intended progression, not a realization of prior episodes)
         - `continuity_contract_pre`  compact continuity obligations derived from the incoming state
         - `actor_metadata`           episode-relevant canonical actor context
         - `planning_feedback`        optional retry feedback from the orchestrator; if present, correct only the named contract failure and preserve valid structure
@@ -1590,11 +1599,11 @@ def episode_planning_instructions(
         - The final architecture `closing` section must expand to exactly one scene card.
         - That scene card must be the episode's last scene card and must use `scene_job = close`.
         - It must keep `estimated_duration_seconds` ≤ 120.
-        - It may land verdict, payoff, or consequence.
         - It must NOT introduce a fresh mechanism, counterpressure chain, parallel
           argument, new institution, or new actor thread. (This is the two-endings
           failure.)
-        - The closing card may exit, constrain, or reframe. It may not perform the answer job again.
+        - The closing card hands off live pressure; it may exit, constrain, or reframe, but may not
+          land a verdict or perform the answer job again.
 
         ==============================================================================
         SCENE CARDS — REQUIRED FIELDS
@@ -1924,17 +1933,17 @@ def narrative_state_reconciler_instructions() -> str:
         """
         You are the `narrative_state_reconciliation` stage of a historical podcast pipeline.
 
-        Your job is to reconcile the season's authoritative `NarrativeState` after
-        one episode has been architected. This is not a prose-writing pass. You are
-        producing the authoritative post-architecture state that the NEXT episode
-        will inherit.
+        Your job is to reconcile the realized `NarrativeState` after one episode has
+        been architected. This is not a prose-writing pass. You are producing the
+        realized post-architecture state used for THIS episode's writing (host posture,
+        recent revisions) and the season's continuity record.
 
         ==============================================================================
         INPUT
         ==============================================================================
         - `episode_number`
         - `project_id`
-        - `narrative_state_pre`  the authoritative state entering this episode
+        - `narrative_state_pre`  the planned state entering this episode (folded from the cross-episode agenda)
         - `strategy_episode`     the episode-level agenda and intended commitments
         - `architecture`         section-level realization of those commitments
 
@@ -1982,7 +1991,8 @@ def narrative_state_reconciler_instructions() -> str:
         3. Use `architecture` to see which listener-facing and host-facing moves were
            actually staged.
         4. Produce the smallest correct `state_post` that reflects what this episode
-           actually commits the next episode to inherit.
+           actually realized — used for this episode's writing (host posture, recent
+           revisions) and the continuity record.
 
         Prefer realized structure over vague intention:
         - if the agenda says to open a question but no section-level
@@ -2002,14 +2012,15 @@ def narrative_state_reconciler_instructions() -> str:
         - `section_progression.state_effects.memory_thread_moves` are the primary source of callback /
           carry-forward thread state.
         - Preserve existing questions and threads unless this episode clearly advances,
-          reframes, pays off, retires, or resolves them.
+          reframes, pays off, retires, or resolves them. A `reframe`d question stays live
+          (status `reframed`) and carries forward; only `resolve` closes it out.
         - `carry_forward_memory` should stay short and should reflect what the listener
           is meant to carry into the next episode, not a summary of everything that happened.
         - Each `carry_forward_memory` entry is structured continuity metadata,
           not drafted prose. Preserve item identity and metadata when the burden
           remains live.
-        - `last_episode_takeaway` should capture the episode's landed takeaway, not a
-          teaser for the next episode.
+        - `last_episode_takeaway` should capture the episode's landed two-part takeaway
+          (`inherited_condition` + `proximate_contingency`), not a teaser for the next episode.
 
         ==============================================================================
         HOST RECONCILIATION RULES
@@ -2021,13 +2032,11 @@ def narrative_state_reconciler_instructions() -> str:
           what the host still believes, has weakened, revised, or dropped.
         - Use `section_progression.state_effects.host_theory_moves` as the primary realized source for the
           host's current working explanation of events.
-        - `recent_revisions` should capture notable epistemic movement, especially
-          changed assumptions, changed theories, and mystery movement that the next
-          episode might reasonably build on.
-        - `confidence_posture` should reflect the host's current overall footing:
-          - `tentative` when key mysteries remain open or a prior theory was materially weakened
-          - `mixed` when the host has some grounded conclusions but still unresolved pressure
-          - `grounded` when the episode substantially stabilizes the host's frame
+        - `recent_revisions` must capture 2-4 items of epistemic movement (changed assumptions,
+          changed theories, mystery movement) for the next episode to build on; do not leave empty.
+        - `confidence_posture` reflects the host's footing and should default to `tentative` or
+          `mixed` while the inevitability question stays live; reserve `grounded` for an episode
+          that genuinely stabilizes the frame — not the default at series end.
 
         ==============================================================================
         HARD CONSTRAINTS
@@ -2163,7 +2172,7 @@ def episode_architecture_instructions(
         - `episode`: one episode object from `narrative_strategy`
         - `episode_scenes` (optional): advisory scene candidates already narrowed to this episode; use them to judge what is concretely stageable here, not as a fixed sequence
         - `narrator_profile` (optional): strategy-level narrator method for explanation density and clarifier tolerance
-        - `narrative_state` (optional): current listener and host state entering this episode
+        - `narrative_state` (optional): listener/host state entering this episode, folded from the planned cross-episode agenda (intended progression, not a realization of prior episodes)
         - `series_explanation_registry` (optional): strategy-owned reusable term/institution registry
         - `series_actor_explanation_registry` (optional): strategy-owned reusable actor-introduction registry
         - `synthesis_map`: only the primitives already assigned to this episode
@@ -2230,10 +2239,10 @@ def episode_architecture_instructions(
         - The final section must use `purpose` = `closing` (aligned with `stage = close`).
         - The final `closing` section must have `approx_runtime_minutes` at or below 2.0.
         - Do not build a second ending.
-        - The `closing` section may answer, constrain, or reframe the listener question, but it may not
-          introduce new load-bearing claims, reopen contestation, or start a new mechanism chain.
+        - The `closing` section hands off `section_progression.what_remains_live`; it may constrain or
+          reframe the listener question but may not answer it, land a verdict, introduce new load-bearing
+          claims, reopen contestation, or start a new mechanism chain.
         - The `answer` stage should not land on the same section as `major_turn_section_id`.
-        - The closing section is not the place to perform answer work again.
         - Every item in `episode.promised_beats` must be accounted for exactly once in `promised_beat_decisions`.
         - Each promised beat decision must be one of: `stage`, `defer`, or `drop`.
         - If a promised beat is `stage`, attach the `section_id` that owns it.
@@ -2279,13 +2288,18 @@ def episode_architecture_instructions(
         - {dense_section_guidance}
         - {overage_guidance}
         - `authorial_passages` should reserve real explanatory work such as doctrinal unpacking,
-          institutional clarification, quote-then-gloss, causal compression, comparative aside,
-          or verdict landing.
+          institutional clarification, quote-then-gloss, comparative aside, or the single
+          verdict landing. The verdict landing must name both the inherited condition AND the
+          proximate contingency (mirroring the episode takeaway); mark `claim_certainty` honestly
+          (`probable`/`contested_memory` where the evidence is genuinely disputed, not a reflexive
+          `settled`).
         - `authorial_passages.mode` carries the explanatory job and must be one of:
           `quote_then_gloss`, `doctrinal_unpack`, `institutional_clarifier`,
           `causal_compression`, `comparative_aside`, `verdict_landing`.
         - `authorial_passages.placement` carries explanatory placement inside the
-          section and must be one of: `open`, `mid`, `close`.
+          section and must be one of: `open`, `mid`, `close`; `verdict_landing` and
+          `causal_compression` may not use `close` (the section close carries live pressure,
+          not a landed verdict), and `verdict_landing` may appear only in the answer-stage section.
         - Treat `comparative_aside` as comparison-with-return, not as a stray simile.
         - A good `comparative_aside` usually does: concrete anchor -> carried comparison -> explicit return.
         - Prefer `placement = mid` for `comparative_aside`; reserve `close` for rare benchmark or measuring-stick landings.
@@ -2349,12 +2363,16 @@ def episode_architecture_instructions(
         - Do not leave state changes implicit inside `must_stage_beats`.
         - Do not stash state changes in `architecture_notes`.
         - Do not dump all host evolution into the closing section.
-        - `open`, `introduce`, and `propose` moves usually belong in `setup`/`advance` sections.
+        - `open`, `introduce`, and `propose` moves usually belong in `setup`/`advance` sections; a
+          `host_theory_moves` `propose` must reach a `strengthen` or `replace` by episode end (no
+          orphaned theory left as settled fact).
         - `advance` and `weaken` moves usually belong near the turn.
         - `resolve`, `revise`, `strengthen`, and `replace` moves usually belong in the
-          `answer` or `afterpressure` sections.
-        - `reframe`, `retire`, and `drop` moves usually belong in `afterpressure` or `close` only
-          when they are genuinely staged there.
+          `answer` or `afterpressure` sections; an inevitability/necessity question must not
+          `resolve` — it `reframe`s instead.
+        - `reframe`, `retire`, and `drop` moves usually belong in `afterpressure` or `close`; a
+          reframed inevitability question dissolves the binary into inherited condition +
+          proximate contingency and stays live for the next episode.
 
         HOST BEATS (where the host surfaces)
         - `host_beat_designations` mark the 0-3 moments in THIS section where the host should
@@ -2485,13 +2503,14 @@ def _writing_host_stance_guidance() -> str:
           - surprise line: "Which is odd, because ..."
           - consequence line: "And that changes the whole calculation."
           - narrowing line: "So now the question is ..."
-          - genuine question: a real unresolved question about the analysis,
-            then the evidence — "Did Bazargan know what bringing them in would
-            mean? On the record, we can't say. Watch what he does next." At most
-            once an episode.
-          - on-air revision: recast a first formulation once, landing sharper —
-            "Call it a coalition. No — sharper: a holding pen." At most once an
-            episode, and it must resolve to a more precise claim, never to doubt.
+          - genuine question: realize a section's planned `host_mystery_moves` (action `open`)
+            at its `host_beat_designation` (kind `mystery`) — a real unresolved question, then the
+            evidence: "Did Bazargan know what bringing them in would mean? On the record, we can't
+            say. Watch what he does next."
+          - on-air revision: realize a section's planned `host_assumption_moves` (action `revise`,
+            with `revised_statement`) at its `host_beat_designation` (kind `assumption`) — recast a
+            formulation sharper: "Call it a coalition. No — sharper: a holding pen." Resolves to a
+            more precise claim, never to doubt.
           - persona aside: one budgeted line of real stake or obsession grounded in
             `host_policy.persona`, then straight back to the evidence — "I keep
             getting stuck on this one: a state this strong, undone by a cassette
@@ -2528,7 +2547,7 @@ def _writing_host_stance_guidance() -> str:
           documentary line, rewrite it into active spoken English.
         - No tasteful recap.
         - No prestige-documentary filler.
-        - No elegant second endings.
+        - No elegant second endings, and no recited persona maxim/aphorism as a section close.
         - No abstract connective tissue that never cashes out in human terms.
         """
     ).strip()
@@ -2553,10 +2572,10 @@ def _writing_sentence_models_guidance() -> str:
           - "That choice comes back later with a cost attached."
 
         VERDICT SHAPE — VARY THE FRAME
-        - The antithetical-parallel ("It is not X. It is Y." / "X is real, Y is
-          not." / "Not A. B.") is one verdict tool, not the only one. It is the
-          frame this kind of writing falls into by default; that is exactly why
-          it should be rationed. Reserve it for three or four landings an episode.
+        - The antithetical-parallel ("It is not X. It is Y." / "Not A. B.") collapses a
+          contingent outcome into a single totalization; do not use it to deliver the episode
+          verdict. The verdict names the inherited condition AND the proximate choice that
+          still had to be made. Reserve the antithetical frame for at most one minor landing.
         - Placing a verdict does not require that frame. Land most claims in
           other shapes:
           - flat declarative: "Beheshti was killed."
@@ -2635,7 +2654,7 @@ def episode_writing_instructions() -> str:
             - `books`: compact book metadata.
             - `skip_grounding`: whether a later grounding pass will be skipped.
             - `host_policy`: narrator policy for host density, tone, and pronouns.
-            - Optional `narrative_state_pre`: listener/host state entering this episode.
+            - Optional `narrative_state_pre`: planned listener/host state entering this episode (cross-episode agenda fold).
             - Optional `narrative_state_post`: authoritative post-architecture listener/host state after this episode.
             - Optional `continuity_contract_pre`: compact inherited continuity burdens for recap/opening recall.
             - Optional `continuity_contract_post`: compact outgoing continuity burdens that should survive as residue.
@@ -2727,7 +2746,7 @@ def episode_writing_instructions() -> str:
             - Read each scene's phase buckets in order:
               - `open`: shape how the beat enters and what is foregrounded first
               - `pivot`: sharpen what becomes legible after concrete material lands
-              - `close`: control the residue, verdict, callback, or pressure at the end
+              - `close`: control the residue, callback, or live pressure at the end
             - Planned `host_moves` should shape the scene's narration, not just
               insert a sentence.
             - If a phase has two cues, the first is primary and the second supports it.
@@ -2983,7 +3002,7 @@ def episode_writing_no_citations_instructions() -> str:
           - Read the scene's `host_moves` phase buckets in order:
             - `open`: shape how the beat enters and what is foregrounded first
             - `pivot`: clarify, contrast, or sharpen meaning after evidence lands
-            - `close`: control the residue, verdict, callback, or pressure at the end
+            - `close`: control the residue, callback, or live pressure at the end
             - if a phase has two cues, the first is primary and the second supports it
             - let `surface_mode` and `address_mode` decide whether a cue is woven through the scene, rendered distinctly, or both
           - Use optional `passages[].chapter_context` only when present.
@@ -3515,10 +3534,10 @@ def style_audit_instructions() -> str:
           cleanly at its intended opening, pivot, or closing position.
         - Cut reverse-expanded planning cues when they survive as managerial
           prose instead of natural narration.
-        - Preserve planned quote-then-gloss, doctrinal unpacking,
-          institutional clarification, causal compression, comparative aside,
-          or verdict landing when they are clearly anchored in the existing
-          prose.
+        - Preserve planned quote-then-gloss, doctrinal unpacking, institutional clarification,
+          or comparative aside when clearly anchored in the existing prose. Strip a verdict landing
+          or causal compression that appears in the close section — only the answer-stage section
+          carries the strongest explicit landing (see ALLOWED EDITS).
         - Prefer cutting visible production-frame phrasing before cutting a
           real clarifier or payoff line.
         - Rewrite review-essay, prestige-documentary, or elegant-recap residue

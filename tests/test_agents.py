@@ -1653,7 +1653,8 @@ class TestRedesignedAgents:
         assert "`comparative_aside`" in prompt
         assert "`verdict_landing`" in prompt
         assert "`authorial_passages.placement` carries explanatory placement inside the" in prompt
-        assert "section and must be one of: `open`, `mid`, `close`." in prompt
+        assert "section and must be one of: `open`, `mid`, `close`;" in prompt
+        assert "may not use `close`" in prompt
         assert "Treat `comparative_aside` as comparison-with-return" in prompt
         assert "Prefer `placement = mid` for `comparative_aside`" in prompt
         assert "prefer them in your JSON output when possible" not in prompt

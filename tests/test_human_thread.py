@@ -14,6 +14,7 @@ from podcast_agent.schemas.models import (
     HumanThread,
     HumanThreadMember,
     NarratorPersona,
+    PodcastMode,
     PrimitiveSalience,
     PrimitiveSubstrate,
     SectionThreadRef,
@@ -24,6 +25,7 @@ from podcast_agent.schemas.models import (
 from podcast_agent.pipeline.orchestrator import (
     _build_host_policy_payload,
     _build_human_thread_candidate_index,
+    _human_thread_candidate_cap_for_mode,
 )
 
 
@@ -260,6 +262,11 @@ def test_candidate_index_ranks_coverage_over_fame():
     # the thin famous actor is present but ranked below the situated carrier
     shah = next(c for c in ranked if c["actor_id"] == "the_shah")
     assert ranked.index(shah) > 0
+
+
+def test_human_thread_candidate_cap_varies_by_mode():
+    assert _human_thread_candidate_cap_for_mode(PodcastMode.MINIFIED) == 12
+    assert _human_thread_candidate_cap_for_mode(PodcastMode.FULL) == 40
 
 
 def test_section_validates_without_thread_binding():

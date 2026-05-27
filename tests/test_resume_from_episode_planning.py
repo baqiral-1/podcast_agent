@@ -416,7 +416,7 @@ def _build_project_dir(tmp_path: Path) -> Path:
                 "questions": [],
                 "memory_threads": [],
                 "carry_forward_memory": [],
-                "last_episode_takeaway": "",
+                "last_episode_takeaway": None,
             },
             "host": {
                 "mysteries": [],
@@ -424,7 +424,7 @@ def _build_project_dir(tmp_path: Path) -> Path:
                 "working_theories": [],
                 "recent_revisions": [],
                 "confidence_posture": "mixed",
-                "last_episode_takeaway": "",
+                "last_episode_takeaway": None,
             },
         }
     )
