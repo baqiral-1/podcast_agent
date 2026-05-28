@@ -29,16 +29,20 @@ class NarrativeStrategySkeletonAgent(Agent):
     instructions = narrative_strategy_skeleton_instructions()
 
     @staticmethod
-    def _primitive_target_bounds(payload: dict) -> tuple[int, int, int, int, int]:
+    def _primitive_target_bounds(
+        payload: dict,
+    ) -> tuple[int, int, int, int, int, int, int]:
         project = payload.get("project")
         if not isinstance(project, dict):
-            return 8, 11, 9, 13, 3
+            return 8, 11, 9, 13, 3, 12, 18
         return (
             int(project.get("episode_spine_core_primitive_target_min", 8)),
             int(project.get("episode_spine_core_primitive_target_max", 11)),
             int(project.get("episode_spine_support_primitive_target_min", 9)),
             int(project.get("episode_spine_support_primitive_target_max", 13)),
             int(project.get("episode_spine_recall_primitive_target_max", 3)),
+            int(project.get("episode_spine_excerpt_target_min", 12)),
+            int(project.get("episode_spine_excerpt_target_max", 18)),
         )
 
     @staticmethod
@@ -59,6 +63,8 @@ class NarrativeStrategySkeletonAgent(Agent):
             support_target_min,
             support_target_max,
             recall_target_max,
+            excerpt_target_min,
+            excerpt_target_max,
         ) = self._primitive_target_bounds(payload)
         return narrative_strategy_skeleton_instructions(
             core_primitive_target_min=core_target_min,
@@ -66,6 +72,8 @@ class NarrativeStrategySkeletonAgent(Agent):
             support_primitive_target_min=support_target_min,
             support_primitive_target_max=support_target_max,
             recall_primitive_target_max=recall_target_max,
+            excerpt_target_min=excerpt_target_min,
+            excerpt_target_max=excerpt_target_max,
         )
 
     def validate_result(
@@ -77,6 +85,8 @@ class NarrativeStrategySkeletonAgent(Agent):
             support_target_min,
             support_target_max,
             recall_target_max,
+            excerpt_target_min,
+            excerpt_target_max,
         ) = self._primitive_target_bounds(payload)
         project = payload.get("project")
         has_project_context = isinstance(project, dict)
@@ -113,6 +123,8 @@ class NarrativeStrategySkeletonAgent(Agent):
                 support_target_min=support_target_min,
                 support_target_max=support_target_max,
                 recall_target_max=recall_target_max,
+                excerpt_target_min=excerpt_target_min,
+                excerpt_target_max=excerpt_target_max,
             )
             if primitive_by_id:
                 if not any(
@@ -180,6 +192,8 @@ class NarrativeStrategySkeletonAgent(Agent):
             support_target_min,
             support_target_max,
             recall_target_max,
+            _excerpt_target_min,
+            _excerpt_target_max,
         ) = self._primitive_target_bounds(payload)
         raw_payload = exc.data.get("raw_payload")
         episode_feedback = self._episode_feedback_from_raw_payload(
@@ -498,6 +512,7 @@ class NarrativeStrategySkeletonAgent(Agent):
         actor_metadata: dict | None = None,
         strategy_skeleton_feedback: dict | None = None,
         human_thread_candidates: list[dict] | None = None,
+        excerpts: list[dict] | None = None,
     ) -> dict:
         payload = {
             "synthesis_map": synthesis_map,
@@ -505,6 +520,8 @@ class NarrativeStrategySkeletonAgent(Agent):
             "recommended_episode_count_min": recommended_episode_count_min,
             "recommended_episode_count_max": recommended_episode_count_max,
         }
+        if excerpts is not None:
+            payload["excerpts"] = excerpts
         if scene_discovery is not None:
             payload["scene_discovery"] = scene_discovery
         if actor_metadata is not None:

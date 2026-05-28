@@ -369,6 +369,11 @@ class PipelineConfig(StrictModel):
     episode_spine_support_primitive_target_min: int = Field(default=6, ge=1)
     episode_spine_support_primitive_target_max: int = Field(default=9, ge=1)
     episode_spine_recall_primitive_target_max: int = Field(default=2, ge=0)
+    episode_spine_excerpt_target_min: int = Field(default=12, ge=0)
+    episode_spine_excerpt_target_max: int = Field(default=18, ge=0)
+    excerpt_extraction_count_min: int = Field(default=78, ge=0)
+    excerpt_extraction_count_max: int = Field(default=130, ge=0)
+    excerpt_extraction_total_passage_cap: int = Field(default=400, ge=1)
     narrative_strategy_episode_count_min: int = Field(default=10, ge=1)
     narrative_strategy_episode_count_max: int = Field(default=16, ge=1)
     min_episode_minutes: float = Field(default=90.0, gt=0.0)
@@ -575,6 +580,11 @@ def resolve_pipeline_config_for_mode(config: "PipelineConfig") -> "PipelineConfi
             "episode_spine_support_primitive_target_min": 4,
             "episode_spine_support_primitive_target_max": 6,
             "episode_spine_recall_primitive_target_max": 1,
+            "episode_spine_excerpt_target_min": 4,
+            "episode_spine_excerpt_target_max": 7,
+            "excerpt_extraction_count_min": 23,
+            "excerpt_extraction_count_max": 36,
+            "excerpt_extraction_total_passage_cap": 120,
             "narrative_strategy_episode_count_min": 2,
             "narrative_strategy_episode_count_max": 4,
             "episode_writing_batch_count": 2,
@@ -598,6 +608,11 @@ def resolve_pipeline_config_for_mode(config: "PipelineConfig") -> "PipelineConfi
             "episode_spine_support_primitive_target_min": 6,
             "episode_spine_support_primitive_target_max": 9,
             "episode_spine_recall_primitive_target_max": 2,
+            "episode_spine_excerpt_target_min": 12,
+            "episode_spine_excerpt_target_max": 18,
+            "excerpt_extraction_count_min": 78,
+            "excerpt_extraction_count_max": 130,
+            "excerpt_extraction_total_passage_cap": 400,
             "narrative_strategy_episode_count_min": 10,
             "narrative_strategy_episode_count_max": 16,
             "episode_writing_batch_count": 5,
@@ -857,7 +872,6 @@ class ThematicCorpus(StrictModel):
 class PrimitiveSubstrate(str, Enum):
     EVENTS = "events"
     ACTS = "acts"
-    UTTERANCES = "utterances"
     ACTOR_PORTRAITS = "actor_portraits"
     MECHANISMS = "mechanisms"
     CONDITIONS = "conditions"
@@ -1102,24 +1116,6 @@ class ActPrimitive(BaseSynthesisPrimitive):
     immediate_result: str = ""
 
 
-class UtterancePrimitive(BaseSynthesisPrimitive):
-    substrate: Literal[PrimitiveSubstrate.UTTERANCES]
-    utterance_type: Literal[
-        "speech",
-        "writing",
-        "broadcast",
-        "decree",
-        "testimony",
-        "manifesto",
-        "letter",
-        "other",
-    ] = "other"
-    speaker: str = ""
-    audience: str = ""
-    utterance_summary: str = Field(min_length=1)
-    key_quote: str = ""
-
-
 class ActorPrimitive(BaseSynthesisPrimitive):
     substrate: Literal[PrimitiveSubstrate.ACTOR_PORTRAITS]
     focus_actor_id: str | None = None
@@ -1150,9 +1146,7 @@ class ArtifactPrimitive(BaseSynthesisPrimitive):
     artifact_type: Literal[
         "object",
         "place",
-        "document",
         "image",
-        "slogan",
         "ritual",
         "gesture",
         "detail",
@@ -1179,7 +1173,6 @@ class ReadingPrimitive(BaseSynthesisPrimitive):
 AnySynthesisPrimitive = Annotated[
     EventPrimitive
     | ActPrimitive
-    | UtterancePrimitive
     | ActorPrimitive
     | MechanismPrimitive
     | ConditionPrimitive
@@ -1279,24 +1272,6 @@ class ExtractionActPrimitive(BaseExtractionPrimitive):
     immediate_result: str = ""
 
 
-class ExtractionUtterancePrimitive(BaseExtractionPrimitive):
-    substrate: Literal[PrimitiveSubstrate.UTTERANCES]
-    utterance_type: Literal[
-        "speech",
-        "writing",
-        "broadcast",
-        "decree",
-        "testimony",
-        "manifesto",
-        "letter",
-        "other",
-    ] = "other"
-    speaker: str = ""
-    audience: str = ""
-    utterance_summary: str = Field(min_length=1)
-    key_quote: str = ""
-
-
 class ExtractionActorPrimitive(BaseExtractionPrimitive):
     substrate: Literal[PrimitiveSubstrate.ACTOR_PORTRAITS]
     focus_actor_id: str | None = None
@@ -1320,9 +1295,7 @@ class ExtractedArtifactPrimitive(BaseSynthesisPrimitive):
     artifact_type: Literal[
         "object",
         "place",
-        "document",
         "image",
-        "slogan",
         "ritual",
         "gesture",
         "detail",
@@ -1353,9 +1326,7 @@ class ExtractionArtifactPrimitive(BaseExtractionPrimitive):
     artifact_type: Literal[
         "object",
         "place",
-        "document",
         "image",
-        "slogan",
         "ritual",
         "gesture",
         "detail",
@@ -1382,7 +1353,6 @@ class ExtractionReadingPrimitive(BaseExtractionPrimitive):
 AnyExtractionSynthesisPrimitive = Annotated[
     ExtractionEventPrimitive
     | ExtractionActPrimitive
-    | ExtractionUtterancePrimitive
     | ExtractionActorPrimitive
     | ExtractionMechanismPrimitive
     | ExtractionConditionPrimitive
@@ -1395,7 +1365,6 @@ AnyExtractionSynthesisPrimitive = Annotated[
 AnyExtractedSynthesisPrimitive = Annotated[
     EventPrimitive
     | ActPrimitive
-    | UtterancePrimitive
     | ActorPrimitive
     | ExtractedMechanismPrimitive
     | ConditionPrimitive
@@ -1415,7 +1384,6 @@ PRIMITIVE_FUNCTION_SET = set(PRIMITIVE_FUNCTIONS)
 FULL_PRIMITIVE_SUBSTRATE_TARGET_RANGES: dict[str, tuple[int, int]] = {
     "events": (87, 120),
     "acts": (45, 59),
-    "utterances": (12, 17),
     "actor_portraits": (18, 24),
     "mechanisms": (37, 51),
     "conditions": (21, 27),
@@ -1425,7 +1393,6 @@ FULL_PRIMITIVE_SUBSTRATE_TARGET_RANGES: dict[str, tuple[int, int]] = {
 MINIFIED_PRIMITIVE_SUBSTRATE_TARGET_RANGES: dict[str, tuple[int, int]] = {
     "events": (19, 27),
     "acts": (10, 13),
-    "utterances": (2, 3),
     "actor_portraits": (6, 8),
     "mechanisms": (7, 12),
     "conditions": (4, 5),
@@ -1584,23 +1551,6 @@ class GroupedExtractionActPrimitive(GroupedExtractionPrimitiveBase):
     immediate_result: str = ""
 
 
-class GroupedExtractionUtterancePrimitive(GroupedExtractionPrimitiveBase):
-    utterance_type: Literal[
-        "speech",
-        "writing",
-        "broadcast",
-        "decree",
-        "testimony",
-        "manifesto",
-        "letter",
-        "other",
-    ] = "other"
-    speaker: str = ""
-    audience: str = ""
-    utterance_summary: str = Field(min_length=1)
-    key_quote: str = ""
-
-
 class GroupedExtractionActorPrimitive(GroupedExtractionPrimitiveBase):
     focus_actor_id: str | None = None
     actor_label: str = ""
@@ -1627,9 +1577,7 @@ class GroupedExtractionArtifactPrimitive(GroupedExtractionPrimitiveBase):
     artifact_type: Literal[
         "object",
         "place",
-        "document",
         "image",
-        "slogan",
         "ritual",
         "gesture",
         "detail",
@@ -1755,13 +1703,88 @@ class SynthesisPrimitivesArtifact(ExtractedPrimitiveArtifactBase):
     """Step-1 substrate extraction artifact."""
 
 
-class RawSynthesisPrimitivesArtifact(StrictModel):
+class ExcerptRecord(StrictModel):
+    """A standalone primary-source record whose payload is the words themselves.
+
+    Excerpts are NOT primitives: they sit outside ``PRIMITIVE_SUBSTRATES``, are
+    extracted in a single self-contained pass with no enrichment, and ride a
+    separate first-class overlay channel through planning. Ids use the ``x{n}``
+    namespace so they never collide with primitive ids.
+    """
+
+    id: str = ""
+    excerpt_type: Literal[
+        "speech",
+        "broadcast",
+        "decree",
+        "testimony",
+        "letter",
+        "manifesto",
+        "writing",
+        "newspaper",
+        "official_document",
+        "petition",
+        "telegram",
+        "slogan",
+        "other",
+    ] = "other"
+    title: str = Field(min_length=1)
+    passage_ids: list[str] = Field(min_length=1)
+    timeframe: str | None = None
+    geography: str | None = None
+    actor_ids: list[str] = Field(default_factory=list)
+    speaker: str = ""
+    audience: str = ""
+    summary: str = Field(min_length=1)
+    verbatim_excerpt: str = ""
+    plain_gloss: str = ""
+    quotability: float = Field(default=0.5, ge=0.0, le=1.0)
+
+    @field_validator("verbatim_excerpt")
+    @classmethod
+    def _bound_verbatim_excerpt(cls, value: str) -> str:
+        text = (value or "").strip()
+        if len(text) > 1200:
+            raise ValueError("verbatim_excerpt must be <= 1200 characters")
+        return text
+
+
+class RawExcerptArtifact(StrictModel):
+    """Model-facing excerpt artifact before local ids are materialized."""
+
+    project_id: str
+    excerpts: list[ExcerptRecord] = Field(default_factory=list)
+    quality_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    quality_notes: list[str] = Field(default_factory=list)
+
+
+class ExcerptArtifact(StrictModel):
+    """Excerpt pool with materialized ``x{n}`` ids, consumed downstream."""
+
+    project_id: str
+    excerpts: list[ExcerptRecord] = Field(default_factory=list)
+    quality_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    quality_notes: list[str] = Field(default_factory=list)
+
+    def excerpt_by_id(self) -> dict[str, ExcerptRecord]:
+        return {excerpt.id: excerpt for excerpt in self.excerpts}
+
+    @model_validator(mode="after")
+    def validate_unique_ids(self) -> "ExcerptArtifact":
+        excerpt_ids = [excerpt.id for excerpt in self.excerpts]
+        if any(not excerpt_id for excerpt_id in excerpt_ids):
+            raise ValueError("excerpts must carry non-empty ids")
+        if len(excerpt_ids) != len(set(excerpt_ids)):
+            raise ValueError("excerpts must use unique ids")
+        return self
+
+
+class RawCorePrimitivesArtifact(StrictModel):
     """Model-facing grouped extraction artifact before local primitive ids are materialized."""
 
     project_id: str
     events: list[GroupedExtractionEventPrimitive] = Field(default_factory=list)
     acts: list[GroupedExtractionActPrimitive] = Field(default_factory=list)
-    utterances: list[GroupedExtractionUtterancePrimitive] = Field(default_factory=list)
     actor_portraits: list[GroupedExtractionActorPrimitive] = Field(default_factory=list)
     mechanisms: list[GroupedExtractionMechanismPrimitive] = Field(default_factory=list)
     conditions: list[GroupedExtractionConditionPrimitive] = Field(default_factory=list)
@@ -1774,7 +1797,6 @@ class RawSynthesisPrimitivesArtifact(StrictModel):
         return {
             PrimitiveSubstrate.EVENTS.value: list(self.events),
             PrimitiveSubstrate.ACTS.value: list(self.acts),
-            PrimitiveSubstrate.UTTERANCES.value: list(self.utterances),
             PrimitiveSubstrate.ACTOR_PORTRAITS.value: list(self.actor_portraits),
             PrimitiveSubstrate.MECHANISMS.value: list(self.mechanisms),
             PrimitiveSubstrate.CONDITIONS.value: list(self.conditions),
@@ -1822,6 +1844,7 @@ class EpisodeSpine(StrictModel):
         default_factory=dict
     )
     recall_primitive_ids: list[str] = Field(default_factory=list)
+    excerpt_ids: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_spine(self) -> "EpisodeSpine":
@@ -1883,6 +1906,19 @@ class EpisodeSpine(StrictModel):
             raise ValueError(
                 "recall_primitive_ids must contain at most 3 primitive ids"
             )
+
+        # Excerpts ride a separate, first-class budget; they are not primitives and
+        # are intentionally excluded from the core/support/recall count and overlap
+        # rules above.
+        deduped_excerpt_ids: list[str] = []
+        seen_excerpt_ids: set[str] = set()
+        for excerpt_id in self.excerpt_ids:
+            normalized = str(excerpt_id or "").strip()
+            if not normalized or normalized in seen_excerpt_ids:
+                continue
+            seen_excerpt_ids.add(normalized)
+            deduped_excerpt_ids.append(normalized)
+        self.excerpt_ids = deduped_excerpt_ids
         return self
 
     @property
@@ -1900,6 +1936,17 @@ class EpisodeSpine(StrictModel):
             ordered.append(primitive_id)
         return ordered
 
+    @property
+    def assigned_excerpt_ids(self) -> list[str]:
+        ordered: list[str] = []
+        seen: set[str] = set()
+        for excerpt_id in self.excerpt_ids:
+            if not excerpt_id or excerpt_id in seen:
+                continue
+            seen.add(excerpt_id)
+            ordered.append(excerpt_id)
+        return ordered
+
 
 def validate_episode_spine_targets(
     spine: EpisodeSpine,
@@ -1909,7 +1956,13 @@ def validate_episode_spine_targets(
     support_target_min: int,
     support_target_max: int,
     recall_target_max: int,
+    excerpt_target_min: int = 0,
+    excerpt_target_max: int = 0,
 ) -> None:
+    # `excerpt_target_*` are advisory only: the excerpt track is a soft, separately
+    # budgeted overlay, so out-of-range excerpt counts surface as orchestrator
+    # diagnostics rather than hard validation failures that would trigger retries.
+    _ = (excerpt_target_min, excerpt_target_max)
     core_count = len(spine.core_primitive_ids)
     if core_count < core_target_min or core_count > core_target_max:
         raise ValueError(
@@ -3394,6 +3447,7 @@ class ArchitectureSection(StrictModel):
     purpose: SectionPurpose
     approx_runtime_minutes: float = Field(gt=0.0)
     primitive_ids: list[str] = Field(default_factory=list, min_length=1)
+    excerpt_ids: list[str] = Field(default_factory=list)
     open_mode: Literal[
         "scene_anchor", "voice_first", "question_first", "condition_first"
     ] = "scene_anchor"
@@ -3734,6 +3788,7 @@ class _SceneCardBase(StrictModel):
     location: str | None = None
     actors: list[SceneActor] = Field(default_factory=list, max_length=4)
     primitive_ids: list[str] = Field(default_factory=list)
+    excerpt_ids: list[str] = Field(default_factory=list)
     passage_ids: list[str] = Field(default_factory=list)
     authorial_passage_ids: list[str] = Field(default_factory=list, max_length=4)
     host_beat_ids: list[str] = Field(default_factory=list, max_length=2)
@@ -3751,6 +3806,15 @@ class _SceneCardBase(StrictModel):
             seen_primitive_ids.add(normalized)
             deduped_primitive_ids.append(normalized)
         self.primitive_ids = deduped_primitive_ids
+        deduped_excerpt_ids: list[str] = []
+        seen_excerpt_ids: set[str] = set()
+        for excerpt_id in self.excerpt_ids:
+            normalized = str(excerpt_id or "").strip()
+            if not normalized or normalized in seen_excerpt_ids:
+                continue
+            seen_excerpt_ids.add(normalized)
+            deduped_excerpt_ids.append(normalized)
+        self.excerpt_ids = deduped_excerpt_ids
         deduped_authorial_ids: list[str] = []
         seen_authorial_ids: set[str] = set()
         for authorial_passage_id in self.authorial_passage_ids:

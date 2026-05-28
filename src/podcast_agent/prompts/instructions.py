@@ -17,11 +17,10 @@ from podcast_agent.schemas.models import (
 _PRIMITIVE_SUBSTRATE_GUIDANCE: dict[str, str] = {
     "events": "Things that happened at a time and place: battles, coups, treaties, crises, deaths, journeys, ceremonies, ruptures.",
     "acts": "Agentive moves by named actors: decisions, refusals, delays, deferrals, orders, defections, decisive tactical moves, and explicit failures to act.",
-    "utterances": "Speech acts and textual acts: speeches, decrees, testimony, letters, broadcasts, manifestos, orders, public statements.",
     "actor_portraits": "People or organized actors viewed as pressure-bearing agents: motives, fears, stakes, projects, and operating pressures.",
     "mechanisms": "How systems actually work: patronage flows, logistics, finance, bureaucratic chains, clerical networks, media or coercive machinery.",
     "conditions": "Standing states of the world: balances, dependencies, alliances, enmities, demographic or institutional fault lines, unstable equilibria.",
-    "artifacts": "Concrete carriers and world-anchors: objects, places, documents, images, slogans, rituals, gestures, small details with material presence.",
+    "artifacts": "Concrete material carriers and world-anchors: objects, places, images, rituals, gestures, small physical details with material presence. NOT the text of documents, slogans, headlines, or speeches — those are `excerpt` records.",
     "readings": "Interpretations and contested meanings: actor beliefs, historian disputes, interpretive claims, counterfactual frames, rival causal readings.",
 }
 
@@ -66,16 +65,6 @@ _FUNCTION_TAGGING_SUBSTRATE_NOTES: dict[str, str] = {
         - `texture` on an act is suspicious unless the act is inseparable from a memorable concrete gesture, phrase, or public staging.
         """
     ).strip(),
-    "utterances": dedent(
-        """
-        - Utterances most often carry `texture`, `contest`, `stake`, or `pivot`.
-        - The utterance itself should do the work. Do not tag it only for the event happening around it.
-        - A speech, decree, testimony, or broadcast may be `pivot` when its issuance materially changes what actors can now do, deny, justify, or must now answer.
-        - `texture` is strong when a phrase, line, or verbal posture helps the listener hear the world in the actors' own register.
-        - Prefer `contest` when the utterance itself advances, crystallizes, or publicly stages competing readings.
-        - `stake` fits when the utterance reveals what must now be defended, justified, or politically survived.
-        """
-    ).strip(),
     "actor_portraits": dedent(
         """
         - Actor primitives most often carry `stake`, `complication`, or `recurrence`.
@@ -109,11 +98,11 @@ _FUNCTION_TAGGING_SUBSTRATE_NOTES: dict[str, str] = {
     "artifacts": dedent(
         """
         - Artifacts most often carry `texture`, `recurrence`, `stake`, or `contest`.
-        - The best artifact tags preserve a concrete carrier a planner could actually stage, quote, point to, or return to.
+        - The best artifact tags preserve a concrete material carrier a planner could actually stage, point to, or return to.
         - `texture` is usually the baseline strength here, but vividness alone is not enough if the carrier does not actually do narrative work.
-        - `recurrence` is strong when the object, document, place, slogan, or gesture can plausibly return with accrued meaning.
+        - `recurrence` is strong when the object, place, image, ritual, or gesture can plausibly return with accrued meaning.
         - `contest` fits when the carrier itself becomes a site of interpretation, dispute, legitimacy, or public reading.
-        - `cost` is allowed only when the object, place, or document is part of how the cost is experienced, recorded, enforced, or seen.
+        - `cost` is allowed only when the object or place is part of how the cost is experienced, recorded, enforced, or seen.
         """
     ).strip(),
     "readings": dedent(
@@ -141,10 +130,6 @@ _FUNCTION_TAGGING_DEFERRED_DETAIL_LINES: dict[str, tuple[str, ...]] = {
         "  `acts.immediate_result`",
         "- This `acts` batch may add only deferred substrate-detail fields owned by `acts`.",
         "- Only fill deferred fields when the supplied evidence supports them; do not invent unsupported specificity.",
-    ),
-    "utterances": (
-        "- There are no deferred substrate-detail fields to fill for this substrate in this pass.",
-        "- This `utterances` batch may not add deferred substrate-detail fields owned by other substrates.",
     ),
     "actor_portraits": (
         "- Before assigning functions, fill any deferred substrate-detail fields that are absent for this substrate:",
@@ -184,9 +169,6 @@ _FUNCTION_TAGGING_SELF_CHECK_LINES: dict[str, tuple[str, ...]] = {
     ),
     "acts": (
         "- Did you fill the deferred substrate-detail fields required for this substrate, and only for this substrate?",
-    ),
-    "utterances": (
-        "- Did you avoid adding deferred substrate-detail fields that do not belong to this substrate?",
     ),
     "actor_portraits": (
         "- Did you fill the deferred substrate-detail fields required for this substrate, and only for this substrate?",
@@ -298,7 +280,7 @@ def _scene_concreteness_guardrails_guidance() -> str:
         """
         SCENE CONCRETENESS GUARDRAILS
         - Prefer beats that can open from a person, room, object, document, route, crowd, public act, witnessed consequence, or other stageable carrier.
-        - `mechanisms`, `conditions`, and `readings` may carry explanation, but they should still anchor in an event, act, utterance, artifact, or lived pressure thread whenever one is available.
+        - `mechanisms`, `conditions`, and `readings` may carry explanation, but they should still anchor in an event, act, artifact, attached excerpt, or lived pressure thread whenever one is available.
         - Do not let structural cards turn into free-floating thesis cards, descriptive background paragraphs, or repeated restatements of the same interpretation.
         - Do not restart consecutive scenes with the same explanatory frame when dates, actors, places, or unresolved pressure can carry continuity instead.
         - Leave something live for the next beat: a question, threat, choice, contradiction, cost, or newly exposed consequence.
@@ -571,7 +553,7 @@ def primitive_substrate_extraction_instructions(
 
         HARD RULES
         - Every primitive must be grounded in passage ids present in the payload. Never invent a passage id.
-        - The top-level output must be a substrate map with keys `events`, `acts`, `utterances`, `actor_portraits`, `mechanisms`, `conditions`, `artifacts`, and `readings`.
+        - The top-level output must be a substrate map with keys `events`, `acts`, `actor_portraits`, `mechanisms`, `conditions`, `artifacts`, and `readings`.
         - Every primitive belongs in exactly one substrate bucket.
         - Do not emit primitive `id`; local code will assign ids after extraction.
         - Do not emit per-item `substrate`; the containing top-level bucket already determines it.
@@ -597,7 +579,6 @@ def primitive_substrate_extraction_instructions(
         After choosing `substrate`, fill that substrate's required fields before moving on to the next primitive.
         - `events`: required `event_type`, required `what_happened`
         - `acts`: required `act_summary`, schema-safe `act_type`, optional `acting_subject`
-        - `utterances`: required `utterance_summary`, schema-safe `utterance_type`, optional `speaker`, optional `audience`, optional `key_quote`
         - `actor_portraits`: required `goal_or_project`, required `stakes_or_fears`, optional `focus_actor_id`, optional `actor_label`
         - `mechanisms`: required `mechanism_name`, optional `failure_mode`
         - `conditions`: required `condition_type`, required `condition_summary`
@@ -607,8 +588,7 @@ def primitive_substrate_extraction_instructions(
         SCHEMA-BOUND FIELD RULES
         Use only these literal values when the primitive type requires them:
         - `acts.act_type`: `decision`, `refusal`, `delay`, `deferral`, `order`, `defection`, `other`
-        - `utterances.utterance_type`: `speech`, `writing`, `broadcast`, `decree`, `testimony`, `manifesto`, `letter`, `other`
-        - `artifacts.artifact_type`: `object`, `place`, `document`, `image`, `slogan`, `ritual`, `gesture`, `detail`, `other`
+        - `artifacts.artifact_type`: `object`, `place`, `image`, `ritual`, `gesture`, `detail`, `other`
         - `readings.reading_type`: `actor_belief`, `historiographical_dispute`, `interpretive_claim`, `counterfactual`, `other`
         - If an act feels like a tactical pivot, strategic repositioning, hesitation, or missed chance, still map it into an allowed `act_type` and preserve the nuance in `title`, `act_summary`, or `immediate_result`.
         - Never emit ad hoc labels such as `tactical_pivot` or any other invented enum member.
@@ -620,7 +600,7 @@ def primitive_substrate_extraction_instructions(
 
         BREVITY GUIDANCE
         - To keep extraction lean, aim to keep these fields at 20 words or fewer whenever the evidence allows:
-          `what_happened`, `act_summary`, `condition_summary`, `utterance_summary`,
+          `what_happened`, `act_summary`, `condition_summary`,
           `reading_summary`, `goal_or_project`, `stakes_or_fears`, `mechanism_name`.
         - Keep those fields concrete and compressed. Prefer one sentence fragment over multi-clause summary prose.
 
@@ -633,7 +613,7 @@ def primitive_substrate_extraction_instructions(
 
         OUTPUT CONTRACT
         - Return one JSON object with top-level keys:
-          `project_id`, `events`, `acts`, `utterances`, `actor_portraits`, `mechanisms`, `conditions`, `artifacts`, `readings`, `quality_score`, `quality_notes`.
+          `project_id`, `events`, `acts`, `actor_portraits`, `mechanisms`, `conditions`, `artifacts`, `readings`, `quality_score`, `quality_notes`.
         - Each substrate key maps to a list of primitives of that type.
         - Within each bucket item, do not repeat `substrate`.
 
@@ -648,11 +628,7 @@ def primitive_substrate_extraction_instructions(
           Prefer `acts` over `events` when the key unit is the choice or non-choice rather than the larger public occurrence around it.
           `act_summary` is required. Use schema-safe `act_type`, then add `acting_subject` when the evidence supports it. Do not emit `immediate_result` in this stage.
           Do not use `acts` merely because an important person is present in the passage.
-        - `utterances`
-          Preserve the speech or text act itself: the speech, decree, testimony, letter, broadcast, manifesto, or public statement.
-          Prefer `utterances` when the wording, issuance, audience, or voiced claim is the actual payload.
-          `utterance_summary` is required. Use schema-safe `utterance_type`, then add `speaker`, `audience`, and `key_quote` when supported.
-          Do not recast an utterance as an event if the real burden is what was said or declared.
+        - SPEECH AND TEXT ACTS — speeches, decrees, testimony, letters, broadcasts, manifestos, newspaper articles, official documents, petitions, telegrams, slogans — are NOT primitives. They are extracted as `excerpt` records in a separate dedicated stage. If a passage's real burden is what was said, written, published, or chanted, leave it for that stage; do not recast it as an event, act, or artifact here.
         - `actor_portraits`
           Make a pressure-bearing person legible through project, fear, stake, and operating pressure.
           Prefer `actor_portraits` when the passage mainly reveals what an actor is trying to do, what they fear, or what box they are trapped in.
@@ -670,8 +646,9 @@ def primitive_substrate_extraction_instructions(
           `condition_type` and `condition_summary` are required. Do not emit `active_tension` in this stage.
           Do not rename a whole civilization-sized era as one condition primitive unless the evidence makes a narrower standing pressure explicit.
         - `artifacts`
-          Preserve the concrete carrier itself: object, place, document, image, slogan, ritual, gesture, or material detail.
-          Prefer `artifacts` when the carrier is what makes the evidence memorable, stageable, or publicly legible.
+          Preserve the concrete material carrier itself: object, place, image, ritual, gesture, or physical detail.
+          Prefer `artifacts` when the material carrier is what makes the evidence memorable, stageable, or publicly legible.
+          If the payload is the TEXT of a document, slogan, headline, or speech, it is an `excerpt`, not an artifact. Keep `artifacts` for material presence (the burned helicopter, the smuggled cassette as object, the empty square).
           Use schema-safe `artifact_type`; `artifact_label` is required here, while `artifact_detail` is deferred to function tagging.
           Do not use `artifacts` for generic atmosphere with no concrete carrier.
         - `readings`
@@ -696,7 +673,7 @@ def primitive_substrate_extraction_instructions(
         - If actor identity is unclear, keep `actor_ids` sparse rather than guessing.
         - If the evidence supports consequence but not mechanism, do not fabricate the operating chain.
         - If the evidence supports pressure but not a discrete act, prefer `conditions` or `actor_portraits` rather than forcing `events`.
-        - If the evidence supports one public act and one quoted line, split them only when the line itself carries independent historical weight.
+        - If a passage's burden is the words that were said, written, or chanted, leave it for the `excerpt` stage rather than forcing it into an event or act here.
 
         FAILURE MODES
         - Do not drift into narrative-role language such as pivots, scenes, episode spines, hooks, or payoff.
@@ -706,10 +683,10 @@ def primitive_substrate_extraction_instructions(
         - Do not emit `artifacts` that are actually atmosphere with no concrete carrier.
         - Do not emit `actor_portraits` that are just biography without live project, stake, or pressure.
         - Do not emit `mechanisms` unless a concrete operating chain can be described.
-        - Do not collapse a vivid utterance or artifact into a generic event summary when the speech act or carrier is the actual point.
+        - Do not flatten a vivid artifact into a generic event summary when the carrier is the point. If the real point is the words (a speech, document, headline, slogan), leave it for the `excerpt` stage.
         - Do not choose `actor_portraits` merely because a famous person appears in the passage.
         - Do not create new enum labels to preserve nuance.
-        - Do not return an event, act, utterance, actor, mechanism, condition, artifact, or reading in shared-field-only form.
+        - Do not return an event, act, actor, mechanism, condition, artifact, or reading in shared-field-only form.
 
         SELF-CHECK BEFORE RETURNING
         - Would this primitive still be legible if stripped of narrative interpretation?
@@ -736,6 +713,108 @@ def synthesis_primitives_instructions(
     target_ranges: dict[str, tuple[int, int]] | None = None,
 ) -> str:
     return primitive_substrate_extraction_instructions(target_ranges=target_ranges)
+
+
+def excerpt_extraction_instructions(
+    *,
+    count_min: int = 78,
+    count_max: int = 130,
+) -> str:
+    return dedent(
+        f"""
+        You are the `excerpt_extraction` stage for a historical podcast pipeline.
+
+        Goal:
+        - Read the quote-rich source evidence and extract the EXCERPT RECORD of the
+          series: the primary-source material whose payload is the WORDS and which a host
+          could read or speak aloud.
+        - This runs in parallel with primitive extraction and is fully self-contained:
+          there is NO later enrichment pass. Capture everything you need now.
+
+        WHAT IS AN EXCERPT
+        Anything whose burden is what was said, written, published, issued, or chanted:
+        - spoken: `speech`, `broadcast`, `testimony` (incl. court testimony), `decree`,
+          `slogan` (chants and rallying cries)
+        - written/published: `writing` (books, lectures, essays), `manifesto`, `letter`,
+          `telegram`, `petition`, `newspaper` (articles and headlines),
+          `official_document` (treaties, communiqués, reports, legal texts)
+        - `other` only when none fit.
+
+        WHAT IS NOT AN EXCERPT
+        - A material object/place/image with no text payload is an `artifact`, handled
+          elsewhere (a burned helicopter, an empty square, a photograph-as-object).
+        - The mere fact that something happened ("the telegram was sent", "the article ran")
+          is an `event`, handled elsewhere. Here you capture the telegram's or article's
+          WORDS.
+        - Your own interpretation is a `reading`, handled elsewhere. Here you capture the
+          source's own words, not a gloss of their meaning.
+
+        INPUT AND AUTHORITY
+        - `project_id`, `podcast_mode`
+        - `axes`: compact axis summaries
+        - `passages_by_axis`: quote-biased evidence grouped by axis, then by book, with
+          `passage_id` and text
+        - `books`: compact book metadata
+        - `actor_metadata` (optional): canonical actor registry for actor ids only
+        - `excerpt_feedback` (optional): retry feedback; correct only named errors
+
+        PASSAGE IDS
+        - Copy passage ids exactly; never rewrite or invent them.
+
+        FIELDS PER EXCERPT
+        - `title`: operational and speakable (e.g. "Khomeini declares the Absolute Mandate").
+        - `excerpt_type`: one schema-safe literal from the list above.
+        - `passage_ids`: at least one grounding id from the payload.
+        - `timeframe`, `geography`: when supported.
+        - `speaker`: who said/wrote/issued it — a person, institution, or publication.
+        - `audience`: the addressed or reached audience, when supported.
+        - `actor_ids`: canonical actor ids only when materially central.
+        - `summary` (required): one compressed sentence-fragment, 20 words or fewer.
+        - `verbatim_excerpt` (REQUIRED whenever the evidence contains the words): the actual
+          quoted words, lightly trimmed with ellipses where needed. One to a few sentences;
+          preserve the speaker's register; do NOT paraphrase and do NOT dump a whole passage
+          (<= ~1200 characters). If the passage only reports that something was said without
+          giving the words, set `verbatim_excerpt` to "" and still record the excerpt.
+        - `plain_gloss`: a plainspoken one-line translation a host could say to unpack a
+          dense or archaic line. Leave "" when the words are already plain.
+        - `quotability` (0.0-1.0): how airtime-worthy the line is for spoken storytelling —
+          vivid, declarative, in the actor's own voice, or doctrinally/legally consequential
+          score high; dry procedural text scores low. Used downstream to rank which excerpts
+          to voice when a scene has limited room.
+
+        VOLUME AND COVERAGE
+        - This is a SERIES-WIDE pool. Aim for roughly {count_min}-{count_max} excerpts,
+          covering the full arc, not just the famous lines. Capture both landmark texts and
+          revealing minor ones (a witness in the dock, a conscript's letter, a bazaar
+          petition, a rooftop chant).
+        - Excerpts are cheap airtime and high texture, so lean toward keeping genuinely
+          voiced material rather than trimming to a number.
+        - Emit ONE excerpt per distinct source utterance even if it appears under several
+          axes; do not duplicate the same words as multiple records.
+
+        HARD RULES
+        - Every excerpt must be grounded in passage ids present in the payload.
+        - Top-level output key is `excerpts` only.
+        - Do not emit `id`; local code assigns `x{{n}}` ids.
+        - Do not emit narrative functions, salience justification payloads, or scene/episode
+          planning language. `quotability` and `plain_gloss` are the only narration-facing
+          fields you set.
+        - Never invent enum labels for `excerpt_type`.
+
+        OUTPUT CONTRACT
+        - Return one JSON object with top-level keys: `project_id`, `excerpts`,
+          `quality_score`, `quality_notes`.
+
+        SELF-CHECK BEFORE RETURNING
+        - Is each item genuinely source material whose payload is the words?
+        - Does each carry `summary`, a schema-safe `excerpt_type`, and — where the words
+          exist — a `verbatim_excerpt`?
+        - Did you leave out `id`, functions, and salience payloads?
+        - Did you avoid duplicating the same source words across multiple records?
+
+        Do not add markdown or commentary outside the JSON object.
+        """
+    ).strip()
 
 
 def primitive_function_tagging_instructions(
@@ -1035,6 +1114,8 @@ def narrative_strategy_skeleton_instructions(
     support_primitive_target_min: int = 9,
     support_primitive_target_max: int = 13,
     recall_primitive_target_max: int = 3,
+    excerpt_target_min: int = 12,
+    excerpt_target_max: int = 18,
 ) -> str:
     core_range = _format_target_range(
         core_primitive_target_min, core_primitive_target_max
@@ -1042,6 +1123,7 @@ def narrative_strategy_skeleton_instructions(
     support_range = _format_target_range(
         support_primitive_target_min, support_primitive_target_max
     )
+    excerpt_range = _format_target_range(excerpt_target_min, excerpt_target_max)
     recall_limit = (
         "1 primitive"
         if recall_primitive_target_max == 1
@@ -1075,6 +1157,7 @@ def narrative_strategy_skeleton_instructions(
 
         INPUT PAYLOAD
         - `synthesis_map`: primitive-only synthesis artifact with a flat `primitives` list
+        - `excerpts`: the series-wide excerpt pool (x-ids) — speeches, decrees, testimony, letters, broadcasts, manifestos, newspaper lines, official documents, petitions, telegrams, slogans — each with `verbatim_excerpt`, `summary`, `speaker`, and `quotability`
         - `project`: project metadata, runtime bounds, book metadata
         - `scene_discovery` (optional): compact global sceneability pool used only to pressure-test what is concretely stageable
         - `actor_metadata` (optional): canonical actor context
@@ -1204,6 +1287,12 @@ def narrative_strategy_skeleton_instructions(
         - Do not use `core_primitive_ids` to preserve optional downstream material for enrichment.
         - If an episode needs more than {core_range} core primitives to feel viable, the partition is wrong; rebalance, merge, or reduce episode count.
         - If both core and support are overfull, reduce episode scope before adding more primitives.
+
+        EXCERPT TRACK
+        - `excerpt_ids` is a SEPARATE, first-class budget of {excerpt_range} `excerpt` records the episode will voice. It is NOT part of core/support/recall and does NOT count against their ranges. Its ids come from the `excerpts` pool (x-ids), never from the primitive pool.
+        - Excerpts are the series' voiced and documentary record — speeches, decrees, testimony, letters, broadcasts, manifestos, newspaper lines, official documents, petitions, telegrams, slogans. They are cheap airtime and high texture, so select MOST of the excerpts genuinely relevant to this episode, not a token few.
+        - Prefer high-`quotability` excerpts and those that voice the episode's turns, stakes, and human thread. A strong excerpt may recur across episodes for callbacks; reuse the same x-id where it earns its return.
+        - Episodes whose openings or human thread lean on voiced moments should carry the upper end of the range.
 
         ACTOR ARC DIRECTIVES
         Actor arc directives are episode-specific planning guidance for how selected actors function across scenes.
@@ -1507,6 +1596,7 @@ def episode_planning_instructions(
         - `strategy_episode`        one episode object from `narrative_strategy`
         - `architecture`             one episode architecture object
         - `synthesis_map`            primitive-first synthesis map filtered to this episode
+        - `excerpts`                 the episode's assigned `excerpt` records (x-ids) — verbatim source lines to attach via scene `excerpt_ids`
         - `project`                  theme, sub-themes, book metadata, duration goals
         - `scene_job_budget`         explicit scene-job allocation contract for this mode
         - `available_passages`       evidence available to this episode
@@ -1815,7 +1905,9 @@ def episode_planning_instructions(
           dated action, or place. SHOW, do not FRAME.
         - `voice_first`: open on a line already in the evidence — a quoted
           sentence, order, or remark — and let it carry the entry before the
-          narration around it.
+          narration around it. Attach the opening line via the scene's
+          `excerpt_ids` and read its `verbatim_excerpt` aloud (quote-then-gloss
+          using the excerpt's `plain_gloss`).
         - `question_first`: open on a real unresolved question and pursue it
           through the section; do not resolve it in the first scene.
         - `condition_first`: open on a standing condition or a stretch of time,
@@ -1847,18 +1939,18 @@ def episode_planning_instructions(
           first when they fit the scene's job.
 
         WHICH PRIMITIVES TO PICK
-        - Prefer concrete substrates for scene entry: `events`, `acts`, `utterances`, and `artifacts`, especially when tagged `texture` or `pivot`.
+        - Prefer concrete substrates for scene entry: `events`, `acts`, and `artifacts`, plus the episode's attached `excerpt` records, especially when tagged `texture` or `pivot`.
         - Use `cost`, `stake`, and actor-centered primitives to keep scenes from going purely abstract or institutional.
         - Use `mechanisms`, `conditions`, and `readings` to structure explanation only when the scene still opens from something visible.
         - Use substrate-specific fields directly:
           `what_happened`/`event_result` for event payoff,
           `act_summary`/`immediate_result` for choice framing,
-          `utterance_summary`/`key_quote` for speech-driven scenes,
           `goal_or_project`/`stakes_or_fears` for actor pressure,
           `operating_chain` for mechanism staging,
           `condition_summary`/`active_tension` for standing-pressure scenes,
           `artifact_label`/`artifact_detail` for entry images and callbacks,
           `reading_summary` for contest or interpretation scenes.
+        - EXCERPTS: `excerpt` records attach to a scene through `excerpt_ids`, a SEPARATE channel from `primitive_ids` that does NOT count toward the scene primitive target. Voice the episode's excerpt track here — especially in `voice_first` openings, handoffs, and callbacks — reading the `verbatim_excerpt` rather than summarizing it. Every spine-assigned excerpt should land in at least one scene's `excerpt_ids`.
         - Prefer `narration_hooks.concrete_detail` for `observable_detail` when present.
         - Use `recurrence`-tagged primitives for openings, callbacks, handoffs, and closings when the evidence supports explicit return.
 
@@ -2176,6 +2268,7 @@ def episode_architecture_instructions(
         - `series_explanation_registry` (optional): strategy-owned reusable term/institution registry
         - `series_actor_explanation_registry` (optional): strategy-owned reusable actor-introduction registry
         - `synthesis_map`: only the primitives already assigned to this episode
+        - `excerpts` (optional): the episode's assigned `excerpt` records (x-ids) — verbatim source lines to place into section `excerpt_ids`
         - `project`: theme, sub-themes, book metadata, and duration goals
         - `core_passages`: summarized text for core-primitive core passages only
         - `support_passages`: summarized text for support-primitive evidence
@@ -2227,6 +2320,7 @@ def episode_architecture_instructions(
           omit or compress support rather than distributing it across sections.
         - Do not place all assigned support primitives by default.
         - Support-only sections should be rare and brief.
+        - `excerpt` records attach via each section's `excerpt_ids`, a SEPARATE channel from `primitive_ids`. Place the episode's excerpts where they land best — `voice_first` openings, handoffs, callbacks. Excerpts do NOT count toward the support-placement target or the support-density budget, and their ids come from the `excerpts` payload (x-ids), never the primitive pool.
         - Planning will only receive passages for primitives that actually
           appear in sections.
         - If a selected support or recall primitive is omitted from all
@@ -2255,13 +2349,12 @@ def episode_architecture_instructions(
         - Use primitive substrate and function together when deciding section jobs.
           `events` and `acts` tagged `pivot` are strong turn anchors.
           `mechanisms` and `conditions` are strong explanatory sections when anchored in something concrete.
-          `artifacts` and `utterances` tagged `texture` are strong openings, handoffs, and callbacks.
+          `artifacts` tagged `texture`, and the episode's attached `excerpt` records, are strong openings, handoffs, and callbacks. Route excerpts through `excerpt_ids`, not `primitive_ids`.
           `readings` tagged `contest` or `complication` are strong contest sections when tied back to visible evidence.
           `cost` and `stake` often supply the best human-grounding sections.
         - When substrate-specific fields are present, use them directly:
           `what_happened`/`event_result`,
           `act_summary`/`immediate_result`,
-          `utterance_summary`/`key_quote`,
           `goal_or_project`/`stakes_or_fears`,
           `operating_chain`,
           `condition_summary`/`active_tension`,
@@ -2405,7 +2498,7 @@ def episode_architecture_instructions(
           stretch of time for `condition_first`. It must be concrete either way.
         - Adjacent explanatory sections should usually differ in `open_mode` and
           scene engine, not just topic label.
-        - Sections built mostly from `mechanisms`, `conditions`, or `readings` should usually tie those abstractions to an event, act, utterance, artifact, or recurring human pressure thread, not upstream a setup-plus-thesis block.
+        - Sections built mostly from `mechanisms`, `conditions`, or `readings` should usually tie those abstractions to an event, act, artifact, attached excerpt, or recurring human pressure thread, not upstream a setup-plus-thesis block.
         - `must_stage_beats` must be 2-4 concrete, evidence-bearing beats the
           planner is required to realize somewhere inside the section.
         - `must_stage_beats` are not scene cards, scene counts, or within-section
@@ -2596,7 +2689,12 @@ def _writing_scene_primitive_brief_input_line() -> str:
     return (
         "- Optional `scene_primitive_briefs`: full, window-scoped scene-bound "
         "primitive objects keyed only to this call's `plan.scene_cards`. Treat "
-        "them as narrative context for realization, not factual authority."
+        "them as narrative context for realization, not factual authority.\n"
+        "- Optional `scene_excerpt_briefs`: window-scoped `excerpt` records keyed "
+        "to this call's scene cards by `scene.excerpt_ids`. Each carries a "
+        "`verbatim_excerpt` (the real words), `plain_gloss`, and `speaker`. When a "
+        "scene has an excerpt, read the `verbatim_excerpt` aloud (quote, then gloss "
+        "with `plain_gloss` where helpful); its source passages are in `passages`."
     )
 
 
@@ -2608,6 +2706,7 @@ def _writing_scene_primitive_brief_guidance() -> str:
         - Before drafting a scene, read the matching primitive objects for substrate-specific fields, function payloads and justifications, `salience`, and `narration_hooks`.
         - Use enriched fields to decide foreground, bounded explanation, detail triage, host move eligibility, and residue, not to add unsupported content.
         - Use `narration_hooks.quote_anchor`, `plain_gloss`, `listener_confusion`, and `authorial_move` only when planned explanation actually requires them.
+        - When a scene carries `scene_excerpt_briefs`, voice the `verbatim_excerpt` on the page (read the line, then gloss it with the excerpt's `plain_gloss` when the wording is dense or archaic). Do not paraphrase a quoted line into oblivion. Keep it grounded in the excerpt's source `passages`.
         - Do not treat `scene_primitive_briefs` as substitute evidence or as permission to introduce unsupported facts, chronology, motives, or claims.
         - If `scene_primitive_briefs` conflicts with `plan.scene_cards`, `architecture`, `strategy_episode`, or `passages`, follow those richer inputs.
         """

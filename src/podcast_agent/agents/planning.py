@@ -87,6 +87,7 @@ class EpisodePlanningAgent(Agent):
         actor_metadata: dict | None = None,
         planning_feedback: dict | None = None,
         field_semantics: dict | None = None,
+        excerpts: list[dict] | None = None,
     ) -> dict:
         payload = {
             "strategy_episode": strategy_episode,
@@ -95,6 +96,8 @@ class EpisodePlanningAgent(Agent):
             "project": project_metadata,
             "available_passages": available_passages,
         }
+        if excerpts:
+            payload["excerpts"] = excerpts
         if scene_job_budget is None:
             raw_mode = project_metadata.get("podcast_mode", "full")
             scene_job_budget = scene_job_budget_for_mode(raw_mode)

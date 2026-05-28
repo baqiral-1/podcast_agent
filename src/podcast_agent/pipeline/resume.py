@@ -18,6 +18,7 @@ from podcast_agent.schemas.models import (
     ActorMetadata,
     EpisodeArchitecture,
     EpisodePlan,
+    ExcerptArtifact,
     NarrativeState,
     NarrativeStrategy,
     PrimitiveFunctionTaggingArtifact,
@@ -267,6 +268,7 @@ async def _plan_series_for_resume(
     project_dir: Path,
     actor_metadata: ActorMetadata,
     scene_discovery: SceneDiscoveryArtifact | None = None,
+    retained_excerpts: ExcerptArtifact | None = None,
 ) -> tuple[
     list[EpisodeArchitecture],
     list[EpisodePlan],
@@ -282,7 +284,25 @@ async def _plan_series_for_resume(
         project_dir=project_dir,
         actor_metadata=actor_metadata,
         scene_discovery=scene_discovery,
+        retained_excerpts=retained_excerpts,
     )
+
+
+def _load_excerpt_artifact_if_present(
+    project_dir: Path, filename: str
+) -> ExcerptArtifact | None:
+    """Load an excerpt artifact from disk; return None when absent.
+
+    Resume paths are gracefully tolerant of older runs that predate the
+    excerpt stage. New runs always emit `excerpts.json` and
+    `retained_excerpts.json` and resume points that depend on them will
+    log/warn but not hard-fail when they are missing.
+    """
+
+    path = project_dir / filename
+    if not path.exists():
+        return None
+    return ExcerptArtifact.model_validate(_load_json(path))
 
 
 def _primitive_id_list(
@@ -453,6 +473,7 @@ async def _produce_from_persisted_plan(
     actor_metrics: dict[str, Any],
     narrative_state_pre_by_episode: dict[int, NarrativeState] | None = None,
     narrative_state_post_by_episode: dict[int, NarrativeState] | None = None,
+    retained_excerpts: ExcerptArtifact | None = None,
 ) -> None:
     project = project.model_copy(update={"status": ProjectStatus.PRODUCING})
     _save_json(project_dir / "thematic_project.json", project)
@@ -478,6 +499,11 @@ async def _produce_from_persisted_plan(
         )
     )
     retained_primitive_lookup = _flatten_synthesis_primitives(synthesis_map)
+    if retained_excerpts is None:
+        retained_excerpts = _load_excerpt_artifact_if_present(
+            project_dir, "retained_excerpts.json"
+        ) or ExcerptArtifact(project_id=project.project_id)
+    retained_excerpt_by_id = retained_excerpts.excerpt_by_id()
     ep_tasks = [
         orchestrator._produce_episode(
             plan,
@@ -497,6 +523,7 @@ async def _produce_from_persisted_plan(
             spoken_semaphore=spoken_sem,
             series_explanation_registry=strategy.series_explanation_registry,
             narrative_state_pre=narrative_state_pre_by_episode[plan.episode_number],
+            excerpt_by_id=retained_excerpt_by_id,
             narrative_state_post=narrative_state_post_by_episode[plan.episode_number],
         )
         for plan in episode_plans
@@ -619,13 +646,21 @@ async def resume_from_synthesis_stage(
     actor_metrics: dict[str, Any] = {}
     try:
         (
-            synthesis_primitives,
-            synthesis_actor_metrics,
-        ) = await orchestrator._map_synthesis(
-            project=project,
-            corpus=corpus,
-            project_dir=project_dir,
-            actor_metadata=actor_metadata,
+            (synthesis_primitives, synthesis_actor_metrics),
+            excerpts,
+        ) = await asyncio.gather(
+            orchestrator._map_synthesis(
+                project=project,
+                corpus=corpus,
+                project_dir=project_dir,
+                actor_metadata=actor_metadata,
+            ),
+            orchestrator._extract_excerpts(
+                project=project,
+                corpus=corpus,
+                project_dir=project_dir,
+                actor_metadata=actor_metadata,
+            ),
         )
         actor_metrics["synthesis_primitives"] = synthesis_actor_metrics.get(
             "primitives", {}
@@ -663,11 +698,18 @@ async def resume_from_synthesis_stage(
             project_dir=project_dir,
             scene_discovery=scene_discovery,
             actor_metadata=actor_metadata,
+            excerpts=excerpts,
         )
         actor_metrics["narrative_strategy"] = strategy_actor_metrics
         synthesis_map = await orchestrator._materialize_selected_primitives(
             project=project,
             synthesis_primitives=synthesis_primitives,
+            strategy=strategy,
+            project_dir=project_dir,
+        )
+        retained_excerpts = await orchestrator._materialize_selected_excerpts(
+            project=project,
+            excerpts=excerpts,
             strategy=strategy,
             project_dir=project_dir,
         )
@@ -693,6 +735,7 @@ async def resume_from_synthesis_stage(
             project_dir=project_dir,
             actor_metadata=actor_metadata,
             scene_discovery=scene_discovery,
+            retained_excerpts=retained_excerpts,
         )
         actor_metrics["episode_architecture"] = planning_state_metrics.get(
             "episode_architecture", {}
@@ -833,6 +876,9 @@ async def resume_single_episode_from_writing_stage(
             narrative_state_post=narrative_state_post_by_episode[episode_number],
         )
         primitive_lookup = _flatten_synthesis_primitives(retained_primitives)
+        retained_excerpts = _load_excerpt_artifact_if_present(
+            project_dir, "retained_excerpts.json"
+        ) or ExcerptArtifact(project_id=project.project_id)
         _, spoken = await orchestrator._produce_episode(
             target_plan,
             target_strategy_episode,
@@ -848,6 +894,7 @@ async def resume_single_episode_from_writing_stage(
             series_explanation_registry=strategy.series_explanation_registry,
             narrative_state_pre=narrative_state_pre_by_episode[episode_number],
             narrative_state_post=narrative_state_post_by_episode[episode_number],
+            excerpt_by_id=retained_excerpts.excerpt_by_id(),
         )
 
         audio_sem = asyncio.Semaphore(max(1, project.config.tts_concurrency))
@@ -960,6 +1007,10 @@ async def resume_from_substrate_function_tagging_stage(
         )
         actor_metrics["substrate_function_tagging"] = tagging_metrics
 
+        excerpts = _load_excerpt_artifact_if_present(
+            project_dir, "excerpts.json"
+        ) or ExcerptArtifact(project_id=project.project_id)
+
         scene_discovery = await orchestrator._discover_scenes(
             project=project,
             synthesis_map=synthesis_primitives,
@@ -976,11 +1027,18 @@ async def resume_from_substrate_function_tagging_stage(
             project_dir=project_dir,
             scene_discovery=scene_discovery,
             actor_metadata=actor_metadata,
+            excerpts=excerpts,
         )
         actor_metrics["narrative_strategy"] = strategy_actor_metrics
         synthesis_map = await orchestrator._materialize_selected_primitives(
             project=project,
             synthesis_primitives=synthesis_primitives,
+            strategy=strategy,
+            project_dir=project_dir,
+        )
+        retained_excerpts = await orchestrator._materialize_selected_excerpts(
+            project=project,
+            excerpts=excerpts,
             strategy=strategy,
             project_dir=project_dir,
         )
@@ -1006,6 +1064,7 @@ async def resume_from_substrate_function_tagging_stage(
             project_dir=project_dir,
             actor_metadata=actor_metadata,
             scene_discovery=scene_discovery,
+            retained_excerpts=retained_excerpts,
         )
         actor_metrics["episode_architecture"] = planning_state_metrics.get(
             "episode_architecture", {}
@@ -1099,6 +1158,10 @@ async def resume_from_narrative_strategy_stage(
 
     actor_metrics = _load_existing_stage_metrics(project_dir)
     try:
+        excerpts = _load_excerpt_artifact_if_present(
+            project_dir, "excerpts.json"
+        ) or ExcerptArtifact(project_id=project.project_id)
+
         (
             strategy,
             strategy_actor_metrics,
@@ -1108,6 +1171,7 @@ async def resume_from_narrative_strategy_stage(
             project_dir=project_dir,
             scene_discovery=scene_discovery,
             actor_metadata=actor_metadata,
+            excerpts=excerpts,
         )
         actor_metrics["narrative_strategy"] = strategy_actor_metrics
         _verify_strategy_scene_references(
@@ -1117,6 +1181,12 @@ async def resume_from_narrative_strategy_stage(
         synthesis_map = await orchestrator._materialize_selected_primitives(
             project=project,
             synthesis_primitives=tagged_primitives,
+            strategy=strategy,
+            project_dir=project_dir,
+        )
+        retained_excerpts = await orchestrator._materialize_selected_excerpts(
+            project=project,
+            excerpts=excerpts,
             strategy=strategy,
             project_dir=project_dir,
         )
@@ -1142,6 +1212,7 @@ async def resume_from_narrative_strategy_stage(
             project_dir=project_dir,
             actor_metadata=actor_metadata,
             scene_discovery=scene_discovery,
+            retained_excerpts=retained_excerpts,
         )
         actor_metrics["episode_architecture"] = planning_state_metrics.get(
             "episode_architecture", {}
@@ -1249,6 +1320,10 @@ async def resume_from_scene_discovery_stage(
             actor_metadata=actor_metadata,
         )
 
+        excerpts = _load_excerpt_artifact_if_present(
+            project_dir, "excerpts.json"
+        ) or ExcerptArtifact(project_id=project.project_id)
+
         (
             strategy,
             strategy_actor_metrics,
@@ -1258,6 +1333,7 @@ async def resume_from_scene_discovery_stage(
             project_dir=project_dir,
             scene_discovery=scene_discovery,
             actor_metadata=actor_metadata,
+            excerpts=excerpts,
         )
         actor_metrics["narrative_strategy"] = strategy_actor_metrics
         _verify_strategy_scene_references(
@@ -1267,6 +1343,12 @@ async def resume_from_scene_discovery_stage(
         synthesis_map = await orchestrator._materialize_selected_primitives(
             project=project,
             synthesis_primitives=tagged_primitives,
+            strategy=strategy,
+            project_dir=project_dir,
+        )
+        retained_excerpts = await orchestrator._materialize_selected_excerpts(
+            project=project,
+            excerpts=excerpts,
             strategy=strategy,
             project_dir=project_dir,
         )
@@ -1292,6 +1374,7 @@ async def resume_from_scene_discovery_stage(
             project_dir=project_dir,
             actor_metadata=actor_metadata,
             scene_discovery=scene_discovery,
+            retained_excerpts=retained_excerpts,
         )
         actor_metrics["episode_architecture"] = planning_state_metrics.get(
             "episode_architecture", {}
@@ -1394,6 +1477,9 @@ async def resume_from_episode_architecture_stage(
 
     actor_metrics = _load_existing_stage_metrics(project_dir)
     try:
+        retained_excerpts = _load_excerpt_artifact_if_present(
+            project_dir, "retained_excerpts.json"
+        ) or ExcerptArtifact(project_id=project.project_id)
         (
             episode_architectures,
             episode_plans,
@@ -1409,6 +1495,7 @@ async def resume_from_episode_architecture_stage(
             project_dir=project_dir,
             actor_metadata=actor_metadata,
             scene_discovery=scene_discovery,
+            retained_excerpts=retained_excerpts,
         )
         actor_metrics["episode_architecture"] = planning_state_metrics.get(
             "episode_architecture", {}

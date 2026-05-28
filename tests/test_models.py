@@ -306,30 +306,28 @@ class TestThematicProject:
         assert target_ranges == {
             "events": (87, 120),
             "acts": (45, 59),
-            "utterances": (12, 17),
             "actor_portraits": (18, 24),
             "mechanisms": (37, 51),
             "conditions": (21, 27),
             "artifacts": (18, 24),
             "readings": (11, 13),
         }
-        assert sum(lower for lower, _ in target_ranges.values()) == 249
-        assert sum(upper for _, upper in target_ranges.values()) == 335
+        assert sum(lower for lower, _ in target_ranges.values()) == 237
+        assert sum(upper for _, upper in target_ranges.values()) == 318
 
     def test_primitive_substrate_target_ranges_for_minified_mode_match_expanded_table(self):
         target_ranges = primitive_substrate_target_ranges_for_mode(PodcastMode.MINIFIED)
         assert target_ranges == {
             "events": (19, 27),
             "acts": (10, 13),
-            "utterances": (2, 3),
             "actor_portraits": (6, 8),
             "mechanisms": (7, 12),
             "conditions": (4, 5),
             "artifacts": (3, 4),
             "readings": (2, 2),
         }
-        assert sum(lower for lower, _ in target_ranges.values()) == 53
-        assert sum(upper for _, upper in target_ranges.values()) == 74
+        assert sum(lower for lower, _ in target_ranges.values()) == 51
+        assert sum(upper for _, upper in target_ranges.values()) == 71
 
     def test_thematic_project_accepts_forty_sub_themes(self):
         project = ThematicProject(

@@ -41,6 +41,9 @@ _TRANSIENT_API_STATUS_MESSAGE_SNIPPETS = (
     "service unavailable",
     "gateway timeout",
     "temporarily unavailable",
+    "rate limit",
+    "rate limited",
+    "too many requests",
 )
 
 
@@ -134,6 +137,7 @@ def _extract_http_status_code(exc: Exception) -> int | None:
 
     message = str(exc)
     for pattern in (
+        r"\berror\s+code\s*[:=]?\s*(\d{3})\b",
         r"\bstatus(?:_code)?\s*[:=]\s*(\d{3})\b",
         r"\bhttp\s*(\d{3})\b",
         r"\bcode\s*[:=]\s*(\d{3})\b",
@@ -145,7 +149,45 @@ def _extract_http_status_code(exc: Exception) -> int | None:
             return int(match.group(1))
         except ValueError:
             continue
+
+    for arg in getattr(exc, "args", ()):
+        if isinstance(arg, int) and 100 <= arg <= 599:
+            return arg
+        if isinstance(arg, str):
+            for pattern in (
+                r"\berror\s+code\s*[:=]?\s*(\d{3})\b",
+                r"\bstatus(?:_code)?\s*[:=]\s*(\d{3})\b",
+                r"\bhttp\s*(\d{3})\b",
+                r"\bcode\s*[:=]\s*(\d{3})\b",
+            ):
+                match = re.search(pattern, arg, flags=re.IGNORECASE)
+                if not match:
+                    continue
+                try:
+                    return int(match.group(1))
+                except ValueError:
+                    continue
     return None
+
+
+def _iter_api_error_values(exc: Exception) -> Sequence[Any]:
+    values: list[Any] = []
+    for attr_name in ("type", "body", "message", "detail", "details"):
+        values.append(getattr(exc, attr_name, None))
+    values.extend(getattr(exc, "args", ()))
+
+    response = getattr(exc, "response", None)
+    if response is not None:
+        for attr_name in ("text", "content", "reason_phrase"):
+            values.append(getattr(response, attr_name, None))
+        json_method = getattr(response, "json", None)
+        if callable(json_method):
+            try:
+                values.append(json_method())
+            except Exception:
+                pass
+
+    return values
 
 
 def is_api_status_transient_error(exc: Exception) -> bool:
@@ -159,15 +201,8 @@ def is_api_status_transient_error(exc: Exception) -> bool:
     if "ratelimit" in error_name:
         return True
 
-    if _contains_transient_api_status_snippet(getattr(exc, "type", None)):
-        return True
-    if _contains_transient_api_status_snippet(getattr(exc, "body", None)):
-        return True
-    response = getattr(exc, "response", None)
-    if response is not None:
-        if _contains_transient_api_status_snippet(getattr(response, "text", None)):
-            return True
-        if _contains_transient_api_status_snippet(getattr(response, "content", None)):
+    for value in _iter_api_error_values(exc):
+        if _contains_transient_api_status_snippet(value):
             return True
 
     message = str(exc)

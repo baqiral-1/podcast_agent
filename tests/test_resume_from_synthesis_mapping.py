@@ -29,6 +29,7 @@ from podcast_agent.schemas.models import (
     ThematicAxis,
     ThematicCorpus,
     ThematicProject,
+    ExcerptArtifact,
 )
 
 
@@ -212,6 +213,7 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
             project_dir: Path,
             actor_metadata: ActorMetadata,
             scene_discovery: SceneDiscoveryArtifact | None = None,
+            **kwargs: Any,
         ) -> tuple[NarrativeStrategy, dict[str, Any]]:
             calls["order"].append("narrative_strategy")
             calls["narrative_actor_metadata"] = actor_metadata
@@ -281,6 +283,41 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
             synthesis_map = SynthesisMap(project_id=project.project_id, primitives=[primitive])
             _write_json(project_dir / "retained_primitives.json", synthesis_map)
             return synthesis_map
+
+        async def _extract_excerpts(
+            self,
+            *args: Any,
+            **kwargs: Any,
+        ) -> ExcerptArtifact:
+            try:
+                calls.setdefault("order", []).append("extract_excerpts")  # type: ignore[name-defined]
+            except NameError:
+                pass
+            project = kwargs.get("project")
+            project_id = getattr(project, "project_id", "p") if project else "p"
+            artifact = ExcerptArtifact(project_id=project_id)
+            project_dir = kwargs.get("project_dir")
+            if project_dir is not None:
+                _write_json(project_dir / "excerpts.json", artifact)
+            return artifact
+
+        async def _materialize_selected_excerpts(
+            self,
+            *args: Any,
+            **kwargs: Any,
+        ) -> ExcerptArtifact:
+            try:
+                calls.setdefault("order", []).append("selected_excerpts")  # type: ignore[name-defined]
+            except NameError:
+                pass
+            project = kwargs.get("project")
+            project_id = getattr(project, "project_id", "p") if project else "p"
+            artifact = ExcerptArtifact(project_id=project_id)
+            project_dir = kwargs.get("project_dir")
+            if project_dir is not None:
+                _write_json(project_dir / "retained_excerpts.json", artifact)
+            return artifact
+
 
         def _resolve_episode_count_from_strategy(
             self,
@@ -540,6 +577,7 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
             series_explanation_registry: list[Any] | None = None,
             narrative_state_pre: NarrativeState | None = None,
             narrative_state_post: NarrativeState | None = None,
+            **kwargs: Any,
         ) -> tuple[int, Any]:
             calls["order"].append("produce_episode")
             calls["production_actor_metadata"] = actor_metadata
@@ -590,9 +628,11 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
 
     assert calls["order"] == [
         "map_synthesis",
+        "extract_excerpts",
         "scene_discovery",
         "narrative_strategy",
         "selected_primitives",
+        "selected_excerpts",
         "resolve_episode_count",
         "episode_architecture",
         "plan_series",
@@ -729,6 +769,7 @@ def test_resume_from_synthesis_mapping_fails_when_upstream_artifact_changes(
             project_dir: Path,
             actor_metadata: ActorMetadata,
             scene_discovery: SceneDiscoveryArtifact | None = None,
+            **kwargs: Any,
         ) -> tuple[NarrativeStrategy, dict[str, Any]]:
             strategy = NarrativeStrategy(
                 strategy_type="chronological",
@@ -791,6 +832,41 @@ def test_resume_from_synthesis_mapping_fails_when_upstream_artifact_changes(
             _write_json(project_dir / "retained_primitives.json", synthesis_map)
             return synthesis_map
 
+        async def _extract_excerpts(
+            self,
+            *args: Any,
+            **kwargs: Any,
+        ) -> ExcerptArtifact:
+            try:
+                calls.setdefault("order", []).append("extract_excerpts")  # type: ignore[name-defined]
+            except NameError:
+                pass
+            project = kwargs.get("project")
+            project_id = getattr(project, "project_id", "p") if project else "p"
+            artifact = ExcerptArtifact(project_id=project_id)
+            project_dir = kwargs.get("project_dir")
+            if project_dir is not None:
+                _write_json(project_dir / "excerpts.json", artifact)
+            return artifact
+
+        async def _materialize_selected_excerpts(
+            self,
+            *args: Any,
+            **kwargs: Any,
+        ) -> ExcerptArtifact:
+            try:
+                calls.setdefault("order", []).append("selected_excerpts")  # type: ignore[name-defined]
+            except NameError:
+                pass
+            project = kwargs.get("project")
+            project_id = getattr(project, "project_id", "p") if project else "p"
+            artifact = ExcerptArtifact(project_id=project_id)
+            project_dir = kwargs.get("project_dir")
+            if project_dir is not None:
+                _write_json(project_dir / "retained_excerpts.json", artifact)
+            return artifact
+
+
         def _resolve_episode_count_from_strategy(
             self,
             project: ThematicProject,
@@ -799,8 +875,8 @@ def test_resume_from_synthesis_mapping_fails_when_upstream_artifact_changes(
             return project.model_copy(update={"episode_count": 1})
 
         async def _plan_series_with_narrative_state(
-            self, **_: Any
-        ) -> tuple[
+            self, **_: Any,
+                ) -> tuple[
             list[EpisodeArchitecture],
             list[Any],
             dict[int, NarrativeState],
@@ -847,6 +923,7 @@ def test_resume_from_synthesis_mapping_fails_when_upstream_artifact_changes(
             series_explanation_registry: list[Any] | None = None,
             narrative_state_pre: NarrativeState | None = None,
             narrative_state_post: NarrativeState | None = None,
+            **kwargs: Any,
         ) -> tuple[int, Any]:
             return plan.episode_number, SimpleNamespace(
                 episode_number=plan.episode_number

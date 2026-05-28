@@ -5,6 +5,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from anthropic import APIStatusError as AnthropicAPIStatusError
+import httpx
 import pytest
 
 from _section_progression_helpers import make_section_progression
@@ -30,10 +32,22 @@ class DummyTTSClient:
         return None
 
 
-class APIStatusError(Exception):
-    def __init__(self, message: str, *, status_code: int | None = None) -> None:
-        super().__init__(message)
-        self.status_code = status_code
+def _anthropic_overloaded_error(
+    *,
+    status_code: int = 529,
+    message: str = "provider status failure",
+) -> AnthropicAPIStatusError:
+    request = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    response = httpx.Response(status_code, request=request)
+    body = {
+        "type": "error",
+        "error": {
+            "details": None,
+            "type": "overloaded_error",
+            "message": "Overloaded",
+        },
+    }
+    return AnthropicAPIStatusError(message, response=response, body=body)
 
 
 def _core_primitive_ids() -> list[str]:
@@ -566,7 +580,7 @@ def test_write_episode_retries_transient_failure_for_second_part(
             }
         )
         if len(captured_calls) == 2:
-            raise APIStatusError("Internal server error", status_code=500)
+            raise _anthropic_overloaded_error()
         return response_model.model_validate(
             {
                 "prose_sections": [

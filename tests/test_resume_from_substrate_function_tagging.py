@@ -33,6 +33,7 @@ from podcast_agent.schemas.models import (
     ThematicAxis,
     ThematicCorpus,
     ThematicProject,
+    ExcerptArtifact,
 )
 
 
@@ -338,6 +339,7 @@ def test_resume_from_substrate_function_tagging_reruns_tagging_and_downstream(
             project_dir: Path,
             actor_metadata: ActorMetadata,
             scene_discovery: SceneDiscoveryArtifact | None = None,
+            **kwargs: Any,
         ) -> tuple[NarrativeStrategy, dict[str, Any]]:
             calls["order"].append("narrative_strategy")
             calls["narrative_actor_metadata"] = actor_metadata
@@ -373,6 +375,41 @@ def test_resume_from_substrate_function_tagging_reruns_tagging_and_downstream(
             )
             _write_json(project_dir / "retained_primitives.json", synthesis_map)
             return synthesis_map
+
+        async def _extract_excerpts(
+            self,
+            *args: Any,
+            **kwargs: Any,
+        ) -> ExcerptArtifact:
+            try:
+                calls.setdefault("order", []).append("extract_excerpts")  # type: ignore[name-defined]
+            except NameError:
+                pass
+            project = kwargs.get("project")
+            project_id = getattr(project, "project_id", "p") if project else "p"
+            artifact = ExcerptArtifact(project_id=project_id)
+            project_dir = kwargs.get("project_dir")
+            if project_dir is not None:
+                _write_json(project_dir / "excerpts.json", artifact)
+            return artifact
+
+        async def _materialize_selected_excerpts(
+            self,
+            *args: Any,
+            **kwargs: Any,
+        ) -> ExcerptArtifact:
+            try:
+                calls.setdefault("order", []).append("selected_excerpts")  # type: ignore[name-defined]
+            except NameError:
+                pass
+            project = kwargs.get("project")
+            project_id = getattr(project, "project_id", "p") if project else "p"
+            artifact = ExcerptArtifact(project_id=project_id)
+            project_dir = kwargs.get("project_dir")
+            if project_dir is not None:
+                _write_json(project_dir / "retained_excerpts.json", artifact)
+            return artifact
+
 
         def _resolve_episode_count_from_strategy(
             self,
@@ -430,6 +467,7 @@ def test_resume_from_substrate_function_tagging_reruns_tagging_and_downstream(
             series_explanation_registry: list[Any] | None = None,
             narrative_state_pre: NarrativeState | None = None,
             narrative_state_post: NarrativeState | None = None,
+            **kwargs: Any,
         ) -> tuple[int, Any]:
             calls["order"].append("produce_episode")
             calls["production_actor_metadata"] = actor_metadata
@@ -481,6 +519,7 @@ def test_resume_from_substrate_function_tagging_reruns_tagging_and_downstream(
         "scene_discovery",
         "narrative_strategy",
         "selected_primitives",
+        "selected_excerpts",
         "resolve_episode_count",
         "episode_architecture",
         "plan_series",
@@ -631,6 +670,7 @@ def test_resume_from_substrate_function_tagging_fails_when_upstream_artifact_cha
             project_dir: Path,
             actor_metadata: ActorMetadata,
             scene_discovery: SceneDiscoveryArtifact | None = None,
+            **kwargs: Any,
         ) -> tuple[NarrativeStrategy, dict[str, Any]]:
             strategy = _build_strategy()
             _write_json(project_dir / "narrative_strategy.json", strategy)
@@ -658,6 +698,41 @@ def test_resume_from_substrate_function_tagging_fails_when_upstream_artifact_cha
             )
             return synthesis_map
 
+        async def _extract_excerpts(
+            self,
+            *args: Any,
+            **kwargs: Any,
+        ) -> ExcerptArtifact:
+            try:
+                calls.setdefault("order", []).append("extract_excerpts")  # type: ignore[name-defined]
+            except NameError:
+                pass
+            project = kwargs.get("project")
+            project_id = getattr(project, "project_id", "p") if project else "p"
+            artifact = ExcerptArtifact(project_id=project_id)
+            project_dir = kwargs.get("project_dir")
+            if project_dir is not None:
+                _write_json(project_dir / "excerpts.json", artifact)
+            return artifact
+
+        async def _materialize_selected_excerpts(
+            self,
+            *args: Any,
+            **kwargs: Any,
+        ) -> ExcerptArtifact:
+            try:
+                calls.setdefault("order", []).append("selected_excerpts")  # type: ignore[name-defined]
+            except NameError:
+                pass
+            project = kwargs.get("project")
+            project_id = getattr(project, "project_id", "p") if project else "p"
+            artifact = ExcerptArtifact(project_id=project_id)
+            project_dir = kwargs.get("project_dir")
+            if project_dir is not None:
+                _write_json(project_dir / "retained_excerpts.json", artifact)
+            return artifact
+
+
         def _resolve_episode_count_from_strategy(
             self,
             project: ThematicProject,
@@ -666,8 +741,8 @@ def test_resume_from_substrate_function_tagging_fails_when_upstream_artifact_cha
             return project.model_copy(update={"episode_count": 1})
 
         async def _plan_series_with_narrative_state(
-            self, **_: Any
-        ) -> tuple[
+            self, **_: Any,
+                ) -> tuple[
             list[EpisodeArchitecture],
             list[Any],
             dict[int, NarrativeState],
@@ -702,6 +777,7 @@ def test_resume_from_substrate_function_tagging_fails_when_upstream_artifact_cha
             series_explanation_registry: list[Any] | None = None,
             narrative_state_pre: NarrativeState | None = None,
             narrative_state_post: NarrativeState | None = None,
+            **kwargs: Any,
         ) -> tuple[int, Any]:
             return plan.episode_number, SimpleNamespace(
                 episode_number=plan.episode_number
@@ -788,6 +864,7 @@ def test_resume_from_substrate_function_tagging_uses_stage_label_in_resume_failu
             project_dir: Path,
             actor_metadata: ActorMetadata,
             scene_discovery: SceneDiscoveryArtifact | None = None,
+            **kwargs: Any,
         ) -> tuple[NarrativeStrategy, dict[str, Any]]:
             strategy = _build_strategy()
             _write_json(project_dir / "narrative_strategy.json", strategy)
@@ -814,6 +891,41 @@ def test_resume_from_substrate_function_tagging_uses_stage_label_in_resume_failu
                 primitives=[_build_event_primitive()],
             )
 
+        async def _extract_excerpts(
+            self,
+            *args: Any,
+            **kwargs: Any,
+        ) -> ExcerptArtifact:
+            try:
+                calls.setdefault("order", []).append("extract_excerpts")  # type: ignore[name-defined]
+            except NameError:
+                pass
+            project = kwargs.get("project")
+            project_id = getattr(project, "project_id", "p") if project else "p"
+            artifact = ExcerptArtifact(project_id=project_id)
+            project_dir = kwargs.get("project_dir")
+            if project_dir is not None:
+                _write_json(project_dir / "excerpts.json", artifact)
+            return artifact
+
+        async def _materialize_selected_excerpts(
+            self,
+            *args: Any,
+            **kwargs: Any,
+        ) -> ExcerptArtifact:
+            try:
+                calls.setdefault("order", []).append("selected_excerpts")  # type: ignore[name-defined]
+            except NameError:
+                pass
+            project = kwargs.get("project")
+            project_id = getattr(project, "project_id", "p") if project else "p"
+            artifact = ExcerptArtifact(project_id=project_id)
+            project_dir = kwargs.get("project_dir")
+            if project_dir is not None:
+                _write_json(project_dir / "retained_excerpts.json", artifact)
+            return artifact
+
+
         def _resolve_episode_count_from_strategy(
             self,
             project: ThematicProject,
@@ -822,8 +934,8 @@ def test_resume_from_substrate_function_tagging_uses_stage_label_in_resume_failu
             return project.model_copy(update={"episode_count": 1})
 
         async def _plan_series_with_narrative_state(
-            self, **_: Any
-        ) -> tuple[
+            self, **_: Any,
+                ) -> tuple[
             list[EpisodeArchitecture],
             list[Any],
             dict[int, NarrativeState],
@@ -858,6 +970,7 @@ def test_resume_from_substrate_function_tagging_uses_stage_label_in_resume_failu
             series_explanation_registry: list[Any] | None = None,
             narrative_state_pre: NarrativeState | None = None,
             narrative_state_post: NarrativeState | None = None,
+            **kwargs: Any,
         ) -> tuple[int, Any]:
             raise RuntimeError("boom")
 

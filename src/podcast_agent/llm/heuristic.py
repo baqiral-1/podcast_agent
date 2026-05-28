@@ -314,19 +314,6 @@ class HeuristicLLMClient(LLMClient):
                 },
             ),
             self._build_base_primitive(
-                substrate="utterances",
-                title="Heuristic utterance",
-                passage_ids=passage_ids[:3],
-                actor_ids=actor_ids[:1],
-                extra_fields={
-                    "utterance_type": "speech",
-                    "speaker": "A visible speaker",
-                    "audience": "A public audience",
-                    "utterance_summary": "A speech or text makes the dispute audible.",
-                    "key_quote": "This changes what can now be said aloud.",
-                },
-            ),
-            self._build_base_primitive(
                 substrate="actor_portraits",
                 title="Heuristic actor pressure",
                 passage_ids=passage_ids[:3],
@@ -361,8 +348,8 @@ class HeuristicLLMClient(LLMClient):
                 title="Heuristic artifact",
                 passage_ids=passage_ids[:3],
                 extra_fields={
-                    "artifact_type": "document",
-                    "artifact_label": "A visible document or object",
+                    "artifact_type": "object",
+                    "artifact_label": "A visible material object or place",
                 },
             ),
             self._build_base_primitive(
@@ -380,7 +367,6 @@ class HeuristicLLMClient(LLMClient):
         grouped = {
             "events": [],
             "acts": [],
-            "utterances": [],
             "actor_portraits": [],
             "mechanisms": [],
             "conditions": [],
@@ -438,25 +424,6 @@ class HeuristicLLMClient(LLMClient):
                 updated["stake"] = {
                     "whose": primitive.get("acting_subject") or "The acting subject",
                     "what_at_stake": "Authority and immediate leverage.",
-                }
-            elif substrate == "utterances":
-                updated["functions"] = ["texture", "contest"]
-                updated["texture"] = {
-                    "what_it_anchors": "A line or phrase that makes the political pressure audible.",
-                }
-                updated["contest"] = {
-                    "candidate_readings": [
-                        {
-                            "reading": "The utterance is a sincere declaration.",
-                            "support": "Its explicit wording carries the claim directly.",
-                            "weakness": "It may also be performative or strategic.",
-                        },
-                        {
-                            "reading": "The utterance is strategic positioning.",
-                            "support": "Its timing suggests tactical intent.",
-                            "weakness": "The public wording may still bind actors sincerely.",
-                        },
-                    ]
                 }
             elif substrate == "actor_portraits":
                 updated.setdefault(
@@ -569,10 +536,34 @@ class HeuristicLLMClient(LLMClient):
     ) -> dict[str, Any]:
         return self._generate_primitive_function_tagging_batch(payload, substrate="acts")
 
-    def _generate_primitive_function_tagging_utterances(
-        self, payload: PromptPayload
-    ) -> dict[str, Any]:
-        return self._generate_primitive_function_tagging_batch(payload, substrate="utterances")
+    def _generate_excerpt_extraction(self, payload: PromptPayload) -> dict[str, Any]:
+        passages_by_axis = payload.get("passages_by_axis", {})
+        passage_ids = self._collect_passage_ids(passages_by_axis) or [uuid4().hex]
+        actor_metadata = payload.get("actor_metadata", {}) or {}
+        actor_ids = [
+            str(actor.get("actor_id", ""))
+            for actor in actor_metadata.get("actors", [])
+            if actor.get("actor_id")
+        ]
+        return {
+            "project_id": payload.get("project_id", "project"),
+            "excerpts": [
+                {
+                    "excerpt_type": "speech",
+                    "title": "Heuristic excerpt",
+                    "passage_ids": passage_ids[:2] or ["p0"],
+                    "actor_ids": actor_ids[:1],
+                    "speaker": "A visible speaker",
+                    "audience": "A public audience",
+                    "summary": "A line makes the dispute audible.",
+                    "verbatim_excerpt": "This changes what can now be said aloud.",
+                    "plain_gloss": "In plain terms, the rules just shifted.",
+                    "quotability": 0.7,
+                }
+            ],
+            "quality_score": 0.5,
+            "quality_notes": ["Heuristic excerpt artifact."],
+        }
 
     def _generate_primitive_function_tagging_actor_portraits(
         self, payload: PromptPayload

@@ -2,20 +2,14 @@
 
 from __future__ import annotations
 
-import logging
 import re
-import time
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 from podcast_agent.agents.base import Agent
-from podcast_agent.langchain.runnables import RetryableGenerationError, TransientLLMError
-from podcast_agent.llm.concurrency import llm_semaphore_for
 from podcast_agent.prompts import theme_decomposition_instructions
 from podcast_agent.schemas.models import BookRecord, ChapterInfo, ThematicAxis
-
-logger = logging.getLogger(__name__)
 
 
 class ThemeDecompositionResponse(BaseModel):
@@ -125,50 +119,14 @@ class ThemeDecompositionAgent(Agent):
             "books": book_summaries,
         }
 
-    def run(self, payload: dict) -> BaseModel:
+    def build_instructions(self, payload: dict) -> str:
         axis_count_min = int(payload.get("axis_count_min", 12))
         axis_count_max = int(payload.get("axis_count_max", 20))
         actor_count_min = int(payload.get("actor_count_min", 10))
         actor_count_max = int(payload.get("actor_count_max", 40))
-        instructions = theme_decomposition_instructions(
+        return theme_decomposition_instructions(
             axis_count_min=axis_count_min,
             axis_count_max=axis_count_max,
             actor_count_min=actor_count_min,
             actor_count_max=actor_count_max,
         )
-        last_exc: Exception | None = None
-        for attempt in range(1, self.max_retry_attempts + 1):
-            with llm_semaphore_for(self.schema_name):
-                try:
-                    return self.llm.generate_json(
-                        schema_name=self.schema_name,
-                        instructions=instructions,
-                        payload=payload,
-                        response_model=self.response_model,
-                        attempt=attempt,
-                        max_attempts=self.max_retry_attempts,
-                    )
-                except (TransientLLMError, RetryableGenerationError) as exc:
-                    last_exc = exc
-                    if attempt < self.max_retry_attempts:
-                        backoff = min(2 ** (attempt - 1), 16) + (time.monotonic() % 1)
-                        self._log_retry_scheduled(
-                            payload=payload,
-                            attempt=attempt,
-                            backoff=backoff,
-                            exc=exc,
-                        )
-                        logger.warning(
-                            "Agent %s attempt %d/%d failed (%s: %s), retrying in %.1fs",
-                            self.schema_name,
-                            attempt,
-                            self.max_retry_attempts,
-                            type(exc).__name__,
-                            exc,
-                            backoff,
-                        )
-                        time.sleep(backoff)
-                    continue
-                except Exception:
-                    raise
-        raise last_exc  # type: ignore[misc]

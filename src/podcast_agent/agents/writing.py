@@ -71,6 +71,7 @@ class WritingAgent(Agent):
         continuity_contract_pre: dict | None = None,
         continuity_contract_post: dict | None = None,
         scene_primitive_briefs: dict[str, list[dict[str, object]]] | None = None,
+        scene_excerpt_briefs: dict[str, list[dict[str, object]]] | None = None,
         actor_metadata: dict | None = None,
         writing_feedback: str | None = None,
         prior_window_continuity: dict | None = None,
@@ -97,6 +98,8 @@ class WritingAgent(Agent):
             payload["continuity_contract_post"] = continuity_contract_post
         if scene_primitive_briefs is not None:
             payload["scene_primitive_briefs"] = scene_primitive_briefs
+        if scene_excerpt_briefs:
+            payload["scene_excerpt_briefs"] = scene_excerpt_briefs
         if actor_metadata is not None:
             payload["actor_metadata"] = actor_metadata
         if writing_feedback:

@@ -18,6 +18,7 @@ from podcast_agent.schemas.models import (
     ActorSeriesScope,
     ActorTier,
     BaseSynthesisPrimitive,
+    ExcerptArtifact,
     EpisodePlan,
     EpisodePlanDraft,
     NarrativeStrategy,
@@ -381,6 +382,19 @@ def clean_synthesis_primitive_actor_links(
         actor_ids = _filter_known_ids(primitive.actor_ids, valid_actor_ids, metrics)
         cleaned_primitives.append(primitive.model_copy(update={"actor_ids": actor_ids}))
     return artifact.model_copy(update={"primitives": cleaned_primitives}), metrics
+
+
+def clean_excerpt_actor_links(
+    artifact: ExcerptArtifact,
+    actor_metadata: ActorMetadata,
+) -> tuple[ExcerptArtifact, dict[str, Any]]:
+    valid_actor_ids = {actor.actor_id for actor in actor_metadata.actors}
+    metrics = {"unknown_actor_ids": 0}
+    cleaned_excerpts = []
+    for excerpt in artifact.excerpts:
+        actor_ids = _filter_known_ids(excerpt.actor_ids, valid_actor_ids, metrics)
+        cleaned_excerpts.append(excerpt.model_copy(update={"actor_ids": actor_ids}))
+    return artifact.model_copy(update={"excerpts": cleaned_excerpts}), metrics
 
 
 def clean_strategy_actor_links(

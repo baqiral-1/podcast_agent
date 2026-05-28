@@ -85,9 +85,9 @@ class LLMConfig(BaseModel):
     provider_overrides: dict[str, str] = Field(
         default_factory=lambda: {
             "primitive_substrate_extraction": "anthropic",
+            "excerpt_extraction": "anthropic",
             "primitive_function_tagging_events": "anthropic",
             "primitive_function_tagging_acts": "anthropic",
-            "primitive_function_tagging_utterances": "anthropic",
             "primitive_function_tagging_actor_portraits": "anthropic",
             "primitive_function_tagging_mechanisms": "anthropic",
             "primitive_function_tagging_conditions": "anthropic",
@@ -136,9 +136,9 @@ class LLMConfig(BaseModel):
         default_factory=lambda: {
             "passage_extraction": 480.0,
             "primitive_substrate_extraction": 3360.0,
+            "excerpt_extraction": 2400.0,
             "primitive_function_tagging_events": 1200.0,
             "primitive_function_tagging_acts": 1200.0,
-            "primitive_function_tagging_utterances": 1200.0,
             "primitive_function_tagging_actor_portraits": 1200.0,
             "primitive_function_tagging_mechanisms": 1200.0,
             "primitive_function_tagging_conditions": 1200.0,
@@ -159,9 +159,9 @@ class LLMConfig(BaseModel):
     thinking_budget_tokens: dict[str, int] = Field(
         default_factory=lambda: {
             "primitive_substrate_extraction": 30000,
+            "excerpt_extraction": 24000,
             "primitive_function_tagging_events": 20000,
             "primitive_function_tagging_acts": 20000,
-            "primitive_function_tagging_utterances": 20000,
             "primitive_function_tagging_actor_portraits": 20000,
             "primitive_function_tagging_mechanisms": 20000,
             "primitive_function_tagging_conditions": 20000,
@@ -236,6 +236,12 @@ class LLMConfig(BaseModel):
                 max_retry_attempts=2,
                 concurrency_limit=3,
             ),
+            "excerpt_extraction": AgentConfig(
+                model_name="claude-opus-4-7",
+                temperature=0.8,
+                max_retry_attempts=2,
+                concurrency_limit=3,
+            ),
             "primitive_function_tagging_events": AgentConfig(
                 model_name="claude-opus-4-7",
                 temperature=0.4,
@@ -243,12 +249,6 @@ class LLMConfig(BaseModel):
                 concurrency_limit=8,
             ),
             "primitive_function_tagging_acts": AgentConfig(
-                model_name="claude-opus-4-7",
-                temperature=0.4,
-                max_retry_attempts=2,
-                concurrency_limit=8,
-            ),
-            "primitive_function_tagging_utterances": AgentConfig(
                 model_name="claude-opus-4-7",
                 temperature=0.4,
                 max_retry_attempts=2,

@@ -13,14 +13,13 @@ from podcast_agent.prompts import primitive_substrate_extraction_instructions
 from podcast_agent.schemas.models import (
     PRIMITIVE_SUBSTRATES,
     PrimitiveSubstrate,
-    RawSynthesisPrimitivesArtifact,
+    RawCorePrimitivesArtifact,
     SynthesisPrimitivesArtifact,
 )
 
 _PRIMITIVE_ID_PREFIXES: dict[str, str] = {
     PrimitiveSubstrate.EVENTS.value: "e",
     PrimitiveSubstrate.ACTS.value: "a",
-    PrimitiveSubstrate.UTTERANCES.value: "u",
     PrimitiveSubstrate.ACTOR_PORTRAITS.value: "r",
     PrimitiveSubstrate.MECHANISMS.value: "m",
     PrimitiveSubstrate.CONDITIONS.value: "c",
@@ -33,7 +32,7 @@ class PrimitiveSubstrateExtractionAgent(Agent):
     """Extracts substrate-first primitives from the full synthesis evidence surface."""
 
     schema_name = "primitive_substrate_extraction"
-    response_model = RawSynthesisPrimitivesArtifact
+    response_model = RawCorePrimitivesArtifact
     instructions = primitive_substrate_extraction_instructions()
 
     def build_instructions(self, payload: dict) -> str:
@@ -84,7 +83,7 @@ class PrimitiveSubstrateExtractionAgent(Agent):
 
     def validate_result(
         self,
-        result: RawSynthesisPrimitivesArtifact,
+        result: RawCorePrimitivesArtifact,
         payload: dict,
     ) -> SynthesisPrimitivesArtifact:
         counters: defaultdict[str, int] = defaultdict(int)

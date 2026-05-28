@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import json
 
+from anthropic import APIStatusError as AnthropicAPIStatusError
+import httpx
+
 from podcast_agent.langchain.runnables import (
     is_connection_error,
     is_json_parse_error,
@@ -40,6 +43,24 @@ class StructuredAPIStatusError(Exception):
 
 class ProviderWrapperError(Exception):
     pass
+
+
+def _anthropic_overloaded_error(
+    *,
+    status_code: int = 529,
+    message: str = "provider status failure",
+) -> AnthropicAPIStatusError:
+    request = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    response = httpx.Response(status_code, request=request)
+    body = {
+        "type": "error",
+        "error": {
+            "details": None,
+            "type": "overloaded_error",
+            "message": "Overloaded",
+        },
+    }
+    return AnthropicAPIStatusError(message, response=response, body=body)
 
 
 def test_connection_error_detects_builtin_connection_error() -> None:
@@ -126,6 +147,10 @@ def test_transient_error_true_for_api_overloaded_type_without_status_or_message(
         error_type="overloaded_error",
     )
     assert is_transient_error(exc)
+
+
+def test_transient_error_true_for_real_anthropic_api_status_error() -> None:
+    assert is_transient_error(_anthropic_overloaded_error())
 
 
 def test_json_parse_error_detects_jsondecodeerror() -> None:

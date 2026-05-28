@@ -93,6 +93,7 @@ class EpisodeArchitectureAgent(Agent):
         narrative_state: dict | None = None,
         actor_metadata: dict | None = None,
         architecture_feedback: dict | None = None,
+        excerpts: list[dict] | None = None,
     ) -> dict:
         payload = {
             "episode": episode,
@@ -101,6 +102,8 @@ class EpisodeArchitectureAgent(Agent):
             "core_passages": core_passages,
             "support_passages": support_passages,
         }
+        if excerpts:
+            payload["excerpts"] = excerpts
         if episode_scenes is not None:
             payload["episode_scenes"] = episode_scenes
         if narrator_profile is not None:

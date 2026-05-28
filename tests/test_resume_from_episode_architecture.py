@@ -29,6 +29,7 @@ from podcast_agent.schemas.models import (
     ThematicAxis,
     ThematicCorpus,
     ThematicProject,
+    ExcerptArtifact,
 )
 
 
@@ -364,6 +365,41 @@ def test_resume_from_episode_architecture_reruns_architecture_then_planning_then
                 },
             )
 
+        async def _extract_excerpts(
+            self,
+            *args: Any,
+            **kwargs: Any,
+        ) -> ExcerptArtifact:
+            try:
+                calls.setdefault("order", []).append("extract_excerpts")  # type: ignore[name-defined]
+            except NameError:
+                pass
+            project = kwargs.get("project")
+            project_id = getattr(project, "project_id", "p") if project else "p"
+            artifact = ExcerptArtifact(project_id=project_id)
+            project_dir = kwargs.get("project_dir")
+            if project_dir is not None:
+                _write_json(project_dir / "excerpts.json", artifact)
+            return artifact
+
+        async def _materialize_selected_excerpts(
+            self,
+            *args: Any,
+            **kwargs: Any,
+        ) -> ExcerptArtifact:
+            try:
+                calls.setdefault("order", []).append("selected_excerpts")  # type: ignore[name-defined]
+            except NameError:
+                pass
+            project = kwargs.get("project")
+            project_id = getattr(project, "project_id", "p") if project else "p"
+            artifact = ExcerptArtifact(project_id=project_id)
+            project_dir = kwargs.get("project_dir")
+            if project_dir is not None:
+                _write_json(project_dir / "retained_excerpts.json", artifact)
+            return artifact
+
+
         async def _produce_episode(self, *args: Any, **kwargs: Any) -> tuple[int, SpokenScript]:
             calls["order"].append("produce_episode")
             calls["host_policy"] = kwargs["host_policy"]
@@ -493,6 +529,41 @@ def test_resume_from_episode_architecture_does_not_require_persisted_architectur
                     "episode_planning": {"unknown_actor_ids": 0},
                 },
             )
+
+        async def _extract_excerpts(
+            self,
+            *args: Any,
+            **kwargs: Any,
+        ) -> ExcerptArtifact:
+            try:
+                calls.setdefault("order", []).append("extract_excerpts")  # type: ignore[name-defined]
+            except NameError:
+                pass
+            project = kwargs.get("project")
+            project_id = getattr(project, "project_id", "p") if project else "p"
+            artifact = ExcerptArtifact(project_id=project_id)
+            project_dir = kwargs.get("project_dir")
+            if project_dir is not None:
+                _write_json(project_dir / "excerpts.json", artifact)
+            return artifact
+
+        async def _materialize_selected_excerpts(
+            self,
+            *args: Any,
+            **kwargs: Any,
+        ) -> ExcerptArtifact:
+            try:
+                calls.setdefault("order", []).append("selected_excerpts")  # type: ignore[name-defined]
+            except NameError:
+                pass
+            project = kwargs.get("project")
+            project_id = getattr(project, "project_id", "p") if project else "p"
+            artifact = ExcerptArtifact(project_id=project_id)
+            project_dir = kwargs.get("project_dir")
+            if project_dir is not None:
+                _write_json(project_dir / "retained_excerpts.json", artifact)
+            return artifact
+
 
         async def _produce_episode(self, *args: Any, **kwargs: Any) -> tuple[int, SpokenScript]:
             return (

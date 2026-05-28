@@ -31,6 +31,7 @@ from podcast_agent.schemas.models import (
     ThematicAxis,
     ThematicCorpus,
     ThematicProject,
+    ExcerptArtifact,
 )
 
 
@@ -339,6 +340,7 @@ def test_resume_from_narrative_strategy_uses_scene_discovery_and_current_artifac
             project_dir: Path,
             scene_discovery: SceneDiscoveryArtifact | None = None,
             actor_metadata: ActorMetadata | None = None,
+            **kwargs: Any,
         ) -> tuple[NarrativeStrategy, dict[str, Any]]:
             calls["strategy_config"] = project.config
             calls["strategy_scene_discovery"] = scene_discovery
@@ -366,6 +368,41 @@ def test_resume_from_narrative_strategy_uses_scene_discovery_and_current_artifac
             )
             _write_json(project_dir / "retained_primitives.json", retained)
             return retained
+
+        async def _extract_excerpts(
+            self,
+            *args: Any,
+            **kwargs: Any,
+        ) -> ExcerptArtifact:
+            try:
+                calls.setdefault("order", []).append("extract_excerpts")  # type: ignore[name-defined]
+            except NameError:
+                pass
+            project = kwargs.get("project")
+            project_id = getattr(project, "project_id", "p") if project else "p"
+            artifact = ExcerptArtifact(project_id=project_id)
+            project_dir = kwargs.get("project_dir")
+            if project_dir is not None:
+                _write_json(project_dir / "excerpts.json", artifact)
+            return artifact
+
+        async def _materialize_selected_excerpts(
+            self,
+            *args: Any,
+            **kwargs: Any,
+        ) -> ExcerptArtifact:
+            try:
+                calls.setdefault("order", []).append("selected_excerpts")  # type: ignore[name-defined]
+            except NameError:
+                pass
+            project = kwargs.get("project")
+            project_id = getattr(project, "project_id", "p") if project else "p"
+            artifact = ExcerptArtifact(project_id=project_id)
+            project_dir = kwargs.get("project_dir")
+            if project_dir is not None:
+                _write_json(project_dir / "retained_excerpts.json", artifact)
+            return artifact
+
 
         def _resolve_episode_count_from_strategy(
             self,

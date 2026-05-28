@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+from anthropic import APIStatusError as AnthropicAPIStatusError
+import httpx
 import pytest
 from pydantic import ValidationError
 
@@ -52,10 +54,22 @@ from podcast_agent.schemas.models import (
 )
 
 
-class APIStatusError(Exception):
-    def __init__(self, message: str, *, status_code: int | None = None) -> None:
-        super().__init__(message)
-        self.status_code = status_code
+def _anthropic_overloaded_error(
+    *,
+    status_code: int = 529,
+    message: str = "provider status failure",
+) -> AnthropicAPIStatusError:
+    request = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    response = httpx.Response(status_code, request=request)
+    body = {
+        "type": "error",
+        "error": {
+            "details": None,
+            "type": "overloaded_error",
+            "message": "Overloaded",
+        },
+    }
+    return AnthropicAPIStatusError(message, response=response, body=body)
 
 
 def _mock_llm() -> MagicMock:
@@ -826,9 +840,7 @@ class TestRedesignedAgents:
             book_summaries={},
         )
 
-        with patch(
-            "podcast_agent.agents.theme_decomposition.time.sleep", return_value=None
-        ):
+        with patch("podcast_agent.agents.base.time.sleep", return_value=None):
             result = agent.run(payload)
 
         assert result is expected
@@ -837,7 +849,7 @@ class TestRedesignedAgents:
     def test_writing_agent_retries_raw_transient_provider_error(self):
         llm = _mock_llm()
         llm.generate_json.side_effect = [
-            APIStatusError("Internal server error", status_code=500),
+            _anthropic_overloaded_error(),
             WritingAgent.response_model.model_validate(
                 {
                     "prose_sections": [
@@ -866,6 +878,62 @@ class TestRedesignedAgents:
             result = agent.run(payload)
 
         assert result.prose_sections[0].scene_card_ids == ["scene_1"]
+        assert llm.generate_json.call_count == 2
+        assert llm.generate_json.call_args_list[0].kwargs["attempt"] == 1
+        assert llm.generate_json.call_args_list[1].kwargs["attempt"] == 2
+
+    def test_spoken_delivery_agent_retries_raw_transient_provider_error(self):
+        llm = _mock_llm()
+        llm.generate_json.side_effect = [
+            _anthropic_overloaded_error(),
+            SpokenDeliveryAgent.response_model.model_validate(
+                {
+                    "sections": [
+                        {
+                            "section_id": "section_1",
+                            "text": "Spoken delivery draft.",
+                            "speech_hints": {
+                                "style": "neutral",
+                                "intensity": "none",
+                                "pace": "normal",
+                                "pause_before_ms": 300,
+                                "pause_after_ms": 300,
+                                "pronunciation_hints": [],
+                                "emphasis_targets": [],
+                                "render_strategy": "plain",
+                            },
+                        }
+                    ]
+                }
+            ),
+        ]
+        agent = SpokenDeliveryAgent(llm, max_retry_attempts=2)
+        payload = agent.build_payload(
+            episode_number=1,
+            script={
+                "framing": {
+                    "opening_image": "",
+                    "threat_or_unresolved_action": "",
+                    "opening_question": "",
+                    "handoff_scene_card_id": "scene_1",
+                },
+                "prose_sections": [
+                    {
+                        "section_id": "section_1",
+                        "scene_card_ids": ["scene_1"],
+                        "movement_goal": "continue",
+                        "text": "Section text.",
+                    }
+                ],
+            },
+            max_words_per_segment=250,
+            tts_provider="openai",
+        )
+
+        with patch("podcast_agent.agents.base.time.sleep", return_value=None):
+            result = agent.run(payload)
+
+        assert result.sections[0].section_id == "section_1"
         assert llm.generate_json.call_count == 2
         assert llm.generate_json.call_args_list[0].kwargs["attempt"] == 1
         assert llm.generate_json.call_args_list[1].kwargs["attempt"] == 2
@@ -1670,7 +1738,7 @@ class TestRedesignedAgents:
         assert "`thread_binding` (required when the episode has a `human_thread`" in prompt
         assert "Adjacent explanatory sections should usually differ in `open_mode`" in prompt
         assert "`open_mode` sets the rhetorical shape of the section's opening" in prompt
-        assert "Sections built mostly from `mechanisms`, `conditions`, or `readings` should usually tie those abstractions to an event, act, utterance, artifact, or recurring human pressure thread" in prompt
+        assert "Sections built mostly from `mechanisms`, `conditions`, or `readings` should usually tie those abstractions to an event, act, artifact, attached excerpt, or recurring human pressure thread" in prompt
         assert "Sections may additionally specify `section_sonic_plan`" in prompt
         assert "`section_sonic_plan.obligation` must be exactly" in prompt
         assert "`required` or `preferred`." in prompt

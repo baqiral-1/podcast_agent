@@ -10,7 +10,7 @@ Implements the four-phase pipeline:
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import hashlib
 from itertools import combinations
 import json
@@ -54,6 +54,7 @@ from podcast_agent.agents.spoken_delivery_agent import (
     SpokenDeliveryBatchSection,
 )
 from podcast_agent.agents.style_audit import StyleAuditAgent
+from podcast_agent.agents.excerpt_extraction import ExcerptExtractionAgent
 from podcast_agent.agents.synthesis_primitives import SynthesisPrimitivesAgent
 from podcast_agent.agents.theme_decomposition import ThemeDecompositionAgent
 from podcast_agent.agents.validation import GroundingValidationAgent
@@ -152,7 +153,8 @@ from podcast_agent.schemas.models import (
     effective_narrator_allowed_moves,
     scene_discovery_candidate_range_for_mode,
     scene_job_budget_for_mode,
-    UtterancePrimitive,
+    ExcerptArtifact,
+    ExcerptRecord,
     WithholdUntil,
     WordCountPriority,
 )
@@ -162,6 +164,7 @@ from podcast_agent.tts.openai_compatible import (
 )
 from podcast_agent.utils.actor_metadata import (
     clean_axis_actor_ids,
+    clean_excerpt_actor_links,
     clean_narrative_strategy_actor_links,
     clean_scene_actor_links,
     clean_synthesis_primitive_actor_links,
@@ -865,22 +868,6 @@ def _primitive_substrate_fields_payload(
         ):
             payload["immediate_result"] = immediate_result
         return payload
-    if substrate == PrimitiveSubstrate.UTTERANCES:
-        if utterance_type := _nonempty_runtime_text(
-            getattr(primitive, "utterance_type", None)
-        ):
-            payload["utterance_type"] = utterance_type
-        if speaker := _nonempty_runtime_text(getattr(primitive, "speaker", None)):
-            payload["speaker"] = speaker
-        if audience := _nonempty_runtime_text(getattr(primitive, "audience", None)):
-            payload["audience"] = audience
-        if utterance_summary := _nonempty_runtime_text(
-            getattr(primitive, "utterance_summary", None)
-        ):
-            payload["utterance_summary"] = utterance_summary
-        if key_quote := _nonempty_runtime_text(getattr(primitive, "key_quote", None)):
-            payload["key_quote"] = key_quote
-        return payload
     if substrate == PrimitiveSubstrate.ACTOR_PORTRAITS:
         if focus_actor_id := _nonempty_runtime_text(
             getattr(primitive, "focus_actor_id", None)
@@ -1000,6 +987,34 @@ def _build_scene_primitive_briefs(
     return briefs
 
 
+def _build_scene_excerpt_briefs(
+    *,
+    scene_cards: list[SceneCard],
+    excerpt_by_id: dict[str, ExcerptRecord],
+) -> dict[str, list[dict[str, Any]]]:
+    briefs: dict[str, list[dict[str, Any]]] = {}
+    for scene in scene_cards:
+        scene_briefs: list[dict[str, Any]] = []
+        for excerpt_id in scene.excerpt_ids:
+            excerpt = excerpt_by_id.get(excerpt_id)
+            if excerpt is None:
+                continue
+            scene_briefs.append(
+                {
+                    "id": excerpt.id,
+                    "excerpt_type": excerpt.excerpt_type,
+                    "title": excerpt.title,
+                    "speaker": excerpt.speaker,
+                    "verbatim_excerpt": excerpt.verbatim_excerpt,
+                    "plain_gloss": excerpt.plain_gloss,
+                    "passage_ids": list(excerpt.passage_ids),
+                }
+            )
+        if scene_briefs:
+            briefs[scene.scene_id] = scene_briefs
+    return briefs
+
+
 def _build_host_policy_payload(
     narrator_profile: SeriesNarratorProfile,
     narrative_state_pre: NarrativeState | None = None,
@@ -1110,6 +1125,7 @@ class _EpisodePlanningRuntime:
     compact_episode_actor_metadata: dict[str, Any]
     available_passages: list[dict[str, Any]]
     episode_payload: dict[str, Any]
+    episode_excerpts: list[dict[str, Any]] = field(default_factory=list)
 
 
 def _build_episode_planning_project_metadata(
@@ -1143,7 +1159,9 @@ def _build_episode_planning_runtime(
     narrative_state_pre: NarrativeState | None,
     primitive_lookup: dict[str, SynthesisPrimitiveBase],
     passage_lookup: dict[str, ExtractedPassage],
+    excerpt_by_id: dict[str, ExcerptRecord] | None = None,
 ) -> _EpisodePlanningRuntime:
+    excerpt_by_id = excerpt_by_id or {}
     continuity_contract_pre = (
         _build_continuity_contract(
             narrative_state=narrative_state_pre,
@@ -1197,6 +1215,17 @@ def _build_episode_planning_runtime(
             continue
         seen_passage_ids.add(passage_id)
         passage_ids.append(passage_id)
+    episode_excerpts = _build_episode_excerpt_payload(
+        primitive_ids_by_role.get("excerpt", []),
+        excerpt_by_id,
+    )
+    # Ground every voiced excerpt: pull its source passages into the writer's
+    # available-passage set so the verbatim text can be read on the page.
+    for excerpt_item in episode_excerpts:
+        for passage_id in excerpt_item.get("passage_ids", []):
+            if passage_id in passage_lookup and passage_id not in seen_passage_ids:
+                seen_passage_ids.add(passage_id)
+                passage_ids.append(passage_id)
     available_passages = [
         {
             "passage_id": passage_lookup[passage_id].passage_id,
@@ -1250,6 +1279,7 @@ def _build_episode_planning_runtime(
         compact_episode_actor_metadata=compact_actor_metadata(episode_actor_metadata),
         available_passages=available_passages,
         episode_payload=architecture.model_dump(mode="json"),
+        episode_excerpts=episode_excerpts,
     )
 
 
@@ -1491,11 +1521,20 @@ def _build_window_passages(
     *,
     window_scene_cards: list[SceneCard],
     passage_lookup: dict[str, ExtractedPassage],
+    excerpt_by_id: dict[str, ExcerptRecord] | None = None,
 ) -> list[dict[str, Any]]:
+    excerpt_by_id = excerpt_by_id or {}
     ordered_passage_ids: list[str] = []
     seen_passage_ids: set[str] = set()
     for scene in window_scene_cards:
-        for passage_id in scene.passage_ids:
+        scene_passage_ids = list(scene.passage_ids)
+        # Pull the source passages behind any voiced excerpt into the window so the
+        # verbatim text is grounded on the page.
+        for excerpt_id in scene.excerpt_ids:
+            excerpt = excerpt_by_id.get(excerpt_id)
+            if excerpt is not None:
+                scene_passage_ids.extend(excerpt.passage_ids)
+        for passage_id in scene_passage_ids:
             if passage_id in seen_passage_ids or passage_id not in passage_lookup:
                 continue
             seen_passage_ids.add(passage_id)
@@ -3180,13 +3219,6 @@ _SCENE_DISCOVERY_PRIMITIVE_TYPE_KEEP_FIELDS: dict[str, set[str]] = {
         "act_summary",
         "immediate_result",
     },
-    PrimitiveSubstrate.UTTERANCES.value: {
-        "utterance_type",
-        "speaker",
-        "audience",
-        "utterance_summary",
-        "key_quote",
-    },
     PrimitiveSubstrate.ACTOR_PORTRAITS.value: {
         "focus_actor_id",
         "actor_label",
@@ -3310,6 +3342,69 @@ def _build_narrative_strategy_synthesis_map_payload(
     )
 
 
+def _build_strategy_excerpt_payload(
+    excerpts: ExcerptArtifact | None,
+) -> list[dict[str, Any]] | None:
+    if excerpts is None or not excerpts.excerpts:
+        return None
+    payload: list[dict[str, Any]] = []
+    for excerpt in excerpts.excerpts:
+        item: dict[str, Any] = {
+            "id": excerpt.id,
+            "excerpt_type": excerpt.excerpt_type,
+            "title": excerpt.title,
+            "summary": excerpt.summary,
+            "quotability": excerpt.quotability,
+        }
+        if excerpt.verbatim_excerpt.strip():
+            item["verbatim_excerpt"] = excerpt.verbatim_excerpt
+        if excerpt.speaker.strip():
+            item["speaker"] = excerpt.speaker
+        if excerpt.timeframe:
+            item["timeframe"] = excerpt.timeframe
+        if excerpt.actor_ids:
+            item["actor_ids"] = list(excerpt.actor_ids)
+        payload.append(item)
+    return payload
+
+
+def _build_episode_excerpt_payload(
+    excerpt_ids: list[str],
+    excerpt_by_id: dict[str, "ExcerptRecord"],
+) -> list[dict[str, Any]]:
+    payload: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for excerpt_id in excerpt_ids:
+        if not excerpt_id or excerpt_id in seen:
+            continue
+        seen.add(excerpt_id)
+        excerpt = excerpt_by_id.get(excerpt_id)
+        if excerpt is None:
+            continue
+        item: dict[str, Any] = {
+            "id": excerpt.id,
+            "excerpt_type": excerpt.excerpt_type,
+            "title": excerpt.title,
+            "summary": excerpt.summary,
+            "quotability": excerpt.quotability,
+            "passage_ids": list(excerpt.passage_ids),
+        }
+        if excerpt.verbatim_excerpt.strip():
+            item["verbatim_excerpt"] = excerpt.verbatim_excerpt
+        if excerpt.plain_gloss.strip():
+            item["plain_gloss"] = excerpt.plain_gloss
+        if excerpt.speaker.strip():
+            item["speaker"] = excerpt.speaker
+        if excerpt.audience.strip():
+            item["audience"] = excerpt.audience
+        if excerpt.timeframe:
+            item["timeframe"] = excerpt.timeframe
+        if excerpt.actor_ids:
+            item["actor_ids"] = list(excerpt.actor_ids)
+        payload.append(item)
+    return payload
+
+
 def _build_narrative_strategy_project_metadata_payload(
     project: ThematicProject,
 ) -> dict[str, Any]:
@@ -3341,6 +3436,12 @@ def _build_narrative_strategy_project_metadata_payload(
             ),
             "episode_spine_recall_primitive_target_max": (
                 project.config.episode_spine_recall_primitive_target_max
+            ),
+            "episode_spine_excerpt_target_min": (
+                project.config.episode_spine_excerpt_target_min
+            ),
+            "episode_spine_excerpt_target_max": (
+                project.config.episode_spine_excerpt_target_max
             ),
             "min_episode_minutes": project.config.min_episode_minutes,
             "max_episode_minutes": project.config.max_episode_minutes,
@@ -3881,6 +3982,18 @@ def _collect_strategy_selected_primitive_ids(strategy: NarrativeStrategy) -> lis
                 continue
             seen.add(primitive_id)
             ordered.append(primitive_id)
+    return ordered
+
+
+def _collect_strategy_selected_excerpt_ids(strategy: NarrativeStrategy) -> list[str]:
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for episode in strategy.episodes:
+        for excerpt_id in episode.episode_spine.assigned_excerpt_ids:
+            if not excerpt_id or excerpt_id in seen:
+                continue
+            seen.add(excerpt_id)
+            ordered.append(excerpt_id)
     return ordered
 
 
@@ -6527,6 +6640,20 @@ def _ordered_architecture_primitive_ids(
     return ordered
 
 
+def _ordered_architecture_excerpt_ids(
+    episode: EpisodeArchitecture,
+) -> list[str]:
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for section in episode.sections:
+        for excerpt_id in section.excerpt_ids:
+            if excerpt_id in seen:
+                continue
+            seen.add(excerpt_id)
+            ordered.append(excerpt_id)
+    return ordered
+
+
 def _strategy_episode_by_number(
     strategy: NarrativeStrategy,
     episode_number: int,
@@ -6555,6 +6682,15 @@ def _validate_architecture_transition(
         raise RuntimeError(
             "Episode architecture referenced primitives outside the strategy spine "
             f"for episode {architecture.episode_number}: {_preview_ids(invalid_primitive_ids)}"
+        )
+
+    assigned_excerpt_ids = set(strategy_episode.episode_spine.assigned_excerpt_ids)
+    section_excerpt_ids = set(_ordered_architecture_excerpt_ids(architecture))
+    invalid_excerpt_ids = sorted(section_excerpt_ids - assigned_excerpt_ids)
+    if invalid_excerpt_ids:
+        raise RuntimeError(
+            "Episode architecture referenced excerpts outside the strategy spine "
+            f"for episode {architecture.episode_number}: {_preview_ids(invalid_excerpt_ids)}"
         )
 
     missing_core_primitive_ids = sorted(
@@ -6656,6 +6792,7 @@ def _filter_primitive_ids_by_architecture(
     episode: EpisodeArchitecture,
 ) -> dict[str, list[str]]:
     section_primitive_ids = set(_ordered_architecture_primitive_ids(episode))
+    section_excerpt_ids = set(_ordered_architecture_excerpt_ids(episode))
     return {
         "core": [
             primitive_id
@@ -6671,6 +6808,11 @@ def _filter_primitive_ids_by_architecture(
             primitive_id
             for primitive_id in strategy_episode.episode_spine.recall_primitive_ids
             if primitive_id in section_primitive_ids
+        ],
+        "excerpt": [
+            excerpt_id
+            for excerpt_id in strategy_episode.episode_spine.assigned_excerpt_ids
+            if excerpt_id in section_excerpt_ids
         ],
     }
 
@@ -8188,7 +8330,7 @@ def _build_human_grounding_warnings(
 
 
 _SPINE_PRIMITIVE_SUBSTRATES = frozenset({"events", "acts"})
-_SCENE_DETAIL_PRIMITIVE_SUBSTRATES = frozenset({"events", "utterances", "artifacts"})
+_SCENE_DETAIL_PRIMITIVE_SUBSTRATES = frozenset({"events", "artifacts"})
 _SYSTEM_CONTEXT_PRIMITIVE_SUBSTRATES = frozenset({"mechanisms", "conditions", "readings"})
 
 
@@ -9201,6 +9343,9 @@ class PipelineOrchestrator:
         self.synthesis_primitives_agent = SynthesisPrimitivesAgent(
             self.llm, max_retry_attempts=_retries("primitive_substrate_extraction")
         )
+        self.excerpt_extraction_agent = ExcerptExtractionAgent(
+            self.llm, max_retry_attempts=_retries("excerpt_extraction")
+        )
         self.primitive_function_tagging_agents = {
             substrate: PrimitiveFunctionTaggingAgent(
                 self.llm,
@@ -9361,11 +9506,12 @@ class PipelineOrchestrator:
                 project, project_dir
             )
             corpus = await self._extract_passages(project, axes, project_dir)
-            synthesis_primitives, synthesis_actor_metrics = await self._map_synthesis(
-                project,
-                corpus,
-                project_dir,
-                actor_metadata,
+            (
+                (synthesis_primitives, synthesis_actor_metrics),
+                excerpts,
+            ) = await asyncio.gather(
+                self._map_synthesis(project, corpus, project_dir, actor_metadata),
+                self._extract_excerpts(project, corpus, project_dir, actor_metadata),
             )
             actor_metrics["synthesis_primitives"] = synthesis_actor_metrics.get(
                 "primitives", {}
@@ -9400,11 +9546,18 @@ class PipelineOrchestrator:
                 project_dir,
                 scene_discovery,
                 actor_metadata,
+                excerpts,
             )
             actor_metrics["narrative_strategy"] = strategy_actor_metrics
             synthesis_map = await self._materialize_selected_primitives(
                 project,
                 synthesis_primitives,
+                strategy,
+                project_dir,
+            )
+            retained_excerpts = await self._materialize_selected_excerpts(
+                project,
+                excerpts,
                 strategy,
                 project_dir,
             )
@@ -9426,6 +9579,7 @@ class PipelineOrchestrator:
                 project_dir,
                 actor_metadata,
                 scene_discovery,
+                retained_excerpts,
             )
             actor_metrics["episode_architecture"] = planning_state_metrics.get(
                 "episode_architecture", {}
@@ -9447,6 +9601,7 @@ class PipelineOrchestrator:
                 )
             )
             retained_primitive_lookup = _flatten_synthesis_primitives(synthesis_map)
+            retained_excerpt_by_id = retained_excerpts.excerpt_by_id()
             strategy_episode_by_number = {
                 episode.episode_number: episode for episode in strategy.episodes
             }
@@ -9478,6 +9633,7 @@ class PipelineOrchestrator:
                     strategy.series_explanation_registry,
                     narrative_state_pre_by_episode.get(plan.episode_number),
                     narrative_state_post_by_episode.get(plan.episode_number),
+                    excerpt_by_id=retained_excerpt_by_id,
                 )
                 for plan in episode_plans
             ]
@@ -11017,6 +11173,116 @@ class PipelineOrchestrator:
             "tagged_counts_by_substrate": _primitive_counts_by_substrate(tagged_primitives),
         }
 
+    async def _extract_excerpts(
+        self,
+        project: ThematicProject,
+        corpus: ThematicCorpus,
+        project_dir: Path,
+        actor_metadata: ActorMetadata | None = None,
+    ) -> ExcerptArtifact:
+        actor_metadata = actor_metadata or ActorMetadata(project_id=project.project_id)
+        async with _stage_log(
+            self.run_logger,
+            "excerpt_extraction",
+            project_dir,
+            axis_count=len(corpus.axes),
+            total_passages=corpus.total_passages,
+        ) as ctx:
+            selected_axis_count = _compute_stage_axis_target_count(
+                axis_total=len(corpus.axes),
+                percentage=project.config.synthesis_axis_pct,
+                minimum=project.config.synthesis_axis_min,
+                maximum=project.config.synthesis_axis_max,
+            )
+            ranked_axes = sorted(
+                corpus.axes,
+                key=lambda axis: (-axis.theme_importance_score, axis.axis_id),
+            )
+            selected_axes = list(ranked_axes[:selected_axis_count])
+
+            # Quote-biased, series-wide passage pool ranked by quotability.
+            candidate_passages: list[ExtractedPassage] = []
+            seen_passage_ids: set[str] = set()
+            for axis in selected_axes:
+                for passage in corpus.passages_by_axis.get(axis.axis_id, []):
+                    if passage.passage_id in seen_passage_ids:
+                        continue
+                    seen_passage_ids.add(passage.passage_id)
+                    candidate_passages.append(passage)
+            candidate_passages.sort(
+                key=lambda p: (-p.quotability_score, -p.relevance_score, p.passage_id)
+            )
+            passage_cap = max(1, project.config.excerpt_extraction_total_passage_cap)
+            selected_passages = candidate_passages[:passage_cap]
+
+            passages_by_axis: dict[str, list[dict[str, Any]]] = {}
+            for passage in selected_passages:
+                book_groups = passages_by_axis.setdefault(passage.axis_id, [])
+                book_entry = next(
+                    (entry for entry in book_groups if entry["book_id"] == passage.book_id),
+                    None,
+                )
+                if book_entry is None:
+                    book_entry = {"book_id": passage.book_id, "passages": []}
+                    book_groups.append(book_entry)
+                book_entry["passages"].append(
+                    {
+                        "passage_id": passage.passage_id,
+                        "text": passage.full_text.strip() or passage.text,
+                    }
+                )
+
+            axes_summary = [
+                {
+                    "axis_id": a.axis_id,
+                    "name": a.name,
+                    "description": a.description,
+                    "theme_importance_score": a.theme_importance_score,
+                }
+                for a in selected_axes
+            ]
+            book_metadata = [
+                {"book_id": b.book_id, "title": b.title, "author": b.author}
+                for b in project.books
+            ]
+
+            payload = self.excerpt_extraction_agent.build_payload(
+                project_id=project.project_id,
+                podcast_mode=project.config.podcast_mode.value,
+                axes_summary=axes_summary,
+                passages_by_axis=passages_by_axis,
+                book_metadata=book_metadata,
+                excerpt_count_min=project.config.excerpt_extraction_count_min,
+                excerpt_count_max=project.config.excerpt_extraction_count_max,
+                actor_metadata=compact_actor_registry(actor_metadata),
+            )
+            excerpts = await asyncio.to_thread(
+                self.excerpt_extraction_agent.run, payload
+            )
+            excerpts, excerpt_actor_metrics = clean_excerpt_actor_links(
+                excerpts, actor_metadata
+            )
+            _save_json(project_dir / "excerpts.json", excerpts)
+
+            type_counts: dict[str, int] = {}
+            for excerpt in excerpts.excerpts:
+                type_counts[excerpt.excerpt_type] = (
+                    type_counts.get(excerpt.excerpt_type, 0) + 1
+                )
+            ctx["output_summary"] = {
+                "selected_axes": len(selected_axes),
+                "candidate_passages": len(candidate_passages),
+                "selected_passages": len(selected_passages),
+                "excerpt_count": len(excerpts.excerpts),
+                "excerpt_counts_by_type": type_counts,
+                "excerpts_with_verbatim": sum(
+                    1 for e in excerpts.excerpts if e.verbatim_excerpt.strip()
+                ),
+                "unknown_actor_ids": excerpt_actor_metrics.get("unknown_actor_ids", 0),
+                "quality_score": excerpts.quality_score,
+            }
+            return excerpts
+
     async def _discover_scenes(
         self,
         project: ThematicProject,
@@ -11068,6 +11334,7 @@ class PipelineOrchestrator:
         project_dir: Path,
         scene_discovery: SceneDiscoveryArtifact | None = None,
         actor_metadata: ActorMetadata | None = None,
+        excerpts: ExcerptArtifact | None = None,
     ) -> tuple[NarrativeStrategy, dict[str, Any]]:
         actor_metadata = actor_metadata or ActorMetadata(project_id=project.project_id)
         async with _stage_log(
@@ -11104,6 +11371,7 @@ class PipelineOrchestrator:
                             project.config.podcast_mode
                         ),
                     ),
+                    excerpts=_build_strategy_excerpt_payload(excerpts),
                 )
             )
             strategy_skeleton = await asyncio.to_thread(
@@ -11246,6 +11514,80 @@ class PipelineOrchestrator:
             }
             return synthesis_map
 
+    async def _materialize_selected_excerpts(
+        self,
+        project: ThematicProject,
+        excerpts: ExcerptArtifact | None,
+        strategy: NarrativeStrategy,
+        project_dir: Path,
+    ) -> ExcerptArtifact:
+        excerpts = excerpts or ExcerptArtifact(project_id=project.project_id)
+        excerpt_by_id = excerpts.excerpt_by_id()
+        selected_excerpt_ids = _collect_strategy_selected_excerpt_ids(strategy)
+        retained: list[ExcerptRecord] = []
+        missing_excerpt_ids: list[str] = []
+        for excerpt_id in selected_excerpt_ids:
+            excerpt = excerpt_by_id.get(excerpt_id)
+            if excerpt is None:
+                missing_excerpt_ids.append(excerpt_id)
+                continue
+            retained.append(excerpt)
+        if missing_excerpt_ids:
+            raise RuntimeError(
+                f"narrative_strategy selected unknown excerpt ids: {missing_excerpt_ids[:10]}"
+            )
+
+        async with _stage_log(
+            self.run_logger,
+            "selected_excerpts",
+            project_dir,
+            selected_excerpt_count=len(retained),
+        ) as ctx:
+            retained_excerpts = ExcerptArtifact(
+                project_id=project.project_id,
+                excerpts=retained,
+                quality_score=excerpts.quality_score,
+                quality_notes=list(excerpts.quality_notes),
+            )
+            warnings: list[str] = []
+            extracted_count = len(excerpts.excerpts)
+            episode_count = max(1, len(strategy.episodes))
+            floor = episode_count  # expect roughly >= 1 voiced excerpt per episode
+            if extracted_count > 0 and len(retained) == 0:
+                warnings.append(
+                    "retained_excerpts_below_floor: "
+                    f"{extracted_count} excerpts extracted but 0 retained by narrative strategy"
+                )
+            elif extracted_count > 0 and len(retained) < floor:
+                warnings.append(
+                    "retained_excerpts_below_floor: "
+                    f"only {len(retained)} excerpts retained for {episode_count} episodes "
+                    f"(extracted {extracted_count})"
+                )
+            for episode in strategy.episodes:
+                if not episode.episode_spine.excerpt_ids:
+                    warnings.append(
+                        "episode_without_excerpt: "
+                        f"episode {episode.episode_number} carries no excerpt_ids"
+                    )
+            for warning in warnings:
+                logger.warning("%s", warning)
+                self.run_logger.log("selected_excerpts_warning", warning=warning)
+
+            _save_json(project_dir / "retained_excerpts.json", retained_excerpts)
+            type_counts: dict[str, int] = {}
+            for excerpt in retained:
+                type_counts[excerpt.excerpt_type] = (
+                    type_counts.get(excerpt.excerpt_type, 0) + 1
+                )
+            ctx["output_summary"] = {
+                "extracted_excerpt_count": extracted_count,
+                "retained_excerpt_count": len(retained),
+                "retained_excerpt_counts_by_type": type_counts,
+                "warning_count": len(warnings),
+            }
+            return retained_excerpts
+
     def _resolve_episode_count_from_strategy(
         self,
         project: ThematicProject,
@@ -11297,9 +11639,15 @@ class PipelineOrchestrator:
         actor_metadata: ActorMetadata,
         scene_discovery: SceneDiscoveryArtifact | None,
         narrative_state_pre: NarrativeState,
+        excerpt_by_id: dict[str, ExcerptRecord] | None = None,
     ) -> tuple[EpisodeArchitecture, dict[str, Any], list[dict[str, Any]]]:
+        excerpt_by_id = excerpt_by_id or {}
         primitive_lookup = _flatten_synthesis_primitives(synthesis_map)
         passage_lookup = _build_passage_lookup(corpus)
+        episode_excerpts_payload = _build_episode_excerpt_payload(
+            strategy_episode.episode_spine.assigned_excerpt_ids,
+            excerpt_by_id,
+        )
         primitive_ids_by_role = {
             "core": list(strategy_episode.episode_spine.core_primitive_ids),
             "support": list(strategy_episode.episode_spine.support_primitive_roles.keys()),
@@ -11378,6 +11726,7 @@ class PipelineOrchestrator:
                 narrative_state=narrative_state_pre.model_dump(mode="json"),
                 actor_metadata=compact_actor_metadata(episode_actor_metadata),
                 architecture_feedback=architecture_feedback,
+                excerpts=episode_excerpts_payload,
             )
             try:
                 architecture = await asyncio.to_thread(
@@ -11797,6 +12146,7 @@ class PipelineOrchestrator:
         project_dir: Path,
         actor_metadata: ActorMetadata | None = None,
         scene_discovery: SceneDiscoveryArtifact | None = None,
+        excerpt_by_id: dict[str, ExcerptRecord] | None = None,
     ) -> tuple[
         list[EpisodeArchitecture],
         dict[int, NarrativeState],
@@ -11805,6 +12155,7 @@ class PipelineOrchestrator:
         dict[str, Any],
     ]:
         actor_metadata = actor_metadata or ActorMetadata(project_id=project.project_id)
+        excerpt_by_id = excerpt_by_id or {}
         async with _stage_log(
             self.run_logger,
             "episode_architecture",
@@ -11853,6 +12204,7 @@ class PipelineOrchestrator:
                         actor_metadata=actor_metadata,
                         scene_discovery=scene_discovery,
                         narrative_state_pre=state_pre_by_episode[episode_number],
+                        excerpt_by_id=excerpt_by_id,
                     )
 
             architecture_results = await asyncio.gather(
@@ -11997,6 +12349,7 @@ class PipelineOrchestrator:
         project_dir: Path,
         actor_metadata: ActorMetadata | None = None,
         scene_discovery: SceneDiscoveryArtifact | None = None,
+        retained_excerpts: ExcerptArtifact | None = None,
     ) -> tuple[
         list[EpisodeArchitecture],
         list[EpisodePlan],
@@ -12004,6 +12357,9 @@ class PipelineOrchestrator:
         dict[int, NarrativeState],
         dict[str, Any],
     ]:
+        excerpt_by_id = (
+            retained_excerpts.excerpt_by_id() if retained_excerpts is not None else {}
+        )
         (
             architectures,
             state_pre_by_episode,
@@ -12018,6 +12374,7 @@ class PipelineOrchestrator:
             project_dir=project_dir,
             actor_metadata=actor_metadata,
             scene_discovery=scene_discovery,
+            excerpt_by_id=excerpt_by_id,
         )
         plans, planning_actor_metrics = await self._plan_series(
             project=project,
@@ -12028,6 +12385,7 @@ class PipelineOrchestrator:
             project_dir=project_dir,
             actor_metadata=actor_metadata,
             narrative_state_pre_by_episode=state_pre_by_episode,
+            excerpt_by_id=excerpt_by_id,
         )
         return (
             architectures,
@@ -12050,8 +12408,10 @@ class PipelineOrchestrator:
         project_dir: Path,
         actor_metadata: ActorMetadata | None = None,
         narrative_state_pre_by_episode: dict[int, NarrativeState] | None = None,
+        excerpt_by_id: dict[str, ExcerptRecord] | None = None,
     ) -> tuple[list[EpisodePlan], dict[str, Any]]:
         actor_metadata = actor_metadata or ActorMetadata(project_id=project.project_id)
+        excerpt_by_id = excerpt_by_id or {}
         async with _stage_log(
             self.run_logger,
             "episode_planning",
@@ -12110,6 +12470,7 @@ class PipelineOrchestrator:
                         narrative_state_pre=narrative_state_pre,
                         primitive_lookup=primitive_lookup,
                         passage_lookup=passage_lookup,
+                        excerpt_by_id=excerpt_by_id,
                     )
                     plan_draft: EpisodePlanDraft | None = None
                     actor_link_metrics: dict[str, Any] = {}
@@ -12137,6 +12498,7 @@ class PipelineOrchestrator:
                             actor_metadata=planning_runtime.compact_episode_actor_metadata,
                             planning_feedback=planning_feedback,
                             field_semantics=_build_field_semantics_payload(),
+                            excerpts=planning_runtime.episode_excerpts,
                         )
                         try:
                             plan_draft = await asyncio.to_thread(
@@ -12532,6 +12894,7 @@ class PipelineOrchestrator:
         series_explanation_registry: list[Any] | None = None,
         narrative_state_pre: NarrativeState | None = None,
         narrative_state_post: NarrativeState | None = None,
+        excerpt_by_id: dict[str, ExcerptRecord] | None = None,
     ) -> tuple[int, SpokenScript]:
         async with semaphore:
             ep_dir = project_dir / "episodes" / str(plan.episode_number)
@@ -12562,6 +12925,7 @@ class PipelineOrchestrator:
                 continuity_contract_pre=continuity_contract_pre,
                 continuity_contract_post=continuity_contract_post,
                 primitive_lookup=primitive_lookup,
+                excerpt_by_id=excerpt_by_id,
             )
 
             if not project.config.skip_grounding:
@@ -12656,9 +13020,11 @@ class PipelineOrchestrator:
         continuity_contract_pre: dict[str, Any] | None = None,
         continuity_contract_post: dict[str, Any] | None = None,
         primitive_lookup: dict[str, SynthesisPrimitiveBase] | None = None,
+        excerpt_by_id: dict[str, ExcerptRecord] | None = None,
     ) -> EpisodeScript:
         actor_metadata = actor_metadata or ActorMetadata(project_id=project.project_id)
         primitive_lookup = primitive_lookup or {}
+        excerpt_by_id = excerpt_by_id or {}
         async with _stage_log(
             self.run_logger,
             f"write_episode_{plan.episode_number}",
@@ -12782,6 +13148,7 @@ class PipelineOrchestrator:
                         window_passages = _build_window_passages(
                             window_scene_cards=window_scene_cards,
                             passage_lookup=passage_lookup,
+                            excerpt_by_id=excerpt_by_id,
                         )
                         window_actor_metadata = _build_window_actor_metadata(
                             window_scene_cards=window_scene_cards,
@@ -12792,6 +13159,10 @@ class PipelineOrchestrator:
                         window_scene_primitive_briefs = _build_scene_primitive_briefs(
                             scene_cards=window_scene_cards,
                             primitive_lookup=primitive_lookup,
+                        )
+                        window_scene_excerpt_briefs = _build_scene_excerpt_briefs(
+                            scene_cards=window_scene_cards,
+                            excerpt_by_id=excerpt_by_id,
                         )
                         async with _stage_log(
                             self.run_logger,
@@ -12833,6 +13204,7 @@ class PipelineOrchestrator:
                                 continuity_contract_pre=continuity_contract_pre,
                                 continuity_contract_post=continuity_contract_post,
                                 scene_primitive_briefs=window_scene_primitive_briefs,
+                                scene_excerpt_briefs=window_scene_excerpt_briefs,
                                 actor_metadata=window_actor_metadata,
                                 writing_feedback=writing_feedback_by_part.get(
                                     part_number

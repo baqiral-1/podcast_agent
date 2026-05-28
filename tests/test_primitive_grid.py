@@ -90,7 +90,7 @@ def test_primitive_extraction_prompt_is_rich_and_schema_safe() -> None:
     assert "The top-level output must be a substrate map" in extraction
     assert "events (87–120)" in extraction
     assert "readings (11–13)" in extraction
-    assert "`project_id`, `events`, `acts`, `utterances`, `actor_portraits`, `mechanisms`, `conditions`, `artifacts`, `readings`, `quality_score`, `quality_notes`." in extraction
+    assert "`project_id`, `events`, `acts`, `actor_portraits`, `mechanisms`, `conditions`, `artifacts`, `readings`, `quality_score`, `quality_notes`." in extraction
     assert "- `id`" not in extraction
     assert "- `substrate`" not in extraction
     assert "For every `events` primitive, are `event_type` and `what_happened` present and non-empty?" in extraction
@@ -199,8 +199,8 @@ def test_extraction_artifact_allows_deferred_mechanism_and_artifact_fields() -> 
                     "substrate": "artifacts",
                     "title": "A visible decree",
                     "core_passage_ids": ["passage_02"],
-                    "artifact_type": "document",
-                    "artifact_label": "A visible decree",
+                    "artifact_type": "object",
+                    "artifact_label": "A signed parchment on the table",
                 },
             ],
         }
@@ -236,8 +236,8 @@ def test_tagged_artifact_still_requires_full_mechanism_and_artifact_fields() -> 
                         "substrate": "artifacts",
                         "title": "A visible decree",
                         "core_passage_ids": ["passage_02"],
-                        "artifact_type": "document",
-                        "artifact_label": "A visible decree",
+                        "artifact_type": "object",
+                        "artifact_label": "A signed parchment on the table",
                         "functions": [],
                     }
                 ],
