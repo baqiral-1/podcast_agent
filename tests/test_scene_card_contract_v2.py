@@ -349,7 +349,7 @@ def test_style_audit_payload_includes_section_load_metadata() -> None:
         architecture_notes=[],
     )
 
-    payload = _build_style_audit_sections_payload(
+    payload, _lint_flags = _build_style_audit_sections_payload(
         script=script,
         architecture=architecture,
         plan=plan,

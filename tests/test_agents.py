@@ -1739,7 +1739,7 @@ class TestRedesignedAgents:
         assert "Adjacent explanatory sections should usually differ in `open_mode`" in prompt
         assert "`open_mode` sets the rhetorical shape of the section's opening" in prompt
         assert "Sections built mostly from `mechanisms`, `conditions`, or `readings` should usually tie those abstractions to an event, act, artifact, attached excerpt, or recurring human pressure thread" in prompt
-        assert "Sections may additionally specify `section_sonic_plan`" in prompt
+        assert "Sections carry `section_sonic_plan` whenever their primary excerpt is audible" in prompt
         assert "`section_sonic_plan.obligation` must be exactly" in prompt
         assert "`required` or `preferred`." in prompt
 

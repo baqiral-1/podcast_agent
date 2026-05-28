@@ -56,6 +56,10 @@ from podcast_agent.agents.spoken_delivery_agent import (
 from podcast_agent.agents.style_audit import StyleAuditAgent
 from podcast_agent.agents.excerpt_extraction import ExcerptExtractionAgent
 from podcast_agent.agents.synthesis_primitives import SynthesisPrimitivesAgent
+from podcast_agent.pipeline.excerpt_verification import verify_excerpt
+from podcast_agent.pipeline.style_audit_linting import (
+    compute_style_audit_lint_flags,
+)
 from podcast_agent.agents.theme_decomposition import ThemeDecompositionAgent
 from podcast_agent.agents.validation import GroundingValidationAgent
 from podcast_agent.agents.writing import WritingAgent, WritingAgentNoCitations
@@ -991,7 +995,16 @@ def _build_scene_excerpt_briefs(
     *,
     scene_cards: list[SceneCard],
     excerpt_by_id: dict[str, ExcerptRecord],
+    recall_excerpt_ids: set[str] | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
+    """Per-scene briefs of the excerpts attached via ``scene.excerpt_ids``.
+
+    ``recall_excerpt_ids`` is the host episode's ``EpisodeSpine.recall_excerpt_ids``
+    set: any excerpt id appearing there is a cross-episode callback and gets
+    ``is_recall: true`` in its brief so the writer frames it as a return.
+    """
+
+    recall_set = recall_excerpt_ids or set()
     briefs: dict[str, list[dict[str, Any]]] = {}
     for scene in scene_cards:
         scene_briefs: list[dict[str, Any]] = []
@@ -1008,6 +1021,7 @@ def _build_scene_excerpt_briefs(
                     "verbatim_excerpt": excerpt.verbatim_excerpt,
                     "plain_gloss": excerpt.plain_gloss,
                     "passage_ids": list(excerpt.passage_ids),
+                    "is_recall": excerpt_id in recall_set,
                 }
             )
         if scene_briefs:
@@ -1647,9 +1661,22 @@ def _build_style_audit_sections_payload(
     script: EpisodeScript,
     architecture: EpisodeArchitecture,
     plan: EpisodePlan | None = None,
-) -> list[dict[str, Any]]:
+    strategy_episode: StrategyEpisode | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Build the style_audit section payload and the episode-level lint flags.
+
+    Returns ``(sections, lint_flags)``. ``lint_flags`` carries per-section
+    tic/thesis-overlap/abstract-noun signals computed in pure Python; each
+    section dict in ``sections`` also has its own slice as ``lint_flags`` so
+    the style_audit prompt can act on it locally.
+    """
+
     section_meta_by_id = {
         section.section_id: section for section in architecture.sections
+    }
+    section_progression_by_id = {
+        section.section_id: section.section_progression.stage.value
+        for section in architecture.sections
     }
     section_authorial_passages_by_section_id: dict[str, list[dict[str, Any]]] = {}
     if plan is not None:
@@ -1663,6 +1690,20 @@ def _build_style_audit_sections_payload(
     if plan is not None:
         for scene in plan.scene_cards:
             scene_cards_by_section.setdefault(scene.section_id, []).append(scene)
+
+    prose_section_dicts = [
+        {"section_id": ps.section_id, "text": ps.text}
+        for ps in script.prose_sections
+    ]
+    spine = strategy_episode.episode_spine if strategy_episode is not None else None
+    lint_flags = compute_style_audit_lint_flags(
+        prose_section_dicts,
+        spine_episode_answer=(spine.episode_answer if spine else ""),
+        spine_pressure_line=(spine.pressure_line if spine else ""),
+        section_progression_by_id=section_progression_by_id,
+    )
+    by_section_flags = lint_flags["by_section"]
+
     payload_sections: list[dict[str, Any]] = []
     for prose_section in script.prose_sections:
         meta = section_meta_by_id.get(prose_section.section_id)
@@ -1713,9 +1754,10 @@ def _build_style_audit_sections_payload(
                     realization.model_dump(mode="json")
                     for realization in prose_section.actor_explanation_realizations
                 ],
+                "lint_flags": by_section_flags.get(prose_section.section_id, {}),
             }
         )
-    return payload_sections
+    return payload_sections, lint_flags
 
 
 def _build_spoken_delivery_sections_payload(
@@ -4387,8 +4429,29 @@ def _build_plan_transition_feedback(exc: ComplianceViolationError) -> dict[str, 
 
 def _build_architecture_retry_feedback(exc: Exception) -> dict[str, Any]:
     data = getattr(exc, "data", None) or {}
+    issue = str(data.get("issue", "architecture_contract_invalid"))
+    if issue == "voice_first_unvoiceable":
+        # Structured feedback for the voice_first preconditions: every
+        # voice_first section needs an attached excerpt whose verbatim is
+        # non-empty AND quotability >= 0.80. Either swap the excerpt or
+        # downgrade open_mode.
+        return {
+            "issue": issue,
+            "episode_number": data.get("episode_number"),
+            "sections": data.get("sections", []),
+            "instruction": (
+                "Each section with open_mode=voice_first MUST attach at least "
+                "one excerpt_id whose excerpt has a non-empty verbatim_excerpt "
+                "AND quotability >= 0.80. Empty-verbatim excerpts (named-but-not-"
+                "quoted documents) cannot anchor a voice_first opening. For each "
+                "failing section, either: (a) swap the section's excerpt_ids to "
+                "include a voiceable excerpt from the spine's assigned_excerpt_ids, "
+                "or (b) downgrade open_mode to scene_anchor and choose a visible "
+                "anchor (object, person, dated action, place) instead."
+            ),
+        }
     feedback = {
-        "issue": str(data.get("issue", "architecture_contract_invalid")),
+        "issue": issue,
         "episode_number": data.get("episode_number"),
         "instruction": data.get(
             "instruction",
@@ -6668,7 +6731,9 @@ def _validate_architecture_transition(
     *,
     strategy_episode: StrategyEpisode,
     architecture: EpisodeArchitecture,
+    excerpt_by_id: dict[str, ExcerptRecord] | None = None,
 ) -> EpisodeArchitecture:
+    excerpt_by_id = excerpt_by_id or {}
     if architecture.episode_number != strategy_episode.episode_number:
         raise RuntimeError(
             "Episode architecture episode_number does not match strategy episode "
@@ -6692,6 +6757,60 @@ def _validate_architecture_transition(
             "Episode architecture referenced excerpts outside the strategy spine "
             f"for episode {architecture.episode_number}: {_preview_ids(invalid_excerpt_ids)}"
         )
+
+    # Voice_first preconditions: a section opened in `voice_first` mode requires
+    # at least one attached excerpt with non-empty verbatim AND quotability >= 0.80.
+    # Empty-verbatim excerpts (e.g. named-but-not-quoted documents) cannot anchor
+    # the literal first beat the writer is asked to perform; route them elsewhere.
+    # Raised as a ComplianceViolationError so the architecture agent's retry loop
+    # picks it up — the model can swap a stronger excerpt OR downgrade the section
+    # to scene_anchor.
+    if excerpt_by_id:
+        unvoiceable_voice_first: list[dict[str, Any]] = []
+        for section in architecture.sections:
+            if section.open_mode != "voice_first":
+                continue
+            attempted = []
+            voiceable = False
+            for xid in section.excerpt_ids:
+                excerpt = excerpt_by_id.get(xid)
+                if excerpt is None:
+                    continue
+                attempted.append(
+                    {
+                        "excerpt_id": xid,
+                        "excerpt_type": excerpt.excerpt_type,
+                        "has_verbatim": bool(excerpt.verbatim_excerpt.strip()),
+                        "quotability": excerpt.quotability,
+                    }
+                )
+                if (
+                    excerpt.verbatim_excerpt.strip()
+                    and excerpt.quotability >= 0.80
+                ):
+                    voiceable = True
+                    break
+            if not voiceable:
+                unvoiceable_voice_first.append(
+                    {
+                        "section_id": section.section_id,
+                        "attempted_excerpts": attempted,
+                    }
+                )
+        if unvoiceable_voice_first:
+            section_ids = [item["section_id"] for item in unvoiceable_voice_first]
+            raise ComplianceViolationError(
+                "Episode architecture has voice_first section(s) without a "
+                "voiceable excerpt (non-empty verbatim_excerpt AND "
+                f"quotability >= 0.80) for episode {architecture.episode_number}: "
+                f"{_preview_ids(section_ids)}. Either swap in a stronger excerpt "
+                "or downgrade those sections to scene_anchor.",
+                data={
+                    "issue": "voice_first_unvoiceable",
+                    "episode_number": architecture.episode_number,
+                    "sections": unvoiceable_voice_first,
+                },
+            )
 
     missing_core_primitive_ids = sorted(
         primitive_id
@@ -11262,6 +11381,36 @@ class PipelineOrchestrator:
             excerpts, excerpt_actor_metrics = clean_excerpt_actor_links(
                 excerpts, actor_metadata
             )
+
+            # Verify each excerpt's verbatim text against its source passages.
+            # Drops verbatim to empty when fuzzy-match falls below threshold —
+            # a misquoted line under quotation marks is worse than no quote.
+            passage_text_by_id: dict[str, str] = {
+                passage.passage_id: (passage.full_text.strip() or passage.text)
+                for passage in selected_passages
+            }
+            verbatim_with_text_before = sum(
+                1 for e in excerpts.excerpts if e.verbatim_excerpt.strip()
+            )
+            excerpts = ExcerptArtifact(
+                project_id=excerpts.project_id,
+                excerpts=[
+                    verify_excerpt(e, passage_text_by_id) for e in excerpts.excerpts
+                ],
+                quality_score=excerpts.quality_score,
+                quality_notes=list(excerpts.quality_notes),
+            )
+            verbatim_with_text_after = sum(
+                1 for e in excerpts.excerpts if e.verbatim_excerpt.strip()
+            )
+            excerpts_verbatim_dropped = (
+                verbatim_with_text_before - verbatim_with_text_after
+            )
+            ratios = [e.verbatim_match_ratio for e in excerpts.excerpts]
+            mean_verbatim_match_ratio = (
+                round(sum(ratios) / len(ratios), 4) if ratios else 0.0
+            )
+
             _save_json(project_dir / "excerpts.json", excerpts)
 
             type_counts: dict[str, int] = {}
@@ -11275,9 +11424,9 @@ class PipelineOrchestrator:
                 "selected_passages": len(selected_passages),
                 "excerpt_count": len(excerpts.excerpts),
                 "excerpt_counts_by_type": type_counts,
-                "excerpts_with_verbatim": sum(
-                    1 for e in excerpts.excerpts if e.verbatim_excerpt.strip()
-                ),
+                "excerpts_with_verbatim": verbatim_with_text_after,
+                "excerpts_verbatim_dropped": excerpts_verbatim_dropped,
+                "mean_verbatim_match_ratio": mean_verbatim_match_ratio,
                 "unknown_actor_ids": excerpt_actor_metrics.get("unknown_actor_ids", 0),
                 "quality_score": excerpts.quality_score,
             }
@@ -11523,6 +11672,33 @@ class PipelineOrchestrator:
     ) -> ExcerptArtifact:
         excerpts = excerpts or ExcerptArtifact(project_id=project.project_id)
         excerpt_by_id = excerpts.excerpt_by_id()
+
+        # Cross-episode recall is strict backward-only: each episode N's
+        # `recall_excerpt_ids[i]` must already appear in some prior episode M's
+        # primary `excerpt_ids` (M < N). The spine schema cannot enforce this
+        # because it cannot see other episodes; we enforce here at retention
+        # time so the violation is loud, not silent.
+        ordered_episodes = sorted(
+            strategy.episodes, key=lambda ep: ep.episode_number
+        )
+        introduced_excerpt_ids: set[str] = set()
+        for episode in ordered_episodes:
+            spine = episode.episode_spine
+            unintroduced = [
+                excerpt_id
+                for excerpt_id in spine.recall_excerpt_ids
+                if excerpt_id not in introduced_excerpt_ids
+            ]
+            if unintroduced:
+                raise RuntimeError(
+                    "narrative_strategy episode "
+                    f"{episode.episode_number} recall_excerpt_ids reference "
+                    "excerpts not assigned to any earlier episode's "
+                    f"excerpt_ids: {unintroduced[:10]}"
+                )
+            for excerpt_id in spine.excerpt_ids:
+                introduced_excerpt_ids.add(excerpt_id)
+
         selected_excerpt_ids = _collect_strategy_selected_excerpt_ids(strategy)
         retained: list[ExcerptRecord] = []
         missing_excerpt_ids: list[str] = []
@@ -11565,10 +11741,43 @@ class PipelineOrchestrator:
                     f"(extracted {extracted_count})"
                 )
             for episode in strategy.episodes:
-                if not episode.episode_spine.excerpt_ids:
+                spine = episode.episode_spine
+                if not spine.excerpt_ids:
                     warnings.append(
                         "episode_without_excerpt: "
                         f"episode {episode.episode_number} carries no excerpt_ids"
+                    )
+                    continue
+                # Per-episode register diversity: ≥ 3 distinct speakers and
+                # ≥ 2 distinct excerpt_types. Same speaker in the same type
+                # collapses to one voice slot.
+                episode_excerpts = [
+                    excerpt_by_id[xid]
+                    for xid in spine.excerpt_ids
+                    if xid in excerpt_by_id
+                ]
+                speakers = {e.speaker.strip() for e in episode_excerpts if e.speaker.strip()}
+                types = {e.excerpt_type for e in episode_excerpts}
+                if len(speakers) < 3 or len(types) < 2:
+                    warnings.append(
+                        "episode_excerpt_register_thin: "
+                        f"episode {episode.episode_number} carries "
+                        f"{len(speakers)} distinct speakers and {len(types)} "
+                        "distinct excerpt_types (target: >=3 speakers, "
+                        ">=2 types)"
+                    )
+                # Voice_first slots need voiceable lines: at least one excerpt
+                # with non-empty verbatim AND quotability >= 0.80. Pre-warning
+                # of the architecture-stage hard error.
+                if not any(
+                    e.verbatim_excerpt.strip() and e.quotability >= 0.80
+                    for e in episode_excerpts
+                ):
+                    warnings.append(
+                        "episode_excerpt_voicefirst_unvoiceable: "
+                        f"episode {episode.episode_number} has no excerpt with "
+                        "non-empty verbatim AND quotability >= 0.80; voice_first "
+                        "sections cannot be honored"
                     )
             for warning in warnings:
                 logger.warning("%s", warning)
@@ -11735,6 +11944,7 @@ class PipelineOrchestrator:
                 architecture = _validate_architecture_transition(
                     strategy_episode=strategy_episode,
                     architecture=architecture,
+                    excerpt_by_id=excerpt_by_id,
                 )
             except ComplianceViolationError as exc:
                 architecture_feedback = _build_architecture_retry_feedback(exc)
@@ -13163,6 +13373,9 @@ class PipelineOrchestrator:
                         window_scene_excerpt_briefs = _build_scene_excerpt_briefs(
                             scene_cards=window_scene_cards,
                             excerpt_by_id=excerpt_by_id,
+                            recall_excerpt_ids=set(
+                                strategy_episode.episode_spine.recall_excerpt_ids
+                            ),
                         )
                         async with _stage_log(
                             self.run_logger,
@@ -13602,14 +13815,19 @@ class PipelineOrchestrator:
             episode=episode_number,
             section_count=len(script.prose_sections),
         ) as ctx:
-            payload = self.style_audit_agent.build_payload(
-                episode_number=episode_number,
-                title=script.title,
-                sections=_build_style_audit_sections_payload(
+            style_audit_sections, style_audit_lint_flags = (
+                _build_style_audit_sections_payload(
                     script=script,
                     architecture=architecture,
                     plan=plan,
-                ),
+                    strategy_episode=strategy_episode,
+                )
+            )
+            payload = self.style_audit_agent.build_payload(
+                episode_number=episode_number,
+                title=script.title,
+                sections=style_audit_sections,
+                lint_flags=style_audit_lint_flags,
                 host_policy=host_policy,
                 narrative_state_pre=(
                     narrative_state_pre.model_dump(mode="json")

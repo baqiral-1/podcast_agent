@@ -313,7 +313,7 @@ def chapter_summary_instructions() -> str:
 
         Field guidance for `analysis`:
         - `themes_touched`: Strictly 3-4 most relevant themes present in the chapter.
-        - `major_actors`: Strictly 2-5 concrete actors explicitly present in the chapter. Include not only named leaders but also the situated non-elite people the chapter makes legible — a striker, a conscript, a bereaved mother, a seminary student, a bazaar merchant — when they carry the chapter's lived stakes.
+        - `major_actors`: Strictly 2-5 concrete actors explicitly present in the chapter. Include not only named leaders but also the situated non-elite people the chapter makes legible — a striker, a conscript, a bereaved mother, a student, a small merchant — when they carry the chapter's lived stakes.
         - `key_events_or_arguments`: Strictly 3-7 main claims, developments, disputes, tradeoffs, or contradictions in the chapter.
 
         Do not add markdown, commentary, or explanation outside the JSON object.
@@ -648,7 +648,7 @@ def primitive_substrate_extraction_instructions(
         - `artifacts`
           Preserve the concrete material carrier itself: object, place, image, ritual, gesture, or physical detail.
           Prefer `artifacts` when the material carrier is what makes the evidence memorable, stageable, or publicly legible.
-          If the payload is the TEXT of a document, slogan, headline, or speech, it is an `excerpt`, not an artifact. Keep `artifacts` for material presence (the burned helicopter, the smuggled cassette as object, the empty square).
+          If the payload is the TEXT of a document, slogan, headline, or speech, it is an `excerpt`, not an artifact. Keep `artifacts` for material presence — a destroyed vehicle, an object passed hand to hand, an empty public space.
           Use schema-safe `artifact_type`; `artifact_label` is required here, while `artifact_detail` is deferred to function tagging.
           Do not use `artifacts` for generic atmosphere with no concrete carrier.
         - `readings`
@@ -742,7 +742,7 @@ def excerpt_extraction_instructions(
 
         WHAT IS NOT AN EXCERPT
         - A material object/place/image with no text payload is an `artifact`, handled
-          elsewhere (a burned helicopter, an empty square, a photograph-as-object).
+          elsewhere (a destroyed vehicle, an empty public space, a photograph-as-object).
         - The mere fact that something happened ("the telegram was sent", "the article ran")
           is an `event`, handled elsewhere. Here you capture the telegram's or article's
           WORDS.
@@ -762,7 +762,7 @@ def excerpt_extraction_instructions(
         - Copy passage ids exactly; never rewrite or invent them.
 
         FIELDS PER EXCERPT
-        - `title`: operational and speakable (e.g. "Khomeini declares the Absolute Mandate").
+        - `title`: operational and speakable — a named figure plus a concrete verb, not a thesis label.
         - `excerpt_type`: one schema-safe literal from the list above.
         - `passage_ids`: at least one grounding id from the payload.
         - `timeframe`, `geography`: when supported.
@@ -770,11 +770,13 @@ def excerpt_extraction_instructions(
         - `audience`: the addressed or reached audience, when supported.
         - `actor_ids`: canonical actor ids only when materially central.
         - `summary` (required): one compressed sentence-fragment, 20 words or fewer.
-        - `verbatim_excerpt` (REQUIRED whenever the evidence contains the words): the actual
-          quoted words, lightly trimmed with ellipses where needed. One to a few sentences;
-          preserve the speaker's register; do NOT paraphrase and do NOT dump a whole passage
-          (<= ~1200 characters). If the passage only reports that something was said without
-          giving the words, set `verbatim_excerpt` to "" and still record the excerpt.
+        - `verbatim_excerpt` (REQUIRED whenever the passage gives the words): copy them
+          character-for-character from a single passage; ellipses (`…`) are the only allowed
+          compression. NEVER re-translate. NEVER stitch fragments across passages. NEVER
+          smooth wording into "what they would have said." If the passage paraphrases or
+          reports without giving the words, set `verbatim_excerpt` to "" and still record the
+          excerpt. A misquoted line under quotation marks is worse than no quote. Keep it
+          <= ~1200 characters.
         - `plain_gloss`: a plainspoken one-line translation a host could say to unpack a
           dense or archaic line. Leave "" when the words are already plain.
         - `quotability` (0.0-1.0): how airtime-worthy the line is for spoken storytelling —
@@ -785,8 +787,8 @@ def excerpt_extraction_instructions(
         VOLUME AND COVERAGE
         - This is a SERIES-WIDE pool. Aim for roughly {count_min}-{count_max} excerpts,
           covering the full arc, not just the famous lines. Capture both landmark texts and
-          revealing minor ones (a witness in the dock, a conscript's letter, a bazaar
-          petition, a rooftop chant).
+          revealing minor ones (a witness in the dock, a conscript's letter, a
+          petition from below, a crowd chant).
         - Excerpts are cheap airtime and high texture, so lean toward keeping genuinely
           voiced material rather than trimming to a number.
         - Emit ONE excerpt per distinct source utterance even if it appears under several
@@ -1293,6 +1295,9 @@ def narrative_strategy_skeleton_instructions(
         - Excerpts are the series' voiced and documentary record — speeches, decrees, testimony, letters, broadcasts, manifestos, newspaper lines, official documents, petitions, telegrams, slogans. They are cheap airtime and high texture, so select MOST of the excerpts genuinely relevant to this episode, not a token few.
         - Prefer high-`quotability` excerpts and those that voice the episode's turns, stakes, and human thread. A strong excerpt may recur across episodes for callbacks; reuse the same x-id where it earns its return.
         - Episodes whose openings or human thread lean on voiced moments should carry the upper end of the range.
+        - **Register diversity is contractual.** Each episode's `excerpt_ids` should span at least 4 distinct `speaker`s and at least 3 distinct `excerpt_type`s. Two excerpts from the same speaker in the same type count as one voice slot; the listener should hear different voices, not the same voice repeated.
+        - **Voice_first slots need voiceable lines.** Prefer excerpts with non-empty `verbatim_excerpt`, `verbatim_match_ratio` >= 0.50, and `quotability` >= 0.80 for sections you intend the architecture to open in `voice_first` mode.
+        - `recall_excerpt_ids` (optional, <= 3 per episode): excerpts from EARLIER episodes the current episode re-invokes for cross-episode resonance. Each recalled id must have been assigned to `excerpt_ids` in a prior episode in this series. Recall ids do NOT count toward this episode's `excerpt_ids` budget. Use sparingly — only when the excerpt's meaning shifts in light of what later episodes have shown. Recall is callback, not recap. More valuable in full mode than in short minified runs.
 
         ACTOR ARC DIRECTIVES
         Actor arc directives are episode-specific planning guidance for how selected actors function across scenes.
@@ -1310,8 +1315,9 @@ def narrative_strategy_skeleton_instructions(
         - Pick by cross-section coverage, not fame: the anchor (and relay members) must
           collectively have passage grounding spanning the episode's arc, with no long
           mid-episode run uncovered. Prefer expanding to a FAMILY (relay) over a lone
-          figure with gaps — e.g. a seminary student in January, his mother at the chelom,
-          his brother at the bazaar, his sister at the airport.
+          figure with gaps — e.g. a young witness early in the arc, an older
+          family member at a public mourning, a sibling at a workplace, another
+          sibling at a transit moment of the period.
         - Each member denotes a single human person — canonical OR situated — never an institution or faction.
           A member may be a canonical actor (set `actor_id`, optionally `arc_actor_id`) OR a situated person
           sourced from an `actor_portraits` primitive's `actor_label` with `actor_id` left null. Either way the
@@ -1903,11 +1909,13 @@ def episode_planning_instructions(
 
         - `scene_anchor`: open on a visible moment — a person, object, document,
           dated action, or place. SHOW, do not FRAME.
-        - `voice_first`: open on a line already in the evidence — a quoted
-          sentence, order, or remark — and let it carry the entry before the
-          narration around it. Attach the opening line via the scene's
-          `excerpt_ids` and read its `verbatim_excerpt` aloud (quote-then-gloss
-          using the excerpt's `plain_gloss`).
+        - `voice_first`: the section's literal first beat IS the
+          `verbatim_excerpt`. Attach the opening line via the scene's
+          `excerpt_ids`; stage the carrier (one sentence — see the architecture
+          section's `section_sonic_plan.opening_anchor`), then deliver the
+          line. Narration that frames the line follows the line. More than one
+          sentence of setup before the quote means you are not in `voice_first`
+          mode — switch the section to `scene_anchor`.
         - `question_first`: open on a real unresolved question and pursue it
           through the section; do not resolve it in the first scene.
         - `condition_first`: open on a standing condition or a stretch of time,
@@ -2415,8 +2423,24 @@ def episode_architecture_instructions(
         - `section_progression` (required; see SECTION PROGRESSION below)
         - `thread_binding` (required when the episode has a `human_thread`; one per section)
         - `host_beat_designations` (0-3): the host moments this section earns (see HOST BEATS)
-        - Sections may additionally specify `section_sonic_plan` when the
-          section's opening pressure is materially audible.
+        - Sections carry `section_sonic_plan` whenever their primary excerpt is audible.
+          The carrier IS the audio. Derive `opening_anchor` from the section's
+          highest-`quotability` excerpt's `excerpt_type`:
+          - `speech` → pulpit, room, the voice arriving on a breath
+          - `broadcast` → radio set, dial, static cutting open
+          - `decree` → seal, paper unfolded, the official register
+          - `testimony` → room, silence before, the weight of the voice
+          - `letter` → envelope opened, paragraph read in the recipient's room
+          - `manifesto` / `writing` → printed page, lectern, book opened on a table
+          - `newspaper` → front page, ink, headline on a bus seat
+          - `official_document` → seal, treaty hand, proclamation
+          - `petition` → paper passed under a counter, signatures down a list
+          - `telegram` → wire, tape, urgent register
+          - `slogan` → crowd, chant rising, breath collective
+          Do not invent generic ambience. Set `obligation = required` for these sections
+          so the writer must stage the carrier before voicing the line. Omit
+          `section_sonic_plan` only for sections opened visually or explanatorily with
+          no excerpt.
 
         SECTION PROGRESSION
         `section_progression` is the binding contract for how this section advances
@@ -2496,6 +2520,16 @@ def episode_architecture_instructions(
           document, dated action, or place for `scene_anchor`; the quoted line
           for `voice_first`; the question for `question_first`; the condition or
           stretch of time for `condition_first`. It must be concrete either way.
+          A `section_anchor` is a handle, not a thesis — name the handle, do not
+          pre-state the section's argument.
+        - **Structural rhymes** (optional). Across an episode you may
+          deliberately rhyme scene-shapes between two sections — a door, a
+          signed page, a ledger, a gathered crowd, an empty room, a silence —
+          recurring at different scales. When you intend a rhyme, name the
+          recurring shape in both sections' `section_anchor`s using the same
+          noun. The listener should feel the echo without being told. Use
+          sparingly (at most one rhyme pair per episode); vary which shape
+          rhymes across episodes so the device itself does not become a tic.
         - Adjacent explanatory sections should usually differ in `open_mode` and
           scene engine, not just topic label.
         - Sections built mostly from `mechanisms`, `conditions`, or `readings` should usually tie those abstractions to an event, act, artifact, attached excerpt, or recurring human pressure thread, not upstream a setup-plus-thesis block.
@@ -2583,33 +2617,41 @@ def _writing_host_stance_guidance() -> str:
           2. plain-English interpretation
           3. a host line that tells the listener what to notice, what changed,
              or why this matters
-        - Host-line archetypes are welcome when earned:
-          - pressure-point line: "Here is the real pressure point."
-          - bargain line: "What this really is, is a trade."
-          - translation line: actually drop the diction, do not just announce
-            it. "In plain bazaari, the king was being told to leave" shifts
-            register; "In plain English, ..." followed by the same essayist
-            register does not.
-          - register lift: for a doctrinal or juridical beat, one clause in the
-            higher register the material earns — "what was being instituted, in
-            juridical terms, was a vicegerency, not a republic."
-          - surprise line: "Which is odd, because ..."
-          - consequence line: "And that changes the whole calculation."
-          - narrowing line: "So now the question is ..."
-          - genuine question: realize a section's planned `host_mystery_moves` (action `open`)
-            at its `host_beat_designation` (kind `mystery`) — a real unresolved question, then the
-            evidence: "Did Bazargan know what bringing them in would mean? On the record, we can't
-            say. Watch what he does next."
-          - on-air revision: realize a section's planned `host_assumption_moves` (action `revise`,
-            with `revised_statement`) at its `host_beat_designation` (kind `assumption`) — recast a
-            formulation sharper: "Call it a coalition. No — sharper: a holding pen." Resolves to a
-            more precise claim, never to doubt.
-          - persona aside: one budgeted line of real stake or obsession grounded in
-            `host_policy.persona`, then straight back to the evidence — "I keep
-            getting stuck on this one: a state this strong, undone by a cassette
-            tape." Use at most `host_policy.target_persona_asides_per_episode` times
-            an episode; never as biography.
-        - Do not copy those mechanically. Use the move, not the exact wording.
+        - Host-line archetypes are welcome when earned. Use the move; vary the
+          surface form. Do not begin two of the same archetype with the same
+          opener across an episode.
+          - pressure-point line: one sentence that names where the pressure
+            actually sits. Do not use announcement frames ("Here is", "Here's
+            the…").
+          - bargain line: name the trade in one short claim.
+          - translation line: actually drop the diction; do not just announce
+            it. A register-shift moves into the source's own vocabulary; an
+            announcement frame followed by the same essayist register does not
+            shift anything.
+          - register lift: for a doctrinal or juridical beat, one clause in
+            the higher register the material earns.
+          - surprise line: a brief reversal that names what is unexpected,
+            then resolves.
+          - consequence line: one short claim of what changes.
+          - narrowing line: one short clause that narrows the question.
+          - genuine question: realize a section's planned `host_mystery_moves`
+            (action `open`) at its `host_beat_designation` (kind `mystery`) —
+            a real unresolved question, then the evidence. Do not phrase the
+            redirection as "Watch what X does next" — narrate the next move
+            and let the listener follow.
+          - on-air revision: realize a section's planned
+            `host_assumption_moves` (action `revise`, with `revised_statement`)
+            at its `host_beat_designation` (kind `assumption`) — recast a
+            formulation toward a more precise noun or claim, never toward
+            doubt.
+          - persona aside: one budgeted line of real stake, opinion, or
+            obsession grounded in `host_policy.persona`, then straight back to
+            the evidence. Use at most
+            `host_policy.target_persona_asides_per_episode` times an episode;
+            never as biography. Vary the opener phrasing; do not begin two
+            persona asides the same way across an episode.
+        - Use the move, not a particular wording. Across an episode, do not
+          begin two archetype lines with the same phrase.
         - Register shifts and questions must resolve back to the confident
           analytic voice. Three first-person registers are distinct:
           (a) ALLOWED — earned stake/opinion/curiosity via a budgeted `persona_aside`
@@ -2671,10 +2713,10 @@ def _writing_sentence_models_guidance() -> str:
           still had to be made. Reserve the antithetical frame for at most one minor landing.
         - Placing a verdict does not require that frame. Land most claims in
           other shapes:
-          - flat declarative: "Beheshti was killed."
-          - periodic, weight held to the end: "The army built over twenty-five
-            years to answer to one man, on the morning that man's plane left,
-            could not move."
+          - flat declarative: a single-clause statement of a hard event, no
+            analytical clause attached.
+          - periodic, weight held to the end: a long subject that does not
+            release its verb until the consequence lands at the close.
           - cumulative, main clause then accreting detail: "The chairs were
             still in rows, the wall gone, the seats bolted to a floor with no
             building left on top of it."
@@ -2706,9 +2748,16 @@ def _writing_scene_primitive_brief_guidance() -> str:
         - Before drafting a scene, read the matching primitive objects for substrate-specific fields, function payloads and justifications, `salience`, and `narration_hooks`.
         - Use enriched fields to decide foreground, bounded explanation, detail triage, host move eligibility, and residue, not to add unsupported content.
         - Use `narration_hooks.quote_anchor`, `plain_gloss`, `listener_confusion`, and `authorial_move` only when planned explanation actually requires them.
-        - When a scene carries `scene_excerpt_briefs`, voice the `verbatim_excerpt` on the page (read the line, then gloss it with the excerpt's `plain_gloss` when the wording is dense or archaic). Do not paraphrase a quoted line into oblivion. Keep it grounded in the excerpt's source `passages`.
+        - When a scene carries `scene_excerpt_briefs`, voice the `verbatim_excerpt` on the page following this rhythm: **stage → speak → beat → reflect**.
+          1. Stage: name the carrier — the audio device, the pulpit, the envelope, the front page, the courtroom, the room. One sentence.
+          2. Speak: the words, exactly as given in `verbatim_excerpt`. The line has been verified against its source passages — render it as written; substantive re-wording or stitching is not allowed. If a line cannot be voiced as written, narrate around it using `plain_gloss` rather than reconstructing it.
+          3. Beat: one image, fragment, or short narration — the silence, the listener, the room — before the gloss arrives.
+          4. Reflect: the narrator's analytical line, or the excerpt's `plain_gloss` where the wording is dense or archaic.
+          Do not collapse Speak and Reflect into the same breath. The pattern "X says: '…' — in plain terms, X means Y" is the failure mode. Give the excerpt the moment first.
+        - When a scene's excerpt is a callback (the brief's `is_recall` is true), frame the return — name where it last appeared and let the meaning shift in light of what intervening episodes have shown. Recall does relational work, not introductory work.
         - Do not treat `scene_primitive_briefs` as substitute evidence or as permission to introduce unsupported facts, chronology, motives, or claims.
         - If `scene_primitive_briefs` conflicts with `plan.scene_cards`, `architecture`, `strategy_episode`, or `passages`, follow those richer inputs.
+        - **Structural rhyme.** When two sections share an anchor noun (the rhyming shape — a door, a ledger, a signed page, a crowd, an empty room, a silence), render the echo in the later section without flagging it. Do not say "as before" or "we have seen this." The same noun in the same kind of frame is enough; the listener does the rest.
         """
     ).strip()
 
@@ -2915,7 +2964,7 @@ def episode_writing_instructions() -> str:
               copied verbatim.
             - Use `preferred_plain_gloss` only as legacy fallback scaffolding when
               the richer actor-intro fields are absent.
-            - Brief translator phrases are allowed inside planned explanation when they clarify in one hearing: for example, “in plain English,” “what this means is,” or “the effect is.”
+            - Translator phrases are allowed inside planned explanation when they clarify in one hearing. Use them sparingly. Vary the surface across an episode — repeated identical translator phrases are a tic, not a clarification.
             - Use those explicit translator phrases sparingly; most episodes should
               need no more than one. When you do use one, the restatement that
               follows must actually change register, not continue in the same
@@ -2967,9 +3016,6 @@ def episode_writing_instructions() -> str:
             - Do not tell the listener what to notice when the scene already
               makes it legible, or turn every strong image into an abstract
               explanation on the next line.
-            - Do not rely on abstract-noun thesis prose such as `mechanism`,
-              `architecture`, `framework`, `system`, `logic`, `apparatus`, or
-              `structure` unless naming one directly is historically necessary.
             - Do not make every scene self-contained.
             - Do not invent facts, chronology, quotations, or source claims not supported by the provided passages.
             - Do not introduce new primary analytical claims that are outside the assigned scene cards and their grounded facts.
@@ -3170,10 +3216,11 @@ def episode_writing_no_citations_instructions() -> str:
           copied verbatim.
         - Use `preferred_plain_gloss` only as legacy fallback scaffolding when
           the richer actor-intro fields are absent.
-        - Brief translator phrases are allowed inside planned explanation when
-          they clarify in one hearing: for example, “in plain English,” “what
-          this means is,” or “the effect is.” Use them sparingly, and let the
-          restatement actually change register rather than relabel the same one.
+        - Translator phrases are allowed inside planned explanation when they
+          clarify in one hearing. Use them sparingly. Vary the surface across
+          an episode — repeated identical translator phrases are a tic, not a
+          clarification. Let the restatement actually change register rather
+          than relabel the same one.
         - The per-scene and episode word-count budgets already encode
           importance. Treat them as binding.
         - Do not expand because evidence is dense, the cluster is important, or
@@ -3594,10 +3641,10 @@ def style_audit_instructions() -> str:
 
         PRIMARY FAILURE MODES TO FIX
         1. Repeated interpretive landing across adjacent sections.
-        2. Interior sections should usually end on scene residue, consequence, or open pressure, not explicit explanation.
-        3. Abstract-noun thesis drift such as `mechanism`, `architecture`, `system`, `logic`, `structure`, or `framework` unless historically necessary.
-        4. Seam handrails such as "which brings us to", "the pattern is", "that is", or other summary-reset lines.
-        5. Second endings, including a close that restates the answer instead of exiting.
+        2. Interior sections (any with `section_progression.stage != answer`) closing with a verdict or thesis-restatement. `lint_flags.by_section[sid].closing_thesis_overlap` reports how much the final ~220 chars share content words with the spine's `episode_answer` + `pressure_line`. **When a non-answer section has `closing_thesis_overlap >= 0.30`, treat its final sentences as primary cut candidates** unless they carry an irreplaceable image or live pressure. Only the answer-stage section is allowed to land an explicit thesis line.
+        3. Abstract analytic nouns in section frames (openings + closings). `lint_flags.by_section[sid].abstract_noun_hits_in_frames` lists occurrences of `mechanism`, `architecture`, `framework`, `system`, `logic`, `apparatus`, `structure`, `paralysis`, `rentier`, `residue`, `contingency` in the first/last ~220 chars. **When a frame contains such a noun and the section's scenes have already rendered the thing concretely, rewrite the frame to decline the abstraction** — let the listener supply the word. The unnamed concept lands harder than the named-and-explained one. Reserve abstract nouns for the answer-stage section or for places where the next claim genuinely depends on the technical name.
+        4. **Repeated narrator signature phrases (tics) and seam handrails.** `lint_flags.tic_counts` reports how many times each tic family appears in this episode. **When any family count >= 2, rewrite all but the first instance** to vary the surface form while preserving the underlying move. Tic families: `Hold (that|it|the)`, `Watch (what|this|how|the)`, `Look at (what|the)`, `Here(?:'s| is) (the|what|why)`, `I keep (getting stuck|coming back)`, `Notice (the|that|how)`, `In plain (terms|English)`, `Picture/Imagine`, `What I (keep|want|mean)`, `Now (look at|watch)`, `the thing (is|about)`. Also: seam handrails ("which brings us to", "the pattern is", "that is" as connective tissue).
+        5. Section openings that pre-state the episode's argument. `lint_flags.by_section[sid].opening_thesis_overlap` reports content-word overlap between the first ~220 chars and the spine's `episode_answer` + `pressure_line`. **When opening_thesis_overlap >= 0.30**, rewrite the opening to anchor on image, name, date, or quote instead of thesis. Section anchors are *handles*, not theses; the section earns its argument through its scenes.
         6. Repeated causal or pressure restatement in slightly different words.
         7. Overloaded sections whose prose keeps explaining after the point is already clear.
         8. Structural beats drifting into broad synthesis or descriptive backgrounding.
@@ -3612,6 +3659,7 @@ def style_audit_instructions() -> str:
         16. Contested or probable claims flattened into settled narration.
 
         ALLOWED EDITS
+        - **Act on `lint_flags` first.** When `lint_flags.tic_counts[family] >= 2`, rewrite all but the first occurrence of that family to vary the surface form while preserving the underlying move. When a non-answer section's `lint_flags.by_section[sid].closing_thesis_overlap >= 0.30`, treat its closing sentences as primary cut candidates. When `lint_flags.by_section[sid].opening_thesis_overlap >= 0.30`, rewrite the opening to anchor on image, name, date, or quote instead of thesis. When `lint_flags.by_section[sid].abstract_noun_hits_in_frames` is non-empty and the section is not the answer stage, rewrite the frame to decline the named abstraction.
         - Delete repeated sentences.
         - Compress repeated explanation.
         - Remove transition handrails.

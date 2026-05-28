@@ -580,11 +580,11 @@ def resolve_pipeline_config_for_mode(config: "PipelineConfig") -> "PipelineConfi
             "episode_spine_support_primitive_target_min": 4,
             "episode_spine_support_primitive_target_max": 6,
             "episode_spine_recall_primitive_target_max": 1,
-            "episode_spine_excerpt_target_min": 4,
-            "episode_spine_excerpt_target_max": 7,
-            "excerpt_extraction_count_min": 23,
-            "excerpt_extraction_count_max": 36,
-            "excerpt_extraction_total_passage_cap": 120,
+            "episode_spine_excerpt_target_min": 6,
+            "episode_spine_excerpt_target_max": 10,
+            "excerpt_extraction_count_min": 32,
+            "excerpt_extraction_count_max": 50,
+            "excerpt_extraction_total_passage_cap": 150,
             "narrative_strategy_episode_count_min": 2,
             "narrative_strategy_episode_count_max": 4,
             "episode_writing_batch_count": 2,
@@ -1739,6 +1739,11 @@ class ExcerptRecord(StrictModel):
     verbatim_excerpt: str = ""
     plain_gloss: str = ""
     quotability: float = Field(default=0.5, ge=0.0, le=1.0)
+    # Populated by the post-extraction verification step (pure-Python fuzzy
+    # match of verbatim against the excerpt's source passage text). The model
+    # never emits these.
+    verbatim_match_ratio: float = Field(default=0.0, ge=0.0, le=1.0)
+    verbatim_provenance: list[str] = Field(default_factory=list)
 
     @field_validator("verbatim_excerpt")
     @classmethod
@@ -1845,6 +1850,7 @@ class EpisodeSpine(StrictModel):
     )
     recall_primitive_ids: list[str] = Field(default_factory=list)
     excerpt_ids: list[str] = Field(default_factory=list)
+    recall_excerpt_ids: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_spine(self) -> "EpisodeSpine":
@@ -1919,6 +1925,30 @@ class EpisodeSpine(StrictModel):
             seen_excerpt_ids.add(normalized)
             deduped_excerpt_ids.append(normalized)
         self.excerpt_ids = deduped_excerpt_ids
+
+        # Recall excerpts are cross-episode callbacks: ids that lived in some
+        # prior episode's `excerpt_ids`. They are deduped, capped at 3 per
+        # episode, and excluded from the host episode's primary excerpt set so
+        # they do not count toward this episode's quote-track budget. The
+        # cross-episode prior-episode invariant is enforced at materialization
+        # time (the spine validator cannot see other episodes from here).
+        deduped_recall_excerpt_ids: list[str] = []
+        seen_recall_excerpt_ids: set[str] = set()
+        for excerpt_id in self.recall_excerpt_ids:
+            normalized = str(excerpt_id or "").strip()
+            if not normalized or normalized in seen_recall_excerpt_ids:
+                continue
+            if normalized in seen_excerpt_ids:
+                # A recall id cannot also live in this episode's primary
+                # excerpt_ids; the model is conflating roles.
+                continue
+            seen_recall_excerpt_ids.add(normalized)
+            deduped_recall_excerpt_ids.append(normalized)
+        self.recall_excerpt_ids = deduped_recall_excerpt_ids
+        if len(self.recall_excerpt_ids) > 3:
+            raise ValueError(
+                "recall_excerpt_ids must contain at most 3 excerpt ids"
+            )
         return self
 
     @property
@@ -1940,7 +1970,9 @@ class EpisodeSpine(StrictModel):
     def assigned_excerpt_ids(self) -> list[str]:
         ordered: list[str] = []
         seen: set[str] = set()
-        for excerpt_id in self.excerpt_ids:
+        # Primary excerpts first; then recalled ids (cross-episode callbacks)
+        # so downstream code that loops over the union sees primaries first.
+        for excerpt_id in [*self.excerpt_ids, *self.recall_excerpt_ids]:
             if not excerpt_id or excerpt_id in seen:
                 continue
             seen.add(excerpt_id)

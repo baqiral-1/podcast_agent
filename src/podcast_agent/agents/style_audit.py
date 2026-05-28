@@ -26,12 +26,15 @@ class StyleAuditAgent(Agent):
         continuity_contract_post: dict | None = None,
         series_explanation_registry: list[dict] | None = None,
         field_semantics: dict | None = None,
+        lint_flags: dict | None = None,
     ) -> dict:
         payload = {
             "episode_number": episode_number,
             "title": title,
             "sections": sections,
         }
+        if lint_flags is not None:
+            payload["lint_flags"] = lint_flags
         if host_policy is not None:
             payload["host_policy"] = host_policy
         if narrative_state_pre is not None:
