@@ -645,3 +645,81 @@ def test_validate_architecture_transition_rejects_unknown_staged_section():
             strategy_episode=strategy_episode,
             architecture=architecture,
         )
+
+
+def _excerpt_record(
+    *,
+    excerpt_id: str = "x1",
+    verbatim: str = "We must answer the call of history.",
+    quotability: float = 0.62,
+) -> "ExcerptRecord":
+    from podcast_agent.schemas.models import ExcerptRecord
+
+    return ExcerptRecord(
+        id=excerpt_id,
+        excerpt_type="speech",
+        title="A quotable line",
+        passage_ids=["passage_1"],
+        summary="The speaker addresses the crowd.",
+        verbatim_excerpt=verbatim,
+        plain_gloss="",
+        quotability=quotability,
+        actor_ids=["actor_1"],
+        speaker="actor_1",
+        audience="public",
+    )
+
+
+def _strategy_with_excerpt(excerpt_id: str = "x1") -> NarrativeStrategy:
+    """Strategy whose episode spine assigns one excerpt the architecture can use."""
+    strategy = _strategy()
+    strategy.episodes[0].episode_spine.excerpt_ids = [excerpt_id]
+    return strategy
+
+
+def _architecture_with_voice_first(excerpt_id: str = "x1") -> EpisodeArchitecture:
+    """Architecture whose first section opens in voice_first on a single excerpt."""
+    architecture = _architecture()
+    architecture.sections[0].open_mode = "voice_first"
+    architecture.sections[0].excerpt_ids = [excerpt_id]
+    return architecture
+
+
+def test_validate_architecture_voice_first_accepts_low_quotability_with_verbatim():
+    """The 0.80 quotability gate has been dropped — a mid-band score (0.62)
+    with non-empty verbatim must be accepted."""
+    from podcast_agent.pipeline.orchestrator import _validate_architecture_transition
+
+    strategy_episode = _strategy_with_excerpt().episodes[0]
+    architecture = _architecture_with_voice_first()
+    excerpt_by_id = {"x1": _excerpt_record(quotability=0.62)}
+
+    result = _validate_architecture_transition(
+        strategy_episode=strategy_episode,
+        architecture=architecture,
+        excerpt_by_id=excerpt_by_id,
+    )
+    assert result is architecture
+
+
+def test_validate_architecture_voice_first_rejects_empty_verbatim():
+    """Structural requirement remains: voice_first cannot anchor on a
+    named-but-not-quoted excerpt (empty verbatim_excerpt)."""
+    from podcast_agent.langchain.runnables import ComplianceViolationError
+    from podcast_agent.pipeline.orchestrator import _validate_architecture_transition
+
+    strategy_episode = _strategy_with_excerpt().episodes[0]
+    architecture = _architecture_with_voice_first()
+    excerpt_by_id = {"x1": _excerpt_record(verbatim="", quotability=0.9)}
+
+    with pytest.raises(ComplianceViolationError) as exc_info:
+        _validate_architecture_transition(
+            strategy_episode=strategy_episode,
+            architecture=architecture,
+            excerpt_by_id=excerpt_by_id,
+        )
+    # Error message references verbatim, not quotability score.
+    message = str(exc_info.value)
+    assert "verbatim_excerpt" in message
+    assert "0.80" not in message
+    assert "quotability >=" not in message

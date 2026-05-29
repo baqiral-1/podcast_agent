@@ -1169,8 +1169,6 @@ def narrative_strategy_skeleton_instructions(
         - `excerpts`: the series-wide excerpt pool (x-ids) — speeches, decrees, testimony, letters, broadcasts, manifestos, newspaper lines, official documents, petitions, telegrams, slogans — each with `verbatim_excerpt`, `summary`, `speaker`, and `quotability`
         - `project`: project metadata, runtime bounds, book metadata
         - `scene_discovery` (optional): compact global sceneability pool used only to pressure-test what is concretely stageable
-        - `actor_metadata` (optional): canonical actor context
-        - `human_thread_candidates` (optional): per-corpus ranked carrier candidates (canonical and situated), scored by cross-section coverage rather than fame; use as the starting set for `human_thread`
         - `requested_episode_count` (optional): hard episode-count constraint
         - `recommended_episode_count_min`: lower bound when no explicit count is requested
         - `recommended_episode_count_max`: upper bound when no explicit count is requested
@@ -1188,7 +1186,7 @@ def narrative_strategy_skeleton_instructions(
         - `episode_answer` is the concise answer the episode earns.
         - `pressure_line` is the live contradiction or pressure the listener should feel while moving through the episode.
         - `core_primitive_ids` are the binding episode contract.
-        - The episode answers `listener_problem` by carrying the listener through its `human_thread` and an engaged host voice, not by exposition alone.
+        - The episode answers `listener_problem` by working through its `episode_spine` on a partition that can carry a human thread downstream, not by exposition alone.
         - Support primitives must be typed with exactly one role each:
           `stakes`, `mechanism`, `counterpressure`, `consequence`, or `texture`.
         - Infer support role and recall eligibility from primitive substrate, functions,
@@ -1262,11 +1260,11 @@ def narrative_strategy_skeleton_instructions(
         - `arc_summary`
         - `unresolved_questions`
         - `episode_spine`
-        - `actor_arc_directives`
-        - `human_thread`
         - `negative_scope`
 
         Do NOT include:
+        - `actor_arc_directives`
+        - `human_thread`
         - `narrator_contract`
         - `authorial_contract`
         - `narrative_agenda`
@@ -1300,44 +1298,11 @@ def narrative_strategy_skeleton_instructions(
         EXCERPT TRACK
         - `excerpt_ids` is a SEPARATE, first-class budget of {excerpt_range} `excerpt` records the episode will voice. It is NOT part of core/support/recall and does NOT count against their ranges. Its ids come from the `excerpts` pool (x-ids), never from the primitive pool.
         - Excerpts are the series' voiced and documentary record — speeches, decrees, testimony, letters, broadcasts, manifestos, newspaper lines, official documents, petitions, telegrams, slogans. They are cheap airtime and high texture, so select MOST of the excerpts genuinely relevant to this episode, not a token few.
-        - Prefer high-`quotability` excerpts and those that voice the episode's turns, stakes, and human thread. A strong excerpt may recur across episodes for callbacks; reuse the same x-id where it earns its return.
-        - Episodes whose openings or human thread lean on voiced moments should carry the upper end of the range.
+        - Prefer high-`quotability` excerpts and those that voice the episode's turns, stakes, and pivotal carriers. A strong excerpt may recur across episodes for callbacks; reuse the same x-id where it earns its return.
+        - Episodes whose openings or pivotal scenes lean on voiced moments should carry the upper end of the range.
         - **Register diversity is contractual.** Each episode's `excerpt_ids` should span at least 4 distinct `speaker`s and at least 3 distinct `excerpt_type`s. Two excerpts from the same speaker in the same type count as one voice slot; the listener should hear different voices, not the same voice repeated.
-        - **Voice_first slots need voiceable lines.** Prefer excerpts with non-empty `verbatim_excerpt`, `verbatim_match_ratio` >= 0.50, and `quotability` >= 0.80 for sections you intend the architecture to open in `voice_first` mode.
+        - **Voice_first slots need voiceable lines.** For sections you intend the architecture to open in `voice_first` mode, prefer excerpts whose `verbatim_excerpt` reads as a clean spoken line — a named speaker or document, a complete clause, recognizable phrasing — with `verbatim_match_ratio` >= 0.50. Treat `quotability` as a soft ranking hint, not a threshold; do not exclude an otherwise voiceable line because its score is mid-band.
         - `recall_excerpt_ids` (optional, <= 3 per episode): excerpts from EARLIER episodes the current episode re-invokes for cross-episode resonance. Each recalled id must have been assigned to `excerpt_ids` in a prior episode in this series. Recall ids do NOT count toward this episode's `excerpt_ids` budget. Use sparingly — only when the excerpt's meaning shifts in light of what later episodes have shown. Recall is callback, not recap. More valuable in full mode than in short minified runs.
-
-        ACTOR ARC DIRECTIVES
-        Actor arc directives are episode-specific planning guidance for how selected actors function across scenes.
-        - `actor_arc_directives` must contain only the 2-4 actors whose episode function needs explicit planning guidance.
-        - Choose actors who give the episode a usable character spine.
-        - When an episode leans institutional, explanatory, or mechanism-heavy, usually spend one directive slot on a human carrier such as a witness, loser, inheritor, or daily sufferer of the policy when the evidence supports it.
-        - Sovereigns or state heads alone are not always a sufficient character spine for a mechanism-heavy episode.
-        - Do not include an actor just because they appear in clusters or primitives.
-
-        HUMAN THREAD
-        Return one `human_thread` per episode: a single person or small family/cohort
-        (<=5 members) whose lived, evidence-grounded experience the listener can follow
-        through the whole episode. The thread is the CARRIER through which the spine's
-        argument lands in a body — it does not replace the spine.
-        - Pick by cross-section coverage, not fame: the anchor (and relay members) must
-          collectively have passage grounding spanning the episode's arc, with no long
-          mid-episode run uncovered. Prefer expanding to a FAMILY (relay) over a lone
-          figure with gaps — e.g. a young witness early in the arc, an older
-          family member at a public mourning, a sibling at a workplace, another
-          sibling at a transit moment of the period.
-        - Each member denotes a single human person — canonical OR situated — never an institution or faction.
-          A member may be a canonical actor (set `actor_id`, optionally `arc_actor_id`) OR a situated person
-          sourced from an `actor_portraits` primitive's `actor_label` with `actor_id` left null. Either way the
-          member needs `grounding_primitive_ids` and `grounding_passage_ids`; a member with no evidence cannot be in the thread.
-        - Strongly prefer a non-elite or situated carrier when one has the coverage — the listener should live the
-          episode through a body, not through the most famous man in the room. Use `human_thread_candidates` (ranked
-          by cross-section coverage, not fame) as your starting set; a high-coverage situated/label-only candidate
-          outranks a famous actor with thin coverage.
-        - When a member IS canonical and also drives a tracked arc, set `arc_actor_id` to that
-          `actor_arc_directives[].actor_id`; leave the remaining directive slots for non-thread actors.
-        - Set a stable `thread_key`. If `narrative_state.threads` carries a still-covered
-          `thread_key`, prefer reusing it (set `carried_from_episode_number`).
-        - Do NOT invent kinship, presence, or feeling the passages do not support.
 
         QUALITY
         - Keep the listener-facing problem narrow and concrete.
@@ -1385,7 +1350,7 @@ def narrative_strategy_enrichment_instructions(
         )
     else:
         authorial_guidance = (
-            "For full-length episodes running about 108-126 minutes at the pipeline's spoken-rate targets, "
+            "For full-length episodes running about 124-145 minutes at the pipeline's spoken-rate targets, "
             f"`target_authorial_passages_per_episode` should usually land around {authorial_range}."
         )
     return dedent(
@@ -1403,8 +1368,6 @@ def narrative_strategy_enrichment_instructions(
         - change arc summaries
         - change unresolved questions
         - change episode spines
-        - change actor arc directives
-        - change human threads
         - change negative scope
         - reassign primitives across episodes
 
@@ -1417,13 +1380,16 @@ def narrative_strategy_enrichment_instructions(
         - per-episode authorial contract
         - per-episode listener/host progression agenda
         - sparse promised beats anchored in episode-scoped scene candidates
+        - per-episode actor arc directives
+        - per-episode human thread (carrier identity + prose + grounding)
 
         INPUT PAYLOAD
         - `strategy_skeleton`: binding structural series skeleton
         - `synthesis_map`: skeleton-selected primitive subset only
         - `project`: project metadata, runtime bounds, book metadata
         - `episode_scene_candidates`: per-episode scene-candidate pools already filtered from global scene discovery
-        - `actor_metadata` (optional): canonical actor context
+        - `actor_metadata`: canonical actor context (required for actor arc directives and human thread)
+        - `human_thread_candidates`: per-corpus ranked carrier candidates (canonical and situated), scored by cross-section coverage rather than fame; use as the starting set for `human_thread`
         - `strategy_enrichment_feedback` (optional): retry feedback from the orchestrator; when present, it is binding corrective guidance for the retry
 
         BINDING IMMUTABILITY RULES
@@ -1504,8 +1470,74 @@ def narrative_strategy_enrichment_instructions(
         - `authorial_contract`
         - `narrative_agenda`
         - `promised_beats`
+        - `actor_arc_directives`
+        - `human_thread` (when the evidence supports a carrier)
 
         Do not repeat structural skeleton fields in the output.
+
+        CHOOSE ACTOR ARC DIRECTIVES
+        Return `actor_arc_directives` per episode: episode-specific planning
+        guidance for how selected actors function across scenes.
+        - 2-4 actors per episode whose episode function needs explicit
+          planning guidance. Choose actors who give the episode a usable
+          character spine.
+        - When an episode leans institutional, explanatory, or
+          mechanism-heavy, usually spend one directive slot on a human
+          carrier such as a witness, loser, inheritor, or daily sufferer of
+          the policy when the evidence supports it.
+        - Sovereigns or state heads alone are not always a sufficient
+          character spine for a mechanism-heavy episode.
+        - Do not include an actor just because they appear in clusters or
+          primitives.
+        - Coordinate `arc_thread` ids across episodes when the same actor
+          recurs, so downstream planning can read a single arc.
+
+        CHOOSE HUMAN THREAD
+        Return one `human_thread` per episode: the single person or small
+        family/cohort (≤5 members) whose lived, evidence-grounded experience
+        the listener can follow through the whole episode. The thread is the
+        CARRIER through which the spine's argument lands in a body — it does
+        not replace the spine.
+
+        KIND vs MEMBERS (strict)
+        - Single carrier: `kind = person` with EXACTLY one member (the
+          anchor).
+        - Relay carrier: `kind = family` or `kind = cohort` with 2-5 members
+          (one anchor + 1-4 associates). NEVER emit `kind = family` or
+          `kind = cohort` with a single member; if only one carrier is
+          justified, use `kind = person`.
+
+        SELECTION
+        - Pick by cross-section coverage, not fame: the anchor (and any
+          relay members) must collectively have passage grounding spanning
+          the episode's arc, with no long mid-episode run uncovered. Prefer
+          expanding to a relay over a lone figure with gaps — e.g. a young
+          witness early in the arc, an older family member at a public
+          mourning, a sibling at a workplace, another sibling at a transit
+          moment of the period.
+        - Each member denotes a single human person — canonical OR situated
+          — never an institution or faction. A member may be a canonical
+          actor (set `actor_id`, optionally `arc_actor_id`) OR a situated
+          person sourced from an `actor_portraits` primitive's `actor_label`
+          with `actor_id` left null. Each member must carry at least one
+          `grounding_primitive_id` and at least one `grounding_passage_id`;
+          a member with no evidence cannot be in the thread.
+        - Strongly prefer a non-elite or situated carrier when one has the
+          coverage — the listener should live the episode through a body,
+          not through the most famous man in the room. Use
+          `human_thread_candidates` (ranked by cross-section coverage, not
+          fame) as your starting set; a high-coverage situated/label-only
+          candidate outranks a famous actor with thin coverage.
+        - When a member IS canonical and also drives a tracked arc, set
+          `arc_actor_id` to that `actor_arc_directives[].actor_id` for the
+          same episode; leave the remaining directive slots for non-thread
+          actors.
+        - Set a stable `thread_key`. If `narrative_state.threads` carries a
+          still-covered `thread_key`, prefer reusing it (set
+          `carried_from_episode_number`). Coordinate `thread_key` across
+          episodes so cross-episode threads remain identifiable.
+        - Do NOT invent kinship, presence, or feeling the passages do not
+          support.
 
         PROMISED BEATS
         `promised_beats` are the sparse set of concrete historical obligations this episode is explicitly promising to stage or pay off downstream.
@@ -1573,6 +1605,7 @@ def narrative_strategy_enrichment_instructions(
         - `series_explanation_registry` is top-level output, not per-episode output.
         - `series_actor_explanation_registry` is top-level output, not per-episode output.
         - Every episode must include `promised_beats`.
+        - Every enriched episode must include `actor_arc_directives` and (where the evidence supports a carrier) `human_thread`.
         - Before returning JSON, verify that every actor id used in any episode's `introduce_actor_ids` or `remind_actor_ids` appears exactly once in the top-level `series_actor_explanation_registry`.
         - Do not restate skeleton fields that are already fixed upstream.
         - Do not add markdown or commentary.
@@ -1582,8 +1615,8 @@ def narrative_strategy_enrichment_instructions(
 
 def episode_planning_instructions(
     *,
-    scene_card_target_min: int = 36,
-    scene_card_target_max: int = 42,
+    scene_card_target_min: int = 41,
+    scene_card_target_max: int = 48,
 ) -> str:
     scene_card_range = _format_target_range(scene_card_target_min, scene_card_target_max)
     scene_role_semantics = indent(_scene_role_semantics_guidance(), " " * 8)
@@ -2218,8 +2251,8 @@ def narrative_state_reconciler_instructions() -> str:
 
 def episode_architecture_instructions(
     *,
-    section_target_min: int = 12,
-    section_target_max: int = 18,
+    section_target_min: int = 14,
+    section_target_max: int = 21,
     authorial_passage_target_min: int = authorial_passage_target_range_for_mode(PodcastMode.FULL)[
         0
     ],
@@ -2234,12 +2267,12 @@ def episode_architecture_instructions(
     ),
     podcast_mode: PodcastMode | str = PodcastMode.FULL,
     max_dense_sections_per_episode: int = 2,
-    dense_section_runtime_min: float = 14.0,
-    dense_section_runtime_max: float = 18.0,
-    section_runtime_floor: float = 4.0,
-    section_runtime_ceiling: float = 13.0,
-    target_episode_runtime_min: float = 108.0,
-    target_episode_runtime_max: float = 126.0,
+    dense_section_runtime_min: float = 16.0,
+    dense_section_runtime_max: float = 21.0,
+    section_runtime_floor: float = 4.5,
+    section_runtime_ceiling: float = 15.0,
+    target_episode_runtime_min: float = 124.0,
+    target_episode_runtime_max: float = 145.0,
 ) -> str:
     mode = PodcastMode(podcast_mode)
     section_range = _format_target_range(section_target_min, section_target_max)
@@ -2569,6 +2602,9 @@ def episode_architecture_instructions(
           `question_first` (an unresolved question), or `condition_first` (a
           standing condition or duration). Default to `scene_anchor`, but do not
           open every section that way; vary `open_mode` across the episode.
+          `voice_first` requires that at least one excerpt attached via
+          `excerpt_ids` have a non-empty `verbatim_excerpt`; named-but-not-quoted
+          documents cannot anchor a `voice_first` opening.
         - `section_anchor` is the opening handle in that mode: a person, object,
           document, dated action, or place for `scene_anchor`; the quoted line
           for `voice_first`; the question for `question_first`; the condition or
@@ -3601,17 +3637,19 @@ def spoken_delivery_instructions() -> str:
            unpack.
 
         5. Mark actor voice candidates. For any excerpt in
-           `quotability_marks` whose `quotability >= 0.85` AND whose
-           `excerpt_type` is in {speech, broadcast, decree, testimony,
-           manifesto}, you may emit that excerpt as its own
-           `SpokenSegment` with `speaker_role="actor"` and
-           `quotability_basis_excerpt_id` set to the excerpt's id. You
-           may NOT invent actor lines — only realize provided excerpts.
-           Pick a `speaker_id` from `actor_voice_catalog`; if none fits,
-           omit the actor mark and keep the excerpt in primary voice. The
-           narrator's "carrier" lines before and after the excerpt stay
-           in primary voice — only the verbatim itself goes to actor
-           voice.
+           `quotability_marks` whose `excerpt_type` is in {speech,
+           broadcast, decree, testimony, manifesto} AND whose
+           `verbatim_excerpt` is non-empty, you may emit that excerpt as
+           its own `SpokenSegment` with `speaker_role="actor"` and
+           `quotability_basis_excerpt_id` set to the excerpt's id. The
+           `quotability` score is a soft ranking hint, not a threshold;
+           do not exclude an eligible excerpt because its score is mid-
+           band. You may NOT invent actor lines — only realize provided
+           excerpts. Pick a `speaker_id` from `actor_voice_catalog`; if
+           none fits, omit the actor mark and keep the excerpt in primary
+           voice. The narrator's "carrier" lines before and after the
+           excerpt stay in primary voice — only the verbatim itself goes
+           to actor voice.
 
         6. Preservation contract. Across the rewrite:
            - Preserve every factual claim, date, name, number, and

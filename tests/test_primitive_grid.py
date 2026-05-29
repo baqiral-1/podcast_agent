@@ -91,8 +91,8 @@ def test_primitive_extraction_prompt_is_rich_and_schema_safe() -> None:
     assert "Do not emit primitive `id`; local code will assign ids after extraction." in extraction
     assert "Do not emit per-item `substrate`" in extraction
     assert "The top-level output must be a substrate map" in extraction
-    assert "events (87–120)" in extraction
-    assert "readings (11–13)" in extraction
+    assert "events (100–141)" in extraction
+    assert "readings (21–28)" in extraction
     assert (
         "`project_id`, `events`, `acts`, `actor_portraits`, `mechanisms`, `conditions`, `artifacts`, `readings`, `quality_score`, `quality_notes`."
         in extraction

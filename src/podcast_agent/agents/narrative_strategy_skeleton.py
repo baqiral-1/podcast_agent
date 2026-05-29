@@ -34,15 +34,15 @@ class NarrativeStrategySkeletonAgent(Agent):
     ) -> tuple[int, int, int, int, int, int, int]:
         project = payload.get("project")
         if not isinstance(project, dict):
-            return 6, 10, 8, 12, 2, 12, 20
+            return 7, 11, 9, 13, 2, 10, 16
         return (
-            int(project.get("episode_spine_core_primitive_target_min", 6)),
-            int(project.get("episode_spine_core_primitive_target_max", 10)),
-            int(project.get("episode_spine_support_primitive_target_min", 8)),
-            int(project.get("episode_spine_support_primitive_target_max", 12)),
+            int(project.get("episode_spine_core_primitive_target_min", 7)),
+            int(project.get("episode_spine_core_primitive_target_max", 11)),
+            int(project.get("episode_spine_support_primitive_target_min", 9)),
+            int(project.get("episode_spine_support_primitive_target_max", 13)),
             int(project.get("episode_spine_recall_primitive_target_max", 2)),
-            int(project.get("episode_spine_excerpt_target_min", 12)),
-            int(project.get("episode_spine_excerpt_target_max", 20)),
+            int(project.get("episode_spine_excerpt_target_min", 10)),
+            int(project.get("episode_spine_excerpt_target_max", 16)),
         )
 
     @staticmethod
@@ -497,9 +497,7 @@ class NarrativeStrategySkeletonAgent(Agent):
         episode_count: int | None,
         recommended_episode_count_min: int,
         recommended_episode_count_max: int,
-        actor_metadata: dict | None = None,
         strategy_skeleton_feedback: dict | None = None,
-        human_thread_candidates: list[dict] | None = None,
         excerpts: list[dict] | None = None,
     ) -> dict:
         payload = {
@@ -512,10 +510,6 @@ class NarrativeStrategySkeletonAgent(Agent):
             payload["excerpts"] = excerpts
         if scene_discovery is not None:
             payload["scene_discovery"] = scene_discovery
-        if actor_metadata is not None:
-            payload["actor_metadata"] = actor_metadata
-        if human_thread_candidates is not None:
-            payload["human_thread_candidates"] = human_thread_candidates
         if episode_count is not None:
             payload["requested_episode_count"] = episode_count
         if strategy_skeleton_feedback is not None:

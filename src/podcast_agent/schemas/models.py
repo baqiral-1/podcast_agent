@@ -361,16 +361,16 @@ class PipelineConfig(StrictModel):
     episode_write_concurrency: int = Field(default=8, ge=1)
     episode_writing_batch_count: int = Field(default=5, ge=1)
     spoken_delivery_concurrency: int | None = Field(default=8, ge=1)
-    architecture_section_target_min: int = Field(default=12, ge=1)
-    architecture_section_target_max: int = Field(default=18, ge=1)
+    architecture_section_target_min: int = Field(default=14, ge=1)
+    architecture_section_target_max: int = Field(default=21, ge=1)
     # Density budget: at most N sections per episode may run in the dense band.
     max_dense_sections_per_episode: int = Field(default=2, ge=0, le=4)
-    dense_section_runtime_min_minutes: float = Field(default=14.0, gt=0.0)
-    dense_section_runtime_max_minutes: float = Field(default=18.0, gt=0.0)
+    dense_section_runtime_min_minutes: float = Field(default=16.0, gt=0.0)
+    dense_section_runtime_max_minutes: float = Field(default=21.0, gt=0.0)
     # Non-dense runtime guardrails. Closing section is exempt (must be <= 2.0 min by
     # the architecture validator).
-    section_runtime_floor_minutes: float = Field(default=4.0, gt=0.0)
-    section_runtime_ceiling_minutes: float = Field(default=13.0, gt=0.0)
+    section_runtime_floor_minutes: float = Field(default=4.5, gt=0.0)
+    section_runtime_ceiling_minutes: float = Field(default=15.0, gt=0.0)
     # Series runtime envelope. When None, derived from episode count * per-episode
     # bounds in the orchestrator.
     series_runtime_target_min_minutes: float | None = None
@@ -385,25 +385,25 @@ class PipelineConfig(StrictModel):
     actor_voice_catalog: dict[str, str] = Field(
         default_factory=lambda: {"actor_male_1": "onyx", "actor_female_1": "shimmer"}
     )
-    episode_spine_core_primitive_target_min: int = Field(default=6, ge=1)
-    episode_spine_core_primitive_target_max: int = Field(default=10, ge=1)
-    episode_spine_support_primitive_target_min: int = Field(default=8, ge=1)
-    episode_spine_support_primitive_target_max: int = Field(default=12, ge=1)
+    episode_spine_core_primitive_target_min: int = Field(default=7, ge=1)
+    episode_spine_core_primitive_target_max: int = Field(default=11, ge=1)
+    episode_spine_support_primitive_target_min: int = Field(default=9, ge=1)
+    episode_spine_support_primitive_target_max: int = Field(default=13, ge=1)
     episode_spine_recall_primitive_target_max: int = Field(default=2, ge=0)
-    episode_spine_excerpt_target_min: int = Field(default=12, ge=0)
-    episode_spine_excerpt_target_max: int = Field(default=20, ge=0)
+    episode_spine_excerpt_target_min: int = Field(default=10, ge=0)
+    episode_spine_excerpt_target_max: int = Field(default=16, ge=0)
     excerpt_extraction_count_min: int = Field(default=140, ge=0)
     excerpt_extraction_count_max: int = Field(default=220, ge=0)
     excerpt_extraction_total_passage_cap: int = Field(default=250, ge=1)
     excerpt_extraction_axis_passage_floor: int = Field(default=5, ge=0)
     excerpt_extraction_axis_passage_ceiling_fraction: float = Field(default=0.35, gt=0.0, le=1.0)
-    narrative_strategy_episode_count_min: int = Field(default=10, ge=1)
-    narrative_strategy_episode_count_max: int = Field(default=16, ge=1)
-    min_episode_minutes: float = Field(default=108.0, gt=0.0)
-    max_episode_minutes: float = Field(default=126.0, gt=0.0)
+    narrative_strategy_episode_count_min: int = Field(default=8, ge=1)
+    narrative_strategy_episode_count_max: int = Field(default=12, ge=1)
+    min_episode_minutes: float = Field(default=124.0, gt=0.0)
+    max_episode_minutes: float = Field(default=145.0, gt=0.0)
     duration_shortfall_policy: Literal["warn"] = "warn"
-    scene_card_target_min: int = Field(default=36, ge=1)
-    scene_card_target_max: int = Field(default=42, ge=1)
+    scene_card_target_min: int = Field(default=41, ge=1)
+    scene_card_target_max: int = Field(default=48, ge=1)
     scene_card_target_policy: Literal["warn"] = "warn"
     scene_card_primitives_min: int = Field(default=1, ge=0)
     scene_card_primitives_max: int = Field(default=2, ge=1)
@@ -518,8 +518,8 @@ def _scale_range_containing_span(base_range: tuple[int, int], multiplier: float)
     return math.floor(lower_bound * multiplier), math.ceil(upper_bound * multiplier)
 
 
-FULL_AUTHORIAL_PASSAGE_TARGET_RANGE: tuple[int, int] = (24, 32)
-FULL_DENSE_SECTION_AUTHORIAL_PASSAGE_RANGE: tuple[int, int] = (4, 10)
+FULL_AUTHORIAL_PASSAGE_TARGET_RANGE: tuple[int, int] = (17, 22)
+FULL_DENSE_SECTION_AUTHORIAL_PASSAGE_RANGE: tuple[int, int] = (3, 7)
 
 
 def authorial_passage_target_range_for_mode(
@@ -571,14 +571,14 @@ def scene_job_budget_for_mode(mode: PodcastMode | str) -> dict[str, int]:
             "max_recap_build_scenes": 1,
         }
     return {
-        "total_min": 36,
-        "total_max": 42,
+        "total_min": 41,
+        "total_max": 48,
         "opening_min": 2,
         "opening_max": 3,
-        "build_min": 28,
-        "build_max": 32,
-        "turn_min": 4,
-        "turn_max": 5,
+        "build_min": 32,
+        "build_max": 37,
+        "turn_min": 5,
+        "turn_max": 6,
         "answer_min": 1,
         "answer_max": 1,
         "close_min": 1,
@@ -638,30 +638,30 @@ def resolve_pipeline_config_for_mode(config: "PipelineConfig") -> "PipelineConfi
             "max_axes": 20,
             "synthesis_axis_min": 12,
             "synthesis_axis_max": 20,
-            "episode_spine_core_primitive_target_min": 6,
-            "episode_spine_core_primitive_target_max": 10,
-            "episode_spine_support_primitive_target_min": 8,
-            "episode_spine_support_primitive_target_max": 12,
+            "episode_spine_core_primitive_target_min": 7,
+            "episode_spine_core_primitive_target_max": 11,
+            "episode_spine_support_primitive_target_min": 9,
+            "episode_spine_support_primitive_target_max": 13,
             "episode_spine_recall_primitive_target_max": 2,
-            "episode_spine_excerpt_target_min": 12,
-            "episode_spine_excerpt_target_max": 20,
+            "episode_spine_excerpt_target_min": 10,
+            "episode_spine_excerpt_target_max": 16,
             "excerpt_extraction_count_min": 140,
             "excerpt_extraction_count_max": 220,
             "excerpt_extraction_total_passage_cap": 250,
             "excerpt_extraction_axis_passage_floor": 5,
-            "narrative_strategy_episode_count_min": 10,
-            "narrative_strategy_episode_count_max": 16,
+            "narrative_strategy_episode_count_min": 8,
+            "narrative_strategy_episode_count_max": 12,
             "episode_writing_batch_count": 5,
-            "architecture_section_target_min": 12,
-            "architecture_section_target_max": 18,
-            "dense_section_runtime_min_minutes": 14.0,
-            "dense_section_runtime_max_minutes": 18.0,
-            "section_runtime_floor_minutes": 4.0,
-            "section_runtime_ceiling_minutes": 13.0,
-            "min_episode_minutes": 108.0,
-            "max_episode_minutes": 126.0,
-            "scene_card_target_min": 36,
-            "scene_card_target_max": 42,
+            "architecture_section_target_min": 14,
+            "architecture_section_target_max": 21,
+            "dense_section_runtime_min_minutes": 16.0,
+            "dense_section_runtime_max_minutes": 21.0,
+            "section_runtime_floor_minutes": 4.5,
+            "section_runtime_ceiling_minutes": 15.0,
+            "min_episode_minutes": 124.0,
+            "max_episode_minutes": 145.0,
+            "scene_card_target_min": 41,
+            "scene_card_target_max": 48,
             "synthesis_total_passage_cap": 750,
         }
     return config.model_copy(update=updates)
@@ -1408,22 +1408,22 @@ PRIMITIVE_SUBSTRATE_SET = set(PRIMITIVE_SUBSTRATES)
 PRIMITIVE_FUNCTION_SET = set(PRIMITIVE_FUNCTIONS)
 
 FULL_PRIMITIVE_SUBSTRATE_TARGET_RANGES: dict[str, tuple[int, int]] = {
-    "events": (100, 138),
-    "acts": (52, 68),
-    "actor_portraits": (21, 28),
-    "mechanisms": (43, 59),
-    "conditions": (24, 31),
-    "artifacts": (21, 28),
-    "readings": (13, 15),
+    "events": (100, 141),
+    "acts": (44, 60),
+    "actor_portraits": (22, 29),
+    "mechanisms": (51, 67),
+    "conditions": (30, 37),
+    "artifacts": (28, 35),
+    "readings": (21, 28),
 }
 MINIFIED_PRIMITIVE_SUBSTRATE_TARGET_RANGES: dict[str, tuple[int, int]] = {
-    "events": (19, 27),
-    "acts": (10, 13),
+    "events": (19, 28),
+    "acts": (9, 12),
     "actor_portraits": (6, 8),
-    "mechanisms": (7, 12),
-    "conditions": (4, 5),
-    "artifacts": (3, 4),
-    "readings": (2, 2),
+    "mechanisms": (8, 13),
+    "conditions": (5, 6),
+    "artifacts": (4, 5),
+    "readings": (4, 5),
 }
 
 
@@ -2728,8 +2728,6 @@ class StrategyEpisodeSkeleton(StrictModel):
     arc_summary: str = Field(min_length=1)
     unresolved_questions: list[str] = Field(default_factory=list)
     episode_spine: EpisodeSpine
-    actor_arc_directives: list[ActorArcDirective] = Field(default_factory=list, max_length=4)
-    human_thread: HumanThread | None = None
     negative_scope: NegativeScope = Field(default_factory=NegativeScope)
 
 
@@ -2989,6 +2987,8 @@ class StrategyEpisodeEnrichment(StrictModel):
     authorial_contract: EpisodeAuthorialContract = Field(default_factory=EpisodeAuthorialContract)
     narrative_agenda: EpisodeNarrativeAgenda = Field(default_factory=EpisodeNarrativeAgenda)
     promised_beats: list[PromisedBeat] = Field(default_factory=list, max_length=12)
+    actor_arc_directives: list[ActorArcDirective] = Field(default_factory=list, max_length=4)
+    human_thread: HumanThread | None = None
 
     @model_validator(mode="after")
     def validate_commitments(self) -> "StrategyEpisodeEnrichment":
@@ -3471,10 +3471,10 @@ class EpisodeArchitecture(StrictModel):
     allowed_recurring_primitive_ids: list[str] = Field(default_factory=list)
     forbidden_redundancies: list[str] = Field(default_factory=list)
     promised_beat_decisions: list[PromisedBeatDecisionRecord] = Field(default_factory=list)
-    # Hard schema bounds widened (Change 1). Business policy (preferred 12-18
+    # Hard schema bounds widened (Change 1). Business policy (preferred 14-21
     # full / 6-10 minified) is enforced softly via
     # validate_episode_architecture_targets using project config.
-    sections: list[ArchitectureSection] = Field(default_factory=list, min_length=4, max_length=18)
+    sections: list[ArchitectureSection] = Field(default_factory=list, min_length=4, max_length=21)
     architecture_notes: list[str] = Field(default_factory=list)
 
     @model_validator(mode="before")

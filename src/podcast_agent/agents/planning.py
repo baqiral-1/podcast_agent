@@ -48,8 +48,8 @@ class EpisodePlanningAgent(Agent):
             instructions = self.instructions
         else:
             base_instructions = episode_planning_instructions(
-                scene_card_target_min=int(project.get("scene_card_target_min", 36)),
-                scene_card_target_max=int(project.get("scene_card_target_max", 42)),
+                scene_card_target_min=int(project.get("scene_card_target_min", 41)),
+                scene_card_target_max=int(project.get("scene_card_target_max", 48)),
             )
             instructions = f"{base_instructions}\n\n{self.note_guidance}"
         if payload:

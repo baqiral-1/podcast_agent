@@ -892,7 +892,7 @@ class HeuristicLLMClient(LLMClient):
         )
         closing_minutes = 2.0
         non_closing_count = max(1, section_count - 1)
-        target_runtime_minutes = float(project.get("min_episode_minutes", 108.0))
+        target_runtime_minutes = float(project.get("min_episode_minutes", 124.0))
         non_closing_minutes = max(
             1.0, (target_runtime_minutes - closing_minutes) / non_closing_count
         )

@@ -26,10 +26,10 @@ class EpisodeArchitectureAgent(Agent):
     def _section_target_bounds(payload: dict) -> tuple[int, int]:
         project = payload.get("project")
         if not isinstance(project, dict):
-            return 12, 18
+            return 14, 21
         return (
-            int(project.get("architecture_section_target_min", 12)),
-            int(project.get("architecture_section_target_max", 18)),
+            int(project.get("architecture_section_target_min", 14)),
+            int(project.get("architecture_section_target_max", 21)),
         )
 
     @staticmethod
@@ -39,12 +39,12 @@ class EpisodeArchitectureAgent(Agent):
             project = {}
         return {
             "max_dense_sections": int(project.get("max_dense_sections_per_episode", 2)),
-            "dense_min": float(project.get("dense_section_runtime_min_minutes", 14.0)),
-            "dense_max": float(project.get("dense_section_runtime_max_minutes", 18.0)),
-            "section_floor": float(project.get("section_runtime_floor_minutes", 4.0)),
-            "section_ceiling": float(project.get("section_runtime_ceiling_minutes", 13.0)),
-            "episode_min": float(project.get("min_episode_minutes", 108.0)),
-            "episode_max": float(project.get("max_episode_minutes", 126.0)),
+            "dense_min": float(project.get("dense_section_runtime_min_minutes", 16.0)),
+            "dense_max": float(project.get("dense_section_runtime_max_minutes", 21.0)),
+            "section_floor": float(project.get("section_runtime_floor_minutes", 4.5)),
+            "section_ceiling": float(project.get("section_runtime_ceiling_minutes", 15.0)),
+            "episode_min": float(project.get("min_episode_minutes", 124.0)),
+            "episode_max": float(project.get("max_episode_minutes", 145.0)),
             "policy": str(project.get("series_runtime_policy", "warn")),
         }
 

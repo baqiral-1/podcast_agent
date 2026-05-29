@@ -367,10 +367,11 @@ def _build_quotability_marks_for_batch(
 ) -> list[dict]:
     """Surface verbatim excerpts the oral rewriter may voice in actor voice.
 
-    A ``quotability_mark`` is emitted for every excerpt with quotability
-    >= 0.80 that is realized in one of the batch's sections. Marks below
-    0.85 are still surfaced so the agent has the full context; the
-    >=0.85 + excerpt_type gate is applied inside the agent's prompt.
+    A ``quotability_mark`` is emitted for every scene-attached excerpt in
+    the batch's sections. The spoken-delivery agent decides which to
+    render in actor voice via the ``excerpt_type`` allow-list and the
+    non-empty ``verbatim_excerpt`` requirement inside its prompt; this
+    helper does not filter on the score.
     """
     if plan is None:
         return []
@@ -3776,11 +3777,11 @@ def _merge_narrative_strategy_parts(
                 episode_spine=skeleton_episode.episode_spine.model_copy(deep=True),
                 actor_arc_directives=[
                     directive.model_copy(deep=True)
-                    for directive in skeleton_episode.actor_arc_directives
+                    for directive in enrichment_episode.actor_arc_directives
                 ],
                 human_thread=(
-                    skeleton_episode.human_thread.model_copy(deep=True)
-                    if skeleton_episode.human_thread is not None
+                    enrichment_episode.human_thread.model_copy(deep=True)
+                    if enrichment_episode.human_thread is not None
                     else None
                 ),
                 narrator_contract=enrichment_episode.narrator_contract.model_copy(deep=True),
@@ -4435,22 +4436,22 @@ def _build_architecture_retry_feedback(exc: Exception) -> dict[str, Any]:
     issue = str(data.get("issue", "architecture_contract_invalid"))
     if issue == "voice_first_unvoiceable":
         # Structured feedback for the voice_first preconditions: every
-        # voice_first section needs an attached excerpt whose verbatim is
-        # non-empty AND quotability >= 0.80. Either swap the excerpt or
-        # downgrade open_mode.
+        # voice_first section needs at least one attached excerpt with a
+        # non-empty verbatim_excerpt. Empty-verbatim excerpts (named-but-
+        # not-quoted documents) cannot anchor a quoted opening.
         return {
             "issue": issue,
             "episode_number": data.get("episode_number"),
             "sections": data.get("sections", []),
             "instruction": (
                 "Each section with open_mode=voice_first MUST attach at least "
-                "one excerpt_id whose excerpt has a non-empty verbatim_excerpt "
-                "AND quotability >= 0.80. Empty-verbatim excerpts (named-but-not-"
-                "quoted documents) cannot anchor a voice_first opening. For each "
-                "failing section, either: (a) swap the section's excerpt_ids to "
-                "include a voiceable excerpt from the spine's assigned_excerpt_ids, "
-                "or (b) downgrade open_mode to scene_anchor and choose a visible "
-                "anchor (object, person, dated action, place) instead."
+                "one excerpt_id whose excerpt has a non-empty verbatim_excerpt. "
+                "Empty-verbatim excerpts (named-but-not-quoted documents) cannot "
+                "anchor a voice_first opening. For each failing section, either: "
+                "(a) swap the section's excerpt_ids to include an excerpt with "
+                "quoted text from the spine's assigned_excerpt_ids, or (b) "
+                "downgrade open_mode to scene_anchor and choose a visible anchor "
+                "(object, person, dated action, place) instead."
             ),
         }
     # Pydantic field-level validation errors: extract loc/msg/ctx so the
@@ -6731,12 +6732,14 @@ def _validate_architecture_transition(
         )
 
     # Voice_first preconditions: a section opened in `voice_first` mode requires
-    # at least one attached excerpt with non-empty verbatim AND quotability >= 0.80.
-    # Empty-verbatim excerpts (e.g. named-but-not-quoted documents) cannot anchor
-    # the literal first beat the writer is asked to perform; route them elsewhere.
-    # Raised as a ComplianceViolationError so the architecture agent's retry loop
-    # picks it up — the model can swap a stronger excerpt OR downgrade the section
-    # to scene_anchor.
+    # at least one attached excerpt with a non-empty verbatim_excerpt. Empty-
+    # verbatim excerpts (e.g. named-but-not-quoted documents like a referenced
+    # decree whose words aren't in the source passage) cannot anchor the literal
+    # first beat the writer is asked to perform; route them elsewhere. Raised as
+    # a ComplianceViolationError so the architecture agent's retry loop picks it
+    # up — the model can swap in an excerpt with quoted text OR downgrade the
+    # section to scene_anchor. The numerical quotability score is NOT gated on;
+    # treat it as a soft ranking signal only.
     if excerpt_by_id:
         unvoiceable_voice_first: list[dict[str, Any]] = []
         for section in architecture.sections:
@@ -6756,7 +6759,7 @@ def _validate_architecture_transition(
                         "quotability": excerpt.quotability,
                     }
                 )
-                if excerpt.verbatim_excerpt.strip() and excerpt.quotability >= 0.80:
+                if excerpt.verbatim_excerpt.strip():
                     voiceable = True
                     break
             if not voiceable:
@@ -6770,10 +6773,10 @@ def _validate_architecture_transition(
             section_ids = [item["section_id"] for item in unvoiceable_voice_first]
             raise ComplianceViolationError(
                 "Episode architecture has voice_first section(s) without a "
-                "voiceable excerpt (non-empty verbatim_excerpt AND "
-                f"quotability >= 0.80) for episode {architecture.episode_number}: "
-                f"{_preview_ids(section_ids)}. Either swap in a stronger excerpt "
-                "or downgrade those sections to scene_anchor.",
+                "voiceable excerpt (non-empty verbatim_excerpt) for episode "
+                f"{architecture.episode_number}: {_preview_ids(section_ids)}. "
+                "Either swap in an excerpt with quoted text or downgrade those "
+                "sections to scene_anchor.",
                 data={
                     "issue": "voice_first_unvoiceable",
                     "episode_number": architecture.episode_number,
@@ -11259,12 +11262,6 @@ class PipelineOrchestrator:
                     recommended_episode_count_max=(
                         project.config.narrative_strategy_episode_count_max
                     ),
-                    actor_metadata=_build_narrative_strategy_actor_metadata_payload(actor_metadata),
-                    human_thread_candidates=_build_human_thread_candidate_index(
-                        synthesis_map,
-                        actor_metadata,
-                        top_n=_human_thread_candidate_cap_for_mode(project.config.podcast_mode),
-                    ),
                     excerpts=_build_strategy_excerpt_payload(excerpts),
                 )
             )
@@ -11293,6 +11290,11 @@ class PipelineOrchestrator:
                         mode=mode,
                     ),
                     actor_metadata=_build_narrative_strategy_actor_metadata_payload(actor_metadata),
+                    human_thread_candidates=_build_human_thread_candidate_index(
+                        synthesis_map,
+                        actor_metadata,
+                        top_n=_human_thread_candidate_cap_for_mode(project.config.podcast_mode),
+                    ),
                 )
             )
             strategy_enrichment = await asyncio.to_thread(
@@ -11500,16 +11502,14 @@ class PipelineOrchestrator:
                         ">=2 types)"
                     )
                 # Voice_first slots need voiceable lines: at least one excerpt
-                # with non-empty verbatim AND quotability >= 0.80. Pre-warning
-                # of the architecture-stage hard error.
-                if not any(
-                    e.verbatim_excerpt.strip() and e.quotability >= 0.80 for e in episode_excerpts
-                ):
+                # with a non-empty verbatim_excerpt. Pre-warning of the
+                # architecture-stage hard error.
+                if not any(e.verbatim_excerpt.strip() for e in episode_excerpts):
                     warnings.append(
                         "episode_excerpt_voicefirst_unvoiceable: "
                         f"episode {episode.episode_number} has no excerpt with "
-                        "non-empty verbatim AND quotability >= 0.80; voice_first "
-                        "sections cannot be honored"
+                        "a non-empty verbatim_excerpt; voice_first sections "
+                        "cannot be honored"
                     )
             for warning in warnings:
                 logger.warning("%s", warning)

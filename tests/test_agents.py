@@ -337,7 +337,7 @@ class TestRedesignedAgents:
         assert "SUBSTRATE REQUIRED FIELD MATRIX" in instructions
         assert "SCHEMA-BOUND FIELD RULES" in instructions
         assert "SOFT COUNT GUIDANCE" in instructions
-        assert "events (19–27)" in instructions
+        assert "events (19–28)" in instructions
 
     def test_narrative_strategy_skeleton_agent_payload(self):
         agent = NarrativeStrategySkeletonAgent(_mock_llm())
@@ -348,27 +348,36 @@ class TestRedesignedAgents:
             episode_count=3,
             recommended_episode_count_min=10,
             recommended_episode_count_max=16,
-            actor_metadata={"actors": [{"actor_id": "actor_1"}]},
             strategy_skeleton_feedback={"issue": "weak_episode"},
         )
         instructions = agent.build_instructions(payload)
         assert agent.schema_name == "narrative_strategy_skeleton"
         assert payload["strategy_skeleton_feedback"]["issue"] == "weak_episode"
+        # Skeleton no longer receives actor_metadata or human_thread_candidates.
+        assert "actor_metadata" not in payload
+        assert "human_thread_candidates" not in payload
         assert "`promised_beats`" in instructions
         assert "Do NOT include:" in instructions
         assert "`narrative_agenda`" in instructions
-        assert "`core_primitive_ids` must contain 6–10 primitives." in instructions
+        assert "`core_primitive_ids` must contain 7–11 primitives." in instructions
         assert "`negative_scope -> scope`" not in instructions
         assert "COMPACT TRANSPORT KEYS" not in instructions
         assert "prefer canonical field names" not in instructions
         assert "not a holding area for every later-useful primitive" in instructions
         assert "Do not let tail episodes become everything left over." in instructions
         assert "trim or demote primitives rather than adding more" in instructions
-        assert "usually spend one directive slot on a human carrier" in instructions
+        # ACTOR ARC DIRECTIVES and HUMAN THREAD prompt blocks have moved to enrichment.
+        assert "usually spend one directive slot on a human carrier" not in instructions
         assert (
             "Sovereigns or state heads alone are not always a sufficient character spine"
-            in instructions
+            not in instructions
         )
+        assert "human_thread_candidates" not in instructions
+        assert "ACTOR ARC DIRECTIVES" not in instructions
+        assert "HUMAN THREAD\n" not in instructions
+        # The Do NOT include list explicitly fences off the deferred fields.
+        assert "`actor_arc_directives`" in instructions
+        assert "`human_thread`" in instructions
 
     def test_narrative_strategy_skeleton_agent_prepare_retry_payload_adds_targeted_feedback(
         self,
@@ -552,11 +561,17 @@ class TestRedesignedAgents:
                 {"episode_number": 1, "candidates": [{"candidate_id": "c1"}]}
             ],
             actor_metadata={"actors": [{"actor_id": "actor_1"}]},
+            human_thread_candidates=[
+                {"kind": "situated", "label": "a striker at Abadan", "score": 0.9}
+            ],
             strategy_enrichment_feedback={"issue": "bad_registry"},
         )
         instructions = agent.build_instructions(payload)
         assert agent.schema_name == "narrative_strategy_enrichment"
         assert payload["strategy_enrichment_feedback"]["issue"] == "bad_registry"
+        # Enrichment now owns both inputs as load-bearing payload entries.
+        assert payload["actor_metadata"] == {"actors": [{"actor_id": "actor_1"}]}
+        assert payload["human_thread_candidates"][0]["label"] == "a striker at Abadan"
         assert "The skeleton is binding." in instructions
         assert "`episode_scene_candidates`" in instructions
         assert "`series_explanation_registry` is top-level output" in instructions
@@ -569,6 +584,16 @@ class TestRedesignedAgents:
             "`target_authorial_passages_per_episode` should usually land around 12–16."
             in instructions
         )
+        # CHOOSE blocks moved from skeleton to enrichment.
+        assert "CHOOSE ACTOR ARC DIRECTIVES" in instructions
+        assert "CHOOSE HUMAN THREAD" in instructions
+        assert "usually spend one directive slot on a human" in instructions
+        # Root-cause regression: the strict kind/members rule must remain in the prompt.
+        assert "NEVER emit `kind = family` or" in instructions
+        assert "with a single member" in instructions
+        # Immutability list no longer mentions human threads or actor arcs.
+        assert "change actor arc directives" not in instructions
+        assert "change human threads" not in instructions
 
     def test_narrative_strategy_enrichment_agent_prepare_retry_payload_adds_targeted_feedback(
         self,
@@ -579,6 +604,8 @@ class TestRedesignedAgents:
             synthesis_map={"primitives": [{"id": "primitive_1"}]},
             project_metadata={"podcast_mode": "full"},
             episode_scene_candidates=[],
+            actor_metadata={"actors": []},
+            human_thread_candidates=[],
         )
         raw_payload = {
             "episodes": [
@@ -961,7 +988,7 @@ class TestRedesignedAgents:
         assert payload["series_actor_explanation_registry"][0]["actor_id"] == "kermit_roosevelt"
         assert payload["actor_metadata"]["actors"][0]["actor_id"] == "actor_1"
         assert payload["architecture_feedback"]["issue"] == "missing_turn"
-        assert "Convert the episode spine into 12–18 binding sections." in instructions
+        assert "Convert the episode spine into 14–21 binding sections." in instructions
         assert (
             "The final section must use `purpose` = `closing` (aligned with `stage = close`)."
             in instructions
@@ -985,7 +1012,7 @@ class TestRedesignedAgents:
         assert "`host_mystery_moves`" in instructions
         assert "`host_assumption_moves`" in instructions
         assert "`host_theory_moves`" in instructions
-        assert "24–32 total `authorial_passages`" in instructions
+        assert "17–22 total `authorial_passages`" in instructions
         assert "are not scene cards, scene counts" in instructions
         assert (
             "The first `must_stage_beats` item should usually open from the section" in instructions
@@ -1144,7 +1171,7 @@ class TestRedesignedAgents:
             "Sections that open in `context_setup` or `actor_setup` should usually pick up a concrete event, confrontation, or consequence beat inside the same section."
             in instructions
         )
-        assert "Target 36–42 scene cards for this episode." in agent.instructions
+        assert "Target 41–48 scene cards for this episode." in agent.instructions
 
     def test_episode_planning_agent_build_llm_payload_keeps_canonical_keys(self):
         agent = EpisodePlanningAgent(_mock_llm())
@@ -1630,6 +1657,22 @@ class TestRedesignedAgents:
         # The new oral rewriter prompt is naturally longer than the old
         # compliance pass; allow up to ~2500 words.
         assert len(prompt.split()) <= 2500
+
+    def test_spoken_delivery_actor_voice_gate_is_type_only(self):
+        """The actor-voice gate is now type+verbatim, not a quotability
+        threshold. The new passage-extraction quotability rubric compressed
+        the score band; gating on `>= 0.85` would exclude clean voiceable
+        excerpts. Keep the excerpt_type allow-list and the non-empty
+        verbatim requirement; drop the numerical threshold."""
+        prompt = spoken_delivery_instructions()
+        assert "quotability >= 0.85" not in prompt
+        assert "quotability >= 0.8" not in prompt
+        # Type allow-list and verbatim requirement still present.
+        # Type allow-list (post-dedent) still gates eligibility.
+        assert "speech" in prompt and "broadcast" in prompt and "manifesto" in prompt
+        assert "`verbatim_excerpt` is non-empty" in prompt
+        # Soft-hint framing replaces the threshold.
+        assert "soft ranking hint" in prompt
 
     def test_episode_architecture_prompt_includes_field_contract(self):
         prompt = episode_architecture_instructions()

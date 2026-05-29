@@ -439,8 +439,8 @@ def test_choose_narrative_strategy_uses_trimmed_runtime_payload(monkeypatch, tmp
     )
 
     payload = captured["skeleton_payload"]
-    assert payload["recommended_episode_count_min"] == 10
-    assert payload["recommended_episode_count_max"] == 16
+    assert payload["recommended_episode_count_min"] == 8
+    assert payload["recommended_episode_count_max"] == 12
     primitive = payload["synthesis_map"]["primitives"][0]
     assert "affected_actor_ids" not in primitive
     assert "actor_tags" not in primitive
@@ -448,14 +448,18 @@ def test_choose_narrative_strategy_uses_trimmed_runtime_payload(monkeypatch, tmp
     assert "axis_ids" not in primitive
     assert "thematic_axes" not in payload
     assert "sub_themes" not in payload["project"]
-    assert "book_ids" not in payload["actor_metadata"]["actors"][0]
-    assert "narrative_functions" not in payload["actor_metadata"]["actors"][0]
-    assert "relationships" not in payload["actor_metadata"]
-    assert "quality_notes" not in payload["actor_metadata"]
+    # actor_metadata and human_thread_candidates moved to the enrichment payload.
+    assert "actor_metadata" not in payload
+    assert "human_thread_candidates" not in payload
     assert "passage_ids" not in payload["scene_discovery"]["candidates"][0]
     enrichment_payload = captured["enrichment_payload"]
     assert enrichment_payload["strategy_skeleton"]["episodes"][0]["episode_number"] == 1
     assert enrichment_payload["episode_scene_candidates"][0]["episode_number"] == 1
+    assert "book_ids" not in enrichment_payload["actor_metadata"]["actors"][0]
+    assert "narrative_functions" not in enrichment_payload["actor_metadata"]["actors"][0]
+    assert "relationships" not in enrichment_payload["actor_metadata"]
+    assert "quality_notes" not in enrichment_payload["actor_metadata"]
+    assert isinstance(enrichment_payload["human_thread_candidates"], list)
 
 
 def test_narrative_strategy_accepts_series_explanation_registry_contract() -> None:

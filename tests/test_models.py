@@ -174,8 +174,8 @@ class TestThematicProject:
         assert config.max_axes == 20
         assert config.synthesis_axis_min == 12
         assert config.synthesis_axis_max == 20
-        assert config.narrative_strategy_episode_count_min == 10
-        assert config.narrative_strategy_episode_count_max == 16
+        assert config.narrative_strategy_episode_count_min == 8
+        assert config.narrative_strategy_episode_count_max == 12
 
     def test_pipeline_config_rejects_narrative_strategy_episode_count_bound_inversion(
         self,
@@ -210,28 +210,28 @@ class TestThematicProject:
         assert config.episode_write_concurrency == 8
         assert config.episode_writing_batch_count == 5
         assert config.spoken_delivery_concurrency == 8
-        assert config.min_episode_minutes == 108.0
-        assert config.max_episode_minutes == 126.0
-        assert config.architecture_section_target_min == 12
-        assert config.architecture_section_target_max == 18
+        assert config.min_episode_minutes == 124.0
+        assert config.max_episode_minutes == 145.0
+        assert config.architecture_section_target_min == 14
+        assert config.architecture_section_target_max == 21
         # Change 1: density budget defaults
         assert config.max_dense_sections_per_episode == 2
-        assert config.dense_section_runtime_min_minutes == 14.0
-        assert config.dense_section_runtime_max_minutes == 18.0
-        assert config.section_runtime_floor_minutes == 4.0
-        assert config.section_runtime_ceiling_minutes == 13.0
+        assert config.dense_section_runtime_min_minutes == 16.0
+        assert config.dense_section_runtime_max_minutes == 21.0
+        assert config.section_runtime_floor_minutes == 4.5
+        assert config.section_runtime_ceiling_minutes == 15.0
         # Change 2 + 3 defaults
         assert config.style_tic_semantic_threshold == 0.78
         assert config.series_carryover_threshold == 3
         # Change 4 defaults
         assert "actor_male_1" in config.actor_voice_catalog
-        assert config.episode_spine_core_primitive_target_min == 6
-        assert config.episode_spine_core_primitive_target_max == 10
-        assert config.episode_spine_support_primitive_target_min == 8
-        assert config.episode_spine_support_primitive_target_max == 12
+        assert config.episode_spine_core_primitive_target_min == 7
+        assert config.episode_spine_core_primitive_target_max == 11
+        assert config.episode_spine_support_primitive_target_min == 9
+        assert config.episode_spine_support_primitive_target_max == 13
         assert config.episode_spine_recall_primitive_target_max == 2
-        assert config.scene_card_target_min == 36
-        assert config.scene_card_target_max == 42
+        assert config.scene_card_target_min == 41
+        assert config.scene_card_target_max == 48
 
     def test_resolve_pipeline_config_for_mode_applies_minified_profile(self):
         config = resolve_pipeline_config_for_mode(PipelineConfig(podcast_mode=PodcastMode.MINIFIED))
@@ -269,30 +269,30 @@ class TestThematicProject:
         assert config.max_axes == 20
         assert config.synthesis_axis_min == 12
         assert config.synthesis_axis_max == 20
-        assert config.narrative_strategy_episode_count_min == 10
-        assert config.narrative_strategy_episode_count_max == 16
+        assert config.narrative_strategy_episode_count_min == 8
+        assert config.narrative_strategy_episode_count_max == 12
         assert config.synthesis_total_passage_cap == 750
         assert config.episode_writing_batch_count == 5
-        assert config.architecture_section_target_min == 12
-        assert config.architecture_section_target_max == 18
-        assert config.dense_section_runtime_min_minutes == 14.0
-        assert config.dense_section_runtime_max_minutes == 18.0
-        assert config.section_runtime_floor_minutes == 4.0
-        assert config.section_runtime_ceiling_minutes == 13.0
-        assert config.min_episode_minutes == 108.0
-        assert config.max_episode_minutes == 126.0
-        assert config.scene_card_target_min == 36
-        assert config.scene_card_target_max == 42
+        assert config.architecture_section_target_min == 14
+        assert config.architecture_section_target_max == 21
+        assert config.dense_section_runtime_min_minutes == 16.0
+        assert config.dense_section_runtime_max_minutes == 21.0
+        assert config.section_runtime_floor_minutes == 4.5
+        assert config.section_runtime_ceiling_minutes == 15.0
+        assert config.min_episode_minutes == 124.0
+        assert config.max_episode_minutes == 145.0
+        assert config.scene_card_target_min == 41
+        assert config.scene_card_target_max == 48
 
     def test_authorial_passage_target_ranges_for_modes(self):
-        assert authorial_passage_target_range_for_mode(PodcastMode.FULL) == (24, 32)
+        assert authorial_passage_target_range_for_mode(PodcastMode.FULL) == (17, 22)
         assert authorial_passage_target_range_for_mode(PodcastMode.MINIFIED) == (12, 16)
         assert dense_section_authorial_passage_range_for_mode(PodcastMode.FULL) == (
-            4,
-            10,
+            3,
+            7,
         )
         assert dense_section_authorial_passage_range_for_mode(PodcastMode.MINIFIED) == (2, 5)
-        assert authorial_passage_target_for_mode(PodcastMode.FULL) == 28
+        assert authorial_passage_target_for_mode(PodcastMode.FULL) == 19
         assert authorial_passage_target_for_mode(PodcastMode.MINIFIED) == 14
 
     def test_authorial_passage_allows_six_sentence_budget(self):
@@ -310,24 +310,24 @@ class TestThematicProject:
     def test_primitive_substrate_target_ranges_for_full_mode_match_expanded_table(self):
         target_ranges = primitive_substrate_target_ranges_for_mode(PodcastMode.FULL)
         assert target_ranges == {
-            "events": (100, 138),
-            "acts": (52, 68),
-            "actor_portraits": (21, 28),
-            "mechanisms": (43, 59),
-            "conditions": (24, 31),
-            "artifacts": (21, 28),
-            "readings": (13, 15),
+            "events": (100, 141),
+            "acts": (44, 60),
+            "actor_portraits": (22, 29),
+            "mechanisms": (51, 67),
+            "conditions": (30, 37),
+            "artifacts": (28, 35),
+            "readings": (21, 28),
         }
-        assert sum(lower for lower, _ in target_ranges.values()) == 274
-        assert sum(upper for _, upper in target_ranges.values()) == 367
+        assert sum(lower for lower, _ in target_ranges.values()) == 296
+        assert sum(upper for _, upper in target_ranges.values()) == 397
 
-    def test_episode_architecture_accepts_eighteen_sections(self):
+    def test_episode_architecture_accepts_twenty_one_sections(self):
         sections = []
-        for idx in range(18):
+        for idx in range(21):
             section_id = f"section_{idx + 1:02d}"
-            if idx == 17:
+            if idx == 20:
                 stage = "close"
-            elif idx == 16:
+            elif idx == 19:
                 stage = "answer"
             elif idx == 0:
                 stage = "setup"
@@ -336,8 +336,8 @@ class TestThematicProject:
             sections.append(
                 ArchitectureSection(
                     section_id=section_id,
-                    purpose="opening" if idx == 0 else "closing" if idx == 17 else "setup",
-                    approx_runtime_minutes=108.0 / 18,
+                    purpose="opening" if idx == 0 else "closing" if idx == 20 else "setup",
+                    approx_runtime_minutes=124.0 / 21,
                     primitive_ids=["et_1"],
                     section_anchor=f"Anchor {idx + 1}",
                     must_stage_beats=[f"Beat {idx + 1}A", f"Beat {idx + 1}B"],
@@ -350,21 +350,21 @@ class TestThematicProject:
             sections=sections,
         )
 
-        assert len(architecture.sections) == 18
+        assert len(architecture.sections) == 21
 
     def test_primitive_substrate_target_ranges_for_minified_mode_match_expanded_table(self):
         target_ranges = primitive_substrate_target_ranges_for_mode(PodcastMode.MINIFIED)
         assert target_ranges == {
-            "events": (19, 27),
-            "acts": (10, 13),
+            "events": (19, 28),
+            "acts": (9, 12),
             "actor_portraits": (6, 8),
-            "mechanisms": (7, 12),
-            "conditions": (4, 5),
-            "artifacts": (3, 4),
-            "readings": (2, 2),
+            "mechanisms": (8, 13),
+            "conditions": (5, 6),
+            "artifacts": (4, 5),
+            "readings": (4, 5),
         }
-        assert sum(lower for lower, _ in target_ranges.values()) == 51
-        assert sum(upper for _, upper in target_ranges.values()) == 71
+        assert sum(lower for lower, _ in target_ranges.values()) == 55
+        assert sum(upper for _, upper in target_ranges.values()) == 77
 
     def test_thematic_project_accepts_forty_sub_themes(self):
         project = ThematicProject(
@@ -405,7 +405,7 @@ class TestThematicProject:
         assert profile.spoken_style_contract == "anti_academic_oral"
         assert profile.analysis_mode == "hybrid"
         assert profile.analysis_density == "medium"
-        assert profile.target_authorial_passages_per_episode == 28
+        assert profile.target_authorial_passages_per_episode == 19
 
     def test_host_presence_beat_normalizes_legacy_term_reminder(self):
         beat = HostPresenceBeat.model_validate(
@@ -1438,8 +1438,8 @@ class TestEpisodeArchitectureModels:
             )
 
     def test_episode_architecture_rejects_fewer_than_four_sections(self):
-        # Change 1 widened the hard schema bounds to [4, 16]; the prior
-        # 6-section floor moved to the soft per-project target enforced by
+        # Hard schema bounds are [4, 21]; the 6-section floor for minified and
+        # 14-section floor for full are soft per-project targets enforced by
         # validate_episode_architecture_targets.
         with pytest.raises(ValidationError, match="at least 4 items"):
             self._build_architecture(3)
@@ -1450,7 +1450,6 @@ class TestEpisodeArchitectureModels:
         assert len(architecture.sections) == 13
 
     def test_episode_architecture_accepts_sixteen_sections(self):
-        # Change 1 widened the hard upper bound from 13 to 16.
         architecture = self._build_architecture(16)
         assert len(architecture.sections) == 16
 

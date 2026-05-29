@@ -247,7 +247,8 @@ class NarrativeStrategyEnrichmentAgent(Agent):
         synthesis_map: dict,
         project_metadata: dict,
         episode_scene_candidates: list[dict],
-        actor_metadata: dict | None = None,
+        actor_metadata: dict,
+        human_thread_candidates: list[dict],
         strategy_enrichment_feedback: dict | None = None,
     ) -> dict:
         payload = {
@@ -255,9 +256,9 @@ class NarrativeStrategyEnrichmentAgent(Agent):
             "synthesis_map": synthesis_map,
             "project": project_metadata,
             "episode_scene_candidates": episode_scene_candidates,
+            "actor_metadata": actor_metadata,
+            "human_thread_candidates": human_thread_candidates,
         }
-        if actor_metadata is not None:
-            payload["actor_metadata"] = actor_metadata
         if strategy_enrichment_feedback is not None:
             payload["strategy_enrichment_feedback"] = strategy_enrichment_feedback
         return payload
