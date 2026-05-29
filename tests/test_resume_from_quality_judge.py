@@ -19,8 +19,10 @@ from podcast_agent.schemas.models import (
     EpisodePlan,
     EpisodeScript,
     EventPrimitive,
-    NarrativeStrategy,
+    ExcerptArtifact,
+    ExcerptRecord,
     NarrativeState,
+    NarrativeStrategy,
     PipelineConfig,
     PrimitiveSubstrate,
     ProjectStatus,
@@ -36,16 +38,16 @@ from podcast_agent.schemas.models import (
 _SCRIPT_PATH = (
     Path(__file__).resolve().parents[1]
     / "scripts"
-    / "retry_single_episode_from_writing.py"
+    / "resume_from_quality_judge.py"
 )
 _SCRIPT_SPEC = importlib.util.spec_from_file_location(
-    "retry_single_episode_from_writing",
+    "resume_from_quality_judge",
     _SCRIPT_PATH,
 )
 assert _SCRIPT_SPEC is not None
 assert _SCRIPT_SPEC.loader is not None
-retry_script = importlib.util.module_from_spec(_SCRIPT_SPEC)
-_SCRIPT_SPEC.loader.exec_module(retry_script)
+resume_script = importlib.util.module_from_spec(_SCRIPT_SPEC)
+_SCRIPT_SPEC.loader.exec_module(resume_script)
 
 
 def _write_json(path: Path, payload: Any) -> None:
@@ -337,9 +339,7 @@ def _spoken_script(plan: EpisodePlan, title: str) -> SpokenScript:
                     "section_id": f"section_{plan.episode_number}_spoken",
                     "segments": [
                         {
-                            "segment_id": (
-                                f"section_{plan.episode_number}_spoken_seg1"
-                            ),
+                            "segment_id": f"section_{plan.episode_number}_spoken_seg1",
                             "text": "A spoken section.",
                             "speaker_role": "primary",
                             "tonal_register": "neutral",
@@ -353,7 +353,21 @@ def _spoken_script(plan: EpisodePlan, title: str) -> SpokenScript:
     )
 
 
-def _build_project_dir(tmp_path: Path) -> tuple[Path, list[EpisodePlan]]:
+def _retained_excerpts() -> ExcerptArtifact:
+    return ExcerptArtifact(
+        project_id="run_1",
+        excerpts=[
+            ExcerptRecord(
+                id="x1",
+                title="Proclamation",
+                passage_ids=["passage_1"],
+                summary="A short proclamation.",
+            )
+        ],
+    )
+
+
+def _build_project_dir(tmp_path: Path, *, include_retained_excerpts: bool = True) -> tuple[Path, list[EpisodePlan]]:
     project_dir = tmp_path / "run_1"
     project_dir.mkdir()
 
@@ -362,15 +376,6 @@ def _build_project_dir(tmp_path: Path) -> tuple[Path, list[EpisodePlan]]:
         name="Axis",
         description="Axis description",
         theme_importance_score=1.0,
-    )
-    primitive = EventPrimitive(
-        id="primitive_1",
-        substrate=PrimitiveSubstrate.EVENTS,
-        title="Primitive",
-        core_passage_ids=["passage_1"],
-        actor_ids=["actor_1"],
-        event_type="turning_point",
-        what_happened="A decisive event changes the situation.",
     )
     enriched_primitive = EventPrimitive(
         id="primitive_1",
@@ -410,17 +415,10 @@ def _build_project_dir(tmp_path: Path) -> tuple[Path, list[EpisodePlan]]:
                 episode_spine={
                     "listener_problem": "Question 1?",
                     "episode_answer": "A working claim.",
-                    "core_primitive_ids": [
-                        "primitive_1",
-                        "core_2",
-                        "core_3",
-                        "core_4",
-                        "core_5",
-                        "core_6",
-                        "core_7",
-                    ],
+                    "core_primitive_ids": ["primitive_1", "core_2"],
                     "support_primitive_roles": {
-                        f"support_{idx}": "mechanism" for idx in range(1, 8)
+                        "support_1": "mechanism",
+                        "support_2": "mechanism",
                     },
                     "recall_primitive_ids": [],
                 },
@@ -432,17 +430,10 @@ def _build_project_dir(tmp_path: Path) -> tuple[Path, list[EpisodePlan]]:
                 episode_spine={
                     "listener_problem": "Question 2?",
                     "episode_answer": "Another working claim.",
-                    "core_primitive_ids": [
-                        "primitive_1",
-                        "core_2",
-                        "core_3",
-                        "core_4",
-                        "core_5",
-                        "core_6",
-                        "core_7",
-                    ],
+                    "core_primitive_ids": ["primitive_1", "core_2"],
                     "support_primitive_roles": {
-                        f"support_{idx}": "mechanism" for idx in range(1, 8)
+                        "support_1": "mechanism",
+                        "support_2": "mechanism",
                     },
                     "recall_primitive_ids": [],
                 },
@@ -487,38 +478,28 @@ def _build_project_dir(tmp_path: Path) -> tuple[Path, list[EpisodePlan]]:
     _write_json(project_dir / "actor_metadata.json", actor_metadata)
     _write_json(
         project_dir / "actor_metadata_metrics.json",
-        {"stage_metrics": {"episode_planning": {"unknown_actor_ids": 0}, "writing": {"completed_episode_count": 1}}},
+        {"stage_metrics": {"episode_planning": {"unknown_actor_ids": 0}}},
     )
+    if include_retained_excerpts:
+        _write_json(project_dir / "retained_excerpts.json", _retained_excerpts())
 
-    existing_plan = plans[0]
-    _write_json(
-        project_dir / "episodes" / "1" / "episode_script.json",
-        _episode_script(existing_plan, "Episode 1"),
-    )
-    _write_json(
-        project_dir / "episodes" / "1" / "spoken_script.json",
-        _spoken_script(existing_plan, "Episode 1"),
-    )
-    for episode_number in (1, 2):
-        ep_dir = project_dir / "episodes" / str(episode_number)
-        _write_json(
-            ep_dir / "narrative_state_pre.json",
-            NarrativeState(project_id="run_1"),
-        )
-        _write_json(
-            ep_dir / "narrative_state_post.json",
-            NarrativeState(project_id="run_1"),
-        )
+    for plan in plans:
+        ep_dir = project_dir / "episodes" / str(plan.episode_number)
+        _write_json(ep_dir / "episode_script.json", _episode_script(plan, f"Episode {plan.episode_number}"))
+        _write_json(ep_dir / "narrative_state_pre.json", NarrativeState(project_id="run_1"))
+        _write_json(ep_dir / "narrative_state_post.json", NarrativeState(project_id="run_1"))
+        _write_json(ep_dir / "spine_diagnostics.json", {"episode": plan.episode_number})
+        _write_json(ep_dir / "host_moves_script_diagnostics.json", {"stale": True})
 
     return project_dir, plans
 
 
-def test_retry_single_episode_from_writing_retries_target_episode_and_regenerates_manifest(
-    monkeypatch,
-    tmp_path,
-):
+def test_resume_from_quality_judge_uses_persisted_scripts_and_context(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     project_dir, plans = _build_project_dir(tmp_path)
-    calls: dict[str, Any] = {}
+    calls: dict[str, Any] = {"episodes": []}
 
     class FakeOrchestrator:
         def __init__(self, settings: Any) -> None:
@@ -527,57 +508,57 @@ def test_retry_single_episode_from_writing_retries_target_episode_and_regenerate
         def _bind_run_logger(self, bound_project_dir: Path) -> None:
             calls["bound_project_dir"] = bound_project_dir
 
-        async def _produce_episode(
+        async def _continue_episode_from_script(
             self,
+            *,
             plan: EpisodePlan,
             strategy_episode: StrategyEpisode,
             architecture: EpisodeArchitecture,
+            script: EpisodeScript,
             project: ThematicProject,
             corpus: ThematicCorpus,
             actor_metadata: ActorMetadata,
             project_dir: Path,
-            *,
+            ep_dir: Path,
             host_policy: dict[str, Any],
             primitive_lookup: dict[str, EventPrimitive],
-            semaphore: asyncio.Semaphore,
-            spoken_semaphore: asyncio.Semaphore | None = None,
+            spoken_semaphore: asyncio.Semaphore,
             series_explanation_registry: list[Any] | None = None,
-            **_kwargs: Any,
+            narrative_state_pre: NarrativeState | None = None,
+            narrative_state_post: NarrativeState | None = None,
+            excerpt_by_id: dict[str, ExcerptRecord] | None = None,
+            spine_diagnostics: dict[str, Any] | None = None,
+            host_moves_diagnostics: dict[str, Any] | None = None,
         ) -> tuple[int, SpokenScript]:
-            ep_dir = project_dir / "episodes" / str(plan.episode_number)
-            ep_dir.mkdir(parents=True, exist_ok=True)
-            calls["produced_episode_number"] = plan.episode_number
-            calls["write_config"] = project.config
-            calls["produced_strategy_title"] = strategy_episode.title
-            calls["produced_architecture_episode"] = architecture.episode_number
-            calls["host_policy"] = host_policy
-            calls["primitive_lookup"] = primitive_lookup
-            script = _episode_script(plan, strategy_episode.title)
-            _write_json(ep_dir / "episode_script.json", script)
-            _write_json(ep_dir / "spine_diagnostics.json", {"status": "ok"})
-            _write_json(ep_dir / "style_audited_script.json", script)
-            _write_json(ep_dir / "style_audit_result.json", {"status": "ok"})
-            spoken = _spoken_script(plans[plan.episode_number - 1], script.title)
-            _write_json(ep_dir / "spoken_script.json", spoken)
-            _write_json(ep_dir / "spoken_host_moves_diagnostics.json", {"status": "ok"})
-            return plan.episode_number, spoken
-
-        async def _render_episode_audio(
-            self,
-            episode_number: int,
-            spoken: SpokenScript,
-            config: PipelineConfig,
-            project_dir: Path,
-            semaphore: asyncio.Semaphore,
-            *,
-            skip_audio: bool,
-        ) -> None:
-            calls["render_episode_number"] = episode_number
-            calls["audio_skip"] = skip_audio
-            _write_json(
-                project_dir / "episodes" / str(episode_number) / "render_manifest.json",
-                {"episode_number": episode_number, "total_segments": len(spoken.sections)},
+            calls["episodes"].append(
+                {
+                    "episode_number": plan.episode_number,
+                    "script_episode_number": script.episode_number,
+                    "strategy_title": strategy_episode.title,
+                    "architecture_episode_number": architecture.episode_number,
+                    "config": project.config,
+                    "corpus_project_id": corpus.project_id,
+                    "actor_id": actor_metadata.actors[0].actor_id,
+                    "host_policy": host_policy,
+                    "primitive_lookup": primitive_lookup,
+                    "narrative_state_pre": narrative_state_pre,
+                    "narrative_state_post": narrative_state_post,
+                    "excerpt_ids": sorted((excerpt_by_id or {}).keys()),
+                    "spine_diagnostics": spine_diagnostics,
+                    "host_moves_diagnostics": host_moves_diagnostics,
+                    "series_explanation_registry": series_explanation_registry or [],
+                    "spoken_semaphore": spoken_semaphore,
+                }
             )
+            _write_json(
+                ep_dir / "quality_judgment.json",
+                {"episode_number": plan.episode_number, "overall_score": 80},
+            )
+            _write_json(ep_dir / "style_audit_result.json", {"status": "ok"})
+            _write_json(ep_dir / "style_audited_script.json", script)
+            spoken = _spoken_script(plan, strategy_episode.title)
+            _write_json(ep_dir / "spoken_script.json", spoken)
+            return plan.episode_number, spoken
 
         def _write_passage_utilization(self, **kwargs: Any) -> None:
             calls["passage_utilization"] = kwargs
@@ -593,26 +574,67 @@ def test_retry_single_episode_from_writing_retries_target_episode_and_regenerate
         def _write_actor_metadata_metrics(self, **kwargs: Any) -> None:
             calls["actor_metadata_metrics"] = kwargs
 
+        async def _render_episode_audio(
+            self,
+            episode_number: int,
+            spoken: SpokenScript,
+            config: PipelineConfig,
+            project_dir: Path,
+            semaphore: asyncio.Semaphore,
+            *,
+            skip_audio: bool,
+        ) -> None:
+            calls.setdefault("render_calls", []).append(
+                {"episode_number": episode_number, "skip_audio": skip_audio}
+            )
+            _write_json(
+                project_dir / "episodes" / str(episode_number) / "render_manifest.json",
+                {"episode_number": episode_number, "segment_count": len(spoken.sections)},
+            )
+
     monkeypatch.setattr(
-        retry_script,
+        resume_script,
         "Settings",
         lambda: SimpleNamespace(pipeline=SimpleNamespace(artifact_root=tmp_path)),
     )
-    monkeypatch.setattr(retry_script, "PipelineOrchestrator", FakeOrchestrator)
+    monkeypatch.setattr(resume_script, "PipelineOrchestrator", FakeOrchestrator)
+    monkeypatch.setattr(
+        resume_script,
+        "resume_from_quality_judge_stage",
+        resume_script.resume_from_quality_judge_stage,
+    )
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.resume._verify_architectures_against_strategy",
+        lambda **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.resume._verify_plans_against_strategy_and_architecture",
+        lambda **kwargs: None,
+    )
 
-    asyncio.run(retry_script._retry_single_episode_from_writing("run_1", 2))
+    asyncio.run(resume_script._resume_from_quality_judge("run_1"))
 
     assert calls["bound_project_dir"] == project_dir
-    assert calls["produced_episode_number"] == 2
-    assert calls["produced_strategy_title"] == "Episode 2"
-    assert calls["produced_architecture_episode"] == 2
-    assert calls["render_episode_number"] == 2
-    assert calls["write_config"].skip_grounding is True
-    assert calls["write_config"].skip_audio is True
-    assert calls["write_config"].skip_spoken_delivery is False
-    assert calls["audio_skip"] is True
-    assert calls["primitive_lookup"]["primitive_1"].id == "primitive_1"
-    assert "authorial_policy" in calls["host_policy"]
+    assert [item["episode_number"] for item in calls["episodes"]] == [1, 2]
+    assert calls["episodes"][0]["script_episode_number"] == 1
+    assert calls["episodes"][1]["strategy_title"] == "Episode 2"
+    assert calls["episodes"][0]["architecture_episode_number"] == 1
+    assert calls["episodes"][0]["config"].skip_grounding is True
+    assert calls["episodes"][0]["config"].skip_audio is True
+    assert calls["episodes"][0]["config"].skip_spoken_delivery is False
+    assert calls["episodes"][0]["corpus_project_id"] == "run_1"
+    assert calls["episodes"][0]["actor_id"] == "actor_1"
+    assert "authorial_policy" in calls["episodes"][0]["host_policy"]
+    assert calls["episodes"][0]["primitive_lookup"]["primitive_1"].id == "primitive_1"
+    assert calls["episodes"][0]["narrative_state_pre"].project_id == "run_1"
+    assert calls["episodes"][0]["narrative_state_post"].project_id == "run_1"
+    assert calls["episodes"][0]["excerpt_ids"] == ["x1"]
+    assert calls["episodes"][0]["spine_diagnostics"] == {"episode": 1}
+    assert calls["episodes"][0]["host_moves_diagnostics"] == {}
+    assert calls["render_calls"] == [
+        {"episode_number": 1, "skip_audio": True},
+        {"episode_number": 2, "skip_audio": True},
+    ]
     assert calls["passage_utilization"]["episode_numbers"] == [1, 2]
     assert [episode_number for episode_number, _ in calls["spoken_scripts"]] == [1, 2]
     assert calls["actor_metadata_metrics"]["metrics"]["episode_planning"] == {
@@ -621,11 +643,13 @@ def test_retry_single_episode_from_writing_retries_target_episode_and_regenerate
     assert calls["actor_metadata_metrics"]["metrics"]["writing"] == {
         "completed_episode_count": 2
     }
-    assert (project_dir / "episodes" / "2" / "episode_script.json").exists()
-    assert (project_dir / "episodes" / "2" / "style_audited_script.json").exists()
-    assert (project_dir / "episodes" / "2" / "style_audit_result.json").exists()
-    assert (project_dir / "episodes" / "2" / "spoken_script.json").exists()
-    assert (project_dir / "episodes" / "2" / "render_manifest.json").exists()
+    for plan in plans:
+        ep_dir = project_dir / "episodes" / str(plan.episode_number)
+        assert (ep_dir / "quality_judgment.json").exists()
+        assert (ep_dir / "style_audit_result.json").exists()
+        assert (ep_dir / "style_audited_script.json").exists()
+        assert (ep_dir / "spoken_script.json").exists()
+        assert (ep_dir / "render_manifest.json").exists()
 
     final_project = ThematicProject.model_validate(
         json.loads((project_dir / "thematic_project.json").read_text(encoding="utf-8"))
@@ -634,59 +658,191 @@ def test_retry_single_episode_from_writing_retries_target_episode_and_regenerate
     assert final_project.episode_count == 2
 
 
-def test_retry_single_episode_from_writing_restores_original_status_on_failure(
-    monkeypatch,
-    tmp_path,
-):
+def test_resume_from_quality_judge_requires_episode_script(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     project_dir, _ = _build_project_dir(tmp_path)
+    (project_dir / "episodes" / "2" / "episode_script.json").unlink()
+
+    monkeypatch.setattr(
+        resume_script,
+        "Settings",
+        lambda: SimpleNamespace(pipeline=SimpleNamespace(artifact_root=tmp_path)),
+    )
+    monkeypatch.setattr(
+        resume_script,
+        "PipelineOrchestrator",
+        lambda settings: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.resume._verify_architectures_against_strategy",
+        lambda **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.resume._verify_plans_against_strategy_and_architecture",
+        lambda **kwargs: None,
+    )
+
+    with pytest.raises(RuntimeError, match="episode_script.json"):
+        asyncio.run(resume_script._resume_from_quality_judge("run_1"))
+
+
+def test_resume_from_quality_judge_requires_narrative_states(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    project_dir, _ = _build_project_dir(tmp_path)
+    (project_dir / "episodes" / "2" / "narrative_state_pre.json").unlink()
+
+    monkeypatch.setattr(
+        resume_script,
+        "Settings",
+        lambda: SimpleNamespace(pipeline=SimpleNamespace(artifact_root=tmp_path)),
+    )
+    monkeypatch.setattr(
+        resume_script,
+        "PipelineOrchestrator",
+        lambda settings: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.resume._verify_architectures_against_strategy",
+        lambda **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.resume._verify_plans_against_strategy_and_architecture",
+        lambda **kwargs: None,
+    )
+
+    with pytest.raises(RuntimeError, match="narrative_state_pre.json"):
+        asyncio.run(resume_script._resume_from_quality_judge("run_1"))
+
+
+def test_resume_from_quality_judge_validates_persisted_artifact_alignment(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _build_project_dir(tmp_path)
+
+    monkeypatch.setattr(
+        resume_script,
+        "Settings",
+        lambda: SimpleNamespace(pipeline=SimpleNamespace(artifact_root=tmp_path)),
+    )
+    monkeypatch.setattr(
+        resume_script,
+        "PipelineOrchestrator",
+        lambda settings: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.resume._verify_architectures_against_strategy",
+        lambda **kwargs: (_ for _ in ()).throw(
+            RuntimeError("episode numbers do not match persisted strategy")
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="episode numbers do not match"):
+        asyncio.run(resume_script._resume_from_quality_judge("run_1"))
+
+
+def test_resume_from_quality_judge_strips_removed_pipeline_config_keys(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Persisted thematic_project.json from runs that predate the redraft-loop
+    removal still carries `style_audit_redraft_cap` and
+    `style_audit_in_place_floor` under `config`. PipelineConfig is strict and
+    would reject those keys; the resume loader must strip them so the legacy
+    run can resume cleanly.
+    """
+    project_dir, plans = _build_project_dir(tmp_path)
+
+    project_path = project_dir / "thematic_project.json"
+    project_payload = json.loads(project_path.read_text(encoding="utf-8"))
+    project_payload["config"]["style_audit_redraft_cap"] = 1
+    project_payload["config"]["style_audit_in_place_floor"] = 70
+    project_path.write_text(json.dumps(project_payload), encoding="utf-8")
 
     class FakeOrchestrator:
         def __init__(self, settings: Any) -> None:
             self.settings = settings
 
         def _bind_run_logger(self, bound_project_dir: Path) -> None:
-            return None
+            pass
 
-        async def _produce_episode(self, *args: Any, **kwargs: Any) -> tuple[int, SpokenScript]:
-            raise RuntimeError("writing failed")
+        async def _continue_episode_from_script(
+            self,
+            *,
+            plan: EpisodePlan,
+            strategy_episode: StrategyEpisode,
+            architecture: EpisodeArchitecture,
+            script: EpisodeScript,
+            project: ThematicProject,
+            corpus: ThematicCorpus,
+            actor_metadata: ActorMetadata,
+            project_dir: Path,
+            ep_dir: Path,
+            host_policy: dict[str, Any],
+            primitive_lookup: dict[str, EventPrimitive],
+            spoken_semaphore: asyncio.Semaphore,
+            series_explanation_registry: list[Any] | None = None,
+            narrative_state_pre: NarrativeState | None = None,
+            narrative_state_post: NarrativeState | None = None,
+            excerpt_by_id: dict[str, ExcerptRecord] | None = None,
+            spine_diagnostics: dict[str, Any] | None = None,
+            host_moves_diagnostics: dict[str, Any] | None = None,
+        ) -> tuple[int, SpokenScript]:
+            spoken = _spoken_script(plan, strategy_episode.title)
+            _write_json(ep_dir / "spoken_script.json", spoken)
+            return plan.episode_number, spoken
+
+        def _write_passage_utilization(self, **kwargs: Any) -> None:
+            pass
+
+        def _build_writing_actor_metrics(
+            self,
+            project_dir: Path,
+            spoken_scripts: list[tuple[int, SpokenScript]],
+        ) -> dict[str, Any]:
+            return {"completed_episode_count": len(spoken_scripts)}
+
+        def _write_actor_metadata_metrics(self, **kwargs: Any) -> None:
+            pass
+
+        async def _render_episode_audio(
+            self,
+            episode_number: int,
+            spoken: SpokenScript,
+            config: PipelineConfig,
+            project_dir: Path,
+            semaphore: asyncio.Semaphore,
+            *,
+            skip_audio: bool,
+        ) -> None:
+            _write_json(
+                project_dir / "episodes" / str(episode_number) / "render_manifest.json",
+                {"episode_number": episode_number},
+            )
 
     monkeypatch.setattr(
-        retry_script,
+        resume_script,
         "Settings",
         lambda: SimpleNamespace(pipeline=SimpleNamespace(artifact_root=tmp_path)),
     )
-    monkeypatch.setattr(retry_script, "PipelineOrchestrator", FakeOrchestrator)
-
-    with pytest.raises(RuntimeError, match="writing failed"):
-        asyncio.run(retry_script._retry_single_episode_from_writing("run_1", 2))
-
-    final_project = ThematicProject.model_validate(
-        json.loads((project_dir / "thematic_project.json").read_text(encoding="utf-8"))
-    )
-    assert final_project.status == ProjectStatus.COMPLETE
-
-
-def test_retry_single_episode_from_writing_requires_matching_architecture(
-    monkeypatch,
-    tmp_path,
-):
-    project_dir, _ = _build_project_dir(tmp_path)
-    architectures_payload = json.loads(
-        (project_dir / "episode_architectures.json").read_text(encoding="utf-8")
-    )
-    architectures_payload["episodes"] = architectures_payload["episodes"][:1]
-    _write_json(project_dir / "episode_architectures.json", architectures_payload)
-
+    monkeypatch.setattr(resume_script, "PipelineOrchestrator", FakeOrchestrator)
     monkeypatch.setattr(
-        retry_script,
-        "Settings",
-        lambda: SimpleNamespace(pipeline=SimpleNamespace(artifact_root=tmp_path)),
+        "podcast_agent.pipeline.resume._verify_architectures_against_strategy",
+        lambda **kwargs: None,
     )
     monkeypatch.setattr(
-        retry_script,
-        "PipelineOrchestrator",
-        lambda settings: SimpleNamespace(),
+        "podcast_agent.pipeline.resume._verify_plans_against_strategy_and_architecture",
+        lambda **kwargs: None,
     )
 
-    with pytest.raises(RuntimeError, match="episode_architectures.json does not contain episode_number 2"):
-        asyncio.run(retry_script._retry_single_episode_from_writing("run_1", 2))
+    asyncio.run(resume_script._resume_from_quality_judge("run_1"))
+
+    # Re-saved config should no longer contain the removed keys.
+    saved = json.loads(project_path.read_text(encoding="utf-8"))
+    assert "style_audit_redraft_cap" not in saved["config"]
+    assert "style_audit_in_place_floor" not in saved["config"]
+    assert saved["status"] == ProjectStatus.COMPLETE.value

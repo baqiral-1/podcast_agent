@@ -48,8 +48,8 @@ class EpisodePlanningAgent(Agent):
             instructions = self.instructions
         else:
             base_instructions = episode_planning_instructions(
-                scene_card_target_min=int(project.get("scene_card_target_min", 30)),
-                scene_card_target_max=int(project.get("scene_card_target_max", 38)),
+                scene_card_target_min=int(project.get("scene_card_target_min", 36)),
+                scene_card_target_max=int(project.get("scene_card_target_max", 42)),
             )
             instructions = (
                 f"{base_instructions}\n\n{self.note_guidance}"
@@ -88,6 +88,7 @@ class EpisodePlanningAgent(Agent):
         planning_feedback: dict | None = None,
         field_semantics: dict | None = None,
         excerpts: list[dict] | None = None,
+        section_scene_targets: dict[str, dict[str, int | bool]] | None = None,
     ) -> dict:
         payload = {
             "strategy_episode": strategy_episode,
@@ -102,6 +103,8 @@ class EpisodePlanningAgent(Agent):
             raw_mode = project_metadata.get("podcast_mode", "full")
             scene_job_budget = scene_job_budget_for_mode(raw_mode)
         payload["scene_job_budget"] = scene_job_budget
+        if section_scene_targets is not None:
+            payload["section_scene_targets"] = section_scene_targets
         if host_policy is not None:
             payload["host_policy"] = host_policy
         if narrative_state_pre is not None:

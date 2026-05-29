@@ -42,13 +42,13 @@ class TestLLMConfig:
         assert config.resolve_temperature("synthesis_primitives") == 0.8
         assert config.resolve_temperature("narrative_strategy_skeleton") == 0.5
         assert config.resolve_temperature("narrative_strategy_enrichment") == 0.5
-        assert config.resolve_temperature("grounding_validation") == 0.2
+        assert config.resolve_temperature("quality_judge") == 0.2
 
     def test_resolve_model_defaults(self):
         config = LLMConfig()
         assert config.resolve_model("chapter_summary") == "claude-haiku-4-5"
-        assert config.resolve_model("synthesis_primitives") == "claude-opus-4-7"
-        assert config.resolve_model("narrative_strategy") == "claude-opus-4-7"
+        assert config.resolve_model("synthesis_primitives") == "claude-opus-4-8"
+        assert config.resolve_model("narrative_strategy") == "claude-opus-4-8"
         assert config.resolve_model("theme_decomposition") == "claude-sonnet-4-6"
 
     def test_resolve_max_retry_attempts_defaults(self):
@@ -179,10 +179,10 @@ class TestPipelineRuntimeConfig:
         assert config.planning_axis_max == 15
         assert config.synthesis_total_passage_cap == 750
         assert config.planning_total_passage_cap == 300
-        assert config.architecture_section_target_min == 11
-        assert config.architecture_section_target_max == 14
-        assert config.scene_card_target_min == 30
-        assert config.scene_card_target_max == 38
+        assert config.architecture_section_target_min == 12
+        assert config.architecture_section_target_max == 18
+        assert config.scene_card_target_min == 36
+        assert config.scene_card_target_max == 42
         assert config.passage_extraction_concurrency == 16
         assert config.llm_global_max_concurrency == 30
 

@@ -27,6 +27,8 @@ class StyleAuditAgent(Agent):
         series_explanation_registry: list[dict] | None = None,
         field_semantics: dict | None = None,
         lint_flags: dict | None = None,
+        quality_judgment: dict | None = None,
+        series_carryover_counts: dict[str, int] | None = None,
     ) -> dict:
         payload = {
             "episode_number": episode_number,
@@ -35,6 +37,10 @@ class StyleAuditAgent(Agent):
         }
         if lint_flags is not None:
             payload["lint_flags"] = lint_flags
+        if quality_judgment is not None:
+            payload["quality_judgment"] = quality_judgment
+        if series_carryover_counts is not None:
+            payload["series_carryover_counts"] = series_carryover_counts
         if host_policy is not None:
             payload["host_policy"] = host_policy
         if narrative_state_pre is not None:

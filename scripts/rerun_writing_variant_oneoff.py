@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Callable, TypeVar
 
 from podcast_agent.config import AgentConfig, Settings
+from podcast_agent.langchain.llm import _supports_adaptive_thinking
 from podcast_agent.pipeline.orchestrator import (
     PipelineOrchestrator,
     _build_host_policy_payload,
@@ -137,13 +138,10 @@ def _writing_model_metadata(settings: Settings) -> dict[str, Any]:
     schema_name = "episode_writing"
     model_name = settings.llm.resolve_model(schema_name)
     provider = _provider_for_schema(settings, schema_name)
-    normalized_model_name = str(model_name or "").strip().lower()
     adaptive_thinking_effort: str | None = None
     thinking_budget_tokens: int | None = None
     if provider == "anthropic":
-        if normalized_model_name == "claude-opus-4-7" or normalized_model_name.startswith(
-            "claude-opus-4-7-"
-        ):
+        if _supports_adaptive_thinking(str(model_name or "")):
             adaptive_thinking_effort = settings.llm.resolve_anthropic_thinking_effort(
                 schema_name
             )

@@ -26,6 +26,7 @@ from podcast_agent.schemas.models import (
     SceneDiscoveryArtifact,
     SpokenScript,
     SpokenSection,
+    SpokenSegment,
     StrategyEpisode,
     SynthesisMap,
     ThematicAxis,
@@ -457,7 +458,7 @@ def test_resume_from_narrative_strategy_uses_scene_discovery_and_current_artifac
                         "opening_question": "What now?",
                         "handoff_scene_card_id": "scene_01",
                     },
-                    sections=[SpokenSection(section_id="section_01", text="Text.")],
+                    sections=[SpokenSection(section_id="section_01", segments=[SpokenSegment(segment_id="section_01_seg1", text="Text.")])],
                     tts_provider="openai",
                 ),
             )

@@ -25,6 +25,7 @@ import unicodedata
 from contextlib import asynccontextmanager
 from pathlib import Path
 from types import SimpleNamespace
+from collections.abc import Mapping, Sequence
 from typing import Any, Callable, cast
 from uuid import uuid4
 
@@ -47,12 +48,9 @@ from podcast_agent.agents.planning import EpisodePlanningAgent
 from podcast_agent.agents.primitive_function_tagging import (
     PrimitiveFunctionTaggingAgent,
 )
-from podcast_agent.agents.repair import RepairAgent
+from podcast_agent.agents.quality_judge import QualityJudgeAgent
 from podcast_agent.agents.scene_discovery import SceneDiscoveryAgent
-from podcast_agent.agents.spoken_delivery_agent import (
-    SpokenDeliveryAgent,
-    SpokenDeliveryBatchSection,
-)
+from podcast_agent.agents.spoken_delivery_agent import SpokenDeliveryAgent
 from podcast_agent.agents.style_audit import StyleAuditAgent
 from podcast_agent.agents.excerpt_extraction import ExcerptExtractionAgent
 from podcast_agent.agents.synthesis_primitives import SynthesisPrimitivesAgent
@@ -61,7 +59,8 @@ from podcast_agent.pipeline.style_audit_linting import (
     compute_style_audit_lint_flags,
 )
 from podcast_agent.agents.theme_decomposition import ThemeDecompositionAgent
-from podcast_agent.agents.validation import GroundingValidationAgent
+# Grounding stage removed; QualityJudgeAgent (above) is the new
+# post-writing gate (Change 3).
 from podcast_agent.agents.writing import WritingAgent, WritingAgentNoCitations
 from podcast_agent.config import Settings
 from podcast_agent.ingestion import read_source_text, extract_chapters_from_source
@@ -97,7 +96,7 @@ from podcast_agent.schemas.models import (
     ExtractedArtifactPrimitive,
     ExtractedMechanismPrimitive,
     ExtractedPassage,
-    GroundingReport,
+    EpisodeQualityScore,
     MustLandFacts,
     NarrativeStrategy,
     NarrativeStrategyEnrichment,
@@ -117,7 +116,6 @@ from podcast_agent.schemas.models import (
     ReadingPrimitive,
     RenderManifest,
     RenderSegment,
-    RepairResult,
     resolve_pipeline_config_for_mode,
     SceneCard,
     SceneCardDraft,
@@ -129,7 +127,7 @@ from podcast_agent.schemas.models import (
     SeriesNarratorProfile,
     SeriesActorExplanationItem,
     SeriesExplanationItem,
-    SegmentDiff,
+    SeriesTicState,
     SectionSonicBeat,
     SectionSonicObligation,
     SectionSonicPlan,
@@ -345,6 +343,71 @@ def _score_spoken_delivery_batch_partition(
     worst_deviation = max(abs(total - target) for total in batch_totals)
     spread = max(batch_totals) - min(batch_totals)
     return (worst_deviation, spread, cut_points)
+
+
+def _build_tts_provider_capabilities(tts_provider: str) -> dict:
+    """Capability advertisement for the oral rewriter (Change 4).
+
+    Only ``openai-compatible`` (specifically ``gpt-4o-mini-tts``) accepts
+    free-form per-segment ``instructions``. Kokoro and the stock OpenAI
+    ``tts-1`` / ``tts-1-hd`` models don't. The agent uses this signal to
+    decide whether to emit ``SpokenSegment.delivery_instructions`` strings.
+    """
+    provider = (tts_provider or "").lower()
+    supports_instructions = provider in {"openai-compatible", "openai"}
+    voice_catalog: list[str] = []
+    if provider in {"openai-compatible", "openai"}:
+        voice_catalog = [
+            "alloy", "ash", "coral", "echo", "fable",
+            "onyx", "nova", "sage", "shimmer",
+        ]
+    elif provider == "kokoro":
+        voice_catalog = ["af_heart"]
+    return {
+        "provider": provider,
+        "supports_per_segment_instructions": supports_instructions,
+        "voice_catalog": voice_catalog,
+    }
+
+
+def _build_quotability_marks_for_batch(
+    *,
+    prose_batch: list[ProseSection],
+    script: EpisodeScript,
+    plan: "EpisodePlan | None",
+) -> list[dict]:
+    """Surface verbatim excerpts the oral rewriter may voice in actor voice.
+
+    A ``quotability_mark`` is emitted for every excerpt with quotability
+    >= 0.80 that is realized in one of the batch's sections. Marks below
+    0.85 are still surfaced so the agent has the full context; the
+    >=0.85 + excerpt_type gate is applied inside the agent's prompt.
+    """
+    if plan is None:
+        return []
+    section_ids_in_batch = {ps.section_id for ps in prose_batch}
+    excerpt_lookup: dict[str, dict] = {}
+    # plan.framing / scene_cards may carry excerpt_ids; look them up against
+    # the corpus excerpts via plan.scene_cards[].excerpt_ids if present.
+    scene_excerpt_pairs: list[tuple[str, str]] = []
+    for scene in getattr(plan, "scene_cards", []):
+        if scene.section_id not in section_ids_in_batch:
+            continue
+        for excerpt_id in getattr(scene, "excerpt_ids", []) or []:
+            scene_excerpt_pairs.append((scene.section_id, excerpt_id))
+    if not scene_excerpt_pairs:
+        return []
+    # The full excerpt records live on the corpus; we accept that the
+    # caller may not have those here in build-time scope. The agent will
+    # still receive the excerpt_id, allowing it to coordinate marks even
+    # without verbatim text.
+    marks: list[dict] = []
+    for section_id, excerpt_id in scene_excerpt_pairs:
+        marks.append({
+            "section_id": section_id,
+            "excerpt_id": excerpt_id,
+        })
+    return marks
 
 
 def _build_spoken_delivery_batches(
@@ -1662,6 +1725,7 @@ def _build_style_audit_sections_payload(
     architecture: EpisodeArchitecture,
     plan: EpisodePlan | None = None,
     strategy_episode: StrategyEpisode | None = None,
+    series_carryover_counts: dict[str, int] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Build the style_audit section payload and the episode-level lint flags.
 
@@ -1696,11 +1760,26 @@ def _build_style_audit_sections_payload(
         for ps in script.prose_sections
     ]
     spine = strategy_episode.episode_spine if strategy_episode is not None else None
+    from podcast_agent.pipeline.tic_families import detect_tic_hits
+    from podcast_agent.pipeline.text_embeddings import get_text_embedder
+    from podcast_agent.pipeline.text_utils import split_sentences as _split_sentences
+
+    _audit_embedder = get_text_embedder()
+
+    def _audit_semantic_detector(text: str, section_id: str):
+        return detect_tic_hits(
+            _split_sentences(text),
+            section_id=section_id,
+            embedder=_audit_embedder,
+        )
+
     lint_flags = compute_style_audit_lint_flags(
         prose_section_dicts,
         spine_episode_answer=(spine.episode_answer if spine else ""),
         spine_pressure_line=(spine.pressure_line if spine else ""),
         section_progression_by_id=section_progression_by_id,
+        semantic_detector=_audit_semantic_detector,
+        series_carryover_counts=series_carryover_counts or {},
     )
     by_section_flags = lint_flags["by_section"]
 
@@ -1710,6 +1789,22 @@ def _build_style_audit_sections_payload(
         if meta is None:
             continue
         section_scene_cards = scene_cards_by_section.get(prose_section.section_id, [])
+        # Aggregate binding must-land facts and citations across the section's
+        # scene cards so style_audit has the preservation contract inline with
+        # the prose. The aggregation lives in style_audit_linting so the
+        # post-audit fact-coverage diagnostic shares one source of truth.
+        from podcast_agent.pipeline.style_audit_linting import (
+            aggregate_section_must_land_facts,
+        )
+
+        (
+            section_required_facts,
+            section_strongly_preferred_facts,
+        ) = aggregate_section_must_land_facts(section_scene_cards)
+        section_citations = [
+            citation.model_dump(mode="json")
+            for citation in prose_section.citations
+        ]
         payload_sections.append(
             {
                 "section_id": prose_section.section_id,
@@ -1730,6 +1825,11 @@ def _build_style_audit_sections_payload(
                     for scene in section_scene_cards
                     if _is_structural_scene_card(scene)
                 ),
+                "must_land_facts": {
+                    "required": section_required_facts,
+                    "strongly_preferred": section_strongly_preferred_facts,
+                },
+                "citations": section_citations,
                 "host_moves": host_moves_by_section.get(prose_section.section_id, []),
                 "key_terms": list(meta.key_terms),
                 "authorial_passages": section_authorial_passages_by_section_id.get(
@@ -2187,7 +2287,6 @@ def _resolve_synthesis_bm25_keep_fraction_by_passage(
         passages,
         key=lambda passage: (
             -passage.relevance_score,
-            -passage.quotability_score,
             passage.passage_id,
         ),
     )
@@ -2461,7 +2560,6 @@ def _select_mmr_passages(
             key=lambda p: (
                 -base_score_fn(p),
                 -p.relevance_score,
-                -p.quotability_score,
                 p.passage_id,
             ),
         )
@@ -2502,7 +2600,6 @@ def _select_mmr_passages(
                 ),
                 base_scores[idx],
                 passages[idx].relevance_score,
-                passages[idx].quotability_score,
                 -idx,
             ),
         )
@@ -2734,6 +2831,106 @@ def _build_flat_planning_passage_payload(
     return [by_id[passage_id] for passage_id in ordered_ids]
 
 
+def _allocate_excerpt_extraction_passages(
+    *,
+    selected_axes: Sequence[Any],
+    passages_by_axis: Mapping[str, Sequence[ExtractedPassage]],
+    passage_cap: int,
+    axis_floor: int,
+    ceiling_fraction: float,
+) -> tuple[
+    dict[str, list[ExtractedPassage]],
+    dict[str, int],
+    dict[str, list[ExtractedPassage]],
+    list[str],
+]:
+    """Allocate a global excerpt-extraction passage cap across the selected axes.
+
+    Per-axis budgets are proportional to ``theme_importance_score`` with a floor
+    (``axis_floor``) and a ceiling (``ceil(passage_cap * ceiling_fraction)``).
+    Within each axis pool, passages are ranked by ``(-quotability_score,
+    -relevance_score, passage_id)``. Axes claim their budget in order of
+    descending ``theme_importance_score``; unused slots redistribute to axes
+    whose pools still have unclaimed passages, respecting the per-axis ceiling.
+    Returns the per-axis pools, per-axis budgets, per-axis claimed passages,
+    and the axis claim order.
+    """
+    passage_cap = max(1, passage_cap)
+    axis_floor = max(0, axis_floor)
+    axis_ceiling = max(axis_floor, math.ceil(passage_cap * ceiling_fraction))
+
+    axis_pools: dict[str, list[ExtractedPassage]] = {}
+    for axis in selected_axes:
+        pool = list(passages_by_axis.get(axis.axis_id, []))
+        pool.sort(
+            key=lambda p: (
+                -p.quotability_score,
+                -p.relevance_score,
+                p.passage_id,
+            )
+        )
+        axis_pools[axis.axis_id] = pool
+
+    axis_weights = {
+        a.axis_id: max(0.0, float(a.theme_importance_score)) for a in selected_axes
+    }
+    total_weight = sum(axis_weights.values())
+    if total_weight <= 0.0:
+        even_share = max(1, passage_cap // max(1, len(selected_axes)))
+        axis_budgets = {a.axis_id: even_share for a in selected_axes}
+    else:
+        axis_budgets = {
+            a.axis_id: max(
+                axis_floor,
+                math.floor(passage_cap * axis_weights[a.axis_id] / total_weight),
+            )
+            for a in selected_axes
+        }
+    axis_budgets = {
+        axis_id: min(axis_ceiling, budget) for axis_id, budget in axis_budgets.items()
+    }
+
+    axis_order = [
+        a.axis_id
+        for a in sorted(
+            selected_axes,
+            key=lambda a: (-a.theme_importance_score, a.axis_id),
+        )
+    ]
+    claimed_by_axis: dict[str, list[ExtractedPassage]] = {
+        axis_id: [] for axis_id in axis_order
+    }
+    claimed_ids: set[str] = set()
+    for axis_id in axis_order:
+        budget = axis_budgets[axis_id]
+        for passage in axis_pools[axis_id]:
+            if len(claimed_by_axis[axis_id]) >= budget:
+                break
+            if passage.passage_id in claimed_ids:
+                continue
+            claimed_by_axis[axis_id].append(passage)
+            claimed_ids.add(passage.passage_id)
+
+    while len(claimed_ids) < passage_cap:
+        progress = False
+        for axis_id in axis_order:
+            if len(claimed_ids) >= passage_cap:
+                break
+            if len(claimed_by_axis[axis_id]) >= axis_ceiling:
+                continue
+            for passage in axis_pools[axis_id]:
+                if passage.passage_id in claimed_ids:
+                    continue
+                claimed_by_axis[axis_id].append(passage)
+                claimed_ids.add(passage.passage_id)
+                progress = True
+                break
+        if not progress:
+            break
+
+    return axis_pools, axis_budgets, claimed_by_axis, axis_order
+
+
 def _rank_synthesis_axis_passages(
     passages: list[ExtractedPassage],
     *,
@@ -2744,7 +2941,6 @@ def _rank_synthesis_axis_passages(
         key=lambda p: (
             -(1 if p.passage_id in cross_pair_ids else 0),
             -p.relevance_score,
-            -p.quotability_score,
             p.passage_id,
         ),
     )
@@ -2777,9 +2973,9 @@ def _prioritize_cross_book_pairs(pairs: list[PassagePair]) -> list[PassagePair]:
 
 
 def _combined_synthesis_passage_score(passage: ExtractedPassage) -> float:
-    return (0.7 * float(passage.relevance_score)) + (
-        0.3 * float(passage.quotability_score)
-    )
+    # quotability_score now measures excerpt-presence, not narratability, so it
+    # no longer belongs in synthesis ranking. Use relevance only.
+    return float(passage.relevance_score)
 
 
 def _synthesis_source_key(
@@ -2913,7 +3109,6 @@ def _allocate_synthesis_passages_by_axis(
                         -(1 if passage.passage_id in cross_pair_ids else 0),
                         -_combined_synthesis_passage_score(passage),
                         -passage.relevance_score,
-                        -passage.quotability_score,
                         passage.passage_id,
                     ),
                     axis_id,
@@ -3043,7 +3238,7 @@ def _select_episode_planning_passages(
                 continue
             supporting_pool.append(passage)
         insight_passages.sort(
-            key=lambda p: (-p.relevance_score, -p.quotability_score, p.passage_id)
+            key=lambda p: (-p.relevance_score, p.passage_id)
         )
         target_supporting_count = supporting_passages_per_axis
         if supporting_passages_per_axis_by_axis is not None:
@@ -3055,11 +3250,9 @@ def _select_episode_planning_passages(
         def _planning_score(passage: ExtractedPassage) -> float:
             key = _chunk_key(passage)
             is_multi_axis = len(chunk_axes.get(key, set())) > 1
-            return (
-                (0.65 * passage.relevance_score)
-                + (0.35 * passage.quotability_score)
-                + (0.04 if is_multi_axis else 0.0)
-            )
+            # quotability_score now measures excerpt-presence and no longer belongs
+            # in planning ranking; relevance + the multi-axis bonus carry it.
+            return passage.relevance_score + (0.04 if is_multi_axis else 0.0)
 
         if use_mmr and supporting_top_n > 0:
             supporting_passages = _select_mmr_passages(
@@ -3074,7 +3267,6 @@ def _select_episode_planning_passages(
                 key=lambda passage: (
                     -_planning_score(passage),
                     -passage.relevance_score,
-                    -passage.quotability_score,
                     passage.passage_id,
                 ),
             )
@@ -3646,7 +3838,7 @@ def _build_strategy_selected_synthesis_map_preview(
 
 
 def _episode_scene_candidate_cap_for_mode(mode: PodcastMode) -> int:
-    return 8 if mode == PodcastMode.MINIFIED else 12
+    return 8 if mode == PodcastMode.MINIFIED else 13
 
 
 def _human_thread_candidate_cap_for_mode(mode: PodcastMode) -> int:
@@ -4450,6 +4642,49 @@ def _build_architecture_retry_feedback(exc: Exception) -> dict[str, Any]:
                 "anchor (object, person, dated action, place) instead."
             ),
         }
+    # Pydantic field-level validation errors: extract loc/msg/ctx so the
+    # agent sees exactly which field failed and by what rule. Without this
+    # the agent gets only the generic fallback below and tends to rewrite
+    # the same offending field on retry.
+    if isinstance(exc, ValidationError):
+        lines: list[str] = []
+        for err in exc.errors()[:8]:
+            loc = ".".join(str(part) for part in err.get("loc", ()))
+            msg = str(err.get("msg", "validation error"))
+            ctx = err.get("ctx") or {}
+            ctx_bits = ", ".join(f"{k}={v}" for k, v in ctx.items())
+            if ctx_bits:
+                lines.append(f"- `{loc}`: {msg} ({ctx_bits})")
+            else:
+                lines.append(f"- `{loc}`: {msg}")
+        total = len(exc.errors())
+        suffix = f" (+{total - 8} more)" if total > 8 else ""
+        return {
+            "issue": "schema_validation_failed",
+            "episode_number": data.get("episode_number"),
+            "instruction": (
+                "Pydantic schema validation failed on the previous attempt. "
+                "Fix each named field on the next attempt and keep all other "
+                "fields unchanged. Pay attention to max_length / min_length / "
+                "max_items constraints on the offending fields.\n"
+                + "\n".join(lines)
+                + suffix
+            ),
+        }
+    # Model-validator ValueError messages already include the field name
+    # and the rule that failed (e.g. "verdict_landing may only appear in
+    # the answer-stage section; found in section_05"). Pass them through
+    # verbatim.
+    if isinstance(exc, ValueError) and not data:
+        return {
+            "issue": "model_validator_failed",
+            "episode_number": None,
+            "instruction": (
+                "A model-level validator rejected the previous attempt with "
+                f"the following message. Fix exactly this failure and keep "
+                f"all other requirements unchanged:\n{exc}"
+            ),
+        }
     feedback = {
         "issue": issue,
         "episode_number": data.get("episode_number"),
@@ -5219,6 +5454,30 @@ def _render_segments_for_spoken_segment(
 # ---------------------------------------------------------------------------
 
 
+def _resolve_segment_voice(
+    spoken_segment,  # type: SpokenSegment (imported lazily inside the body)
+    default_voice_id: str,
+    actor_voice_catalog: dict[str, str],
+) -> str:
+    """Resolve the per-RenderSegment voice id for a SpokenSegment.
+
+    Primary segments use the episode-default voice. Actor segments use the
+    voice id mapped to their ``speaker_id`` in ``actor_voice_catalog``,
+    falling back to the default with a logged degradation when unknown.
+    """
+    from podcast_agent.schemas.models import SpokenSpeakerRole
+
+    if (
+        spoken_segment.speaker_role == SpokenSpeakerRole.PRIMARY
+        or not spoken_segment.speaker_id
+    ):
+        return default_voice_id
+    resolved = actor_voice_catalog.get(spoken_segment.speaker_id)
+    if resolved:
+        return resolved
+    return default_voice_id
+
+
 def build_render_manifest(
     spoken_script: SpokenScript,
     voice_id: str = "fable",
@@ -5226,10 +5485,12 @@ def build_render_manifest(
     words_per_minute: int = 130,
     base_instructions: str | None = None,
     tts_model_name: str | None = "tts-1-hd",
+    actor_voice_catalog: dict[str, str] | None = None,
 ) -> RenderManifest:
     segments: list[RenderSegment] = []
     tts_provider = spoken_script.tts_provider
     framing = spoken_script.framing
+    actor_voice_catalog = actor_voice_catalog or {}
     framing_texts = [
         ("framing_opening_image", framing.opening_image, 0, 900),
         ("framing_threat", framing.threat_or_unresolved_action, 200, 800),
@@ -5253,21 +5514,48 @@ def build_render_manifest(
             )
         )
 
+    # Change 4: iterate SpokenSegments, not SpokenSections. Each
+    # SpokenSegment becomes one or more RenderSegments (via
+    # _render_segments_for_spoken_segment when render_strategy splits the
+    # text). Per-segment voice override drives actor voicing. Speech hints
+    # at the SpokenSegment level take precedence; SpokenSection-level hints
+    # fall through so the agent can set tonal posture per section while
+    # leaving most segments at defaults.
     for section in spoken_script.sections:
-        segments.extend(
-            _render_segments_for_spoken_segment(
-                SimpleNamespace(
-                    segment_id=section.section_id,
-                    text=section.text,
-                    speech_hints=section.speech_hints,
-                ),
-                voice_id=voice_id,
-                speed=speed,
-                tts_provider=tts_provider,
-                tts_model_name=tts_model_name,
-                base_instructions=base_instructions,
+        section_hints = section.speech_hints
+        section_has_default_hints = section_hints == SpeechHints()
+        for spoken_segment in section.segments:
+            seg_voice = _resolve_segment_voice(
+                spoken_segment, voice_id, actor_voice_catalog
             )
-        )
+            seg_instructions = spoken_segment.delivery_instructions
+            if seg_instructions is None and section.section_delivery_instructions:
+                seg_instructions = section.section_delivery_instructions
+            effective_base_instructions = (
+                seg_instructions if seg_instructions else base_instructions
+            )
+            # If the SpokenSegment carries default hints AND the parent
+            # SpokenSection has non-default hints, inherit the section's
+            # hints so per-section pacing / emphasis / pause overrides flow
+            # through to the render segment without each segment having to
+            # restate them.
+            effective_hints = spoken_segment.speech_hints
+            if effective_hints == SpeechHints() and not section_has_default_hints:
+                effective_hints = section_hints
+            segments.extend(
+                _render_segments_for_spoken_segment(
+                    SimpleNamespace(
+                        segment_id=spoken_segment.segment_id,
+                        text=spoken_segment.text,
+                        speech_hints=effective_hints,
+                    ),
+                    voice_id=seg_voice,
+                    speed=speed,
+                    tts_provider=tts_provider,
+                    tts_model_name=tts_model_name,
+                    base_instructions=effective_base_instructions,
+                )
+            )
 
     total_words = sum(len(seg.text.split()) for seg in segments)
     estimated_seconds = int(total_words / words_per_minute * 60)
@@ -9432,6 +9720,9 @@ class PipelineOrchestrator:
         self.tts_client = build_tts_client(self.settings)
         self.llm.set_run_logger(self.run_logger)
         self.tts_client.set_run_logger(self.run_logger)
+        # Cross-episode signal caches (Changes 2 + 3).
+        self._latest_lint_flags_by_episode: dict[int, dict] = {}
+        self._series_state_lock = asyncio.Lock()
 
         # Configure per-schema concurrency semaphores
         per_schema: dict[str, int] = {}
@@ -9500,10 +9791,9 @@ class PipelineOrchestrator:
             self.llm,
             max_retry_attempts=_retries("episode_writing"),
         )
-        self.grounding_agent = GroundingValidationAgent(
-            self.llm, max_retry_attempts=_retries("grounding_validation")
+        self.quality_judge_agent = QualityJudgeAgent(
+            self.llm, max_retry_attempts=_retries("quality_judge")
         )
-        self.repair_agent = RepairAgent(self.llm, max_retry_attempts=_retries("repair"))
         self.style_audit_agent = StyleAuditAgent(
             self.llm, max_retry_attempts=_retries("style_audit")
         )
@@ -10473,7 +10763,6 @@ class PipelineOrchestrator:
                     rehydrated_passages,
                     key=lambda p: (
                         -p.relevance_score,
-                        -p.quotability_score,
                         p.passage_id,
                     ),
                 )
@@ -11319,20 +11608,26 @@ class PipelineOrchestrator:
             )
             selected_axes = list(ranked_axes[:selected_axis_count])
 
-            # Quote-biased, series-wide passage pool ranked by quotability.
-            candidate_passages: list[ExtractedPassage] = []
-            seen_passage_ids: set[str] = set()
-            for axis in selected_axes:
-                for passage in corpus.passages_by_axis.get(axis.axis_id, []):
-                    if passage.passage_id in seen_passage_ids:
-                        continue
-                    seen_passage_ids.add(passage.passage_id)
-                    candidate_passages.append(passage)
-            candidate_passages.sort(
-                key=lambda p: (-p.quotability_score, -p.relevance_score, p.passage_id)
+            # Axis-budgeted, quotability-ranked passage selection.
+            # quotability_score now measures excerpt-presence (does this passage carry
+            # a discrete utterance/document we could surface), so we pick the top-K per
+            # axis using budgets proportional to theme_importance_score, with a floor
+            # and ceiling to keep coverage broad. Unused budget redistributes to the
+            # axes with deeper excerpt-bearing pools.
+            axis_pools, axis_budgets, claimed_by_axis, axis_order = (
+                _allocate_excerpt_extraction_passages(
+                    selected_axes=selected_axes,
+                    passages_by_axis=corpus.passages_by_axis,
+                    passage_cap=project.config.excerpt_extraction_total_passage_cap,
+                    axis_floor=project.config.excerpt_extraction_axis_passage_floor,
+                    ceiling_fraction=project.config.excerpt_extraction_axis_passage_ceiling_fraction,
+                )
             )
-            passage_cap = max(1, project.config.excerpt_extraction_total_passage_cap)
-            selected_passages = candidate_passages[:passage_cap]
+            selected_passages = [
+                passage
+                for axis_id in axis_order
+                for passage in claimed_by_axis[axis_id]
+            ]
 
             passages_by_axis: dict[str, list[dict[str, Any]]] = {}
             for passage in selected_passages:
@@ -11420,8 +11715,15 @@ class PipelineOrchestrator:
                 )
             ctx["output_summary"] = {
                 "selected_axes": len(selected_axes),
-                "candidate_passages": len(candidate_passages),
+                "candidate_passages": sum(
+                    len(pool) for pool in axis_pools.values()
+                ),
                 "selected_passages": len(selected_passages),
+                "axis_budgets": dict(axis_budgets),
+                "selected_per_axis": {
+                    axis_id: len(claimed_by_axis[axis_id])
+                    for axis_id in axis_order
+                },
                 "excerpt_count": len(excerpts.excerpts),
                 "excerpt_counts_by_type": type_counts,
                 "excerpts_with_verbatim": verbatim_with_text_after,
@@ -11892,6 +12194,24 @@ class PipelineOrchestrator:
             ),
             "min_episode_minutes": project.config.min_episode_minutes,
             "max_episode_minutes": project.config.max_episode_minutes,
+            # Density budget (Change 1) — threaded into
+            # EpisodeArchitectureAgent.validate_result for enforce-mode checks.
+            "max_dense_sections_per_episode": (
+                project.config.max_dense_sections_per_episode
+            ),
+            "dense_section_runtime_min_minutes": (
+                project.config.dense_section_runtime_min_minutes
+            ),
+            "dense_section_runtime_max_minutes": (
+                project.config.dense_section_runtime_max_minutes
+            ),
+            "section_runtime_floor_minutes": (
+                project.config.section_runtime_floor_minutes
+            ),
+            "section_runtime_ceiling_minutes": (
+                project.config.section_runtime_ceiling_minutes
+            ),
+            "series_runtime_policy": project.config.series_runtime_policy,
         }
         core_passages = _build_episode_architecture_core_passages(
             driving_question=strategy_episode.episode_spine.listener_problem,
@@ -12104,13 +12424,25 @@ class PipelineOrchestrator:
         planning_feedback: dict[str, Any] | None = None
         planning_attempts: list[dict[str, Any]] = []
         max_attempts = self.episode_planning_agent.max_retry_attempts
+        # Change 1: derive per-section scene targets from the architecture's
+        # runtime distribution. The planner gets this on top of the
+        # mode-locked scene_job_budget so dense sections can be allocated
+        # more scenes than light ones.
+        from podcast_agent.schemas.models import derive_section_scene_targets
+
+        mode_scene_job_budget = scene_job_budget_for_mode(project.config.podcast_mode)
+        section_scene_targets = derive_section_scene_targets(
+            architecture,
+            mode=project.config.podcast_mode,
+            scene_job_budget=mode_scene_job_budget,
+        )
         for attempt in range(1, max_attempts + 1):
             payload = self.episode_planning_agent.build_payload(
                 strategy_episode=strategy_episode.model_dump(mode="json"),
                 architecture=planning_runtime.episode_payload,
                 synthesis_map=planning_runtime.episode_synthesis_map_payload,
                 project_metadata=planning_runtime.project_metadata,
-                scene_job_budget=scene_job_budget_for_mode(project.config.podcast_mode),
+                scene_job_budget=mode_scene_job_budget,
                 available_passages=planning_runtime.available_passages,
                 host_policy=planning_runtime.host_policy,
                 narrative_state_pre=narrative_state_pre.model_dump(mode="json"),
@@ -12118,6 +12450,7 @@ class PipelineOrchestrator:
                 actor_metadata=planning_runtime.compact_episode_actor_metadata,
                 planning_feedback=planning_feedback,
                 field_semantics=_build_field_semantics_payload(),
+                section_scene_targets=section_scene_targets,
             )
             try:
                 plan_draft = await asyncio.to_thread(self.episode_planning_agent.run, payload)
@@ -12424,6 +12757,45 @@ class PipelineOrchestrator:
                 n: result[0] for n, result in zip(episode_numbers, architecture_results)
             }
 
+            # Change 1: series-level runtime budget validation. When the
+            # configured series target is None, we derive it from
+            # episode_count * per-episode min/max so a series can drift
+            # outside an explicit total without unfounded slack.
+            from podcast_agent.schemas.models import (
+                validate_series_runtime_budget,
+            )
+
+            derived_series_min = (
+                project.config.series_runtime_target_min_minutes
+                if project.config.series_runtime_target_min_minutes is not None
+                else project.config.min_episode_minutes * project.episode_count
+            )
+            derived_series_max = (
+                project.config.series_runtime_target_max_minutes
+                if project.config.series_runtime_target_max_minutes is not None
+                else project.config.max_episode_minutes * project.episode_count
+            )
+            try:
+                series_runtime_warnings = validate_series_runtime_budget(
+                    list(architecture_by_episode.values()),
+                    series_min=float(derived_series_min),
+                    series_max=float(derived_series_max),
+                    policy=project.config.series_runtime_policy,
+                )
+            except ValueError as exc:
+                self.run_logger.log(
+                    "series_runtime_violation",
+                    message=str(exc),
+                    policy=project.config.series_runtime_policy,
+                )
+                raise
+            for warning in series_runtime_warnings:
+                self.run_logger.log(
+                    "series_runtime_warning",
+                    message=warning,
+                    policy=project.config.series_runtime_policy,
+                )
+
             # Reconcile each episode independently from its folded pre-state + its own
             # architecture (realized state moves live only on the architecture). Each
             # call is ready as soon as its architecture completes, so this is parallel.
@@ -12688,15 +13060,27 @@ class PipelineOrchestrator:
                     planning_feedback: dict[str, Any] | None = None
                     planning_attempts: list[dict[str, Any]] = []
                     max_attempts = self.episode_planning_agent.max_retry_attempts
+                    # Change 1: derive per-section scene targets from
+                    # architecture runtime distribution.
+                    from podcast_agent.schemas.models import (
+                        derive_section_scene_targets as _derive_section_scene_targets,
+                    )
+
+                    mode_scene_job_budget = scene_job_budget_for_mode(
+                        project.config.podcast_mode
+                    )
+                    section_scene_targets = _derive_section_scene_targets(
+                        episode,
+                        mode=project.config.podcast_mode,
+                        scene_job_budget=mode_scene_job_budget,
+                    )
                     for attempt in range(1, max_attempts + 1):
                         payload = self.episode_planning_agent.build_payload(
                             strategy_episode=strategy_episode.model_dump(mode="json"),
                             architecture=planning_runtime.episode_payload,
                             synthesis_map=planning_runtime.episode_synthesis_map_payload,
                             project_metadata=project_metadata,
-                            scene_job_budget=scene_job_budget_for_mode(
-                                project.config.podcast_mode
-                            ),
+                            scene_job_budget=mode_scene_job_budget,
                             available_passages=planning_runtime.available_passages,
                             host_policy=planning_runtime.host_policy,
                             narrative_state_pre=(
@@ -12709,6 +13093,7 @@ class PipelineOrchestrator:
                             planning_feedback=planning_feedback,
                             field_semantics=_build_field_semantics_payload(),
                             excerpts=planning_runtime.episode_excerpts,
+                            section_scene_targets=section_scene_targets,
                         )
                         try:
                             plan_draft = await asyncio.to_thread(
@@ -13119,7 +13504,6 @@ class PipelineOrchestrator:
                 episode_number=plan.episode_number,
                 phase="post",
             )
-
             script = await self._write_episode(
                 plan,
                 strategy_episode,
@@ -13137,49 +13521,112 @@ class PipelineOrchestrator:
                 primitive_lookup=primitive_lookup,
                 excerpt_by_id=excerpt_by_id,
             )
-
-            if not project.config.skip_grounding:
-                report = await self._validate_grounding(
-                    plan.episode_number,
-                    script,
-                    corpus,
-                    ep_dir,
-                    project_dir,
-                    architecture=architecture,
-                )
-                if report.overall_status != "PASSED":
-                    script, report = await self._repair_loop(
-                        plan.episode_number,
-                        script,
-                        report,
-                        corpus,
-                        ep_dir,
-                        architecture,
-                        project_dir,
-                        max_attempts=project.config.max_repair_attempts,
-                    )
-            else:
-                self.run_logger.log("grounding_skipped", episode=plan.episode_number)
-
-            script = await self._style_audit_episode(
-                plan.episode_number,
-                script,
-                architecture,
-                ep_dir,
-                project_dir,
+            spine_diagnostics = _load_json(ep_dir / "spine_diagnostics.json") or {}
+            return await self._continue_episode_from_script(
                 plan=plan,
+                strategy_episode=strategy_episode,
+                architecture=architecture,
+                script=script,
+                project=project,
+                corpus=corpus,
+                actor_metadata=actor_metadata,
+                project_dir=project_dir,
+                ep_dir=ep_dir,
                 host_policy=host_policy,
+                primitive_lookup=primitive_lookup,
+                spoken_semaphore=spoken_semaphore or semaphore,
+                series_explanation_registry=series_explanation_registry,
                 narrative_state_pre=narrative_state_pre,
                 narrative_state_post=narrative_state_post,
-                continuity_contract_pre=continuity_contract_pre,
-                continuity_contract_post=continuity_contract_post,
-                strategy_episode=strategy_episode,
-                series_explanation_registry=series_explanation_registry,
+                excerpt_by_id=excerpt_by_id,
+                spine_diagnostics=spine_diagnostics,
+                host_moves_diagnostics={},
             )
 
+    async def _continue_episode_from_script(
+        self,
+        *,
+        plan: EpisodePlan,
+        strategy_episode: StrategyEpisode,
+        architecture: EpisodeArchitecture,
+        script: EpisodeScript,
+        project: ThematicProject,
+        corpus: ThematicCorpus,
+        actor_metadata: ActorMetadata,
+        project_dir: Path,
+        ep_dir: Path,
+        host_policy: dict[str, Any],
+        primitive_lookup: dict[str, SynthesisPrimitiveBase],
+        spoken_semaphore: asyncio.Semaphore,
+        series_explanation_registry: list[Any] | None = None,
+        narrative_state_pre: NarrativeState | None = None,
+        narrative_state_post: NarrativeState | None = None,
+        excerpt_by_id: dict[str, ExcerptRecord] | None = None,
+        spine_diagnostics: dict[str, Any] | None = None,
+        host_moves_diagnostics: dict[str, Any] | None = None,
+    ) -> tuple[int, SpokenScript]:
+        continuity_contract_pre = _build_continuity_contract(
+            narrative_state=narrative_state_pre,
+            episode_number=plan.episode_number,
+            phase="pre",
+        )
+        continuity_contract_post = _build_continuity_contract(
+            narrative_state=narrative_state_post,
+            episode_number=plan.episode_number,
+            phase="post",
+        )
+        spine_diagnostics = dict(spine_diagnostics or {})
+        host_moves_diagnostics = dict(host_moves_diagnostics or {})
+
+        # Grounding stage removed in Change 3. The LLM-as-judge runs in
+        # its place between writing and style_audit and feeds its
+        # judgment into style_audit's payload as remediation direction.
+        # Excerpt verbatim verification still runs (in
+        # pipeline/excerpt_verification.py) as part of the spoken pass.
+        judgment = await self._judge_episode(
+            plan=plan,
+            script=script,
+            architecture=architecture,
+            ep_dir=ep_dir,
+            project_dir=project_dir,
+            spine_diagnostics=spine_diagnostics,
+            host_moves_diagnostics=host_moves_diagnostics,
+            project_id=project.project_id,
+        )
+
+        # Pull the cumulative series tic counts so the lint pass can
+        # surface carryover-warning families to the style_audit prompt.
+        from podcast_agent.pipeline.series_state import load_series_state
+
+        series_state_pre_audit = load_series_state(project_dir, project.project_id)
+        series_carryover_counts = dict(
+            series_state_pre_audit.cumulative_family_counts
+        )
+        script, audit_response = await self._style_audit_episode(
+            plan.episode_number,
+            script,
+            architecture,
+            ep_dir,
+            project_dir,
+            plan=plan,
+            host_policy=host_policy,
+            narrative_state_pre=narrative_state_pre,
+            narrative_state_post=narrative_state_post,
+            continuity_contract_pre=continuity_contract_pre,
+            continuity_contract_post=continuity_contract_post,
+            strategy_episode=strategy_episode,
+            series_explanation_registry=series_explanation_registry,
+            quality_judgment=judgment,
+            series_carryover_counts=series_carryover_counts,
+            project_id=project.project_id,
+        )
+
+        # Redraft loop removed: style_audit now has broad-rewrite scope on
+        # Opus and acts on the judge's remediation hints directly. The
+        # judge → style_audit → spoken pipeline is one shot per episode.
+
         if not project.config.skip_spoken_delivery:
-            spoken_gate = spoken_semaphore or semaphore
-            async with spoken_gate:
+            async with spoken_semaphore:
                 spoken = await self._rewrite_for_speech(
                     plan.episode_number,
                     script,
@@ -13589,208 +14036,168 @@ class PipelineOrchestrator:
             }
             return script
 
-    async def _validate_grounding(
+    async def _judge_episode(
         self,
-        episode_number: int,
+        *,
+        plan: EpisodePlan,
         script: EpisodeScript,
-        corpus: ThematicCorpus,
+        architecture: EpisodeArchitecture,
         ep_dir: Path,
         project_dir: Path,
-        architecture: EpisodeArchitecture | None = None,
-    ) -> GroundingReport:
+        spine_diagnostics: dict[str, Any] | None = None,
+        host_moves_diagnostics: dict[str, Any] | None = None,
+        project_id: str | None = None,
+    ) -> EpisodeQualityScore:
+        """Run the LLM-as-judge on the assembled episode.
+
+        Output is persisted to ``episodes/N/quality_judgment.json`` and the
+        EpisodeQualityScore returned to the caller for inclusion in the
+        style_audit payload.
+        """
+        from podcast_agent.pipeline.style_audit_linting import (
+            compute_style_audit_lint_flags,
+        )
+        from podcast_agent.pipeline.tic_families import detect_tic_hits
+        from podcast_agent.pipeline.text_embeddings import get_text_embedder
+        from podcast_agent.pipeline.text_utils import split_sentences
+
+        embedder = get_text_embedder()
+
+        def _semantic_detector(text: str, section_id: str):
+            return detect_tic_hits(
+                split_sentences(text),
+                section_id=section_id,
+                embedder=embedder,
+            )
+
+        section_progression_by_id = {
+            s.section_id: s.section_progression.stage.value
+            for s in architecture.sections
+        }
+        lint_flags = compute_style_audit_lint_flags(
+            prose_sections=[
+                {"section_id": s.section_id, "text": s.text}
+                for s in script.prose_sections
+            ],
+            spine_episode_answer=(
+                plan.strategy_episode.episode_spine.episode_answer
+                if hasattr(plan, "strategy_episode") else ""
+            ) or "",
+            spine_pressure_line=(
+                plan.strategy_episode.episode_spine.pressure_line
+                if hasattr(plan, "strategy_episode") else ""
+            ) or "",
+            section_progression_by_id=section_progression_by_id,
+            semantic_detector=_semantic_detector,
+            series_carryover_counts={},
+        )
+
+        architecture_summary = [
+            {
+                "section_id": s.section_id,
+                "purpose": s.purpose.value,
+                "stage": s.section_progression.stage.value,
+                "is_dense": s.is_dense,
+                "approx_runtime_minutes": s.approx_runtime_minutes,
+                "must_stage_beats": list(s.must_stage_beats),
+            }
+            for s in architecture.sections
+        ]
+        excerpt_staging: list[dict] = []
+        for section in script.prose_sections:
+            for citation in section.citations:
+                excerpt_staging.append({
+                    "section_id": section.section_id,
+                    "passage_id": citation.passage_id,
+                    "text_span": citation.text_span,
+                })
+
+        if spine_diagnostics is None:
+            try:
+                spine_diagnostics = _load_json(ep_dir / "spine_diagnostics.json") or {}
+            except Exception:
+                spine_diagnostics = {}
+        if host_moves_diagnostics is None:
+            host_moves_diagnostics = {}
+
+        # Load series state so the judge can flag cross-episode tic clusters
+        # (cumulative_family_counts) and avoid prescribing structural moves
+        # that prior episodes already used (prior_episode_remediation_hints).
+        # Both are skipped for episode 1 / when project_id is unavailable.
+        series_state_payload: dict | None = None
+        prior_hints: list[dict] = []
+        if project_id is not None:
+            from podcast_agent.pipeline.series_state import load_series_state
+
+            try:
+                series_state = load_series_state(project_dir, project_id)
+                cumulative = dict(series_state.cumulative_family_counts)
+                if cumulative:
+                    series_state_payload = {
+                        "cumulative_family_counts": cumulative,
+                    }
+            except Exception:
+                series_state_payload = None
+        for prior_ep in range(1, plan.episode_number):
+            prior_path = (
+                project_dir / "episodes" / str(prior_ep) / "quality_judgment.json"
+            )
+            if not prior_path.exists():
+                continue
+            try:
+                prior_payload = json.loads(prior_path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            for section_score in prior_payload.get("section_scores", []) or []:
+                section_id = section_score.get("section_id")
+                weakest = section_score.get("weakest_criterion")
+                for hint in section_score.get("remediation_hints", []) or []:
+                    hint_text = str(hint).strip()
+                    if not hint_text:
+                        continue
+                    prior_hints.append(
+                        {
+                            "episode_number": prior_ep,
+                            "section_id": section_id,
+                            "criterion": weakest,
+                            "hint": hint_text,
+                        }
+                    )
+
         async with _stage_log(
             self.run_logger,
-            f"grounding_{episode_number}",
+            f"quality_judge_{plan.episode_number}",
             project_dir,
-            episode=episode_number,
-            text_unit_count=len(script.prose_sections),
+            episode=plan.episode_number,
+            section_count=len(script.prose_sections),
         ) as ctx:
-            passage_lookup: dict[str, dict] = {}
-            for axis_passages in corpus.passages_by_axis.values():
-                for p in axis_passages:
-                    passage_lookup[p.passage_id] = {
-                        "passage_id": p.passage_id,
-                        "book_id": p.book_id,
-                        "text": _resolve_writing_passage_text(p),
-                    }
-
-            payload = self.grounding_agent.build_payload(
-                episode_number=episode_number,
-                script={
-                    **script.model_dump(mode="json"),
-                    "prose_sections": _build_script_sections_payload(
-                        script=script,
-                        architecture=architecture,
-                    ),
-                },
-                passages=passage_lookup,
+            payload = self.quality_judge_agent.build_payload(
+                episode_number=plan.episode_number,
+                title=script.title,
+                framing=script.framing.model_dump(),
+                prose_sections=[s.model_dump() for s in script.prose_sections],
+                architecture_summary=architecture_summary,
+                excerpt_staging=excerpt_staging,
+                rubric_thresholds={},
+                style_audit_lint_flags=lint_flags,
+                spine_diagnostics=spine_diagnostics,
+                host_moves_diagnostics=host_moves_diagnostics,
+                series_state=series_state_payload,
+                prior_episode_remediation_hints=prior_hints or None,
             )
-            report = await asyncio.to_thread(self.grounding_agent.run, payload)
-            _save_json(ep_dir / "grounding_report.json", report)
-
+            judgment = await asyncio.to_thread(self.quality_judge_agent.run, payload)
             ctx["output_summary"] = {
-                "status": report.overall_status,
-                "grounding_score": report.grounding_score,
-                "attribution_accuracy": report.attribution_accuracy,
-                "claim_count": len(report.claim_assessments),
-                "fairness_flags": len(report.fairness_flags),
+                "overall_score": judgment.overall_score,
+                "criterion_scores": {
+                    cs.criterion.value: cs.score for cs in judgment.criterion_scores
+                },
+                "weakest_sections": list(judgment.weakest_sections),
             }
-            return report
-
-    async def _repair_loop(
-        self,
-        episode_number: int,
-        script: EpisodeScript,
-        report: GroundingReport,
-        corpus: ThematicCorpus,
-        ep_dir: Path,
-        architecture: EpisodeArchitecture,
-        project_dir: Path,
-        max_attempts: int = 3,
-    ) -> tuple[EpisodeScript, GroundingReport]:
-        current_script = script
-        current_report = report
-
-        for attempt in range(1, max_attempts + 1):
-            if current_report.overall_status == "PASSED":
-                break
-
-            failing_claims = [
-                ca
-                for ca in current_report.claim_assessments
-                if ca.status in ("UNSUPPORTED", "FABRICATED")
-            ]
-            if not failing_claims and not current_report.fairness_flags:
-                break
-
-            async with _stage_log(
-                self.run_logger,
-                f"repair_{episode_number}_attempt_{attempt}",
-                project_dir,
-                episode=episode_number,
-                attempt=attempt,
-                failing_claims=len(failing_claims),
-            ) as ctx:
-                passage_lookup: dict[str, dict] = {}
-                for axis_passages in corpus.passages_by_axis.values():
-                    for p in axis_passages:
-                        passage_lookup[p.passage_id] = {
-                            "passage_id": p.passage_id,
-                            "book_id": p.book_id,
-                            "text": _resolve_writing_passage_text(p),
-                        }
-
-                failing_unit_ids = {claim.text_unit_id for claim in failing_claims}
-                failing_unit_ids.update(
-                    flag.text_unit_id for flag in current_report.fairness_flags
-                )
-                failing_sections = [
-                    section
-                    for section in _build_script_sections_payload(
-                        script=current_script,
-                        architecture=architecture,
-                    )
-                    if section["section_id"] in failing_unit_ids
-                ]
-                failure_reasons = [
-                    {
-                        "text_unit_id": c.text_unit_id,
-                        "claim_text": c.claim_text,
-                        "status": c.status,
-                        "explanation": c.explanation,
-                    }
-                    for c in failing_claims
-                ]
-
-                payload = self.repair_agent.build_payload(
-                    failing_sections=failing_sections,
-                    failure_reasons=failure_reasons,
-                    passages=passage_lookup,
-                )
-                result = await asyncio.to_thread(self.repair_agent.run, payload)
-
-                repaired_sections = {
-                    section.section_id: section for section in result.repaired_sections
-                }
-                new_sections = []
-                diffs: list[SegmentDiff] = []
-                for section in current_script.prose_sections:
-                    if section.section_id in repaired_sections:
-                        repaired = repaired_sections[section.section_id]
-                        diffs.append(
-                            SegmentDiff(
-                                text_unit_id=section.section_id,
-                                before=section.text,
-                                after=repaired.text,
-                            )
-                        )
-                        new_sections.append(repaired)
-                    else:
-                        new_sections.append(section)
-
-                new_script = current_script.model_copy(
-                    update={
-                        "prose_sections": new_sections,
-                    }
-                )
-                new_script = new_script.model_copy(
-                    update={
-                        "total_word_count": _script_total_word_count(new_script),
-                        "estimated_duration_seconds": _estimate_duration_seconds_from_words(
-                            _script_total_word_count(new_script),
-                            float(self.settings.pipeline.spoken_words_per_minute),
-                        ),
-                    }
-                )
-                new_report = await self._validate_grounding(
-                    episode_number,
-                    new_script,
-                    corpus,
-                    ep_dir,
-                    project_dir,
-                    architecture=architecture,
-                )
-
-                remaining = len(
-                    [
-                        ca
-                        for ca in new_report.claim_assessments
-                        if ca.status in ("UNSUPPORTED", "FABRICATED")
-                    ]
-                )
-                status = (
-                    "RESOLVED"
-                    if new_report.overall_status == "PASSED"
-                    else "IMPROVED"
-                    if new_report.grounding_score > current_report.grounding_score
-                    else "NO_PROGRESS"
-                )
-
-                repair_result = RepairResult(
-                    attempt_number=attempt,
-                    original_script=current_script,
-                    repaired_script=new_script,
-                    claims_repaired=len(diffs),
-                    remaining_failures=remaining,
-                    diffs=diffs,
-                    status=status,
-                )
-                _save_json(ep_dir / f"repair_attempt_{attempt}.json", repair_result)
-
-                current_script = new_script
-                current_report = new_report
-
-                ctx["output_summary"] = {
-                    "status": status,
-                    "claims_repaired": len(diffs),
-                    "remaining_failures": remaining,
-                }
-
-                if status == "NO_PROGRESS":
-                    break
-
-        _save_json(ep_dir / "episode_script.json", current_script)
-        return current_script, current_report
+        _save_json(ep_dir / "quality_judgment.json", judgment.model_dump())
+        # Stash the lint flags so style_audit can reuse them without
+        # re-embedding.
+        self._latest_lint_flags_by_episode[plan.episode_number] = lint_flags
+        return judgment
 
     async def _style_audit_episode(
         self,
@@ -13807,7 +14214,10 @@ class PipelineOrchestrator:
         continuity_contract_post: dict[str, Any] | None = None,
         strategy_episode: StrategyEpisode | None = None,
         series_explanation_registry: list[Any] | None = None,
-    ) -> EpisodeScript:
+        quality_judgment: "EpisodeQualityScore | None" = None,
+        series_carryover_counts: dict[str, int] | None = None,
+        project_id: str | None = None,
+    ) -> tuple[EpisodeScript, "StyleAuditResponse"]:
         async with _stage_log(
             self.run_logger,
             f"style_audit_{episode_number}",
@@ -13821,6 +14231,7 @@ class PipelineOrchestrator:
                     architecture=architecture,
                     plan=plan,
                     strategy_episode=strategy_episode,
+                    series_carryover_counts=series_carryover_counts,
                 )
             )
             payload = self.style_audit_agent.build_payload(
@@ -13828,6 +14239,12 @@ class PipelineOrchestrator:
                 title=script.title,
                 sections=style_audit_sections,
                 lint_flags=style_audit_lint_flags,
+                quality_judgment=(
+                    quality_judgment.model_dump(mode="json")
+                    if quality_judgment is not None
+                    else None
+                ),
+                series_carryover_counts=series_carryover_counts,
                 host_policy=host_policy,
                 narrative_state_pre=(
                     narrative_state_pre.model_dump(mode="json")
@@ -13858,6 +14275,173 @@ class PipelineOrchestrator:
                 ),
             )
             _save_json(ep_dir / "style_audited_script.json", audited_script)
+
+            # Post-audit fact-coverage sweep — pure Python. Reads each
+            # section's audited text against the must_land_facts.required
+            # aggregated from its scene cards and the original citations
+            # from the writer's prose. Writes a diagnostic JSON; logs a
+            # structured event on any miss; never gates downstream stages.
+            from podcast_agent.pipeline.style_audit_linting import (
+                compute_fact_coverage_diagnostics,
+            )
+
+            scene_cards_by_section_id: dict[str, list[SceneCard]] = {}
+            if plan is not None:
+                for scene in plan.scene_cards:
+                    scene_cards_by_section_id.setdefault(
+                        scene.section_id, []
+                    ).append(scene)
+            original_citations_by_section_id: dict[str, list[Citation]] = {
+                section.section_id: list(section.citations)
+                for section in script.prose_sections
+            }
+            fact_coverage = compute_fact_coverage_diagnostics(
+                audited_script=audited_script,
+                scene_cards_by_section_id=scene_cards_by_section_id,
+                original_citations_by_section_id=(
+                    original_citations_by_section_id
+                ),
+            )
+            _save_json(
+                ep_dir / "fact_coverage_diagnostics.json",
+                fact_coverage,
+            )
+            for section_report in fact_coverage["sections"]:
+                if (
+                    section_report["missing_required"]
+                    or section_report["missing_citation_passage_ids"]
+                ):
+                    self.run_logger.log(
+                        "style_audit_fact_coverage_miss",
+                        episode=episode_number,
+                        section_id=section_report["section_id"],
+                        missing_required=section_report["missing_required"],
+                        missing_citation_passage_ids=section_report[
+                            "missing_citation_passage_ids"
+                        ],
+                    )
+
+            # Post-audit lint sweep — recompute lint flags on the audited
+            # prose using the same detector. The pre-audit lint flags live
+            # in ``style_audit_lint_flags``; the new ``post_audit_lint_flags``
+            # captures what survived the audit. Both feed the residual-lint
+            # diagnostic. The series_state write below reads from POST-audit
+            # counts so the next episode's blocklist reflects what shipped.
+            from podcast_agent.pipeline.style_audit_linting import (
+                compute_style_audit_lint_flags as _post_compute_lint,
+            )
+            from podcast_agent.pipeline.tic_families import (
+                detect_tic_hits as _post_detect_tic_hits,
+            )
+            from podcast_agent.pipeline.text_embeddings import (
+                get_text_embedder as _post_get_text_embedder,
+            )
+            from podcast_agent.pipeline.text_utils import (
+                split_sentences as _post_split_sentences,
+            )
+
+            _post_embedder = _post_get_text_embedder()
+
+            def _post_audit_semantic_detector(
+                text: str, section_id: str
+            ):
+                return _post_detect_tic_hits(
+                    _post_split_sentences(text),
+                    section_id=section_id,
+                    embedder=_post_embedder,
+                )
+
+            _audited_section_progression_by_id = {
+                s.section_id: s.section_progression.stage.value
+                for s in architecture.sections
+            }
+            _audited_prose_section_dicts = [
+                {"section_id": ps.section_id, "text": ps.text}
+                for ps in audited_script.prose_sections
+            ]
+            _post_spine = (
+                strategy_episode.episode_spine
+                if strategy_episode is not None
+                else None
+            )
+            post_audit_lint_flags = _post_compute_lint(
+                _audited_prose_section_dicts,
+                spine_episode_answer=(
+                    _post_spine.episode_answer if _post_spine else ""
+                ),
+                spine_pressure_line=(
+                    _post_spine.pressure_line if _post_spine else ""
+                ),
+                section_progression_by_id=_audited_section_progression_by_id,
+                semantic_detector=_post_audit_semantic_detector,
+                series_carryover_counts=series_carryover_counts or {},
+            )
+            pre_tic_counts = dict(
+                style_audit_lint_flags.get("tic_counts", {})
+            )
+            post_tic_counts = dict(
+                post_audit_lint_flags.get("tic_counts", {})
+            )
+            residual_families = sorted(
+                fam
+                for fam, count in post_tic_counts.items()
+                if count >= 2
+            )
+            frame_overlap_residual_sections: list[dict[str, Any]] = []
+            for section_id, section_flags in (
+                post_audit_lint_flags.get("by_section", {}).items()
+            ):
+                if section_flags.get("is_answer_stage"):
+                    continue
+                opening = float(
+                    section_flags.get("opening_thesis_overlap", 0.0) or 0.0
+                )
+                closing = float(
+                    section_flags.get("closing_thesis_overlap", 0.0) or 0.0
+                )
+                if opening >= 0.30 or closing >= 0.30:
+                    frame_overlap_residual_sections.append(
+                        {
+                            "section_id": section_id,
+                            "opening_thesis_overlap": opening,
+                            "closing_thesis_overlap": closing,
+                        }
+                    )
+            tics_removed = sum(
+                max(pre_tic_counts.get(fam, 0) - post_tic_counts.get(fam, 0), 0)
+                for fam in set(pre_tic_counts) | set(post_tic_counts)
+            )
+            tics_remaining = sum(post_tic_counts.values())
+            residual_lint_diagnostics = {
+                "episode_number": episode_number,
+                "pre_audit_tic_counts": pre_tic_counts,
+                "post_audit_tic_counts": post_tic_counts,
+                "tic_families_residual_at_2_plus": residual_families,
+                "frame_overlap_residual_sections": (
+                    frame_overlap_residual_sections
+                ),
+                "delta_summary": {
+                    "tics_removed": tics_removed,
+                    "tics_remaining": tics_remaining,
+                    "frame_overlap_sections_remaining": len(
+                        frame_overlap_residual_sections
+                    ),
+                },
+            }
+            _save_json(
+                ep_dir / "residual_lint_diagnostics.json",
+                residual_lint_diagnostics,
+            )
+            if residual_families or frame_overlap_residual_sections:
+                self.run_logger.log(
+                    "style_audit_residual_lint",
+                    episode=episode_number,
+                    tic_families_residual_at_2_plus=residual_families,
+                    frame_overlap_residual_sections=(
+                        frame_overlap_residual_sections
+                    ),
+                )
+
             host_moves_text_diagnostics = _build_host_move_text_diagnostics(
                 text_by_section_id={
                     section.section_id: section.text
@@ -13927,7 +14511,34 @@ class PipelineOrchestrator:
                     "warning_count"
                 ],
             }
-            return audited_script
+        # Persist this episode's per-family tic counts to series_state.json
+        # so later episodes' writing payloads can pick up a blocklist of
+        # surface phrases used here.
+        if project_id is not None:
+            from podcast_agent.pipeline.series_state import (
+                load_series_state,
+                record_episode_tics,
+                save_series_state,
+            )
+            from podcast_agent.pipeline.style_audit_linting import (
+                collect_surface_phrases,
+            )
+
+            # Read POST-audit tic counts and surface phrases so the next
+            # episode's series_tic_blocklist reflects what actually shipped,
+            # not what the writer produced before style_audit's edits.
+            family_counts = dict(post_audit_lint_flags.get("tic_counts", {}))
+            surface_phrases = collect_surface_phrases(post_audit_lint_flags)
+            async with self._series_state_lock:
+                series_state = load_series_state(project_dir, project_id)
+                series_state = record_episode_tics(
+                    series_state,
+                    episode_number=episode_number,
+                    family_counts=family_counts,
+                    surface_phrases=surface_phrases,
+                )
+                save_series_state(project_dir, series_state)
+        return audited_script, audit
 
     async def _rewrite_for_speech(
         self,
@@ -13973,11 +14584,25 @@ class PipelineOrchestrator:
                     "framing": script.framing.model_dump(mode="json"),
                     "prose_sections": batch_sections,
                 }
+                # Build the new oral-rewriter input payload. The provider
+                # capabilities tell the model whether it may emit
+                # per-segment delivery_instructions. Quotability marks
+                # surface excerpts the agent may voice in actor voice.
+                tts_provider_capabilities = _build_tts_provider_capabilities(
+                    project.config.tts_provider
+                )
+                quotability_marks = _build_quotability_marks_for_batch(
+                    prose_batch=prose_batch,
+                    script=script,
+                    plan=plan,
+                )
                 payload = self.spoken_delivery_agent.build_payload(
                     episode_number=episode_number,
                     script=script_payload,
                     max_words_per_segment=project.config.spoken_chunk_max_words,
                     tts_provider=project.config.tts_provider,
+                    tts_provider_capabilities=tts_provider_capabilities,
+                    quotability_marks=quotability_marks,
                     host_policy=host_policy,
                     narrative_state_pre=(
                         narrative_state_pre.model_dump(mode="json")
@@ -13993,46 +14618,42 @@ class PipelineOrchestrator:
                     continuity_contract_post=continuity_contract_post,
                     previous_spoken_tail=previous_spoken_tail,
                     field_semantics=_build_field_semantics_payload(),
+                    actor_voice_catalog=dict(project.config.actor_voice_catalog),
                 )
                 result = await asyncio.to_thread(
                     self.spoken_delivery_agent.run, payload
                 )
-                result_sections = list(result.sections)
-                if (
-                    not result_sections
-                    and len(prose_batch) == 1
-                    and result.text is not None
-                    and result.speech_hints is not None
-                ):
-                    result_sections = [
-                        SpokenDeliveryBatchSection(
-                            section_id=prose_batch[0].section_id,
-                            text=result.text,
-                            speech_hints=result.speech_hints,
-                        )
-                    ]
-                for rewritten in result_sections:
-                    source_section = section_payload_by_id.get(rewritten.section_id, {})
+                # The new SpokenDeliveryResponse always returns
+                # `sections: list[SpokenSection]`. Re-attach
+                # `section_sonic_plan` and `sonic_cues` from the source
+                # section payload because those are control metadata the
+                # agent is told not to emit.
+                for rewritten in result.sections:
+                    source_section = section_payload_by_id.get(
+                        rewritten.section_id, {}
+                    )
                     sonic_cues = [
                         SonicCue.model_validate(cue)
                         for cue in source_section.get("scene_cues", []) or []
                     ]
+                    section_sonic_plan = (
+                        SectionSonicPlan.model_validate(
+                            source_section["section_sonic_plan"]
+                        )
+                        if source_section.get("section_sonic_plan") is not None
+                        else None
+                    )
                     rewritten_sections.append(
-                        SpokenSection(
-                            section_id=rewritten.section_id,
-                            text=rewritten.text,
-                            speech_hints=rewritten.speech_hints,
-                            section_sonic_plan=SectionSonicPlan.model_validate(
-                                source_section["section_sonic_plan"]
-                            )
-                            if source_section.get("section_sonic_plan") is not None
-                            else None,
-                            sonic_cues=sonic_cues,
+                        rewritten.model_copy(
+                            update={
+                                "section_sonic_plan": section_sonic_plan,
+                                "sonic_cues": sonic_cues,
+                            }
                         )
                     )
-                if result_sections:
+                if result.sections:
                     previous_spoken_tail = _extract_previous_spoken_tail(
-                        result_sections[-1].text
+                        result.sections[-1].text
                     )
 
             spoken = SpokenScript(
@@ -14329,6 +14950,7 @@ class PipelineOrchestrator:
                     words_per_minute=self.settings.pipeline.spoken_words_per_minute,
                     base_instructions=self.settings.tts.instructions,
                     tts_model_name=self.settings.tts.model_name,
+                    actor_voice_catalog=dict(config.actor_voice_catalog),
                 )
                 _save_json(ep_dir / "render_manifest.json", manifest)
                 for seg in manifest.segments:

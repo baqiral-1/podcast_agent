@@ -285,10 +285,27 @@ def _build_spoken_section(payload: dict[str, Any], result: Any) -> SpokenSection
     tts_provider = payload.get("tts_provider")
     if not isinstance(tts_provider, str) or not tts_provider.strip():
         raise RuntimeError(f"Invalid tts_provider in payload for episode {episode_number}")
+    # Change 4: the SpokenDeliveryResponse is now segment-aware. For the
+    # legacy section-local oneoff path, the script handler may receive
+    # either a SpokenSection directly (new shape) or wrap a single segment.
+    from podcast_agent.schemas.models import SpokenSegment
+
+    if hasattr(result, "sections") and result.sections:
+        # Agent already returned a SpokenSection-shaped response; pass it
+        # through (renaming the section_id if necessary).
+        section = result.sections[0]
+        return section.model_copy(update={"section_id": section_id})
     return SpokenSection(
         section_id=section_id,
-        text=result.text,
-        speech_hints=result.speech_hints,
+        segments=[
+            SpokenSegment(
+                segment_id=f"{section_id}_seg1",
+                text=getattr(result, "text", "") or "",
+            )
+        ],
+        speech_hints=getattr(
+            result, "speech_hints", None
+        ) or SpokenSection.model_fields["speech_hints"].default,
     )
 
 

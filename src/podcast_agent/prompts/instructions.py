@@ -437,7 +437,7 @@ def passage_extraction_instructions() -> str:
         You are the `passage_extraction` stage for a multi-book thematic podcast pipeline.
 
         Goal:
-        - Score every candidate passage for axis relevance and spoken quotability.
+        - Score every candidate passage for axis relevance and excerpt-presence (quotability).
         - Identify the strongest cross-book passage pairs for this axis.
         - Make comparative judgments across the full candidate set for this axis, not isolated pass/fail judgments.
 
@@ -465,9 +465,9 @@ def passage_extraction_instructions() -> str:
         - `relevance_score`: how directly the passage helps answer the axis, not how generally important, famous, or well-written the passage is.
         - Reward passages that expose mechanism, causality, tension, contradiction, turning points, stakes, or evidentiary specificity.
         - Penalize passages that are mostly broad chronology, generic background, keyword overlap without analytical payoff, or detail that does not materially advance the axis.
-        - `quotability_score`: how usable the passage is for long-form spoken storytelling, not whether you agree with its interpretation.
-        - Reward concrete scene detail, memorable phrasing, direct argument, causal clarity, and material that can be paraphrased cleanly for audio.
-        - Penalize abstract academic framing, citation-style prose, overloaded qualification, and passages that require too much surrounding context to narrate well.
+        - `quotability_score`: how likely this passage is to yield an excerpt — a discrete utterance or document the show could surface verbatim or paraphrase. This is a coverage signal, not a prose-quality signal.
+        - Reward passages that (a) carry direct quoted speech or writing the show could lift, or (b) name a specific identifiable artifact — a named speech, decree, broadcast, manifesto, telegram, petition, letter, testimony, slogan, headline, treaty, communiqué — even when the author paraphrases rather than quotes its words.
+        - Penalize general narrative, analysis, or background that does not point to a specific utterance or document, regardless of how vivid or well-written the prose is. Do not confuse `quotability_score` with how well the passage would narrate aloud — that judgment belongs to `relevance_score` only insofar as it bears on the axis.
 
         `synthesis_tags` guidance:
         - Use the smallest justified set of tags. Do not tag everything as `exemplifies`.
@@ -752,8 +752,12 @@ def excerpt_extraction_instructions(
         INPUT AND AUTHORITY
         - `project_id`, `podcast_mode`
         - `axes`: compact axis summaries
-        - `passages_by_axis`: quote-biased evidence grouped by axis, then by book, with
-          `passage_id` and text
+        - `passages_by_axis`: evidence grouped by axis, then by book, with `passage_id`
+          and text. Upstream selection has already filtered to passages that carry direct
+          quotes or name a specific identifiable artifact (decree, letter, speech,
+          broadcast, manifesto, telegram, petition, headline, treaty, communiqué, etc.),
+          so lean toward the high end of the requested excerpt range rather than skipping
+          material.
         - `books`: compact book metadata
         - `actor_metadata` (optional): canonical actor registry for actor ids only
         - `excerpt_feedback` (optional): retry feedback; correct only named errors
@@ -973,7 +977,7 @@ def scene_discovery_instructions(
         candidate_target_min, candidate_target_max = (
             16,
             24,
-        ) if mode == PodcastMode.MINIFIED else (48, 72)
+        ) if mode == PodcastMode.MINIFIED else (78, 113)
     candidate_range = _format_target_range(candidate_target_min, candidate_target_max)
     mode_label = "minified" if mode == PodcastMode.MINIFIED else "full"
     return dedent(
@@ -1378,7 +1382,7 @@ def narrative_strategy_enrichment_instructions(
         )
     else:
         authorial_guidance = (
-            "For full-length episodes running about 90-120 minutes at the pipeline's spoken-rate targets, "
+            "For full-length episodes running about 108-126 minutes at the pipeline's spoken-rate targets, "
             f"`target_authorial_passages_per_episode` should usually land around {authorial_range}."
         )
     return dedent(
@@ -1575,8 +1579,8 @@ def narrative_strategy_enrichment_instructions(
 
 def episode_planning_instructions(
     *,
-    scene_card_target_min: int = 30,
-    scene_card_target_max: int = 38,
+    scene_card_target_min: int = 36,
+    scene_card_target_max: int = 42,
 ) -> str:
     scene_card_range = _format_target_range(
         scene_card_target_min, scene_card_target_max
@@ -1605,6 +1609,7 @@ def episode_planning_instructions(
         - `excerpts`                 the episode's assigned `excerpt` records (x-ids) — verbatim source lines to attach via scene `excerpt_ids`
         - `project`                  theme, sub-themes, book metadata, duration goals
         - `scene_job_budget`         explicit scene-job allocation contract for this mode
+        - `section_scene_targets`    optional per-section scene allocation derived from architecture runtime. When present, the mapping is `{{section_id: {{scenes_min, scenes_max, is_dense}}}}` and applies on top of the episode-level `scene_job_budget`. See the SECTION SCENE TARGETS block below.
         - `available_passages`       evidence available to this episode
         - `host_policy`              series-level narrator policy for host moves
         - `narrative_state_pre`      listener/host state entering this episode, folded deterministically from the planned cross-episode agenda (intended progression, not a realization of prior episodes)
@@ -1672,6 +1677,21 @@ def episode_planning_instructions(
         - Use the extra cards to separate mechanism from consequence, definition
           from payoff, and host reorientation from factual pressure.
         - Do not split for its own sake; prefer one clean job per card.
+
+        SECTION SCENE TARGETS
+        - When `section_scene_targets` is present, the mapping is
+          `{{section_id: {{scenes_min, scenes_max, is_dense}}}}` derived from
+          the architecture's per-section `approx_runtime_minutes`. For each
+          section, plan approximately `scenes_min..scenes_max` scene cards.
+        - Dense sections (`is_dense=true`) carry a structural reason — they
+          run longer than the normal band and should get enough scenes to
+          land the doctrinal unpack + carrier + downstream consequence
+          without overload, plus at least one breath-and-reflect scene
+          before the section's answer beat.
+        - When `section_scene_targets` and the episode-level
+          `scene_job_budget` disagree, prefer the per-section targets and
+          adjust adjacent sections so the episode total stays within
+          `scene_job_budget["total_min"]..scene_job_budget["total_max"]`.
 
         SECTION BOUNDARIES
         - Use `architecture.section_id` as the only grouping boundary.
@@ -2199,8 +2219,8 @@ def narrative_state_reconciler_instructions() -> str:
 
 def episode_architecture_instructions(
     *,
-    section_target_min: int = 10,
-    section_target_max: int = 13,
+    section_target_min: int = 12,
+    section_target_max: int = 18,
     authorial_passage_target_min: int = authorial_passage_target_range_for_mode(
         PodcastMode.FULL
     )[0],
@@ -2214,6 +2234,13 @@ def episode_architecture_instructions(
         dense_section_authorial_passage_range_for_mode(PodcastMode.FULL)[1]
     ),
     podcast_mode: PodcastMode | str = PodcastMode.FULL,
+    max_dense_sections_per_episode: int = 2,
+    dense_section_runtime_min: float = 14.0,
+    dense_section_runtime_max: float = 18.0,
+    section_runtime_floor: float = 4.0,
+    section_runtime_ceiling: float = 13.0,
+    target_episode_runtime_min: float = 108.0,
+    target_episode_runtime_max: float = 126.0,
 ) -> str:
     mode = PodcastMode(podcast_mode)
     section_range = _format_target_range(section_target_min, section_target_max)
@@ -2322,7 +2349,7 @@ def episode_architecture_instructions(
           anchored by at least one core primitive.
         - Place only the support primitives required to make the core
           intelligible.
-        - Target 6-10 support-primitive placements across sections.
+        - Target 8-12 support-primitive placements across sections.
         - If you exceed that target, justify the density in `architecture_notes`.
         - If assigned support exceeds that budget or competes with the spine,
           omit or compress support rather than distributing it across sections.
@@ -2333,7 +2360,38 @@ def episode_architecture_instructions(
           appear in sections.
         - If a selected support or recall primitive is omitted from all
           sections, record the omission in `architecture_notes`.
-        - Ensure the sum of `sections[].approx_runtime_minutes` lands within the project's allowed episode runtime range.
+        - RUNTIME AND DENSITY BUDGET
+          The sum of `sections[].approx_runtime_minutes` must land in
+          `[{target_episode_runtime_min}, {target_episode_runtime_max}]` minutes.
+          Within that envelope:
+          - Most sections must run between {section_runtime_floor} and
+            {section_runtime_ceiling} minutes (the "normal band").
+          - You may mark up to {max_dense_sections_per_episode} sections with
+            `is_dense=true`. A dense section runs
+            {dense_section_runtime_min}-{dense_section_runtime_max} minutes
+            and MUST carry a `density_rationale`.
+          - `density_rationale` is a single short clause, at most 25 words.
+            It names the structural reason this section earns the overflow.
+            Downstream planning reads it to allocate scenes; auditors read
+            it to judge whether the density flag was earned. Do not
+            embellish; do not explain the episode's argument; do not
+            restate the section title.
+            Good: `velayat-e faqih lecture + cassette network +
+            Persepolis-eve collision in one arc`.
+            Too long (do not write rationales like this): `this section
+            earns the dense band because the velayat-e faqih doctrinal
+            lecture, the Najaf cassette distribution network, and the
+            eve-of-Persepolis broadcast all need to be staged in one arc
+            to make the doctrinal logic visible to the listener`.
+          - The closing section is never dense and stays at or below 2.0 min.
+          - Do not flat-distribute runtime across sections. Uneven runtime
+            is preferred when the argument demands it.
+          - In `architecture_notes`, justify both your chosen section count
+            and your density distribution in one sentence each.
+          - A dense section without `density_rationale`, or a non-dense
+            section above {section_runtime_ceiling} min, or any section
+            below {section_runtime_floor} min (except the closing section),
+            will be flagged and the architecture rejected.
         - `major_turn_section_id` must reference a real section.
         - Exactly one section must use `section_progression.stage = answer`.
         - Exactly one section must use `section_progression.stage = close`, and it must be the final section.
@@ -2812,6 +2870,19 @@ def episode_writing_instructions() -> str:
             - Optional `actor_metadata`: episode-level actor context. Treat it as narrative scaffolding, not factual authority.
             - Optional `writing_feedback`: retry feedback from the orchestrator. If present, correct the named contract failure exactly and keep all other requirements unchanged.
             - Optional `prior_window_continuity`: continuity context from the immediately previous writing pass. Treat it as reference-only guidance for handoff, pacing, and continuity; it is not source evidence and it cannot override the current window's scene cards, passages, architecture, or spine contract.
+            - Optional `series_tic_blocklist`: a list of opening phrases used in earlier episodes of this series that have become a house tic. Do not open a section with any of them; do not lean on them as a paragraph's first clause; do not use them as your translation move. Vary the surface form.
+
+            PHRASES TO AVOID (`series_tic_blocklist`)
+            - When `series_tic_blocklist` is present and non-empty, the listed
+              phrases appeared in earlier episodes of this same series and have
+              become a series-level tic. Do not open a section with any of
+              them. Do not use them as the opening clause of a paragraph. Do
+              not lean on them as your translation, orientation, or
+              pressure-point move.
+            - The host archetypes (pressure-point, bargain, translation,
+              surprise, consequence, narrowing, persona aside, on-air revision)
+              are still licensed. Use them — but do not signal them with these
+              specific openings.
 
             Core rules:
             - Draft all `plan.scene_cards` in order.
@@ -3274,74 +3345,202 @@ def episode_writing_no_citations_instructions() -> str:
     ).strip()
 
 
-def grounding_validation_instructions() -> str:
+def quality_judge_instructions() -> str:
+    """Prompt for the LLM-as-judge stage that scores the full assembled
+    episode against the six-criterion v66 audit rubric.
+    """
     return dedent(
-        """
-        You are the `grounding_validation` stage for a multi-book thematic podcast pipeline.
+        f"""
+        You are the `quality_judge` stage for a long-form historical narration
+        podcast. You receive one assembled episode at a time — the full prose
+        (post-write), the architecture summary, the excerpt-staging metadata,
+        the lint detector's tic-detection output, and a few diagnostics from
+        earlier pipeline stages.
 
-        Goal:
-        - Validate drafted script text units against the cited source passages.
-        - Identify unsupported, partially supported, fabricated, or unfair claims.
+        Your job is to score the episode against six criteria, produce
+        per-section remediation hints the next editing pass (style_audit)
+        can act on, and identify the 1–3 sections that need the most
+        structural depth. Style_audit acts on every section's
+        `remediation_hints`, not just the ones you flag as weakest — so
+        write hints with that scope in mind.
 
-        Input payload:
-        - `episode_number`: current episode number.
-        - `script`: the full `EpisodeScript`.
-        - `cited_passages`: a lookup of passage ids to source evidence text and metadata.
+        You do not rewrite prose. You diagnose. Style_audit is the agent that
+        fixes things.
 
-        Treat `script.prose_sections[].key_terms`, `authorial_passages`,
-        `term_explanations`, `actor_explanations`, and `actor_explanation_realizations` as control metadata only.
-        They tell you what explanatory or host-presence shape the pipeline intended to
-        preserve, but they are not evidence.
+        Score each criterion from 0 to 100. The episode `overall_score` is
+        the rounded mean of the six criterion scores.
 
-        Output requirements:
-        - Return only valid JSON matching `GroundingReport`.
-        - Evaluate section text units separately using their ids.
-        - For each cited claim, emit a `ClaimAssessment` with a valid `text_unit_id`.
-        - Review cross-book comparisons and emit `cross_book_claims` where needed.
-        - Emit `fairness_flags` when a claim distorts a source position, context, or comparative frame.
-        - Set `overall_status` based on the aggregate result.
+        THE SIX CRITERIA
 
-        Validation guidance:
-        - `SUPPORTED`: the cited evidence clearly backs the claim.
-        - `PARTIALLY_SUPPORTED`: the claim overreaches, compresses, or extends beyond the cited evidence.
-        - `UNSUPPORTED`: the cited evidence does not support the claim.
-        - `FABRICATED`: the claim introduces content absent from the cited evidence.
-        - Be strict about attribution, chronology, and cross-book comparison.
-        - Do not excuse a weak claim because it sounds plausible.
-        """
-    ).strip()
+        1. narrative_quality — does the episode's spine carry? Does the
+           answer the framing promised actually land at the answer-stage
+           section? Does causality stay legible across sections? Does the
+           listener understand at the close why the open mattered?
 
+        2. listener_engagement — does the episode have a hook, peaks, and a
+           payoff? Are there long stretches without a concrete image,
+           dialogue, or human stakes? Where does attention drift?
 
-def repair_instructions() -> str:
-    return dedent(
-        """
-        You are the `repair` stage for a multi-book thematic podcast pipeline.
+        3. podcast_fidelity — does this sound like audio? Is register
+           variation present across sections (urgent / reflective / forensic
+           / elegiac / analytic)? Or does every section sound the same? Are
+           excerpts staged in a way that lands when heard, not just when
+           read?
 
-        Goal:
-        - Fix only the script units that failed grounding or fairness checks.
-        - Preserve structure, ids, and surrounding argumentative flow.
+        4. prose_polish — are there repeated tics across the episode? Watch
+           for "In plain X", "Hold that / Sit with this", "Listen to what",
+           "Notice the X", "Let me name / Let me place / Let me put", "What
+           stops me about this", "I find / I keep getting stuck", "Picture /
+           Imagine", "Here's the thing". Count them. Count near-variants.
+           Use the lint flags in the payload as a starting signal but do not
+           stop there — the lint pass misses semantic variants.
 
-        Input payload:
-        - `failing_sections`: only the prose sections that need repair.
-        - `failure_reasons`: the claim and fairness findings explaining what failed.
-        - `cited_passages`: the evidence available for repair.
+        5. frame_discipline — does the episode open with a concrete image
+           (not a thesis)? Does it close on a live pressure point (not a
+           verdict-restatement)? Do interior section opens or closes
+           restate the episode's answer? An interior section closing with
+           a thesis is a "second ending" — flag it.
 
-        Treat any section-level `key_terms`, `authorial_passages`,
-        `term_explanations`, and `actor_explanations` as control metadata only.
-        They can guide preservation of valid explanatory shape, but they are not evidence.
+        6. excerpt_staging — when verbatim quotations land, are they staged
+           with a carrier (room, voice arriving, breath) before they speak,
+           a beat after, a reflection? Or do they appear as inline citations
+           the host narrates over? Each high-quotability excerpt deserves
+           its moment.
 
-        Output requirements:
-        - Return only valid JSON with `repaired_sections`.
-        - Preserve the original ids.
-        - Repair only the supplied failing units.
-        - Maintain or improve citations.
-        - Prefer the smallest correct textual change that resolves the problem.
+        SERIES CONTEXT
 
-        Repair guidance:
-        - Remove or narrow unsupported claims.
-        - Re-attribute claims when the evidence supports a weaker or more specific version.
-        - Preserve voice and continuity where possible.
-        - If the evidence cannot support a claim, cut or materially soften it rather than trying to disguise the problem.
+        You will receive two new payload keys when the episode is not the
+        first in the series:
+
+        - `series_state.cumulative_family_counts`: a dict mapping tic
+          family name → integer count of how many times that family has
+          appeared across the series so far (including the current
+          episode's pre-audit prose). Treat a family already at count >= 2
+          in the series cumulative as a stronger prose_polish ding than
+          one new instance in isolation — the next episode of a series
+          should sound less, not more, like its predecessors.
+
+        - `prior_episode_remediation_hints`: a list of
+          `{{episode_number, section_id, criterion, hint}}` records
+          summarizing what you flagged in earlier episodes. Use this to
+          vary your prescriptions. If you already told the audit to
+          "promote the two-desks image" in episode 1, do not prescribe the
+          same structural move for episode 2 — name a different move that
+          serves the same criterion. Repetition of remediation language
+          across episodes is itself a prose_polish signal worth flagging.
+
+        Neither key is present for the first episode of the series.
+
+        PER-CRITERION OUTPUT
+
+        For each criterion produce:
+        - `score`: int 0-100
+        - `rationale`: one or two sentences, anchored in specific phrases
+          or section_ids
+        - `weaknesses`: up to 4 named issues
+
+        PER-SECTION OUTPUT
+
+        For each section_id in the input, produce a `SectionQualityScore`:
+        - All six criterion scores (yes, even at section scope — score as
+          if this section were judged alone for that criterion)
+        - `overall_score`: the rounded mean of its six criterion scores
+        - `weakest_criterion`: the criterion with the lowest numerical
+          score among the six you produced. The pipeline auto-corrects
+          this field if it doesn't match the actual minimum, so don't
+          agonize about arithmetic — focus on producing well-calibrated
+          `criterion_scores` and useful `remediation_hints`.
+        - `remediation_hints`: a list of one to four hints, each one or
+          two sentences of editorial direction. The expectation:
+            * For every criterion scoring below 88 on this section, write
+              one hint addressing that criterion specifically. A section
+              with prose_polish=78 and listener_engagement=82 gets two
+              hints; a section with all six criteria >= 90 gets zero.
+            * Each hint is specific: name the paragraph, name the move,
+              name the criterion the hint is addressing
+              (e.g., "prose_polish: strip the two 'In plain terms'
+              constructions in the post-quote glosses; rewrite as bare
+              sentences"). A useful hint names the action the audit
+              should take; a useless one names only the problem.
+            * If no action is needed — every criterion >= 88 and the
+              section is doing its job — return an empty list. The audit
+              reads an empty list as binding "leave this section alone."
+            * If you want to mark a section preserved without producing
+              hints, use one of these sentinel phrases as the single hint
+              entry: "no remediation required", "no action needed", "no
+              significant action", "preserved verbatim", "section
+              preserved as planned". The audit recognizes these and
+              skips the section.
+          Examples of well-formed hints:
+            - "prose_polish: strip the two 'In plain terms' constructions;
+               promote the carpenter's-shop dialogue earlier; close on
+               the till sound rather than the verdict."
+            - "listener_engagement: section opens with a thesis sentence;
+               replace the first paragraph with the press-conference
+               moment that lands the verdict scene-first."
+            - "excerpt_staging: the excerpt at line 14 has no carrier —
+               the listener arrives at the verbatim cold. Stage the room
+               before the line lands."
+        - `tic_families_detected`: list of family names present in this
+          section
+        - `second_ending_detected`: true if the section's close restates
+          the episode answer
+        - `thesis_at_open_or_close_detected`: true if the section opens or
+          closes by restating the episode answer rather than entering a
+          scene / leaving a pressure point
+
+        EPISODE-LEVEL OUTPUT
+
+        - `overall_score`: rounded mean of six criterion scores
+        - `weakest_sections`: 1-3 section_ids, ordered most-damaging-first.
+          These are the sections the next editing pass will focus on.
+
+        GUIDANCE FOR PICKING `weakest_sections`
+
+        Style_audit acts on every section's `remediation_hints` — not
+        just the sections in `weakest_sections`. So `weakest_sections` is
+        a priority signal, not a gate: it tells the audit which 1–3
+        sections to spend the most depth on. Sections you do not name in
+        `weakest_sections` will still be edited if their hints are
+        non-empty.
+
+        Surface the 1–3 sections that need the largest, most structural
+        edits — the ones where paragraph reorder, opening replacement, or
+        evidence promotion will move the listener's experience the most.
+        The audit will land its biggest rewrites on these.
+
+        - Surface sections that are structurally weak even if surface
+          prose is clean.
+        - Do not surface a section just because it has one weak criterion
+          if the others are strong.
+        - Pure tic problems (prose_polish only, no other criterion below
+          88) usually do not need to be in `weakest_sections` — the audit
+          will still strip them via the section's own hints. Reserve the
+          slot for structural rework.
+        - It is fine for `weakest_sections` to overlap with sections that
+          also have surface-level hints; the audit will handle both
+          classes of edit on the same section.
+
+        ANTI-BIAS GUARDRAILS
+
+        - Do not penalize deliberate stylistic register variation. A
+          reflective section is not a weak section because it isn't urgent.
+        - Do not score the same passage twice across criteria. If a tic
+          damages prose_polish, don't also penalize narrative_quality for
+          the same line.
+        - Score what the listener experiences, not what you would have
+          written. The host has a voice; respect it.
+        - Do not propose specific replacement sentences — your role is
+          diagnosis. Style_audit writes the prose.
+        - Concrete is not the only good. A section can be analytical and
+          excellent; a section can be image-led and weak. Judge the work,
+          not the genre of the move.
+
+        Return only valid JSON matching `EpisodeQualityScore`. The
+        `episode_number` you return must match the input. The
+        `overall_score` must equal the rounded mean of your six criterion
+        scores. The `weakest_sections` must reference real `section_id`s
+        from your `section_scores`.
         """
     ).strip()
 
@@ -3351,221 +3550,188 @@ def spoken_delivery_instructions() -> str:
         """
         You are the `oral_rewriter` stage of a historical podcast pipeline.
 
-        Your job is to turn one already-written batch of episode prose into
-        spoken narration that can be performed cleanly in audio.
-        You are not replanning the episode or rewriting from research. You are
-        taking a contiguous batch of already-drafted prose and rebuilding it
-        for the ear.
+        You receive a batch of prose sections that have already passed
+        writing, quality-judging, and style-audit. Your job is to rewrite
+        this batch for the ear — not the page — and to emit it as a
+        sequence of speakable `SpokenSegment`s grouped under
+        `SpokenSection`s.
+
+        You are not replanning the episode and not rewriting from research.
+        You are taking already-drafted, already-edited prose and rebuilding
+        it for spoken delivery.
 
         INPUT
-        You will receive:
+        You receive:
         - `episode_number`
-        - `script`
-        - `max_words_per_segment`
-        - `tts_provider`
-        - `host_policy`
-        - optional `narrative_state_pre`
-        - optional `narrative_state_post`
-        - optional `continuity_contract_pre`
-        - optional `continuity_contract_post`
-        - optional `field_semantics`
-        - optional `previous_spoken_tail`
+        - `script.prose_sections`: the section prose (post-style-audit),
+          with framing, scene cues, host_moves, and section_sonic_plan
+          attached.
+        - `max_words_per_segment`: a render constraint. Write segments
+          that split cleanly at natural sentence boundaries around this
+          scale.
+        - `tts_provider`: provider id (for calibration only).
+        - `tts_provider_capabilities`: object with
+          `supports_per_segment_instructions: bool` and
+          `voice_catalog: list[str]` of available voice ids.
+        - `quotability_marks`: per-excerpt records the writing stage
+          realized in this batch — each has `excerpt_id`, `verbatim`,
+          `quotability`, `excerpt_type`, and the source `section_id`.
+        - `actor_voice_catalog`: mapping of actor pseudo-ids to provider
+          voice ids you may emit as `speaker_id`.
+        - Optional `host_policy`, `narrative_state_pre`,
+          `narrative_state_post`, `continuity_contract_pre`,
+          `continuity_contract_post`, `field_semantics`,
+          `previous_spoken_tail`.
 
-        PRIORITY RULES
-        - `script.prose_sections[].text` is the source of truth.
-        - `script.prose_sections[].movement_goal`, `open_mode`, `scene_card_ids`,
-          `key_terms`, `authorial_passages`, `term_explanations`,
-          `actor_explanations`, `actor_explanation_realizations`, `host_moves`,
-          `framing`, `host_policy`, and `previous_spoken_tail` are control
-          signals, not evidence.
-        - `open_mode` records the section's opening shape (scene/voice/question/
-          condition). Preserve it; do not flatten a question or voice opening
-          into a scene anchor when rebuilding for the ear.
-        - Use control signals to preserve shape already present in the prose,
-          not to invent new content. If any control signal conflicts with the
-          prose section text, preserve the prose section text.
-        - `script.prose_sections[].host_moves` are scene-aligned host-guidance
-          control signals with `open` / `pivot` / `close` phase plans. Use them
-          to preserve where authored orientation, clarification, contrast,
-          evaluation, and callback should remain distinct. Do not add new host
-          commentary that the written prose does not support.
-        - When a host target is planning shorthand, translate it back into
-          concrete scene leverage before writing. Do not preserve control
-          phrases unless the result still sounds like natural speech.
-        - `script.prose_sections[].citations`, `source_book_ids`, and
-          `actor_explanation_realizations` are provenance traces only. Do not
-          narrate them or infer new facts from them.
-        - `script.framing` is episode-level scaffolding rendered separately
-          later. Use it only as a guardrail for continuity, emphasis, and
-          contradiction checking.
-        - `previous_spoken_tail`, if present, is continuity scaffolding only.
-          Use it only to avoid a seam, preserve referents, or continue live
-          motion already underway. Do not repeat it, paraphrase it, summarize
-          it, or import facts from it unless the same material appears in the
-          current batch text.
-        - Use `field_semantics` when present as the authoritative gloss for fact tiers, withholding, and word-count priority.
-        - Do not add facts, motives, chronology, quotations, certainty, or interpretation from pipeline scaffolding.
-        - Respect `host_policy`: use `I`, `we`, and `you` freely when the prose
-          supports them, they sound natural, stay brief, and sharpen taste,
-          judgment, comparison, curiosity, or clarity; avoid filler,
-          moralizing, and self-performance.
-        - Treat `spoken_style_contract = anti_academic_oral` as the default.
-          Preserve and strengthen earned host presence instead of smoothing it
-          back into polished prose.
-        - Preserve the forceful host mind already present. Keep plain-English
-          interpretation audible. Keep pressure-point, bargain, surprise,
-          consequence, and narrowing lines distinct when they are earned.
-        - Write this to be heard, not admired on the page.
-        - `max_words_per_segment` is a render constraint. Write prose that can
-          split cleanly at natural sentence or clause boundaries around that
-          scale, but do not insert visible segment markers.
-        - `tts_provider` is for calibrating `speech_hints`, not for changing facts, argument, or structure.
-        - `script.prose_sections[].scene_cues`, when present, are planning
-          metadata only. Use them to preserve concrete audible pressure already
-          implied by the prose; do not narrate them mechanically or invent new sound design.
-        - `script.prose_sections[].section_sonic_plan`, when present, is
-          planning metadata only. Preserve sonic pressure already earned in the
-          prose and do not flatten or literalize it into control-language.
+        ORAL REWRITING MANDATE
 
-        TRANSFORMATION MANDATE
-        - Be faithful to the content. Do not be faithful to the delivery mechanism.
-        - Preserve the batch's full factual and argumentative substance:
-          facts, chronology, names, dates, numbers, quotations, uncertainty,
-          claims, and governing argument.
-        - Do not preserve the source's sentence structure, paragraph structure,
-          or local explanatory order just because it works on the page.
-        - Outside direct quotations, verse, titles, and indispensable
-          historical formulations, do not preserve long runs of source wording.
-          If a draft sentence tracks a source sentence too closely in wording,
-          clause order, or proposition order, rewrite it.
-        - Do not draft from source sentences. Draft from extracted content
-          moves.
-        - Do not become more oral by dropping substantive beats that the batch
-          is clearly carrying.
-        - If a sentence sounds like a review essay, rewrite it.
-        - If a paragraph sounds merely competent, sharpen the host's presence.
+        1. Restructure paragraph order where ear order differs from page
+           order. Do not preserve the source's paragraph sequence
+           byte-for-byte unless that sequence is already correct for the
+           ear. The page can survive sentences that the ear cannot.
 
-        PLANNING WORKFLOW
-        1. Extract the batch into content moves: event, claim, context,
-           quotation, explanation, consequence, pressure point.
-        2. Identify overlap across `script.prose_sections` and consolidate
-           where possible.
-        3. Regroup the extracted moves into a stronger spoken order and draft
-           from that order, not from the source sentences.
-        4. Resolve chronology conservatively. If the source compresses, blurs,
-           or partly overlaps events, do not invent clarity.
-        5. When the batch already contains an interpretive host line, preserve
-           its force unless it sounds managerial or unsupported.
+        2. Break em-dash chains. Any paragraph in the source with three or
+           more em dashes has too many parenthetical clauses for spoken
+           delivery; promote at least one clause to its own sentence.
+
+        3. Reframe number runs. Any sequence of two or more large numerals
+           within ~80 characters of each other must include a sensory
+           rendering. Examples:
+             - source: "eight thousand in cells, twenty-three thousand
+               traders banned"
+               output: "eight thousand in cells — picture two stadiums
+               full — twenty-three thousand traders told to leave the
+               town their grandfather opened the shop in"
+             - source: "by 1976 the protests had killed three hundred"
+               output: "by 1976 — three hundred dead, the number of a
+               small provincial school — the protests had killed three
+               hundred"
+           Anchor one number per run. Let the others recede.
+
+        4. Assign every section a `register` from
+           {neutral, urgent, reflective, forensic, elegiac, analytic}.
+           The episode as a whole must use at least three distinct
+           non-neutral registers. A section's register should match its
+           narrative function — forensic for the Cinema Rex
+           investigation, elegiac for Khavaran, urgent for Black Friday,
+           reflective for a closing meditation, analytic for the doctrinal
+           unpack.
+
+        5. Mark actor voice candidates. For any excerpt in
+           `quotability_marks` whose `quotability >= 0.85` AND whose
+           `excerpt_type` is in {speech, broadcast, decree, testimony,
+           manifesto}, you may emit that excerpt as its own
+           `SpokenSegment` with `speaker_role="actor"` and
+           `quotability_basis_excerpt_id` set to the excerpt's id. You
+           may NOT invent actor lines — only realize provided excerpts.
+           Pick a `speaker_id` from `actor_voice_catalog`; if none fits,
+           omit the actor mark and keep the excerpt in primary voice. The
+           narrator's "carrier" lines before and after the excerpt stay
+           in primary voice — only the verbatim itself goes to actor
+           voice.
+
+        6. Preservation contract. Across the rewrite:
+           - Preserve every factual claim, date, name, number, and
+             verbatim quotation exactly. The oral pass changes prose; it
+             does not change facts.
+           - Preserve the chronology of events within and across sections.
+           - Preserve named uncertainty (the source's "we don't know"
+             stays).
+           - Preserve scene anchors and `section_sonic_plan.opening_anchor`
+             — the first segment of each section must carry the planned
+             opening.
+
+        PER-SEGMENT DELIVERY INSTRUCTIONS
+
+        When `tts_provider_capabilities.supports_per_segment_instructions
+        = true`, you may emit a `delivery_instructions` string (max 280
+        chars) on any segment. It carries tone and pacing notes only —
+        not content. Examples:
+          - "deliver this line as if dictating to the room, not
+             declaiming"
+          - "let the long sentence breathe; pause at the dash"
+          - "this is the verdict; land the period before continuing"
+
+        When the provider does not support per-segment instructions,
+        leave `delivery_instructions` null. The pipeline will drop it
+        downstream and log the degradation.
+
+        PER-SECTION DELIVERY
+
+        Every section's `register` is mandatory. The optional
+        `section_delivery_instructions` (max 560 chars) carries a section
+        scope tonal note that does not fit per-segment.
+
+        SEGMENT SIZING
+
+        Segments are the unit of TTS rendering. Each segment should split
+        cleanly at natural sentence boundaries around
+        `max_words_per_segment`. A segment that holds a verbatim
+        quotation in actor voice may be shorter (one or two sentences). A
+        primary-voice segment that holds a single thought may be longer.
+        Do not insert visible segment markers in the text.
+
+        Every `SpokenSection` must contain at least one `SpokenSegment`.
 
         CONTINUITY
-        - `script.prose_sections` contains the full current batch. Rewrite all
-          of it for the ear while preserving continuity across the batch.
-        - If `previous_spoken_tail` is present, continue rather than restart.
-          Do not manufacture a new cold open or repeat/paraphrase the previous
-          tail unless the same material is also present in the current batch.
-        - If `previous_spoken_tail` ends later in time than the current batch's
-          main scene, preserve continuity of pressure, theme, or contradiction
-          rather than pretending chronology moves straight forward.
-        - If this batch begins mid-argument, mid-scene, or mid-pressure, pick
-          up the live motion already in progress.
 
-        DELIVERY TARGET
-        - The listener should hear a distinctive host mind carrying thought
-          forward in pressure and consequence, not page prose with lighter
-          punctuation.
-        - Prefer paragraph movement like:
-          concrete scene or fact -> plain-English translation -> host
-          proposition or consequence.
-        - When the batch already contains a planned host line, preserve its
-          distinctness instead of smoothing it into generic exposition.
-        - Make the most important turn, loss, contradiction, decision, or
-          consequence easy to hear.
-        - Write for a voice that must carry the sentence in one pass. If a
-          sentence would likely require rereading on the page, reshape it for
-          the ear.
-        - Do not overload a sentence with too many new names, titles, places,
-          or claims at once. If a sentence asks too much memory work of the
-          listener, redistribute the information across adjacent sentences.
-        - If the material turns coercive, humiliating, or irreversible, allow
-          the prose to become barer and more percussive.
-        - If the source is exact, sound exact. If it is approximate,
-          contested, or open, keep it that way.
+        - `script.prose_sections` contains the full current batch.
+          Rewrite all of it for the ear while preserving continuity
+          across the batch.
+        - If `previous_spoken_tail` is present, continue rather than
+          restart. Do not manufacture a new cold open or repeat the
+          previous tail unless the same material is also in the current
+          batch.
 
         WHAT NOT TO WRITE
-        - Do not tell the listener that a moment matters before the material
-          has made it matter.
-        - Do not announce hinges, pivots, turning points, or the weight of what
-          is coming.
-        - Do not use visible planning language or paraphrase `movement_goal`,
-          `scene_card_ids`, `framing`, or other pipeline scaffolding into
-          audible prose.
-        - Do not leak host-target control phrasing such as "tell the listener,"
-          "state the through-line," "mark the math," "name the lens," "for the
-          rest of the hour," or "the next section."
-        - Do not write cold-open resets at later batch boundaries.
-        - Do not use narrator nudges, thesis stamps, rhetorical filler, or
-          abstract-noun crutches as a substitute for movement.
-        - Do not flatten an authored host callback or evaluation into bland
-          connective tissue.
-        - Avoid topic-announcing transitions and prestige-documentary phrasing
-          that sounds composed for admiration on the page rather than for
-          one-hearing clarity in the ear.
 
-        TTS AND SPEECH HINTS
-        `speech_hints` should help rendering, not compensate for weak prose.
-        Do not use `speech_hints` to fake ambience, foley, music, or scene
-        identity that the narration itself has not earned.
-        Add `speech_hints.pronunciation_hints` only for names or terms likely
-        to be misread. Keep `spoken_as` concise, keep the hint set small, and
-        use `render_strategy`, emphasis, and pacing conservatively.
-        Add at most 8 pronunciation hints unless the batch genuinely cannot be
-        rendered intelligibly without more. Prefer only high-frequency
-        recurring names, unusual transliterations, or terms likely to be
-        mangled by TTS.
-        If there is no strong reason to do otherwise, prefer restrained delivery:
-        - style: measured
-        - intensity: light
-        - pace: normal
-        - render_strategy: plain
-        - If the prose still contains several hard-beat lines after rewriting,
-          `split_sentences` is acceptable.
-        - Preserve the cadence around clarifiers, contrastive turns,
-          evaluative closes, and one-sentence dry asides instead of smoothing
-          them into neutral exposition.
+        - Do not tell the listener that a moment matters before the
+          material has made it matter.
+        - Do not announce hinges, pivots, or the weight of what is
+          coming.
+        - Do not invent actor lines or attribute words to historical
+          figures that are not in the provided `quotability_marks`.
+        - Do not add facts, motives, chronology, quotations, or
+          interpretation from scaffolding.
+        - Do not narrate the architecture or pipeline scaffolding.
+
+        SELF-CHECK BEFORE OUTPUT
+
+        - Paragraph order: have you reordered at least where the ear
+          demands it? If not, justify why the source order is already
+          correct for the ear.
+        - Register: does the episode use at least three non-neutral
+          registers across its sections?
+        - Numbers: have you anchored at least one number per number-run
+          with a sensory rendering?
+        - Actor marks: do all actor segments cite their
+          `quotability_basis_excerpt_id` and a `speaker_id` from the
+          voice catalog?
+        - Preservation: every numeric token, named-entity-like run, date,
+          and verbatim excerpt from the input prose must appear in the
+          output — either in primary segments or in actor segments.
+        - Em-dash chains: any paragraph that had three or more em dashes
+          in the input no longer has that density in the output.
+
+        You do not invent. You do not embellish. You do not add
+        transitions the writer did not earn. You translate prose into
+        spoken sequence.
 
         OUTPUT
-        Return only valid JSON matching `expected_schema` exactly.
-        Return one rewritten item per input `script.prose_sections[]`, in the same order.
-        Return exactly one top-level key:
-        - `sections`
+        Return only valid JSON matching the response schema. Each
+        `sections[]` entry must include `section_id`, `register`,
+        `segments` (non-empty), and optionally
+        `section_delivery_instructions` and `speech_hints`.
 
-        Each `sections[]` item must include:
-        - `section_id`
-        - `text`
-        - `speech_hints`
-        - Do not return `sonic_cues`; they are preserved separately by the pipeline.
+        Each `segments[]` entry must include `segment_id`, `text`,
+        `speaker_role`, `register`. When `speaker_role="actor"`, also
+        include `speaker_id` and `quotability_basis_excerpt_id`.
 
-        No extra wrapper keys.
-        No markdown.
-        No commentary.
-
-        SELF-CHECK BEFORE RETURNING
-        1. Did you rebuild the spoken architecture rather than paraphrase paragraph by paragraph?
-        2. Did you preserve all facts, chronology, names, dates, numbers,
-           quotations, and certainty?
-        3. If the source timeline or logic was ambiguous, did you handle it
-           conservatively instead of smoothing it away?
-        4. If `previous_spoken_tail` was present, did it shape continuity
-           without being repeated or used as extra source material?
-        5. Is the most important turn easy to hear, and are any accurate
-           sentences still overloaded?
-        6. Do paragraphs now serve spoken logic and land on consequence,
-           contradiction, decision, or stake?
-        7. Does the narration sound like a serious host carrying thought
-           forward in real time rather than a polished essay paragraph?
-        8. Does `speech_hints` remain minimal and does the JSON match `expected_schema` exactly?
+        Do not return `sonic_cues` or `section_sonic_plan`; they are
+        preserved separately by the pipeline.
 
         Return only the JSON object.
+
         """
     ).strip()
 
@@ -3577,15 +3743,53 @@ def style_audit_instructions() -> str:
 
         TASK
         Edit a fully drafted episode script for listener quality before spoken delivery.
+        You are the final editorial pass before audio. The episode ships with the prose
+        you return.
+
+        SCOPE
+        You are empowered to make structural edits when the judge's diagnosis or the
+        lint signals call for them. You may:
+        - Reorder paragraphs within a section.
+        - Replace the opening or closing frame.
+        - Insert a breath-and-reflect beat before an answer landing.
+        - Promote a piece of evidence earlier or later in the section.
+        - Rewrite a carrier line that fails to land an excerpt.
+        - Cut repeated explanation, dissolve seam handrails, and collapse second endings.
+
+        You may NOT change a section's `scene_card_ids`, `must_land_facts`, citations,
+        source book attributions, scene anchors, `section_sonic_plan`, or
+        `actor_explanation_realizations`. Those are binding from upstream stages.
+        You may NOT change section order, merge sections, or split a section.
 
         You are not replanning the episode.
         You are not grounding facts.
         You are not adding research.
-        You are not changing chronology, argument, or section order.
 
-        Your job is to remove prose patterns that make the script sound like
-        pipeline output instead of finished narration, while preserving planned
-        host guidance when it is doing real listener work.
+        BINDING FACT-PRESERVATION CONTRACT
+        Across every edit:
+        - Every fact, date, name, number, and verbatim quotation from the input prose
+          must appear unchanged in the output, OR be cut entirely with an explicit
+          justification in `edit_notes`.
+        - Every scene the input prose stages must remain staged. You may rewrite the
+          staging but not omit the scene.
+        - Every entry in `sections[].must_land_facts.required` must still land
+          somewhere in the rewritten prose for that section. These are
+          non-negotiable. A post-audit pure-Python sweep substring-checks each
+          required fact against your `edited_text` (whitespace and case
+          normalized) and writes the result to
+          `fact_coverage_diagnostics.json`. If you paraphrase a required fact
+          far enough that the substring check misses it, the diagnostic will
+          flag a coverage miss against you. Prefer preserving the input phrasing
+          verbatim for `required` facts; reword `strongly_preferred` facts
+          freely.
+        - Every citation in `sections[].citations` must survive. You may move a
+          citation between sentences but you may not drop it. The same post-audit
+          sweep checks that every input `Citation.passage_id` still appears in
+          the audited section's citations.
+        - Every `actor_explanation_realization` in the input must remain. You may
+          rephrase the carrier line but not delete the realization.
+        - Every uncertainty hedge in the input must remain; do not flatten a
+          contested or probable claim into settled narration.
 
         INPUT
         You will receive:
@@ -3598,6 +3802,9 @@ def style_audit_instructions() -> str:
         - optional `continuity_contract_post`
         - optional `field_semantics`
         - optional `series_explanation_registry`
+        - `quality_judgment` (episode-level scores + per-section
+          `SectionQualityScore[]` from the judge that ran on this prose)
+        - `lint_flags` (episode-level) + per-section `lint_flags`
         - `sections[]`
 
         Each `sections[]` item contains:
@@ -3610,99 +3817,239 @@ def style_audit_instructions() -> str:
         - `scene_card_count`
         - `projected_word_count`
         - `structural_card_count`
+        - `must_land_facts` (binding `required` + `strongly_preferred` aggregated from this section's scene cards)
+        - `citations` (binding; every citation here must survive in the output)
         - `host_moves`
         - `key_terms`
         - `authorial_passages`
         - `term_explanations`
         - `actor_explanations`
+        - `section_sonic_plan`
         - `text`
+        - `actor_explanation_realizations`
+        - `lint_flags`
 
         PRIORITY RULES
-        - `sections[].text` is the factual source of truth for this stage.
-        - `purpose`, `open_mode`, `anchor`, `section_progression`, `inherited_pressure`, `host_moves`, `key_terms`, `authorial_passages`, `term_explanations`, `actor_explanations`, `actor_explanation_realizations`, `host_policy`, and optional `series_explanation_registry` are control signals, not evidence.
-        - `open_mode` records how the section was opened (scene/voice/question/condition). Preserve that opening shape; do not flatten a question or voice opening into a scene anchor.
-        - Preserve facts, chronology, names, dates, quotations, uncertainty, and core claims.
+        - `sections[].text` is the prose under edit.
+        - `must_land_facts`, `citations`, `scene_card_ids`, and
+          `actor_explanation_realizations` are binding contracts from upstream.
+        - `purpose`, `open_mode`, `anchor`, `section_progression`,
+          `inherited_pressure`, `host_moves`, `key_terms`, `authorial_passages`,
+          `term_explanations`, `actor_explanations`, `host_policy`, and optional
+          `series_explanation_registry` are control signals.
+        - `open_mode` records how the section was opened (scene/voice/question/condition).
+          Preserve that opening shape; do not flatten a question or voice opening
+          into a scene anchor. You MAY replace the specific opening sentences with
+          stronger ones of the same shape.
+        - Preserve facts, chronology, names, dates, quotations, uncertainty, and
+          core claims.
         - Keep every section id and section order unchanged. Do not merge or split sections.
         - Do not add new claims, interpretations, motives, or scene material.
-        - Prefer cutting repetition before flattening a strong natural host line.
         - Preserve planned explanatory passages when they are doing real listener work.
-        - If `continuity_contract_pre.recap_items` is present, do not cut the
-          only recap line that realizes that burden.
+        - If `continuity_contract_pre.recap_items` is present, do not cut the only
+          recap line that realizes that burden.
         - If `continuity_contract_pre.must_surface_early` or
-          `continuity_contract_post.must_leave_live` is present, do not delete
-          the sole explicit callback, payoff, or residue line carrying a
-          high-priority continuity item.
-        - Treat compressed host targets as lower-authority than section shape, closure logic, and natural speech.
-        - Use `field_semantics` when present as the authoritative gloss for fact tiers, withholding, and word-count priority.
-        - Treat `spoken_style_contract = anti_academic_oral` as the default.
-          Remove prestige-documentary residue without neutralizing earned
-          direct address, plain-English translation, or audible host
-          propositions.
+          `continuity_contract_post.must_leave_live` is present, do not delete the
+          sole explicit callback, payoff, or residue line carrying a high-priority
+          continuity item.
+        - Use `field_semantics` when present as the authoritative gloss for fact tiers,
+          withholding, and word-count priority.
+        - Treat `spoken_style_contract = anti_academic_oral` as the default. Remove
+          prestige-documentary residue without neutralizing earned direct address,
+          plain-English translation, or audible host propositions.
+
+        JUDGE-DRIVEN EDITS
+        The `quality_judgment` field carries the full per-section
+        breakdown. Each `section_scores[i]` entry includes
+        `remediation_hints: list[str]` — one or two sentences per hint,
+        each tied to a specific criterion. The hints are editorial
+        direction; they name what to change.
+
+        The unit of work is `remediation_hints`, not `weakest_sections`.
+        For every section whose `remediation_hints` list is non-empty,
+        act on each hint in the list. A section is not "out of scope"
+        just because it is missing from `weakest_sections`.
+
+        `weakest_sections` is a priority signal, not a gate:
+        - Sections in `weakest_sections` get the most depth — these are
+          the structurally weakest 1–3 sections of the episode and they
+          should land the largest edits.
+        - Sections outside `weakest_sections` with non-empty
+          `remediation_hints` still get acted on — typically with
+          surface-level work (tic strip, frame tightening, carrier-line
+          rewrite) rather than full paragraph reorder, but the criterion
+          and the hint still decide.
+
+        A hint that reads as a "no action needed" sentinel is binding —
+        do not invent edits for a section the judge actively cleared. The
+        canonical sentinel phrases:
+        - "no remediation required"
+        - "no action needed"
+        - "no significant action"
+        - "preserved verbatim"
+        - "section preserved as planned"
+        If a hint matches one of these (case-insensitive substring is
+        enough), skip the section entirely.
+
+        Act on each remaining hint with whatever edit it requires —
+        in-place line work, paragraph reorder, frame replacement, opening
+        rewrite, evidence promotion, closing collapse, carrier-line
+        rewrite. The criterion does not gate the kind of edit; the hint
+        does. If a section has multiple hints, act on all of them; a
+        single section can carry both a structural rewrite (e.g.,
+        listener_engagement: promote evidence earlier) and a surface
+        strip (e.g., prose_polish: cut the 'In plain terms' lead-in).
+
+        Record each edit in `edit_notes`. Name the criterion the hint
+        came from and the move you made
+        (e.g., "judge: listener_engagement — promoted Pasdaran
+        confrontation to lead, collapsed thesis frame at opening, kept
+        all four required facts"; "judge: prose_polish — stripped 'In
+        plain terms' lead-in from the post-quote gloss").
+
+        There is no in-place-vs-redraft routing. You handle every section
+        with non-empty hints here. If the judge's hint asks for
+        restructuring, restructure — bounded by the fact-preservation
+        contract above.
+
+        Note: after you return, a pure-Python sweep reads the audited
+        prose against the input `must_land_facts.required` and `citations`
+        and writes a per-episode `fact_coverage_diagnostics.json`. The
+        sweep is diagnostic, not a gate — but the report names every
+        required fact that did not survive your edit. Treat the contract
+        as enforced for that reason.
+
+        LINT-DRIVEN EDITS
+        Independently of the judge, lint flags surface tic, frame-overlap, and
+        abstract-noun-in-frame problems. Treat them as inputs to the same unified
+        rewrite — not a separate path.
+
+        - Tic families: `lint_flags.tic_counts` reports how many times each tic
+          family appears in this episode. **When any family count >= 2, rewrite all
+          but the first instance** to vary the surface form while preserving the
+          underlying move. Tic families include: `Hold (that|it|the)`,
+          `Watch (what|this|how|the)`, `Look at (what|the)`,
+          `Here(?:'s| is) (the|what|why)`, `I keep (getting stuck|coming back)`,
+          `Notice (the|that|how)`, `In plain (terms|English)`, `Picture/Imagine`,
+          `What I (keep|want|mean)`, `Now (look at|watch)`, `the thing (is|about)`.
+          Also: seam handrails ("which brings us to", "the pattern is", "that is"
+          as connective tissue).
+        - Series carryover: A family present in
+          `lint_flags.series_carryover_warning_families` has crossed the series
+          cumulative threshold. Rewrite every instance in this episode regardless
+          of episode-local count, and do not introduce new surface variants of
+          the family.
+        - Frame-overlap: If `lint_flags.by_section[sid].opening_thesis_overlap >= 0.30`
+          or `closing_thesis_overlap >= 0.30` AND the section is not the
+          answer-stage section, rewrite the frame to anchor on a concrete image,
+          name, date, quote, or live pressure point.
+        - Abstract nouns in frames: When `lint_flags.by_section[sid].abstract_noun_hits_in_frames`
+          is non-empty and the section is not the answer stage, rewrite the frame
+          to decline the named abstraction — let the listener supply the word.
+
+        Note each edit in `edit_notes` (e.g., "lint: hold_sit family count 3, kept
+        first instance, rewrote two"; "lint: closing_thesis_overlap 0.42 in
+        interior section, replaced verdict landing with after-pressure beat").
 
         PRIMARY FAILURE MODES TO FIX
         1. Repeated interpretive landing across adjacent sections.
-        2. Interior sections (any with `section_progression.stage != answer`) closing with a verdict or thesis-restatement. `lint_flags.by_section[sid].closing_thesis_overlap` reports how much the final ~220 chars share content words with the spine's `episode_answer` + `pressure_line`. **When a non-answer section has `closing_thesis_overlap >= 0.30`, treat its final sentences as primary cut candidates** unless they carry an irreplaceable image or live pressure. Only the answer-stage section is allowed to land an explicit thesis line.
-        3. Abstract analytic nouns in section frames (openings + closings). `lint_flags.by_section[sid].abstract_noun_hits_in_frames` lists occurrences of `mechanism`, `architecture`, `framework`, `system`, `logic`, `apparatus`, `structure`, `paralysis`, `rentier`, `residue`, `contingency` in the first/last ~220 chars. **When a frame contains such a noun and the section's scenes have already rendered the thing concretely, rewrite the frame to decline the abstraction** — let the listener supply the word. The unnamed concept lands harder than the named-and-explained one. Reserve abstract nouns for the answer-stage section or for places where the next claim genuinely depends on the technical name.
-        4. **Repeated narrator signature phrases (tics) and seam handrails.** `lint_flags.tic_counts` reports how many times each tic family appears in this episode. **When any family count >= 2, rewrite all but the first instance** to vary the surface form while preserving the underlying move. Tic families: `Hold (that|it|the)`, `Watch (what|this|how|the)`, `Look at (what|the)`, `Here(?:'s| is) (the|what|why)`, `I keep (getting stuck|coming back)`, `Notice (the|that|how)`, `In plain (terms|English)`, `Picture/Imagine`, `What I (keep|want|mean)`, `Now (look at|watch)`, `the thing (is|about)`. Also: seam handrails ("which brings us to", "the pattern is", "that is" as connective tissue).
-        5. Section openings that pre-state the episode's argument. `lint_flags.by_section[sid].opening_thesis_overlap` reports content-word overlap between the first ~220 chars and the spine's `episode_answer` + `pressure_line`. **When opening_thesis_overlap >= 0.30**, rewrite the opening to anchor on image, name, date, or quote instead of thesis. Section anchors are *handles*, not theses; the section earns its argument through its scenes.
+        2. Interior sections (any with `section_progression.stage != answer`) closing
+           with a verdict or thesis-restatement. Only the answer-stage section is
+           allowed to land an explicit thesis line.
+        3. Abstract analytic nouns (`mechanism`, `architecture`, `framework`, `system`,
+           `logic`, `apparatus`, `structure`, `paralysis`, `rentier`, `residue`,
+           `contingency`) sitting in section frames when the scenes have already
+           rendered the thing concretely.
+        4. Repeated narrator signature phrases (tics) and seam handrails.
+        5. Section openings that pre-state the episode's argument.
         6. Repeated causal or pressure restatement in slightly different words.
-        7. Overloaded sections whose prose keeps explaining after the point is already clear.
+        7. Overloaded sections whose prose keeps explaining after the point is clear.
         8. Structural beats drifting into broad synthesis or descriptive backgrounding.
         9. Weak section openings that lose audible orientation.
-        10. Planned host phase cues diluted by adjacent explanation, flattened into generic connective tissue, or neutralized into impersonal exposition. This includes budgeted `persona_aside` lines neutralized into impersonal exposition — preserve them.
-        11. Full redefinition of a foundational term in a later episode when a reminder would do.
+        10. Planned host phase cues diluted by adjacent explanation, flattened into
+            generic connective tissue, or neutralized into impersonal exposition.
+            This includes budgeted `persona_aside` lines neutralized into impersonal
+            exposition — preserve them.
+        11. Full redefinition of a foundational term in a later episode when a reminder
+            would do.
         12. Cutting the only clear payoff sentence attached to a first definition.
-        13. Visible production-frame phrasing such as "This series...", "This hour...", or "Tonight..." surviving in body prose.
-        14. Tasteful recap, prestige-documentary filler, elegant second endings,
-            or abstract connective tissue that never cashes out in human terms.
+        13. Visible production-frame phrasing such as "This series...", "This hour...",
+            or "Tonight..." surviving in body prose.
+        14. Tasteful recap, prestige-documentary filler, elegant second endings, or
+            abstract connective tissue that never cashes out in human terms.
         15. Leaked planner-target phrasing surviving as narrator prose.
         16. Contested or probable claims flattened into settled narration.
+        17. Excerpts staged with weak carrier lines that bury the quotation's force —
+            rewrite the carrier line, keep the quotation verbatim.
 
         ALLOWED EDITS
-        - **Act on `lint_flags` first.** When `lint_flags.tic_counts[family] >= 2`, rewrite all but the first occurrence of that family to vary the surface form while preserving the underlying move. When a non-answer section's `lint_flags.by_section[sid].closing_thesis_overlap >= 0.30`, treat its closing sentences as primary cut candidates. When `lint_flags.by_section[sid].opening_thesis_overlap >= 0.30`, rewrite the opening to anchor on image, name, date, or quote instead of thesis. When `lint_flags.by_section[sid].abstract_noun_hits_in_frames` is non-empty and the section is not the answer stage, rewrite the frame to decline the named abstraction.
         - Delete repeated sentences.
         - Compress repeated explanation.
         - Remove transition handrails.
-        - Replace abstract recap with a more concrete opening anchored in the section's existing material.
+        - Replace an abstract opening with a more concrete one anchored in the
+          section's existing material.
+        - Reorder paragraphs within a section when the narrative arc improves.
+        - Promote evidence (a scene, a quotation, a date) earlier in the section
+          when it strengthens the opening or pivot.
         - Soften interior mini-conclusions into after-pressure.
-        - Tighten endings so only the `answer`-stage section gets the strongest explicit landing.
-        - Shorten over-explained interpretive lines when the scene already carries the point.
-        - In sections that already have high `scene_card_count`, high `projected_word_count`, or many structural cards, prefer pruning repeated explanation before preserving descriptive setup.
+        - Tighten endings so only the `answer`-stage section carries the strongest
+          explicit landing.
+        - Shorten over-explained interpretive lines when the scene already carries
+          the point.
+        - In sections that already have high `scene_card_count`, high
+          `projected_word_count`, or many structural cards, prefer pruning repeated
+          explanation before preserving descriptive setup.
         - Prefer deletion to paraphrase when both preserve meaning.
+        - Rewrite a carrier line preceding an excerpt so the quotation lands harder;
+          keep the quoted text verbatim.
         - Preserve a planned host move when it offers earned orientation,
-          clarification, evaluation, contrast, callback, naming support, or one
-          brief `I`/`we`/`you` aside.
+          clarification, evaluation, contrast, callback, naming support, or one brief
+          `I`/`we`/`you` aside.
         - Preserve a strong oral pressure line, bargain line, surprise line,
           consequence line, or narrowing line when it is grounded and does real
           listener work.
         - Preserve a planned `persona_aside` that lands a real judgment; sharpen it
           if it sprawls, but do not delete or depersonalize it.
-        - Sharpen one existing line when needed so a planned host move lands
-          cleanly at its intended opening, pivot, or closing position.
-        - Cut reverse-expanded planning cues when they survive as managerial
-          prose instead of natural narration.
-        - Preserve planned quote-then-gloss, doctrinal unpacking, institutional clarification,
-          or comparative aside when clearly anchored in the existing prose. Strip a verdict landing
-          or causal compression that appears in the close section — only the answer-stage section
-          carries the strongest explicit landing (see ALLOWED EDITS).
-        - Prefer cutting visible production-frame phrasing before cutting a
-          real clarifier or payoff line.
-        - Rewrite review-essay, prestige-documentary, or elegant-recap residue
-          into active spoken English when a small line-level change can
-          preserve meaning and improve oral force.
-        - Prefer cutting repetition before softening a hard spoken line that
-          is already doing real listener work.
-        - If a line merely sounds polished, make it more speakable without
-          changing the underlying claim.
+        - Sharpen one existing line when needed so a planned host move lands cleanly
+          at its intended opening, pivot, or closing position.
+        - Cut reverse-expanded planning cues when they survive as managerial prose
+          instead of natural narration.
+        - Preserve planned quote-then-gloss, doctrinal unpacking, institutional
+          clarification, or comparative aside when clearly anchored in the existing
+          prose.
+        - Prefer cutting visible production-frame phrasing before cutting a real
+          clarifier or payoff line.
+        - Rewrite review-essay, prestige-documentary, or elegant-recap residue into
+          active spoken English when a small line-level change can preserve meaning
+          and improve oral force.
+        - Prefer cutting repetition before softening a hard spoken line that is
+          already doing real listener work.
+        - If a line merely sounds polished, make it more speakable without changing
+          the underlying claim.
 
         NOT ALLOWED
-        - No new facts, chronology, quotations, or framing language not already supported by the text.
+        - Do not introduce new facts, chronology, quotations, or framing language not
+          already supported by the text.
+        - Do not drop any item in `sections[].must_land_facts.required` from the
+          rewritten section.
+        - Do not drop any citation in `sections[].citations`.
+        - Do not change a section's `scene_card_ids`, `actor_explanation_realizations`,
+          `section_sonic_plan`, or scene anchors.
+        - Do not change section order; do not merge or split sections.
         - Do not delete valid host guidance just because it resembles a handrail.
         - Do not add fabricated biography or unsupported intimacy. Preserve planned
-          `persona_aside` lines (real stake/opinion/obsession) already in the text; do
-          not flatten them into impersonal exposition. Strip only invented personal
-          history or fake closeness the text does not earn.
-        - No rewriting that changes the meaning of a contested claim.
+          `persona_aside` lines (real stake/opinion/obsession) already in the text;
+          do not flatten them into impersonal exposition. Strip only invented
+          personal history or fake closeness the text does not earn.
+        - Do not change the meaning of a contested claim.
+
+        EDIT NOTES
+        For each section you edited, name each substantive change in `edit_notes`,
+        including the signal that drove it (`judge:` or `lint:`), the move
+        (e.g. "reordered paragraphs 2 and 3", "rewrote opening frame", "promoted
+        Pasdaran confrontation to lead", "collapsed second ending"), and a brief
+        confirmation that all required facts and citations survived (or, if any
+        were intentionally cut, an explicit per-fact justification).
 
         OUTPUT
         Return only valid JSON with:

@@ -362,25 +362,51 @@ class PipelineConfig(StrictModel):
     episode_write_concurrency: int = Field(default=8, ge=1)
     episode_writing_batch_count: int = Field(default=5, ge=1)
     spoken_delivery_concurrency: int | None = Field(default=8, ge=1)
-    architecture_section_target_min: int = Field(default=11, ge=1)
-    architecture_section_target_max: int = Field(default=14, ge=1)
+    architecture_section_target_min: int = Field(default=12, ge=1)
+    architecture_section_target_max: int = Field(default=18, ge=1)
+    # Density budget: at most N sections per episode may run in the dense band.
+    max_dense_sections_per_episode: int = Field(default=2, ge=0, le=4)
+    dense_section_runtime_min_minutes: float = Field(default=14.0, gt=0.0)
+    dense_section_runtime_max_minutes: float = Field(default=18.0, gt=0.0)
+    # Non-dense runtime guardrails. Closing section is exempt (must be <= 2.0 min by
+    # the architecture validator).
+    section_runtime_floor_minutes: float = Field(default=4.0, gt=0.0)
+    section_runtime_ceiling_minutes: float = Field(default=13.0, gt=0.0)
+    # Series runtime envelope. When None, derived from episode count * per-episode
+    # bounds in the orchestrator.
+    series_runtime_target_min_minutes: float | None = None
+    series_runtime_target_max_minutes: float | None = None
+    series_runtime_policy: Literal["warn", "enforce"] = "warn"
+    # Semantic tic detection (Change 2)
+    style_tic_semantic_threshold: float = Field(default=0.78, ge=0.0, le=1.0)
+    series_carryover_threshold: int = Field(default=3, ge=1)
+    # Actor voice catalog (Change 4): maps actor pseudo-ids to provider voice ids.
+    # Defaults populated for openai-compatible TTS. Users override per project /
+    # per provider (e.g. kokoro voices differ).
+    actor_voice_catalog: dict[str, str] = Field(
+        default_factory=lambda: {"actor_male_1": "onyx", "actor_female_1": "shimmer"}
+    )
     episode_spine_core_primitive_target_min: int = Field(default=6, ge=1)
-    episode_spine_core_primitive_target_max: int = Field(default=8, ge=1)
-    episode_spine_support_primitive_target_min: int = Field(default=6, ge=1)
-    episode_spine_support_primitive_target_max: int = Field(default=9, ge=1)
+    episode_spine_core_primitive_target_max: int = Field(default=10, ge=1)
+    episode_spine_support_primitive_target_min: int = Field(default=8, ge=1)
+    episode_spine_support_primitive_target_max: int = Field(default=12, ge=1)
     episode_spine_recall_primitive_target_max: int = Field(default=2, ge=0)
     episode_spine_excerpt_target_min: int = Field(default=12, ge=0)
-    episode_spine_excerpt_target_max: int = Field(default=18, ge=0)
-    excerpt_extraction_count_min: int = Field(default=78, ge=0)
-    excerpt_extraction_count_max: int = Field(default=130, ge=0)
-    excerpt_extraction_total_passage_cap: int = Field(default=400, ge=1)
+    episode_spine_excerpt_target_max: int = Field(default=20, ge=0)
+    excerpt_extraction_count_min: int = Field(default=140, ge=0)
+    excerpt_extraction_count_max: int = Field(default=220, ge=0)
+    excerpt_extraction_total_passage_cap: int = Field(default=250, ge=1)
+    excerpt_extraction_axis_passage_floor: int = Field(default=5, ge=0)
+    excerpt_extraction_axis_passage_ceiling_fraction: float = Field(
+        default=0.35, gt=0.0, le=1.0
+    )
     narrative_strategy_episode_count_min: int = Field(default=10, ge=1)
     narrative_strategy_episode_count_max: int = Field(default=16, ge=1)
-    min_episode_minutes: float = Field(default=90.0, gt=0.0)
-    max_episode_minutes: float = Field(default=120.0, gt=0.0)
+    min_episode_minutes: float = Field(default=108.0, gt=0.0)
+    max_episode_minutes: float = Field(default=126.0, gt=0.0)
     duration_shortfall_policy: Literal["warn"] = "warn"
-    scene_card_target_min: int = Field(default=30, ge=1)
-    scene_card_target_max: int = Field(default=38, ge=1)
+    scene_card_target_min: int = Field(default=36, ge=1)
+    scene_card_target_max: int = Field(default=42, ge=1)
     scene_card_target_policy: Literal["warn"] = "warn"
     scene_card_primitives_min: int = Field(default=1, ge=0)
     scene_card_primitives_max: int = Field(default=2, ge=1)
@@ -454,6 +480,32 @@ class PipelineConfig(StrictModel):
             )
         if self.max_episode_minutes < self.min_episode_minutes:
             raise ValueError("max_episode_minutes must be >= min_episode_minutes")
+        if self.dense_section_runtime_max_minutes < self.dense_section_runtime_min_minutes:
+            raise ValueError(
+                "dense_section_runtime_max_minutes must be >= dense_section_runtime_min_minutes"
+            )
+        if self.section_runtime_ceiling_minutes < self.section_runtime_floor_minutes:
+            raise ValueError(
+                "section_runtime_ceiling_minutes must be >= section_runtime_floor_minutes"
+            )
+        if (
+            self.section_runtime_ceiling_minutes
+            >= self.dense_section_runtime_min_minutes
+        ):
+            raise ValueError(
+                "section_runtime_ceiling_minutes must be strictly less than "
+                "dense_section_runtime_min_minutes (the dense band must not overlap "
+                "the normal band)"
+            )
+        if (
+            self.series_runtime_target_min_minutes is not None
+            and self.series_runtime_target_max_minutes is not None
+            and self.series_runtime_target_max_minutes
+            < self.series_runtime_target_min_minutes
+        ):
+            raise ValueError(
+                "series_runtime_target_max_minutes must be >= series_runtime_target_min_minutes"
+            )
         return self
 
 
@@ -488,8 +540,8 @@ def _scale_range_containing_span(
     return math.floor(lower_bound * multiplier), math.ceil(upper_bound * multiplier)
 
 
-FULL_AUTHORIAL_PASSAGE_TARGET_RANGE: tuple[int, int] = (18, 28)
-FULL_DENSE_SECTION_AUTHORIAL_PASSAGE_RANGE: tuple[int, int] = (3, 8)
+FULL_AUTHORIAL_PASSAGE_TARGET_RANGE: tuple[int, int] = (24, 32)
+FULL_DENSE_SECTION_AUTHORIAL_PASSAGE_RANGE: tuple[int, int] = (4, 10)
 
 
 def authorial_passage_target_range_for_mode(
@@ -541,12 +593,12 @@ def scene_job_budget_for_mode(mode: PodcastMode | str) -> dict[str, int]:
             "max_recap_build_scenes": 1,
         }
     return {
-        "total_min": 30,
-        "total_max": 38,
+        "total_min": 36,
+        "total_max": 42,
         "opening_min": 2,
         "opening_max": 3,
-        "build_min": 22,
-        "build_max": 28,
+        "build_min": 28,
+        "build_max": 32,
         "turn_min": 4,
         "turn_max": 5,
         "answer_min": 1,
@@ -562,7 +614,7 @@ def scene_discovery_candidate_range_for_mode(
 ) -> tuple[int, int]:
     if PodcastMode(mode) == PodcastMode.MINIFIED:
         return 18, 26
-    return 53, 79
+    return 78, 113
 
 
 def resolve_pipeline_config_for_mode(config: "PipelineConfig") -> "PipelineConfig":
@@ -584,12 +636,17 @@ def resolve_pipeline_config_for_mode(config: "PipelineConfig") -> "PipelineConfi
             "episode_spine_excerpt_target_max": 10,
             "excerpt_extraction_count_min": 32,
             "excerpt_extraction_count_max": 50,
-            "excerpt_extraction_total_passage_cap": 150,
+            "excerpt_extraction_total_passage_cap": 60,
+            "excerpt_extraction_axis_passage_floor": 3,
             "narrative_strategy_episode_count_min": 2,
             "narrative_strategy_episode_count_max": 4,
             "episode_writing_batch_count": 2,
-            "architecture_section_target_min": 7,
-            "architecture_section_target_max": 9,
+            "architecture_section_target_min": 6,
+            "architecture_section_target_max": 10,
+            "dense_section_runtime_min_minutes": 7.0,
+            "dense_section_runtime_max_minutes": 9.0,
+            "section_runtime_floor_minutes": 2.0,
+            "section_runtime_ceiling_minutes": 6.5,
             "min_episode_minutes": 54.0,
             "max_episode_minutes": 63.0,
             "scene_card_target_min": 18,
@@ -604,24 +661,29 @@ def resolve_pipeline_config_for_mode(config: "PipelineConfig") -> "PipelineConfi
             "synthesis_axis_min": 12,
             "synthesis_axis_max": 20,
             "episode_spine_core_primitive_target_min": 6,
-            "episode_spine_core_primitive_target_max": 8,
-            "episode_spine_support_primitive_target_min": 6,
-            "episode_spine_support_primitive_target_max": 9,
+            "episode_spine_core_primitive_target_max": 10,
+            "episode_spine_support_primitive_target_min": 8,
+            "episode_spine_support_primitive_target_max": 12,
             "episode_spine_recall_primitive_target_max": 2,
             "episode_spine_excerpt_target_min": 12,
-            "episode_spine_excerpt_target_max": 18,
-            "excerpt_extraction_count_min": 78,
-            "excerpt_extraction_count_max": 130,
-            "excerpt_extraction_total_passage_cap": 400,
+            "episode_spine_excerpt_target_max": 20,
+            "excerpt_extraction_count_min": 140,
+            "excerpt_extraction_count_max": 220,
+            "excerpt_extraction_total_passage_cap": 250,
+            "excerpt_extraction_axis_passage_floor": 5,
             "narrative_strategy_episode_count_min": 10,
             "narrative_strategy_episode_count_max": 16,
             "episode_writing_batch_count": 5,
-            "architecture_section_target_min": 11,
-            "architecture_section_target_max": 14,
-            "min_episode_minutes": 90.0,
-            "max_episode_minutes": 120.0,
-            "scene_card_target_min": 30,
-            "scene_card_target_max": 38,
+            "architecture_section_target_min": 12,
+            "architecture_section_target_max": 18,
+            "dense_section_runtime_min_minutes": 14.0,
+            "dense_section_runtime_max_minutes": 18.0,
+            "section_runtime_floor_minutes": 4.0,
+            "section_runtime_ceiling_minutes": 13.0,
+            "min_episode_minutes": 108.0,
+            "max_episode_minutes": 126.0,
+            "scene_card_target_min": 36,
+            "scene_card_target_max": 42,
             "synthesis_total_passage_cap": 750,
         }
     return config.model_copy(update=updates)
@@ -1382,13 +1444,13 @@ PRIMITIVE_SUBSTRATE_SET = set(PRIMITIVE_SUBSTRATES)
 PRIMITIVE_FUNCTION_SET = set(PRIMITIVE_FUNCTIONS)
 
 FULL_PRIMITIVE_SUBSTRATE_TARGET_RANGES: dict[str, tuple[int, int]] = {
-    "events": (87, 120),
-    "acts": (45, 59),
-    "actor_portraits": (18, 24),
-    "mechanisms": (37, 51),
-    "conditions": (21, 27),
-    "artifacts": (18, 24),
-    "readings": (11, 13),
+    "events": (100, 138),
+    "acts": (52, 68),
+    "actor_portraits": (21, 28),
+    "mechanisms": (43, 59),
+    "conditions": (24, 31),
+    "artifacts": (21, 28),
+    "readings": (13, 15),
 }
 MINIFIED_PRIMITIVE_SUBSTRATE_TARGET_RANGES: dict[str, tuple[int, int]] = {
     "events": (19, 27),
@@ -3478,6 +3540,13 @@ class ArchitectureSection(StrictModel):
     section_id: str = Field(min_length=1)
     purpose: SectionPurpose
     approx_runtime_minutes: float = Field(gt=0.0)
+    # Density gate (Change 1): is_dense=True allows the section to land in the
+    # dense band (e.g. 10-12 min full / 7-9 min minified) instead of the normal
+    # band. A dense section MUST carry a density_rationale and MUST NOT be the
+    # closing section. The architecture validator + density-budget validator
+    # enforce these jointly.
+    is_dense: bool = Field(default=False)
+    density_rationale: str = Field(default="", max_length=400)
     primitive_ids: list[str] = Field(default_factory=list, min_length=1)
     excerpt_ids: list[str] = Field(default_factory=list)
     open_mode: Literal[
@@ -3562,6 +3631,21 @@ class ArchitectureSection(StrictModel):
             seen_ids.add(passage.authorial_passage_id)
         return self
 
+    @model_validator(mode="after")
+    def validate_dense_section_constraints(self) -> "ArchitectureSection":
+        if self.is_dense:
+            if not self.density_rationale.strip():
+                raise ValueError(
+                    "is_dense=True requires a non-empty density_rationale "
+                    f"(section_id={self.section_id})"
+                )
+            if self.purpose == SectionPurpose.CLOSING:
+                raise ValueError(
+                    "closing-purpose section cannot be dense "
+                    f"(section_id={self.section_id})"
+                )
+        return self
+
 
 class EpisodeArchitecture(StrictModel):
     episode_number: int = Field(ge=1)
@@ -3571,8 +3655,11 @@ class EpisodeArchitecture(StrictModel):
     promised_beat_decisions: list[PromisedBeatDecisionRecord] = Field(
         default_factory=list
     )
+    # Hard schema bounds widened (Change 1). Business policy (preferred 12-18
+    # full / 6-10 minified) is enforced softly via
+    # validate_episode_architecture_targets using project config.
     sections: list[ArchitectureSection] = Field(
-        default_factory=list, min_length=6, max_length=13
+        default_factory=list, min_length=4, max_length=18
     )
     architecture_notes: list[str] = Field(default_factory=list)
 
@@ -3702,6 +3789,236 @@ def validate_episode_architecture_targets(
             "sections must contain "
             f"{section_target_min}-{section_target_max} items"
         )
+
+
+def validate_density_budget(
+    architecture: EpisodeArchitecture,
+    *,
+    max_dense_sections: int,
+    dense_runtime_range: tuple[float, float],
+    nondense_runtime_ceiling: float,
+    section_runtime_floor: float,
+) -> list[str]:
+    """Return warnings for density-budget violations. Never raises.
+
+    Caller decides whether to feed warnings back as architecture_feedback
+    (enforce mode) or just log them (warn mode).
+    """
+    warnings: list[str] = []
+    dense_sections = [s for s in architecture.sections if s.is_dense]
+    if len(dense_sections) > max_dense_sections:
+        warnings.append(
+            f"too_many_dense_sections: {len(dense_sections)} > {max_dense_sections} "
+            f"(dense_ids={[s.section_id for s in dense_sections]})"
+        )
+    lo, hi = dense_runtime_range
+    for s in dense_sections:
+        if not (lo <= s.approx_runtime_minutes <= hi):
+            warnings.append(
+                f"dense_section_runtime_out_of_band: {s.section_id} "
+                f"@ {s.approx_runtime_minutes} min, expected [{lo}, {hi}]"
+            )
+    for s in architecture.sections:
+        if s.is_dense or s.purpose == SectionPurpose.CLOSING:
+            continue
+        if s.approx_runtime_minutes > nondense_runtime_ceiling:
+            warnings.append(
+                f"nondense_section_above_ceiling: {s.section_id} "
+                f"@ {s.approx_runtime_minutes} > {nondense_runtime_ceiling}"
+            )
+        if s.approx_runtime_minutes < section_runtime_floor:
+            warnings.append(
+                f"section_below_floor: {s.section_id} "
+                f"@ {s.approx_runtime_minutes} < {section_runtime_floor}"
+            )
+    return warnings
+
+
+def validate_episode_runtime_envelope(
+    architecture: EpisodeArchitecture,
+    *,
+    min_episode_minutes: float,
+    max_episode_minutes: float,
+    policy: Literal["warn", "enforce"] = "warn",
+) -> list[str]:
+    """Return warnings for episode runtime envelope violations.
+
+    In ``enforce`` mode, raises ``ValueError`` joining the messages.
+    """
+    total = architecture.runtime_minutes
+    msgs: list[str] = []
+    if total < min_episode_minutes:
+        msgs.append(
+            f"episode_runtime_below_min: {total} < {min_episode_minutes}"
+        )
+    if total > max_episode_minutes:
+        msgs.append(
+            f"episode_runtime_above_max: {total} > {max_episode_minutes}"
+        )
+    if msgs and policy == "enforce":
+        raise ValueError("; ".join(msgs))
+    return msgs
+
+
+def validate_series_runtime_budget(
+    architectures: list[EpisodeArchitecture],
+    *,
+    series_min: float | None,
+    series_max: float | None,
+    policy: Literal["warn", "enforce"] = "warn",
+) -> list[str]:
+    """Return warnings for series-level runtime budget violations.
+
+    In ``enforce`` mode, raises ``ValueError`` joining the messages.
+    """
+    total = sum(a.runtime_minutes for a in architectures)
+    msgs: list[str] = []
+    if series_min is not None and total < series_min:
+        msgs.append(f"series_runtime_below_min: {total} < {series_min}")
+    if series_max is not None and total > series_max:
+        msgs.append(f"series_runtime_above_max: {total} > {series_max}")
+    if msgs and policy == "enforce":
+        raise ValueError("; ".join(msgs))
+    return msgs
+
+
+def derive_section_scene_targets(
+    architecture: EpisodeArchitecture,
+    *,
+    mode: "PodcastMode | str",
+    scene_job_budget: dict[str, int],
+) -> dict[str, dict[str, int | bool]]:
+    """Allocate scene-card targets per section, proportional to section runtime.
+
+    Returns ``{section_id: {"scenes_min": int, "scenes_max": int,
+    "is_dense": bool}}``.
+
+    Algorithm:
+      1. Total scene budget is ``scene_job_budget["total_min"]..total_max"]``.
+      2. Reserve fixed jobs: opening (``opening_min``), answer (1), close (1).
+      3. Distribute the remaining budget across non-fixed sections proportional
+         to ``approx_runtime_minutes``.
+      4. Dense sections get a +1 floor bonus (so their min is at least the
+         proportional share +1).
+      5. Greedy-round so the total min/max stays within the scene_job_budget
+         total bounds.
+    """
+    sections = list(architecture.sections)
+    if not sections:
+        return {}
+
+    total_min = int(scene_job_budget.get("total_min", len(sections)))
+    total_max = int(scene_job_budget.get("total_max", total_min))
+    opening_min = int(scene_job_budget.get("opening_min", 1))
+
+    # Classify sections by progression stage / purpose to know which get the
+    # fixed-job reserve.
+    fixed_reserves: dict[str, int] = {}
+    flex_sections: list[ArchitectureSection] = []
+    for s in sections:
+        if s.purpose == SectionPurpose.OPENING:
+            fixed_reserves[s.section_id] = opening_min
+        elif s.section_progression.stage == ProgressionStage.ANSWER:
+            fixed_reserves[s.section_id] = 1
+        elif s.section_progression.stage == ProgressionStage.CLOSE:
+            fixed_reserves[s.section_id] = 1
+        else:
+            flex_sections.append(s)
+
+    fixed_total = sum(fixed_reserves.values())
+    remaining_min = max(0, total_min - fixed_total)
+    remaining_max = max(0, total_max - fixed_total)
+    flex_runtime_total = sum(s.approx_runtime_minutes for s in flex_sections)
+
+    result: dict[str, dict[str, int | bool]] = {}
+    # Seed with fixed reserves first.
+    for section_id, reserve in fixed_reserves.items():
+        section = next(s for s in sections if s.section_id == section_id)
+        # Opening sections may want extra scenes if there are multiple opening
+        # entries (opening_max in the budget); we use the budget's opening_max
+        # as the upper bound for opening, and the fixed reserve as the min.
+        if section.purpose == SectionPurpose.OPENING:
+            opening_max = int(scene_job_budget.get("opening_max", reserve))
+            result[section_id] = {
+                "scenes_min": reserve,
+                "scenes_max": max(reserve, opening_max),
+                "is_dense": section.is_dense,
+            }
+        else:
+            result[section_id] = {
+                "scenes_min": reserve,
+                "scenes_max": reserve,
+                "is_dense": section.is_dense,
+            }
+
+    # Distribute remaining budget proportionally across flex sections.
+    if flex_sections and flex_runtime_total > 0 and remaining_max > 0:
+        # First pass: proportional floor allocations.
+        shares: list[tuple[ArchitectureSection, float]] = []
+        for section in flex_sections:
+            proportion = section.approx_runtime_minutes / flex_runtime_total
+            share_min = proportion * remaining_min
+            shares.append((section, share_min))
+
+        # Floor each share, then greedy-distribute the remainder.
+        floored = [(s, max(1, int(share))) for s, share in shares]
+        allocated_min = sum(amt for _, amt in floored)
+        leftover_min = max(0, remaining_min - allocated_min)
+        # Sort by fractional remainder descending; dense sections also get +1.
+        fractional = sorted(
+            ((s, shares[i][1] - floored[i][1]) for i, (s, _) in enumerate(floored)),
+            key=lambda x: x[1],
+            reverse=True,
+        )
+        bonus: dict[str, int] = {s.section_id: 0 for s, _ in floored}
+        for s, _ in fractional:
+            if leftover_min <= 0:
+                break
+            bonus[s.section_id] += 1
+            leftover_min -= 1
+
+        # Dense sections get a +1 floor bonus.
+        for s, _ in floored:
+            if s.is_dense:
+                bonus[s.section_id] += 1
+
+        # Compute max budget similarly.
+        max_shares: list[tuple[ArchitectureSection, float]] = []
+        for section in flex_sections:
+            proportion = section.approx_runtime_minutes / flex_runtime_total
+            share_max = proportion * remaining_max
+            max_shares.append((section, share_max))
+        max_floored = [(s, max(1, int(share))) for s, share in max_shares]
+        max_allocated = sum(amt for _, amt in max_floored)
+        max_leftover = max(0, remaining_max - max_allocated)
+        max_fractional = sorted(
+            (
+                (s, max_shares[i][1] - max_floored[i][1])
+                for i, (s, _) in enumerate(max_floored)
+            ),
+            key=lambda x: x[1],
+            reverse=True,
+        )
+        max_bonus: dict[str, int] = {s.section_id: 0 for s, _ in max_floored}
+        for s, _ in max_fractional:
+            if max_leftover <= 0:
+                break
+            max_bonus[s.section_id] += 1
+            max_leftover -= 1
+
+        for (section, base_min), (_, base_max) in zip(floored, max_floored):
+            min_target = base_min + bonus[section.section_id]
+            max_target = max(min_target, base_max + max_bonus[section.section_id])
+            # Dense bonus also widens max ceiling.
+            if section.is_dense:
+                max_target += 1
+            result[section.section_id] = {
+                "scenes_min": min_target,
+                "scenes_max": max_target,
+                "is_dense": section.is_dense,
+            }
+
+    return result
 
 
 class SceneActor(StrictModel):
@@ -4138,55 +4455,122 @@ class EpisodeScript(StrictModel):
     estimated_duration_seconds: int = Field(default=0, ge=0)
 
 
-class ClaimAssessment(StrictModel):
-    text_unit_id: str = Field(min_length=1)
-    claim_text: str
-    cited_passage_id: str
-    status: Literal["SUPPORTED", "PARTIALLY_SUPPORTED", "UNSUPPORTED", "FABRICATED"]
-    explanation: str = ""
+# ---------------------------------------------------------------------------
+# 3.6 Quality judge models (Change 3)
+# ---------------------------------------------------------------------------
 
 
-class CrossBookClaimAssessment(StrictModel):
-    text_unit_id: str = Field(min_length=1)
-    claim_text: str
-    book_ids: list[str] = Field(default_factory=list)
-    passage_ids: list[str] = Field(default_factory=list)
-    comparison_valid: bool = True
-    failure_reason: str | None = None
+class QualityCriterion(str, Enum):
+    NARRATIVE = "narrative_quality"
+    ENGAGEMENT = "listener_engagement"
+    PODCAST_FIDELITY = "podcast_fidelity"
+    PROSE_POLISH = "prose_polish"
+    FRAME_DISCIPLINE = "frame_discipline"
+    EXCERPT_STAGING = "excerpt_staging"
 
 
-class FairnessFlag(StrictModel):
-    text_unit_id: str = Field(min_length=1)
-    book_id: str
-    claim_text: str
-    issue: Literal["straw_man", "oversimplified", "out_of_context", "false_equivalence"]
-    suggestion: str = ""
+class QualityCriterionScore(StrictModel):
+    criterion: QualityCriterion
+    score: int = Field(ge=0, le=100)
+    rationale: str = Field(min_length=1, max_length=600)
+    weaknesses: list[str] = Field(default_factory=list, max_length=4)
 
 
-class GroundingReport(StrictModel):
+class SectionQualityScore(StrictModel):
+    section_id: str = Field(min_length=1)
+    overall_score: int = Field(ge=0, le=100)
+    criterion_scores: list[QualityCriterionScore] = Field(min_length=6, max_length=6)
+    weakest_criterion: QualityCriterion
+    remediation_hints: list[str] = Field(default_factory=list, max_length=4)
+    tic_families_detected: list[str] = Field(default_factory=list, max_length=8)
+    second_ending_detected: bool = False
+    thesis_at_open_or_close_detected: bool = False
+
+    @model_validator(mode="after")
+    def _validate_criteria_complete_and_weakest(self) -> "SectionQualityScore":
+        seen = {cs.criterion for cs in self.criterion_scores}
+        if seen != set(QualityCriterion):
+            raise ValueError(
+                "section criterion_scores must cover all six QualityCriterion values"
+            )
+        # weakest_criterion is AUTO-CORRECTED, never rejected. The LLM's
+        # per-criterion numerical scoring is approximate; its semantic
+        # judgment of "weakest" is more confident. When the LLM's pick is
+        # off by 1-2 points from the actual minimum (the common case), we
+        # silently overwrite the field with the actual-minimum criterion so
+        # style_audit's downstream routing tracks the numbers. The LLM's
+        # contextual reasoning about which weakness to address lives in
+        # remediation_hints, which is preserved.
+        #
+        # When the LLM's pick is already tied at the minimum, we keep it —
+        # ties are semantically equivalent and the LLM's choice may carry
+        # useful context about which tied-criterion is most actionable.
+        min_score = min(cs.score for cs in self.criterion_scores)
+        llm_score = next(
+            cs.score
+            for cs in self.criterion_scores
+            if cs.criterion == self.weakest_criterion
+        )
+        if llm_score != min_score:
+            corrected = next(
+                cs.criterion
+                for cs in self.criterion_scores
+                if cs.score == min_score
+            )
+            object.__setattr__(self, "weakest_criterion", corrected)
+        return self
+
+
+class EpisodeQualityScore(StrictModel):
     episode_number: int = Field(ge=1)
-    claim_assessments: list[ClaimAssessment] = Field(default_factory=list)
-    cross_book_claims: list[CrossBookClaimAssessment] = Field(default_factory=list)
-    overall_status: Literal["PASSED", "NEEDS_REPAIR", "FAILED"] = "PASSED"
-    grounding_score: float = Field(default=1.0, ge=0.0, le=1.0)
-    attribution_accuracy: float = Field(default=1.0, ge=0.0, le=1.0)
-    fairness_flags: list[FairnessFlag] = Field(default_factory=list)
+    overall_score: int = Field(ge=0, le=100)
+    criterion_scores: list[QualityCriterionScore] = Field(min_length=6, max_length=6)
+    section_scores: list[SectionQualityScore] = Field(default_factory=list)
+    weakest_sections: list[str] = Field(default_factory=list, max_length=3)
+    judge_model_name: str = Field(default="")
+    judge_temperature: float = Field(default=0.0, ge=0.0, le=2.0)
+
+    @model_validator(mode="after")
+    def _validate_episode_score(self) -> "EpisodeQualityScore":
+        seen = {cs.criterion for cs in self.criterion_scores}
+        if seen != set(QualityCriterion):
+            raise ValueError(
+                "episode criterion_scores must cover all six QualityCriterion values"
+            )
+        section_ids = {s.section_id for s in self.section_scores}
+        for target in self.weakest_sections:
+            if target not in section_ids:
+                raise ValueError(
+                    f"weakest_sections must reference scored sections; {target!r} not found"
+                )
+        # Overall must equal the rounded mean of criterion scores (allow ±1 for
+        # rounding flavor).
+        avg = round(sum(cs.score for cs in self.criterion_scores) / 6)
+        if abs(self.overall_score - avg) > 1:
+            raise ValueError(
+                f"overall_score {self.overall_score} must equal the rounded mean "
+                f"of criterion_scores ({avg})"
+            )
+        return self
 
 
-class SegmentDiff(StrictModel):
-    text_unit_id: str
-    before: str
-    after: str
+# ---------------------------------------------------------------------------
+# 3.6 Series tic state
+# ---------------------------------------------------------------------------
 
 
-class RepairResult(StrictModel):
-    attempt_number: int = Field(ge=1)
-    original_script: EpisodeScript
-    repaired_script: EpisodeScript
-    claims_repaired: int = Field(default=0, ge=0)
-    remaining_failures: int = Field(default=0, ge=0)
-    diffs: list[SegmentDiff] = Field(default_factory=list)
-    status: Literal["RESOLVED", "IMPROVED", "NO_PROGRESS"] = "NO_PROGRESS"
+class SeriesTicEpisodeEntry(StrictModel):
+    episode_number: int = Field(ge=1)
+    family_counts: dict[str, int] = Field(default_factory=dict)
+    surface_phrases: list[str] = Field(default_factory=list)
+    timestamp: str = Field(default="")
+
+
+class SeriesTicState(StrictModel):
+    project_id: str
+    cumulative_family_counts: dict[str, int] = Field(default_factory=dict)
+    per_episode: list[SeriesTicEpisodeEntry] = Field(default_factory=list)
+    schema_version: int = 1
 
 
 # ---------------------------------------------------------------------------
@@ -4225,12 +4609,69 @@ class SonicCue(StrictModel):
     audible_detail: str = ""
 
 
+# Change 4: SpokenSegment + new SpokenSection (segment-aware oral rewriter
+# output). The old single-text SpokenSection is gone; the new schema requires
+# at least one SpokenSegment per section. `text` is exposed as a derived
+# property so legacy consumers keep working.
+
+
+class SpokenRegister(str, Enum):
+    NEUTRAL = "neutral"
+    URGENT = "urgent"
+    REFLECTIVE = "reflective"
+    FORENSIC = "forensic"
+    ELEGIAC = "elegiac"
+    ANALYTIC = "analytic"
+
+
+class SpokenSpeakerRole(str, Enum):
+    PRIMARY = "primary"  # narrator/host voice
+    ACTOR = "actor"      # voiced historical excerpt
+
+
+class SpokenSegment(StrictModel):
+    segment_id: str = Field(min_length=1)
+    text: str = Field(min_length=1)
+    speaker_role: SpokenSpeakerRole = SpokenSpeakerRole.PRIMARY
+    # When speaker_role=ACTOR, speaker_id must be set and should resolve in
+    # PipelineConfig.actor_voice_catalog. When PRIMARY, speaker_id may be None
+    # and the segment uses the episode-default voice.
+    speaker_id: str | None = None
+    tonal_register: SpokenRegister = SpokenRegister.NEUTRAL
+    delivery_instructions: str | None = Field(default=None, max_length=280)
+    quotability_basis_excerpt_id: str | None = None
+    speech_hints: SpeechHints = Field(default_factory=SpeechHints)
+
+    @model_validator(mode="after")
+    def _validate_actor_constraints(self) -> "SpokenSegment":
+        if self.speaker_role == SpokenSpeakerRole.ACTOR:
+            if self.quotability_basis_excerpt_id is None:
+                raise ValueError(
+                    "actor segments must cite quotability_basis_excerpt_id "
+                    f"(segment_id={self.segment_id})"
+                )
+            if self.speaker_id is None:
+                raise ValueError(
+                    "actor segments must set speaker_id "
+                    f"(segment_id={self.segment_id})"
+                )
+        return self
+
+
 class SpokenSection(StrictModel):
     section_id: str
-    text: str
+    segments: list[SpokenSegment] = Field(min_length=1)
+    tonal_register: SpokenRegister = SpokenRegister.NEUTRAL
+    section_delivery_instructions: str | None = Field(default=None, max_length=560)
     speech_hints: SpeechHints = Field(default_factory=SpeechHints)
     section_sonic_plan: SectionSonicPlan | None = None
     sonic_cues: list[SonicCue] = Field(default_factory=list)
+
+    @property
+    def text(self) -> str:
+        """Derived from segments; preserved for downstream readers that join
+        the section's prose without caring about segment boundaries."""
+        return "\n\n".join(s.text for s in self.segments)
 
 
 class SpokenScript(StrictModel):

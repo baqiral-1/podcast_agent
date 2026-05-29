@@ -226,12 +226,12 @@ def test_scene_job_budget_defaults_are_locked() -> None:
     }
     full_budget = scene_job_budget_for_mode(PodcastMode.FULL)
     assert full_budget == {
-        "total_min": 30,
-        "total_max": 38,
+        "total_min": 36,
+        "total_max": 42,
         "opening_min": 2,
         "opening_max": 3,
-        "build_min": 22,
-        "build_max": 28,
+        "build_min": 28,
+        "build_max": 32,
         "turn_min": 4,
         "turn_max": 5,
         "answer_min": 1,
@@ -259,8 +259,8 @@ def test_scene_job_budget_defaults_are_locked() -> None:
         PipelineConfig(podcast_mode=PodcastMode.MINIFIED)
     )
     assert (full_config.scene_card_target_min, full_config.scene_card_target_max) == (
-        30,
-        38,
+        36,
+        42,
     )
     assert (
         minified_config.scene_card_target_min,
@@ -353,7 +353,7 @@ def test_scene_discovery_agent_builds_richer_mode_specific_instructions() -> Non
     assert "visible consequence, irreversible turn, or immediate aftermath" in minified_instructions
     assert "SELF-CHECK BEFORE RETURNING" in minified_instructions
     assert "This is a `full` run." in full_instructions
-    assert "Return 53–79 candidates." in full_instructions
+    assert "Return 78–113 candidates." in full_instructions
 
 
 def test_scene_discovery_agent_prepare_retry_payload_adds_role_feedback() -> None:

@@ -76,7 +76,7 @@ class LLMConfig(BaseModel):
         default_factory=lambda: os.getenv("LLM_PROVIDER", "anthropic")
     )
     model_name: str = Field(
-        default_factory=lambda: os.getenv("LLM_MODEL_NAME", "claude-opus-4-7")
+        default_factory=lambda: os.getenv("LLM_MODEL_NAME", "claude-opus-4-8")
     )
     model_overrides: dict[str, str] = Field(
         default_factory=dict,
@@ -172,7 +172,7 @@ class LLMConfig(BaseModel):
             "episode_architecture": 30000,
             "episode_planning": 30000,
             "episode_writing": 30000,
-            "style_audit": 16000,
+            "style_audit": 30000,
             "spoken_delivery": 30000,
             "theme_decomposition": 30000,
             "scene_discovery": 30000,
@@ -231,115 +231,118 @@ class LLMConfig(BaseModel):
                 concurrency_limit=26,
             ),
             "primitive_substrate_extraction": AgentConfig(
-                model_name="claude-opus-4-7",
+                model_name="claude-opus-4-8",
                 temperature=0.8,
                 max_retry_attempts=2,
                 concurrency_limit=3,
             ),
             "excerpt_extraction": AgentConfig(
-                model_name="claude-opus-4-7",
+                model_name="claude-opus-4-8",
                 temperature=0.8,
                 max_retry_attempts=2,
                 concurrency_limit=3,
             ),
             "primitive_function_tagging_events": AgentConfig(
-                model_name="claude-opus-4-7",
+                model_name="claude-opus-4-8",
                 temperature=0.4,
                 max_retry_attempts=2,
                 concurrency_limit=8,
             ),
             "primitive_function_tagging_acts": AgentConfig(
-                model_name="claude-opus-4-7",
+                model_name="claude-opus-4-8",
                 temperature=0.4,
                 max_retry_attempts=2,
                 concurrency_limit=8,
             ),
             "primitive_function_tagging_actor_portraits": AgentConfig(
-                model_name="claude-opus-4-7",
+                model_name="claude-opus-4-8",
                 temperature=0.4,
                 max_retry_attempts=2,
                 concurrency_limit=8,
             ),
             "primitive_function_tagging_mechanisms": AgentConfig(
-                model_name="claude-opus-4-7",
+                model_name="claude-opus-4-8",
                 temperature=0.4,
                 max_retry_attempts=2,
                 concurrency_limit=8,
             ),
             "primitive_function_tagging_conditions": AgentConfig(
-                model_name="claude-opus-4-7",
+                model_name="claude-opus-4-8",
                 temperature=0.4,
                 max_retry_attempts=2,
                 concurrency_limit=8,
             ),
             "primitive_function_tagging_artifacts": AgentConfig(
-                model_name="claude-opus-4-7",
+                model_name="claude-opus-4-8",
                 temperature=0.4,
                 max_retry_attempts=2,
                 concurrency_limit=8,
             ),
             "primitive_function_tagging_readings": AgentConfig(
-                model_name="claude-opus-4-7",
+                model_name="claude-opus-4-8",
                 temperature=0.4,
                 max_retry_attempts=2,
                 concurrency_limit=8,
             ),
             "synthesis_primitives": AgentConfig(
-                model_name="claude-opus-4-7",
+                model_name="claude-opus-4-8",
                 temperature=0.8,
                 max_retry_attempts=2,
                 concurrency_limit=3,
             ),
             "narrative_strategy_skeleton": AgentConfig(
-                model_name="claude-opus-4-7",
+                model_name="claude-opus-4-8",
                 temperature=0.5,
                 max_retry_attempts=2,
                 concurrency_limit=6,
             ),
             "narrative_strategy_enrichment": AgentConfig(
-                model_name="claude-opus-4-7",
+                model_name="claude-opus-4-8",
                 temperature=0.5,
                 max_retry_attempts=2,
                 concurrency_limit=6,
             ),
             "episode_architecture": AgentConfig(
-                model_name="claude-opus-4-7",
+                model_name="claude-opus-4-8",
                 temperature=0.5,
                 max_retry_attempts=3,
                 concurrency_limit=6,
             ),
             "episode_planning": AgentConfig(
-                model_name="claude-opus-4-7",
+                model_name="claude-opus-4-8",
                 temperature=0.5,
                 max_retry_attempts=3,
                 concurrency_limit=9,
             ),
             "episode_writing": AgentConfig(
-                model_name="claude-opus-4-7",
+                model_name="claude-opus-4-8",
                 temperature=0.6,
                 max_retry_attempts=2,
                 concurrency_limit=9,
             ),
+            # Style_audit moved to Opus 4.7 to support broad-rewrite scope.
+            # With the redraft loop removed, style_audit is the single
+            # remediation stage — it needs the depth to do structural
+            # rewrites (paragraph reorder, opening replacement, etc.) on
+            # top of its existing tic-removal + frame-tightening work.
             "style_audit": AgentConfig(
-                model_name="claude-sonnet-4-6",
-                temperature=0.2,
-                max_retry_attempts=2,
-                concurrency_limit=9,
-            ),
-            "grounding_validation": AgentConfig(
-                model_name="claude-sonnet-4-6",
-                temperature=0.2,
-                max_retry_attempts=2,
-                concurrency_limit=6,
-            ),
-            "repair": AgentConfig(
-                model_name="claude-sonnet-4-6",
+                model_name="claude-opus-4-8",
                 temperature=0.3,
+                max_retry_attempts=2,
+                concurrency_limit=4,
+            ),
+            # Change 3: grounding_validation + repair removed.
+            # quality_judge replaces them as the post-writing diagnosis
+            # gate. Opus + low temperature because scoring the rubric
+            # demands the same comprehension depth as writing.
+            "quality_judge": AgentConfig(
+                model_name="claude-opus-4-8",
+                temperature=0.2,
                 max_retry_attempts=2,
                 concurrency_limit=6,
             ),
             "spoken_delivery": AgentConfig(
-                model_name="claude-opus-4-7",
+                model_name="claude-opus-4-8",
                 temperature=0.7,
                 max_retry_attempts=2,
                 concurrency_limit=9,
@@ -548,10 +551,10 @@ class PipelineRuntimeConfig(BaseModel):
     synthesis_quality_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
     passage_extraction_concurrency: int = Field(default=16, ge=1)
     spoken_chunk_max_words: int = Field(default=250, ge=50)
-    architecture_section_target_min: int = Field(default=11, ge=1)
-    architecture_section_target_max: int = Field(default=14, ge=1)
-    scene_card_target_min: int = Field(default=30, ge=1)
-    scene_card_target_max: int = Field(default=38, ge=1)
+    architecture_section_target_min: int = Field(default=12, ge=1)
+    architecture_section_target_max: int = Field(default=18, ge=1)
+    scene_card_target_min: int = Field(default=36, ge=1)
+    scene_card_target_max: int = Field(default=42, ge=1)
 
     @model_validator(mode="after")
     def validate_retrieval_budget_bounds(self) -> PipelineRuntimeConfig:

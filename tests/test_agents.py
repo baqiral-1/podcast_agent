@@ -24,12 +24,11 @@ from podcast_agent.agents.narrative_strategy_skeleton import (
 from podcast_agent.agents.passage_extraction import PassageExtractionAgent
 from podcast_agent.agents.planning import EpisodePlanningAgent
 from podcast_agent.agents.primitive_function_tagging import PrimitiveFunctionTaggingAgent
-from podcast_agent.agents.repair import RepairAgent
+from podcast_agent.agents.quality_judge import QualityJudgeAgent
 from podcast_agent.agents.spoken_delivery_agent import SpokenDeliveryAgent
 from podcast_agent.agents.style_audit import StyleAuditAgent
 from podcast_agent.agents.synthesis_primitives import SynthesisPrimitivesAgent
 from podcast_agent.agents.theme_decomposition import ThemeDecompositionAgent
-from podcast_agent.agents.validation import GroundingValidationAgent
 from podcast_agent.agents.writing import WritingAgent, WritingAgentNoCitations
 from podcast_agent.langchain.runnables import (
     RetryableGenerationError,
@@ -374,7 +373,7 @@ class TestRedesignedAgents:
         assert "`promised_beats`" in instructions
         assert "Do NOT include:" in instructions
         assert "`narrative_agenda`" in instructions
-        assert "`core_primitive_ids` must contain 8–11 primitives." in instructions
+        assert "`core_primitive_ids` must contain 6–10 primitives." in instructions
         assert "`negative_scope -> scope`" not in instructions
         assert "COMPACT TRANSPORT KEYS" not in instructions
         assert "prefer canonical field names" not in instructions
@@ -891,17 +890,15 @@ class TestRedesignedAgents:
                     "sections": [
                         {
                             "section_id": "section_1",
-                            "text": "Spoken delivery draft.",
-                            "speech_hints": {
-                                "style": "neutral",
-                                "intensity": "none",
-                                "pace": "normal",
-                                "pause_before_ms": 300,
-                                "pause_after_ms": 300,
-                                "pronunciation_hints": [],
-                                "emphasis_targets": [],
-                                "render_strategy": "plain",
-                            },
+                            "segments": [
+                                {
+                                    "segment_id": "section_1_seg1",
+                                    "text": "Spoken delivery draft.",
+                                    "speaker_role": "primary",
+                                    "tonal_register": "neutral",
+                                }
+                            ],
+                            "tonal_register": "neutral",
                         }
                     ]
                 }
@@ -979,7 +976,7 @@ class TestRedesignedAgents:
         assert payload["actor_metadata"]["actors"][0]["actor_id"] == "actor_1"
         assert payload["architecture_feedback"]["issue"] == "missing_turn"
         assert (
-            "Convert the episode spine into 11–14 binding sections."
+            "Convert the episode spine into 12–18 binding sections."
             in instructions
         )
         assert (
@@ -989,7 +986,7 @@ class TestRedesignedAgents:
         assert "approx_runtime_minutes` at or below 2.0" in instructions
         assert "Do not build a second ending." in instructions
         assert (
-            "Target 6-10 support-primitive placements across sections."
+            "Target 8-12 support-primitive placements across sections."
             in instructions
         )
         assert (
@@ -997,7 +994,7 @@ class TestRedesignedAgents:
             in instructions
         )
         assert (
-            "Ensure the sum of `sections[].approx_runtime_minutes` lands within the project's allowed episode runtime range."
+            "RUNTIME AND DENSITY BUDGET"
             in instructions
         )
         assert (
@@ -1016,7 +1013,7 @@ class TestRedesignedAgents:
         assert "`host_mystery_moves`" in instructions
         assert "`host_assumption_moves`" in instructions
         assert "`host_theory_moves`" in instructions
-        assert "18–28 total `authorial_passages`" in instructions
+        assert "24–32 total `authorial_passages`" in instructions
         assert "are not scene cards, scene counts" in instructions
         assert "The first `must_stage_beats` item should usually open from the section" in instructions
         assert "`section_progression`" in instructions
@@ -1168,7 +1165,7 @@ class TestRedesignedAgents:
         assert "Ordinary sections should usually contain at most one `implication` card." in instructions
         assert "When the real job is \"what changed because of this,\" prefer `fallout`." in instructions
         assert "Sections that open in `context_setup` or `actor_setup` should usually pick up a concrete event, confrontation, or consequence beat inside the same section." in instructions
-        assert "Target 30–38 scene cards for this episode." in agent.instructions
+        assert "Target 36–42 scene cards for this episode." in agent.instructions
 
     def test_episode_planning_agent_build_llm_payload_keeps_canonical_keys(self):
         agent = EpisodePlanningAgent(_mock_llm())
@@ -1576,26 +1573,26 @@ class TestRedesignedAgents:
 
         assert response.prose_sections[0].scene_card_ids == ["scene_1"]
 
-    def test_grounding_validation_agent_payload(self):
-        agent = GroundingValidationAgent(_mock_llm())
+    def test_quality_judge_agent_payload(self):
+        agent = QualityJudgeAgent(_mock_llm())
         payload = agent.build_payload(
             episode_number=1,
-            script={"prose_sections": []},
-            passages={"p1": {"passage_id": "p1"}},
+            title="Test Episode",
+            framing={"opening_image": "x", "threat_or_unresolved_action": "y",
+                     "opening_question": "z", "handoff_scene_card_id": "sc01"},
+            prose_sections=[{"section_id": "s1", "text": "hello"}],
+            architecture_summary=[{
+                "section_id": "s1", "purpose": "opening", "stage": "setup",
+                "is_dense": False, "approx_runtime_minutes": 5.0,
+                "must_stage_beats": [],
+            }],
+            excerpt_staging=[],
+            rubric_thresholds={"criterion_floor_for_in_place_fixes": 70},
+            style_audit_lint_flags={"tic_counts": {}, "tic_locations": {}, "by_section": {}},
         )
-        assert agent.schema_name == "grounding_validation"
-        assert payload["cited_passages"]["p1"]["passage_id"] == "p1"
-        assert "`cited_passages`" in agent.instructions
-
-    def test_repair_agent_payload(self):
-        agent = RepairAgent(_mock_llm())
-        payload = agent.build_payload(
-            failing_sections=[{"section_id": "section_1"}],
-            failure_reasons=[{"text_unit_id": "section_1", "status": "UNSUPPORTED"}],
-            passages={"p1": {"passage_id": "p1"}},
-        )
-        assert agent.schema_name == "repair"
-        assert payload["failure_reasons"][0]["text_unit_id"] == "section_1"
+        assert agent.schema_name == "quality_judge"
+        assert payload["episode_number"] == 1
+        assert payload["thresholds"]["criterion_floor_for_in_place_fixes"] == 70
 
     def test_spoken_delivery_agent_payload(self):
         agent = SpokenDeliveryAgent(_mock_llm())
@@ -1613,103 +1610,46 @@ class TestRedesignedAgents:
                         "section_id": "section_1",
                         "movement_goal": "continue",
                         "scene_card_ids": ["scene_1"],
-                        "host_moves": [
-                            {
-                                "scene_id": "scene_1",
-                                "host_moves": {
-                                    "open": [],
-                                    "pivot": [],
-                                    "close": [
-                                        {
-                                            "move_type": "callback",
-                                            "note": "Carry residue.",
-                                        }
-                                    ],
-                                },
-                            }
-                        ],
                         "text": "Section text",
                     }
                 ],
             },
             max_words_per_segment=250,
             tts_provider="openai",
+            tts_provider_capabilities={
+                "provider": "openai",
+                "supports_per_segment_instructions": False,
+                "voice_catalog": ["fable", "onyx"],
+            },
+            quotability_marks=[{"section_id": "section_1", "excerpt_id": "x1"}],
             host_policy={"target_full_phase_scene_coverage_target": 0.8},
             continuity_contract_pre={"recap_items": [{"item_id": "carry_1"}]},
             continuity_contract_post={"must_leave_live": [{"item_id": "carry_2"}]},
+            actor_voice_catalog={"actor_male_1": "onyx"},
         )
+        # Change 4 contract: agent schema, payload shape, prompt content
         assert agent.schema_name == "spoken_delivery"
         assert payload["max_words_per_segment"] == 250
         assert payload["host_policy"]["target_full_phase_scene_coverage_target"] == 0.8
         assert payload["continuity_contract_pre"]["recap_items"][0]["item_id"] == "carry_1"
         assert payload["continuity_contract_post"]["must_leave_live"][0]["item_id"] == "carry_2"
+        assert payload["tts_provider_capabilities"]["supports_per_segment_instructions"] is False
+        assert payload["quotability_marks"][0]["excerpt_id"] == "x1"
+        assert payload["actor_voice_catalog"]["actor_male_1"] == "onyx"
+        # Oral rewriter prompt mentions its core mandates
         assert "You are the `oral_rewriter` stage" in agent.instructions
-        assert "already-written batch of episode prose" in agent.instructions
-        assert "spoken narration" in agent.instructions
-        assert "INPUT" in agent.instructions
-        assert "`script.prose_sections[].host_moves` are scene-aligned" in agent.instructions
-        assert "`term_explanations`" in agent.instructions
-        assert "`actor_explanations`" in agent.instructions
-        assert "`host_policy`" in agent.instructions
-        assert "optional `continuity_contract_pre`" in agent.instructions
-        assert "optional `continuity_contract_post`" in agent.instructions
-        assert "TRANSFORMATION MANDATE" in agent.instructions
-        assert (
-            "Be faithful to the content. Do not be faithful to the delivery mechanism."
-            in agent.instructions
-        )
-        assert (
-            "Do not draft from source sentences." in agent.instructions
-            and "Draft from extracted content" in agent.instructions
-        )
-        assert "PLANNING WORKFLOW" in agent.instructions
-        assert "chronology" in agent.instructions
-        assert "Extract the batch into content moves" in agent.instructions
-        assert "distinctive host mind carrying thought" in agent.instructions
-        assert "Write this to be heard, not admired on the page." in agent.instructions
-        assert "Make the most important turn, loss, contradiction, decision, or" in agent.instructions
-        assert "plain-English translation -> host" in agent.instructions
-        assert "Write for a voice that must carry the sentence in one pass." in agent.instructions
-        assert "If the material turns coercive, humiliating, or irreversible" in agent.instructions
-        assert "Avoid topic-announcing transitions and prestige-documentary phrasing" in agent.instructions
-        assert "TTS AND SPEECH HINTS" in agent.instructions
-        assert (
-            "Return only valid JSON matching `expected_schema` exactly"
-            in agent.instructions
-        )
-        assert (
-            "If `previous_spoken_tail` is present, continue rather than restart."
-            in agent.instructions
-        )
-        assert "Do not manufacture a new cold open" in agent.instructions
-        assert "Do not repeat it, paraphrase it" in agent.instructions
-        assert "use `I`, `we`" in agent.instructions
-        assert "SELF-CHECK BEFORE RETURNING" in agent.instructions
-        assert "speech_hints" in agent.instructions
-        assert "`script.prose_sections[].scene_cues`" in agent.instructions
-        assert "`script.prose_sections[].section_sonic_plan`" in agent.instructions
-        assert "Does the narration sound like a serious host carrying thought" in agent.instructions
-        assert "`script.prose_sections`" in agent.instructions
-        assert "`script.framing`" in agent.instructions
-        assert "upcoming_batches_summary" not in agent.instructions
-        assert (
-            "Rewrite all of it into one continuous spoken passage"
-            not in agent.instructions
-        )
-        assert "speech_hints" in agent.instructions
-        assert "section" in payload
-        assert "previous_spoken_text" not in payload
-        assert "previous_spoken_tail" not in payload
-        assert "upcoming_batches_summary" not in payload
-        assert "batch_index" not in payload
-        assert "batch_count" not in payload
-        assert "spoken_style_contract = anti_academic_oral" in agent.instructions
-        assert "Preserve the forceful host mind already present." in agent.instructions
-        assert "Write this to be heard, not admired on the page." in agent.instructions
+        assert "ORAL REWRITING MANDATE" in agent.instructions
+        assert "Restructure paragraph order" in agent.instructions
+        assert "em-dash" in agent.instructions
+        assert "register" in agent.instructions
+        assert "actor voice" in agent.instructions.lower()
+        assert "Preservation contract" in agent.instructions
 
     def test_spoken_delivery_prompt_stays_trimmed(self):
         prompt = spoken_delivery_instructions()
-        assert len(prompt.split()) <= 2150
+        # The new oral rewriter prompt is naturally longer than the old
+        # compliance pass; allow up to ~2500 words.
+        assert len(prompt.split()) <= 2500
 
     def test_episode_architecture_prompt_includes_field_contract(self):
         prompt = episode_architecture_instructions()
@@ -1811,6 +1751,43 @@ class TestHeuristicClient:
         )
         llm.generate_json.side_effect = [
             TransientLLMError("Connection error."),
+            expected,
+        ]
+        agent = SynthesisPrimitivesAgent(llm, max_retry_attempts=2)
+        payload = agent.build_payload(
+            project_id="proj",
+            podcast_mode="full",
+            axes_summary=[{"axis_id": "axis_1"}],
+            passages_by_axis={"axis_1": []},
+            cross_book_pairs=[],
+            book_metadata=[],
+        )
+
+        with patch("podcast_agent.agents.base.time.sleep", return_value=None):
+            result = agent.run(payload)
+
+        assert result.project_id == expected.project_id
+        assert result.primitives[0].id == "e1"
+
+    def test_synthesis_primitives_agent_run_retries_on_overloaded_provider_error(self):
+        llm = _mock_llm()
+        expected = SynthesisPrimitivesAgent(
+            HeuristicLLMClient()
+        ).response_model.model_validate(
+            {
+                "project_id": "proj",
+                "events": [
+                    {
+                        "title": "Recovered event",
+                        "core_passage_ids": ["p1"],
+                        "event_type": "crisis",
+                        "what_happened": "A concrete event is returned after retry.",
+                    }
+                ],
+            }
+        )
+        llm.generate_json.side_effect = [
+            _anthropic_overloaded_error(),
             expected,
         ]
         agent = SynthesisPrimitivesAgent(llm, max_retry_attempts=2)

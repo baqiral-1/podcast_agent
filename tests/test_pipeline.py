@@ -15,6 +15,7 @@ from pydantic import ValidationError
 from podcast_agent.llm.heuristic import HeuristicLLMClient
 from podcast_agent.pipeline.orchestrator import (
     PipelineOrchestrator,
+    _allocate_excerpt_extraction_passages,
     _allocate_synthesis_passages_by_axis,
     _allocate_scene_durations,
     _build_spoken_delivery_batches,
@@ -71,6 +72,7 @@ from podcast_agent.schemas.models import (
     SpineRelation,
     SpokenScript,
     SpokenSection,
+    SpokenSegment,
     StrategyEpisode,
     SupportPrimitiveRole,
     SynthesisMap,
@@ -531,12 +533,14 @@ def test_build_scene_card_count_warnings_for_under_target():
 
 def test_episode_architecture_realization_uses_resolved_config_targets():
     strategy_episode = _strategy_episode("et_1", "et_2", "et_3")
+    # Change 1 widened the minified target floor to 6 sections; build 5 to
+    # land below the new floor so the realization warning still fires.
     sections = []
-    for idx in range(6):
+    for idx in range(5):
         section_id = f"section_{idx + 1:02d}"
-        if idx == 5:
+        if idx == 4:
             stage = "close"
-        elif idx == 4:
+        elif idx == 3:
             stage = "answer"
         elif idx == 0:
             stage = "setup"
@@ -545,8 +549,8 @@ def test_episode_architecture_realization_uses_resolved_config_targets():
         sections.append(
             ArchitectureSection(
                 section_id=section_id,
-                purpose="closing" if idx == 5 else "setup",
-                approx_runtime_minutes=2.0 if idx == 5 else 8.0,
+                purpose="closing" if idx == 4 else "setup",
+                approx_runtime_minutes=2.0 if idx == 4 else 8.0,
                 primitive_ids=[
                     strategy_episode.episode_spine.assigned_primitive_ids[
                         min(idx, len(strategy_episode.episode_spine.assigned_primitive_ids) - 1)
@@ -2077,65 +2081,6 @@ def test_write_episode_raises_after_retry_exhaustion_on_scene_id_contract_failur
     assert not (ep_dir / "episode_script.json").exists()
 
 
-def test_validate_grounding_uses_full_text_lookup(monkeypatch, tmp_path):
-    heuristic = HeuristicLLMClient()
-    monkeypatch.setattr("podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic)
-    monkeypatch.setattr(
-        "podcast_agent.pipeline.orchestrator.PGVectorRetrieval",
-        lambda settings, run_logger=None: SimpleNamespace(),
-    )
-    monkeypatch.setattr(
-        "podcast_agent.pipeline.orchestrator.RetrievalService",
-        lambda settings, vector_store: SimpleNamespace(),
-    )
-    monkeypatch.setattr(
-        "podcast_agent.pipeline.orchestrator.build_tts_client",
-        lambda settings: DummyTTSClient(),
-    )
-
-    orchestrator = PipelineOrchestrator()
-    captured: dict[str, object] = {}
-
-    def fake_grounding_run(payload: dict):
-        captured["payload"] = payload
-        return orchestrator.grounding_agent.response_model.model_validate({"episode_number": 1})
-
-    orchestrator.grounding_agent.run = fake_grounding_run
-    script = EpisodeScript(
-        episode_number=1,
-        title="Episode 1",
-        framing=_framing(),
-        prose_sections=[
-            ProseSection(
-                section_id="section_1",
-                scene_card_ids=["scene_1"],
-                movement_goal="discover",
-                text="Draft.",
-            )
-        ],
-    )
-    corpus = ThematicCorpus(
-        project_id="proj",
-        passages_by_axis={
-            "axis_1": [
-                ExtractedPassage(
-                    passage_id="p1",
-                    book_id="b1",
-                    chunk_ids=["c1"],
-                    text="Trimmed text",
-                    full_text="Full text evidence for grounding.",
-                    axis_id="axis_1",
-                )
-            ]
-        },
-    )
-
-    asyncio.run(orchestrator._validate_grounding(1, script, corpus, tmp_path, tmp_path))
-
-    payload = captured["payload"]
-    assert payload["cited_passages"]["p1"]["text"] == "Full text evidence for grounding."
-
-
 def test_split_episode_writing_windows_uses_three_balanced_batches_when_available():
     scene_cards = [
         _scene_card(
@@ -2214,22 +2159,36 @@ def test_rewrite_for_speech_rewrites_each_section_individually(monkeypatch, tmp_
 
     def fake_spoken_run(payload: dict):
         payloads.append(payload)
-        text = str(payload["section"]["text"])
+        section_id = payload["script"]["prose_sections"][0]["section_id"]
+        text = str(payload["script"]["prose_sections"][0]["text"])
         return orchestrator.spoken_delivery_agent.response_model.model_validate(
             {
-                "text": f"spoken::{text}.",
-                "speech_hints": {
-                    "style": "measured",
-                    "intensity": "light",
-                    "pause_before_ms": 100,
-                    "pause_after_ms": 200,
-                    "pace": "slower",
-                    "pronunciation_hints": [
-                        {"text": "Panipat", "spoken_as": "PAH-nee-puht"},
-                    ],
-                    "emphasis_targets": ["spoken"],
-                    "render_strategy": "plain",
-                },
+                "sections": [
+                    {
+                        "section_id": section_id,
+                        "segments": [
+                            {
+                                "segment_id": f"{section_id}_seg1",
+                                "text": f"spoken::{text}.",
+                                "speaker_role": "primary",
+                                "tonal_register": "neutral",
+                            }
+                        ],
+                        "tonal_register": "neutral",
+                        "speech_hints": {
+                            "style": "measured",
+                            "intensity": "light",
+                            "pause_before_ms": 100,
+                            "pause_after_ms": 200,
+                            "pace": "slower",
+                            "pronunciation_hints": [
+                                {"text": "Panipat", "spoken_as": "PAH-nee-puht"},
+                            ],
+                            "emphasis_targets": ["spoken"],
+                            "render_strategy": "plain",
+                        },
+                    }
+                ]
             }
         )
 
@@ -2291,8 +2250,8 @@ def test_rewrite_for_speech_rewrites_each_section_individually(monkeypatch, tmp_
     )
 
     assert len(payloads) == 2
-    assert payloads[0]["section"]["section_id"] == "section_1"
-    assert payloads[1]["section"]["section_id"] == "section_2"
+    assert payloads[0]["script"]["prose_sections"][0]["section_id"] == "section_1"
+    assert payloads[1]["script"]["prose_sections"][0]["section_id"] == "section_2"
     assert "batch_index" not in payloads[0]
     assert "batch_index" not in payloads[1]
     assert "batch_count" not in payloads[0]
@@ -2301,7 +2260,7 @@ def test_rewrite_for_speech_rewrites_each_section_individually(monkeypatch, tmp_
     assert "previous_spoken_text" not in payloads[1]
     assert "previous_spoken_tail" not in payloads[0]
     assert payloads[1]["previous_spoken_tail"] == "spoken::First section."
-    assert payloads[0]["section"]["scene_cues"][0]["audible_detail"] == "The stamp snaps down."
+    assert payloads[0]["script"]["prose_sections"][0]["scene_cues"][0]["audible_detail"] == "The stamp snaps down."
     assert "upcoming_batches_summary" not in payloads[0]
     assert "upcoming_batches_summary" not in payloads[1]
     assert [section.section_id for section in spoken.sections] == ["section_1", "section_2"]
@@ -2418,8 +2377,10 @@ def test_rewrite_for_speech_raises_on_invalid_section_contract(monkeypatch, tmp_
     orchestrator = PipelineOrchestrator()
 
     def fake_spoken_run(_payload: dict):
+        # The new SpokenDeliveryResponse requires sections[]; returning an
+        # empty/invalid response now fails at the schema level.
         return orchestrator.spoken_delivery_agent.response_model.model_validate(
-            {"speech_hints": {"style": "neutral"}}
+            {"sections": []}
         )
 
     orchestrator.spoken_delivery_agent.run = fake_spoken_run
@@ -2453,7 +2414,7 @@ def test_rewrite_for_speech_raises_on_invalid_section_contract(monkeypatch, tmp_
     ep_dir = tmp_path / "episodes" / "1"
     ep_dir.mkdir(parents=True, exist_ok=True)
 
-    with pytest.raises(ValidationError, match="text"):
+    with pytest.raises(ValidationError, match="at least 1 item"):
         asyncio.run(orchestrator._rewrite_for_speech(1, script, project, ep_dir, tmp_path))
 
 
@@ -2526,7 +2487,7 @@ def test_produce_episode_releases_write_slot_before_spoken_delivery(monkeypatch,
             episode_number=episode_number,
             title=script.title,
             framing=script.framing,
-            sections=[SpokenSection(section_id="section_1", text="spoken section")],
+            sections=[SpokenSection(section_id="section_1", segments=[SpokenSegment(segment_id="section_1_seg1", text="spoken section")])],
             tts_provider=project.config.tts_provider,
         )
 
@@ -2644,9 +2605,9 @@ def test_render_episode_audio_writes_section_only_manifest(monkeypatch, tmp_path
         title="Episode 4",
         framing=_framing(),
         sections=[
-            SpokenSection(section_id="sec_01", text="One."),
-            SpokenSection(section_id="sec_02", text="Two."),
-            SpokenSection(section_id="sec_03", text="Three."),
+            SpokenSection(section_id="sec_01", segments=[SpokenSegment(segment_id="sec_01_seg1", text="One.")]),
+            SpokenSection(section_id="sec_02", segments=[SpokenSegment(segment_id="sec_02_seg1", text="Two.")]),
+            SpokenSection(section_id="sec_03", segments=[SpokenSegment(segment_id="sec_03_seg1", text="Three.")]),
         ],
     )
 
@@ -2665,3 +2626,129 @@ def test_render_episode_audio_writes_section_only_manifest(monkeypatch, tmp_path
     warning_events = [payload for event_type, payload in logged_events if event_type == "spoken_transition_mismatch_warning"]
     assert not warning_events
     assert (tmp_path / "episodes" / "4" / "render_manifest.json").exists()
+
+
+def _excerpt_passage(
+    passage_id: str,
+    axis_id: str,
+    *,
+    quotability: float,
+    relevance: float = 0.5,
+) -> ExtractedPassage:
+    return ExtractedPassage(
+        passage_id=passage_id,
+        book_id="b1",
+        chunk_ids=[f"c_{passage_id}"],
+        text=f"text {passage_id}",
+        full_text=f"full text {passage_id}",
+        axis_id=axis_id,
+        relevance_score=relevance,
+        quotability_score=quotability,
+    )
+
+
+def test_allocate_excerpt_extraction_passages_proportional_with_floor_and_ceiling() -> None:
+    axes = [
+        ThematicAxis(axis_id="axis_a", name="A", description="A", theme_importance_score=0.9),
+        ThematicAxis(axis_id="axis_b", name="B", description="B", theme_importance_score=0.6),
+        ThematicAxis(axis_id="axis_c", name="C", description="C", theme_importance_score=0.05),
+    ]
+    # axis_a: many high-quotability passages (dominant)
+    pool_a = [
+        _excerpt_passage(f"a{i}", "axis_a", quotability=0.9 - i * 0.01)
+        for i in range(40)
+    ]
+    pool_b = [
+        _excerpt_passage(f"b{i}", "axis_b", quotability=0.8 - i * 0.01)
+        for i in range(15)
+    ]
+    pool_c = [
+        _excerpt_passage(f"c{i}", "axis_c", quotability=0.5 - i * 0.01)
+        for i in range(8)
+    ]
+    passages_by_axis = {"axis_a": pool_a, "axis_b": pool_b, "axis_c": pool_c}
+
+    axis_pools, axis_budgets, claimed_by_axis, axis_order = (
+        _allocate_excerpt_extraction_passages(
+            selected_axes=axes,
+            passages_by_axis=passages_by_axis,
+            passage_cap=30,
+            axis_floor=4,
+            ceiling_fraction=0.5,  # ceiling = ceil(30 * 0.5) = 15
+        )
+    )
+
+    # Axis order is descending theme_importance_score.
+    assert axis_order == ["axis_a", "axis_b", "axis_c"]
+    # Proportional split (raw: a≈17, b≈11, c≈1) clamped by floor=4 on axis_c.
+    assert axis_budgets["axis_a"] == 15  # capped at ceiling
+    assert axis_budgets["axis_b"] == 11
+    assert axis_budgets["axis_c"] == 4   # raised to floor
+
+    # Within an axis, passages are taken in quotability order.
+    assert [p.passage_id for p in claimed_by_axis["axis_a"]] == [
+        f"a{i}" for i in range(15)
+    ]
+    assert [p.passage_id for p in claimed_by_axis["axis_b"]][:3] == ["b0", "b1", "b2"]
+    assert len(claimed_by_axis["axis_c"]) == 4
+
+    # Ceiling on axis_a prevents it from eating all 30 slots.
+    assert len(claimed_by_axis["axis_a"]) <= 15
+    # All pools are returned for diagnostics.
+    assert len(axis_pools["axis_a"]) == 40
+
+
+def test_allocate_excerpt_extraction_passages_redistributes_underfilled_slots() -> None:
+    axes = [
+        ThematicAxis(axis_id="axis_a", name="A", description="A", theme_importance_score=0.5),
+        ThematicAxis(axis_id="axis_b", name="B", description="B", theme_importance_score=0.5),
+    ]
+    # axis_b only has 2 passages, well under its budget. Leftover slots should flow to axis_a.
+    pool_a = [
+        _excerpt_passage(f"a{i}", "axis_a", quotability=0.9 - i * 0.01)
+        for i in range(20)
+    ]
+    pool_b = [
+        _excerpt_passage("b0", "axis_b", quotability=0.95),
+        _excerpt_passage("b1", "axis_b", quotability=0.92),
+    ]
+
+    _, axis_budgets, claimed_by_axis, _ = _allocate_excerpt_extraction_passages(
+        selected_axes=axes,
+        passages_by_axis={"axis_a": pool_a, "axis_b": pool_b},
+        passage_cap=12,
+        axis_floor=3,
+        ceiling_fraction=1.0,  # no ceiling
+    )
+
+    # Even proportional split: 6 + 6.
+    assert axis_budgets == {"axis_a": 6, "axis_b": 6}
+    # axis_b only delivers 2; axis_a absorbs the remaining 4 slots.
+    assert len(claimed_by_axis["axis_b"]) == 2
+    assert len(claimed_by_axis["axis_a"]) == 10
+    total = sum(len(v) for v in claimed_by_axis.values())
+    assert total == 12
+
+
+def test_allocate_excerpt_extraction_passages_skips_passages_already_claimed_by_another_axis() -> None:
+    # The same passage can appear under multiple axes (secondary axis). It must
+    # be claimed at most once and counted only against its first axis.
+    axes = [
+        ThematicAxis(axis_id="axis_a", name="A", description="A", theme_importance_score=0.9),
+        ThematicAxis(axis_id="axis_b", name="B", description="B", theme_importance_score=0.4),
+    ]
+    shared = _excerpt_passage("shared", "axis_a", quotability=0.99)
+    pool_a = [shared, _excerpt_passage("a1", "axis_a", quotability=0.5)]
+    pool_b = [shared, _excerpt_passage("b1", "axis_b", quotability=0.5)]
+
+    _, _, claimed_by_axis, _ = _allocate_excerpt_extraction_passages(
+        selected_axes=axes,
+        passages_by_axis={"axis_a": pool_a, "axis_b": pool_b},
+        passage_cap=10,
+        axis_floor=1,
+        ceiling_fraction=1.0,
+    )
+
+    assert [p.passage_id for p in claimed_by_axis["axis_a"]] == ["shared", "a1"]
+    # axis_b cannot re-claim "shared"; it only gets b1.
+    assert [p.passage_id for p in claimed_by_axis["axis_b"]] == ["b1"]

@@ -34,15 +34,15 @@ class NarrativeStrategySkeletonAgent(Agent):
     ) -> tuple[int, int, int, int, int, int, int]:
         project = payload.get("project")
         if not isinstance(project, dict):
-            return 8, 11, 9, 13, 3, 12, 18
+            return 6, 10, 8, 12, 2, 12, 20
         return (
-            int(project.get("episode_spine_core_primitive_target_min", 8)),
-            int(project.get("episode_spine_core_primitive_target_max", 11)),
-            int(project.get("episode_spine_support_primitive_target_min", 9)),
-            int(project.get("episode_spine_support_primitive_target_max", 13)),
-            int(project.get("episode_spine_recall_primitive_target_max", 3)),
+            int(project.get("episode_spine_core_primitive_target_min", 6)),
+            int(project.get("episode_spine_core_primitive_target_max", 10)),
+            int(project.get("episode_spine_support_primitive_target_min", 8)),
+            int(project.get("episode_spine_support_primitive_target_max", 12)),
+            int(project.get("episode_spine_recall_primitive_target_max", 2)),
             int(project.get("episode_spine_excerpt_target_min", 12)),
-            int(project.get("episode_spine_excerpt_target_max", 18)),
+            int(project.get("episode_spine_excerpt_target_max", 20)),
         )
 
     @staticmethod

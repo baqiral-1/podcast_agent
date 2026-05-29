@@ -152,19 +152,33 @@ def test_rewrite_for_speech_passes_continuity_tail_for_later_batches(
             if len(payloads) == 1
             else "Later batch."
         )
+        section_id = payload["script"]["prose_sections"][0]["section_id"]
         return orchestrator.spoken_delivery_agent.response_model.model_validate(
             {
-                "text": f"spoken::{text}",
-                "speech_hints": {
-                    "style": "measured",
-                    "intensity": "light",
-                    "pause_before_ms": 100,
-                    "pause_after_ms": 200,
-                    "pace": "slower",
-                    "pronunciation_hints": [],
-                    "emphasis_targets": ["spoken"],
-                    "render_strategy": "plain",
-                },
+                "sections": [
+                    {
+                        "section_id": section_id,
+                        "segments": [
+                            {
+                                "segment_id": f"{section_id}_seg1",
+                                "text": f"spoken::{text}",
+                                "speaker_role": "primary",
+                                "tonal_register": "neutral",
+                            }
+                        ],
+                        "tonal_register": "neutral",
+                        "speech_hints": {
+                            "style": "measured",
+                            "intensity": "light",
+                            "pause_before_ms": 100,
+                            "pause_after_ms": 200,
+                            "pace": "slower",
+                            "pronunciation_hints": [],
+                            "emphasis_targets": ["spoken"],
+                            "render_strategy": "plain",
+                        },
+                    }
+                ]
             }
         )
 
@@ -236,14 +250,16 @@ def test_rewrite_for_speech_passes_continuity_tail_for_later_batches(
     )
 
     assert len(payloads) == 2
-    assert payloads[0]["section"]["section_id"] == "section_1"
-    assert payloads[1]["section"]["section_id"] == "section_2"
-    assert payloads[0]["section"]["anchor"] == "Anchor 1"
-    assert payloads[1]["section"]["section_progression"]["stage"] == "close"
+    # The new SpokenDeliveryAgent payload no longer emits a single-section
+    # shortcut; read prose_sections directly. (Change 4)
+    assert payloads[0]["script"]["prose_sections"][0]["section_id"] == "section_1"
+    assert payloads[1]["script"]["prose_sections"][0]["section_id"] == "section_2"
+    assert payloads[0]["script"]["prose_sections"][0]["anchor"] == "Anchor 1"
+    assert payloads[1]["script"]["prose_sections"][0]["section_progression"]["stage"] == "close"
     assert payloads[0]["continuity_contract_pre"]["recap_items"][0]["item_id"] == "carry_1"
     assert payloads[1]["continuity_contract_post"]["must_leave_live"][0]["item_id"] == "carry_2"
-    assert payloads[0]["section"]["term_explanations"] == []
-    assert "host_presence_beats" not in payloads[0]["section"]
+    assert payloads[0]["script"]["prose_sections"][0]["term_explanations"] == []
+    assert "host_presence_beats" not in payloads[0]["script"]["prose_sections"][0]
     assert "batch_index" not in payloads[0]
     assert "batch_index" not in payloads[1]
     assert "batch_count" not in payloads[0]
@@ -337,7 +353,7 @@ def test_style_audit_episode_uses_section_anchor_payload(
     ep_dir = tmp_path / "episodes" / "1"
     ep_dir.mkdir(parents=True, exist_ok=True)
 
-    audited_script = asyncio.run(
+    audited_script, _audit_response = asyncio.run(
         orchestrator._style_audit_episode(
             1,
             script,

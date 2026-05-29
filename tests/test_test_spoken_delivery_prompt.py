@@ -94,7 +94,20 @@ def test_load_episode_input_prefers_existing_spoken_tts_provider(tmp_path: Path)
             "recap": None,
             "preview": None,
         },
-        sections=[{"section_id": "sc_01", "text": "Spoken text"}],
+        sections=[
+            {
+                "section_id": "sc_01",
+                "segments": [
+                    {
+                        "segment_id": "sc_01_seg1",
+                        "text": "Spoken text",
+                        "speaker_role": "primary",
+                        "tonal_register": "neutral",
+                    }
+                ],
+                "tonal_register": "neutral",
+            }
+        ],
         tts_provider="openai-compatible",
     )
     (episode_dir / "spoken_script.json").write_text(

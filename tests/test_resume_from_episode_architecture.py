@@ -24,6 +24,7 @@ from podcast_agent.schemas.models import (
     SceneDiscoveryArtifact,
     SpokenScript,
     SpokenSection,
+    SpokenSegment,
     StrategyEpisode,
     SynthesisMap,
     ThematicAxis,
@@ -414,7 +415,7 @@ def test_resume_from_episode_architecture_reruns_architecture_then_planning_then
                         "opening_question": "What now?",
                         "handoff_scene_card_id": "scene_01",
                     },
-                    sections=[SpokenSection(section_id="section_01", text="Text.")],
+                    sections=[SpokenSection(section_id="section_01", segments=[SpokenSegment(segment_id="section_01_seg1", text="Text.")])],
                     tts_provider="openai",
                 ),
             )
@@ -577,7 +578,7 @@ def test_resume_from_episode_architecture_does_not_require_persisted_architectur
                         "opening_question": "What now?",
                         "handoff_scene_card_id": "scene_01",
                     },
-                    sections=[SpokenSection(section_id="section_01", text="Text.")],
+                    sections=[SpokenSection(section_id="section_01", segments=[SpokenSegment(segment_id="section_01_seg1", text="Text.")])],
                     tts_provider="openai",
                 ),
             )

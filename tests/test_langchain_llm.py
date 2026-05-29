@@ -122,7 +122,65 @@ class _FakeAnthropicModel:
         _FakeAnthropicModel.last_kwargs = kwargs
 
 
-def test_build_model_uses_adaptive_thinking_for_opus_47(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_build_model_uses_adaptive_thinking_for_opus_48(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(llm_module, "ChatAnthropic", _FakeAnthropicModel)
+    _FakeAnthropicModel.last_kwargs = None
+    settings = Settings(
+        llm=LLMConfig(
+            llm_provider="anthropic",
+            provider="anthropic",
+            model_name="claude-opus-4-8",
+            anthropic_api_key="test-key",
+            provider_overrides={"custom_schema": "anthropic"},
+            temperature=0.2,
+            thinking_budget_tokens={"custom_schema": 20_000},
+        )
+    )
+    client = llm_module.LangChainLLMClient(settings)
+
+    model_client = client._build_model("custom_schema")
+
+    assert isinstance(model_client, _FakeAnthropicModel)
+    kwargs = _FakeAnthropicModel.last_kwargs
+    assert kwargs is not None
+    assert kwargs["thinking"] == {"type": "adaptive"}
+    assert kwargs["model_kwargs"] == {"output_config": {"effort": "high"}}
+    assert "temperature" not in kwargs
+
+
+def test_build_model_omits_thinking_for_opus_48_without_effort(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(llm_module, "ChatAnthropic", _FakeAnthropicModel)
+    _FakeAnthropicModel.last_kwargs = None
+    settings = Settings(
+        llm=LLMConfig(
+            llm_provider="anthropic",
+            provider="anthropic",
+            model_name="claude-opus-4-8",
+            anthropic_api_key="test-key",
+            provider_overrides={"custom_schema": "anthropic"},
+            thinking_budget_tokens={},
+        )
+    )
+    client = llm_module.LangChainLLMClient(settings)
+
+    model_client = client._build_model("custom_schema")
+
+    assert isinstance(model_client, _FakeAnthropicModel)
+    kwargs = _FakeAnthropicModel.last_kwargs
+    assert kwargs is not None
+    assert "thinking" not in kwargs
+    assert "model_kwargs" not in kwargs
+    assert "temperature" not in kwargs
+
+
+def test_build_model_uses_adaptive_thinking_for_opus_47(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: 4.7 must still take the adaptive-thinking path after the
+    4.8 migration broadened the predicate."""
+
     monkeypatch.setattr(llm_module, "ChatAnthropic", _FakeAnthropicModel)
     _FakeAnthropicModel.last_kwargs = None
     settings = Settings(
@@ -145,33 +203,6 @@ def test_build_model_uses_adaptive_thinking_for_opus_47(monkeypatch: pytest.Monk
     assert kwargs is not None
     assert kwargs["thinking"] == {"type": "adaptive"}
     assert kwargs["model_kwargs"] == {"output_config": {"effort": "high"}}
-    assert "temperature" not in kwargs
-
-
-def test_build_model_omits_thinking_for_opus_47_without_effort(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(llm_module, "ChatAnthropic", _FakeAnthropicModel)
-    _FakeAnthropicModel.last_kwargs = None
-    settings = Settings(
-        llm=LLMConfig(
-            llm_provider="anthropic",
-            provider="anthropic",
-            model_name="claude-opus-4-7",
-            anthropic_api_key="test-key",
-            provider_overrides={"custom_schema": "anthropic"},
-            thinking_budget_tokens={},
-        )
-    )
-    client = llm_module.LangChainLLMClient(settings)
-
-    model_client = client._build_model("custom_schema")
-
-    assert isinstance(model_client, _FakeAnthropicModel)
-    kwargs = _FakeAnthropicModel.last_kwargs
-    assert kwargs is not None
-    assert "thinking" not in kwargs
-    assert "model_kwargs" not in kwargs
     assert "temperature" not in kwargs
 
 
@@ -223,7 +254,7 @@ def test_build_model_emits_thinking_config_event_adaptive(
         llm=LLMConfig(
             llm_provider="anthropic",
             provider="anthropic",
-            model_name="claude-opus-4-7",
+            model_name="claude-opus-4-8",
             anthropic_api_key="test-key",
             provider_overrides={"custom_schema": "anthropic"},
             thinking_budget_tokens={"custom_schema": 20_000},
@@ -243,7 +274,7 @@ def test_build_model_emits_thinking_config_event_adaptive(
     assert payload["effort"] == "high"
     assert payload["budget_tokens"] == 20_000
     assert payload["schema_name"] == "custom_schema"
-    assert payload["model"] == "claude-opus-4-7"
+    assert payload["model"] == "claude-opus-4-8"
 
 
 def test_build_model_emits_thinking_config_event_legacy(
@@ -372,6 +403,36 @@ class _FakeStreamingClient:
         return iter(self._chunks)
 
 
+class _FakeFailingStreamingClient:
+    def __init__(
+        self,
+        exc: Exception,
+        *,
+        chunks: list[_FakeAIMessageChunk] | None = None,
+        fail_on_stream: bool = False,
+        fail_after_chunks: int = 0,
+    ) -> None:
+        self._exc = exc
+        self._chunks = chunks or []
+        self._fail_on_stream = fail_on_stream
+        self._fail_after_chunks = fail_after_chunks
+
+    def stream(self, messages: Any, **_: Any) -> Any:
+        if self._fail_on_stream:
+            raise self._exc
+
+        def _iterator() -> Any:
+            emitted = 0
+            for chunk in self._chunks:
+                if emitted >= self._fail_after_chunks:
+                    raise self._exc
+                emitted += 1
+                yield chunk
+            raise self._exc
+
+        return _iterator()
+
+
 class _FakeInvokeClient:
     def __init__(self, exc: Exception) -> None:
         self._exc = exc
@@ -434,7 +495,7 @@ def _make_client_with_stub_stream(
         llm=LLMConfig(
             llm_provider="anthropic",
             provider="anthropic",
-            model_name="claude-opus-4-7",
+            model_name="claude-opus-4-8",
             anthropic_api_key="test-key",
             provider_overrides={"custom_schema": "anthropic"},
             thinking_budget_tokens={"custom_schema": 20_000},
@@ -463,7 +524,7 @@ def test_generate_json_records_thinking_tokens_from_streaming(
                 "output_token_details": {"reasoning": 2048},
                 "input_token_details": {"cache_read": 10},
             },
-            response_metadata={"id": "msg_1", "model": "claude-opus-4-7"},
+            response_metadata={"id": "msg_1", "model": "claude-opus-4-8"},
         ),
     ]
     client, run_logger = _make_client_with_stub_stream(chunks, monkeypatch)
@@ -659,7 +720,7 @@ def test_generate_json_logs_transient_provider_failure_as_retryable(
         llm=LLMConfig(
             llm_provider="anthropic",
             provider="anthropic",
-            model_name="claude-opus-4-7",
+            model_name="claude-opus-4-8",
             anthropic_api_key="test-key",
             provider_overrides={"custom_schema": "anthropic"},
         )
@@ -700,7 +761,7 @@ def test_generate_json_logs_structured_overload_failure_as_retryable(
         llm=LLMConfig(
             llm_provider="anthropic",
             provider="anthropic",
-            model_name="claude-opus-4-7",
+            model_name="claude-opus-4-8",
             anthropic_api_key="test-key",
             provider_overrides={"custom_schema": "anthropic"},
         )
@@ -751,7 +812,7 @@ def test_generate_json_logs_real_anthropic_overload_failure_as_retryable(
         llm=LLMConfig(
             llm_provider="anthropic",
             provider="anthropic",
-            model_name="claude-opus-4-7",
+            model_name="claude-opus-4-8",
             anthropic_api_key="test-key",
             provider_overrides={"custom_schema": "anthropic"},
         )
@@ -783,6 +844,72 @@ def test_generate_json_logs_real_anthropic_overload_failure_as_retryable(
     assert error_events == []
 
 
+@pytest.mark.parametrize(
+    ("stub", "expected_error_type"),
+    [
+        (
+            lambda: _FakeFailingStreamingClient(
+                _anthropic_overloaded_error(),
+                fail_on_stream=True,
+            ),
+            "TransientLLMError",
+        ),
+        (
+            lambda: _FakeFailingStreamingClient(
+                _anthropic_overloaded_error(),
+                chunks=[],
+                fail_after_chunks=0,
+            ),
+            "TransientLLMError",
+        ),
+        (
+            lambda: _FakeFailingStreamingClient(
+                _anthropic_overloaded_error(),
+                chunks=[_FakeAIMessageChunk('{"k":1}')],
+                fail_after_chunks=1,
+            ),
+            "TransientLLMError",
+        ),
+    ],
+)
+def test_generate_json_logs_streaming_anthropic_overload_failure_as_retryable(
+    monkeypatch: pytest.MonkeyPatch,
+    stub,
+    expected_error_type: str,
+) -> None:
+    monkeypatch.setattr(llm_module, "ChatAnthropic", _FakeAnthropicModel)
+    settings = Settings(
+        llm=LLMConfig(
+            llm_provider="anthropic",
+            provider="anthropic",
+            model_name="claude-opus-4-8",
+            anthropic_api_key="test-key",
+            provider_overrides={"custom_schema": "anthropic"},
+        )
+    )
+    client = llm_module.LangChainLLMClient(settings)
+    run_logger = _StubRunLogger()
+    client.set_run_logger(run_logger)
+    monkeypatch.setattr(client, "_build_model", lambda _schema: stub())
+
+    with pytest.raises(llm_module.TransientLLMError, match="provider status failure"):
+        client.generate_json(
+            schema_name="custom_schema",
+            instructions="x",
+            payload={"user_text": "y"},
+            response_model=_DummySchema,
+            attempt=1,
+            max_attempts=2,
+        )
+
+    retryable_events = [p for (t, p) in run_logger.events if t == "llm_retryable_error"]
+    error_events = [p for (t, p) in run_logger.events if t == "llm_error"]
+    assert len(retryable_events) == 1
+    assert retryable_events[0]["error_type"] == expected_error_type
+    assert retryable_events[0]["will_retry"] is True
+    assert error_events == []
+
+
 def test_thinking_config_event_includes_display(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -791,7 +918,7 @@ def test_thinking_config_event_includes_display(
         llm=LLMConfig(
             llm_provider="anthropic",
             provider="anthropic",
-            model_name="claude-opus-4-7",
+            model_name="claude-opus-4-8",
             anthropic_api_key="test-key",
             provider_overrides={"custom_schema": "anthropic"},
             thinking_budget_tokens={"custom_schema": 20_000},

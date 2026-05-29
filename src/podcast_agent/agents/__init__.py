@@ -15,7 +15,7 @@ from podcast_agent.agents.planning import EpisodePlanningAgent
 from podcast_agent.agents.primitive_function_tagging import (
     PrimitiveFunctionTaggingAgent,
 )
-from podcast_agent.agents.repair import RepairAgent
+from podcast_agent.agents.quality_judge import QualityJudgeAgent
 from podcast_agent.agents.scene_discovery import SceneDiscoveryAgent
 from podcast_agent.agents.spoken_delivery_agent import SpokenDeliveryAgent
 from podcast_agent.agents.style_audit import StyleAuditAgent
@@ -24,7 +24,6 @@ from podcast_agent.agents.synthesis_primitives import (
     SynthesisPrimitivesAgent,
 )
 from podcast_agent.agents.theme_decomposition import ThemeDecompositionAgent
-from podcast_agent.agents.validation import GroundingValidationAgent
 from podcast_agent.agents.writing import WritingAgent, WritingAgentNoCitations
 
 __all__ = [
@@ -33,12 +32,11 @@ __all__ = [
     "EpisodeArchitectureAgent",
     "EpisodePlanningAgent",
     "ExcerptExtractionAgent",
-    "GroundingValidationAgent",
     "NarrativeStrategyEnrichmentAgent",
     "NarrativeStrategySkeletonAgent",
     "PassageExtractionAgent",
     "PrimitiveFunctionTaggingAgent",
-    "RepairAgent",
+    "QualityJudgeAgent",
     "SceneDiscoveryAgent",
     "PrimitiveSubstrateExtractionAgent",
     "SpokenDeliveryAgent",

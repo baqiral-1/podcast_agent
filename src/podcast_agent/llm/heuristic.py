@@ -922,8 +922,8 @@ class HeuristicLLMClient(LLMClient):
             primitive_ids = list(
                 episode_spine.get("core_primitive_ids") or ["primitive_001"]
             )
-        section_target_min = int(project.get("architecture_section_target_min", 11))
-        section_target_max = int(project.get("architecture_section_target_max", 14))
+        section_target_min = int(project.get("architecture_section_target_min", 12))
+        section_target_max = int(project.get("architecture_section_target_max", 18))
         section_count = (
             min(section_target_max, max(section_target_min, len(primitive_ids)))
             if primitive_ids
@@ -931,7 +931,7 @@ class HeuristicLLMClient(LLMClient):
         )
         closing_minutes = 2.0
         non_closing_count = max(1, section_count - 1)
-        target_runtime_minutes = float(project.get("min_episode_minutes", 130.0))
+        target_runtime_minutes = float(project.get("min_episode_minutes", 108.0))
         non_closing_minutes = max(
             1.0, (target_runtime_minutes - closing_minutes) / non_closing_count
         )
@@ -1357,29 +1357,78 @@ class HeuristicLLMClient(LLMClient):
             "prose_sections": prose_sections,
         }
 
-    def _generate_grounding_validation(self, payload: PromptPayload) -> dict[str, Any]:
+    def _generate_quality_judge(self, payload: PromptPayload) -> dict[str, Any]:
+        """Fabricate a passing EpisodeQualityScore for local heuristic runs.
+
+        Returns identical 92s across all six criteria, no remediation
+        targets — just enough shape for downstream tests/runs to proceed.
+        """
+        episode_number = int(payload.get("episode_number", 1) or 1)
+        prose_sections = list(payload.get("prose_sections", []) or [])
+        criteria = [
+            "narrative_quality",
+            "listener_engagement",
+            "podcast_fidelity",
+            "prose_polish",
+            "frame_discipline",
+            "excerpt_staging",
+        ]
+        # Stagger so prose_polish is the unique minimum and the validator
+        # accepts weakest_criterion="prose_polish".
+        score_overrides = {"prose_polish": 90}
+        criterion_scores = [
+            {
+                "criterion": c,
+                "score": score_overrides.get(c, 92),
+                "rationale": "Heuristic uniform score for local runs.",
+                "weaknesses": [],
+            }
+            for c in criteria
+        ]
+        overall = round(sum(cs["score"] for cs in criterion_scores) / 6)
+        section_scores = []
+        for section in prose_sections:
+            section_id = str(section.get("section_id", "")).strip() or "section_01"
+            section_scores.append({
+                "section_id": section_id,
+                "overall_score": overall,
+                "criterion_scores": criterion_scores,
+                "weakest_criterion": "prose_polish",
+                "remediation_hints": [],
+                "tic_families_detected": [],
+                "second_ending_detected": False,
+                "thesis_at_open_or_close_detected": False,
+            })
         return {
-            "episode_number": payload.get("episode_number", 1),
-            "claim_assessments": [],
-            "cross_book_claims": [],
-            "overall_status": "PASSED",
-            "grounding_score": 1.0,
-            "attribution_accuracy": 1.0,
-            "fairness_flags": [],
+            "episode_number": episode_number,
+            "overall_score": 92,
+            "criterion_scores": criterion_scores,
+            "section_scores": section_scores,
+            "weakest_sections": [],
+            "judge_model_name": "heuristic",
+            "judge_temperature": 0.0,
         }
 
-    def _generate_repair(self, payload: PromptPayload) -> dict[str, Any]:
-        return {"repaired_sections": []}
-
     def _generate_spoken_delivery(self, payload: PromptPayload) -> dict[str, Any]:
+        """Emit the new segment-aware SpokenDeliveryResponse shape (Change 4)."""
         script = payload.get("script", {})
         prose_sections = list(script.get("prose_sections", []) or [])
         return {
             "sections": [
                 {
                     "section_id": str(section.get("section_id", f"section_{idx + 1}")),
-                    "text": str(section.get("text", "")).strip()
-                    or "Spoken delivery text.",
+                    "segments": [
+                        {
+                            "segment_id": (
+                                f"{section.get('section_id', f'section_{idx + 1}')}_seg1"
+                            ),
+                            "text": str(section.get("text", "")).strip()
+                            or "Spoken delivery text.",
+                            "speaker_role": "primary",
+                            "tonal_register": "neutral",
+                        }
+                    ],
+                    "tonal_register": "neutral",
                     "speech_hints": {
                         "style": "neutral",
                         "intensity": "none",

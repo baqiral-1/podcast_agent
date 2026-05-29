@@ -28,7 +28,7 @@ class ExcerptExtractionAgent(Agent):
         try:
             return int(count_min), int(count_max)
         except (TypeError, ValueError):
-            return 78, 130
+            return 140, 220
 
     def build_instructions(self, payload: dict) -> str:
         count_min, count_max = self._count_bounds(payload)

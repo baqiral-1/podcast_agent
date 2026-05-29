@@ -76,6 +76,7 @@ class WritingAgent(Agent):
         writing_feedback: str | None = None,
         prior_window_continuity: dict | None = None,
         field_semantics: dict | None = None,
+        series_tic_blocklist: list[str] | None = None,
     ) -> dict:
         payload = {
             "episode_number": episode_number,
@@ -116,6 +117,8 @@ class WritingAgent(Agent):
             payload["episode_target_word_count_higher"] = int(
                 episode_target_word_count_higher
             )
+        if series_tic_blocklist:
+            payload["series_tic_blocklist"] = list(series_tic_blocklist)
         return payload
 
 

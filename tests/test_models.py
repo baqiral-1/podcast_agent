@@ -217,17 +217,28 @@ class TestThematicProject:
         assert config.episode_write_concurrency == 8
         assert config.episode_writing_batch_count == 5
         assert config.spoken_delivery_concurrency == 8
-        assert config.min_episode_minutes == 90.0
-        assert config.max_episode_minutes == 120.0
-        assert config.architecture_section_target_min == 11
-        assert config.architecture_section_target_max == 14
+        assert config.min_episode_minutes == 108.0
+        assert config.max_episode_minutes == 126.0
+        assert config.architecture_section_target_min == 12
+        assert config.architecture_section_target_max == 18
+        # Change 1: density budget defaults
+        assert config.max_dense_sections_per_episode == 2
+        assert config.dense_section_runtime_min_minutes == 14.0
+        assert config.dense_section_runtime_max_minutes == 18.0
+        assert config.section_runtime_floor_minutes == 4.0
+        assert config.section_runtime_ceiling_minutes == 13.0
+        # Change 2 + 3 defaults
+        assert config.style_tic_semantic_threshold == 0.78
+        assert config.series_carryover_threshold == 3
+        # Change 4 defaults
+        assert "actor_male_1" in config.actor_voice_catalog
         assert config.episode_spine_core_primitive_target_min == 6
-        assert config.episode_spine_core_primitive_target_max == 8
-        assert config.episode_spine_support_primitive_target_min == 6
-        assert config.episode_spine_support_primitive_target_max == 9
+        assert config.episode_spine_core_primitive_target_max == 10
+        assert config.episode_spine_support_primitive_target_min == 8
+        assert config.episode_spine_support_primitive_target_max == 12
         assert config.episode_spine_recall_primitive_target_max == 2
-        assert config.scene_card_target_min == 30
-        assert config.scene_card_target_max == 38
+        assert config.scene_card_target_min == 36
+        assert config.scene_card_target_max == 42
 
     def test_resolve_pipeline_config_for_mode_applies_minified_profile(self):
         config = resolve_pipeline_config_for_mode(
@@ -248,8 +259,12 @@ class TestThematicProject:
         assert config.episode_spine_support_primitive_target_min == 4
         assert config.episode_spine_support_primitive_target_max == 6
         assert config.episode_spine_recall_primitive_target_max == 1
-        assert config.architecture_section_target_min == 7
-        assert config.architecture_section_target_max == 9
+        assert config.architecture_section_target_min == 6
+        assert config.architecture_section_target_max == 10
+        assert config.dense_section_runtime_min_minutes == 7.0
+        assert config.dense_section_runtime_max_minutes == 9.0
+        assert config.section_runtime_floor_minutes == 2.0
+        assert config.section_runtime_ceiling_minutes == 6.5
         assert config.min_episode_minutes == 54.0
         assert config.max_episode_minutes == 63.0
         assert config.scene_card_target_min == 18
@@ -269,24 +284,28 @@ class TestThematicProject:
         assert config.narrative_strategy_episode_count_max == 16
         assert config.synthesis_total_passage_cap == 750
         assert config.episode_writing_batch_count == 5
-        assert config.architecture_section_target_min == 11
-        assert config.architecture_section_target_max == 14
-        assert config.min_episode_minutes == 90.0
-        assert config.max_episode_minutes == 120.0
-        assert config.scene_card_target_min == 30
-        assert config.scene_card_target_max == 38
+        assert config.architecture_section_target_min == 12
+        assert config.architecture_section_target_max == 18
+        assert config.dense_section_runtime_min_minutes == 14.0
+        assert config.dense_section_runtime_max_minutes == 18.0
+        assert config.section_runtime_floor_minutes == 4.0
+        assert config.section_runtime_ceiling_minutes == 13.0
+        assert config.min_episode_minutes == 108.0
+        assert config.max_episode_minutes == 126.0
+        assert config.scene_card_target_min == 36
+        assert config.scene_card_target_max == 42
 
     def test_authorial_passage_target_ranges_for_modes(self):
-        assert authorial_passage_target_range_for_mode(PodcastMode.FULL) == (18, 28)
+        assert authorial_passage_target_range_for_mode(PodcastMode.FULL) == (24, 32)
         assert authorial_passage_target_range_for_mode(PodcastMode.MINIFIED) == (12, 16)
         assert dense_section_authorial_passage_range_for_mode(PodcastMode.FULL) == (
-            3,
-            8,
+            4,
+            10,
         )
         assert dense_section_authorial_passage_range_for_mode(
             PodcastMode.MINIFIED
         ) == (2, 5)
-        assert authorial_passage_target_for_mode(PodcastMode.FULL) == 23
+        assert authorial_passage_target_for_mode(PodcastMode.FULL) == 28
         assert authorial_passage_target_for_mode(PodcastMode.MINIFIED) == 14
 
     def test_authorial_passage_allows_six_sentence_budget(self):
@@ -304,16 +323,51 @@ class TestThematicProject:
     def test_primitive_substrate_target_ranges_for_full_mode_match_expanded_table(self):
         target_ranges = primitive_substrate_target_ranges_for_mode(PodcastMode.FULL)
         assert target_ranges == {
-            "events": (87, 120),
-            "acts": (45, 59),
-            "actor_portraits": (18, 24),
-            "mechanisms": (37, 51),
-            "conditions": (21, 27),
-            "artifacts": (18, 24),
-            "readings": (11, 13),
+            "events": (100, 138),
+            "acts": (52, 68),
+            "actor_portraits": (21, 28),
+            "mechanisms": (43, 59),
+            "conditions": (24, 31),
+            "artifacts": (21, 28),
+            "readings": (13, 15),
         }
-        assert sum(lower for lower, _ in target_ranges.values()) == 237
-        assert sum(upper for _, upper in target_ranges.values()) == 318
+        assert sum(lower for lower, _ in target_ranges.values()) == 274
+        assert sum(upper for _, upper in target_ranges.values()) == 367
+
+    def test_episode_architecture_accepts_eighteen_sections(self):
+        sections = []
+        for idx in range(18):
+            section_id = f"section_{idx + 1:02d}"
+            if idx == 17:
+                stage = "close"
+            elif idx == 16:
+                stage = "answer"
+            elif idx == 0:
+                stage = "setup"
+            else:
+                stage = "advance"
+            sections.append(
+                ArchitectureSection(
+                    section_id=section_id,
+                    purpose="opening"
+                    if idx == 0
+                    else "closing"
+                    if idx == 17
+                    else "setup",
+                    approx_runtime_minutes=108.0 / 18,
+                    primitive_ids=["et_1"],
+                    section_anchor=f"Anchor {idx + 1}",
+                    must_stage_beats=[f"Beat {idx + 1}A", f"Beat {idx + 1}B"],
+                    section_progression=make_section_progression(stage, label=section_id),
+                )
+            )
+        architecture = EpisodeArchitecture(
+            episode_number=1,
+            major_turn_section_id=sections[2].section_id,
+            sections=sections,
+        )
+
+        assert len(architecture.sections) == 18
 
     def test_primitive_substrate_target_ranges_for_minified_mode_match_expanded_table(self):
         target_ranges = primitive_substrate_target_ranges_for_mode(PodcastMode.MINIFIED)
@@ -368,7 +422,7 @@ class TestThematicProject:
         assert profile.spoken_style_contract == "anti_academic_oral"
         assert profile.analysis_mode == "hybrid"
         assert profile.analysis_density == "medium"
-        assert profile.target_authorial_passages_per_episode == 23
+        assert profile.target_authorial_passages_per_episode == 28
 
     def test_host_presence_beat_normalizes_legacy_term_reminder(self):
         beat = HostPresenceBeat.model_validate(
@@ -1237,6 +1291,8 @@ class TestSpeechAndStyleModels:
         assert section.text == ""
 
     def test_spoken_script_roundtrip_preserves_sections(self):
+        from podcast_agent.schemas.models import SpokenSegment
+
         spoken = SpokenScript(
             episode_number=1,
             title="Episode 1",
@@ -1244,7 +1300,12 @@ class TestSpeechAndStyleModels:
             sections=[
                 SpokenSection(
                     section_id="section_1",
-                    text="The convoy moves before dawn.",
+                    segments=[
+                        SpokenSegment(
+                            segment_id="section_1_seg1",
+                            text="The convoy moves before dawn.",
+                        )
+                    ],
                     speech_hints=SpeechHints(style="measured", pace="slower"),
                     section_sonic_plan=SectionSonicPlan(
                         obligation=SectionSonicObligation.REQUIRED,
@@ -1405,14 +1466,22 @@ class TestEpisodeArchitectureModels:
                 }
             )
 
-    def test_episode_architecture_rejects_fewer_than_six_sections(self):
-        with pytest.raises(ValidationError, match="at least 6 items"):
-            self._build_architecture(5)
+    def test_episode_architecture_rejects_fewer_than_four_sections(self):
+        # Change 1 widened the hard schema bounds to [4, 16]; the prior
+        # 6-section floor moved to the soft per-project target enforced by
+        # validate_episode_architecture_targets.
+        with pytest.raises(ValidationError, match="at least 4 items"):
+            self._build_architecture(3)
 
     def test_episode_architecture_accepts_thirteen_sections(self):
         architecture = self._build_architecture(13)
 
         assert len(architecture.sections) == 13
+
+    def test_episode_architecture_accepts_sixteen_sections(self):
+        # Change 1 widened the hard upper bound from 13 to 16.
+        architecture = self._build_architecture(16)
+        assert len(architecture.sections) == 16
 
     def test_architecture_section_drops_legacy_fields(self):
         section = ArchitectureSection.model_validate(
@@ -1563,3 +1632,170 @@ def test_episode_planning_model_dump_preserves_answer_scene_and_drops_residue():
 
     revalidated = EpisodePlanDraft.model_validate(canonical_payload)
     assert revalidated.answer_scene_card_id == "scene_1"
+
+
+# ---------------------------------------------------------------------------
+# Quality judge validators (Change to SectionQualityScore tie-handling)
+# ---------------------------------------------------------------------------
+
+
+class TestQualityJudgeValidators:
+    @staticmethod
+    def _scores(**overrides: int) -> list[dict]:
+        base = {
+            "narrative_quality": 90,
+            "listener_engagement": 90,
+            "podcast_fidelity": 90,
+            "prose_polish": 90,
+            "frame_discipline": 90,
+            "excerpt_staging": 90,
+        }
+        base.update(overrides)
+        return [
+            {
+                "criterion": k,
+                "score": v,
+                "rationale": "ok",
+                "weaknesses": [],
+            }
+            for k, v in base.items()
+        ]
+
+    def _section_payload(self, **score_overrides: int) -> dict:
+        criterion_scores = self._scores(**score_overrides)
+        min_score = min(cs["score"] for cs in criterion_scores)
+        overall = round(sum(cs["score"] for cs in criterion_scores) / 6)
+        # weakest_criterion fills in below; assertion-driven tests override it.
+        return {
+            "section_id": "s1",
+            "overall_score": overall,
+            "criterion_scores": criterion_scores,
+            "weakest_criterion": next(
+                cs["criterion"] for cs in criterion_scores if cs["score"] == min_score
+            ),
+            "remediation_hints": [],
+            "tic_families_detected": [],
+            "second_ending_detected": False,
+            "thesis_at_open_or_close_detected": False,
+        }
+
+    def test_accepts_tied_weakest_criterion(self):
+        """When two criteria share the minimum, picking the second is valid."""
+        from podcast_agent.schemas.models import SectionQualityScore
+
+        payload = self._section_payload(
+            listener_engagement=80,  # tied for min
+            podcast_fidelity=80,     # tied for min
+            narrative_quality=85,
+            prose_polish=84,
+            frame_discipline=82,
+            excerpt_staging=86,
+        )
+        payload["weakest_criterion"] = "podcast_fidelity"  # second-position pick
+        SectionQualityScore.model_validate(payload)  # must not raise
+
+    def test_accepts_first_of_tied_pair(self):
+        """First-position pick of a tied pair also still validates."""
+        from podcast_agent.schemas.models import SectionQualityScore
+
+        payload = self._section_payload(
+            listener_engagement=80,
+            podcast_fidelity=80,
+            narrative_quality=85,
+            prose_polish=84,
+            frame_discipline=82,
+            excerpt_staging=86,
+        )
+        payload["weakest_criterion"] = "listener_engagement"
+        SectionQualityScore.model_validate(payload)
+
+    def test_auto_corrects_non_minimum_weakest_criterion(self):
+        """When LLM picks a strictly-non-minimum criterion, the validator
+        silently rewrites it to the criterion at the actual minimum.
+
+        This is the contract: the LLM's per-criterion numerical scoring
+        is approximate but the field needs to track the numbers for
+        downstream style_audit routing. The contextual judgment lives in
+        remediation_hints, which is preserved.
+        """
+        from podcast_agent.schemas.models import SectionQualityScore, QualityCriterion
+
+        payload = self._section_payload(
+            listener_engagement=70,  # unique minimum
+            narrative_quality=85,
+            podcast_fidelity=80,
+            prose_polish=84,
+            frame_discipline=82,
+            excerpt_staging=86,
+        )
+        payload["weakest_criterion"] = "prose_polish"  # 84 — strictly non-min
+        payload["remediation_hints"] = [
+            "prose_polish: strip the in-plain-X tic; close on the till sound.",
+            "listener_engagement: promote the carpenter scene earlier.",
+        ]
+
+        result = SectionQualityScore.model_validate(payload)
+        # weakest_criterion silently corrected to the actual numerical min.
+        assert result.weakest_criterion == QualityCriterion.ENGAGEMENT
+        # remediation_hints preserved unchanged — the LLM's contextual
+        # judgment is the thing that style_audit actually uses.
+        assert result.remediation_hints == [
+            "prose_polish: strip the in-plain-X tic; close on the till sound.",
+            "listener_engagement: promote the carpenter scene earlier.",
+        ]
+
+    def test_preserves_tied_weakest_criterion_pick(self):
+        """When LLM's pick is tied at the minimum, keep their choice
+        instead of normalizing to the first-position tied criterion."""
+        from podcast_agent.schemas.models import SectionQualityScore, QualityCriterion
+
+        payload = self._section_payload(
+            listener_engagement=80,  # tied for min (first-position)
+            podcast_fidelity=80,     # tied for min (later-position)
+            narrative_quality=85,
+            prose_polish=84,
+            frame_discipline=82,
+            excerpt_staging=86,
+        )
+        payload["weakest_criterion"] = "podcast_fidelity"  # second-position tied
+        result = SectionQualityScore.model_validate(payload)
+        # LLM's pick kept because it's already at the minimum score.
+        assert result.weakest_criterion == QualityCriterion.PODCAST_FIDELITY
+
+    def test_prepare_retry_payload_extracts_validation_errors(self):
+        """Override on QualityJudgeAgent surfaces Pydantic loc/msg to the
+        next-attempt instructions. The weakest_criterion mismatch no
+        longer raises (auto-corrected), so we trigger a different
+        validator failure — a missing criterion — to exercise the path.
+        """
+        from unittest.mock import MagicMock
+        from podcast_agent.agents.quality_judge import QualityJudgeAgent
+        from podcast_agent.schemas.models import SectionQualityScore
+
+        agent = QualityJudgeAgent(MagicMock())
+        # Drop one criterion to trigger the completeness validator.
+        bad_payload = self._section_payload()
+        bad_payload["criterion_scores"] = bad_payload["criterion_scores"][:5]
+        try:
+            SectionQualityScore.model_validate(bad_payload)
+        except ValidationError as exc:
+            new_payload = agent.prepare_retry_payload(
+                {"episode_number": 1}, exc
+            )
+        else:  # pragma: no cover
+            raise AssertionError("expected ValidationError")
+        assert "retry_feedback" in new_payload
+        feedback = new_payload["retry_feedback"]
+        assert "Fix exactly these fields" in feedback
+        # The completeness validator's message names the six-criterion rule.
+        assert "six" in feedback.lower() or "criterion" in feedback.lower()
+
+    def test_prepare_retry_payload_passes_through_when_not_pydantic(self):
+        """Non-ValidationError exceptions leave the payload unchanged."""
+        from unittest.mock import MagicMock
+        from podcast_agent.agents.quality_judge import QualityJudgeAgent
+
+        agent = QualityJudgeAgent(MagicMock())
+        original = {"episode_number": 1, "title": "x"}
+        result = agent.prepare_retry_payload(original, RuntimeError("not a schema err"))
+        assert result == original

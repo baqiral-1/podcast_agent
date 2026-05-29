@@ -55,9 +55,19 @@ def _resolve_default_provider(config: LLMConfig) -> str:
         return "openai-compatible"
     raise ValueError(f"Unsupported LLM provider '{config.llm_provider}'.")
 
-def _is_claude_opus_4_7(model_name: str) -> bool:
+def _supports_adaptive_thinking(model_name: str) -> bool:
+    """Opus 4.7 and 4.8 use the effort-based adaptive-thinking API.
+
+    Older Opus 4.x versions and other model families still use the legacy
+    budget-tokens path; match exact families rather than a bare ``claude-opus-4-``
+    prefix to avoid silently claiming adaptive support for unverified versions.
+    """
+
     normalized = model_name.strip().lower()
-    return normalized == "claude-opus-4-7" or normalized.startswith("claude-opus-4-7-")
+    for family in ("claude-opus-4-7", "claude-opus-4-8"):
+        if normalized == family or normalized.startswith(f"{family}-"):
+            return True
+    return False
 
 
 @dataclass(frozen=True)
@@ -390,7 +400,7 @@ class LangChainLLMClient(LLMClient):
         model_supports_adaptive_thinking = False
         if provider == "anthropic":
             max_tokens = self.config.resolve_anthropic_max_tokens(schema_name)
-            model_supports_adaptive_thinking = _is_claude_opus_4_7(model)
+            model_supports_adaptive_thinking = _supports_adaptive_thinking(model)
             if model_supports_adaptive_thinking:
                 legacy_budget_for_effort = self.config.resolve_thinking_budget(schema_name)
                 thinking_effort = self.config.resolve_anthropic_thinking_effort(schema_name)
@@ -568,6 +578,126 @@ class LangChainLLMClient(LLMClient):
             ]
         return system_text, user_text, messages
 
+    def _raise_if_transient_stream_error(self, exc: Exception) -> None:
+        if is_transient_error(exc):
+            raise TransientLLMError(str(exc)) from exc
+
+    def _stream_response_content(
+        self,
+        *,
+        model_client: Any,
+        messages: list[Any],
+        invoke_kwargs: dict[str, Any],
+        request_uuid: str,
+        schema_name: str,
+        attempt: int,
+        request_started_monotonic: float,
+        thinking_state: _ThinkingState,
+        log_thinking_content: bool,
+    ) -> tuple[str | None, dict[str, Any] | None, dict[str, Any]]:
+        if not self.config.heartbeat_enabled or not hasattr(model_client, "stream"):
+            return None, None, {}
+
+        response_metadata: dict[str, Any] | None = None
+        last_usage: dict[str, Any] = {}
+        last_heartbeat = request_started_monotonic
+        chunks: list[str] = []
+        aggregated_chunk: Any = None
+
+        stream_kwargs = dict(invoke_kwargs)
+        try:
+            if "prompt_cache_key" in stream_kwargs:
+                try:
+                    stream_iter = model_client.stream(messages, **stream_kwargs)
+                except TypeError:
+                    stream_kwargs.pop("prompt_cache_key", None)
+                    stream_iter = model_client.stream(messages, **stream_kwargs)
+            else:
+                stream_iter = model_client.stream(messages, **stream_kwargs)
+        except (TypeError, AttributeError):
+            return None, None, {}
+        except Exception as exc:
+            self._raise_if_transient_stream_error(exc)
+            raise
+
+        try:
+            for chunk in stream_iter:
+                try:
+                    aggregated_chunk = (
+                        chunk if aggregated_chunk is None else aggregated_chunk + chunk
+                    )
+                except Exception:
+                    aggregated_chunk = chunk
+                chunk_content = getattr(chunk, "content", "")
+                if isinstance(chunk_content, list):
+                    chunk_content = _filter_and_track_thinking(
+                        chunk_content,
+                        thinking_state,
+                        log_content=log_thinking_content,
+                    )
+                chunks.append(str(chunk_content))
+                chunk_meta = getattr(chunk, "response_metadata", None)
+                if isinstance(chunk_meta, dict):
+                    response_metadata = chunk_meta
+                merged_usage = _merge_usage(
+                    getattr(aggregated_chunk, "usage_metadata", None),
+                    (
+                        getattr(aggregated_chunk, "response_metadata", None)
+                        or {}
+                    ).get("usage")
+                    if isinstance(
+                        getattr(aggregated_chunk, "response_metadata", None),
+                        dict,
+                    )
+                    else None,
+                )
+                if merged_usage:
+                    last_usage = merged_usage
+                now = time.monotonic()
+                if (
+                    self.run_logger is not None
+                    and now - last_heartbeat >= self.config.heartbeat_interval_seconds
+                ):
+                    self.run_logger.log(
+                        "llm_heartbeat",
+                        request_uuid=request_uuid,
+                        client="langchain",
+                        schema_name=schema_name,
+                        attempt=attempt,
+                        elapsed_ms=int((now - request_started_monotonic) * 1000),
+                        input_tokens=last_usage.get("input_tokens"),
+                        output_tokens=last_usage.get("output_tokens"),
+                        cache_read_tokens=last_usage.get("cache_read_input_tokens"),
+                        thinking_tokens=last_usage.get("thinking_tokens"),
+                    )
+                    last_heartbeat = now
+        except (TypeError, AttributeError):
+            return None, None, {}
+        except Exception as exc:
+            self._raise_if_transient_stream_error(exc)
+            raise
+
+        content = "".join(chunks)
+        if aggregated_chunk is not None:
+            merged_usage = _merge_usage(
+                getattr(aggregated_chunk, "usage_metadata", None),
+                (
+                    getattr(aggregated_chunk, "response_metadata", None)
+                    or {}
+                ).get("usage")
+                if isinstance(
+                    getattr(aggregated_chunk, "response_metadata", None),
+                    dict,
+                )
+                else None,
+            )
+            if merged_usage:
+                last_usage = merged_usage
+            agg_meta = getattr(aggregated_chunk, "response_metadata", None)
+            if isinstance(agg_meta, dict):
+                response_metadata = agg_meta
+        return content, response_metadata, last_usage
+
     def generate_json(
         self,
         schema_name: str,
@@ -627,91 +757,17 @@ class LangChainLLMClient(LLMClient):
             log_thinking_content = bool(
                 getattr(self.config, "log_thinking_content", False)
             )
-            if self.config.heartbeat_enabled and hasattr(model_client, "stream"):
-                last_heartbeat = request_started_monotonic
-                chunks: list[str] = []
-                aggregated_chunk: Any = None
-                try:
-                    stream_kwargs = dict(invoke_kwargs)
-                    if "prompt_cache_key" in stream_kwargs:
-                        try:
-                            stream_iter = model_client.stream(messages, **stream_kwargs)
-                        except TypeError:
-                            stream_kwargs.pop("prompt_cache_key", None)
-                            stream_iter = model_client.stream(messages, **stream_kwargs)
-                    else:
-                        stream_iter = model_client.stream(messages, **stream_kwargs)
-                    for chunk in stream_iter:
-                        try:
-                            aggregated_chunk = (
-                                chunk if aggregated_chunk is None else aggregated_chunk + chunk
-                            )
-                        except Exception:
-                            aggregated_chunk = chunk
-                        chunk_content = getattr(chunk, "content", "")
-                        if isinstance(chunk_content, list):
-                            chunk_content = _filter_and_track_thinking(
-                                chunk_content,
-                                thinking_state,
-                                log_content=log_thinking_content,
-                            )
-                        chunks.append(str(chunk_content))
-                        chunk_meta = getattr(chunk, "response_metadata", None)
-                        if isinstance(chunk_meta, dict):
-                            response_metadata = chunk_meta
-                        merged_usage = _merge_usage(
-                            getattr(aggregated_chunk, "usage_metadata", None),
-                            (
-                                getattr(aggregated_chunk, "response_metadata", None)
-                                or {}
-                            ).get("usage")
-                            if isinstance(
-                                getattr(aggregated_chunk, "response_metadata", None),
-                                dict,
-                            )
-                            else None,
-                        )
-                        if merged_usage:
-                            last_usage = merged_usage
-                        now = time.monotonic()
-                        if (
-                            self.run_logger is not None
-                            and now - last_heartbeat >= self.config.heartbeat_interval_seconds
-                        ):
-                            self.run_logger.log(
-                                "llm_heartbeat",
-                                request_uuid=request_uuid,
-                                client="langchain",
-                                schema_name=schema_name,
-                                attempt=attempt,
-                                elapsed_ms=int((now - request_started_monotonic) * 1000),
-                                input_tokens=last_usage.get("input_tokens"),
-                                output_tokens=last_usage.get("output_tokens"),
-                                cache_read_tokens=last_usage.get("cache_read_input_tokens"),
-                                thinking_tokens=last_usage.get("thinking_tokens"),
-                            )
-                            last_heartbeat = now
-                    content = "".join(chunks)
-                    if aggregated_chunk is not None:
-                        merged_usage = _merge_usage(
-                            getattr(aggregated_chunk, "usage_metadata", None),
-                            (
-                                getattr(aggregated_chunk, "response_metadata", None)
-                                or {}
-                            ).get("usage")
-                            if isinstance(
-                                getattr(aggregated_chunk, "response_metadata", None),
-                                dict,
-                            )
-                            else None,
-                        )
-                        if merged_usage:
-                            last_usage = merged_usage
-                        agg_meta = getattr(aggregated_chunk, "response_metadata", None)
-                        if isinstance(agg_meta, dict):
-                            response_metadata = agg_meta
-                except (TypeError, AttributeError):
-                    content = None
+            content, response_metadata, last_usage = self._stream_response_content(
+                model_client=model_client,
+                messages=messages,
+                invoke_kwargs=invoke_kwargs,
+                request_uuid=request_uuid,
+                schema_name=schema_name,
+                attempt=attempt,
+                request_started_monotonic=request_started_monotonic,
+                thinking_state=thinking_state,
+                log_thinking_content=log_thinking_content,
+            )
             if content is None:
                 if "prompt_cache_key" in invoke_kwargs:
                     try:

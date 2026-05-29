@@ -188,16 +188,66 @@ def _episode_architecture() -> EpisodeArchitecture:
 
 
 def test_build_architecture_retry_feedback_defaults_for_generic_exception() -> None:
+    # A bare ValueError (no `.data` attribute) is now routed through the
+    # model-validator branch — its message gets passed through verbatim so
+    # the agent sees the exact rule that failed instead of a generic
+    # "schema-valid architecture" instruction.
     feedback = _build_architecture_retry_feedback(ValueError("bad architecture"))
+
+    assert feedback["issue"] == "model_validator_failed"
+    assert feedback["episode_number"] is None
+    assert "bad architecture" in feedback["instruction"]
+    assert "Fix exactly this failure" in feedback["instruction"]
+
+
+def test_build_architecture_retry_feedback_uses_generic_fallback_when_data_present() -> None:
+    # When a ValueError carries a `.data` attribute (custom Compliance-style
+    # error) but no specific issue is recognized, the function falls back
+    # to the generic schema-valid instruction.
+    exc = ValueError("legacy")
+    exc.data = {"issue": "architecture_contract_invalid", "episode_number": 2}  # type: ignore[attr-defined]
+    feedback = _build_architecture_retry_feedback(exc)
 
     assert feedback == {
         "issue": "architecture_contract_invalid",
-        "episode_number": None,
+        "episode_number": 2,
         "instruction": (
             "Return a schema-valid episode architecture that satisfies section counts, "
             "answer/close stage placement, and promised-beat accounting."
         ),
     }
+
+
+def test_build_architecture_retry_feedback_extracts_pydantic_field_errors() -> None:
+    # Pydantic ValidationError must produce a structured instruction that
+    # names the failing field path AND the constraint that was violated.
+    from pydantic import ValidationError as _PydValidationError
+    from podcast_agent.schemas.models import ArchitectureSection
+
+    try:
+        ArchitectureSection.model_validate({
+            "section_id": "s1",
+            "purpose": "setup",
+            "approx_runtime_minutes": 8.0,
+            "is_dense": True,
+            "density_rationale": "x" * 450,
+            "primitive_ids": ["p1"],
+            "section_progression": {
+                "stage": "setup",
+                "becomes_obvious": "a",
+                "answer_contribution": "b",
+                "theme_link": "c",
+                "what_remains_live": "d",
+            },
+        })
+    except _PydValidationError as exc:
+        feedback = _build_architecture_retry_feedback(exc)
+    else:
+        raise AssertionError("expected ValidationError but model_validate succeeded")
+
+    assert feedback["issue"] == "schema_validation_failed"
+    assert "density_rationale" in feedback["instruction"]
+    assert "400" in feedback["instruction"]
 
 
 def _valid_plan_payload(payload: dict, *, use_invalid_section_primitive: bool) -> dict:
