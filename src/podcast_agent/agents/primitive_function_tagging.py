@@ -109,7 +109,9 @@ class PrimitiveFunctionTaggingAgent(Agent):
         returned_ids = list(result.overlays_by_id)
         if set(returned_ids) != set(expected_ids):
             missing_ids = [
-                primitive_id for primitive_id in expected_ids if primitive_id not in result.overlays_by_id
+                primitive_id
+                for primitive_id in expected_ids
+                if primitive_id not in result.overlays_by_id
             ]
             unexpected_ids = [
                 primitive_id for primitive_id in returned_ids if primitive_id not in expected_ids
@@ -234,9 +236,7 @@ class PrimitiveFunctionTaggingAgent(Agent):
             if primitive_index is None and primitive_id is not None:
                 primitive_index = self._primitive_index_for_id(payload, primitive_id)
             message = str(error.get("msg", "")).strip()
-            function_name, issue_type, required_fix = self._classify_function_error(
-                message
-            )
+            function_name, issue_type, required_fix = self._classify_function_error(message)
             feedback_errors.append(
                 {
                     "path": path,
@@ -254,11 +254,7 @@ class PrimitiveFunctionTaggingAgent(Agent):
 
     @staticmethod
     def _primitive_index_from_loc(loc: tuple[Any, ...] | list[Any]) -> int | None:
-        if (
-            len(loc) >= 2
-            and loc[0] == "overlays_by_id"
-            and isinstance(loc[1], str)
-        ):
+        if len(loc) >= 2 and loc[0] == "overlays_by_id" and isinstance(loc[1], str):
             return None
         if len(loc) >= 2 and loc[0] == "primitives" and isinstance(loc[1], int):
             return int(loc[1])
@@ -266,11 +262,7 @@ class PrimitiveFunctionTaggingAgent(Agent):
 
     @staticmethod
     def _primitive_id_from_loc(loc: tuple[Any, ...] | list[Any]) -> str | None:
-        if (
-            len(loc) >= 2
-            and loc[0] == "overlays_by_id"
-            and isinstance(loc[1], str)
-        ):
+        if len(loc) >= 2 and loc[0] == "overlays_by_id" and isinstance(loc[1], str):
             return str(loc[1])
         return None
 

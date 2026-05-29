@@ -13,7 +13,6 @@ from _section_progression_helpers import make_section_progression
 from podcast_agent.schemas.models import (
     ActorMetadata,
     ActorProfile,
-    ArchitectureSection,
     BookRecord,
     EpisodeArchitecture,
     EventPrimitive,
@@ -36,11 +35,7 @@ from podcast_agent.schemas.models import (
 )
 
 
-_SCRIPT_PATH = (
-    Path(__file__).resolve().parents[1]
-    / "scripts"
-    / "resume_from_narrative_strategy.py"
-)
+_SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "resume_from_narrative_strategy.py"
 _SCRIPT_SPEC = importlib.util.spec_from_file_location(
     "resume_from_narrative_strategy",
     _SCRIPT_PATH,
@@ -404,7 +399,6 @@ def test_resume_from_narrative_strategy_uses_scene_discovery_and_current_artifac
                 _write_json(project_dir / "retained_excerpts.json", artifact)
             return artifact
 
-
         def _resolve_episode_count_from_strategy(
             self,
             project: ThematicProject,
@@ -458,7 +452,12 @@ def test_resume_from_narrative_strategy_uses_scene_discovery_and_current_artifac
                         "opening_question": "What now?",
                         "handoff_scene_card_id": "scene_01",
                     },
-                    sections=[SpokenSection(section_id="section_01", segments=[SpokenSegment(segment_id="section_01_seg1", text="Text.")])],
+                    sections=[
+                        SpokenSection(
+                            section_id="section_01",
+                            segments=[SpokenSegment(segment_id="section_01_seg1", text="Text.")],
+                        )
+                    ],
                     tts_provider="openai",
                 ),
             )

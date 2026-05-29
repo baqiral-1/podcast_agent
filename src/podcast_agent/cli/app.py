@@ -69,12 +69,11 @@ def run(
         None,
         "--episodes",
         "-n",
-        help=(
-            "Override number of episodes "
-            "(otherwise inferred from narrative strategy)."
-        ),
+        help=("Override number of episodes (otherwise inferred from narrative strategy)."),
     ),
-    theme_elaboration: Optional[str] = typer.Option(None, "--elaboration", help="Optional longer theme description."),
+    theme_elaboration: Optional[str] = typer.Option(
+        None, "--elaboration", help="Optional longer theme description."
+    ),
     sub_themes: Optional[str] = typer.Option(
         None,
         "--sub-themes",
@@ -82,10 +81,18 @@ def run(
     ),
     titles: Optional[str] = typer.Option(None, "--titles", help="Comma-separated book titles."),
     authors: Optional[str] = typer.Option(None, "--authors", help="Comma-separated author names."),
-    output_dir: Optional[str] = typer.Option(None, "--output-dir", "-o", help="Custom output directory."),
-    skip_grounding: bool = typer.Option(False, "--skip-grounding", help="Skip grounding validation and repair."),
-    skip_spoken_delivery: bool = typer.Option(False, "--skip-spoken-delivery", help="Skip spoken delivery rewrite."),
-    skip_audio: bool = typer.Option(False, "--skip-audio", help="Skip audio synthesis (still writes render manifest)."),
+    output_dir: Optional[str] = typer.Option(
+        None, "--output-dir", "-o", help="Custom output directory."
+    ),
+    skip_grounding: bool = typer.Option(
+        False, "--skip-grounding", help="Skip grounding validation and repair."
+    ),
+    skip_spoken_delivery: bool = typer.Option(
+        False, "--skip-spoken-delivery", help="Skip spoken delivery rewrite."
+    ),
+    skip_audio: bool = typer.Option(
+        False, "--skip-audio", help="Skip audio synthesis (still writes render manifest)."
+    ),
     passage_extraction_concurrency: Optional[int] = typer.Option(
         None,
         "--passage-extraction-concurrency",
@@ -102,7 +109,9 @@ def run(
         "--podcast-mode",
         help="Podcast mode profile (full, minified).",
     ),
-    project_id: Optional[str] = typer.Option(None, "--project-id", help="Custom project ID (default: auto-generated UUID)."),
+    project_id: Optional[str] = typer.Option(
+        None, "--project-id", help="Custom project ID (default: auto-generated UUID)."
+    ),
 ) -> None:
     """Run the full multi-book thematic podcast pipeline."""
     from podcast_agent.config import Settings
@@ -112,7 +121,9 @@ def run(
     settings = Settings()
     if output_dir:
         settings = settings.model_copy(
-            update={"pipeline": settings.pipeline.model_copy(update={"artifact_root": Path(output_dir)})}
+            update={
+                "pipeline": settings.pipeline.model_copy(update={"artifact_root": Path(output_dir)})
+            }
         )
     resolved_tts_provider = _normalize_tts_provider(tts_provider)
     resolved_podcast_mode = _normalize_podcast_mode(podcast_mode)
@@ -190,9 +201,7 @@ def status(
     typer.echo(f"Project: {project_id}")
     typer.echo(f"Theme: {data.get('theme', 'N/A')}")
     sub_themes = data.get("sub_themes", [])
-    typer.echo(
-        f"Sub-themes: {', '.join(sub_themes) if sub_themes else 'None'}"
-    )
+    typer.echo(f"Sub-themes: {', '.join(sub_themes) if sub_themes else 'None'}")
     typer.echo(f"Status: {data.get('status', 'unknown')}")
     typer.echo(f"Books: {len(data.get('books', []))}")
     typer.echo(f"Episodes: {data.get('episode_count', 0)}")

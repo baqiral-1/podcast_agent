@@ -263,7 +263,16 @@ def is_noise_block(text: str) -> bool:
         return True
     if PAGE_NUMBER_RE.fullmatch(stripped):
         return True
-    if stripped in {"PART I", "PART II", "PART III", "PART IV", "Spring", "Summer", "Autumn", "Winter"}:
+    if stripped in {
+        "PART I",
+        "PART II",
+        "PART III",
+        "PART IV",
+        "Spring",
+        "Summer",
+        "Autumn",
+        "Winter",
+    }:
         return True
     if stripped.startswith("CHAPTER ") and len(stripped.split()) <= 3:
         return True
@@ -300,14 +309,14 @@ def ends_sentence(text: str) -> bool:
 def should_merge_paragraphs(previous: str, current: str) -> bool:
     if not previous or not current:
         return False
-    if previous.endswith((",", ";", ":", "—", "–", "-", "“", "\"", "(")):
+    if previous.endswith((",", ";", ":", "—", "–", "-", "“", '"', "(")):
         return True
     if not ends_sentence(previous):
         return True
     first_char = current[0]
     if first_char.islower():
         return True
-    if first_char in {",", ";", ":", ")", "]", "”", "\"", "—", "–", "-"}:
+    if first_char in {",", ";", ":", ")", "]", "”", '"', "—", "–", "-"}:
         return True
     return False
 

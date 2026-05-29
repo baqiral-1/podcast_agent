@@ -12,7 +12,9 @@ from pathlib import Path
 from podcast_agent.utils.book_cleaning import derive_output_filename
 
 HELPER_PATH = Path(__file__).with_name("oneoff_clean_may2_download_batch.py")
-_HELPER_SPEC = importlib.util.spec_from_file_location("oneoff_clean_may2_download_batch", HELPER_PATH)
+_HELPER_SPEC = importlib.util.spec_from_file_location(
+    "oneoff_clean_may2_download_batch", HELPER_PATH
+)
 if _HELPER_SPEC is None or _HELPER_SPEC.loader is None:
     raise RuntimeError(f"Unable to load helper module from {HELPER_PATH}")
 _HELPER_MODULE = importlib.util.module_from_spec(_HELPER_SPEC)
@@ -56,7 +58,12 @@ def _split_chapters(text: str) -> list[str]:
 
 
 def _render_chapters(bodies: list[str]) -> str:
-    return "\n\n".join(f"Chapter {index}\n\n{body.strip()}" for index, body in enumerate(bodies, start=1)).strip() + "\n"
+    return (
+        "\n\n".join(
+            f"Chapter {index}\n\n{body.strip()}" for index, body in enumerate(bodies, start=1)
+        ).strip()
+        + "\n"
+    )
 
 
 def _tokenize(text: str) -> list[str]:

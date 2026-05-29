@@ -32,9 +32,7 @@ class ExcerptExtractionAgent(Agent):
 
     def build_instructions(self, payload: dict) -> str:
         count_min, count_max = self._count_bounds(payload)
-        return excerpt_extraction_instructions(
-            count_min=count_min, count_max=count_max
-        )
+        return excerpt_extraction_instructions(count_min=count_min, count_max=count_max)
 
     def build_payload(
         self,

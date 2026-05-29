@@ -75,9 +75,7 @@ def _iter_exception_chain(exc: Exception) -> Sequence[BaseException]:
 
         nested = getattr(current, "exceptions", None)
         if isinstance(nested, tuple):
-            stack.extend(
-                child for child in reversed(nested) if isinstance(child, BaseException)
-            )
+            stack.extend(child for child in reversed(nested) if isinstance(child, BaseException))
         for attr_name in ("__cause__", "__context__"):
             linked = getattr(current, attr_name, None)
             if isinstance(linked, BaseException):

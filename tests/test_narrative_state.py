@@ -41,24 +41,24 @@ def test_strategy_episode_backfills_narrative_agenda_from_legacy_contract() -> N
             "thematic_focus": "Power moves behind the scenes",
             "arc_summary": "The visible cabinet and the hidden state diverge.",
             "unresolved_questions": ["Who is actually governing?"],
-                "episode_spine": {
-                    "listener_problem": "Who is actually governing?",
-                    "episode_answer": "Parallel institutions are already overruling the cabinet.",
-                    "pressure_line": "Formal offices keep losing ground to shadow authority.",
-                    "core_primitive_ids": [
-                        "primitive_1",
-                        "primitive_2",
-                        "primitive_3",
-                        "primitive_4",
-                        "primitive_5",
-                        "primitive_6",
-                    ],
-                    "support_primitive_roles": {
-                        "primitive_7": "mechanism",
-                        "primitive_8": "stakes",
-                    },
-                    "recall_primitive_ids": [],
+            "episode_spine": {
+                "listener_problem": "Who is actually governing?",
+                "episode_answer": "Parallel institutions are already overruling the cabinet.",
+                "pressure_line": "Formal offices keep losing ground to shadow authority.",
+                "core_primitive_ids": [
+                    "primitive_1",
+                    "primitive_2",
+                    "primitive_3",
+                    "primitive_4",
+                    "primitive_5",
+                    "primitive_6",
+                ],
+                "support_primitive_roles": {
+                    "primitive_7": "mechanism",
+                    "primitive_8": "stakes",
                 },
+                "recall_primitive_ids": [],
+            },
             "authorial_contract": {
                 "analysis_weight": "heavy",
                 "priority_moves": ["institutional_clarifier"],
@@ -76,18 +76,13 @@ def test_strategy_episode_backfills_narrative_agenda_from_legacy_contract() -> N
 
     assert episode.narrator_contract.analysis_weight == "heavy"
     assert episode.narrator_contract.priority_moves == ["institutional_clarifier"]
-    assert episode.narrative_agenda.listener.introduce_explanation_item_ids == [
-        "velayat_faqih"
-    ]
+    assert episode.narrative_agenda.listener.introduce_explanation_item_ids == ["velayat_faqih"]
     assert episode.narrative_agenda.listener.remind_actor_ids == ["khomeini"]
     assert [item.label for item in episode.narrative_agenda.listener.carry_forward_memory] == [
         "velayat_faqih",
         "revolutionary_council",
     ]
-    assert (
-        episode.narrative_agenda.listener.carry_forward_memory[0].source_episode_number
-        == 2
-    )
+    assert episode.narrative_agenda.listener.carry_forward_memory[0].source_episode_number == 2
     assert episode.narrative_agenda.listener.question_moves[0].question_id == (
         "episode_2_question_1"
     )
@@ -98,15 +93,22 @@ def test_strategy_episode_backfills_narrative_agenda_from_legacy_contract() -> N
 
 
 def test_host_move_cue_accepts_epistemic_move_types() -> None:
-    assert HostMoveCue.model_validate(
-        {"move_type": "uncertainty", "target": "what changed"}
-    ).move_type == "uncertainty"
-    assert HostMoveCue.model_validate(
-        {"move_type": "revision", "target": "one bad ruler story"}
-    ).move_type == "revision"
-    assert HostMoveCue.model_validate(
-        {"move_type": "surprise", "target": "parallel ministries"}
-    ).move_type == "surprise"
+    assert (
+        HostMoveCue.model_validate({"move_type": "uncertainty", "target": "what changed"}).move_type
+        == "uncertainty"
+    )
+    assert (
+        HostMoveCue.model_validate(
+            {"move_type": "revision", "target": "one bad ruler story"}
+        ).move_type
+        == "revision"
+    )
+    assert (
+        HostMoveCue.model_validate(
+            {"move_type": "surprise", "target": "parallel ministries"}
+        ).move_type
+        == "surprise"
+    )
 
 
 def test_build_host_policy_payload_uses_narrative_state_context() -> None:
@@ -373,17 +375,13 @@ def test_continuity_diagnostics_track_realized_and_missed_items() -> None:
             {"section_id": "section_2", "text": "A clean ending that drops the thread."},
         ],
         continuity_contract_pre={
-            "recap_items": [
-                {"item_id": "carry_1", "label": "Earlier pressure still matters."}
-            ],
+            "recap_items": [{"item_id": "carry_1", "label": "Earlier pressure still matters."}],
             "must_surface_early": [
                 {"item_id": "carry_1", "label": "Earlier pressure still matters."}
             ],
         },
         continuity_contract_post={
-            "must_leave_live": [
-                {"item_id": "carry_2", "label": "Unfinished pressure survives."}
-            ]
+            "must_leave_live": [{"item_id": "carry_2", "label": "Unfinished pressure survives."}]
         },
     )
 
@@ -401,9 +399,7 @@ def test_apply_agenda_moves_transitions_and_preserves_prior() -> None:
     state = NarrativeState(project_id="proj")
     a1 = EpisodeNarrativeAgenda(
         listener=ListenerEpisodeAgenda(
-            question_moves=[
-                ListenerQuestionMove(question_id="q1", action="open", text="Why?")
-            ]
+            question_moves=[ListenerQuestionMove(question_id="q1", action="open", text="Why?")]
         ),
         host=HostEpisodeAgenda(
             mystery_moves=[HostMysteryMove(mystery_id="m1", action="open", text="Hmm?")],
@@ -438,9 +434,7 @@ def test_apply_agenda_moves_reframe_stays_live_and_takeaway_propagates() -> None
             question_moves=[
                 ListenerQuestionMove(question_id="q1", action="reframe", text="recast")
             ],
-            episode_takeaway=EpisodeTakeaway(
-                inherited_condition="IC", proximate_contingency="PC"
-            ),
+            episode_takeaway=EpisodeTakeaway(inherited_condition="IC", proximate_contingency="PC"),
         )
     )
     s = apply_agenda_moves(state, agenda)
@@ -475,7 +469,11 @@ def test_fold_planned_pre_states_is_cumulative_and_deterministic() -> None:
     eps = [
         _fold_episode(
             1,
-            {"listener": {"question_moves": [{"question_id": "q1", "action": "open", "text": "Why?"}]}},
+            {
+                "listener": {
+                    "question_moves": [{"question_id": "q1", "action": "open", "text": "Why?"}]
+                }
+            },
         ),
         _fold_episode(
             2,
@@ -483,7 +481,11 @@ def test_fold_planned_pre_states_is_cumulative_and_deterministic() -> None:
         ),
         _fold_episode(
             3,
-            {"listener": {"question_moves": [{"question_id": "q2", "action": "open", "text": "And?"}]}},
+            {
+                "listener": {
+                    "question_moves": [{"question_id": "q2", "action": "open", "text": "And?"}]
+                }
+            },
         ),
     ]
     # Pass episodes out of order to confirm the fold sorts by episode_number.

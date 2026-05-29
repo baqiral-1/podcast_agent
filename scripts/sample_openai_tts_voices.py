@@ -52,7 +52,9 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--segment-id", help="Specific render segment id to synthesize.")
     parser.add_argument("--model", default="tts-1-hd", help="OpenAI speech model.")
-    parser.add_argument("--speed", type=float, help="Override speed. Defaults to the segment speed.")
+    parser.add_argument(
+        "--speed", type=float, help="Override speed. Defaults to the segment speed."
+    )
     parser.add_argument("--format", default="mp3", help="Audio format to request.")
     parser.add_argument(
         "--voices",
@@ -77,8 +79,12 @@ def _slug(value: str) -> str:
     return slug or "sample"
 
 
-def _select_segment(manifest: dict[str, Any], segment_id: str | None, segment_index: int) -> dict[str, Any]:
-    segments = [segment for segment in manifest.get("segments", []) if (segment.get("text") or "").strip()]
+def _select_segment(
+    manifest: dict[str, Any], segment_id: str | None, segment_index: int
+) -> dict[str, Any]:
+    segments = [
+        segment for segment in manifest.get("segments", []) if (segment.get("text") or "").strip()
+    ]
     if not segments:
         raise VoiceSampleError("render_manifest.json has no non-empty segments.")
     if segment_id:

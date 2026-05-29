@@ -173,9 +173,7 @@ def test_scene_card_draft_maps_legacy_synthesis_role_to_implication_landing() ->
     assert card.scene_job == "build"
 
 
-def test_structural_card_concreteness_warnings_report_missing_image_and_detail() -> (
-    None
-):
+def test_structural_card_concreteness_warnings_report_missing_image_and_detail() -> None:
     warnings = _build_structural_card_concreteness_warnings(
         scene_cards=[
             _scene(
@@ -189,19 +187,13 @@ def test_structural_card_concreteness_warnings_report_missing_image_and_detail()
         ]
     )
 
+    assert any(warning.startswith("structural_card_missing_entry_image") for warning in warnings)
     assert any(
-        warning.startswith("structural_card_missing_entry_image")
-        for warning in warnings
-    )
-    assert any(
-        warning.startswith("structural_card_missing_observable_detail")
-        for warning in warnings
+        warning.startswith("structural_card_missing_observable_detail") for warning in warnings
     )
 
 
-def test_human_grounding_warning_fires_for_structurally_heavy_episode_without_grounding() -> (
-    None
-):
+def test_human_grounding_warning_fires_for_structurally_heavy_episode_without_grounding() -> None:
     diagnostics, warnings = _build_human_grounding_warnings(
         scene_cards=[
             _scene(
@@ -230,9 +222,7 @@ def test_section_plan_realization_adds_section_load_warnings() -> None:
         sections=[_section("section_1")],
         architecture_notes=[],
     )
-    scene_cards = [
-        _scene(f"scene_{idx}", duration=300, section_id="section_1") for idx in range(5)
-    ]
+    scene_cards = [_scene(f"scene_{idx}", duration=300, section_id="section_1") for idx in range(5)]
 
     section_reports, warnings = _build_section_plan_realization(
         episode=architecture,
@@ -242,8 +232,7 @@ def test_section_plan_realization_adds_section_load_warnings() -> None:
 
     assert "section_scene_card_load_high: section_1 -> 5 cards" in warnings
     assert any(
-        warning.startswith("section_projected_word_count_high: section_1")
-        for warning in warnings
+        warning.startswith("section_projected_word_count_high: section_1") for warning in warnings
     )
     assert section_reports[0]["scene_card_count"] == 5
     assert section_reports[0]["structural_card_count"] == 0
@@ -290,9 +279,7 @@ def test_section_plan_realization_warns_when_required_section_sonic_plan_lacks_d
     )
     assert (
         "section_sonic_plan_required_missing_first_scene_derivation: section_1 -> scene_1"
-        in (
-        section_reports[0]["warnings"]
-    )
+        in (section_reports[0]["warnings"])
     )
 
 
@@ -363,7 +350,9 @@ def test_style_audit_payload_includes_section_load_metadata() -> None:
     assert "host_presence_beats" not in payload[0]
 
 
-def test_section_plan_realization_warns_on_verbatim_section_sonic_copy_and_unbound_later_beat() -> None:
+def test_section_plan_realization_warns_on_verbatim_section_sonic_copy_and_unbound_later_beat() -> (
+    None
+):
     architecture = EpisodeArchitecture.model_construct(
         episode_number=1,
         major_turn_section_id="section_1",
@@ -522,17 +511,15 @@ def test_host_density_diagnostics_flag_build_scene_overcoverage_and_verdict_dens
 
     assert diagnostics["build_scene_ids_with_three_populated_phases"] == ["scene_dense"]
     assert diagnostics["explicit_verdict_scene_count"] == 5
+    assert any(warning.startswith("build_scene_phase_cap_exceeded:") for warning in warnings)
     assert any(
-        warning.startswith("build_scene_phase_cap_exceeded:")
-        for warning in warnings
-    )
-    assert any(
-        warning.startswith("explicit_verdict_scene_cap_exceeded: count=5")
-        for warning in warnings
+        warning.startswith("explicit_verdict_scene_cap_exceeded: count=5") for warning in warnings
     )
 
 
-def test_architecture_grounding_diagnostics_flag_overloaded_run_without_actor_arc_directive() -> None:
+def test_architecture_grounding_diagnostics_flag_overloaded_run_without_actor_arc_directive() -> (
+    None
+):
     architecture = EpisodeArchitecture.model_construct(
         episode_number=1,
         major_turn_section_id="section_2",
@@ -579,9 +566,7 @@ def test_architecture_grounding_diagnostics_flag_overloaded_run_without_actor_ar
     assert diagnostics["warning_count"] == 1
     assert diagnostics["overloaded_runs"][0]["directive_actor_ids"] == []
     assert diagnostics["overloaded_runs"][0]["has_recurring_actor_arc_realization"] is False
-    assert diagnostics["warnings"][0].startswith(
-        "overloaded_run_missing_actor_arc_directive:"
-    )
+    assert diagnostics["warnings"][0].startswith("overloaded_run_missing_actor_arc_directive:")
 
 
 def test_architecture_grounding_diagnostics_flag_missing_directive_realization() -> None:
@@ -634,16 +619,18 @@ def test_architecture_grounding_diagnostics_flag_missing_directive_realization()
     assert diagnostics["warning_count"] == 1
     assert diagnostics["overloaded_runs"][0]["directive_actor_ids"] == ["young_khomeini"]
     assert diagnostics["overloaded_runs"][0]["realized_directive_actor_ids"] == []
-    assert diagnostics["warnings"][0].startswith(
-        "overloaded_run_missing_actor_arc_realization:"
-    )
+    assert diagnostics["warnings"][0].startswith("overloaded_run_missing_actor_arc_realization:")
 
 
-def test_narrative_strategy_actor_arc_diagnostics_warn_when_actor_evidence_has_no_directives() -> None:
+def test_narrative_strategy_actor_arc_diagnostics_warn_when_actor_evidence_has_no_directives() -> (
+    None
+):
     actor_metadata = ActorMetadata(
         project_id="proj",
         actors=[
-            ActorProfile(actor_id="young_khomeini", display_name="Young Khomeini", actor_type="person"),
+            ActorProfile(
+                actor_id="young_khomeini", display_name="Young Khomeini", actor_type="person"
+            ),
             ActorProfile(actor_id="reza_shah", display_name="Reza Shah", actor_type="person"),
         ],
     )
@@ -696,11 +683,15 @@ def test_narrative_strategy_actor_arc_diagnostics_warn_when_actor_evidence_has_n
     )
 
 
-def test_narrative_strategy_actor_arc_diagnostics_warn_when_actor_rich_episode_has_only_one_directive() -> None:
+def test_narrative_strategy_actor_arc_diagnostics_warn_when_actor_rich_episode_has_only_one_directive() -> (
+    None
+):
     actor_metadata = ActorMetadata(
         project_id="proj",
         actors=[
-            ActorProfile(actor_id="young_khomeini", display_name="Young Khomeini", actor_type="person"),
+            ActorProfile(
+                actor_id="young_khomeini", display_name="Young Khomeini", actor_type="person"
+            ),
             ActorProfile(actor_id="reza_shah", display_name="Reza Shah", actor_type="person"),
         ],
     )

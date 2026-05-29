@@ -9,9 +9,7 @@ from typing import Any
 
 
 _SCRIPT_PATH = (
-    Path(__file__).resolve().parents[1]
-    / "scripts"
-    / "resume_single_episode_from_writing.py"
+    Path(__file__).resolve().parents[1] / "scripts" / "resume_single_episode_from_writing.py"
 )
 _SCRIPT_SPEC = importlib.util.spec_from_file_location(
     "resume_single_episode_from_writing",

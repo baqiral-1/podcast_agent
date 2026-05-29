@@ -35,11 +35,7 @@ from podcast_agent.schemas.models import (
 )
 
 
-_SCRIPT_PATH = (
-    Path(__file__).resolve().parents[1]
-    / "scripts"
-    / "resume_from_episode_planning.py"
-)
+_SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "resume_from_episode_planning.py"
 _SCRIPT_SPEC = importlib.util.spec_from_file_location(
     "resume_from_episode_planning",
     _SCRIPT_PATH,
@@ -476,8 +472,10 @@ def test_resume_from_episode_planning_reruns_planning_then_production(
         def _bind_run_logger(self, bound_project_dir: Path) -> None:
             calls["bound_project_dir"] = bound_project_dir
 
-        async def _plan_series_with_narrative_state(self, **_: Any,
-                ) -> None:
+        async def _plan_series_with_narrative_state(
+            self,
+            **_: Any,
+        ) -> None:
             raise AssertionError("episode architecture should not rerun")
 
         async def _plan_series(self, **kwargs: Any) -> tuple[list[EpisodePlan], dict[str, Any]]:
@@ -529,8 +527,9 @@ def test_resume_from_episode_planning_reruns_planning_then_production(
                 _write_json(project_dir / "retained_excerpts.json", artifact)
             return artifact
 
-
-        async def _produce_episode(self, plan: EpisodePlan, *args: Any, **kwargs: Any) -> tuple[int, SpokenScript]:
+        async def _produce_episode(
+            self, plan: EpisodePlan, *args: Any, **kwargs: Any
+        ) -> tuple[int, SpokenScript]:
             calls["planned_episode_number"] = plan.episode_number
             calls["produce_config"] = kwargs["semaphore"] is not None
             calls["host_policy"] = kwargs["host_policy"]
@@ -540,7 +539,12 @@ def test_resume_from_episode_planning_reruns_planning_then_production(
                     episode_number=1,
                     title="Episode 1",
                     framing=plan.framing,
-                    sections=[SpokenSection(section_id="section_01", segments=[SpokenSegment(segment_id="section_01_seg1", text="Text.")])],
+                    sections=[
+                        SpokenSection(
+                            section_id="section_01",
+                            segments=[SpokenSegment(segment_id="section_01_seg1", text="Text.")],
+                        )
+                    ],
                     tts_provider="openai",
                 ),
             )
@@ -603,9 +607,7 @@ def test_resume_from_episode_planning_requires_architecture(
         lambda settings: SimpleNamespace(),
     )
 
-    with pytest.raises(
-        (RuntimeError, FileNotFoundError), match="episode_architectures.json"
-    ):
+    with pytest.raises((RuntimeError, FileNotFoundError), match="episode_architectures.json"):
         asyncio.run(resume_script._resume_from_episode_planning("run_1"))
 
 

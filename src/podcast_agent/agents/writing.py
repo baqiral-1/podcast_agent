@@ -20,9 +20,7 @@ class SectionProse(BaseModel):
     text: str
     citations: list[Citation] = Field(default_factory=list)
     source_book_ids: list[str] = Field(default_factory=list)
-    actor_explanation_realizations: list[ActorExplanationRealization] = Field(
-        default_factory=list
-    )
+    actor_explanation_realizations: list[ActorExplanationRealization] = Field(default_factory=list)
 
 
 class EpisodeWritingResponse(BaseModel):
@@ -37,9 +35,7 @@ class SectionProseNoCitations(BaseModel):
     movement_goal: str = ""
     text: str
     source_book_ids: list[str] = Field(default_factory=list)
-    actor_explanation_realizations: list[ActorExplanationRealization] = Field(
-        default_factory=list
-    )
+    actor_explanation_realizations: list[ActorExplanationRealization] = Field(default_factory=list)
 
 
 class EpisodeWritingNoCitationsResponse(BaseModel):
@@ -110,13 +106,9 @@ class WritingAgent(Agent):
         if field_semantics is not None:
             payload["field_semantics"] = field_semantics
         if episode_target_word_count_lower is not None:
-            payload["episode_target_word_count_lower"] = int(
-                episode_target_word_count_lower
-            )
+            payload["episode_target_word_count_lower"] = int(episode_target_word_count_lower)
         if episode_target_word_count_higher is not None:
-            payload["episode_target_word_count_higher"] = int(
-                episode_target_word_count_higher
-            )
+            payload["episode_target_word_count_higher"] = int(episode_target_word_count_higher)
         if series_tic_blocklist:
             payload["series_tic_blocklist"] = list(series_tic_blocklist)
         return payload

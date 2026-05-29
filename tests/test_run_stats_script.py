@@ -28,7 +28,9 @@ def _build_run(tmp_path: Path) -> Path:
             "books": [],
         },
     )
-    _write_json(run_dir / "thematic_axes.json", {"axes": [{"axis_id": "axis_1", "name": "Escalation"}]})
+    _write_json(
+        run_dir / "thematic_axes.json", {"axes": [{"axis_id": "axis_1", "name": "Escalation"}]}
+    )
     _write_json(
         run_dir / "thematic_corpus.json",
         {
@@ -149,7 +151,14 @@ def _build_run(tmp_path: Path) -> Path:
                 "opening_question": "Question",
                 "handoff_scene_card_id": "scene_1",
             },
-            "prose_sections": [{"section_id": "section_1", "scene_card_ids": ["scene_1"], "movement_goal": "discover", "text": "Narration"}],
+            "prose_sections": [
+                {
+                    "section_id": "section_1",
+                    "scene_card_ids": ["scene_1"],
+                    "movement_goal": "discover",
+                    "text": "Narration",
+                }
+            ],
             "total_word_count": 1,
             "estimated_duration_seconds": 1,
         },
@@ -201,4 +210,6 @@ def test_generate_run_stats_fails_when_required_artifact_missing(tmp_path: Path)
     )
 
     assert result.returncode != 0
-    assert "synthesis_primitives.json" in result.stderr or "synthesis_primitives.json" in result.stdout
+    assert (
+        "synthesis_primitives.json" in result.stderr or "synthesis_primitives.json" in result.stdout
+    )

@@ -44,19 +44,19 @@ def _strategy_episode() -> StrategyEpisode:
             "unresolved_questions": [],
             "actor_arc_directives": [],
             "promised_beats": [],
-                "episode_spine": {
-                    "listener_problem": "What changes?",
-                    "episode_answer": "The system changes by force.",
-                    "pressure_line": "Pressure keeps narrowing the options.",
-                    "core_primitive_ids": ["primitive_1", "primitive_2"],
-                    "support_primitive_roles": {
-                        "primitive_3": "mechanism",
-                        "primitive_4": "stakes",
-                    },
-                    "recall_primitive_ids": [],
+            "episode_spine": {
+                "listener_problem": "What changes?",
+                "episode_answer": "The system changes by force.",
+                "pressure_line": "Pressure keeps narrowing the options.",
+                "core_primitive_ids": ["primitive_1", "primitive_2"],
+                "support_primitive_roles": {
+                    "primitive_3": "mechanism",
+                    "primitive_4": "stakes",
                 },
-            }
-        )
+                "recall_primitive_ids": [],
+            },
+        }
+    )
 
 
 def _architecture() -> EpisodeArchitecture:
@@ -200,19 +200,17 @@ def test_validate_plan_transition_requires_scene_pinned_authorial_passages() -> 
         {
             "episode_number": 1,
             "framing": _framing().model_dump(mode="json"),
-                "scene_cards": [
-                    _scene_card("scene_1", "build"),
-                    _scene_card("scene_2", "answer"),
-                    _scene_card("scene_3", "build"),
-                    _scene_card("scene_4", "close"),
-                ],
-                "answer_scene_card_id": "scene_2",
+            "scene_cards": [
+                _scene_card("scene_1", "build"),
+                _scene_card("scene_2", "answer"),
+                _scene_card("scene_3", "build"),
+                _scene_card("scene_4", "close"),
+            ],
+            "answer_scene_card_id": "scene_2",
         }
     )
 
-    with pytest.raises(
-        ComplianceViolationError, match="authorial passages unassigned"
-    ):
+    with pytest.raises(ComplianceViolationError, match="authorial passages unassigned"):
         _validate_plan_transition(
             strategy_episode=strategy_episode,
             architecture=architecture,
@@ -223,13 +221,13 @@ def test_validate_plan_transition_requires_scene_pinned_authorial_passages() -> 
         {
             "episode_number": 1,
             "framing": _framing().model_dump(mode="json"),
-                "scene_cards": [
-                    _scene_card("scene_1", "build", authorial_passage_ids=["ap_1"]),
-                    _scene_card("scene_2", "answer"),
-                    _scene_card("scene_3", "build"),
-                    _scene_card("scene_4", "close"),
-                ],
-                "answer_scene_card_id": "scene_2",
+            "scene_cards": [
+                _scene_card("scene_1", "build", authorial_passage_ids=["ap_1"]),
+                _scene_card("scene_2", "answer"),
+                _scene_card("scene_3", "build"),
+                _scene_card("scene_4", "close"),
+            ],
+            "answer_scene_card_id": "scene_2",
         }
     )
 
@@ -293,6 +291,7 @@ def test_compute_scene_word_count_bands_uses_default_and_tight_ranges() -> None:
 
     assert lower["scene_1"] < lower["scene_2"]
     assert higher["scene_1"] > higher["scene_2"]
+
 
 def test_comparative_aside_scene_warnings_flag_tight_close_answer_stack() -> None:
     architecture = EpisodeArchitecture.model_construct(

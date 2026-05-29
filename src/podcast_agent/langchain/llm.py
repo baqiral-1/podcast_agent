@@ -55,6 +55,7 @@ def _resolve_default_provider(config: LLMConfig) -> str:
         return "openai-compatible"
     raise ValueError(f"Unsupported LLM provider '{config.llm_provider}'.")
 
+
 def _supports_adaptive_thinking(model_name: str) -> bool:
     """Opus 4.7 and 4.8 use the effort-based adaptive-thinking API.
 
@@ -124,9 +125,7 @@ class _ThinkingState:
         return hashlib.sha256(joined).hexdigest()[:16]
 
 
-def _resolve_stop_reason(
-    response_metadata: dict[str, Any] | None, response: Any
-) -> str | None:
+def _resolve_stop_reason(response_metadata: dict[str, Any] | None, response: Any) -> str | None:
     """Pull `stop_reason` from wherever langchain put it.
 
     Streaming: langchain-anthropic sets `response_metadata["stop_reason"]` on
@@ -196,9 +195,7 @@ def _filter_and_track_thinking(
 
     text_parts: list[str] = []
     for idx, part in enumerate(parts):
-        part_type, thinking_text, signature, index = _extract_thinking_part(
-            part, idx
-        )
+        part_type, thinking_text, signature, index = _extract_thinking_part(part, idx)
         if part_type == "thinking":
             state.indices_seen.add(index)
             if thinking_text:
@@ -212,16 +209,12 @@ def _filter_and_track_thinking(
         if part_type == "redacted_thinking":
             state.redacted_count += 1
             continue
-        part_text = (
-            part.get("text") if isinstance(part, dict) else getattr(part, "text", None)
-        )
+        part_text = part.get("text") if isinstance(part, dict) else getattr(part, "text", None)
         text_parts.append(part_text if part_text is not None else str(part))
     return "".join(text_parts)
 
 
-def _merge_usage(
-    usage_metadata_obj: Any, raw_usage: dict[str, Any] | None
-) -> dict[str, Any]:
+def _merge_usage(usage_metadata_obj: Any, raw_usage: dict[str, Any] | None) -> dict[str, Any]:
     """Merge langchain-anthropic 1.x `usage_metadata` with raw Anthropic `usage` dict.
 
     `usage_metadata` in langchain 1.x is a `TypedDict` (a `dict` at runtime);
@@ -410,7 +403,8 @@ class LangChainLLMClient(LLMClient):
             if thinking_budget is not None and temperature != 1.0:
                 logger.warning(
                     "Extended thinking requires temperature=1.0; overriding %.1f for %s",
-                    temperature, schema_name,
+                    temperature,
+                    schema_name,
                 )
                 temperature = 1.0
                 temperature_for_target = 1.0
@@ -448,9 +442,7 @@ class LangChainLLMClient(LLMClient):
                 anthropic_kwargs["temperature"] = temperature
             if model_supports_adaptive_thinking and thinking_effort is not None:
                 anthropic_kwargs["thinking"] = {"type": "adaptive"}
-                anthropic_kwargs["model_kwargs"] = {
-                    "output_config": {"effort": thinking_effort}
-                }
+                anthropic_kwargs["model_kwargs"] = {"output_config": {"effort": thinking_effort}}
                 logger.info(
                     "Adaptive thinking enabled for %s with effort %s",
                     schema_name,
@@ -458,8 +450,7 @@ class LangChainLLMClient(LLMClient):
                 )
                 if (
                     legacy_budget_for_effort is not None
-                    and schema_name
-                    not in self.config.anthropic_thinking_effort_overrides
+                    and schema_name not in self.config.anthropic_thinking_effort_overrides
                 ):
                     logger.warning(
                         "Using deprecated thinking_budget_tokens for %s; "
@@ -475,7 +466,8 @@ class LangChainLLMClient(LLMClient):
                 }
                 logger.info(
                     "Extended thinking enabled for %s with budget %d tokens",
-                    schema_name, thinking_budget,
+                    schema_name,
+                    thinking_budget,
                 )
             model_client = ChatAnthropic(**anthropic_kwargs)
         elif provider == "openai-compatible":
@@ -641,10 +633,7 @@ class LangChainLLMClient(LLMClient):
                     response_metadata = chunk_meta
                 merged_usage = _merge_usage(
                     getattr(aggregated_chunk, "usage_metadata", None),
-                    (
-                        getattr(aggregated_chunk, "response_metadata", None)
-                        or {}
-                    ).get("usage")
+                    (getattr(aggregated_chunk, "response_metadata", None) or {}).get("usage")
                     if isinstance(
                         getattr(aggregated_chunk, "response_metadata", None),
                         dict,
@@ -681,10 +670,7 @@ class LangChainLLMClient(LLMClient):
         if aggregated_chunk is not None:
             merged_usage = _merge_usage(
                 getattr(aggregated_chunk, "usage_metadata", None),
-                (
-                    getattr(aggregated_chunk, "response_metadata", None)
-                    or {}
-                ).get("usage")
+                (getattr(aggregated_chunk, "response_metadata", None) or {}).get("usage")
                 if isinstance(
                     getattr(aggregated_chunk, "response_metadata", None),
                     dict,
@@ -747,16 +733,16 @@ class LangChainLLMClient(LLMClient):
             invoke_kwargs: dict[str, Any] = {}
             provider = self._provider_for_schema(schema_name)
             if provider == "openai-compatible" and self.config.openai_prompt_caching_enabled:
-                cache_key = f"{schema_name}:{prompt_log_metadata(system_text, user_text)['payload_sha256']}"
+                cache_key = (
+                    f"{schema_name}:{prompt_log_metadata(system_text, user_text)['payload_sha256']}"
+                )
                 invoke_kwargs["prompt_cache_key"] = cache_key
             response = None
             response_metadata: dict[str, Any] | None = None
             content = None
             last_usage: dict[str, Any] = {}
             thinking_state = _ThinkingState()
-            log_thinking_content = bool(
-                getattr(self.config, "log_thinking_content", False)
-            )
+            log_thinking_content = bool(getattr(self.config, "log_thinking_content", False))
             content, response_metadata, last_usage = self._stream_response_content(
                 model_client=model_client,
                 messages=messages,
@@ -788,9 +774,7 @@ class LangChainLLMClient(LLMClient):
                     response_metadata = getattr(response, "response_metadata", {}) or {}
                 merged_usage = _merge_usage(
                     getattr(response, "usage_metadata", None),
-                    response_metadata.get("usage")
-                    if isinstance(response_metadata, dict)
-                    else None,
+                    response_metadata.get("usage") if isinstance(response_metadata, dict) else None,
                 )
                 if merged_usage:
                     last_usage = merged_usage
@@ -805,9 +789,15 @@ class LangChainLLMClient(LLMClient):
                     if isinstance(raw_response, list):
                         raw_structure = [
                             {
-                                "type": p.get("type") if isinstance(p, dict) else getattr(p, "type", "?"),
+                                "type": p.get("type")
+                                if isinstance(p, dict)
+                                else getattr(p, "type", "?"),
                                 "text_head": (
-                                    (p.get("text") if isinstance(p, dict) else getattr(p, "text", ""))
+                                    (
+                                        p.get("text")
+                                        if isinstance(p, dict)
+                                        else getattr(p, "text", "")
+                                    )
                                     or ""
                                 )[:200],
                             }
@@ -827,7 +817,9 @@ class LangChainLLMClient(LLMClient):
                             "parse_error_line": parse_error_line,
                             "parse_error_column": parse_error_column,
                             "parse_error_char": parse_error_char,
-                            "raw_response_type": type(raw_response).__name__ if raw_response is not None else "none",
+                            "raw_response_type": type(raw_response).__name__
+                            if raw_response is not None
+                            else "none",
                             "raw_response_parts": raw_structure,
                         },
                     ) from parse_exc
@@ -872,7 +864,9 @@ class LangChainLLMClient(LLMClient):
                     schema_name=schema_name,
                     episode_number=episode_number,
                     attempt=attempt,
-                    response_id=response_metadata.get("id") if isinstance(response_metadata, dict) else None,
+                    response_id=response_metadata.get("id")
+                    if isinstance(response_metadata, dict)
+                    else None,
                     provider_request_id=provider_request_id,
                     model=(
                         response_metadata.get("model", resolved_model)

@@ -82,7 +82,10 @@ def test_primitive_extraction_prompt_is_rich_and_schema_safe() -> None:
     assert "OUTPUT CONTRACT" in extraction
     assert "specificity_anchors" not in extraction
     assert "`events`: required `event_type`, required `what_happened`" in extraction
-    assert "`events`: required `event_type`, required `what_happened`, optional `event_result`" not in extraction
+    assert (
+        "`events`: required `event_type`, required `what_happened`, optional `event_result`"
+        not in extraction
+    )
     assert "COMPACT TRANSPORT KEYS" not in extraction
     assert "Do not treat `title` as a substitute for subtype-required fields." in extraction
     assert "Do not emit primitive `id`; local code will assign ids after extraction." in extraction
@@ -90,18 +93,33 @@ def test_primitive_extraction_prompt_is_rich_and_schema_safe() -> None:
     assert "The top-level output must be a substrate map" in extraction
     assert "events (87–120)" in extraction
     assert "readings (11–13)" in extraction
-    assert "`project_id`, `events`, `acts`, `actor_portraits`, `mechanisms`, `conditions`, `artifacts`, `readings`, `quality_score`, `quality_notes`." in extraction
+    assert (
+        "`project_id`, `events`, `acts`, `actor_portraits`, `mechanisms`, `conditions`, `artifacts`, `readings`, `quality_score`, `quality_notes`."
+        in extraction
+    )
     assert "- `id`" not in extraction
     assert "- `substrate`" not in extraction
-    assert "For every `events` primitive, are `event_type` and `what_happened` present and non-empty?" in extraction
-    assert "In this stage, do not fill deferred substrate-detail fields that belong to later narrative enrichment." in extraction
-    assert "Do not emit `event_result` in this stage; later function tagging may add downstream consequence wording." in extraction
+    assert (
+        "For every `events` primitive, are `event_type` and `what_happened` present and non-empty?"
+        in extraction
+    )
+    assert (
+        "In this stage, do not fill deferred substrate-detail fields that belong to later narrative enrichment."
+        in extraction
+    )
+    assert (
+        "Do not emit `event_result` in this stage; later function tagging may add downstream consequence wording."
+        in extraction
+    )
     assert "Do not emit `immediate_result` in this stage." in extraction
     assert "defer `operating_pressure` to function tagging." in extraction
     assert "do not emit `operating_chain`, `inputs`, or `outputs` in this stage." in extraction
     assert "Do not emit `active_tension` in this stage." in extraction
     assert "`artifact_detail` is deferred to function tagging." in extraction
-    assert "If `synthesis_feedback` is present, fix only the named primitive/field errors first" in extraction
+    assert (
+        "If `synthesis_feedback` is present, fix only the named primitive/field errors first"
+        in extraction
+    )
     assert (
         "`acts.act_type`: `decision`, `refusal`, `delay`, `deferral`, `order`, `defection`, `other`"
         in extraction
@@ -129,10 +147,16 @@ def test_primitive_function_tagging_prompt_is_rich_and_substrate_specific() -> N
     assert "COMPACT TRANSPORT KEYS" not in tagging
     assert "Assign between 0 and 3 function tags per primitive" in tagging
     assert "Do not use substrate identity as a proxy for function." in tagging
-    assert "A primitive is not automatically entitled to a tag just because of its substrate." in tagging
+    assert (
+        "A primitive is not automatically entitled to a tag just because of its substrate."
+        in tagging
+    )
     assert "If choosing between `stake` and `cost`" in tagging
     assert "The contract is bidirectional" in tagging
-    assert "Compare `functions` against `pivot`, `stake`, `texture`, `cost`, `complication`, `recurrence`, and `contest`" in tagging
+    assert (
+        "Compare `functions` against `pivot`, `stake`, `texture`, `cost`, `complication`, `recurrence`, and `contest`"
+        in tagging
+    )
     assert "fix only the named issue" in tagging
     assert "narration_hooks" in tagging
     assert "authorial_move" in tagging
@@ -148,7 +172,9 @@ def test_primitive_function_tagging_prompt_is_rich_and_substrate_specific() -> N
     assert "`events.event_result`" in tagging
     assert "`event_type -> etype`, `what_happened -> event`." not in tagging
     assert "`condition_summary -> cond`" not in tagging
-    assert "`mechanisms.operating_chain`, `mechanisms.inputs`, and `mechanisms.outputs`" not in tagging
+    assert (
+        "`mechanisms.operating_chain`, `mechanisms.inputs`, and `mechanisms.outputs`" not in tagging
+    )
     assert "`artifacts.artifact_detail`" not in tagging
     assert "Build each overlay in this order: resolve deferred substrate-detail fields" in tagging
     assert (
@@ -163,10 +189,15 @@ def test_primitive_function_tagging_prompt_for_conditions_is_family_clean() -> N
     assert "primitive_function_tagging_conditions" in tagging
     assert "`condition_summary -> cond`." not in tagging
     assert "`conditions.active_tension`" in tagging
-    assert "This `conditions` batch may add only deferred substrate-detail fields owned by `conditions`." in tagging
+    assert (
+        "This `conditions` batch may add only deferred substrate-detail fields owned by `conditions`."
+        in tagging
+    )
     assert "`event_type -> etype`" not in tagging
     assert "`acts.immediate_result`" not in tagging
-    assert "`mechanisms.operating_chain`, `mechanisms.inputs`, and `mechanisms.outputs`" not in tagging
+    assert (
+        "`mechanisms.operating_chain`, `mechanisms.inputs`, and `mechanisms.outputs`" not in tagging
+    )
     assert "`artifacts.artifact_detail`" not in tagging
 
 
@@ -175,8 +206,14 @@ def test_primitive_function_tagging_prompt_for_readings_has_no_foreign_deferred_
 
     assert "primitive_function_tagging_readings" in tagging
     assert "`reading_summary -> read`." not in tagging
-    assert "There are no deferred substrate-detail fields to fill for this substrate in this pass." in tagging
-    assert "This `readings` batch may not add deferred substrate-detail fields owned by other substrates." in tagging
+    assert (
+        "There are no deferred substrate-detail fields to fill for this substrate in this pass."
+        in tagging
+    )
+    assert (
+        "This `readings` batch may not add deferred substrate-detail fields owned by other substrates."
+        in tagging
+    )
     assert "`events.event_result`" not in tagging
     assert "`conditions.active_tension`" not in tagging
     assert "`artifacts.artifact_detail`" not in tagging
@@ -372,10 +409,7 @@ def test_scene_primitive_briefs_are_window_scoped() -> None:
         geography="Delhi",
         actor_ids=["actor_1"],
         functions=[PrimitiveFunction.PIVOT],
-        salience=PrimitiveSalience(
-            score=0.9,
-            justification="The scene's load-bearing rupture."
-        ),
+        salience=PrimitiveSalience(score=0.9, justification="The scene's load-bearing rupture."),
         pivot=PivotJustification(
             what_changed="A crisis becomes undeniable.",
             irreversibility=PrimitiveIrreversibility.HIGH,

@@ -35,9 +35,7 @@ from podcast_agent.schemas.models import (
 
 
 _SCRIPT_PATH = (
-    Path(__file__).resolve().parents[1]
-    / "scripts"
-    / "resume_from_episode_architecture.py"
+    Path(__file__).resolve().parents[1] / "scripts" / "resume_from_episode_architecture.py"
 )
 _SCRIPT_SPEC = importlib.util.spec_from_file_location(
     "resume_from_episode_architecture",
@@ -400,7 +398,6 @@ def test_resume_from_episode_architecture_reruns_architecture_then_planning_then
                 _write_json(project_dir / "retained_excerpts.json", artifact)
             return artifact
 
-
         async def _produce_episode(self, *args: Any, **kwargs: Any) -> tuple[int, SpokenScript]:
             calls["order"].append("produce_episode")
             calls["host_policy"] = kwargs["host_policy"]
@@ -415,7 +412,12 @@ def test_resume_from_episode_architecture_reruns_architecture_then_planning_then
                         "opening_question": "What now?",
                         "handoff_scene_card_id": "scene_01",
                     },
-                    sections=[SpokenSection(section_id="section_01", segments=[SpokenSegment(segment_id="section_01_seg1", text="Text.")])],
+                    sections=[
+                        SpokenSection(
+                            section_id="section_01",
+                            segments=[SpokenSegment(segment_id="section_01_seg1", text="Text.")],
+                        )
+                    ],
                     tts_provider="openai",
                 ),
             )
@@ -453,10 +455,7 @@ def test_resume_from_episode_architecture_reruns_architecture_then_planning_then
     ]
     assert calls["bound_project_dir"] == project_dir
     assert calls["architecture_status"] == ProjectStatus.PLANNING
-    assert (
-        calls["architecture_scene_discovery"].candidates[0].candidate_id
-        == "candidate_01"
-    )
+    assert calls["architecture_scene_discovery"].candidates[0].candidate_id == "candidate_01"
     assert calls["architecture_actor_metadata"].actors[0].actor_id == "actor_1"
     assert calls["planning_status"] == ProjectStatus.PLANNING
     assert calls["host_policy"]["allowed_moves"]
@@ -565,7 +564,6 @@ def test_resume_from_episode_architecture_does_not_require_persisted_architectur
                 _write_json(project_dir / "retained_excerpts.json", artifact)
             return artifact
 
-
         async def _produce_episode(self, *args: Any, **kwargs: Any) -> tuple[int, SpokenScript]:
             return (
                 1,
@@ -578,7 +576,12 @@ def test_resume_from_episode_architecture_does_not_require_persisted_architectur
                         "opening_question": "What now?",
                         "handoff_scene_card_id": "scene_01",
                     },
-                    sections=[SpokenSection(section_id="section_01", segments=[SpokenSegment(segment_id="section_01_seg1", text="Text.")])],
+                    sections=[
+                        SpokenSection(
+                            section_id="section_01",
+                            segments=[SpokenSegment(segment_id="section_01_seg1", text="Text.")],
+                        )
+                    ],
                     tts_provider="openai",
                 ),
             )

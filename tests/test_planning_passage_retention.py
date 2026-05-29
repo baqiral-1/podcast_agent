@@ -269,11 +269,7 @@ def _planning_response(
             },
             "scene_cards": scene_cards,
             "answer_scene_card_id": next(
-                (
-                    scene["scene_id"]
-                    for scene in scene_cards
-                    if scene.get("scene_job") == "answer"
-                ),
+                (scene["scene_id"] for scene in scene_cards if scene.get("scene_job") == "answer"),
                 None,
             ),
         }
@@ -303,9 +299,7 @@ def _strategy_episode(
             listener_problem=listener_problem,
             episode_answer="Claim",
             core_primitive_ids=list(core_primitive_ids or _core_primitive_ids()),
-            support_primitive_roles=dict(
-                support_primitive_roles or _support_primitive_roles()
-            ),
+            support_primitive_roles=dict(support_primitive_roles or _support_primitive_roles()),
             recall_primitive_ids=list(recall_primitive_ids or []),
         ),
     )
@@ -319,8 +313,7 @@ def _episode_architecture(
     normalized_sections = [
         section.model_copy(
             update={
-                "section_anchor": section.section_anchor
-                or f"Anchor for {section.section_id}",
+                "section_anchor": section.section_anchor or f"Anchor for {section.section_id}",
                 "must_stage_beats": list(
                     section.must_stage_beats
                     or [
@@ -334,9 +327,7 @@ def _episode_architecture(
     ]
     return EpisodeArchitecture.model_construct(
         episode_number=1,
-        major_turn_section_id=normalized_sections[
-            min(2, len(normalized_sections) - 1)
-        ].section_id,
+        major_turn_section_id=normalized_sections[min(2, len(normalized_sections) - 1)].section_id,
         allowed_recurring_primitive_ids=list(allowed_recurring_primitive_ids or []),
         forbidden_redundancies=[],
         sections=normalized_sections,
@@ -412,9 +403,7 @@ def test_build_episode_planning_passage_refs_preserves_order_and_provenance() ->
     ]
 
 
-def test_build_episode_architecture_realization_reports_omitted_support_and_recall() -> (
-    None
-):
+def test_build_episode_architecture_realization_reports_omitted_support_and_recall() -> None:
     strategy_episode = _strategy_episode(
         support_primitive_roles=_support_primitive_roles(),
         recall_primitive_ids=["recall_1"],
@@ -543,11 +532,7 @@ def test_build_episode_architecture_realization_skips_section_count_warning_insi
         sections.append(
             ArchitectureSection(
                 section_id=section_id,
-                purpose="opening"
-                if idx == 0
-                else "closing"
-                if idx == closing_idx
-                else "setup",
+                purpose="opening" if idx == 0 else "closing" if idx == closing_idx else "setup",
                 approx_runtime_minutes=15.0,
                 primitive_ids=["core_1"],
                 section_question=f"Q{idx + 1}?",
@@ -556,9 +541,7 @@ def test_build_episode_architecture_realization_skips_section_count_warning_insi
                 exit_state=f"X{idx + 1}",
                 transition_logic=f"T{idx + 1}",
                 depends_on_section_ids=[f"section_{idx:02d}"] if idx > 0 else [],
-                sets_up_section_ids=[f"section_{idx + 2:02d}"]
-                if idx < closing_idx
-                else [],
+                sets_up_section_ids=[f"section_{idx + 2:02d}"] if idx < closing_idx else [],
                 argument_role="frame"
                 if idx == 0
                 else "close"
@@ -594,14 +577,11 @@ def test_build_episode_architecture_realization_skips_section_count_warning_insi
     )
 
     assert not any(
-        warning.startswith("architecture_section_count_")
-        for warning in realization["warnings"]
+        warning.startswith("architecture_section_count_") for warning in realization["warnings"]
     )
 
 
-def test_build_episode_architecture_realization_warns_for_missing_payoff_and_low_budget() -> (
-    None
-):
+def test_build_episode_architecture_realization_warns_for_missing_payoff_and_low_budget() -> None:
     strategy_episode = _strategy_episode()
     narrator_profile = SeriesNarratorProfile()
     strategy_episode = strategy_episode.model_copy(
@@ -736,8 +716,7 @@ def test_build_episode_architecture_realization_warns_for_missing_payoff_and_low
     assert "foundational_item_missing_payoff: taqlid" in realization["warnings"]
     assert "reminder_item_redefined: marjaiya" in realization["warnings"]
     assert any(
-        warning.startswith("explanation_section_overloaded:")
-        for warning in realization["warnings"]
+        warning.startswith("explanation_section_overloaded:") for warning in realization["warnings"]
     )
 
 
@@ -856,9 +835,7 @@ def test_build_host_move_plan_diagnostics_flags_long_sentence_shaped_targets() -
     assert diagnostics["host_target_too_long_ids"] == ["scene_1:open"]
     assert diagnostics["host_target_sentence_shaped_ids"] == ["scene_1:open"]
     assert any(warning.startswith("host_target_too_long:") for warning in warnings)
-    assert any(
-        warning.startswith("host_target_sentence_shaped:") for warning in warnings
-    )
+    assert any(warning.startswith("host_target_sentence_shaped:") for warning in warnings)
 
 
 def test_build_host_move_plan_diagnostics_warns_on_low_coverage() -> None:
@@ -982,9 +959,7 @@ def test_build_host_move_text_diagnostics_warns_on_scene_collapse() -> None:
     )
 
     diagnostics = _build_host_move_text_diagnostics(
-        text_by_section_id={
-            "section_01": "The crowd enters the square. Soldiers line the street."
-        },
+        text_by_section_id={"section_01": "The crowd enters the square. Soldiers line the street."},
         plan=plan,
     )
 
@@ -1108,9 +1083,7 @@ def test_build_episode_architecture_core_passages_uses_full_text_bm25_trim() -> 
     ]
 
 
-def test_build_episode_architecture_core_passages_merges_query_text_across_primitives() -> (
-    None
-):
+def test_build_episode_architecture_core_passages_merges_query_text_across_primitives() -> None:
     shared_text = " ".join(
         [
             "Alpha signal appears first.",
@@ -1162,16 +1135,12 @@ def test_build_episode_architecture_core_passages_merges_query_text_across_primi
             "primitive_id": "alpha",
             "book_id": "b1",
             "chapter_ref": "1",
-            "summary_text": (
-                "Alpha signal appears first. Beta signal appears second."
-            ),
+            "summary_text": ("Alpha signal appears first. Beta signal appears second."),
         }
     ]
 
 
-def test_build_episode_architecture_support_passages_use_support_refs_and_core_precedence() -> (
-    None
-):
+def test_build_episode_architecture_support_passages_use_support_refs_and_core_precedence() -> None:
     episode_spine = EpisodeSpine(
         listener_problem="Drivingalpha",
         episode_answer="Claim",
@@ -1432,12 +1401,11 @@ def test_build_episode_architectures_uses_only_strategy_actor_directives(
         )
     )
 
-    assert {
-        actor["actor_id"] for actor in captured_payload["actor_metadata"]["actors"]
-    } == {"actor_strategy", "actor_primitive"}
-    assert [passage["passage_id"] for passage in captured_payload["core_passages"]] == [
-        "p_core"
-    ]
+    assert {actor["actor_id"] for actor in captured_payload["actor_metadata"]["actors"]} == {
+        "actor_strategy",
+        "actor_primitive",
+    }
+    assert [passage["passage_id"] for passage in captured_payload["core_passages"]] == ["p_core"]
     assert captured_payload["support_passages"] == []
     assert [candidate["candidate_id"] for candidate in captured_payload["episode_scenes"]] == [
         "candidate_01"
@@ -1778,9 +1746,7 @@ def test_validate_architecture_transition_rejects_missing_section_seed_fields() 
     anchored_architecture = architecture.model_copy(
         update={
             "sections": [
-                section.model_copy(
-                    update={"section_anchor": f"Anchor for {section.section_id}"}
-                )
+                section.model_copy(update={"section_anchor": f"Anchor for {section.section_id}"})
                 for section in architecture.sections
             ]
         }
@@ -2044,8 +2010,7 @@ def test_plan_series_trims_core_support_and_recall_by_passage_role(
 
     assert [plan.episode_number for plan in plans] == [1]
     available_passages = {
-        passage["passage_id"]: passage["text"]
-        for passage in captured_payload["available_passages"]
+        passage["passage_id"]: passage["text"] for passage in captured_payload["available_passages"]
     }
     assert captured_payload["strategy_episode"]["title"] == "Episode One"
     assert _split_sentences(available_passages["p_core"]) == [
@@ -2286,8 +2251,7 @@ def test_plan_series_uses_primitive_aware_queries_for_reused_passages(
 
     assert [plan.episode_number for plan in plans] == [1]
     available_passages = {
-        passage["passage_id"]: passage["text"]
-        for passage in captured_payload["available_passages"]
+        passage["passage_id"]: passage["text"] for passage in captured_payload["available_passages"]
     }
     assert _split_sentences(available_passages["p_reused"]) == [
         "Episodefocus sentence frames the episode.",

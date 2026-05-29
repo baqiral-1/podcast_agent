@@ -188,6 +188,8 @@ _FUNCTION_TAGGING_SELF_CHECK_LINES: dict[str, tuple[str, ...]] = {
         "- Did you avoid adding deferred substrate-detail fields that do not belong to this substrate?",
     ),
 }
+
+
 def _format_function_tagging_deferred_detail_completion(substrate: str) -> str:
     return "\n".join(_FUNCTION_TAGGING_DEFERRED_DETAIL_LINES[substrate])
 
@@ -966,6 +968,7 @@ def primitive_function_tagging_instructions(
         """
     ).strip()
 
+
 def scene_discovery_instructions(
     *,
     candidate_target_min: int | None = None,
@@ -975,9 +978,13 @@ def scene_discovery_instructions(
     mode = PodcastMode(podcast_mode)
     if candidate_target_min is None or candidate_target_max is None:
         candidate_target_min, candidate_target_max = (
-            16,
-            24,
-        ) if mode == PodcastMode.MINIFIED else (78, 113)
+            (
+                16,
+                24,
+            )
+            if mode == PodcastMode.MINIFIED
+            else (78, 113)
+        )
     candidate_range = _format_target_range(candidate_target_min, candidate_target_max)
     mode_label = "minified" if mode == PodcastMode.MINIFIED else "full"
     return dedent(
@@ -1123,12 +1130,8 @@ def narrative_strategy_skeleton_instructions(
     excerpt_target_min: int = 12,
     excerpt_target_max: int = 18,
 ) -> str:
-    core_range = _format_target_range(
-        core_primitive_target_min, core_primitive_target_max
-    )
-    support_range = _format_target_range(
-        support_primitive_target_min, support_primitive_target_max
-    )
+    core_range = _format_target_range(core_primitive_target_min, core_primitive_target_max)
+    support_range = _format_target_range(support_primitive_target_min, support_primitive_target_max)
     excerpt_range = _format_target_range(excerpt_target_min, excerpt_target_max)
     recall_limit = (
         "1 primitive"
@@ -1362,12 +1365,12 @@ def narrative_strategy_skeleton_instructions(
 
 def narrative_strategy_enrichment_instructions(
     *,
-    authorial_passage_target_min: int = authorial_passage_target_range_for_mode(
-        PodcastMode.FULL
-    )[0],
-    authorial_passage_target_max: int = authorial_passage_target_range_for_mode(
-        PodcastMode.FULL
-    )[1],
+    authorial_passage_target_min: int = authorial_passage_target_range_for_mode(PodcastMode.FULL)[
+        0
+    ],
+    authorial_passage_target_max: int = authorial_passage_target_range_for_mode(PodcastMode.FULL)[
+        1
+    ],
     podcast_mode: PodcastMode | str = PodcastMode.FULL,
 ) -> str:
     mode = PodcastMode(podcast_mode)
@@ -1582,15 +1585,11 @@ def episode_planning_instructions(
     scene_card_target_min: int = 36,
     scene_card_target_max: int = 42,
 ) -> str:
-    scene_card_range = _format_target_range(
-        scene_card_target_min, scene_card_target_max
-    )
+    scene_card_range = _format_target_range(scene_card_target_min, scene_card_target_max)
     scene_role_semantics = indent(_scene_role_semantics_guidance(), " " * 8)
     scene_job_semantics = indent(_scene_job_semantics_guidance(), " " * 8)
     scene_role_mix = indent(_scene_role_mix_guidance(), " " * 8)
-    scene_concreteness_guardrails = indent(
-        _scene_concreteness_guardrails_guidance(), " " * 8
-    )
+    scene_concreteness_guardrails = indent(_scene_concreteness_guardrails_guidance(), " " * 8)
     return dedent(
         f"""
         You are the `episode_planning` stage of a historical podcast pipeline.
@@ -2221,12 +2220,12 @@ def episode_architecture_instructions(
     *,
     section_target_min: int = 12,
     section_target_max: int = 18,
-    authorial_passage_target_min: int = authorial_passage_target_range_for_mode(
-        PodcastMode.FULL
-    )[0],
-    authorial_passage_target_max: int = authorial_passage_target_range_for_mode(
-        PodcastMode.FULL
-    )[1],
+    authorial_passage_target_min: int = authorial_passage_target_range_for_mode(PodcastMode.FULL)[
+        0
+    ],
+    authorial_passage_target_max: int = authorial_passage_target_range_for_mode(PodcastMode.FULL)[
+        1
+    ],
     dense_section_authorial_passage_min: int = (
         dense_section_authorial_passage_range_for_mode(PodcastMode.FULL)[0]
     ),
@@ -2252,8 +2251,7 @@ def episode_architecture_instructions(
     )
     if mode == PodcastMode.MINIFIED:
         total_authorial_guidance = (
-            "Most minified episodes should carry 12–16 total "
-            "`authorial_passages`."
+            "Most minified episodes should carry 12–16 total `authorial_passages`."
         )
         dense_section_guidance = (
             f"Dense minified sections may use {dense_authorial_range} "
@@ -2268,8 +2266,7 @@ def episode_architecture_instructions(
         )
     else:
         total_authorial_guidance = (
-            f"Most full-length episodes should carry {authorial_range} total "
-            "`authorial_passages`."
+            f"Most full-length episodes should carry {authorial_range} total `authorial_passages`."
         )
         dense_section_guidance = (
             f"Dense sections may use {dense_authorial_range} "
@@ -2282,9 +2279,7 @@ def episode_architecture_instructions(
             "the listener would otherwise be asked to carry too much abstraction."
         )
     scene_role_mix = indent(_scene_role_mix_guidance(), " " * 8)
-    scene_concreteness_guardrails = indent(
-        _scene_concreteness_guardrails_guidance(), " " * 8
-    )
+    scene_concreteness_guardrails = indent(_scene_concreteness_guardrails_guidance(), " " * 8)
     return dedent(
         f"""
         You are the `episode_architecture` stage for a historical podcast pipeline.
@@ -2823,18 +2818,12 @@ def _writing_scene_primitive_brief_guidance() -> str:
 def episode_writing_instructions() -> str:
     host_stance = indent(_writing_host_stance_guidance(), " " * 12)
     sentence_models = indent(_writing_sentence_models_guidance(), " " * 12)
-    scene_primitive_brief_input = indent(
-        _writing_scene_primitive_brief_input_line(), " " * 12
-    )
-    scene_primitive_brief_guidance = indent(
-        _writing_scene_primitive_brief_guidance(), " " * 12
-    )
+    scene_primitive_brief_input = indent(_writing_scene_primitive_brief_input_line(), " " * 12)
+    scene_primitive_brief_guidance = indent(_writing_scene_primitive_brief_guidance(), " " * 12)
     scene_role_semantics = indent(_scene_role_semantics_guidance(), " " * 12)
     scene_job_semantics = indent(_scene_job_semantics_guidance(), " " * 12)
     scene_role_mix = indent(_scene_role_mix_guidance(), " " * 12)
-    scene_concreteness_guardrails = indent(
-        _scene_concreteness_guardrails_guidance(), " " * 12
-    )
+    scene_concreteness_guardrails = indent(_scene_concreteness_guardrails_guidance(), " " * 12)
     return dedent(
         f"""
             You are the `episode_writing` stage for a multi-book thematic podcast pipeline.
@@ -3109,18 +3098,12 @@ def episode_writing_instructions() -> str:
 def episode_writing_no_citations_instructions() -> str:
     host_stance = indent(_writing_host_stance_guidance(), " " * 8)
     sentence_models = indent(_writing_sentence_models_guidance(), " " * 8)
-    scene_primitive_brief_input = indent(
-        _writing_scene_primitive_brief_input_line(), " " * 8
-    )
-    scene_primitive_brief_guidance = indent(
-        _writing_scene_primitive_brief_guidance(), " " * 8
-    )
+    scene_primitive_brief_input = indent(_writing_scene_primitive_brief_input_line(), " " * 8)
+    scene_primitive_brief_guidance = indent(_writing_scene_primitive_brief_guidance(), " " * 8)
     scene_role_semantics = indent(_scene_role_semantics_guidance(), " " * 8)
     scene_job_semantics = indent(_scene_job_semantics_guidance(), " " * 8)
     scene_role_mix = indent(_scene_role_mix_guidance(), " " * 8)
-    scene_concreteness_guardrails = indent(
-        _scene_concreteness_guardrails_guidance(), " " * 8
-    )
+    scene_concreteness_guardrails = indent(_scene_concreteness_guardrails_guidance(), " " * 8)
     return dedent(
         f"""
         You are the `episode_writing` stage for a historical podcast pipeline.
@@ -3350,7 +3333,7 @@ def quality_judge_instructions() -> str:
     episode against the six-criterion v66 audit rubric.
     """
     return dedent(
-        f"""
+        """
         You are the `quality_judge` stage for a long-form historical narration
         podcast. You receive one assembled episode at a time — the full prose
         (post-write), the architecture summary, the excerpt-staging metadata,
@@ -3421,7 +3404,7 @@ def quality_judge_instructions() -> str:
           should sound less, not more, like its predecessors.
 
         - `prior_episode_remediation_hints`: a list of
-          `{{episode_number, section_id, criterion, hint}}` records
+          `{episode_number, section_id, criterion, hint}` records
           summarizing what you flagged in earlier episodes. Use this to
           vary your prescriptions. If you already told the audit to
           "promote the two-desks image" in episode 1, do not prescribe the

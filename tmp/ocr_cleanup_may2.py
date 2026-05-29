@@ -22,7 +22,12 @@ def _split_chapters(text: str) -> list[str]:
 
 
 def _render_chapters(bodies: list[str]) -> str:
-    return "\n\n".join(f"Chapter {index}\n\n{body.strip()}" for index, body in enumerate(bodies, start=1)).strip() + "\n"
+    return (
+        "\n\n".join(
+            f"Chapter {index}\n\n{body.strip()}" for index, body in enumerate(bodies, start=1)
+        ).strip()
+        + "\n"
+    )
 
 
 def _cleanup_common(body: str) -> str:
@@ -66,7 +71,11 @@ def _cleanup_india_wins(body: str) -> str:
     body = re.sub(r"\b(?:PRELUDE TO PARTITION|DIVIDED INDIA)\s+\d+\b", "", body)
     body = re.sub(r"\bINTERIM GOVERNMENT\s+\d+\s+", "", body)
 
-    body = body.replace("It was only in the Punjab and Sind that the Congress did not achieve comparable success. .", "It was only in the Punjab and Sind that the Congress did not achieve comparable success.", 1)
+    body = body.replace(
+        "It was only in the Punjab and Sind that the Congress did not achieve comparable success. .",
+        "It was only in the Punjab and Sind that the Congress did not achieve comparable success.",
+        1,
+    )
     body = body.replace("The - Government of India Act 1935", "The Government of India Act 1935", 1)
     body = body.replace("pro- -vincial autonomy", "provincial autonomy", 1)
     replacements = {
@@ -135,8 +144,12 @@ def _cleanup_india_wins(body: str) -> str:
     body = body.replace("My other longings were sent-in", "My other belongings were sent in")
     body = body.replace("had peel orders", "had received orders")
     body = body.replace("freedom+s4ks attitude", "freedom; his attitude")
-    body = body.replace("Either both would have to be taken o1 none", "Either both would have to be taken or none")
-    body = body.replace("The statement will he found on nace 1f6.", "The statement will be found on page 116.")
+    body = body.replace(
+        "Either both would have to be taken o1 none", "Either both would have to be taken or none"
+    )
+    body = body.replace(
+        "The statement will he found on nace 1f6.", "The statement will be found on page 116."
+    )
 
     body = re.sub(
         r"The resolution runs as follows:.*?The Congress has always aimed at a constitution where the fullest freedom and opportunities of development are guaranteed to the group and the individual, and social injustice yields place to the juster social order\.",
@@ -172,12 +185,27 @@ def _cleanup_india_wins(body: str) -> str:
     body = body.replace("have seen toit", "have seen to it")
     body = body.replace("benefitted much\n\nbby my stay", "benefitted much by my stay")
     body = body.replace("called out.our names", "called out our names")
-    body = body.replace("From the very beginning of the War.", "From the very beginning of the war,")
+    body = body.replace(
+        "From the very beginning of the War.", "From the very beginning of the war,"
+    )
     body = body.replace("declarations about, non-violence", "declarations about non-violence")
-    body = body.replace("The Working Committee met on 5 August and Prepared a draft resolution", "The Working Committee met on 5 August and prepared a draft resolution")
-    body = body.replace("open rebellion even if the, rebellion was non-violent", "open rebellion even if the rebellion was non-violent")
-    body = body.replace("first draft of the ‘Quit India’ Resolution’’", "first draft of the ‘Quit India’ Resolution'")
-    body = body.replace("first draft of the ‘Quit India’ Resolution’'", "first draft of the 'Quit India' Resolution.", 1)
+    body = body.replace(
+        "The Working Committee met on 5 August and Prepared a draft resolution",
+        "The Working Committee met on 5 August and prepared a draft resolution",
+    )
+    body = body.replace(
+        "open rebellion even if the, rebellion was non-violent",
+        "open rebellion even if the rebellion was non-violent",
+    )
+    body = body.replace(
+        "first draft of the ‘Quit India’ Resolution’’",
+        "first draft of the ‘Quit India’ Resolution'",
+    )
+    body = body.replace(
+        "first draft of the ‘Quit India’ Resolution’'",
+        "first draft of the 'Quit India' Resolution.",
+        1,
+    )
     body = body.replace(
         "It was while I was there that I learnt that the Labour Party had won an unprecedented a letter of congratulation to Attlee and Cripps.",
         "It was while I was there that I learnt that the Labour Party had won an unprecedented victory. I immediately sent a letter of congratulation to Attlee and Cripps.",
@@ -194,10 +222,17 @@ def _cleanup_india_wins(body: str) -> str:
         "My colleagues pressed hard that I should take the same view. It was for me a delicate question but after careful consideration I came to the conclusion that I should remain outside. I therefore advised that Asaf Ali should be taken into the Cabinet. When Asaf Ali heard this, he also urged me to join, but I did not agree.",
         1,
     )
-    body = body.replace("When Asaf Ali heard this, he also pressed that I should join, but I did not agree.", "When Asaf Ali heard this, he also urged me to join, but I did not agree.", 1)
+    body = body.replace(
+        "When Asaf Ali heard this, he also pressed that I should join, but I did not agree.",
+        "When Asaf Ali heard this, he also urged me to join, but I did not agree.",
+        1,
+    )
     body = body.replace("one GovernorGeneral", "one Governor-General")
     body = body.replace("press conference [In reply", "press conference. In reply")
-    body = body.replace("I did not oppose the resolution\n\n urging direct action", "I did not oppose the resolution urging direct action")
+    body = body.replace(
+        "I did not oppose the resolution\n\n urging direct action",
+        "I did not oppose the resolution urging direct action",
+    )
     body = body.replace("Liagat Ali", "Liaqat Ali")
     body = body.replace("thoygh", "though")
 

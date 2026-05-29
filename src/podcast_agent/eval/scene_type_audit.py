@@ -77,7 +77,7 @@ def _excerpt(text: str, *, max_paragraphs: int = 2, max_chars: int = 700) -> str
 def _render_paragraphs_html(text: str) -> str:
     parts = _paragraphs(text)
     if not parts:
-        return "<p class=\"muted\">No text available.</p>"
+        return '<p class="muted">No text available.</p>'
     return "".join(f"<p>{escape(part)}</p>" for part in parts)
 
 
@@ -103,13 +103,21 @@ def _evaluate_section(
         score += _ROLE_SCORES.get(role, 0.0)
 
     if "shock" in roles:
-        strengths.append("Shock card gives the prose a body-level turn instead of a purely analytic one.")
+        strengths.append(
+            "Shock card gives the prose a body-level turn instead of a purely analytic one."
+        )
     if "action" in roles:
-        strengths.append("Action card gives the section a concrete gesture, vote, march, arrest, or encounter to write from.")
+        strengths.append(
+            "Action card gives the section a concrete gesture, vote, march, arrest, or encounter to write from."
+        )
     if "fallout" in roles:
-        strengths.append("Fallout card helps the prose cash out consequences instead of only describing the event.")
+        strengths.append(
+            "Fallout card helps the prose cash out consequences instead of only describing the event."
+        )
     if "reaction" in roles:
-        strengths.append("Reaction card helps the prose localize the event in a witness, institution, or audience response.")
+        strengths.append(
+            "Reaction card helps the prose localize the event in a witness, institution, or audience response."
+        )
     if "contestation" in roles:
         strengths.append("Contestation card keeps opposition or argument visible on the page.")
 
@@ -117,7 +125,9 @@ def _evaluate_section(
         role in roles for role in ("action", "shock", "fallout", "reaction", "contestation")
     ):
         score += 1.0
-        strengths.append("Implication arrives after concrete scene work, so the argument feels earned.")
+        strengths.append(
+            "Implication arrives after concrete scene work, so the argument feels earned."
+        )
 
     if roles and roles[-1] == "implication":
         score += 0.5
@@ -132,40 +142,58 @@ def _evaluate_section(
 
     if roles.count("implication") >= max(2, len(roles) - 1):
         score -= 1.5
-        weaknesses.append("Implication stack risks turning the section into explanation before it refreshes the scene.")
+        weaknesses.append(
+            "Implication stack risks turning the section into explanation before it refreshes the scene."
+        )
 
     if roles and all(role == "implication" for role in roles):
         score -= 1.0
         weaknesses.append("Pure implication section has very little scenic material to work with.")
 
-    if roles and roles[0] in ("context_setup", "actor_setup") and not any(
-        role in roles for role in ("action", "shock")
+    if (
+        roles
+        and roles[0] in ("context_setup", "actor_setup")
+        and not any(role in roles for role in ("action", "shock"))
     ):
-        weaknesses.append("Section opens in setup mode and never gets a decisive action or shock beat.")
+        weaknesses.append(
+            "Section opens in setup mode and never gets a decisive action or shock beat."
+        )
 
     if word_count > 2200:
         score -= 1.0
-        weaknesses.append("Long section carries a lot of synthesis load and risks flattening its own momentum.")
+        weaknesses.append(
+            "Long section carries a lot of synthesis load and risks flattening its own momentum."
+        )
     elif word_count > 1800:
         score -= 0.5
-        weaknesses.append("Section is long enough that even good scene material has to fight explanatory drag.")
+        weaknesses.append(
+            "Section is long enough that even good scene material has to fight explanatory drag."
+        )
 
     if host_phase_collapse:
         score -= 1.0
-        weaknesses.append("Host-move diagnostics flag phase collapse here, which matches a softer landing on the page.")
+        weaknesses.append(
+            "Host-move diagnostics flag phase collapse here, which matches a softer landing on the page."
+        )
 
     if section_style_warnings:
         score -= 0.5
-        weaknesses.append("Style audit flagged the section directly, so there is already downstream evidence of load or softness.")
+        weaknesses.append(
+            "Style audit flagged the section directly, so there is already downstream evidence of load or softness."
+        )
 
     if episode_warning_hits:
         score -= 0.5
         weaknesses.append("Episode-level style warnings mention this section by name.")
 
-    close_only = bool(jobs) and jobs[-1] == "close" and len(roles) == 1 and roles[0] == "implication"
+    close_only = (
+        bool(jobs) and jobs[-1] == "close" and len(roles) == 1 and roles[0] == "implication"
+    )
     if close_only:
         verdict = "close-only"
-        strengths.append("Short structural close works as a capstone, but it is not a good test case for scene-type performance.")
+        strengths.append(
+            "Short structural close works as a capstone, but it is not a good test case for scene-type performance."
+        )
     elif score >= 4.0:
         verdict = "strong"
     elif score >= 2.0:
@@ -260,7 +288,9 @@ def _aggregate_findings(
 ) -> list[str]:
     active_sections = [section for section in sections if not section["close_only"]]
     implication_heavy = [
-        section for section in active_sections if section["scene_role_sequence"].count("implication") >= 2
+        section
+        for section in active_sections
+        if section["scene_role_sequence"].count("implication") >= 2
     ]
     setup_without_event = [
         section
@@ -367,7 +397,11 @@ def build_scene_type_audit_payload(
                 f"Episode {episode_number} script payload at {script_path} does not contain prose_sections."
             )
 
-        scene_map = {str(scene["scene_id"]): scene for scene in scene_cards if isinstance(scene, dict) and scene.get("scene_id")}
+        scene_map = {
+            str(scene["scene_id"]): scene
+            for scene in scene_cards
+            if isinstance(scene, dict) and scene.get("scene_id")
+        }
         for scene in scene_cards:
             if not isinstance(scene, dict):
                 continue
@@ -376,33 +410,41 @@ def build_scene_type_audit_payload(
             total_scene_cards += 1
 
         host_payload = _load_optional_json(episode_dir / "host_moves_script_diagnostics.json") or {}
-        continuity_payload = _load_optional_json(episode_dir / "continuity_script_diagnostics.json") or {}
+        continuity_payload = (
+            _load_optional_json(episode_dir / "continuity_script_diagnostics.json") or {}
+        )
         spine_payload = _load_optional_json(episode_dir / "spine_diagnostics.json") or {}
         style_payload = _load_optional_json(episode_dir / "style_audit_result.json") or {}
 
-        sections_with_host_phase_collapse = set(host_payload.get("sections_with_host_phase_collapse") or [])
+        sections_with_host_phase_collapse = set(
+            host_payload.get("sections_with_host_phase_collapse") or []
+        )
         sections_with_editorial_pressure = set(
             host_payload.get("sections_with_editorial_host_target_pressure") or []
         )
         style_sections = style_payload.get("sections") or []
         style_warning_map = {
             str(section.get("section_id")): [
-                str(item)
-                for item in (section.get("warnings") or [])
-                if str(item).strip()
+                str(item) for item in (section.get("warnings") or []) if str(item).strip()
             ]
             for section in style_sections
             if isinstance(section, dict) and section.get("section_id")
         }
-        episode_warnings = [str(item) for item in (style_payload.get("episode_warnings") or []) if str(item).strip()]
+        episode_warnings = [
+            str(item) for item in (style_payload.get("episode_warnings") or []) if str(item).strip()
+        ]
 
         episode_sections: list[dict[str, Any]] = []
         for prose_section in prose_sections:
             if not isinstance(prose_section, dict):
                 continue
             section_id = str(prose_section.get("section_id") or "")
-            scene_card_ids = [str(item) for item in (prose_section.get("scene_card_ids") or []) if str(item)]
-            planned_cards = [scene_map[scene_id] for scene_id in scene_card_ids if scene_id in scene_map]
+            scene_card_ids = [
+                str(item) for item in (prose_section.get("scene_card_ids") or []) if str(item)
+            ]
+            planned_cards = [
+                scene_map[scene_id] for scene_id in scene_card_ids if scene_id in scene_map
+            ]
             roles = [str(card.get("scene_role") or "unknown") for card in planned_cards]
             jobs = [str(card.get("scene_job") or "unknown") for card in planned_cards]
             text = str(prose_section.get("text") or "")
@@ -479,22 +521,29 @@ def build_scene_type_audit_payload(
                 "artifact_path": str(script_path),
                 "section_count": len(episode_sections),
                 "scene_card_count": len(scene_cards),
-                "average_score": round(_mean_or_zero(section["score"] for section in episode_sections), 2),
+                "average_score": round(
+                    _mean_or_zero(section["score"] for section in episode_sections), 2
+                ),
                 "verdict_counts": dict(episode_verdict_counts),
                 "diagnostics": {
                     "spine_drift_detected": bool(spine_payload.get("spine_drift_detected")),
                     "new_load_bearing_question_detected": bool(
                         spine_payload.get("new_load_bearing_question_detected")
                     ),
-                    "failure_labels": [str(item) for item in (spine_payload.get("failure_labels") or [])],
+                    "failure_labels": [
+                        str(item) for item in (spine_payload.get("failure_labels") or [])
+                    ],
                     "continuity_warning_labels": [
                         str(item) for item in (continuity_payload.get("warning_labels") or [])
                     ],
-                    "missed_item_ids": [str(item) for item in (continuity_payload.get("missed_item_ids") or [])],
+                    "missed_item_ids": [
+                        str(item) for item in (continuity_payload.get("missed_item_ids") or [])
+                    ],
                     "host_phase_collapse_sections": sorted(sections_with_host_phase_collapse),
                     "host_editorial_pressure_sections": sorted(sections_with_editorial_pressure),
                     "host_unrealized_phase_ids": [
-                        str(item) for item in (host_payload.get("approx_unrealized_phase_ids") or [])
+                        str(item)
+                        for item in (host_payload.get("approx_unrealized_phase_ids") or [])
                     ],
                     "episode_style_warnings": episode_warnings,
                 },
@@ -514,19 +563,11 @@ def build_scene_type_audit_payload(
     )
 
     weak_sections = sorted(
-        (
-            section
-            for section in all_sections
-            if section["verdict"] == "weak"
-        ),
+        (section for section in all_sections if section["verdict"] == "weak"),
         key=lambda item: (item["score"], item["episode_number"], item["section_id"]),
     )[:12]
     strong_sections = sorted(
-        (
-            section
-            for section in all_sections
-            if section["verdict"] == "strong"
-        ),
+        (section for section in all_sections if section["verdict"] == "strong"),
         key=lambda item: (-item["score"], item["episode_number"], item["section_id"]),
     )[:12]
 
@@ -584,7 +625,7 @@ def render_scene_type_audit_html(payload: dict[str, Any]) -> str:
     verdict_cards_html = "".join(
         f"""
         <div class="metric-card">
-          <div class="metric-label">{escape(verdict.replace('-', ' '))}</div>
+          <div class="metric-label">{escape(verdict.replace("-", " "))}</div>
           <div class="metric-value">{count}</div>
         </div>
         """
@@ -598,11 +639,11 @@ def render_scene_type_audit_html(payload: dict[str, Any]) -> str:
     role_rows_html = "".join(
         f"""
         <tr>
-          <td><code>{escape(item['role'])}</code></td>
-          <td>{item['section_count']}</td>
-          <td>{item['average_score']:.2f}</td>
-          <td>{item['strong_count']}</td>
-          <td>{item['weak_count']}</td>
+          <td><code>{escape(item["role"])}</code></td>
+          <td>{item["section_count"]}</td>
+          <td>{item["average_score"]:.2f}</td>
+          <td>{item["strong_count"]}</td>
+          <td>{item["weak_count"]}</td>
         </tr>
         """
         for item in summary["role_presence_stats"]
@@ -611,9 +652,9 @@ def render_scene_type_audit_html(payload: dict[str, Any]) -> str:
     start_role_rows_html = "".join(
         f"""
         <tr>
-          <td><code>{escape(item['role'])}</code></td>
-          <td>{item['section_count']}</td>
-          <td>{item['average_score']:.2f}</td>
+          <td><code>{escape(item["role"])}</code></td>
+          <td>{item["section_count"]}</td>
+          <td>{item["average_score"]:.2f}</td>
         </tr>
         """
         for item in summary["start_role_stats"]
@@ -622,27 +663,29 @@ def render_scene_type_audit_html(payload: dict[str, Any]) -> str:
     combo_rows_html = "".join(
         f"""
         <tr>
-          <td><code>{escape(item['combo'])}</code></td>
-          <td>{item['section_count']}</td>
-          <td>{item['average_score']:.2f}</td>
-          <td>{escape(', '.join(f"{k}:{v}" for k, v in sorted(item['verdict_counts'].items(), key=lambda pair: _VERDICT_ORDER.get(pair[0], 999))))}</td>
-          <td>{escape('; '.join(f"E{sample['episode_number']} {sample['section_id']}" for sample in item['sample_sections']))}</td>
+          <td><code>{escape(item["combo"])}</code></td>
+          <td>{item["section_count"]}</td>
+          <td>{item["average_score"]:.2f}</td>
+          <td>{escape(", ".join(f"{k}:{v}" for k, v in sorted(item["verdict_counts"].items(), key=lambda pair: (
+                        _VERDICT_ORDER.get(pair[0], 999)
+                    ))))}</td>
+          <td>{escape("; ".join(f"E{sample['episode_number']} {sample['section_id']}" for sample in item["sample_sections"]))}</td>
         </tr>
         """
         for item in summary["combo_stats"][:20]
     )
 
     strong_sections_html = "".join(
-        f"<li><a href=\"#ep-{item['episode_number']}-{escape(item['section_id'])}\">Episode {item['episode_number']} / {escape(item['section_id'])}</a> <span class=\"inline-meta\">{item['score']:.2f} · {escape(item['scene_role_combo'])}</span></li>"
+        f'<li><a href="#ep-{item["episode_number"]}-{escape(item["section_id"])}">Episode {item["episode_number"]} / {escape(item["section_id"])}</a> <span class="inline-meta">{item["score"]:.2f} · {escape(item["scene_role_combo"])}</span></li>'
         for item in summary["strong_sections"]
     )
     weak_sections_html = "".join(
-        f"<li><a href=\"#ep-{item['episode_number']}-{escape(item['section_id'])}\">Episode {item['episode_number']} / {escape(item['section_id'])}</a> <span class=\"inline-meta\">{item['score']:.2f} · {escape(item['scene_role_combo'])}</span></li>"
+        f'<li><a href="#ep-{item["episode_number"]}-{escape(item["section_id"])}">Episode {item["episode_number"]} / {escape(item["section_id"])}</a> <span class="inline-meta">{item["score"]:.2f} · {escape(item["scene_role_combo"])}</span></li>'
         for item in summary["weak_sections"]
     )
 
     episode_nav_html = "".join(
-        f"<li><a href=\"#episode-{episode['episode_number']}\">Episode {episode['episode_number']}: {escape(episode['title'])}</a></li>"
+        f'<li><a href="#episode-{episode["episode_number"]}">Episode {episode["episode_number"]}: {escape(episode["title"])}</a></li>'
         for episode in episodes
     )
 
@@ -650,7 +693,7 @@ def render_scene_type_audit_html(payload: dict[str, Any]) -> str:
     for episode in episodes:
         diagnostics = episode["diagnostics"]
         episode_verdict_chips = "".join(
-            f"<span class=\"chip chip-{escape(verdict)}\">{escape(verdict)}: {count}</span>"
+            f'<span class="chip chip-{escape(verdict)}">{escape(verdict)}: {count}</span>'
             for verdict, count in sorted(
                 episode["verdict_counts"].items(), key=lambda item: _VERDICT_ORDER.get(item[0], 999)
             )
@@ -671,43 +714,52 @@ def render_scene_type_audit_html(payload: dict[str, Any]) -> str:
                 f"""
                 <li>
                   <div class="scene-line">
-                    <code>{escape(card['scene_id'])}</code>
-                    <strong>{escape(card['title'])}</strong>
-                    <span class="chip role-chip">{escape(card['scene_role'])}</span>
-                    <span class="chip job-chip">{escape(card['scene_job'])}</span>
+                    <code>{escape(card["scene_id"])}</code>
+                    <strong>{escape(card["title"])}</strong>
+                    <span class="chip role-chip">{escape(card["scene_role"])}</span>
+                    <span class="chip job-chip">{escape(card["scene_job"])}</span>
                   </div>
-                  <div class="scene-detail">{escape(card['beat_change'])}</div>
+                  <div class="scene-detail">{escape(card["beat_change"])}</div>
                 </li>
                 """
                 for card in section["scene_cards"]
             )
-            strengths_html = "".join(f"<li>{escape(item)}</li>" for item in section["strengths"]) or "<li>None.</li>"
-            weaknesses_html = "".join(f"<li>{escape(item)}</li>" for item in section["weaknesses"]) or "<li>None.</li>"
+            strengths_html = (
+                "".join(f"<li>{escape(item)}</li>" for item in section["strengths"])
+                or "<li>None.</li>"
+            )
+            weaknesses_html = (
+                "".join(f"<li>{escape(item)}</li>" for item in section["weaknesses"])
+                or "<li>None.</li>"
+            )
             flags_html = (
-                "".join(f"<span class=\"chip flag-chip\">{escape(flag)}</span>" for flag in section["flags"])
+                "".join(
+                    f'<span class="chip flag-chip">{escape(flag)}</span>'
+                    for flag in section["flags"]
+                )
                 if section["flags"]
-                else "<span class=\"chip chip-muted\">No extra flags</span>"
+                else '<span class="chip chip-muted">No extra flags</span>'
             )
             section_blocks.append(
                 f"""
-                <details class="section-card" id="ep-{section['episode_number']}-{escape(section['section_id'])}">
+                <details class="section-card" id="ep-{section["episode_number"]}-{escape(section["section_id"])}">
                   <summary>
                     <div class="section-head">
                       <div>
-                        <h3>{escape(section['section_id'])}</h3>
-                        <div class="inline-meta">{section['word_count']} words · {section['scene_count']} scene cards</div>
+                        <h3>{escape(section["section_id"])}</h3>
+                        <div class="inline-meta">{section["word_count"]} words · {section["scene_count"]} scene cards</div>
                       </div>
                       <div class="section-badges">
-                        <span class="badge badge-{escape(section['verdict'])}">{escape(section['verdict'])}</span>
-                        <span class="score">{section['score']:.2f}</span>
+                        <span class="badge badge-{escape(section["verdict"])}">{escape(section["verdict"])}</span>
+                        <span class="score">{section["score"]:.2f}</span>
                       </div>
                     </div>
                     <div class="combo-line">
-                      <code>{escape(section['scene_role_combo'])}</code>
+                      <code>{escape(section["scene_role_combo"])}</code>
                     </div>
                   </summary>
                   <div class="section-body">
-                    <p class="movement-goal">{escape(section['movement_goal'])}</p>
+                    <p class="movement-goal">{escape(section["movement_goal"])}</p>
                     <div class="flag-row">{flags_html}</div>
                     <div class="grid-two">
                       <div>
@@ -722,10 +774,10 @@ def render_scene_type_audit_html(payload: dict[str, Any]) -> str:
                     <h4>Planned Scene Cards</h4>
                     <ol class="scene-list">{scene_cards_html}</ol>
                     <h4>Excerpt</h4>
-                    <blockquote>{_render_paragraphs_html(section['text_excerpt'])}</blockquote>
+                    <blockquote>{_render_paragraphs_html(section["text_excerpt"])}</blockquote>
                     <details class="full-text">
                       <summary>Full section text</summary>
-                      <div class="full-text-body">{_render_paragraphs_html(section['text'])}</div>
+                      <div class="full-text-body">{_render_paragraphs_html(section["text"])}</div>
                     </details>
                   </div>
                 </details>
@@ -734,19 +786,19 @@ def render_scene_type_audit_html(payload: dict[str, Any]) -> str:
 
         episode_blocks.append(
             f"""
-            <details class="episode-card" id="episode-{episode['episode_number']}">
+            <details class="episode-card" id="episode-{episode["episode_number"]}">
               <summary>
                 <div class="episode-head">
                   <div>
-                    <h2>Episode {episode['episode_number']}: {escape(episode['title'])}</h2>
-                    <div class="inline-meta">{episode['section_count']} sections · {episode['scene_card_count']} scene cards · avg score {episode['average_score']:.2f}</div>
+                    <h2>Episode {episode["episode_number"]}: {escape(episode["title"])}</h2>
+                    <div class="inline-meta">{episode["section_count"]} sections · {episode["scene_card_count"]} scene cards · avg score {episode["average_score"]:.2f}</div>
                   </div>
                   <div class="chip-row">{episode_verdict_chips}</div>
                 </div>
               </summary>
               <div class="episode-body">
                 <ul class="diagnostic-list">{diagnostic_html}</ul>
-                {''.join(section_blocks)}
+                {"".join(section_blocks)}
               </div>
             </details>
             """
@@ -1048,25 +1100,25 @@ def render_scene_type_audit_html(payload: dict[str, Any]) -> str:
         <h1>{title}</h1>
         <p class="subhead">
           Full-series audit of how planned scene-card roles in <code>series_plan.json</code> translate
-          into the final prose of <code>style_audited_script.json</code> across {summary['episode_count']}
+          into the final prose of <code>style_audited_script.json</code> across {summary["episode_count"]}
           episodes in <code>{run_name}</code>.
         </p>
         <div class="summary-grid">
           <div class="metric-card">
             <div class="metric-label">Episodes</div>
-            <div class="metric-value">{summary['episode_count']}</div>
+            <div class="metric-value">{summary["episode_count"]}</div>
           </div>
           <div class="metric-card">
             <div class="metric-label">Sections</div>
-            <div class="metric-value">{summary['section_count']}</div>
+            <div class="metric-value">{summary["section_count"]}</div>
           </div>
           <div class="metric-card">
             <div class="metric-label">Scene Cards</div>
-            <div class="metric-value">{summary['scene_card_count']}</div>
+            <div class="metric-value">{summary["scene_card_count"]}</div>
           </div>
           <div class="metric-card">
             <div class="metric-label">Average Score</div>
-            <div class="metric-value">{summary['average_score']:.2f}</div>
+            <div class="metric-value">{summary["average_score"]:.2f}</div>
           </div>
           {verdict_cards_html}
         </div>
@@ -1147,7 +1199,7 @@ def render_scene_type_audit_html(payload: dict[str, Any]) -> str:
 
           <section class="panel">
             <h2>Episode Breakdown</h2>
-            {''.join(episode_blocks)}
+            {"".join(episode_blocks)}
           </section>
         </main>
 

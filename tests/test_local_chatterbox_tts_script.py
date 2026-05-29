@@ -128,10 +128,7 @@ def test_load_input_text_reads_and_trims_file(tmp_path: Path) -> None:
     text_file = tmp_path / "input.txt"
     text_file.write_text("\n  First line.\n\nSecond line.  \n", encoding="utf-8")
 
-    assert (
-        local_chatterbox_tts._load_input_text(None, text_file)
-        == "First line. Second line."
-    )
+    assert local_chatterbox_tts._load_input_text(None, text_file) == "First line. Second line."
 
 
 def test_load_input_text_rejects_empty_text() -> None:
@@ -241,7 +238,9 @@ def test_configure_cpu_threads_rejects_negative() -> None:
         local_chatterbox_tts._configure_cpu_threads(-1, SimpleNamespace())
 
 
-def test_convert_wav_to_mp3_requires_ffmpeg(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_convert_wav_to_mp3_requires_ffmpeg(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     monkeypatch.setattr(local_chatterbox_tts.shutil, "which", lambda name: None)
 
     with pytest.raises(RuntimeError, match="ffmpeg"):

@@ -99,9 +99,7 @@ def verify_excerpt(
 
     verbatim = (excerpt.verbatim_excerpt or "").strip()
     if not verbatim:
-        return excerpt.model_copy(
-            update={"verbatim_match_ratio": 0.0, "verbatim_provenance": []}
-        )
+        return excerpt.model_copy(update={"verbatim_match_ratio": 0.0, "verbatim_provenance": []})
 
     verbatim_norm = _normalize(verbatim)
     clause_norms = [_normalize(c) for c in _clauses(verbatim)]

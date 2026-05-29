@@ -45,7 +45,10 @@ class ThemeDecompositionAgent(Agent):
 
     @classmethod
     def _compact_string_list(
-        cls, values: list[str], max_items: int, max_chars: int,
+        cls,
+        values: list[str],
+        max_items: int,
+        max_chars: int,
     ) -> list[str]:
         compacted: list[str] = []
         for value in values:
@@ -101,13 +104,15 @@ class ThemeDecompositionAgent(Agent):
                     "analysis": self._compact_chapter_analysis(ch),
                 }
                 chapter_info.append(entry)
-            book_summaries.append({
-                "book_id": book.book_id,
-                "title": book.title,
-                "author": book.author,
-                "book_summary": summary_by_book.get(book.book_id, ""),
-                "chapters": chapter_info,
-            })
+            book_summaries.append(
+                {
+                    "book_id": book.book_id,
+                    "title": book.title,
+                    "author": book.author,
+                    "book_summary": summary_by_book.get(book.book_id, ""),
+                    "chapters": chapter_info,
+                }
+            )
         return {
             "theme": theme,
             "sub_themes": sub_themes or [],

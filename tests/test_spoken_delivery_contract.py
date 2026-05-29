@@ -84,10 +84,7 @@ def _architecture() -> EpisodeArchitecture:
         major_turn_section_id=payload["major_turn_section_id"],
         allowed_recurring_primitive_ids=[],
         forbidden_redundancies=[],
-        sections=[
-            ArchitectureSection.model_validate(section)
-            for section in payload["sections"]
-        ],
+        sections=[ArchitectureSection.model_validate(section) for section in payload["sections"]],
         architecture_notes=[],
     )
 
@@ -106,9 +103,7 @@ def _narrative_state(*, episode_number: int, carry_label: str) -> NarrativeState
                         "source_episode_number": max(episode_number - 1, 0),
                         "priority": "high",
                         "desired_surface": "recap" if episode_number == 1 else "closing",
-                        "recommended_action": "remind"
-                        if episode_number == 1
-                        else "keep_live",
+                        "recommended_action": "remind" if episode_number == 1 else "keep_live",
                     }
                 ],
                 "last_episode_takeaway": {
@@ -234,9 +229,7 @@ def test_rewrite_for_speech_passes_continuity_tail_for_later_batches(
                 episode_number=2, carry_label="Unfinished pressure still matters."
             ),
             continuity_contract_pre={
-                "recap_items": [
-                    {"item_id": "carry_1", "label": "Earlier pressure still matters."}
-                ]
+                "recap_items": [{"item_id": "carry_1", "label": "Earlier pressure still matters."}]
             },
             continuity_contract_post={
                 "must_leave_live": [
@@ -284,9 +277,7 @@ def test_rewrite_for_speech_passes_continuity_tail_for_later_batches(
     assert "carry_1" in spoken_diagnostics
 
 
-def test_style_audit_episode_uses_section_anchor_payload(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_style_audit_episode_uses_section_anchor_payload(monkeypatch, tmp_path: Path) -> None:
     heuristic = HeuristicLLMClient()
     monkeypatch.setattr(
         "podcast_agent.pipeline.orchestrator.build_llm_client",
@@ -361,9 +352,7 @@ def test_style_audit_episode_uses_section_anchor_payload(
             ep_dir,
             tmp_path,
             continuity_contract_pre={
-                "recap_items": [
-                    {"item_id": "carry_1", "label": "Earlier pressure still matters."}
-                ]
+                "recap_items": [{"item_id": "carry_1", "label": "Earlier pressure still matters."}]
             },
             continuity_contract_post={
                 "must_leave_live": [

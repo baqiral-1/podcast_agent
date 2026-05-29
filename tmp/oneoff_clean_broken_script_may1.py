@@ -40,12 +40,18 @@ _ACKNOWLEDGEMENT_START_RE = re.compile(
     re.IGNORECASE,
 )
 _TERMINAL_SECTION_RE = re.compile(r"^(conclusion|epilogue|afterword|postscript)$", re.IGNORECASE)
-_PART_HEADING_RE = re.compile(r"^part\s+(?:[ivxlcdm]+|\d+|one|two|three|four|five|six)$", re.IGNORECASE)
+_PART_HEADING_RE = re.compile(
+    r"^part\s+(?:[ivxlcdm]+|\d+|one|two|three|four|five|six)$", re.IGNORECASE
+)
 _DISPLAY_TITLE_TOKEN_RE = re.compile(r"^[A-Z0-9][A-Za-z0-9'’\"“”()/:,&.-]*$")
 _TABLE_ROW_RE = re.compile(r"^\d[\d,]*(?:\s+\d[\d,]*){2,}$")
 _TABLE_HEADER_RE = re.compile(r"^(year|demand in rs|collection in rs)$", re.IGNORECASE)
-_DISPLAY_TAIL_RE = re.compile(r":\s*\d{1,3}\s+(year|demand in rs|collection in rs)\b.*$", re.IGNORECASE)
-_DISPLAY_TAIL_NO_FOOTNOTE_RE = re.compile(r":\s*(year|demand in rs|collection in rs)\b.*$", re.IGNORECASE)
+_DISPLAY_TAIL_RE = re.compile(
+    r":\s*\d{1,3}\s+(year|demand in rs|collection in rs)\b.*$", re.IGNORECASE
+)
+_DISPLAY_TAIL_NO_FOOTNOTE_RE = re.compile(
+    r":\s*(year|demand in rs|collection in rs)\b.*$", re.IGNORECASE
+)
 _CAPTION_LIKE_RE = re.compile(r"^[A-Z][A-Za-z'’ -]+,\s*(?:[A-Z][a-z]+\s+)?\d{4}$")
 _EXTRACTION_SCAR_REPLACEMENTS = {
     "AngloMaratha": "Anglo-Maratha",
@@ -77,8 +83,10 @@ def _looks_reference_heavy(lines: list[str]) -> bool:
     marker_count = len(_CITATION_RE.findall(text))
     numbered_lines = sum(1 for line in lines if re.match(r"^\d{1,3}[.)]?\s", line))
     short_lines = sum(1 for line in lines if len(line.split()) <= 16)
-    return marker_count >= 3 or (marker_count >= 2 and numbered_lines >= 2) or (
-        "Endnotes" in text and short_lines >= 2
+    return (
+        marker_count >= 3
+        or (marker_count >= 2 and numbered_lines >= 2)
+        or ("Endnotes" in text and short_lines >= 2)
     )
 
 
@@ -158,11 +166,7 @@ def _trim_terminal_paragraphs(paragraphs: list[str]) -> list[str]:
 def _merge_false_breaks(paragraphs: list[str]) -> list[str]:
     merged: list[str] = []
     for paragraph in paragraphs:
-        if (
-            merged
-            and paragraph
-            and not re.search(r"[.!?][\"'’”\]]?$", merged[-1])
-        ):
+        if merged and paragraph and not re.search(r"[.!?][\"'’”\]]?$", merged[-1]):
             merged[-1] = f"{merged[-1]} {paragraph}".strip()
             continue
         merged.append(paragraph)
@@ -203,7 +207,12 @@ def _collapse_lines(lines: list[str]) -> str:
 
 def _render_chapters(bodies: list[str]) -> str:
     chapters = [body for body in bodies if body]
-    return "\n\n".join(f"Chapter {index}:\n{body}" for index, body in enumerate(chapters, start=1)).strip() + "\n"
+    return (
+        "\n\n".join(
+            f"Chapter {index}:\n{body}" for index, body in enumerate(chapters, start=1)
+        ).strip()
+        + "\n"
+    )
 
 
 def _postprocess_extraction_scars(text: str) -> str:
@@ -216,7 +225,10 @@ def main() -> int:
     args = parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
     extracted = extract_mughal_book_source(args.source)
-    raw_pages = [[line.strip() for line in page.splitlines() if line.strip()] for page in extracted.page_texts]
+    raw_pages = [
+        [line.strip() for line in page.splitlines() if line.strip()]
+        for page in extracted.page_texts
+    ]
     prepared_pages = [_prepare_page(page) for page in extracted.page_texts]
 
     starts: list[tuple[int, int, int]] = []

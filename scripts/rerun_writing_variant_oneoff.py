@@ -91,11 +91,7 @@ def _settings_with_writing_model(settings: Settings, model_name: str) -> Setting
     updated_agent_configs = dict(settings.llm.agent_configs)
     updated_agent_configs["episode_writing"] = updated_episode_writing_cfg
     return settings.model_copy(
-        update={
-            "llm": settings.llm.model_copy(
-                update={"agent_configs": updated_agent_configs}
-            )
-        }
+        update={"llm": settings.llm.model_copy(update={"agent_configs": updated_agent_configs})}
     )
 
 
@@ -108,13 +104,9 @@ def _select_single_episode(
 ) -> T:
     matches = [item for item in items if value_getter(item) == episode_number]
     if not matches:
-        raise RuntimeError(
-            f"{source_name} does not contain episode_number {episode_number}"
-        )
+        raise RuntimeError(f"{source_name} does not contain episode_number {episode_number}")
     if len(matches) > 1:
-        raise RuntimeError(
-            f"{source_name} contains duplicate episode_number {episode_number}"
-        )
+        raise RuntimeError(f"{source_name} contains duplicate episode_number {episode_number}")
     return matches[0]
 
 
@@ -142,9 +134,7 @@ def _writing_model_metadata(settings: Settings) -> dict[str, Any]:
     thinking_budget_tokens: int | None = None
     if provider == "anthropic":
         if _supports_adaptive_thinking(str(model_name or "")):
-            adaptive_thinking_effort = settings.llm.resolve_anthropic_thinking_effort(
-                schema_name
-            )
+            adaptive_thinking_effort = settings.llm.resolve_anthropic_thinking_effort(schema_name)
         else:
             thinking_budget_tokens = settings.llm.resolve_thinking_budget(schema_name)
     return {
@@ -163,8 +153,7 @@ def _word_count(text: str) -> int:
 def _pronoun_counts(text: str) -> dict[str, int]:
     normalized = str(text or "")
     return {
-        family: len(pattern.findall(normalized))
-        for family, pattern in _PRONOUN_PATTERNS.items()
+        family: len(pattern.findall(normalized)) for family, pattern in _PRONOUN_PATTERNS.items()
     }
 
 
@@ -231,9 +220,7 @@ def _build_section_deltas(
         for key in sorted(surface_marker_keys):
             delta_surface_markers[key] = int(
                 (variant or {"surface_markers": {}})["surface_markers"].get(key, 0)
-            ) - int(
-                (baseline or {"surface_markers": {}})["surface_markers"].get(key, 0)
-            )
+            ) - int((baseline or {"surface_markers": {}})["surface_markers"].get(key, 0))
         rows.append(
             {
                 "section_id": section_id,
@@ -264,17 +251,13 @@ def _build_comparison_summary(
     delta_pronouns = {
         key: int(variant_summary["pronouns"].get(key, 0))
         - int(baseline_summary["pronouns"].get(key, 0))
-        for key in sorted(
-            set(baseline_summary["pronouns"]).union(variant_summary["pronouns"])
-        )
+        for key in sorted(set(baseline_summary["pronouns"]).union(variant_summary["pronouns"]))
     }
     delta_surface_markers = {
         key: int(variant_summary["surface_markers"].get(key, 0))
         - int(baseline_summary["surface_markers"].get(key, 0))
         for key in sorted(
-            set(baseline_summary["surface_markers"]).union(
-                variant_summary["surface_markers"]
-            )
+            set(baseline_summary["surface_markers"]).union(variant_summary["surface_markers"])
         )
     }
     return {
@@ -294,8 +277,7 @@ def _build_comparison_summary(
             "surface_markers": variant_summary["surface_markers"],
         },
         "delta": {
-            "word_count": int(variant_summary["word_count"])
-            - int(baseline_summary["word_count"]),
+            "word_count": int(variant_summary["word_count"]) - int(baseline_summary["word_count"]),
             "pronouns": delta_pronouns,
             "surface_markers": delta_surface_markers,
         },
@@ -334,9 +316,7 @@ async def _rerun_writing_variant_oneoff(
         )
 
     baseline_script = EpisodeScript.model_validate(_load_json(baseline_script_path))
-    corpus = ThematicCorpus.model_validate(
-        _load_json(source_project_dir / "thematic_corpus.json")
-    )
+    corpus = ThematicCorpus.model_validate(_load_json(source_project_dir / "thematic_corpus.json"))
     strategy = NarrativeStrategy.model_validate(
         _load_json(source_project_dir / "narrative_strategy.json")
     )
@@ -365,12 +345,8 @@ async def _rerun_writing_variant_oneoff(
         source_name="narrative_strategy.json",
     )
 
-    experiment_project_dir = (
-        source_project_dir / "writing_experiments" / VARIANT_LABEL
-    )
-    experiment_episode_dir = (
-        experiment_project_dir / "episodes" / str(episode_number)
-    )
+    experiment_project_dir = source_project_dir / "writing_experiments" / VARIANT_LABEL
+    experiment_episode_dir = experiment_project_dir / "episodes" / str(episode_number)
     experiment_episode_dir.mkdir(parents=True, exist_ok=True)
     writing_model = _writing_model_metadata(settings)
 

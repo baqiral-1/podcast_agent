@@ -118,11 +118,15 @@ MOVE_PATTERNS: dict[str, tuple[re.Pattern[str], float]] = {
         1.8,
     ),
     "naming_note": (
-        re.compile(r"\b(?:note the word|name the|call it|the word|the phrase|the term)\b", re.IGNORECASE),
+        re.compile(
+            r"\b(?:note the word|name the|call it|the word|the phrase|the term)\b", re.IGNORECASE
+        ),
         1.8,
     ),
     "callback": (
-        re.compile(r"\b(?:carry forward|remember|again|returns here|we left|same)\b", re.IGNORECASE),
+        re.compile(
+            r"\b(?:carry forward|remember|again|returns here|we left|same)\b", re.IGNORECASE
+        ),
         1.8,
     ),
     "contrast": (
@@ -190,7 +194,9 @@ def _load_json(path: Path) -> dict[str, object]:
 
 
 def _sentence_spans(text: str) -> list[str]:
-    parts = [segment.strip() for segment in SENTENCE_SPLIT_RE.split(text.strip()) if segment.strip()]
+    parts = [
+        segment.strip() for segment in SENTENCE_SPLIT_RE.split(text.strip()) if segment.strip()
+    ]
     if parts:
         return parts
     stripped = text.strip()
@@ -224,9 +230,7 @@ def _scene_cards_by_episode(run_dir: Path) -> dict[int, list[dict[str, object]]]
     return mapping
 
 
-def _choose_script_path(
-    episode_dir: Path, script_artifacts: Sequence[str]
-) -> Path | None:
+def _choose_script_path(episode_dir: Path, script_artifacts: Sequence[str]) -> Path | None:
     for name in script_artifacts:
         candidate = episode_dir / name
         if candidate.exists():
@@ -395,9 +399,7 @@ def extract_host_snippets(
         episode_title = _load_episode_title(script_path)
         scene_cards = scene_cards_by_episode.get(episode_number, [])
         scene_card_map = {
-            card["scene_id"]: card
-            for card in scene_cards
-            if isinstance(card.get("scene_id"), str)
+            card["scene_id"]: card for card in scene_cards if isinstance(card.get("scene_id"), str)
         }
         section_scene_ids = _section_scene_order(scene_cards)
 
@@ -575,9 +577,7 @@ def build_review_payload(
         run_labels = ", ".join(run_dir.name for run_dir in resolved_runs)
         title = f"Host Presence RLHF Review: {run_labels}"
 
-    move_counts = Counter(
-        move_type for entry in entries for move_type in entry.move_types
-    )
+    move_counts = Counter(move_type for entry in entries for move_type in entry.move_types)
     phase_counts = Counter(entry.phase for entry in entries)
     run_counts = Counter(entry.run_id for entry in entries)
     artifact_counts = Counter(entry.script_artifact for entry in entries)

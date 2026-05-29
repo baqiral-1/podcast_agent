@@ -20,9 +20,7 @@ async def _resume_from_scene_discovery(project_id: str) -> None:
         message = str(exc)
         if message.startswith("Resume failed from scene discovery onward:"):
             raise
-        raise RuntimeError(
-            f"Resume failed from scene discovery onward: {message}"
-        ) from exc
+        raise RuntimeError(f"Resume failed from scene discovery onward: {message}") from exc
 
 
 def _parse_args() -> argparse.Namespace:

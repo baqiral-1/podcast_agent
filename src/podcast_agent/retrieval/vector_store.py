@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from collections import Counter
-from typing import Any, Iterable
+from typing import Any
 
 from langchain_core.documents import Document
 from langchain_openai import OpenAIEmbeddings
 
-from podcast_agent.config import EmbeddingsConfig, RetrievalConfig, Settings
+from podcast_agent.config import EmbeddingsConfig, Settings
 from podcast_agent.langchain.embeddings import DeterministicEmbeddings
 from podcast_agent.run_logging import RunLogger
 from podcast_agent.schemas.models import TextChunk

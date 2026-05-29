@@ -76,7 +76,12 @@ def _build_fact_bank() -> dict:
                         "uncertainty": "definite",
                         "role": "event",
                         "importance": 3,
-                        "dependencies": {"after": [], "before": [], "group_with": [], "float": False},
+                        "dependencies": {
+                            "after": [],
+                            "before": [],
+                            "group_with": [],
+                            "float": False,
+                        },
                         "scene_id": "episode-1-segment-1_scene",
                         "scene_label": "Scene centered on the courier arrival.",
                         "source_index": 1,
@@ -91,7 +96,12 @@ def _build_fact_bank() -> dict:
                         "uncertainty": "definite",
                         "role": "event",
                         "importance": 3,
-                        "dependencies": {"after": ["episode-1-segment-1__f01"], "before": [], "group_with": [], "float": False},
+                        "dependencies": {
+                            "after": ["episode-1-segment-1__f01"],
+                            "before": [],
+                            "group_with": [],
+                            "float": False,
+                        },
                         "scene_id": "episode-1-segment-1_scene",
                         "scene_label": "Scene centered on the courier arrival.",
                         "source_index": 2,
@@ -106,7 +116,12 @@ def _build_fact_bank() -> dict:
                         "uncertainty": "definite",
                         "role": "context",
                         "importance": 2,
-                        "dependencies": {"after": ["episode-1-segment-1__f02"], "before": [], "group_with": [], "float": False},
+                        "dependencies": {
+                            "after": ["episode-1-segment-1__f02"],
+                            "before": [],
+                            "group_with": [],
+                            "float": False,
+                        },
                         "scene_id": "episode-1-segment-1_scene",
                         "scene_label": "Scene centered on the courier arrival.",
                         "source_index": 3,
@@ -146,13 +161,17 @@ def _format_stats(effort: str, durations: Iterable[float]) -> str:
         return f"{effort}: no runs"
     total = sum(values)
     avg = total / len(values)
-    return f"{effort}: runs={len(values)} avg={avg:.2f}s min={min(values):.2f}s max={max(values):.2f}s"
+    return (
+        f"{effort}: runs={len(values)} avg={avg:.2f}s min={min(values):.2f}s max={max(values):.2f}s"
+    )
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", default=os.getenv("LLM_MODEL_NAME", "gpt-5.4"))
-    parser.add_argument("--base-url", default=os.getenv("OPENAI_BASE_URL", "https://api.openai.com"))
+    parser.add_argument(
+        "--base-url", default=os.getenv("OPENAI_BASE_URL", "https://api.openai.com")
+    )
     parser.add_argument("--api-key", default=os.getenv("OPENAI_API_KEY"))
     parser.add_argument("--runs", type=int, default=1)
     parser.add_argument(

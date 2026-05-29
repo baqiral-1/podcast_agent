@@ -58,10 +58,7 @@ def test_load_input_text_reads_and_trims_file(tmp_path: Path) -> None:
     text_file = tmp_path / "input.txt"
     text_file.write_text("\n  First line.\n\nSecond line.  \n", encoding="utf-8")
 
-    assert (
-        local_voxcpm_tts._load_input_text(None, text_file)
-        == "First line. Second line."
-    )
+    assert local_voxcpm_tts._load_input_text(None, text_file) == "First line. Second line."
 
 
 def test_load_prompt_text_reads_and_trims_file(tmp_path: Path) -> None:
@@ -217,9 +214,7 @@ def test_synthesize_passes_voxcpm_generation_options(
             return [0.0, 0.1]
 
     fake_sf = SimpleNamespace(
-        write=lambda path, audio, sample_rate: calls.update(
-            {"write": (path, audio, sample_rate)}
-        )
+        write=lambda path, audio, sample_rate: calls.update({"write": (path, audio, sample_rate)})
     )
     args = local_voxcpm_tts._parse_args(
         [

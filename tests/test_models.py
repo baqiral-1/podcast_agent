@@ -18,7 +18,6 @@ from podcast_agent.schemas.models import (
     ArchitectureSection,
     ChapterAnalysis,
     EpisodeArchitecture,
-    EpisodePlan,
     EpisodePlanDraft,
     EpisodeSpine,
     EpisodeTakeaway,
@@ -30,7 +29,6 @@ from podcast_agent.schemas.models import (
     NarrativeStrategy,
     ProseSection,
     SceneActor,
-    SceneActorArcBinding,
     SceneCard,
     SceneCardDraft,
     SectionSonicObligation,
@@ -42,7 +40,6 @@ from podcast_agent.schemas.models import (
     SpokenSection,
     StrategyEpisode,
     SupportPrimitiveRole,
-    SynthesisMap,
     SynthesisPrimitivesArtifact,
     ThematicProject,
     PipelineConfig,
@@ -52,12 +49,10 @@ from podcast_agent.schemas.models import (
     dense_section_authorial_passage_range_for_mode,
     primitive_substrate_target_ranges_for_mode,
     resolve_pipeline_config_for_mode,
-    validate_episode_architecture_targets,
     validate_episode_spine_targets,
 )
 from podcast_agent.utils.actor_metadata import (
     ActorMatcher,
-    clean_scene_actor_links,
     clean_synthesis_primitive_actor_links,
     compact_consolidation_actor_metadata,
     normalize_actor_name,
@@ -185,9 +180,7 @@ class TestThematicProject:
     def test_pipeline_config_rejects_narrative_strategy_episode_count_bound_inversion(
         self,
     ):
-        with pytest.raises(
-            ValidationError, match="narrative_strategy_episode_count_max"
-        ):
+        with pytest.raises(ValidationError, match="narrative_strategy_episode_count_max"):
             PipelineConfig(
                 narrative_strategy_episode_count_min=12,
                 narrative_strategy_episode_count_max=8,
@@ -241,9 +234,7 @@ class TestThematicProject:
         assert config.scene_card_target_max == 42
 
     def test_resolve_pipeline_config_for_mode_applies_minified_profile(self):
-        config = resolve_pipeline_config_for_mode(
-            PipelineConfig(podcast_mode=PodcastMode.MINIFIED)
-        )
+        config = resolve_pipeline_config_for_mode(PipelineConfig(podcast_mode=PodcastMode.MINIFIED))
         assert config.podcast_mode == PodcastMode.MINIFIED
         assert config.min_axes == 4
         assert config.max_axes == 6
@@ -271,9 +262,7 @@ class TestThematicProject:
         assert config.scene_card_target_max == 21
 
     def test_resolve_pipeline_config_for_mode_applies_full_profile(self):
-        config = resolve_pipeline_config_for_mode(
-            PipelineConfig(podcast_mode=PodcastMode.FULL)
-        )
+        config = resolve_pipeline_config_for_mode(PipelineConfig(podcast_mode=PodcastMode.FULL))
 
         assert config.podcast_mode == PodcastMode.FULL
         assert config.min_axes == 12
@@ -302,9 +291,7 @@ class TestThematicProject:
             4,
             10,
         )
-        assert dense_section_authorial_passage_range_for_mode(
-            PodcastMode.MINIFIED
-        ) == (2, 5)
+        assert dense_section_authorial_passage_range_for_mode(PodcastMode.MINIFIED) == (2, 5)
         assert authorial_passage_target_for_mode(PodcastMode.FULL) == 28
         assert authorial_passage_target_for_mode(PodcastMode.MINIFIED) == 14
 
@@ -349,11 +336,7 @@ class TestThematicProject:
             sections.append(
                 ArchitectureSection(
                     section_id=section_id,
-                    purpose="opening"
-                    if idx == 0
-                    else "closing"
-                    if idx == 17
-                    else "setup",
+                    purpose="opening" if idx == 0 else "closing" if idx == 17 else "setup",
                     approx_runtime_minutes=108.0 / 18,
                     primitive_ids=["et_1"],
                     section_anchor=f"Anchor {idx + 1}",
@@ -851,9 +834,7 @@ class TestNarrativeStrategy:
             ],
         )
 
-        restored = ActorArcDirective.model_validate(
-            json.loads(directive.model_dump_json())
-        )
+        restored = ActorArcDirective.model_validate(json.loads(directive.model_dump_json()))
 
         assert restored.actor_id == "mahatma_gandhi"
         assert restored.arc_threads[1].thread_id == "gandhi_tracking_1"
@@ -948,9 +929,7 @@ class TestNarrativeStrategy:
             "pack_1": SupportPrimitiveRole.STAKES,
             **{
                 f"support_{idx}": (
-                    SupportPrimitiveRole.MECHANISM
-                    if idx % 2 == 0
-                    else SupportPrimitiveRole.TEXTURE
+                    SupportPrimitiveRole.MECHANISM if idx % 2 == 0 else SupportPrimitiveRole.TEXTURE
                 )
                 for idx in range(1, 8)
             },
@@ -967,9 +946,7 @@ class TestNarrativeStrategy:
             )
 
     def test_episode_spine_rejects_support_primitive_count_outside_shared_range(self):
-        with pytest.raises(
-            ValidationError, match="support_primitive_roles must contain 2-13"
-        ):
+        with pytest.raises(ValidationError, match="support_primitive_roles must contain 2-13"):
             EpisodeSpine(
                 listener_problem="What changed?",
                 episode_answer="A claim",
@@ -1069,9 +1046,7 @@ class TestNarrativeStrategy:
             recall_primitive_ids=["recall_1", "recall_2"],
         )
 
-        with pytest.raises(
-            ValueError, match="recall_primitive_ids must contain at most 1"
-        ):
+        with pytest.raises(ValueError, match="recall_primitive_ids must contain at most 1"):
             validate_episode_spine_targets(
                 spine,
                 core_target_min=3,
@@ -1182,7 +1157,9 @@ class TestPlanningModels:
                     "beat_change": "The disagreement becomes visible.",
                     "passage_ids": ["p1"],
                     "host_moves": {
-                        "open": [{"move_type": "orient", "note": "Enter through the council chamber."}]
+                        "open": [
+                            {"move_type": "orient", "note": "Enter through the council chamber."}
+                        ]
                     },
                     "estimated_duration_seconds": 90,
                 }
@@ -1355,9 +1332,7 @@ class TestSpeechAndStyleModels:
 
         assert section.section_sonic_plan is not None
         assert section.section_sonic_plan.obligation == "required"
-        assert section.section_sonic_plan.later_beats[0].cue == (
-            "a stamp cracks onto the paper"
-        )
+        assert section.section_sonic_plan.later_beats[0].cue == ("a stamp cracks onto the paper")
 
 
 class TestEpisodeArchitectureModels:
@@ -1429,9 +1404,7 @@ class TestEpisodeArchitectureModels:
             AuthorialPassage.model_validate(self._ap("causal_compression", "close"))
 
     def test_architecture_accepts_single_verdict_in_answer_section(self):
-        payload = self._architecture_with_passage_in(
-            stage_index_from_end=2, mode="verdict_landing"
-        )
+        payload = self._architecture_with_passage_in(stage_index_from_end=2, mode="verdict_landing")
         architecture = EpisodeArchitecture.model_validate(payload)
         answer_section = architecture.sections[-2]
         assert answer_section.authorial_passages[0].mode == "verdict_landing"
@@ -1444,9 +1417,7 @@ class TestEpisodeArchitectureModels:
             EpisodeArchitecture.model_validate(payload)
 
     def test_architecture_rejects_verdict_landing_in_close_section(self):
-        payload = self._architecture_with_passage_in(
-            stage_index_from_end=1, mode="verdict_landing"
-        )
+        payload = self._architecture_with_passage_in(stage_index_from_end=1, mode="verdict_landing")
         with pytest.raises(ValidationError, match="answer-stage section"):
             EpisodeArchitecture.model_validate(payload)
 
@@ -1529,17 +1500,13 @@ class TestEpisodeArchitectureModels:
             {**base, "open_mode": "question_first"}
         )
         assert question_section.open_mode == "question_first"
-        assert (
-            question_section.model_dump(mode="json")["open_mode"] == "question_first"
-        )
+        assert question_section.model_dump(mode="json")["open_mode"] == "question_first"
 
         with pytest.raises(ValidationError):
             ArchitectureSection.model_validate({**base, "open_mode": "montage"})
 
     def test_architecture_section_rejects_single_must_stage_beat_when_provided(self):
-        with pytest.raises(
-            ValidationError, match="must_stage_beats must contain at least 2 items"
-        ):
+        with pytest.raises(ValidationError, match="must_stage_beats must contain at least 2 items"):
             ArchitectureSection.model_validate(
                 {
                     "section_id": "section_01",
@@ -1685,7 +1652,7 @@ class TestQualityJudgeValidators:
 
         payload = self._section_payload(
             listener_engagement=80,  # tied for min
-            podcast_fidelity=80,     # tied for min
+            podcast_fidelity=80,  # tied for min
             narrative_quality=85,
             prose_polish=84,
             frame_discipline=82,
@@ -1751,7 +1718,7 @@ class TestQualityJudgeValidators:
 
         payload = self._section_payload(
             listener_engagement=80,  # tied for min (first-position)
-            podcast_fidelity=80,     # tied for min (later-position)
+            podcast_fidelity=80,  # tied for min (later-position)
             narrative_quality=85,
             prose_polish=84,
             frame_discipline=82,
@@ -1779,9 +1746,7 @@ class TestQualityJudgeValidators:
         try:
             SectionQualityScore.model_validate(bad_payload)
         except ValidationError as exc:
-            new_payload = agent.prepare_retry_payload(
-                {"episode_number": 1}, exc
-            )
+            new_payload = agent.prepare_retry_payload({"episode_number": 1}, exc)
         else:  # pragma: no cover
             raise AssertionError("expected ValidationError")
         assert "retry_feedback" in new_payload

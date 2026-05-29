@@ -39,21 +39,11 @@ async def main() -> None:
     if not project_dir.exists():
         raise RuntimeError(f"Run directory does not exist: {project_dir}")
 
-    project = ThematicProject.model_validate(
-        _load_json(project_dir / "thematic_project.json")
-    )
-    corpus = ThematicCorpus.model_validate(
-        _load_json(project_dir / "thematic_corpus.json")
-    )
-    synthesis_map = SynthesisMap.model_validate(
-        _load_json(project_dir / "synthesis_map.json")
-    )
-    strategy = NarrativeStrategy.model_validate(
-        _load_json(project_dir / "narrative_strategy.json")
-    )
-    actor_metadata = ActorMetadata.model_validate(
-        _load_json(project_dir / "actor_metadata.json")
-    )
+    project = ThematicProject.model_validate(_load_json(project_dir / "thematic_project.json"))
+    corpus = ThematicCorpus.model_validate(_load_json(project_dir / "thematic_corpus.json"))
+    synthesis_map = SynthesisMap.model_validate(_load_json(project_dir / "synthesis_map.json"))
+    strategy = NarrativeStrategy.model_validate(_load_json(project_dir / "narrative_strategy.json"))
+    actor_metadata = ActorMetadata.model_validate(_load_json(project_dir / "actor_metadata.json"))
 
     forced_config = project.config.model_copy(
         update={
@@ -61,16 +51,13 @@ async def main() -> None:
             "skip_audio": True,
         }
     )
-    project = project.model_copy(
-        update={"config": forced_config, "status": ProjectStatus.PLANNING}
-    )
+    project = project.model_copy(update={"config": forced_config, "status": ProjectStatus.PLANNING})
     _save_json(project_dir / "thematic_project.json", project)
 
     episode_plans_payload = _load_json(project_dir / "series_plan.json")
     if isinstance(episode_plans_payload, dict) and "episodes" in episode_plans_payload:
         episode_plans = [
-            EpisodePlan.model_validate(item)
-            for item in episode_plans_payload["episodes"]
+            EpisodePlan.model_validate(item) for item in episode_plans_payload["episodes"]
         ]
     else:
         architecture_payload = _load_json(project_dir / "episode_architectures.json")
@@ -99,13 +86,10 @@ async def main() -> None:
             for item in architecture_payload.get("episodes", [])
         ]
     }
-    strategy_by_number = {
-        episode.episode_number: episode for episode in strategy.episodes
-    }
+    strategy_by_number = {episode.episode_number: episode for episode in strategy.episodes}
     sem = asyncio.Semaphore(project.config.episode_write_concurrency)
     spoken_sem = asyncio.Semaphore(
-        project.config.spoken_delivery_concurrency
-        or project.config.episode_write_concurrency
+        project.config.spoken_delivery_concurrency or project.config.episode_write_concurrency
     )
     host_policy = _build_host_policy_payload(strategy.narrator_profile)
     retained_primitive_lookup = _flatten_synthesis_primitives(synthesis_map)

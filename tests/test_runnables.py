@@ -77,7 +77,9 @@ def test_connection_error_detects_remote_protocol_error_type() -> None:
 
 def test_connection_error_detects_incomplete_chunked_read_message() -> None:
     assert is_connection_error(
-        RuntimeError("peer closed connection without sending complete message body (incomplete chunked read)")
+        RuntimeError(
+            "peer closed connection without sending complete message body (incomplete chunked read)"
+        )
     )
 
 

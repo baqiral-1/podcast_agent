@@ -38,21 +38,11 @@ class EpisodeArchitectureAgent(Agent):
         if not isinstance(project, dict):
             project = {}
         return {
-            "max_dense_sections": int(
-                project.get("max_dense_sections_per_episode", 2)
-            ),
-            "dense_min": float(
-                project.get("dense_section_runtime_min_minutes", 14.0)
-            ),
-            "dense_max": float(
-                project.get("dense_section_runtime_max_minutes", 18.0)
-            ),
-            "section_floor": float(
-                project.get("section_runtime_floor_minutes", 4.0)
-            ),
-            "section_ceiling": float(
-                project.get("section_runtime_ceiling_minutes", 13.0)
-            ),
+            "max_dense_sections": int(project.get("max_dense_sections_per_episode", 2)),
+            "dense_min": float(project.get("dense_section_runtime_min_minutes", 14.0)),
+            "dense_max": float(project.get("dense_section_runtime_max_minutes", 18.0)),
+            "section_floor": float(project.get("section_runtime_floor_minutes", 4.0)),
+            "section_ceiling": float(project.get("section_runtime_ceiling_minutes", 13.0)),
             "episode_min": float(project.get("min_episode_minutes", 108.0)),
             "episode_max": float(project.get("max_episode_minutes", 126.0)),
             "policy": str(project.get("series_runtime_policy", "warn")),
@@ -72,12 +62,8 @@ class EpisodeArchitectureAgent(Agent):
     def build_instructions(self, payload: dict) -> str:
         section_target_min, section_target_max = self._section_target_bounds(payload)
         mode = self._podcast_mode(payload)
-        authorial_target_min, authorial_target_max = (
-            authorial_passage_target_range_for_mode(mode)
-        )
-        dense_section_min, dense_section_max = (
-            dense_section_authorial_passage_range_for_mode(mode)
-        )
+        authorial_target_min, authorial_target_max = authorial_passage_target_range_for_mode(mode)
+        dense_section_min, dense_section_max = dense_section_authorial_passage_range_for_mode(mode)
         density_bounds = self._density_bounds(payload)
         return episode_architecture_instructions(
             section_target_min=section_target_min,
@@ -96,9 +82,7 @@ class EpisodeArchitectureAgent(Agent):
             target_episode_runtime_max=float(density_bounds["episode_max"]),
         )
 
-    def validate_result(
-        self, result: EpisodeArchitecture, payload: dict
-    ) -> EpisodeArchitecture:
+    def validate_result(self, result: EpisodeArchitecture, payload: dict) -> EpisodeArchitecture:
         section_target_min, section_target_max = self._section_target_bounds(payload)
         validate_episode_architecture_targets(
             result,
@@ -121,9 +105,7 @@ class EpisodeArchitectureAgent(Agent):
             section_runtime_floor=float(bounds["section_floor"]),
         )
         if density_warnings and bounds["policy"] == "enforce":
-            raise ValueError(
-                "architecture density violations: " + "; ".join(density_warnings)
-            )
+            raise ValueError("architecture density violations: " + "; ".join(density_warnings))
         # Episode runtime envelope. Same enforce/warn split.
         validate_episode_runtime_envelope(
             result,
@@ -175,9 +157,7 @@ class EpisodeArchitectureAgent(Agent):
         if series_explanation_registry is not None:
             payload["series_explanation_registry"] = series_explanation_registry
         if series_actor_explanation_registry is not None:
-            payload["series_actor_explanation_registry"] = (
-                series_actor_explanation_registry
-            )
+            payload["series_actor_explanation_registry"] = series_actor_explanation_registry
         if actor_metadata is not None:
             payload["actor_metadata"] = actor_metadata
         if architecture_feedback is not None:

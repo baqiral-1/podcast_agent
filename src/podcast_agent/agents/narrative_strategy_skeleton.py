@@ -128,8 +128,7 @@ class NarrativeStrategySkeletonAgent(Agent):
             )
             if primitive_by_id:
                 if not any(
-                    primitive_by_id.get(primitive_id, {}).get("substrate")
-                    in {"events", "acts"}
+                    primitive_by_id.get(primitive_id, {}).get("substrate") in {"events", "acts"}
                     for primitive_id in episode.episode_spine.core_primitive_ids
                 ):
                     warning = (
@@ -145,9 +144,7 @@ class NarrativeStrategySkeletonAgent(Agent):
                             episode_number=episode.episode_number,
                         )
                 for primitive_id in episode.episode_spine.recall_primitive_ids:
-                    functions = primitive_by_id.get(primitive_id, {}).get(
-                        "functions", []
-                    )
+                    functions = primitive_by_id.get(primitive_id, {}).get("functions", [])
                     if "recurrence" not in list(functions or []):
                         warning = (
                             "narrative_strategy_recall_missing_recurrence: "
@@ -216,9 +213,7 @@ class NarrativeStrategySkeletonAgent(Agent):
                 "issue": "schema_validation_failed",
                 "required_ranges": {
                     "core_primitive_ids": f"{core_target_min}-{core_target_max}",
-                    "support_primitive_roles": (
-                        f"{support_target_min}-{support_target_max}"
-                    ),
+                    "support_primitive_roles": (f"{support_target_min}-{support_target_max}"),
                     "recall_primitive_ids_max": recall_target_max,
                 },
                 "canonical_field_names": {
@@ -382,9 +377,7 @@ class NarrativeStrategySkeletonAgent(Agent):
                 recall_ids = spine.get("recall_prims")
 
             core_count = len(core_ids) if isinstance(core_ids, list) else 0
-            support_count = (
-                len(support_roles) if isinstance(support_roles, dict) else 0
-            )
+            support_count = len(support_roles) if isinstance(support_roles, dict) else 0
             recall_count = len(recall_ids) if isinstance(recall_ids, list) else 0
             core_direction = cls._count_direction(
                 core_count,
@@ -454,11 +447,7 @@ class NarrativeStrategySkeletonAgent(Agent):
             error_type = str(error.get("type", "")).strip()
             issue = "schema_validation_failed"
             episode_index = next(
-                (
-                    int(part)
-                    for part in error.get("loc", ())
-                    if isinstance(part, int)
-                ),
+                (int(part) for part in error.get("loc", ()) if isinstance(part, int)),
                 None,
             )
             direction_by_field = (
@@ -474,8 +463,7 @@ class NarrativeStrategySkeletonAgent(Agent):
                 )
             elif "support_primitive_roles must contain" in message:
                 issue = (
-                    "support_primitive_count_"
-                    f"{direction_by_field['support_primitive_roles']}"
+                    f"support_primitive_count_{direction_by_field['support_primitive_roles']}"
                     if "support_primitive_roles" in direction_by_field
                     else "support_primitive_count_out_of_range"
                 )

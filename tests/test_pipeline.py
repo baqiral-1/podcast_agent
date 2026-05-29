@@ -8,6 +8,7 @@ import threading
 import time
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from pydantic import ValidationError
@@ -49,8 +50,6 @@ from podcast_agent.schemas.models import (
     ActorArcDirective,
     ActorArcThread,
     ActorMetadata,
-    ActorProfile,
-    ActorRelationship,
     ArchitectureSection,
     BookRecord,
     EpisodeScript,
@@ -60,13 +59,11 @@ from podcast_agent.schemas.models import (
     EventPrimitive,
     ExtractedPassage,
     FramingBlock,
-    NarrativeStrategy,
     PassagePair,
     PipelineConfig,
     PodcastMode,
     ProseSection,
     SceneActor,
-    SceneActorArcBinding,
     SceneCard,
     SceneJob,
     SpineRelation,
@@ -80,7 +77,6 @@ from podcast_agent.schemas.models import (
     ThematicCorpus,
     ThematicAxis,
     ThematicProject,
-    VerdictMode,
     resolve_pipeline_config_for_mode,
 )
 
@@ -111,7 +107,9 @@ def _episode_spine(
         if support_id in core_primitive_ids or support_id in merged_support_roles:
             continue
         merged_support_roles[support_id] = (
-            SupportPrimitiveRole.MECHANISM if len(merged_support_roles) % 2 == 0 else SupportPrimitiveRole.TEXTURE
+            SupportPrimitiveRole.MECHANISM
+            if len(merged_support_roles) % 2 == 0
+            else SupportPrimitiveRole.TEXTURE
         )
     return EpisodeSpine(
         listener_problem="Question?",
@@ -194,9 +192,7 @@ def _episode_plan(
     multi_scene = len(normalized_scene_cards) >= 2
     # With at least two scenes the final scene is the close scene; with a single
     # scene the lone card serves as the answer scene.
-    resolved_close_scene_card_id = (
-        normalized_scene_cards[-1].scene_id if multi_scene else None
-    )
+    resolved_close_scene_card_id = normalized_scene_cards[-1].scene_id if multi_scene else None
     if answer_scene_card_id is None:
         # Pick the last scene before the close scene as the answer scene.
         if multi_scene:
@@ -244,11 +240,7 @@ def _episode_architecture_for_scene_cards(scene_cards: list[SceneCard]) -> Episo
     # The answer-stage section is the section that owns the answer scene; the
     # final section is always the close stage (closing purpose).
     answer_section_id = next(
-        (
-            scene.section_id
-            for scene in scene_cards
-            if scene.scene_job == SceneJob.ANSWER
-        ),
+        (scene.section_id for scene in scene_cards if scene.scene_job == SceneJob.ANSWER),
         None,
     )
     close_section_id = ordered_section_ids[-1]
@@ -280,7 +272,9 @@ def _episode_architecture_for_scene_cards(scene_cards: list[SceneCard]) -> Episo
                     "section_turn": f"Turn for {section_id}",
                     "transition_logic": f"Transition for {section_id}",
                     "depends_on_section_ids": [ordered_section_ids[idx - 2]] if idx > 1 else [],
-                    "sets_up_section_ids": [ordered_section_ids[idx]] if idx < len(ordered_section_ids) else [],
+                    "sets_up_section_ids": [ordered_section_ids[idx]]
+                    if idx < len(ordered_section_ids)
+                    else [],
                     "recurrence_role": "none",
                     "priority_core_passage_ids": [],
                     "section_progression": make_section_progression(stage, label=section_id),
@@ -347,11 +341,7 @@ def _normalize_fixture_strategy_episode(payload: dict[str, object]) -> dict[str,
         payload.pop("driving_question", None)
         return payload
     cluster_path = list(payload.pop("cluster_path", []) or [])
-    spine_pack_ids = [
-        item["cluster_id"]
-        for item in cluster_path
-        if item.get("usage") == "primary"
-    ]
+    spine_pack_ids = [item["cluster_id"] for item in cluster_path if item.get("usage") == "primary"]
     support_pack_roles: dict[str, str] = {}
     allowed_recalls: list[str] = []
     for item in cluster_path:
@@ -368,8 +358,8 @@ def _normalize_fixture_strategy_episode(payload: dict[str, object]) -> dict[str,
         )
     listener_problem = str(payload.get("driving_question", "What changes here?"))
     thematic_focus = str(payload.get("thematic_focus", "") or listener_problem)
-    arc_summary = str(payload.get("arc_summary", "") or thematic_focus)
-    unresolved_questions = list(payload.get("unresolved_questions", []) or [])
+    _arc_summary = str(payload.get("arc_summary", "") or thematic_focus)
+    _unresolved_questions = list(payload.get("unresolved_questions", []) or [])
     payload["episode_spine"] = {
         "listener_problem": listener_problem,
         "episode_answer": thematic_focus,
@@ -411,7 +401,9 @@ def _normalize_fixture_plan_episode(
         scene.setdefault("section_id", f"section_{idx:02d}")
         dominant_pack_id = scene.pop("dominant_cluster_occurrence_id", None)
         if dominant_pack_id:
-            scene["dominant_pack_id"] = occurrence_to_pack_id.get(str(dominant_pack_id), str(dominant_pack_id))
+            scene["dominant_pack_id"] = occurrence_to_pack_id.get(
+                str(dominant_pack_id), str(dominant_pack_id)
+            )
         if "spine_relation" not in scene:
             role = str(scene.get("scene_role", "")).strip()
             scene["spine_relation"] = {
@@ -520,7 +512,6 @@ def _actor_arc_directive(actor_id: str = "actor_primary") -> ActorArcDirective:
     )
 
 
-
 def test_build_scene_card_count_warnings_for_under_target():
     warnings = _build_scene_card_count_warnings(
         scene_card_count=18,
@@ -604,6 +595,7 @@ def test_build_scene_card_primitive_warnings_reports_density_and_unknown_ids():
     )
     assert warnings == []
 
+
 def test_script_total_word_count_counts_sections():
     script = EpisodeScript(
         episode_number=1,
@@ -635,7 +627,9 @@ def test_compute_scene_word_count_targets_uses_scene_durations():
             update={"primitive_ids": [], "passage_ids": ["p2"], "estimated_duration_seconds": 90}
         ),
     ]
-    targets = _compute_scene_word_count_targets(scenes, episode_target_word_count=1000, words_per_minute=120.0)
+    targets = _compute_scene_word_count_targets(
+        scenes, episode_target_word_count=1000, words_per_minute=120.0
+    )
     assert targets == {"scene_1": 60, "scene_2": 180}
 
 
@@ -648,7 +642,9 @@ def test_compute_scene_word_count_targets_scales_with_words_per_minute():
             update={"passage_ids": ["p2"], "estimated_duration_seconds": 90}
         ),
     ]
-    targets = _compute_scene_word_count_targets(scenes, episode_target_word_count=1200, words_per_minute=130.0)
+    targets = _compute_scene_word_count_targets(
+        scenes, episode_target_word_count=1200, words_per_minute=130.0
+    )
     assert targets == {"scene_anchor": 65, "scene_compressed": 195}
 
 
@@ -792,9 +788,7 @@ def test_allocate_scene_durations_middle_east_v2_ep1_rebalances_retarged_roles()
     allocated = _allocate_scene_durations(
         remapped_scene_cards,
         episode,
-        target_duration_seconds=sum(
-            scene.estimated_duration_seconds for scene in plan.scene_cards
-        ),
+        target_duration_seconds=sum(scene.estimated_duration_seconds for scene in plan.scene_cards),
     )
     seconds = {scene.scene_id: scene.estimated_duration_seconds for scene in allocated}
 
@@ -822,7 +816,9 @@ def test_allocate_scene_durations_totals_sum_to_target():
         )
 
         assert len(allocated) == len(plan.scene_cards)
-        assert sum(scene.estimated_duration_seconds for scene in allocated) == target_duration_seconds
+        assert (
+            sum(scene.estimated_duration_seconds for scene in allocated) == target_duration_seconds
+        )
 
 
 def test_build_spine_plan_diagnostics_accepts_065_spine_share():
@@ -830,19 +826,18 @@ def test_build_spine_plan_diagnostics_accepts_065_spine_share():
         "pack_spine",
         support_pack_roles={"pack_support": SupportPrimitiveRole.MECHANISM},
     )
-    scene_cards = [
-        _scene_card(f"spine_{idx}", "pack_spine")
-        for idx in range(12)
-    ] + [
-        _scene_card(
-            f"support_{idx}",
-            "pack_support",
-            scene_role="synthesis",
-        ).model_copy(update={"spine_relation": SpineRelation.SUPPLY_MECHANISM})
-        for idx in range(7)
-    ] + [
-        _scene_card("spine_ending", "pack_spine", scene_role="consequence")
-    ]
+    scene_cards = (
+        [_scene_card(f"spine_{idx}", "pack_spine") for idx in range(12)]
+        + [
+            _scene_card(
+                f"support_{idx}",
+                "pack_support",
+                scene_role="synthesis",
+            ).model_copy(update={"spine_relation": SpineRelation.SUPPLY_MECHANISM})
+            for idx in range(7)
+        ]
+        + [_scene_card("spine_ending", "pack_spine", scene_role="consequence")]
+    )
     scene_cards[-1] = scene_cards[-1].model_copy(
         update={
             "dominant_pack_id": "pack_spine",
@@ -915,7 +910,9 @@ def test_resolve_synthesis_bm25_keep_fraction_by_passage_uses_relevance_tiers():
         for idx in range(1, 11)
     ]
 
-    keep_fraction_by_passage_id, tier_counts = _resolve_synthesis_bm25_keep_fraction_by_passage(passages)
+    keep_fraction_by_passage_id, tier_counts = _resolve_synthesis_bm25_keep_fraction_by_passage(
+        passages
+    )
 
     assert tier_counts == {
         "top_tier_passages": 1,
@@ -935,24 +932,86 @@ def test_resolve_synthesis_bm25_keep_fraction_by_passage_uses_relevance_tiers():
 
 
 def test_allocate_synthesis_passages_by_axis_uses_dynamic_floor_global_refill_and_exact_dedupe():
-    axis_1 = ThematicAxis(axis_id="axis_1", name="Axis 1", description="A1", theme_importance_score=0.95)
-    axis_2 = ThematicAxis(axis_id="axis_2", name="Axis 2", description="A2", theme_importance_score=0.75)
-    axis_3 = ThematicAxis(axis_id="axis_3", name="Axis 3", description="A3", theme_importance_score=0.65)
+    axis_1 = ThematicAxis(
+        axis_id="axis_1", name="Axis 1", description="A1", theme_importance_score=0.95
+    )
+    axis_2 = ThematicAxis(
+        axis_id="axis_2", name="Axis 2", description="A2", theme_importance_score=0.75
+    )
+    axis_3 = ThematicAxis(
+        axis_id="axis_3", name="Axis 3", description="A3", theme_importance_score=0.65
+    )
     selected_by_axis, cap_report = _allocate_synthesis_passages_by_axis(
         axes=[axis_1, axis_2, axis_3],
         passages_by_axis={
             "axis_1": [
-                ExtractedPassage(passage_id="p1", book_id="b1", chunk_ids=["c1"], text="P1", axis_id="axis_1", relevance_score=0.92, quotability_score=0.8),
-                ExtractedPassage(passage_id="p2", book_id="b1", chunk_ids=["c2"], text="P2", axis_id="axis_1", relevance_score=0.55, quotability_score=0.5),
+                ExtractedPassage(
+                    passage_id="p1",
+                    book_id="b1",
+                    chunk_ids=["c1"],
+                    text="P1",
+                    axis_id="axis_1",
+                    relevance_score=0.92,
+                    quotability_score=0.8,
+                ),
+                ExtractedPassage(
+                    passage_id="p2",
+                    book_id="b1",
+                    chunk_ids=["c2"],
+                    text="P2",
+                    axis_id="axis_1",
+                    relevance_score=0.55,
+                    quotability_score=0.5,
+                ),
             ],
             "axis_2": [
-                ExtractedPassage(passage_id="p3", book_id="b1", chunk_ids=["c1"], text="P3 dup", axis_id="axis_2", relevance_score=0.99, quotability_score=0.95),
-                ExtractedPassage(passage_id="p4", book_id="b1", chunk_ids=["c4"], text="P4", axis_id="axis_2", relevance_score=0.78, quotability_score=0.7),
-                ExtractedPassage(passage_id="p5", book_id="b1", chunk_ids=["c5"], text="P5", axis_id="axis_2", relevance_score=0.4, quotability_score=0.4),
+                ExtractedPassage(
+                    passage_id="p3",
+                    book_id="b1",
+                    chunk_ids=["c1"],
+                    text="P3 dup",
+                    axis_id="axis_2",
+                    relevance_score=0.99,
+                    quotability_score=0.95,
+                ),
+                ExtractedPassage(
+                    passage_id="p4",
+                    book_id="b1",
+                    chunk_ids=["c4"],
+                    text="P4",
+                    axis_id="axis_2",
+                    relevance_score=0.78,
+                    quotability_score=0.7,
+                ),
+                ExtractedPassage(
+                    passage_id="p5",
+                    book_id="b1",
+                    chunk_ids=["c5"],
+                    text="P5",
+                    axis_id="axis_2",
+                    relevance_score=0.4,
+                    quotability_score=0.4,
+                ),
             ],
             "axis_3": [
-                ExtractedPassage(passage_id="p6", book_id="b1", chunk_ids=["c6"], text="P6", axis_id="axis_3", relevance_score=0.88, quotability_score=0.82),
-                ExtractedPassage(passage_id="p7", book_id="b1", chunk_ids=["c7"], text="P7", axis_id="axis_3", relevance_score=0.87, quotability_score=0.83),
+                ExtractedPassage(
+                    passage_id="p6",
+                    book_id="b1",
+                    chunk_ids=["c6"],
+                    text="P6",
+                    axis_id="axis_3",
+                    relevance_score=0.88,
+                    quotability_score=0.82,
+                ),
+                ExtractedPassage(
+                    passage_id="p7",
+                    book_id="b1",
+                    chunk_ids=["c7"],
+                    text="P7",
+                    axis_id="axis_3",
+                    relevance_score=0.87,
+                    quotability_score=0.83,
+                ),
             ],
         },
         total_cap=5,
@@ -964,11 +1023,7 @@ def test_allocate_synthesis_passages_by_axis_uses_dynamic_floor_global_refill_an
         axis_ceiling_multiplier=1.2,
     )
 
-    all_ids = [
-        passage.passage_id
-        for passages in selected_by_axis.values()
-        for passage in passages
-    ]
+    all_ids = [passage.passage_id for passages in selected_by_axis.values() for passage in passages]
     assert all_ids == ["p1", "p2", "p4", "p6", "p7"]
     assert len(set(all_ids)) == len(all_ids)
     assert cap_report["axis_floor"] == 1
@@ -987,18 +1042,38 @@ def test_allocate_synthesis_passages_by_axis_uses_dynamic_floor_global_refill_an
 
 
 def test_allocate_synthesis_passages_by_axis_raises_on_duplicate_passage_ids():
-    axis_1 = ThematicAxis(axis_id="axis_1", name="Axis 1", description="A1", theme_importance_score=0.95)
-    axis_2 = ThematicAxis(axis_id="axis_2", name="Axis 2", description="A2", theme_importance_score=0.75)
+    axis_1 = ThematicAxis(
+        axis_id="axis_1", name="Axis 1", description="A1", theme_importance_score=0.95
+    )
+    axis_2 = ThematicAxis(
+        axis_id="axis_2", name="Axis 2", description="A2", theme_importance_score=0.75
+    )
 
     with pytest.raises(ValueError, match="Duplicate synthesis passages detected"):
         _allocate_synthesis_passages_by_axis(
             axes=[axis_1, axis_2],
             passages_by_axis={
                 "axis_1": [
-                    ExtractedPassage(passage_id="dup", book_id="b1", chunk_ids=["c1"], text="P1", axis_id="axis_1", relevance_score=0.92, quotability_score=0.8),
+                    ExtractedPassage(
+                        passage_id="dup",
+                        book_id="b1",
+                        chunk_ids=["c1"],
+                        text="P1",
+                        axis_id="axis_1",
+                        relevance_score=0.92,
+                        quotability_score=0.8,
+                    ),
                 ],
                 "axis_2": [
-                    ExtractedPassage(passage_id="dup", book_id="b2", chunk_ids=["c2"], text="P2", axis_id="axis_2", relevance_score=0.91, quotability_score=0.8),
+                    ExtractedPassage(
+                        passage_id="dup",
+                        book_id="b2",
+                        chunk_ids=["c2"],
+                        text="P2",
+                        axis_id="axis_2",
+                        relevance_score=0.91,
+                        quotability_score=0.8,
+                    ),
                 ],
             },
             total_cap=2,
@@ -1104,10 +1179,7 @@ def test_trim_candidate_texts_by_bm25_query_text_keeps_at_least_one_sentence_whe
         {
             "passage_id": "p1",
             "book_id": "b1",
-            "text": (
-                "Keepalpha sentence one with extra words. "
-                "Dropgamma short two."
-            ),
+            "text": ("Keepalpha sentence one with extra words. Dropgamma short two."),
         }
     ]
 
@@ -1187,10 +1259,7 @@ def test_prioritize_cross_book_pairs_prefers_contradicts_and_filters_independent
         ]
     )
 
-    assert [
-        (pair.relationship, pair.passage_a_id, pair.passage_b_id)
-        for pair in prioritized
-    ] == [
+    assert [(pair.relationship, pair.passage_a_id, pair.passage_b_id) for pair in prioritized] == [
         ("contradicts", "p1", "p2"),
         ("contradicts", "p0", "p9"),
         ("contextualizes", "p5", "p6"),
@@ -1200,7 +1269,9 @@ def test_prioritize_cross_book_pairs_prefers_contradicts_and_filters_independent
 
 def test_orchestrator_initializes_redesigned_agents(monkeypatch):
     heuristic = HeuristicLLMClient()
-    monkeypatch.setattr("podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic)
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic
+    )
     monkeypatch.setattr(
         "podcast_agent.pipeline.orchestrator.PGVectorRetrieval",
         lambda settings, run_logger=None: SimpleNamespace(),
@@ -1216,10 +1287,7 @@ def test_orchestrator_initializes_redesigned_agents(monkeypatch):
 
     orchestrator = PipelineOrchestrator()
 
-    assert (
-        orchestrator.synthesis_primitives_agent.schema_name
-        == "primitive_substrate_extraction"
-    )
+    assert orchestrator.synthesis_primitives_agent.schema_name == "primitive_substrate_extraction"
     assert not hasattr(orchestrator, "synthesis_mapping_agent")
 
 
@@ -1241,23 +1309,18 @@ def test_build_scene_card_family_warnings_reports_missing_mix():
         primitive_by_id={"et_1": _primitive("et_1", "Turn")},
     )
 
+    assert any(warning.startswith("primitive_pool_missing_human_grounding") for warning in warnings)
     assert any(
-        warning.startswith("primitive_pool_missing_human_grounding")
-        for warning in warnings
+        warning.startswith("primitive_pool_missing_system_or_context") for warning in warnings
     )
-    assert any(
-        warning.startswith("primitive_pool_missing_system_or_context")
-        for warning in warnings
-    )
-    assert any(
-        warning.startswith("primitive_pool_missing_recurrence")
-        for warning in warnings
-    )
+    assert any(warning.startswith("primitive_pool_missing_recurrence") for warning in warnings)
 
 
 def test_map_synthesis_caps_total_passages_and_keeps_cross_pair_priority(monkeypatch, tmp_path):
     heuristic = HeuristicLLMClient()
-    monkeypatch.setattr("podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic)
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic
+    )
     monkeypatch.setattr(
         "podcast_agent.pipeline.orchestrator.PGVectorRetrieval",
         lambda settings, run_logger=None: SimpleNamespace(),
@@ -1283,7 +1346,15 @@ def test_map_synthesis_caps_total_passages_and_keeps_cross_pair_priority(monkeyp
     project = ThematicProject(
         project_id="proj",
         theme="War on terror",
-        books=[BookRecord(book_id="b1", title="Book 1", author="Author", source_path="/tmp/book.txt", source_type="txt")],
+        books=[
+            BookRecord(
+                book_id="b1",
+                title="Book 1",
+                author="Author",
+                source_path="/tmp/book.txt",
+                source_type="txt",
+            )
+        ],
         config=PipelineConfig(
             synthesis_total_passage_cap=4,
             synthesis_axis_pct=1.0,
@@ -1295,22 +1366,89 @@ def test_map_synthesis_caps_total_passages_and_keeps_cross_pair_priority(monkeyp
             synthesis_axis_ceiling_multiplier=1.5,
         ),
     )
-    axis_1 = ThematicAxis(axis_id="axis_1", name="Axis 1", description="A1", theme_importance_score=0.95)
-    axis_2 = ThematicAxis(axis_id="axis_2", name="Axis 2", description="A2", theme_importance_score=0.45)
+    axis_1 = ThematicAxis(
+        axis_id="axis_1", name="Axis 1", description="A1", theme_importance_score=0.95
+    )
+    axis_2 = ThematicAxis(
+        axis_id="axis_2", name="Axis 2", description="A2", theme_importance_score=0.45
+    )
     corpus = ThematicCorpus(
         project_id="proj",
         axes=[axis_1, axis_2],
         passages_by_axis={
             "axis_1": [
-                ExtractedPassage(passage_id="p1", book_id="b1", chunk_ids=["c1"], text="P1", full_text="P1 full text.", axis_id="axis_1", relevance_score=0.9, quotability_score=0.8),
-                ExtractedPassage(passage_id="p2", book_id="b1", chunk_ids=["c2"], text="P2", full_text="", axis_id="axis_1", relevance_score=0.7, quotability_score=0.7),
-                ExtractedPassage(passage_id="p3", book_id="b1", chunk_ids=["c3"], text="P3", full_text="P3 full text.", axis_id="axis_1", relevance_score=0.6, quotability_score=0.6),
+                ExtractedPassage(
+                    passage_id="p1",
+                    book_id="b1",
+                    chunk_ids=["c1"],
+                    text="P1",
+                    full_text="P1 full text.",
+                    axis_id="axis_1",
+                    relevance_score=0.9,
+                    quotability_score=0.8,
+                ),
+                ExtractedPassage(
+                    passage_id="p2",
+                    book_id="b1",
+                    chunk_ids=["c2"],
+                    text="P2",
+                    full_text="",
+                    axis_id="axis_1",
+                    relevance_score=0.7,
+                    quotability_score=0.7,
+                ),
+                ExtractedPassage(
+                    passage_id="p3",
+                    book_id="b1",
+                    chunk_ids=["c3"],
+                    text="P3",
+                    full_text="P3 full text.",
+                    axis_id="axis_1",
+                    relevance_score=0.6,
+                    quotability_score=0.6,
+                ),
             ],
             "axis_2": [
-                ExtractedPassage(passage_id="p4", book_id="b1", chunk_ids=["c4"], text="P4", full_text="P4 full text.", axis_id="axis_2", relevance_score=0.95, quotability_score=0.9),
-                ExtractedPassage(passage_id="p5", book_id="b1", chunk_ids=["c5"], text="P5", full_text="P5 full text.", axis_id="axis_2", relevance_score=0.85, quotability_score=0.8),
-                ExtractedPassage(passage_id="p6", book_id="b1", chunk_ids=["c6"], text="P6", full_text="P6 full text.", axis_id="axis_2", relevance_score=0.1, quotability_score=0.1),
-                ExtractedPassage(passage_id="p7", book_id="b1", chunk_ids=["c1"], text="P7 duplicate chunk", full_text="P7 duplicate full text.", axis_id="axis_2", relevance_score=0.99, quotability_score=0.95),
+                ExtractedPassage(
+                    passage_id="p4",
+                    book_id="b1",
+                    chunk_ids=["c4"],
+                    text="P4",
+                    full_text="P4 full text.",
+                    axis_id="axis_2",
+                    relevance_score=0.95,
+                    quotability_score=0.9,
+                ),
+                ExtractedPassage(
+                    passage_id="p5",
+                    book_id="b1",
+                    chunk_ids=["c5"],
+                    text="P5",
+                    full_text="P5 full text.",
+                    axis_id="axis_2",
+                    relevance_score=0.85,
+                    quotability_score=0.8,
+                ),
+                ExtractedPassage(
+                    passage_id="p6",
+                    book_id="b1",
+                    chunk_ids=["c6"],
+                    text="P6",
+                    full_text="P6 full text.",
+                    axis_id="axis_2",
+                    relevance_score=0.1,
+                    quotability_score=0.1,
+                ),
+                ExtractedPassage(
+                    passage_id="p7",
+                    book_id="b1",
+                    chunk_ids=["c1"],
+                    text="P7 duplicate chunk",
+                    full_text="P7 duplicate full text.",
+                    axis_id="axis_2",
+                    relevance_score=0.99,
+                    quotability_score=0.95,
+                ),
             ],
         },
         cross_book_pairs=[
@@ -1364,7 +1502,9 @@ def test_map_synthesis_caps_total_passages_and_keeps_cross_pair_priority(monkeyp
 
 def test_write_episode_passes_full_text_to_writing_agent(monkeypatch, tmp_path):
     heuristic = HeuristicLLMClient()
-    monkeypatch.setattr("podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic)
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic
+    )
     monkeypatch.setattr(
         "podcast_agent.pipeline.orchestrator.PGVectorRetrieval",
         lambda settings, run_logger=None: SimpleNamespace(),
@@ -1401,7 +1541,15 @@ def test_write_episode_passes_full_text_to_writing_agent(monkeypatch, tmp_path):
     project = ThematicProject(
         project_id="proj",
         theme="War on terror",
-        books=[BookRecord(book_id="b1", title="Book 1", author="Author", source_path="/tmp/book.txt", source_type="txt")],
+        books=[
+            BookRecord(
+                book_id="b1",
+                title="Book 1",
+                author="Author",
+                source_path="/tmp/book.txt",
+                source_type="txt",
+            )
+        ],
     )
     plan = _episode_plan(
         [
@@ -1462,14 +1610,14 @@ def test_write_episode_passes_full_text_to_writing_agent(monkeypatch, tmp_path):
     assert payload["passages"][0]["text"] == "Full text evidence for writing."
     assert payload["episode_target_word_count_lower"] == 686
     assert payload["episode_target_word_count_higher"] == 839
-    assert payload["scene_primitive_briefs"] == {
-        "scene_1": [primitive.model_dump(mode="json")]
-    }
+    assert payload["scene_primitive_briefs"] == {"scene_1": [primitive.model_dump(mode="json")]}
 
 
 def test_write_episode_uses_three_writing_calls_for_full_mode(monkeypatch, tmp_path):
     heuristic = HeuristicLLMClient()
-    monkeypatch.setattr("podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic)
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic
+    )
     monkeypatch.setattr(
         "podcast_agent.pipeline.orchestrator.PGVectorRetrieval",
         lambda settings, run_logger=None: SimpleNamespace(),
@@ -1489,9 +1637,7 @@ def test_write_episode_uses_three_writing_calls_for_full_mode(monkeypatch, tmp_p
     def fake_writing_run(payload: dict):
         captured_payloads.append(payload)
         return orchestrator.writing_agent.response_model.model_validate(
-            {
-                "prose_sections": _writing_prose_sections_from_payload(payload)
-            }
+            {"prose_sections": _writing_prose_sections_from_payload(payload)}
         )
 
     orchestrator.writing_agent.run = fake_writing_run
@@ -1499,7 +1645,15 @@ def test_write_episode_uses_three_writing_calls_for_full_mode(monkeypatch, tmp_p
     project = ThematicProject(
         project_id="proj",
         theme="War on terror",
-        books=[BookRecord(book_id="b1", title="Book 1", author="Author", source_path="/tmp/book.txt", source_type="txt")],
+        books=[
+            BookRecord(
+                book_id="b1",
+                title="Book 1",
+                author="Author",
+                source_path="/tmp/book.txt",
+                source_type="txt",
+            )
+        ],
     )
     plan = _episode_plan(
         [
@@ -1539,16 +1693,16 @@ def test_write_episode_uses_three_writing_calls_for_full_mode(monkeypatch, tmp_p
 
     assert len(captured_payloads) == 5
     assert sum(payload["episode_target_word_count_lower"] for payload in captured_payloads) == 17836
-    assert sum(payload["episode_target_word_count_higher"] for payload in captured_payloads) == 21814
+    assert (
+        sum(payload["episode_target_word_count_higher"] for payload in captured_payloads) == 21814
+    )
     assert sum(len(payload["passages"]) for payload in captured_payloads) == 26
     assert all("previous_sections" not in payload for payload in captured_payloads)
     assert "prior_window_continuity" not in captured_payloads[0]
     assert captured_payloads[1]["prior_window_continuity"]["completed_scene_count"] > 0
     assert captured_payloads[2]["prior_window_continuity"]["completed_scene_count"] > 0
     payload_scene_cards = [
-        scene
-        for payload in captured_payloads
-        for scene in payload["plan"]["scene_cards"]
+        scene for payload in captured_payloads for scene in payload["plan"]["scene_cards"]
     ]
     assert [scene["scene_id"] for scene in payload_scene_cards] == [
         f"scene_{idx}" for idx in range(1, 27)
@@ -1561,7 +1715,9 @@ def test_write_episode_uses_three_writing_calls_for_full_mode(monkeypatch, tmp_p
 
 def test_write_episode_uses_two_writing_calls_for_minified_mode(monkeypatch, tmp_path):
     heuristic = HeuristicLLMClient()
-    monkeypatch.setattr("podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic)
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic
+    )
     monkeypatch.setattr(
         "podcast_agent.pipeline.orchestrator.PGVectorRetrieval",
         lambda settings, run_logger=None: SimpleNamespace(),
@@ -1581,9 +1737,7 @@ def test_write_episode_uses_two_writing_calls_for_minified_mode(monkeypatch, tmp
     def fake_writing_run(payload: dict):
         captured_payloads.append(payload)
         return orchestrator.writing_agent.response_model.model_validate(
-            {
-                "prose_sections": _writing_prose_sections_from_payload(payload)
-            }
+            {"prose_sections": _writing_prose_sections_from_payload(payload)}
         )
 
     orchestrator.writing_agent.run = fake_writing_run
@@ -1591,10 +1745,16 @@ def test_write_episode_uses_two_writing_calls_for_minified_mode(monkeypatch, tmp
     project = ThematicProject(
         project_id="proj",
         theme="War on terror",
-        books=[BookRecord(book_id="b1", title="Book 1", author="Author", source_path="/tmp/book.txt", source_type="txt")],
-        config=resolve_pipeline_config_for_mode(
-            PipelineConfig(podcast_mode=PodcastMode.MINIFIED)
-        ),
+        books=[
+            BookRecord(
+                book_id="b1",
+                title="Book 1",
+                author="Author",
+                source_path="/tmp/book.txt",
+                source_type="txt",
+            )
+        ],
+        config=resolve_pipeline_config_for_mode(PipelineConfig(podcast_mode=PodcastMode.MINIFIED)),
     )
     plan = _episode_plan(
         [
@@ -1645,7 +1805,9 @@ def test_write_episode_uses_two_writing_calls_for_minified_mode(monkeypatch, tmp
 
 def test_write_episode_payload_uses_unequal_scene_duration_targets(monkeypatch, tmp_path):
     heuristic = HeuristicLLMClient()
-    monkeypatch.setattr("podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic)
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic
+    )
     monkeypatch.setattr(
         "podcast_agent.pipeline.orchestrator.PGVectorRetrieval",
         lambda settings, run_logger=None: SimpleNamespace(),
@@ -1665,9 +1827,7 @@ def test_write_episode_payload_uses_unequal_scene_duration_targets(monkeypatch, 
     def fake_writing_run(payload: dict):
         captured["payload"] = payload
         return orchestrator.writing_agent.response_model.model_validate(
-            {
-                "prose_sections": _writing_prose_sections_from_payload(payload)
-            }
+            {"prose_sections": _writing_prose_sections_from_payload(payload)}
         )
 
     orchestrator.writing_agent.run = fake_writing_run
@@ -1675,7 +1835,15 @@ def test_write_episode_payload_uses_unequal_scene_duration_targets(monkeypatch, 
     project = ThematicProject(
         project_id="proj",
         theme="War on terror",
-        books=[BookRecord(book_id="b1", title="Book 1", author="Author", source_path="/tmp/book.txt", source_type="txt")],
+        books=[
+            BookRecord(
+                book_id="b1",
+                title="Book 1",
+                author="Author",
+                source_path="/tmp/book.txt",
+                source_type="txt",
+            )
+        ],
     )
     plan = _episode_plan(
         [
@@ -1684,7 +1852,13 @@ def test_write_episode_payload_uses_unequal_scene_duration_targets(monkeypatch, 
                 "pack_1",
                 scene_role="setup",
                 section_id="section_1",
-            ).model_copy(update={"title": "Anchor scene", "passage_ids": ["p1"], "estimated_duration_seconds": 6300}),
+            ).model_copy(
+                update={
+                    "title": "Anchor scene",
+                    "passage_ids": ["p1"],
+                    "estimated_duration_seconds": 6300,
+                }
+            ),
             _scene_card(
                 "scene_context",
                 "pack_1",
@@ -1751,7 +1925,9 @@ def test_write_episode_payload_uses_unequal_scene_duration_targets(monkeypatch, 
 
 def test_write_episode_uses_no_citation_agent_when_skip_grounding(monkeypatch, tmp_path):
     heuristic = HeuristicLLMClient()
-    monkeypatch.setattr("podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic)
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic
+    )
     monkeypatch.setattr(
         "podcast_agent.pipeline.orchestrator.PGVectorRetrieval",
         lambda settings, run_logger=None: SimpleNamespace(),
@@ -1801,7 +1977,15 @@ def test_write_episode_uses_no_citation_agent_when_skip_grounding(monkeypatch, t
     project = ThematicProject(
         project_id="proj",
         theme="War on terror",
-        books=[BookRecord(book_id="b1", title="Book 1", author="Author", source_path="/tmp/book.txt", source_type="txt")],
+        books=[
+            BookRecord(
+                book_id="b1",
+                title="Book 1",
+                author="Author",
+                source_path="/tmp/book.txt",
+                source_type="txt",
+            )
+        ],
         config=PipelineConfig(skip_grounding=True),
     )
     plan = _episode_plan(
@@ -1892,7 +2076,9 @@ def test_normalize_writing_section_outputs_backfills_compact_section_metadata():
 
 def test_write_episode_retries_on_scene_id_contract_failure(monkeypatch, tmp_path):
     heuristic = HeuristicLLMClient()
-    monkeypatch.setattr("podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic)
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic
+    )
     monkeypatch.setattr(
         "podcast_agent.pipeline.orchestrator.PGVectorRetrieval",
         lambda settings, run_logger=None: SimpleNamespace(),
@@ -1949,7 +2135,15 @@ def test_write_episode_retries_on_scene_id_contract_failure(monkeypatch, tmp_pat
     project = ThematicProject(
         project_id="proj",
         theme="War on terror",
-        books=[BookRecord(book_id="b1", title="Book 1", author="Author", source_path="/tmp/book.txt", source_type="txt")],
+        books=[
+            BookRecord(
+                book_id="b1",
+                title="Book 1",
+                author="Author",
+                source_path="/tmp/book.txt",
+                source_type="txt",
+            )
+        ],
     )
     plan = _episode_plan(
         [
@@ -1992,10 +2186,13 @@ def test_write_episode_retries_on_scene_id_contract_failure(monkeypatch, tmp_pat
 
 
 def test_write_episode_raises_after_retry_exhaustion_on_scene_id_contract_failure(
-    monkeypatch, tmp_path,
+    monkeypatch,
+    tmp_path,
 ):
     heuristic = HeuristicLLMClient()
-    monkeypatch.setattr("podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic)
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic
+    )
     monkeypatch.setattr(
         "podcast_agent.pipeline.orchestrator.PGVectorRetrieval",
         lambda settings, run_logger=None: SimpleNamespace(),
@@ -2039,7 +2236,15 @@ def test_write_episode_raises_after_retry_exhaustion_on_scene_id_contract_failur
     project = ThematicProject(
         project_id="proj",
         theme="War on terror",
-        books=[BookRecord(book_id="b1", title="Book 1", author="Author", source_path="/tmp/book.txt", source_type="txt")],
+        books=[
+            BookRecord(
+                book_id="b1",
+                title="Book 1",
+                author="Author",
+                source_path="/tmp/book.txt",
+                source_type="txt",
+            )
+        ],
     )
     plan = _episode_plan(
         [
@@ -2140,7 +2345,9 @@ def test_split_episode_writing_windows_falls_back_when_requested_windows_exceed_
 
 def test_rewrite_for_speech_rewrites_each_section_individually(monkeypatch, tmp_path):
     heuristic = HeuristicLLMClient()
-    monkeypatch.setattr("podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic)
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic
+    )
     monkeypatch.setattr(
         "podcast_agent.pipeline.orchestrator.PGVectorRetrieval",
         lambda settings, run_logger=None: SimpleNamespace(),
@@ -2260,7 +2467,10 @@ def test_rewrite_for_speech_rewrites_each_section_individually(monkeypatch, tmp_
     assert "previous_spoken_text" not in payloads[1]
     assert "previous_spoken_tail" not in payloads[0]
     assert payloads[1]["previous_spoken_tail"] == "spoken::First section."
-    assert payloads[0]["script"]["prose_sections"][0]["scene_cues"][0]["audible_detail"] == "The stamp snaps down."
+    assert (
+        payloads[0]["script"]["prose_sections"][0]["scene_cues"][0]["audible_detail"]
+        == "The stamp snaps down."
+    )
     assert "upcoming_batches_summary" not in payloads[0]
     assert "upcoming_batches_summary" not in payloads[1]
     assert [section.section_id for section in spoken.sections] == ["section_1", "section_2"]
@@ -2358,9 +2568,12 @@ def test_spoken_delivery_payload_includes_scene_cues_from_plan():
         }
     ]
 
+
 def test_rewrite_for_speech_raises_on_invalid_section_contract(monkeypatch, tmp_path):
     heuristic = HeuristicLLMClient()
-    monkeypatch.setattr("podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic)
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic
+    )
     monkeypatch.setattr(
         "podcast_agent.pipeline.orchestrator.PGVectorRetrieval",
         lambda settings, run_logger=None: SimpleNamespace(),
@@ -2379,9 +2592,7 @@ def test_rewrite_for_speech_raises_on_invalid_section_contract(monkeypatch, tmp_
     def fake_spoken_run(_payload: dict):
         # The new SpokenDeliveryResponse requires sections[]; returning an
         # empty/invalid response now fails at the schema level.
-        return orchestrator.spoken_delivery_agent.response_model.model_validate(
-            {"sections": []}
-        )
+        return orchestrator.spoken_delivery_agent.response_model.model_validate({"sections": []})
 
     orchestrator.spoken_delivery_agent.run = fake_spoken_run
 
@@ -2420,7 +2631,9 @@ def test_rewrite_for_speech_raises_on_invalid_section_contract(monkeypatch, tmp_
 
 def test_produce_episode_releases_write_slot_before_spoken_delivery(monkeypatch, tmp_path):
     heuristic = HeuristicLLMClient()
-    monkeypatch.setattr("podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic)
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic
+    )
     monkeypatch.setattr(
         "podcast_agent.pipeline.orchestrator.PGVectorRetrieval",
         lambda settings, run_logger=None: SimpleNamespace(),
@@ -2487,7 +2700,12 @@ def test_produce_episode_releases_write_slot_before_spoken_delivery(monkeypatch,
             episode_number=episode_number,
             title=script.title,
             framing=script.framing,
-            sections=[SpokenSection(section_id="section_1", segments=[SpokenSegment(segment_id="section_1_seg1", text="spoken section")])],
+            sections=[
+                SpokenSection(
+                    section_id="section_1",
+                    segments=[SpokenSegment(segment_id="section_1_seg1", text="spoken section")],
+                )
+            ],
             tts_provider=project.config.tts_provider,
         )
 
@@ -2542,9 +2760,7 @@ def test_produce_episode_releases_write_slot_before_spoken_delivery(monkeypatch,
             *[
                 orchestrator._produce_episode(
                     plan,
-                    strategy_episode.model_copy(
-                        update={"episode_number": plan.episode_number}
-                    ),
+                    strategy_episode.model_copy(update={"episode_number": plan.episode_number}),
                     architecture.model_copy(update={"episode_number": plan.episode_number}),
                     project,
                     corpus,
@@ -2576,7 +2792,9 @@ def test_produce_episode_releases_write_slot_before_spoken_delivery(monkeypatch,
 
 def test_render_episode_audio_writes_section_only_manifest(monkeypatch, tmp_path):
     heuristic = HeuristicLLMClient()
-    monkeypatch.setattr("podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic)
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic
+    )
     monkeypatch.setattr(
         "podcast_agent.pipeline.orchestrator.PGVectorRetrieval",
         lambda settings, run_logger=None: SimpleNamespace(),
@@ -2605,9 +2823,16 @@ def test_render_episode_audio_writes_section_only_manifest(monkeypatch, tmp_path
         title="Episode 4",
         framing=_framing(),
         sections=[
-            SpokenSection(section_id="sec_01", segments=[SpokenSegment(segment_id="sec_01_seg1", text="One.")]),
-            SpokenSection(section_id="sec_02", segments=[SpokenSegment(segment_id="sec_02_seg1", text="Two.")]),
-            SpokenSection(section_id="sec_03", segments=[SpokenSegment(segment_id="sec_03_seg1", text="Three.")]),
+            SpokenSection(
+                section_id="sec_01", segments=[SpokenSegment(segment_id="sec_01_seg1", text="One.")]
+            ),
+            SpokenSection(
+                section_id="sec_02", segments=[SpokenSegment(segment_id="sec_02_seg1", text="Two.")]
+            ),
+            SpokenSection(
+                section_id="sec_03",
+                segments=[SpokenSegment(segment_id="sec_03_seg1", text="Three.")],
+            ),
         ],
     )
 
@@ -2623,7 +2848,11 @@ def test_render_episode_audio_writes_section_only_manifest(monkeypatch, tmp_path
         )
     )
 
-    warning_events = [payload for event_type, payload in logged_events if event_type == "spoken_transition_mismatch_warning"]
+    warning_events = [
+        payload
+        for event_type, payload in logged_events
+        if event_type == "spoken_transition_mismatch_warning"
+    ]
     assert not warning_events
     assert (tmp_path / "episodes" / "4" / "render_manifest.json").exists()
 
@@ -2654,28 +2883,17 @@ def test_allocate_excerpt_extraction_passages_proportional_with_floor_and_ceilin
         ThematicAxis(axis_id="axis_c", name="C", description="C", theme_importance_score=0.05),
     ]
     # axis_a: many high-quotability passages (dominant)
-    pool_a = [
-        _excerpt_passage(f"a{i}", "axis_a", quotability=0.9 - i * 0.01)
-        for i in range(40)
-    ]
-    pool_b = [
-        _excerpt_passage(f"b{i}", "axis_b", quotability=0.8 - i * 0.01)
-        for i in range(15)
-    ]
-    pool_c = [
-        _excerpt_passage(f"c{i}", "axis_c", quotability=0.5 - i * 0.01)
-        for i in range(8)
-    ]
+    pool_a = [_excerpt_passage(f"a{i}", "axis_a", quotability=0.9 - i * 0.01) for i in range(40)]
+    pool_b = [_excerpt_passage(f"b{i}", "axis_b", quotability=0.8 - i * 0.01) for i in range(15)]
+    pool_c = [_excerpt_passage(f"c{i}", "axis_c", quotability=0.5 - i * 0.01) for i in range(8)]
     passages_by_axis = {"axis_a": pool_a, "axis_b": pool_b, "axis_c": pool_c}
 
-    axis_pools, axis_budgets, claimed_by_axis, axis_order = (
-        _allocate_excerpt_extraction_passages(
-            selected_axes=axes,
-            passages_by_axis=passages_by_axis,
-            passage_cap=30,
-            axis_floor=4,
-            ceiling_fraction=0.5,  # ceiling = ceil(30 * 0.5) = 15
-        )
+    axis_pools, axis_budgets, claimed_by_axis, axis_order = _allocate_excerpt_extraction_passages(
+        selected_axes=axes,
+        passages_by_axis=passages_by_axis,
+        passage_cap=30,
+        axis_floor=4,
+        ceiling_fraction=0.5,  # ceiling = ceil(30 * 0.5) = 15
     )
 
     # Axis order is descending theme_importance_score.
@@ -2683,12 +2901,10 @@ def test_allocate_excerpt_extraction_passages_proportional_with_floor_and_ceilin
     # Proportional split (raw: a≈17, b≈11, c≈1) clamped by floor=4 on axis_c.
     assert axis_budgets["axis_a"] == 15  # capped at ceiling
     assert axis_budgets["axis_b"] == 11
-    assert axis_budgets["axis_c"] == 4   # raised to floor
+    assert axis_budgets["axis_c"] == 4  # raised to floor
 
     # Within an axis, passages are taken in quotability order.
-    assert [p.passage_id for p in claimed_by_axis["axis_a"]] == [
-        f"a{i}" for i in range(15)
-    ]
+    assert [p.passage_id for p in claimed_by_axis["axis_a"]] == [f"a{i}" for i in range(15)]
     assert [p.passage_id for p in claimed_by_axis["axis_b"]][:3] == ["b0", "b1", "b2"]
     assert len(claimed_by_axis["axis_c"]) == 4
 
@@ -2704,10 +2920,7 @@ def test_allocate_excerpt_extraction_passages_redistributes_underfilled_slots() 
         ThematicAxis(axis_id="axis_b", name="B", description="B", theme_importance_score=0.5),
     ]
     # axis_b only has 2 passages, well under its budget. Leftover slots should flow to axis_a.
-    pool_a = [
-        _excerpt_passage(f"a{i}", "axis_a", quotability=0.9 - i * 0.01)
-        for i in range(20)
-    ]
+    pool_a = [_excerpt_passage(f"a{i}", "axis_a", quotability=0.9 - i * 0.01) for i in range(20)]
     pool_b = [
         _excerpt_passage("b0", "axis_b", quotability=0.95),
         _excerpt_passage("b1", "axis_b", quotability=0.92),
@@ -2730,7 +2943,9 @@ def test_allocate_excerpt_extraction_passages_redistributes_underfilled_slots() 
     assert total == 12
 
 
-def test_allocate_excerpt_extraction_passages_skips_passages_already_claimed_by_another_axis() -> None:
+def test_allocate_excerpt_extraction_passages_skips_passages_already_claimed_by_another_axis() -> (
+    None
+):
     # The same passage can appear under multiple axes (secondary axis). It must
     # be claimed at most once and counted only against its first axis.
     axes = [

@@ -29,9 +29,7 @@ def main() -> None:
     run_dir = Path(args.run_dir).resolve()
     payload = build_actor_explanation_audit_payload(run_dir)
     output_path = (
-        Path(args.output).resolve()
-        if args.output
-        else run_dir / "actor-explanation-audit.html"
+        Path(args.output).resolve() if args.output else run_dir / "actor-explanation-audit.html"
     )
     output_path.write_text(
         render_actor_explanation_audit_html(payload),

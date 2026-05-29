@@ -20,9 +20,7 @@ class TestLLMConfig:
         assert config.timeout_seconds == 600.0
         assert config.base_url == "https://api.openai.com/v1"
         assert config.reasoning_effort == "xhigh"
-        assert (
-            config.provider_overrides["primitive_substrate_extraction"] == "anthropic"
-        )
+        assert config.provider_overrides["primitive_substrate_extraction"] == "anthropic"
 
     def test_resolve_temperature_with_agent_config(self):
         config = LLMConfig(
@@ -91,16 +89,9 @@ class TestLLMConfig:
     def test_resolve_anthropic_thinking_effort_defaults_from_legacy_budgets(self):
         config = LLMConfig()
         assert config.resolve_anthropic_thinking_effort("episode_writing") == "xhigh"
-        assert (
-            config.resolve_anthropic_thinking_effort("theme_decomposition") == "xhigh"
-        )
-        assert (
-            config.resolve_anthropic_thinking_effort("synthesis_primitives") == "xhigh"
-        )
-        assert (
-            config.resolve_anthropic_thinking_effort("narrative_strategy")
-            == "xhigh"
-        )
+        assert config.resolve_anthropic_thinking_effort("theme_decomposition") == "xhigh"
+        assert config.resolve_anthropic_thinking_effort("synthesis_primitives") == "xhigh"
+        assert config.resolve_anthropic_thinking_effort("narrative_strategy") == "xhigh"
         assert config.resolve_anthropic_thinking_effort("chapter_summary") is None
 
     def test_resolve_provider_uses_canonical_aliases(self):
@@ -211,9 +202,7 @@ class TestPipelineRuntimeConfig:
         with pytest.raises(ValueError, match="synthesis_axis_max"):
             PipelineRuntimeConfig(synthesis_axis_min=40, synthesis_axis_max=20)
         with pytest.raises(ValueError, match="synthesis_axis_floor_max"):
-            PipelineRuntimeConfig(
-                synthesis_axis_floor_min=15, synthesis_axis_floor_max=10
-            )
+            PipelineRuntimeConfig(synthesis_axis_floor_min=15, synthesis_axis_floor_max=10)
         with pytest.raises(ValueError, match="planning_axis_max"):
             PipelineRuntimeConfig(planning_axis_min=50, planning_axis_max=30)
         with pytest.raises(ValueError, match="architecture_section_target_max"):

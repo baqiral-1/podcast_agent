@@ -13,9 +13,13 @@ def _split_chapters(text: str) -> list[str]:
 
 
 def _render_chapters(chapters: list[str]) -> str:
-    return "\n\n".join(
-        f"Chapter {index}\n\n{chapter.strip()}" for index, chapter in enumerate(chapters, start=1)
-    ).strip() + "\n"
+    return (
+        "\n\n".join(
+            f"Chapter {index}\n\n{chapter.strip()}"
+            for index, chapter in enumerate(chapters, start=1)
+        ).strip()
+        + "\n"
+    )
 
 
 def _shift_embedded_heading(

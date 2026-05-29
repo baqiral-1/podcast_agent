@@ -12,4 +12,3 @@ def build_prompt_template() -> ChatPromptTemplate:
             ("human", "{user_text}"),
         ]
     )
-

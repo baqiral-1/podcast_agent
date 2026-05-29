@@ -320,7 +320,9 @@ def _trim_to_content_window(lines: list[str]) -> list[str]:
 def _find_content_start_index(lines: list[str], headings: list[int]) -> int | None:
     if not headings:
         return None
-    numbered_headings = [index for index in headings if _looks_like_multiline_numbered_heading(lines, index)]
+    numbered_headings = [
+        index for index in headings if _looks_like_multiline_numbered_heading(lines, index)
+    ]
     for heading_index in numbered_headings:
         next_heading_index = _next_heading_index(lines, heading_index + 1)
         if _heading_has_local_body(lines, heading_index, next_heading_index):
@@ -374,7 +376,9 @@ def _looks_like_multiline_numbered_heading(lines: list[str], index: int) -> bool
     if next_index is None:
         return True
     next_line = lines[next_index]
-    return _looks_like_title_line(next_line) or _is_prose_like_line(next_line, len(next_line.split()))
+    return _looks_like_title_line(next_line) or _is_prose_like_line(
+        next_line, len(next_line.split())
+    )
 
 
 def _is_heading_at(lines: list[str], index: int) -> bool:
@@ -429,9 +433,9 @@ def _looks_like_heading(line: str) -> bool:
         and not _FRONT_MATTER_RE.match(line)
         and (
             _INTRO_HEADING_RE.match(line)
-        or _EXPLICIT_CHAPTER_RE.match(line)
-        or _looks_like_inline_numbered_heading(line)
-        or _is_standalone_chapter_token(line)
+            or _EXPLICIT_CHAPTER_RE.match(line)
+            or _looks_like_inline_numbered_heading(line)
+            or _is_standalone_chapter_token(line)
         )
     )
 
@@ -618,7 +622,23 @@ def _looks_like_heading_phrase(text: str) -> bool:
     words = re.findall(r"[A-Za-z][A-Za-z'’-]*", text)
     if not words:
         return False
-    stopwords = {"a", "an", "and", "as", "at", "by", "for", "from", "in", "of", "on", "or", "the", "to", "with"}
+    stopwords = {
+        "a",
+        "an",
+        "and",
+        "as",
+        "at",
+        "by",
+        "for",
+        "from",
+        "in",
+        "of",
+        "on",
+        "or",
+        "the",
+        "to",
+        "with",
+    }
     significant = [word for word in words if word.lower() not in stopwords]
     if not significant:
         return False

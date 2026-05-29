@@ -22,7 +22,6 @@ from podcast_agent.schemas.models import (
     ActorProfile,
     ActorRelationship,
     BookRecord,
-    EpisodeSpine,
     EventPrimitive,
     NarrativeStrategy,
     NarrativeStrategyEnrichment,
@@ -35,7 +34,6 @@ from podcast_agent.schemas.models import (
     SeriesExplanationItem,
     SceneDiscoveryArtifact,
     SynthesisPrimitivesArtifact,
-    StrategyEpisode,
     ThematicProject,
 )
 
@@ -267,9 +265,7 @@ def test_build_narrative_strategy_scene_discovery_payload_drops_passage_ids():
     assert "passage_ids" not in candidate
 
 
-def test_choose_narrative_strategy_uses_trimmed_runtime_payload(
-    monkeypatch, tmp_path: Path
-):
+def test_choose_narrative_strategy_uses_trimmed_runtime_payload(monkeypatch, tmp_path: Path):
     heuristic = HeuristicLLMClient()
     monkeypatch.setattr(
         "podcast_agent.pipeline.orchestrator.build_llm_client",
@@ -317,8 +313,7 @@ def test_choose_narrative_strategy_uses_trimmed_runtime_payload(
                                 "core_7",
                             ],
                             "support_primitive_roles": {
-                                f"support_{idx}": "mechanism"
-                                for idx in range(1, 8)
+                                f"support_{idx}": "mechanism" for idx in range(1, 8)
                             },
                         },
                         "negative_scope": {
@@ -526,13 +521,6 @@ def test_narrative_strategy_accepts_series_explanation_registry_contract() -> No
     )
 
     assert strategy.series_explanation_registry[0].item_id == "registry_1"
-    assert (
-        strategy.series_actor_explanation_registry[0].actor_id
-        == "mohammad_mossadeq"
-    )
-    assert strategy.episodes[0].authorial_contract.introduce_explanation_item_ids == [
-        "registry_1"
-    ]
-    assert strategy.episodes[0].authorial_contract.introduce_actor_ids == [
-        "mohammad_mossadeq"
-    ]
+    assert strategy.series_actor_explanation_registry[0].actor_id == "mohammad_mossadeq"
+    assert strategy.episodes[0].authorial_contract.introduce_explanation_item_ids == ["registry_1"]
+    assert strategy.episodes[0].authorial_contract.introduce_actor_ids == ["mohammad_mossadeq"]

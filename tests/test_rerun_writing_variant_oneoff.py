@@ -34,11 +34,7 @@ from podcast_agent.schemas.models import (
 )
 
 
-_SCRIPT_PATH = (
-    Path(__file__).resolve().parents[1]
-    / "scripts"
-    / "rerun_writing_variant_oneoff.py"
-)
+_SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "rerun_writing_variant_oneoff.py"
 _SCRIPT_SPEC = importlib.util.spec_from_file_location(
     "rerun_writing_variant_oneoff",
     _SCRIPT_PATH,
@@ -300,10 +296,7 @@ def _episode_architecture(episode_number: int) -> EpisodeArchitecture:
         major_turn_section_id=payload["major_turn_section_id"],
         allowed_recurring_primitive_ids=payload["allowed_recurring_primitive_ids"],
         forbidden_redundancies=payload["forbidden_redundancies"],
-        sections=[
-            ArchitectureSection.model_validate(section)
-            for section in payload["sections"]
-        ],
+        sections=[ArchitectureSection.model_validate(section) for section in payload["sections"]],
         architecture_notes=payload["architecture_notes"],
     )
 
@@ -483,17 +476,13 @@ def _build_project_dir(tmp_path: Path, *, skip_grounding: bool) -> tuple[Path, l
 
 def test_rerun_writing_variant_oneoff_writes_sidecar_outputs_only(monkeypatch, tmp_path):
     project_dir, plans = _build_project_dir(tmp_path, skip_grounding=True)
-    source_before = (
-        project_dir / "episodes" / "2" / "episode_script.json"
-    ).read_text(encoding="utf-8")
+    source_before = (project_dir / "episodes" / "2" / "episode_script.json").read_text(
+        encoding="utf-8"
+    )
     calls: dict[str, Any] = {}
     base_settings = RuntimeSettings()
     settings = base_settings.model_copy(
-        update={
-            "pipeline": base_settings.pipeline.model_copy(
-                update={"artifact_root": tmp_path}
-            )
-        }
+        update={"pipeline": base_settings.pipeline.model_copy(update={"artifact_root": tmp_path})}
     )
 
     class FakeOrchestrator:
@@ -547,17 +536,21 @@ def test_rerun_writing_variant_oneoff_writes_sidecar_outputs_only(monkeypatch, t
     )
 
     experiment_ep_dir = (
-        project_dir
-        / "writing_experiments"
-        / variant_script.VARIANT_LABEL
-        / "episodes"
-        / "2"
+        project_dir / "writing_experiments" / variant_script.VARIANT_LABEL / "episodes" / "2"
     )
-    assert calls["bound_project_dir"] == project_dir / "writing_experiments" / variant_script.VARIANT_LABEL
+    assert (
+        calls["bound_project_dir"]
+        == project_dir / "writing_experiments" / variant_script.VARIANT_LABEL
+    )
     assert calls["write_episode_number"] == 2
-    assert calls["project_dir"] == project_dir / "writing_experiments" / variant_script.VARIANT_LABEL
+    assert (
+        calls["project_dir"] == project_dir / "writing_experiments" / variant_script.VARIANT_LABEL
+    )
     assert calls["ep_dir"] == experiment_ep_dir
-    assert "Treat `address_mode = we` and `address_mode = i` as stance signals" in calls["instructions"]
+    assert (
+        "Treat `address_mode = we` and `address_mode = i` as stance signals"
+        in calls["instructions"]
+    )
     assert "Avoid companion-tour phrasing" in calls["instructions"]
     assert calls["host_policy"]["pronoun_policy"]["allow_first_person_singular"] is True
     assert calls["resolved_model"] == variant_script.DEFAULT_WRITING_MODEL_NAME
@@ -583,9 +576,9 @@ def test_rerun_writing_variant_oneoff_writes_sidecar_outputs_only(monkeypatch, t
     assert comparison["variant"]["surface_markers"]["first_person_scene_camera"] == 1
     assert comparison["delta"]["surface_markers"]["first_person_scene_camera"] == 1
 
-    source_after = (
-        project_dir / "episodes" / "2" / "episode_script.json"
-    ).read_text(encoding="utf-8")
+    source_after = (project_dir / "episodes" / "2" / "episode_script.json").read_text(
+        encoding="utf-8"
+    )
     assert source_after == source_before
 
 
@@ -594,11 +587,7 @@ def test_rerun_writing_variant_oneoff_requires_baseline_script(monkeypatch, tmp_
     (project_dir / "episodes" / "2" / "episode_script.json").unlink()
     base_settings = RuntimeSettings()
     settings = base_settings.model_copy(
-        update={
-            "pipeline": base_settings.pipeline.model_copy(
-                update={"artifact_root": tmp_path}
-            )
-        }
+        update={"pipeline": base_settings.pipeline.model_copy(update={"artifact_root": tmp_path})}
     )
 
     monkeypatch.setattr(

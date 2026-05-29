@@ -150,9 +150,7 @@ def test_section_thread_ref_evidence_gate_ladder():
         grounding_passage_ids=["x"],
     )
     with pytest.raises(ValidationError):
-        SectionThreadRef(
-            presence="carried", thread_movement="m", binds_to_answer_via="b"
-        )
+        SectionThreadRef(presence="carried", thread_movement="m", binds_to_answer_via="b")
     # peripheral needs a passage
     SectionThreadRef(
         presence="peripheral",
@@ -254,9 +252,7 @@ def test_candidate_index_ranks_coverage_over_fame():
             )
         ],
     )
-    ranked = _build_human_thread_candidate_index(
-        synthesis, actor_metadata, top_n=12
-    )
+    ranked = _build_human_thread_candidate_index(synthesis, actor_metadata, top_n=12)
     assert ranked[0]["kind"] == "situated"
     assert ranked[0]["label"] == "a striker at Abadan"
     # the thin famous actor is present but ranked below the situated carrier

@@ -35,7 +35,9 @@ class OcrChapter:
     printed_page: int
 
 
-_COMMON_SPEC = importlib.util.spec_from_file_location("oneoff_iran_book_clean_common_may1", COMMON_HELPER_PATH)
+_COMMON_SPEC = importlib.util.spec_from_file_location(
+    "oneoff_iran_book_clean_common_may1", COMMON_HELPER_PATH
+)
 if _COMMON_SPEC is None or _COMMON_SPEC.loader is None:
     raise RuntimeError(f"Unable to load helper module from {COMMON_HELPER_PATH}")
 _COMMON_MODULE = importlib.util.module_from_spec(_COMMON_SPEC)
@@ -65,7 +67,21 @@ BACK_MATTER_TITLE_RE = re.compile(
     r"sequence of events|table of contents|contents|also by)\b",
     re.IGNORECASE,
 )
-SMALL_TITLE_WORDS = {"a", "an", "and", "at", "for", "from", "in", "of", "on", "or", "the", "to", "with"}
+SMALL_TITLE_WORDS = {
+    "a",
+    "an",
+    "and",
+    "at",
+    "for",
+    "from",
+    "in",
+    "of",
+    "on",
+    "or",
+    "the",
+    "to",
+    "with",
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -76,7 +92,11 @@ def parse_args() -> argparse.Namespace:
 
 def _recent_pdf_paths(limit: int = 11) -> list[Path]:
     return sorted(
-        [path for path in DOWNLOADS_DIR.iterdir() if path.is_file() and path.suffix.lower() == ".pdf"],
+        [
+            path
+            for path in DOWNLOADS_DIR.iterdir()
+            if path.is_file() and path.suffix.lower() == ".pdf"
+        ],
         key=lambda path: path.stat().st_mtime,
         reverse=True,
     )[:limit]
@@ -99,6 +119,7 @@ def _chapter_selector_for(path: Path):
     name = path.name.casefold()
 
     if "imperial_life_in_the_emerald_city" in name:
+
         def selector(bookmark: Bookmark) -> bool:
             title = bookmark.title.strip()
             return bool(
@@ -110,16 +131,15 @@ def _chapter_selector_for(path: Path):
         return selector
 
     if "directorate_s" in name:
+
         def selector(bookmark: Bookmark) -> bool:
             title = bookmark.title.strip()
-            return bool(
-                title.upper() == "INTRODUCTION"
-                or re.match(r"^[A-Z]+:", title)
-            )
+            return bool(title.upper() == "INTRODUCTION" or re.match(r"^[A-Z]+:", title))
 
         return selector
 
     if "the_black_banners" in name:
+
         def selector(bookmark: Bookmark) -> bool:
             title = bookmark.title.strip()
             return bool(
@@ -130,6 +150,7 @@ def _chapter_selector_for(path: Path):
         return selector
 
     if "one_palestine_complete" in name:
+
         def selector(bookmark: Bookmark) -> bool:
             title = bookmark.title.strip()
             return bool(title.startswith("Introduction") or re.match(r"^\d+\.", title))
@@ -137,6 +158,7 @@ def _chapter_selector_for(path: Path):
         return selector
 
     if "the_arabs" in name:
+
         def selector(bookmark: Bookmark) -> bool:
             title = bookmark.title.strip()
             return bool(title == "Introduction" or title.startswith("CHAPTER "))
@@ -144,13 +166,19 @@ def _chapter_selector_for(path: Path):
         return selector
 
     if "the_iron_wall" in name:
+
         def selector(bookmark: Bookmark) -> bool:
             title = bookmark.title.strip()
-            return bool(title.startswith("Prologue") or title.startswith("Epilogue") or re.match(r"^\d+\.", title))
+            return bool(
+                title.startswith("Prologue")
+                or title.startswith("Epilogue")
+                or re.match(r"^\d+\.", title)
+            )
 
         return selector
 
     if "pity_the_nation" in name:
+
         def selector(bookmark: Bookmark) -> bool:
             title = bookmark.title.strip()
             return bool(re.match(r"^\d+\s", title))
@@ -158,6 +186,7 @@ def _chapter_selector_for(path: Path):
         return selector
 
     if "india_at_war" in name:
+
         def selector(bookmark: Bookmark) -> bool:
             title = bookmark.title.strip()
             return bool(title == "Prologue" or re.match(r"^\d+\s", title))
@@ -165,6 +194,7 @@ def _chapter_selector_for(path: Path):
         return selector
 
     if "the_indian_mutiny" in name:
+
         def selector(bookmark: Bookmark) -> bool:
             title = bookmark.title.strip()
             return bool(title.startswith("Prologue") or re.match(r"^\d+\.", title))
@@ -172,6 +202,7 @@ def _chapter_selector_for(path: Path):
         return selector
 
     if "plan_of_attack" in name:
+
         def selector(bookmark: Bookmark) -> bool:
             return bool(re.match(r"^\d+\s", bookmark.title.strip()))
 
@@ -227,7 +258,11 @@ def _strip_leading_paragraph_prefix(paragraph: str, chapter_title: str) -> str:
     spaced_match = re.match(r"^(?P<prefix>(?:[A-Za-z]\s+){2,}[A-Za-z])\s+(?P<rest>.+)$", text)
     if spaced_match:
         compact = spaced_match.group("prefix").replace(" ", "")
-        if canonicalize(compact) in markers or canonicalize(compact) in {"prologue", "introduction", "epilogue"}:
+        if canonicalize(compact) in markers or canonicalize(compact) in {
+            "prologue",
+            "introduction",
+            "epilogue",
+        }:
             text = spaced_match.group("rest").strip()
     words = text.split()
     upper_bound = min(len(words) - 3, 12)
@@ -260,7 +295,9 @@ def _skip_full_paragraph(paragraph: str) -> bool:
     return False
 
 
-def _clean_outline_paragraphs(path: Path, chapter_title: str, lines: list[str], book_title: str) -> list[str]:
+def _clean_outline_paragraphs(
+    path: Path, chapter_title: str, lines: list[str], book_title: str
+) -> list[str]:
     cleaned_lines = [_strip_watermark(line) if line else "" for line in lines]
     paragraphs = paragraphize(cleaned_lines)
     title_markers = {canonicalize(fragment) for fragment in title_fragments(chapter_title)}
@@ -307,7 +344,9 @@ def _clean_outline_book(path: Path, output_dir: Path) -> Path:
         for bookmark in outline
         if bookmark.page > last_selected_page and BACK_MATTER_TITLE_RE.match(bookmark.title.strip())
     ]
-    last_page_inclusive = min(trailing_back_matter_pages) - 1 if trailing_back_matter_pages else len(reader.pages) - 1
+    last_page_inclusive = (
+        min(trailing_back_matter_pages) - 1 if trailing_back_matter_pages else len(reader.pages) - 1
+    )
     spec = BookSpec(
         pdf_path=path,
         output_path=output_dir / derive_output_filename(path),
@@ -317,7 +356,9 @@ def _clean_outline_book(path: Path, output_dir: Path) -> Path:
     )
     rendered_chapters: list[str] = []
     for index, bookmark in enumerate(selected):
-        next_page = selected[index + 1].page - 1 if index + 1 < len(selected) else last_page_inclusive
+        next_page = (
+            selected[index + 1].page - 1 if index + 1 < len(selected) else last_page_inclusive
+        )
         lines = extract_lines(reader, bookmark.page, next_page)
         lines = _repair_opening_lines(lines, bookmark.title)
         lines = clean_lines(lines, book_title=spec.book_title, chapter_title=bookmark.title)
@@ -348,7 +389,9 @@ def _strip_leading_outline_artifacts(lines: list[str], chapter_title: str) -> li
         if canonicalize(compact) in markers:
             remaining.pop(0)
             continue
-        if SPACED_HEADING_RE.fullmatch(line) or (UPPER_HEADING_RE.fullmatch(line) and len(line.split()) <= 8):
+        if SPACED_HEADING_RE.fullmatch(line) or (
+            UPPER_HEADING_RE.fullmatch(line) and len(line.split()) <= 8
+        ):
             remaining.pop(0)
             continue
         break
@@ -406,7 +449,9 @@ def _extract_india_wins_chapters(path: Path) -> list[OcrChapter]:
         if match is None:
             continue
         title = match.group("title").replace("Warin", "War in").replace("Congressin", "Congress in")
-        title = title.replace("TheInterim", "The Interim").replace("TheEndofaDream", "The End of a Dream")
+        title = title.replace("TheInterim", "The Interim").replace(
+            "TheEndofaDream", "The End of a Dream"
+        )
         title = title.replace("The SimlaConference", "The Simla Conference")
         chapters.append(
             OcrChapter(
@@ -416,7 +461,9 @@ def _extract_india_wins_chapters(path: Path) -> list[OcrChapter]:
             )
         )
     if len(chapters) != 16:
-        raise ValueError(f"Expected 16 chapter entries for India Wins Freedom, found {len(chapters)}")
+        raise ValueError(
+            f"Expected 16 chapter entries for India Wins Freedom, found {len(chapters)}"
+        )
     return chapters
 
 
@@ -464,7 +511,10 @@ def _clean_india_wins_freedom(path: Path, output_dir: Path) -> Path:
                 paragraphs.append(" ".join(current).strip())
 
             for paragraph in paragraphs:
-                if re.fullmatch(r"[A-Z][A-Za-z .,'’\-]{0,50}", paragraph) and len(paragraph.split()) <= 8:
+                if (
+                    re.fullmatch(r"[A-Z][A-Za-z .,'’\-]{0,50}", paragraph)
+                    and len(paragraph.split()) <= 8
+                ):
                     continue
                 page_chunks.append(paragraph)
 

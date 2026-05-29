@@ -43,9 +43,7 @@ def _parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = _parse_args()
-    asyncio.run(
-        _resume_single_episode_from_writing(args.project_id, args.episode_number)
-    )
+    asyncio.run(_resume_single_episode_from_writing(args.project_id, args.episode_number))
 
 
 if __name__ == "__main__":

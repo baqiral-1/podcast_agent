@@ -86,9 +86,8 @@ def main() -> None:
         if args.tss_v2_snippet_file is not None
         else None
     )
-    comparison_target_label = (
-        args.tss_v2_label
-        or (args.tss_v2_snippet_file.stem if args.tss_v2_snippet_file is not None else None)
+    comparison_target_label = args.tss_v2_label or (
+        args.tss_v2_snippet_file.stem if args.tss_v2_snippet_file is not None else None
     )
     payload = build_audio_style_payload(
         args.run_dirs,

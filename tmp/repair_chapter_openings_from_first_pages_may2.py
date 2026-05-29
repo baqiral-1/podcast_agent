@@ -16,7 +16,9 @@ from podcast_agent.utils.book_cleaning import derive_output_filename
 
 
 HELPER_PATH = Path(__file__).with_name("oneoff_clean_may2_download_batch.py")
-HELPER_SPEC = importlib.util.spec_from_file_location("oneoff_clean_may2_download_batch", HELPER_PATH)
+HELPER_SPEC = importlib.util.spec_from_file_location(
+    "oneoff_clean_may2_download_batch", HELPER_PATH
+)
 if HELPER_SPEC is None or HELPER_SPEC.loader is None:
     raise RuntimeError(f"Unable to load helper module from {HELPER_PATH}")
 HELPER_MODULE = importlib.util.module_from_spec(HELPER_SPEC)
@@ -268,7 +270,11 @@ def main() -> int:
         chapter_bodies = _split_chapters(text)
         reader = PdfReader(str(pdf_path))
         chapter_selector = _chapter_selector_for(pdf_path)
-        selected = [bookmark for bookmark in flatten_outline(pdf_path) if bookmark.page is not None and chapter_selector(bookmark)]
+        selected = [
+            bookmark
+            for bookmark in flatten_outline(pdf_path)
+            if bookmark.page is not None and chapter_selector(bookmark)
+        ]
         if len(selected) != len(chapter_bodies):
             continue
 

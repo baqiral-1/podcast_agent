@@ -34,9 +34,7 @@ from podcast_agent.schemas.models import (
 
 
 _SCRIPT_PATH = (
-    Path(__file__).resolve().parents[1]
-    / "scripts"
-    / "retry_single_episode_from_writing.py"
+    Path(__file__).resolve().parents[1] / "scripts" / "retry_single_episode_from_writing.py"
 )
 _SCRIPT_SPEC = importlib.util.spec_from_file_location(
     "retry_single_episode_from_writing",
@@ -337,9 +335,7 @@ def _spoken_script(plan: EpisodePlan, title: str) -> SpokenScript:
                     "section_id": f"section_{plan.episode_number}_spoken",
                     "segments": [
                         {
-                            "segment_id": (
-                                f"section_{plan.episode_number}_spoken_seg1"
-                            ),
+                            "segment_id": (f"section_{plan.episode_number}_spoken_seg1"),
                             "text": "A spoken section.",
                             "speaker_role": "primary",
                             "tonal_register": "neutral",
@@ -363,7 +359,7 @@ def _build_project_dir(tmp_path: Path) -> tuple[Path, list[EpisodePlan]]:
         description="Axis description",
         theme_importance_score=1.0,
     )
-    primitive = EventPrimitive(
+    _primitive = EventPrimitive(
         id="primitive_1",
         substrate=PrimitiveSubstrate.EVENTS,
         title="Primitive",
@@ -487,7 +483,12 @@ def _build_project_dir(tmp_path: Path) -> tuple[Path, list[EpisodePlan]]:
     _write_json(project_dir / "actor_metadata.json", actor_metadata)
     _write_json(
         project_dir / "actor_metadata_metrics.json",
-        {"stage_metrics": {"episode_planning": {"unknown_actor_ids": 0}, "writing": {"completed_episode_count": 1}}},
+        {
+            "stage_metrics": {
+                "episode_planning": {"unknown_actor_ids": 0},
+                "writing": {"completed_episode_count": 1},
+            }
+        },
     )
 
     existing_plan = plans[0]
@@ -618,9 +619,7 @@ def test_retry_single_episode_from_writing_retries_target_episode_and_regenerate
     assert calls["actor_metadata_metrics"]["metrics"]["episode_planning"] == {
         "unknown_actor_ids": 0
     }
-    assert calls["actor_metadata_metrics"]["metrics"]["writing"] == {
-        "completed_episode_count": 2
-    }
+    assert calls["actor_metadata_metrics"]["metrics"]["writing"] == {"completed_episode_count": 2}
     assert (project_dir / "episodes" / "2" / "episode_script.json").exists()
     assert (project_dir / "episodes" / "2" / "style_audited_script.json").exists()
     assert (project_dir / "episodes" / "2" / "style_audit_result.json").exists()
@@ -688,5 +687,7 @@ def test_retry_single_episode_from_writing_requires_matching_architecture(
         lambda settings: SimpleNamespace(),
     )
 
-    with pytest.raises(RuntimeError, match="episode_architectures.json does not contain episode_number 2"):
+    with pytest.raises(
+        RuntimeError, match="episode_architectures.json does not contain episode_number 2"
+    ):
         asyncio.run(retry_script._retry_single_episode_from_writing("run_1", 2))

@@ -11,7 +11,13 @@ from podcast_agent.pipeline.orchestrator import (
     _trim_candidate_texts_by_bm25_query_text,
 )
 from podcast_agent.retrieval.vector_store import RetrievalHit
-from podcast_agent.schemas.models import BookRecord, ChapterInfo, PipelineConfig, ThematicAxis, ThematicProject
+from podcast_agent.schemas.models import (
+    BookRecord,
+    ChapterInfo,
+    PipelineConfig,
+    ThematicAxis,
+    ThematicProject,
+)
 
 
 class DummyTTSClient:
@@ -45,7 +51,9 @@ def test_trim_candidate_texts_by_bm25_query_text_still_prefers_explicit_query_te
 
 def test_extract_passages_uses_global_bm25_admission_without_book_quotas(monkeypatch, tmp_path):
     heuristic = HeuristicLLMClient()
-    monkeypatch.setattr("podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic)
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic
+    )
     monkeypatch.setattr(
         "podcast_agent.pipeline.orchestrator.PGVectorRetrieval",
         lambda settings, run_logger=None: SimpleNamespace(enabled=True),
@@ -141,7 +149,15 @@ def test_extract_passages_uses_global_bm25_admission_without_book_quotas(monkeyp
                 author="Author 1",
                 source_path="/tmp/b1.txt",
                 source_type="txt",
-                chapters=[ChapterInfo(chapter_id="ch1", title="Chapter 1", start_index=0, end_index=10, word_count=500)],
+                chapters=[
+                    ChapterInfo(
+                        chapter_id="ch1",
+                        title="Chapter 1",
+                        start_index=0,
+                        end_index=10,
+                        word_count=500,
+                    )
+                ],
                 chunk_count=2,
                 total_words=1000,
             ),
@@ -151,7 +167,15 @@ def test_extract_passages_uses_global_bm25_admission_without_book_quotas(monkeyp
                 author="Author 2",
                 source_path="/tmp/b2.txt",
                 source_type="txt",
-                chapters=[ChapterInfo(chapter_id="ch1", title="Chapter 1", start_index=0, end_index=10, word_count=500)],
+                chapters=[
+                    ChapterInfo(
+                        chapter_id="ch1",
+                        title="Chapter 1",
+                        start_index=0,
+                        end_index=10,
+                        word_count=500,
+                    )
+                ],
                 chunk_count=2,
                 total_words=1000,
             ),
@@ -174,7 +198,9 @@ def test_extract_passages_uses_global_bm25_admission_without_book_quotas(monkeyp
     assert [item["book_id"] for item in payload["candidate_passages"]] == ["b1", "b1"]
 
     retrieval_artifact = json.loads(
-        (tmp_path / "stage_artifacts" / "passage_extraction" / "retrieval_candidates_axis_1.json").read_text()
+        (
+            tmp_path / "stage_artifacts" / "passage_extraction" / "retrieval_candidates_axis_1.json"
+        ).read_text()
     )
     assert retrieval_artifact["allocation_policy"] == "global_bm25_okapi_top_n"
     used_candidates = [

@@ -32,14 +32,22 @@ class TestBuildRenderManifest:
             sections=[
                 SpokenSection(
                     section_id="section_1",
-                    segments=[SpokenSegment(segment_id="section_1_seg1", text="The convoy moves through the dark.")],
+                    segments=[
+                        SpokenSegment(
+                            segment_id="section_1_seg1", text="The convoy moves through the dark."
+                        )
+                    ],
                     speech_hints=SpeechHints(pause_before_ms=350, pause_after_ms=450),
                 ),
                 SpokenSection(
                     section_id="section_2",
-                    segments=[SpokenSegment(segment_id="section_2_seg1", text="The first checkpoint falls silent.")],
+                    segments=[
+                        SpokenSegment(
+                            segment_id="section_2_seg1", text="The first checkpoint falls silent."
+                        )
+                    ],
                     speech_hints=SpeechHints(pause_before_ms=300, pause_after_ms=400),
-                )
+                ),
             ],
         )
         manifest = build_render_manifest(spoken)
@@ -74,7 +82,9 @@ class TestBuildRenderManifest:
             ],
         )
         manifest = build_render_manifest(spoken, voice_id="nova", speed=1.2)
-        section = next(segment for segment in manifest.segments if segment.segment_id == "section_1_seg1")
+        section = next(
+            segment for segment in manifest.segments if segment.segment_id == "section_1_seg1"
+        )
         assert section.voice_id == "nova"
         assert section.speed == 1.2
         assert section.pause_before_ms == 500
@@ -112,8 +122,14 @@ class TestBuildRenderManifest:
                 handoff_scene_card_id="scene_1",
             ),
             sections=[
-                SpokenSection(section_id="section_1", segments=[SpokenSegment(segment_id="section_1_seg1", text="One.")]),
-                SpokenSection(section_id="section_2", segments=[SpokenSegment(segment_id="section_2_seg1", text="Two.")]),
+                SpokenSection(
+                    section_id="section_1",
+                    segments=[SpokenSegment(segment_id="section_1_seg1", text="One.")],
+                ),
+                SpokenSection(
+                    section_id="section_2",
+                    segments=[SpokenSegment(segment_id="section_2_seg1", text="Two.")],
+                ),
             ],
         )
         manifest = build_render_manifest(spoken)
@@ -138,7 +154,11 @@ class TestBuildRenderManifest:
             sections=[
                 SpokenSection(
                     section_id="section_1",
-                    segments=[SpokenSegment(segment_id="section_1_seg1", text="The fragile truce did not hold.")],
+                    segments=[
+                        SpokenSegment(
+                            segment_id="section_1_seg1", text="The fragile truce did not hold."
+                        )
+                    ],
                     speech_hints=SpeechHints(
                         intensity="light",
                         emphasis_targets=["fragile truce"],
@@ -151,7 +171,9 @@ class TestBuildRenderManifest:
             base_instructions="Keep narration steady.",
             tts_model_name="gpt-4o-mini-tts",
         )
-        section = next(segment for segment in manifest.segments if segment.segment_id == "section_1_seg1")
+        section = next(
+            segment for segment in manifest.segments if segment.segment_id == "section_1_seg1"
+        )
         assert section.instructions is not None
         assert "fragile truce" in section.instructions
         assert section.hint_degradations == []
@@ -170,7 +192,11 @@ class TestBuildRenderManifest:
             sections=[
                 SpokenSection(
                     section_id="section_1",
-                    segments=[SpokenSegment(segment_id="section_1_seg1", text="The fragile truce did not hold.")],
+                    segments=[
+                        SpokenSegment(
+                            segment_id="section_1_seg1", text="The fragile truce did not hold."
+                        )
+                    ],
                     speech_hints=SpeechHints(
                         intensity="light",
                         emphasis_targets=["fragile truce"],
@@ -183,7 +209,9 @@ class TestBuildRenderManifest:
             base_instructions=long_base,
             tts_model_name="gpt-4o-mini-tts",
         )
-        section = next(segment for segment in manifest.segments if segment.segment_id == "section_1_seg1")
+        section = next(
+            segment for segment in manifest.segments if segment.segment_id == "section_1_seg1"
+        )
         assert section.instructions is not None
         assert len(section.instructions) > 500
         assert not section.instructions.endswith("...")
@@ -203,7 +231,11 @@ class TestBuildRenderManifest:
             sections=[
                 SpokenSection(
                     section_id="section_1",
-                    segments=[SpokenSegment(segment_id="section_1_seg1", text="The fragile truce did not hold.")],
+                    segments=[
+                        SpokenSegment(
+                            segment_id="section_1_seg1", text="The fragile truce did not hold."
+                        )
+                    ],
                     speech_hints=SpeechHints(
                         style="measured",
                         intensity="medium",
@@ -215,7 +247,9 @@ class TestBuildRenderManifest:
             tts_provider="kokoro",
         )
         manifest = build_render_manifest(spoken)
-        section = next(segment for segment in manifest.segments if segment.segment_id == "section_1_seg1")
+        section = next(
+            segment for segment in manifest.segments if segment.segment_id == "section_1_seg1"
+        )
         assert section.instructions is None
         assert "segment_instructions_not_supported" in section.hint_degradations
         assert "pronunciation_hints_not_supported" in section.hint_degradations
@@ -234,7 +268,11 @@ class TestBuildRenderManifest:
             sections=[
                 SpokenSection(
                     section_id="section_1",
-                    segments=[SpokenSegment(segment_id="section_1_seg1", text="The fragile truce did not hold.")],
+                    segments=[
+                        SpokenSegment(
+                            segment_id="section_1_seg1", text="The fragile truce did not hold."
+                        )
+                    ],
                     speech_hints=SpeechHints(
                         style="measured",
                         intensity="medium",
@@ -245,7 +283,9 @@ class TestBuildRenderManifest:
             ],
         )
         manifest = build_render_manifest(spoken)
-        section = next(segment for segment in manifest.segments if segment.segment_id == "section_1_seg1")
+        section = next(
+            segment for segment in manifest.segments if segment.segment_id == "section_1_seg1"
+        )
         assert section.voice_id == "fable"
         assert section.instructions is None
         assert "segment_instructions_not_supported" in section.hint_degradations
@@ -265,7 +305,11 @@ class TestBuildRenderManifest:
             sections=[
                 SpokenSection(
                     section_id="section_1",
-                    segments=[SpokenSegment(segment_id="section_1_seg1", text="First sentence. Second sentence.")],
+                    segments=[
+                        SpokenSegment(
+                            segment_id="section_1_seg1", text="First sentence. Second sentence."
+                        )
+                    ],
                     speech_hints=SpeechHints(render_strategy="split_sentences"),
                 ),
             ],
@@ -288,7 +332,12 @@ class TestBuildRenderManifest:
             sections=[
                 SpokenSection(
                     section_id="section_1",
-                    segments=[SpokenSegment(segment_id="section_1_seg1", text="The battle hardened at Panipat. The embassy regrouped in Shiraz.")],
+                    segments=[
+                        SpokenSegment(
+                            segment_id="section_1_seg1",
+                            text="The battle hardened at Panipat. The embassy regrouped in Shiraz.",
+                        )
+                    ],
                     speech_hints=SpeechHints(
                         render_strategy="split_sentences",
                         pronunciation_hints=[
@@ -301,8 +350,12 @@ class TestBuildRenderManifest:
             ],
         )
         manifest = build_render_manifest(spoken, tts_model_name="gpt-4o-mini-tts")
-        first = next(segment for segment in manifest.segments if segment.segment_id == "section_1_seg1_1")
-        second = next(segment for segment in manifest.segments if segment.segment_id == "section_1_seg1_2")
+        first = next(
+            segment for segment in manifest.segments if segment.segment_id == "section_1_seg1_1"
+        )
+        second = next(
+            segment for segment in manifest.segments if segment.segment_id == "section_1_seg1_2"
+        )
         assert first.instructions is not None
         assert "Panipat as PAH-nee-puht" in first.instructions
         assert "Shiraz as shee-RAHZ" not in first.instructions
@@ -325,7 +378,12 @@ class TestBuildRenderManifest:
             sections=[
                 SpokenSection(
                     section_id="section_1",
-                    segments=[SpokenSegment(segment_id="section_1_seg1", text="From Isfahan to al-Mansur, envoys carried the warning.")],
+                    segments=[
+                        SpokenSegment(
+                            segment_id="section_1_seg1",
+                            text="From Isfahan to al-Mansur, envoys carried the warning.",
+                        )
+                    ],
                     speech_hints=SpeechHints(
                         pronunciation_hints=[
                             {"text": "Isfahán", "spoken_as": "ISS-fuh-hahn"},
@@ -336,7 +394,9 @@ class TestBuildRenderManifest:
             ],
         )
         manifest = build_render_manifest(spoken, tts_model_name="gpt-4o-mini-tts")
-        section = next(segment for segment in manifest.segments if segment.segment_id == "section_1_seg1")
+        section = next(
+            segment for segment in manifest.segments if segment.segment_id == "section_1_seg1"
+        )
         assert section.instructions is not None
         assert "Isfahán as ISS-fuh-hahn" in section.instructions
         assert "al mansur as ahl man-SOOR" in section.instructions
@@ -354,7 +414,11 @@ class TestBuildRenderManifest:
             sections=[
                 SpokenSection(
                     section_id="section_1",
-                    segments=[SpokenSegment(segment_id="section_1_seg1", text="The envoy crossed the river at dawn.")],
+                    segments=[
+                        SpokenSegment(
+                            segment_id="section_1_seg1", text="The envoy crossed the river at dawn."
+                        )
+                    ],
                     speech_hints=SpeechHints(
                         pronunciation_hints=[{"text": "Shiraz", "spoken_as": "shee-RAHZ"}],
                     ),
@@ -366,7 +430,9 @@ class TestBuildRenderManifest:
             base_instructions="Keep narration steady.",
             tts_model_name="gpt-4o-mini-tts",
         )
-        section = next(segment for segment in manifest.segments if segment.segment_id == "section_1_seg1")
+        section = next(
+            segment for segment in manifest.segments if segment.segment_id == "section_1_seg1"
+        )
         assert section.instructions is not None
         assert "Keep narration steady." in section.instructions
         assert "Use these pronunciations:" not in section.instructions

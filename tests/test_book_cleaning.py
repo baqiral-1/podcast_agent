@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from podcast_agent.utils.book_cleaning import clean_book_text, derive_output_filename, list_recent_book_files
+from podcast_agent.utils.book_cleaning import (
+    clean_book_text,
+    derive_output_filename,
+    list_recent_book_files,
+)
 
 
 def test_list_recent_book_files_excludes_non_books(tmp_path: Path) -> None:
@@ -61,7 +65,9 @@ Abbas, 22
 
     cleaned = clean_book_text(raw_text)
 
-    assert cleaned.startswith("Chapter 1\n\nThis is the opening paragraph. It continues across a wrapped line.")
+    assert cleaned.startswith(
+        "Chapter 1\n\nThis is the opening paragraph. It continues across a wrapped line."
+    )
     assert "Chapter 2\n\nThis is chapter text. It also wraps across lines." in cleaned
     assert "Chapter 3\n\nMore text lives here." in cleaned
     assert "Contents" not in cleaned

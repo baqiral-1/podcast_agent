@@ -49,7 +49,9 @@ def sample_text(path: Path, segments: int, words: int) -> str:
         chapter_number, token_cursor, body_tokens = rng.choice(chapter_windows)
         max_start = len(body_tokens) - words
         start = rng.randint(0, max_start)
-        picks.append((chapter_number, token_cursor + start, " ".join(body_tokens[start : start + words])))
+        picks.append(
+            (chapter_number, token_cursor + start, " ".join(body_tokens[start : start + words]))
+        )
 
     picks.sort(key=lambda item: item[1])
     rendered: list[str] = []

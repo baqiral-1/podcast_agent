@@ -125,9 +125,7 @@ def extract_chapters_from_source(raw_text: str) -> list[ChapterInfo]:
         chapter_text = raw_text[heading_start:end_index]
         word_count = len(chapter_text.split())
         if word_count < 1000:
-            raise ValueError(
-                f"Chapter '{heading_title}' has {word_count} words; minimum is 1000."
-            )
+            raise ValueError(f"Chapter '{heading_title}' has {word_count} words; minimum is 1000.")
         chapters.append(
             ChapterInfo(
                 chapter_id=f"ch{i + start_idx + 1}",

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pytest
 
 from _section_progression_helpers import make_section_progression
 from podcast_agent.pipeline.orchestrator import (
@@ -28,9 +27,7 @@ from podcast_agent.utils.actor_metadata import clean_narrative_strategy_actor_li
 
 
 def _host_moves() -> HostMovesByPhase:
-    return HostMovesByPhase(
-        open=[HostMoveCue(move_type="orient", note="Set the footing.")]
-    )
+    return HostMovesByPhase(open=[HostMoveCue(move_type="orient", note="Set the footing.")])
 
 
 def _section(*, actor_id: str = "mossadeq", stage: str = "introduce") -> ArchitectureSection:
@@ -72,7 +69,10 @@ def _architecture_with_actor_explanation(
             approx_runtime_minutes=8.0,
             primitive_ids=["p_2"],
             section_anchor="A memo circulates.",
-            must_stage_beats=["Pressure spreads through the ministries.", "The court starts to react."],
+            must_stage_beats=[
+                "Pressure spreads through the ministries.",
+                "The court starts to react.",
+            ],
             listener_tension="Can the old order absorb the challenge?",
             section_turn="The state begins to harden.",
             transition_logic="Move from public naming to institutional reaction.",
@@ -108,7 +108,10 @@ def _architecture_with_actor_explanation(
             approx_runtime_minutes=8.0,
             primitive_ids=["p_5"],
             section_anchor="A shuttered office.",
-            must_stage_beats=["The government loses room to maneuver.", "The cost becomes immediate."],
+            must_stage_beats=[
+                "The government loses room to maneuver.",
+                "The cost becomes immediate.",
+            ],
             listener_tension="What survives the break?",
             section_turn="The consequences stop looking temporary.",
             transition_logic="Show the immediate fallout of the turn.",
@@ -161,9 +164,7 @@ def _scene(*, actor_id: str | None, explanation_stage: str | None = None) -> Sce
         scene_function="scene",
         beat_change="A single political actor now carries the crisis in public.",
         must_land_facts=["Mossadeq is prime minister.", "Oil nationalization is the live issue."],
-        actors=[
-            actor_payload
-        ],
+        actors=[actor_payload],
         passage_ids=["passage_1"],
         host_moves=_host_moves().model_dump(mode="json"),
         estimated_duration_seconds=75,
@@ -228,9 +229,7 @@ def test_clean_narrative_strategy_actor_links_fills_actor_gloss_and_filters_regi
 
     cleaned, metrics = clean_narrative_strategy_actor_links(strategy, actor_metadata)
 
-    assert [item.actor_id for item in cleaned.series_actor_explanation_registry] == [
-        "mossadeq"
-    ]
+    assert [item.actor_id for item in cleaned.series_actor_explanation_registry] == ["mossadeq"]
     assert (
         cleaned.series_actor_explanation_registry[0].preferred_plain_gloss
         == "Prime minister who nationalized Iran's oil and became the face of the crisis"
@@ -344,9 +343,7 @@ def test_validate_actor_explanation_scene_links_requires_matching_scene_actor() 
         plan=plan,
     )
 
-    assert warnings == [
-        "missing_actor_explanation_scene_links:section_1:mossadeq:introduce"
-    ]
+    assert warnings == ["missing_actor_explanation_scene_links:section_1:mossadeq:introduce"]
 
     _validate_actor_explanation_scene_links(
         architecture=architecture,
@@ -381,9 +378,7 @@ def test_validate_actor_explanation_scene_links_rejects_late_introduction() -> N
         plan=plan,
     )
 
-    assert warnings == [
-        "late_actor_introduction_scene_links:mossadeq:scene_early"
-    ]
+    assert warnings == ["late_actor_introduction_scene_links:mossadeq:scene_early"]
 
 
 def test_normalize_writing_section_outputs_allows_missing_actor_intro_realization() -> None:
@@ -462,6 +457,4 @@ def test_normalize_writing_section_outputs_allows_paraphrased_actor_intro_realiz
         skip_grounding=False,
     )
 
-    assert normalized[0]["actor_explanation_realizations"][0].source_passage_ids == [
-        "passage_2"
-    ]
+    assert normalized[0]["actor_explanation_realizations"][0].source_passage_ids == ["passage_2"]

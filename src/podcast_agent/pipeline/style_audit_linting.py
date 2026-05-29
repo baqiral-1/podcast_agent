@@ -32,7 +32,6 @@ import re
 from collections.abc import Callable
 from typing import Any
 
-from podcast_agent.pipeline.text_utils import split_sentences
 from podcast_agent.pipeline.tic_families import TIC_FAMILY_SEEDS, TicHit
 
 
@@ -54,9 +53,7 @@ _ABSTRACT_FRAME_NOUNS: tuple[str, ...] = (
     "contingency",
 )
 
-_ABSTRACT_NOUN_RE = re.compile(
-    r"\b(?:" + "|".join(_ABSTRACT_FRAME_NOUNS) + r")\b", re.IGNORECASE
-)
+_ABSTRACT_NOUN_RE = re.compile(r"\b(?:" + "|".join(_ABSTRACT_FRAME_NOUNS) + r")\b", re.IGNORECASE)
 
 
 # ---------------------------------------------------------------------------
@@ -75,21 +72,122 @@ _FRAME_CHAR_WINDOW = 220
 
 _STOPWORDS = frozenset(
     {
-        "a", "an", "the", "and", "or", "but", "of", "in", "on", "at", "to",
-        "for", "by", "with", "from", "into", "onto", "than", "then", "as",
-        "is", "are", "was", "were", "be", "been", "being", "do", "does",
-        "did", "doing", "have", "has", "had", "having", "this", "that",
-        "these", "those", "it", "its", "they", "them", "their", "there",
-        "here", "what", "when", "where", "why", "how", "who", "whom",
-        "which", "whose", "will", "would", "can", "could", "should",
-        "might", "may", "must", "shall", "not", "no", "nor", "if",
-        "because", "while", "about", "against", "between", "through",
-        "during", "before", "after", "above", "below", "up", "down",
-        "over", "under", "again", "further", "once", "very", "much",
-        "most", "many", "more", "less", "such", "same", "different",
-        "one", "two", "three", "first", "last", "next", "now", "still",
-        "yet", "already", "also", "just", "only", "even", "both", "each",
-        "every", "some", "any", "all", "none",
+        "a",
+        "an",
+        "the",
+        "and",
+        "or",
+        "but",
+        "of",
+        "in",
+        "on",
+        "at",
+        "to",
+        "for",
+        "by",
+        "with",
+        "from",
+        "into",
+        "onto",
+        "than",
+        "then",
+        "as",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "being",
+        "do",
+        "does",
+        "did",
+        "doing",
+        "have",
+        "has",
+        "had",
+        "having",
+        "this",
+        "that",
+        "these",
+        "those",
+        "it",
+        "its",
+        "they",
+        "them",
+        "their",
+        "there",
+        "here",
+        "what",
+        "when",
+        "where",
+        "why",
+        "how",
+        "who",
+        "whom",
+        "which",
+        "whose",
+        "will",
+        "would",
+        "can",
+        "could",
+        "should",
+        "might",
+        "may",
+        "must",
+        "shall",
+        "not",
+        "no",
+        "nor",
+        "if",
+        "because",
+        "while",
+        "about",
+        "against",
+        "between",
+        "through",
+        "during",
+        "before",
+        "after",
+        "above",
+        "below",
+        "up",
+        "down",
+        "over",
+        "under",
+        "again",
+        "further",
+        "once",
+        "very",
+        "much",
+        "most",
+        "many",
+        "more",
+        "less",
+        "such",
+        "same",
+        "different",
+        "one",
+        "two",
+        "three",
+        "first",
+        "last",
+        "next",
+        "now",
+        "still",
+        "yet",
+        "already",
+        "also",
+        "just",
+        "only",
+        "even",
+        "both",
+        "each",
+        "every",
+        "some",
+        "any",
+        "all",
+        "none",
     }
 )
 
@@ -182,14 +280,10 @@ def compute_style_audit_lint_flags(
         }
     """
     progression = section_progression_by_id or {}
-    thesis_tokens = _content_tokens(
-        f"{spine_episode_answer or ''} {spine_pressure_line or ''}"
-    )
+    thesis_tokens = _content_tokens(f"{spine_episode_answer or ''} {spine_pressure_line or ''}")
 
     tic_counts: dict[str, int] = {family: 0 for family in TIC_FAMILY_SEEDS}
-    tic_locations: dict[str, list[dict[str, Any]]] = {
-        family: [] for family in TIC_FAMILY_SEEDS
-    }
+    tic_locations: dict[str, list[dict[str, Any]]] = {family: [] for family in TIC_FAMILY_SEEDS}
     by_section: dict[str, dict[str, Any]] = {}
 
     for section in prose_sections or []:
@@ -219,12 +313,8 @@ def compute_style_audit_lint_flags(
         is_answer = (progression.get(section_id, "") or "").lower() == "answer"
 
         by_section[section_id] = {
-            "opening_thesis_overlap": _jaccard(
-                _content_tokens(opening), thesis_tokens
-            ),
-            "closing_thesis_overlap": _jaccard(
-                _content_tokens(closing), thesis_tokens
-            ),
+            "opening_thesis_overlap": _jaccard(_content_tokens(opening), thesis_tokens),
+            "closing_thesis_overlap": _jaccard(_content_tokens(closing), thesis_tokens),
             "abstract_noun_hits_in_frames": sorted(
                 set(_abstract_noun_hits(opening) + _abstract_noun_hits(closing))
             ),
@@ -246,9 +336,7 @@ def compute_style_audit_lint_flags(
         for family in TIC_FAMILY_SEEDS
     }
     carryover_warning = sorted(
-        family
-        for family, total in cumulative_counts.items()
-        if total >= series_carryover_threshold
+        family for family, total in cumulative_counts.items() if total >= series_carryover_threshold
     )
 
     return {
@@ -333,14 +421,10 @@ def compute_fact_coverage_diagnostics(
     for prose_section in audited_script.prose_sections:
         section_id = prose_section.section_id
         scene_cards = scene_cards_by_section_id.get(section_id, [])
-        required, _strongly_preferred = aggregate_section_must_land_facts(
-            scene_cards
-        )
+        required, _strongly_preferred = aggregate_section_must_land_facts(scene_cards)
         normalized_text = _normalize_for_substring_check(prose_section.text)
         missing_required = [
-            fact
-            for fact in required
-            if _normalize_for_substring_check(fact) not in normalized_text
+            fact for fact in required if _normalize_for_substring_check(fact) not in normalized_text
         ]
         landed_required = len(required) - len(missing_required)
         episode_required_total += len(required)
@@ -378,8 +462,7 @@ def compute_fact_coverage_diagnostics(
         "episode_total_misses": episode_required_total - episode_required_landed,
         "episode_total_citations": episode_citation_total,
         "episode_total_citations_surviving": episode_citation_surviving,
-        "episode_total_citation_misses": episode_citation_total
-        - episode_citation_surviving,
+        "episode_total_citation_misses": episode_citation_total - episode_citation_surviving,
     }
 
 

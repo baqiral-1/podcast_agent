@@ -6,11 +6,19 @@ from pathlib import Path
 
 sys.path.insert(0, "/tmp")
 
-from iran_clean_common import clean_chapter_text, extract_page_range_text, flatten_outline, render_book, write_output
+from iran_clean_common import (
+    clean_chapter_text,
+    extract_page_range_text,
+    flatten_outline,
+    render_book,
+    write_output,
+)
 
 
 PDF_PATH = "/Users/baqir/Downloads/058c64b006c901fd93afa68c7ebefe4d.pdf"
-OUTPUT_PATH = "/Users/baqir/Python/podcast_agent/sample_books/iran/a_history_of_modern_iran.cleaned.txt"
+OUTPUT_PATH = (
+    "/Users/baqir/Python/podcast_agent/sample_books/iran/a_history_of_modern_iran.cleaned.txt"
+)
 
 DROP_HEADERS = [
     '"Royal despots": state and society under the Qajars',
@@ -86,10 +94,14 @@ TABLE_LABELS = (
 
 
 def polish_chapter(text: str) -> str:
-    paragraphs = [paragraph.strip() for paragraph in re.split(r"\n{2,}", text.strip()) if paragraph.strip()]
+    paragraphs = [
+        paragraph.strip() for paragraph in re.split(r"\n{2,}", text.strip()) if paragraph.strip()
+    ]
     while paragraphs and re.fullmatch(r"chapter\s+\d+", paragraphs[0], flags=re.I):
         paragraphs.pop(0)
-    while paragraphs and any(re.search(pattern, paragraphs[0]) for pattern in LEADING_DROP_PATTERNS):
+    while paragraphs and any(
+        re.search(pattern, paragraphs[0]) for pattern in LEADING_DROP_PATTERNS
+    ):
         paragraphs.pop(0)
     if paragraphs:
         for subheading in LEADING_SUBHEADINGS:
@@ -116,7 +128,9 @@ def polish_book(text: str) -> str:
         )
     cleaned = re.sub(r"\b8\.\s+[^.]+(?:\.\s+8\.[^.]+)+", " ", cleaned)
     cleaned = re.sub(r"\bI n\b", "In", cleaned)
-    cleaned = re.sub(r"Sukarno\.\s+seriously undermined", "Sukarno. It also seriously undermined", cleaned)
+    cleaned = re.sub(
+        r"Sukarno\.\s+seriously undermined", "Sukarno. It also seriously undermined", cleaned
+    )
     cleaned = cleaned.replace("loans.11It", "loans. It")
     cleaned = cleaned.replace(
         "were now obliged to enroll in the\n\nChapter 6:",
@@ -153,9 +167,19 @@ def polish_book(text: str) -> str:
         cleaned,
         flags=re.S,
     )
-    cleaned = re.sub(r"gave the figure of 160,\s*\.\s*\.\s*\(cont\.\)\s*", "gave the figure of 160,000 ", cleaned, flags=re.S)
-    cleaned = cleaned.replace("Three of them were executed there. triggered a civil war.", "Three of them were executed there. The bombardment triggered a civil war.")
-    cleaned = cleaned.replace('change the khans.”59Qavam al-Mulk', 'change the khans.” Qavam al-Mulk')
+    cleaned = re.sub(
+        r"gave the figure of 160,\s*\.\s*\.\s*\(cont\.\)\s*",
+        "gave the figure of 160,000 ",
+        cleaned,
+        flags=re.S,
+    )
+    cleaned = cleaned.replace(
+        "Three of them were executed there. triggered a civil war.",
+        "Three of them were executed there. The bombardment triggered a civil war.",
+    )
+    cleaned = cleaned.replace(
+        "change the khans.”59Qavam al-Mulk", "change the khans.” Qavam al-Mulk"
+    )
     cleaned = cleaned.replace(
         "Iran’s oil revenues rose from $34 million in 1954–55 to\n\n34.4\n\nThe shah did not confine his military interest to arms purchases.",
         "Iran’s oil revenues rose from $34 million in 1954–55 to unprecedented levels by the 1970s. The shah did not confine his military interest to arms purchases.",
@@ -205,14 +229,19 @@ def polish_book(text: str) -> str:
     }
     for old, new in replacements.items():
         cleaned = cleaned.replace(old, new)
-    paragraphs = [paragraph.strip() for paragraph in re.split(r"\n{2,}", cleaned) if paragraph.strip()]
+    paragraphs = [
+        paragraph.strip() for paragraph in re.split(r"\n{2,}", cleaned) if paragraph.strip()
+    ]
     filtered: list[str] = []
     for paragraph in paragraphs:
         if any(label in paragraph for label in TABLE_LABELS):
             continue
         if len(re.findall(r"\d{4}–\d{2}", paragraph)) >= 4:
             continue
-        if re.fullmatch(r"[\d\s,.$%–()A-Za-z\-]+", paragraph) and len(re.findall(r"\d", paragraph)) >= 8:
+        if (
+            re.fullmatch(r"[\d\s,.$%–()A-Za-z\-]+", paragraph)
+            and len(re.findall(r"\d", paragraph)) >= 8
+        ):
             continue
         paragraph = re.sub(r"[ \t]{2,}", " ", paragraph).strip()
         if paragraph:
@@ -241,7 +270,9 @@ def polish_book(text: str) -> str:
             "Chapter 6:"
         ),
     )
-    cleaned = cleaned.replace("secondary Expediency Council president rulings such as", "secondary rulings such as")
+    cleaned = cleaned.replace(
+        "secondary Expediency Council president rulings such as", "secondary rulings such as"
+    )
     cleaned = cleaned.replace(
         "8. Stamps honouring the forerunners of the Islamic Revolution. They depict (from left to right) Fazlollah Nuri, Ayatollah Modarres, Kuchek Khan, and Navab Safavi.",
         "",

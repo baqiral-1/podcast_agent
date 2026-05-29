@@ -92,12 +92,18 @@ def _render_report(path: Path, sample_count: int, sample_words: int) -> str:
                 _slice_words(chapter_words, 0, CHAPTER_EDGE_WORDS),
                 "",
                 f"Chapter {chapter.number} END:",
-                _slice_words(chapter_words, max(0, len(chapter_words) - CHAPTER_EDGE_WORDS), CHAPTER_EDGE_WORDS),
+                _slice_words(
+                    chapter_words,
+                    max(0, len(chapter_words) - CHAPTER_EDGE_WORDS),
+                    CHAPTER_EDGE_WORDS,
+                ),
                 "",
             ]
         )
     lines.append("RANDOM_PASSAGES:")
-    for index, start in enumerate(_sample_starts(len(all_words), sample_words, sample_count, seed), start=1):
+    for index, start in enumerate(
+        _sample_starts(len(all_words), sample_words, sample_count, seed), start=1
+    ):
         lines.extend(
             [
                 f"Sample {index} START_WORD {start}:",
@@ -113,7 +119,9 @@ def main() -> int:
     args.report_dir.mkdir(parents=True, exist_ok=True)
     for path in sorted(args.input_dir.glob("*.txt")):
         report_path = args.report_dir / f"{path.stem}.report.txt"
-        report_path.write_text(_render_report(path, args.sample_count, args.sample_words), encoding="utf-8")
+        report_path.write_text(
+            _render_report(path, args.sample_count, args.sample_words), encoding="utf-8"
+        )
         print(f"{path.name} -> {report_path.name}")
     return 0
 

@@ -193,7 +193,9 @@ def clean_lines(lines: list[str], *, book_title: str, chapter_title: str) -> lis
             continue
         if canon == book_marker or canon in chapter_markers:
             continue
-        if is_titleish_line(line) and any(marker.startswith(canon) or canon.startswith(marker) for marker in chapter_markers):
+        if is_titleish_line(line) and any(
+            marker.startswith(canon) or canon.startswith(marker) for marker in chapter_markers
+        ):
             continue
         if canon.startswith("oceanofpdfcom"):
             continue
@@ -308,13 +310,13 @@ def is_map_like(paragraph: str) -> bool:
         return False
     lower = paragraph.casefold()
     upper_tokens = sum(
-        1
-        for word in words
-        if re.fullmatch(r"[A-Z][A-Z'’\-]*", word.strip(".,;:()[]"))
+        1 for word in words if re.fullmatch(r"[A-Z][A-Z'’\-]*", word.strip(".,;:()[]"))
     )
     if "500 miles" in lower or "1000 kms" in lower:
         return True
-    if upper_tokens >= 10 and any(token in lower for token in (" sea ", " empire", " gulf", " miles", " kms")):
+    if upper_tokens >= 10 and any(
+        token in lower for token in (" sea ", " empire", " gulf", " miles", " kms")
+    ):
         return True
     return False
 
@@ -357,10 +359,16 @@ def render_book(chapters: list[str]) -> str:
 
 def clean_book(spec: BookSpec) -> str:
     reader = PdfReader(str(spec.pdf_path))
-    bookmarks = [bookmark for bookmark in flatten_outline(spec.pdf_path) if spec.chapter_selector(bookmark)]
+    bookmarks = [
+        bookmark for bookmark in flatten_outline(spec.pdf_path) if spec.chapter_selector(bookmark)
+    ]
     chapters: list[str] = []
     for index, bookmark in enumerate(bookmarks):
-        next_page = bookmarks[index + 1].page - 1 if index + 1 < len(bookmarks) else spec.last_page_inclusive
+        next_page = (
+            bookmarks[index + 1].page - 1
+            if index + 1 < len(bookmarks)
+            else spec.last_page_inclusive
+        )
         cleaned = clean_chapter(reader, spec, bookmark, next_page)
         if cleaned:
             chapters.append(cleaned)
@@ -369,7 +377,9 @@ def clean_book(spec: BookSpec) -> str:
     return rendered
 
 
-def sample_segments(text: str, *, seed: int = 7, count: int = 20, words_per_segment: int = 200) -> list[str]:
+def sample_segments(
+    text: str, *, seed: int = 7, count: int = 20, words_per_segment: int = 200
+) -> list[str]:
     words = text.split()
     if len(words) <= words_per_segment:
         return [" ".join(words)]

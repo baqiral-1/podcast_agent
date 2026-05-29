@@ -7,7 +7,11 @@ import argparse
 import sys
 from pathlib import Path
 
-from podcast_agent.utils.book_cleaning import clean_book_file, derive_output_filename, list_recent_book_files
+from podcast_agent.utils.book_cleaning import (
+    clean_book_file,
+    derive_output_filename,
+    list_recent_book_files,
+)
 
 
 def parse_args() -> argparse.Namespace:

@@ -115,9 +115,7 @@ def _load_thematic_project(project_dir: Path) -> ThematicProject:
     payload = _load_json(project_dir / "thematic_project.json")
     config_payload = payload.get("config")
     if isinstance(config_payload, dict):
-        dropped = [
-            key for key in _REMOVED_PIPELINE_CONFIG_KEYS if key in config_payload
-        ]
+        dropped = [key for key in _REMOVED_PIPELINE_CONFIG_KEYS if key in config_payload]
         for key in dropped:
             config_payload.pop(key, None)
         if dropped:
@@ -164,12 +162,8 @@ def _tracked_files_with_narrative_states(
     if (project_dir / "narrative_state_latest.json").exists():
         dynamic_files.append("narrative_state_latest.json")
     for episode_number in episode_numbers:
-        dynamic_files.append(
-            f"episodes/{episode_number}/narrative_state_pre.json"
-        )
-        dynamic_files.append(
-            f"episodes/{episode_number}/narrative_state_post.json"
-        )
+        dynamic_files.append(f"episodes/{episode_number}/narrative_state_pre.json")
+        dynamic_files.append(f"episodes/{episode_number}/narrative_state_post.json")
     return tuple(dynamic_files)
 
 
@@ -186,9 +180,7 @@ def _tracked_files_with_quality_judge_inputs(
         dynamic_files.append(f"episodes/{episode_number}/episode_script.json")
         dynamic_files.append(f"episodes/{episode_number}/narrative_state_pre.json")
         dynamic_files.append(f"episodes/{episode_number}/narrative_state_post.json")
-        spine_path = (
-            project_dir / "episodes" / str(episode_number) / "spine_diagnostics.json"
-        )
+        spine_path = project_dir / "episodes" / str(episode_number) / "spine_diagnostics.json"
         if spine_path.exists():
             dynamic_files.append(f"episodes/{episode_number}/spine_diagnostics.json")
     return tuple(dynamic_files)
@@ -218,9 +210,7 @@ def _load_axes_from_file(project_dir: Path) -> list[ThematicAxis]:
     payload = _load_json(project_dir / "thematic_axes.json")
     axes_payload = payload.get("axes")
     if not isinstance(axes_payload, list):
-        raise RuntimeError(
-            "Invalid thematic_axes.json: expected top-level 'axes' list."
-        )
+        raise RuntimeError("Invalid thematic_axes.json: expected top-level 'axes' list.")
     return [ThematicAxis.model_validate(axis) for axis in axes_payload]
 
 
@@ -247,34 +237,22 @@ def _load_episode_architectures(project_dir: Path) -> list[EpisodeArchitecture]:
     payload = _load_json(project_dir / "episode_architectures.json")
     episodes_payload = payload.get("episodes")
     if not isinstance(episodes_payload, list) or not episodes_payload:
-        raise RuntimeError(
-            "episode_architectures.json must contain a non-empty episodes list"
-        )
-    architectures = [
-        EpisodeArchitecture.model_validate(item) for item in episodes_payload
-    ]
+        raise RuntimeError("episode_architectures.json must contain a non-empty episodes list")
+    architectures = [EpisodeArchitecture.model_validate(item) for item in episodes_payload]
     episode_numbers = [episode.episode_number for episode in architectures]
     if len(episode_numbers) != len(set(episode_numbers)):
-        raise RuntimeError(
-            "episode_architectures.json contains duplicate episode_number values"
-        )
+        raise RuntimeError("episode_architectures.json contains duplicate episode_number values")
     return sorted(architectures, key=lambda episode: episode.episode_number)
 
 
 def _load_scene_discovery(project_dir: Path) -> SceneDiscoveryArtifact:
-    return SceneDiscoveryArtifact.model_validate(
-        _load_json(project_dir / "scene_discovery.json")
-    )
+    return SceneDiscoveryArtifact.model_validate(_load_json(project_dir / "scene_discovery.json"))
 
 
 def _load_narrative_strategy(project_dir: Path) -> NarrativeStrategy:
-    strategy = NarrativeStrategy.model_validate(
-        _load_json(project_dir / "narrative_strategy.json")
-    )
+    strategy = NarrativeStrategy.model_validate(_load_json(project_dir / "narrative_strategy.json"))
     if not strategy.episodes:
-        raise RuntimeError(
-            "Persisted narrative_strategy.json must contain at least one episode."
-        )
+        raise RuntimeError("Persisted narrative_strategy.json must contain at least one episode.")
     return strategy
 
 
@@ -288,9 +266,7 @@ def _load_episode_scripts(
 ) -> dict[int, EpisodeScript]:
     scripts_by_episode: dict[int, EpisodeScript] = {}
     for episode_number in episode_numbers:
-        script_path = (
-            project_dir / "episodes" / str(episode_number) / "episode_script.json"
-        )
+        script_path = project_dir / "episodes" / str(episode_number) / "episode_script.json"
         if not script_path.exists():
             raise RuntimeError(
                 "Resume requires episode_script.json for every episode. "
@@ -369,9 +345,7 @@ async def _plan_series_for_resume(
     )
 
 
-def _load_excerpt_artifact_if_present(
-    project_dir: Path, filename: str
-) -> ExcerptArtifact | None:
+def _load_excerpt_artifact_if_present(project_dir: Path, filename: str) -> ExcerptArtifact | None:
     """Load an excerpt artifact from disk; return None when absent.
 
     Resume paths are gracefully tolerant of older runs that predate the
@@ -411,9 +385,7 @@ def _verify_strategy_scene_references(
     strategy: NarrativeStrategy,
     scene_discovery: SceneDiscoveryArtifact,
 ) -> None:
-    candidate_ids = {
-        candidate.candidate_id for candidate in scene_discovery.candidates
-    }
+    candidate_ids = {candidate.candidate_id for candidate in scene_discovery.candidates}
     unknown_candidate_ids = sorted(
         {
             candidate_id
@@ -435,9 +407,7 @@ def _verify_architectures_against_strategy(
     strategy: NarrativeStrategy,
     episode_architectures: list[EpisodeArchitecture],
 ) -> None:
-    strategy_by_number = {
-        episode.episode_number: episode for episode in strategy.episodes
-    }
+    strategy_by_number = {episode.episode_number: episode for episode in strategy.episodes}
     architecture_numbers = [episode.episode_number for episode in episode_architectures]
     strategy_numbers = sorted(strategy_by_number)
     if architecture_numbers != strategy_numbers:
@@ -464,12 +434,8 @@ def _verify_plans_against_strategy_and_architecture(
     episode_architectures: list[EpisodeArchitecture],
     episode_plans: list[EpisodePlan],
 ) -> None:
-    strategy_by_number = {
-        episode.episode_number: episode for episode in strategy.episodes
-    }
-    architecture_by_number = {
-        episode.episode_number: episode for episode in episode_architectures
-    }
+    strategy_by_number = {episode.episode_number: episode for episode in strategy.episodes}
+    architecture_by_number = {episode.episode_number: episode for episode in episode_architectures}
     plan_numbers = [plan.episode_number for plan in episode_plans]
     strategy_numbers = sorted(strategy_by_number)
     architecture_numbers = sorted(architecture_by_number)
@@ -500,13 +466,9 @@ def _select_single_episode(
 ) -> T:
     matches = [item for item in items if value_getter(item) == episode_number]
     if not matches:
-        raise RuntimeError(
-            f"{source_name} does not contain episode_number {episode_number}"
-        )
+        raise RuntimeError(f"{source_name} does not contain episode_number {episode_number}")
     if len(matches) > 1:
-        raise RuntimeError(
-            f"{source_name} contains duplicate episode_number {episode_number}"
-        )
+        raise RuntimeError(f"{source_name} contains duplicate episode_number {episode_number}")
     return matches[0]
 
 
@@ -516,9 +478,7 @@ def _completed_episode_numbers(
 ) -> list[int]:
     completed: list[int] = []
     for plan in episode_plans:
-        script_path = (
-            project_dir / "episodes" / str(plan.episode_number) / "episode_script.json"
-        )
+        script_path = project_dir / "episodes" / str(plan.episode_number) / "episode_script.json"
         if script_path.exists():
             completed.append(plan.episode_number)
     return completed
@@ -530,9 +490,7 @@ def _load_completed_spoken_scripts(
 ) -> list[tuple[int, SpokenScript]]:
     spoken_scripts: list[tuple[int, SpokenScript]] = []
     for plan in episode_plans:
-        spoken_path = (
-            project_dir / "episodes" / str(plan.episode_number) / "spoken_script.json"
-        )
+        spoken_path = project_dir / "episodes" / str(plan.episode_number) / "spoken_script.json"
         if not spoken_path.exists():
             continue
         spoken = SpokenScript.model_validate(_load_json(spoken_path))
@@ -559,12 +517,8 @@ async def _produce_from_persisted_plan(
     project = project.model_copy(update={"status": ProjectStatus.PRODUCING})
     _save_json(project_dir / "thematic_project.json", project)
 
-    architecture_by_number = {
-        episode.episode_number: episode for episode in episode_architectures
-    }
-    strategy_by_number = {
-        episode.episode_number: episode for episode in strategy.episodes
-    }
+    architecture_by_number = {episode.episode_number: episode for episode in episode_architectures}
+    strategy_by_number = {episode.episode_number: episode for episode in strategy.episodes}
     episode_numbers = [plan.episode_number for plan in episode_plans]
     if narrative_state_pre_by_episode is None or narrative_state_post_by_episode is None:
         (
@@ -575,8 +529,7 @@ async def _produce_from_persisted_plan(
     spoken_sem = asyncio.Semaphore(
         max(
             1,
-            project.config.spoken_delivery_concurrency
-            or project.config.episode_write_concurrency,
+            project.config.spoken_delivery_concurrency or project.config.episode_write_concurrency,
         )
     )
     retained_primitive_lookup = _flatten_synthesis_primitives(synthesis_map)
@@ -723,18 +676,13 @@ async def _produce_from_persisted_scripts(
     project = project.model_copy(update={"status": ProjectStatus.PRODUCING})
     _save_json(project_dir / "thematic_project.json", project)
 
-    architecture_by_number = {
-        episode.episode_number: episode for episode in episode_architectures
-    }
-    strategy_by_number = {
-        episode.episode_number: episode for episode in strategy.episodes
-    }
+    architecture_by_number = {episode.episode_number: episode for episode in episode_architectures}
+    strategy_by_number = {episode.episode_number: episode for episode in strategy.episodes}
     write_sem = asyncio.Semaphore(max(1, project.config.episode_write_concurrency))
     spoken_sem = asyncio.Semaphore(
         max(
             1,
-            project.config.spoken_delivery_concurrency
-            or project.config.episode_write_concurrency,
+            project.config.spoken_delivery_concurrency or project.config.episode_write_concurrency,
         )
     )
     retained_primitive_lookup = _flatten_synthesis_primitives(synthesis_map)
@@ -752,9 +700,7 @@ async def _produce_from_persisted_scripts(
             ep_dir = project_dir / "episodes" / str(episode_number)
             spine_diagnostics_path = ep_dir / "spine_diagnostics.json"
             spine_diagnostics = (
-                _load_json(spine_diagnostics_path)
-                if spine_diagnostics_path.exists()
-                else {}
+                _load_json(spine_diagnostics_path) if spine_diagnostics_path.exists() else {}
             )
             return await orchestrator._continue_episode_from_script(
                 plan=plan,
@@ -814,13 +760,9 @@ async def resume_from_quality_judge_stage(
         raise RuntimeError(f"Run directory does not exist: {project_dir}")
 
     project = _load_thematic_project(project_dir)
-    corpus = ThematicCorpus.model_validate(
-        _load_json(project_dir / "thematic_corpus.json")
-    )
+    corpus = ThematicCorpus.model_validate(_load_json(project_dir / "thematic_corpus.json"))
     axes_from_file = _load_axes_from_file(project_dir)
-    actor_metadata = ActorMetadata.model_validate(
-        _load_json(project_dir / "actor_metadata.json")
-    )
+    actor_metadata = ActorMetadata.model_validate(_load_json(project_dir / "actor_metadata.json"))
     synthesis_map = SynthesisMap.model_validate(
         _load_json(project_dir / "retained_primitives.json")
     )
@@ -905,9 +847,7 @@ async def resume_from_quality_judge_stage(
         project = project.model_copy(update={"status": ProjectStatus.FAILED})
         _save_json(project_dir / "thematic_project.json", project)
         if isinstance(exc, RuntimeError):
-            raise RuntimeError(
-                f"Resume failed from {stage_label} onward: {exc}"
-            ) from exc
+            raise RuntimeError(f"Resume failed from {stage_label} onward: {exc}") from exc
         raise
 
 
@@ -927,13 +867,9 @@ async def resume_from_synthesis_stage(
     strict_snapshots = _capture_snapshots(project_dir)
 
     project = _load_thematic_project(project_dir)
-    corpus = ThematicCorpus.model_validate(
-        _load_json(project_dir / "thematic_corpus.json")
-    )
+    corpus = ThematicCorpus.model_validate(_load_json(project_dir / "thematic_corpus.json"))
     axes_from_file = _load_axes_from_file(project_dir)
-    actor_metadata = ActorMetadata.model_validate(
-        _load_json(project_dir / "actor_metadata.json")
-    )
+    actor_metadata = ActorMetadata.model_validate(_load_json(project_dir / "actor_metadata.json"))
 
     if _axis_digest(axes_from_file) != _axis_digest(corpus.axes):
         raise RuntimeError(
@@ -976,14 +912,9 @@ async def resume_from_synthesis_stage(
                 actor_metadata=actor_metadata,
             ),
         )
-        actor_metrics["synthesis_primitives"] = synthesis_actor_metrics.get(
-            "primitives", {}
-        )
+        actor_metrics["synthesis_primitives"] = synthesis_actor_metrics.get("primitives", {})
 
-        if (
-            synthesis_primitives.quality_score
-            < project.config.synthesis_quality_threshold
-        ):
+        if synthesis_primitives.quality_score < project.config.synthesis_quality_threshold:
             logger.warning(
                 "Synthesis quality %.2f below threshold %.2f. "
                 "Books may lack thematic overlap for strong synthesis.",
@@ -1054,9 +985,7 @@ async def resume_from_synthesis_stage(
         actor_metrics["episode_architecture"] = planning_state_metrics.get(
             "episode_architecture", {}
         )
-        actor_metrics["episode_planning"] = planning_state_metrics.get(
-            "episode_planning", {}
-        )
+        actor_metrics["episode_planning"] = planning_state_metrics.get("episode_planning", {})
 
         await _produce_from_persisted_plan(
             orchestrator=orchestrator,
@@ -1081,9 +1010,7 @@ async def resume_from_synthesis_stage(
         project = project.model_copy(update={"status": ProjectStatus.FAILED})
         _save_json(project_dir / "thematic_project.json", project)
         if isinstance(exc, RuntimeError):
-            raise RuntimeError(
-                f"Resume failed from {stage_label} onward: {exc}"
-            ) from exc
+            raise RuntimeError(f"Resume failed from {stage_label} onward: {exc}") from exc
         raise
 
 
@@ -1106,21 +1033,15 @@ async def resume_single_episode_from_writing_stage(
 
     project = _load_thematic_project(project_dir)
     original_status = project.status
-    corpus = ThematicCorpus.model_validate(
-        _load_json(project_dir / "thematic_corpus.json")
-    )
+    corpus = ThematicCorpus.model_validate(_load_json(project_dir / "thematic_corpus.json"))
     axes_from_file = _load_axes_from_file(project_dir)
     retained_primitives = SynthesisMap.model_validate(
         _load_json(project_dir / "retained_primitives.json")
     )
-    strategy = NarrativeStrategy.model_validate(
-        _load_json(project_dir / "narrative_strategy.json")
-    )
+    strategy = NarrativeStrategy.model_validate(_load_json(project_dir / "narrative_strategy.json"))
     episode_architectures = _load_episode_architectures(project_dir)
     episode_plans = _load_episode_plans(project_dir)
-    actor_metadata = ActorMetadata.model_validate(
-        _load_json(project_dir / "actor_metadata.json")
-    )
+    actor_metadata = ActorMetadata.model_validate(_load_json(project_dir / "actor_metadata.json"))
 
     if _axis_digest(axes_from_file) != _axis_digest(corpus.axes):
         raise RuntimeError(
@@ -1229,9 +1150,7 @@ async def resume_single_episode_from_writing_stage(
         )
 
         actor_metrics = _load_existing_stage_metrics(project_dir)
-        completed_spoken_scripts = _load_completed_spoken_scripts(
-            project_dir, episode_plans
-        )
+        completed_spoken_scripts = _load_completed_spoken_scripts(project_dir, episode_plans)
         actor_metrics["writing"] = orchestrator._build_writing_actor_metrics(
             project_dir,
             completed_spoken_scripts,
@@ -1273,13 +1192,9 @@ async def resume_from_substrate_function_tagging_stage(
     )
 
     project = _load_thematic_project(project_dir)
-    corpus = ThematicCorpus.model_validate(
-        _load_json(project_dir / "thematic_corpus.json")
-    )
+    corpus = ThematicCorpus.model_validate(_load_json(project_dir / "thematic_corpus.json"))
     axes_from_file = _load_axes_from_file(project_dir)
-    actor_metadata = ActorMetadata.model_validate(
-        _load_json(project_dir / "actor_metadata.json")
-    )
+    actor_metadata = ActorMetadata.model_validate(_load_json(project_dir / "actor_metadata.json"))
     substrate_primitives = SynthesisPrimitivesArtifact.model_validate(
         _load_json(project_dir / "substrate_primitives.json")
     )
@@ -1379,9 +1294,7 @@ async def resume_from_substrate_function_tagging_stage(
         actor_metrics["episode_architecture"] = planning_state_metrics.get(
             "episode_architecture", {}
         )
-        actor_metrics["episode_planning"] = planning_state_metrics.get(
-            "episode_planning", {}
-        )
+        actor_metrics["episode_planning"] = planning_state_metrics.get("episode_planning", {})
 
         await _produce_from_persisted_plan(
             orchestrator=orchestrator,
@@ -1406,9 +1319,7 @@ async def resume_from_substrate_function_tagging_stage(
         project = project.model_copy(update={"status": ProjectStatus.FAILED})
         _save_json(project_dir / "thematic_project.json", project)
         if isinstance(exc, RuntimeError):
-            raise RuntimeError(
-                f"Resume failed from {stage_label} onward: {exc}"
-            ) from exc
+            raise RuntimeError(f"Resume failed from {stage_label} onward: {exc}") from exc
         raise
 
 
@@ -1430,13 +1341,9 @@ async def resume_from_narrative_strategy_stage(
     )
 
     project = _load_thematic_project(project_dir)
-    corpus = ThematicCorpus.model_validate(
-        _load_json(project_dir / "thematic_corpus.json")
-    )
+    corpus = ThematicCorpus.model_validate(_load_json(project_dir / "thematic_corpus.json"))
     axes_from_file = _load_axes_from_file(project_dir)
-    actor_metadata = ActorMetadata.model_validate(
-        _load_json(project_dir / "actor_metadata.json")
-    )
+    actor_metadata = ActorMetadata.model_validate(_load_json(project_dir / "actor_metadata.json"))
     tagged_primitives = PrimitiveFunctionTaggingArtifact.model_validate(
         _load_json(project_dir / "tagged_primitives.json")
     )
@@ -1525,9 +1432,7 @@ async def resume_from_narrative_strategy_stage(
         actor_metrics["episode_architecture"] = planning_state_metrics.get(
             "episode_architecture", {}
         )
-        actor_metrics["episode_planning"] = planning_state_metrics.get(
-            "episode_planning", {}
-        )
+        actor_metrics["episode_planning"] = planning_state_metrics.get("episode_planning", {})
 
         await _produce_from_persisted_plan(
             orchestrator=orchestrator,
@@ -1552,9 +1457,7 @@ async def resume_from_narrative_strategy_stage(
         project = project.model_copy(update={"status": ProjectStatus.FAILED})
         _save_json(project_dir / "thematic_project.json", project)
         if isinstance(exc, RuntimeError):
-            raise RuntimeError(
-                f"Resume failed from {stage_label} onward: {exc}"
-            ) from exc
+            raise RuntimeError(f"Resume failed from {stage_label} onward: {exc}") from exc
         raise
 
 
@@ -1576,13 +1479,9 @@ async def resume_from_scene_discovery_stage(
     )
 
     project = _load_thematic_project(project_dir)
-    corpus = ThematicCorpus.model_validate(
-        _load_json(project_dir / "thematic_corpus.json")
-    )
+    corpus = ThematicCorpus.model_validate(_load_json(project_dir / "thematic_corpus.json"))
     axes_from_file = _load_axes_from_file(project_dir)
-    actor_metadata = ActorMetadata.model_validate(
-        _load_json(project_dir / "actor_metadata.json")
-    )
+    actor_metadata = ActorMetadata.model_validate(_load_json(project_dir / "actor_metadata.json"))
     substrate_primitives = SynthesisPrimitivesArtifact.model_validate(
         _load_json(project_dir / "substrate_primitives.json")
     )
@@ -1685,9 +1584,7 @@ async def resume_from_scene_discovery_stage(
         actor_metrics["episode_architecture"] = planning_state_metrics.get(
             "episode_architecture", {}
         )
-        actor_metrics["episode_planning"] = planning_state_metrics.get(
-            "episode_planning", {}
-        )
+        actor_metrics["episode_planning"] = planning_state_metrics.get("episode_planning", {})
 
         await _produce_from_persisted_plan(
             orchestrator=orchestrator,
@@ -1712,9 +1609,7 @@ async def resume_from_scene_discovery_stage(
         project = project.model_copy(update={"status": ProjectStatus.FAILED})
         _save_json(project_dir / "thematic_project.json", project)
         if isinstance(exc, RuntimeError):
-            raise RuntimeError(
-                f"Resume failed from {stage_label} onward: {exc}"
-            ) from exc
+            raise RuntimeError(f"Resume failed from {stage_label} onward: {exc}") from exc
         raise
 
 
@@ -1737,13 +1632,9 @@ async def resume_from_episode_architecture_stage(
     )
 
     project = _load_thematic_project(project_dir)
-    corpus = ThematicCorpus.model_validate(
-        _load_json(project_dir / "thematic_corpus.json")
-    )
+    corpus = ThematicCorpus.model_validate(_load_json(project_dir / "thematic_corpus.json"))
     axes_from_file = _load_axes_from_file(project_dir)
-    actor_metadata = ActorMetadata.model_validate(
-        _load_json(project_dir / "actor_metadata.json")
-    )
+    actor_metadata = ActorMetadata.model_validate(_load_json(project_dir / "actor_metadata.json"))
     scene_discovery = _load_scene_discovery(project_dir)
     synthesis_map = SynthesisMap.model_validate(
         _load_json(project_dir / "retained_primitives.json")
@@ -1804,9 +1695,7 @@ async def resume_from_episode_architecture_stage(
         actor_metrics["episode_architecture"] = planning_state_metrics.get(
             "episode_architecture", {}
         )
-        actor_metrics["episode_planning"] = planning_state_metrics.get(
-            "episode_planning", {}
-        )
+        actor_metrics["episode_planning"] = planning_state_metrics.get("episode_planning", {})
 
         await _produce_from_persisted_plan(
             orchestrator=orchestrator,
@@ -1831,9 +1720,7 @@ async def resume_from_episode_architecture_stage(
         project = project.model_copy(update={"status": ProjectStatus.FAILED})
         _save_json(project_dir / "thematic_project.json", project)
         if isinstance(exc, RuntimeError):
-            raise RuntimeError(
-                f"Resume failed from {stage_label} onward: {exc}"
-            ) from exc
+            raise RuntimeError(f"Resume failed from {stage_label} onward: {exc}") from exc
         raise
 
 
@@ -1851,22 +1738,16 @@ async def resume_from_episode_planning_stage(
         raise RuntimeError(f"Run directory does not exist: {project_dir}")
 
     project = _load_thematic_project(project_dir)
-    corpus = ThematicCorpus.model_validate(
-        _load_json(project_dir / "thematic_corpus.json")
-    )
+    corpus = ThematicCorpus.model_validate(_load_json(project_dir / "thematic_corpus.json"))
     axes_from_file = _load_axes_from_file(project_dir)
-    actor_metadata = ActorMetadata.model_validate(
-        _load_json(project_dir / "actor_metadata.json")
-    )
+    actor_metadata = ActorMetadata.model_validate(_load_json(project_dir / "actor_metadata.json"))
     scene_discovery = _load_scene_discovery(project_dir)
     synthesis_map = SynthesisMap.model_validate(
         _load_json(project_dir / "retained_primitives.json")
     )
     strategy = _load_narrative_strategy(project_dir)
     episode_architectures = _load_episode_architectures(project_dir)
-    episode_numbers = [
-        architecture.episode_number for architecture in episode_architectures
-    ]
+    episode_numbers = [architecture.episode_number for architecture in episode_architectures]
     strict_snapshots = _capture_snapshots(
         project_dir,
         tracked_files=_tracked_files_with_narrative_states(
@@ -1954,7 +1835,5 @@ async def resume_from_episode_planning_stage(
         project = project.model_copy(update={"status": ProjectStatus.FAILED})
         _save_json(project_dir / "thematic_project.json", project)
         if isinstance(exc, RuntimeError):
-            raise RuntimeError(
-                f"Resume failed from {stage_label} onward: {exc}"
-            ) from exc
+            raise RuntimeError(f"Resume failed from {stage_label} onward: {exc}") from exc
         raise

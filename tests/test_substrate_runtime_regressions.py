@@ -21,9 +21,7 @@ from podcast_agent.utils.actor_metadata import collect_actor_ids_for_primitives
 def _settings_with_artifact_root(tmp_path: Path) -> Settings:
     settings = Settings()
     return settings.model_copy(
-        update={
-            "pipeline": settings.pipeline.model_copy(update={"artifact_root": tmp_path})
-        }
+        update={"pipeline": settings.pipeline.model_copy(update={"artifact_root": tmp_path})}
     )
 
 
@@ -75,26 +73,22 @@ def test_run_multi_book_podcast_marks_failed_on_late_stage_error(
         return {}
 
     async def fake_map(*args, **kwargs):
-        raise AttributeError(
-            "'EventPrimitive' object has no attribute 'primary_actor_ids'"
-        )
+        raise AttributeError("'EventPrimitive' object has no attribute 'primary_actor_ids'")
 
     monkeypatch.setattr(orchestrator, "_ingest_and_index_book", fake_ingest)
     monkeypatch.setattr(orchestrator, "_decompose_theme", fake_decompose)
     monkeypatch.setattr(orchestrator, "_extract_passages", fake_extract)
     monkeypatch.setattr(orchestrator, "_map_synthesis", fake_map)
 
-    with pytest.raises(
-        AttributeError, match="primary_actor_ids"
-    ):
-            asyncio.run(
-                orchestrator.run_multi_book_podcast(
-                    source_paths=["/tmp/book_a.txt", "/tmp/book_b.txt"],
-                    theme="Iranian Revolution",
-                    episode_count=None,
-                    project_id="proj_1",
-                )
+    with pytest.raises(AttributeError, match="primary_actor_ids"):
+        asyncio.run(
+            orchestrator.run_multi_book_podcast(
+                source_paths=["/tmp/book_a.txt", "/tmp/book_b.txt"],
+                theme="Iranian Revolution",
+                episode_count=None,
+                project_id="proj_1",
             )
+        )
 
     project_payload = json.loads(
         (tmp_path / "proj_1" / "thematic_project.json").read_text(encoding="utf-8")

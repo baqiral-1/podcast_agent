@@ -23,9 +23,7 @@ from podcast_agent.pipeline.tic_families import TicHit
 @pytest.fixture
 def thesis_args() -> dict[str, str]:
     return {
-        "spine_episode_answer": (
-            "The throne built its own enemies through its own instruments."
-        ),
+        "spine_episode_answer": ("The throne built its own enemies through its own instruments."),
         "spine_pressure_line": (
             "Every instrument the throne reaches for builds the coalition against it."
         ),
@@ -70,9 +68,7 @@ class TestTicDetection:
                 ]
             return []
 
-        flags = compute_style_audit_lint_flags(
-            sections, **thesis_args, semantic_detector=detector
-        )
+        flags = compute_style_audit_lint_flags(sections, **thesis_args, semantic_detector=detector)
         counts = flags["tic_counts"]
         assert counts["hold_sit"] == 1
         assert counts["in_plain_x"] == 1
@@ -99,9 +95,7 @@ class TestTicDetection:
                 )
             ]
 
-        flags = compute_style_audit_lint_flags(
-            sections, **thesis_args, semantic_detector=detector
-        )
+        flags = compute_style_audit_lint_flags(sections, **thesis_args, semantic_detector=detector)
         locations = flags["tic_locations"]["hold_sit"]
         assert len(locations) == 2
         assert {loc["section_id"] for loc in locations} == {"s01", "s02"}
@@ -320,8 +314,7 @@ class TestFactCoverageDiagnostics:
         prose = _FakeProseSection(
             "s1",
             text=(
-                "Tehran, March 1979. Bazargan went to Qom with a draft ballot. "
-                "The order is real."
+                "Tehran, March 1979. Bazargan went to Qom with a draft ballot. The order is real."
             ),
             citations=[_FakeCitation("p1"), _FakeCitation("p2")],
         )

@@ -58,11 +58,7 @@ def _episode_dirs(project_dir: Path) -> list[Path]:
     if not episodes_dir.exists() or not episodes_dir.is_dir():
         raise RuntimeError(f"Missing episodes directory: {episodes_dir}")
     episode_dirs = sorted(
-        [
-            path
-            for path in episodes_dir.iterdir()
-            if path.is_dir() and path.name.isdigit()
-        ],
+        [path for path in episodes_dir.iterdir() if path.is_dir() and path.name.isdigit()],
         key=lambda path: int(path.name),
     )
     if not episode_dirs:
@@ -181,11 +177,7 @@ def _infer_words_per_minute(manifests: list[RenderManifest]) -> int:
             raise RuntimeError(
                 "Cannot infer words_per_minute: encountered non-positive estimated_duration_seconds"
             )
-        valid = {
-            w
-            for w in candidates
-            if (words * 60.0) / (est + 1) < w <= (words * 60.0) / est
-        }
+        valid = {w for w in candidates if (words * 60.0) / (est + 1) < w <= (words * 60.0) / est}
         candidates = valid
         if not candidates:
             raise RuntimeError(
@@ -218,7 +210,11 @@ def _infer_render_settings(manifests: list[RenderManifest]) -> RenderSettings:
 
     for manifest in manifests:
         framing = next(
-            (segment for segment in manifest.segments if segment.segment_id == "framing_opening_image"),
+            (
+                segment
+                for segment in manifest.segments
+                if segment.segment_id == "framing_opening_image"
+            ),
             None,
         )
         if framing is None:
@@ -247,9 +243,7 @@ def _infer_render_settings(manifests: list[RenderManifest]) -> RenderSettings:
         )
 
     words_per_minute = _infer_words_per_minute(manifests)
-    base_instructions = (
-        next(iter(base_instruction_prefixes)) if base_instruction_prefixes else None
-    )
+    base_instructions = next(iter(base_instruction_prefixes)) if base_instruction_prefixes else None
 
     return RenderSettings(
         voice_id=next(iter(voice_ids)),
@@ -303,9 +297,8 @@ def _build_spoken_section(payload: dict[str, Any], result: Any) -> SpokenSection
                 text=getattr(result, "text", "") or "",
             )
         ],
-        speech_hints=getattr(
-            result, "speech_hints", None
-        ) or SpokenSection.model_fields["speech_hints"].default,
+        speech_hints=getattr(result, "speech_hints", None)
+        or SpokenSection.model_fields["speech_hints"].default,
     )
 
 
@@ -386,13 +379,10 @@ def _parse_args() -> argparse.Namespace:
 def main() -> int:
     args = _parse_args()
     if args.episode_concurrency < 1:
-        raise RuntimeError(
-            f"--episode-concurrency must be >= 1, got {args.episode_concurrency}"
-        )
+        raise RuntimeError(f"--episode-concurrency must be >= 1, got {args.episode_concurrency}")
     if args.spoken_max_retry_attempts < 1:
         raise RuntimeError(
-            "--spoken-max-retry-attempts must be >= 1, "
-            f"got {args.spoken_max_retry_attempts}"
+            f"--spoken-max-retry-attempts must be >= 1, got {args.spoken_max_retry_attempts}"
         )
 
     settings = Settings()
@@ -408,9 +398,7 @@ def main() -> int:
     project_ids = args.project_id if args.project_id else list(DEFAULT_PROJECT_IDS)
     artifact_root = settings.pipeline.artifact_root
     orchestrator = PipelineOrchestrator(settings)
-    orchestrator.spoken_delivery_agent.max_retry_attempts = (
-        args.spoken_max_retry_attempts
-    )
+    orchestrator.spoken_delivery_agent.max_retry_attempts = args.spoken_max_retry_attempts
 
     total_episodes = 0
     for project_index, project_id in enumerate(project_ids, start=1):
@@ -457,9 +445,7 @@ def main() -> int:
 
         orchestrator._bind_run_logger(project_dir)
 
-        episode_dir_by_number = {
-            int(episode_dir.name): episode_dir for episode_dir in episode_dirs
-        }
+        episode_dir_by_number = {int(episode_dir.name): episode_dir for episode_dir in episode_dirs}
 
         def _process_episode(episode_number: int) -> int:
             episode_dir = episode_dir_by_number[episode_number]
@@ -483,11 +469,13 @@ def main() -> int:
                     raise RuntimeError(
                         f"Invalid batch_index in payload for episode {episode_number}: {batch_index!r}"
                     )
-                payload_records.append((
-                    batch_sort_key,
-                    _payload_section_ids(payload),
-                    payload,
-                ))
+                payload_records.append(
+                    (
+                        batch_sort_key,
+                        _payload_section_ids(payload),
+                        payload,
+                    )
+                )
                 candidate_provider = payload.get("tts_provider")
                 if not isinstance(candidate_provider, str) or not candidate_provider.strip():
                     raise RuntimeError(
@@ -502,13 +490,9 @@ def main() -> int:
 
             payload_records.sort(key=lambda record: record[0])
             covered_section_ids = [
-                section_id
-                for _, section_ids, _ in payload_records
-                for section_id in section_ids
+                section_id for _, section_ids, _ in payload_records for section_id in section_ids
             ]
-            expected_section_ids = [
-                section.section_id for section in episode_script.prose_sections
-            ]
+            expected_section_ids = [section.section_id for section in episode_script.prose_sections]
             if covered_section_ids != expected_section_ids:
                 raise RuntimeError(
                     "Spoken delivery payloads do not cover the episode script contiguously for episode "

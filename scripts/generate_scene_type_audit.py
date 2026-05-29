@@ -41,11 +41,7 @@ def main() -> None:
         run_dir,
         script_artifacts=tuple(args.script_artifacts or DEFAULT_SCENE_AUDIT_ARTIFACTS),
     )
-    output_path = (
-        Path(args.output).resolve()
-        if args.output
-        else run_dir / "scene-type-audit.html"
-    )
+    output_path = Path(args.output).resolve() if args.output else run_dir / "scene-type-audit.html"
     output_path.write_text(render_scene_type_audit_html(payload), encoding="utf-8")
 
 

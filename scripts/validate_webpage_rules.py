@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import json
 import re
-import sys
 from pathlib import Path
 
 
@@ -50,7 +49,7 @@ def main() -> int:
     index_html = INDEX_PATH.read_text()
     errors: list[str] = []
 
-    delimiter = rules["theme"]["delimiter"]
+    _delimiter = rules["theme"]["delimiter"]
     exact_count = int(rules["theme"]["exact_count"])
     max_words = int(rules["theme"]["max_words_per_theme"])
     collections: dict[str, dict[str, object]] = rules["collections"]
@@ -81,7 +80,10 @@ def main() -> int:
                 )
 
         expected_count = int(collection["episode_count"])
-        if f"{expected_count} episodes" not in meta_text and f"{_count_word(expected_count)} episodes" not in meta_text:
+        if (
+            f"{expected_count} episodes" not in meta_text
+            and f"{_count_word(expected_count)} episodes" not in meta_text
+        ):
             errors.append(f"metadata missing episode count for {slug}: '{meta_text}'")
         runtime = str(collection["runtime"])
         if runtime not in meta_text:
@@ -92,9 +94,9 @@ def main() -> int:
         errors.append(f"missing homepage scene for slug: {slug}")
 
     required_snippets = [
-        "class=\"scene-grid\"",
-        "class=\"scene-meta reveal d2\"",
-        "class=\"scene-link reveal d3\"",
+        'class="scene-grid"',
+        'class="scene-meta reveal d2"',
+        'class="scene-link reveal d3"',
         "IntersectionObserver",
     ]
     for snippet in required_snippets:
@@ -108,8 +110,8 @@ def main() -> int:
             continue
         content = path.read_text()
         for snippet in (
-            "class=\"split-container\"",
-            "id=\"waveformCanvas\"",
+            'class="split-container"',
+            'id="waveformCanvas"',
             "const EPISODES =",
             "function loadEpisode",
         ):

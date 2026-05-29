@@ -54,10 +54,14 @@ class TestSplitIntoChunks:
 class TestChunkText:
     def test_single_chapter(self):
         raw_text = " ".join(f"word{i}" for i in range(500))
-        chapters = [ChapterInfo(
-            title="Chapter 1", start_index=0, end_index=len(raw_text),
-            word_count=500,
-        )]
+        chapters = [
+            ChapterInfo(
+                title="Chapter 1",
+                start_index=0,
+                end_index=len(raw_text),
+                word_count=500,
+            )
+        ]
         config = ChunkingConfig(max_chunk_words=200, overlap_words=50, min_chunk_words=50)
         chunks = chunk_text(raw_text, "book1", chapters, config)
         assert len(chunks) > 1
@@ -70,13 +74,17 @@ class TestChunkText:
         midpoint = len("Chapter one text here. " * 50)
         chapters = [
             ChapterInfo(
-                chapter_id="ch1", title="Ch 1",
-                start_index=0, end_index=midpoint,
+                chapter_id="ch1",
+                title="Ch 1",
+                start_index=0,
+                end_index=midpoint,
                 word_count=200,
             ),
             ChapterInfo(
-                chapter_id="ch2", title="Ch 2",
-                start_index=midpoint, end_index=len(raw_text),
+                chapter_id="ch2",
+                title="Ch 2",
+                start_index=midpoint,
+                end_index=len(raw_text),
                 word_count=200,
             ),
         ]
@@ -89,11 +97,15 @@ class TestChunkText:
 
     def test_chunk_ids_are_deterministic(self):
         raw_text = "Test text " * 100
-        chapters = [ChapterInfo(
-            chapter_id="ch1", title="Ch 1",
-            start_index=0, end_index=len(raw_text),
-            word_count=100,
-        )]
+        chapters = [
+            ChapterInfo(
+                chapter_id="ch1",
+                title="Ch 1",
+                start_index=0,
+                end_index=len(raw_text),
+                word_count=100,
+            )
+        ]
         config = ChunkingConfig(max_chunk_words=50)
         chunks1 = chunk_text(raw_text, "book1", chapters, config)
         chunks2 = chunk_text(raw_text, "book1", chapters, config)
@@ -102,11 +114,15 @@ class TestChunkText:
 
     def test_chunk_ids_are_project_unique_by_book_slot(self):
         raw_text = "Test text " * 100
-        chapters = [ChapterInfo(
-            chapter_id="ch1", title="Ch 1",
-            start_index=0, end_index=len(raw_text),
-            word_count=100,
-        )]
+        chapters = [
+            ChapterInfo(
+                chapter_id="ch1",
+                title="Ch 1",
+                start_index=0,
+                end_index=len(raw_text),
+                word_count=100,
+            )
+        ]
         config = ChunkingConfig(max_chunk_words=50)
 
         chunks_a = chunk_text(raw_text, "book1", chapters, config, book_slot=0)
@@ -118,11 +134,15 @@ class TestChunkText:
 
     def test_chunk_positions_are_sequential(self):
         raw_text = "Word " * 1000
-        chapters = [ChapterInfo(
-            chapter_id="ch1", title="Ch 1",
-            start_index=0, end_index=len(raw_text),
-            word_count=1000,
-        )]
+        chapters = [
+            ChapterInfo(
+                chapter_id="ch1",
+                title="Ch 1",
+                start_index=0,
+                end_index=len(raw_text),
+                word_count=1000,
+            )
+        ]
         config = ChunkingConfig(max_chunk_words=200, overlap_words=50)
         chunks = chunk_text(raw_text, "book1", chapters, config)
         positions = [c.position for c in chunks]
@@ -130,10 +150,14 @@ class TestChunkText:
 
     def test_empty_chapter_produces_no_chunks(self):
         raw_text = "   "
-        chapters = [ChapterInfo(
-            title="Empty", start_index=0, end_index=3,
-            word_count=0,
-        )]
+        chapters = [
+            ChapterInfo(
+                title="Empty",
+                start_index=0,
+                end_index=3,
+                word_count=0,
+            )
+        ]
         config = ChunkingConfig()
         chunks = chunk_text(raw_text, "book1", chapters, config)
         assert len(chunks) == 0
@@ -143,13 +167,17 @@ class TestChunkText:
         midpoint = len("Chapter one text here. " * 40)
         chapters = [
             ChapterInfo(
-                chapter_id="ch1", title="Ch 1",
-                start_index=0, end_index=midpoint,
+                chapter_id="ch1",
+                title="Ch 1",
+                start_index=0,
+                end_index=midpoint,
                 word_count=200,
             ),
             ChapterInfo(
-                chapter_id="ch1", title="Ch 1 Again",
-                start_index=midpoint, end_index=len(raw_text),
+                chapter_id="ch1",
+                title="Ch 1 Again",
+                start_index=midpoint,
+                end_index=len(raw_text),
                 word_count=200,
             ),
         ]

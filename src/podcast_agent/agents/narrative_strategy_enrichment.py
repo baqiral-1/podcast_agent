@@ -39,9 +39,7 @@ class NarrativeStrategyEnrichmentAgent(Agent):
 
     def build_instructions(self, payload: dict) -> str:
         mode = self._podcast_mode(payload)
-        authorial_target_min, authorial_target_max = (
-            authorial_passage_target_range_for_mode(mode)
-        )
+        authorial_target_min, authorial_target_max = authorial_passage_target_range_for_mode(mode)
         return narrative_strategy_enrichment_instructions(
             authorial_passage_target_min=authorial_target_min,
             authorial_passage_target_max=authorial_target_max,
@@ -92,10 +90,7 @@ class NarrativeStrategyEnrichmentAgent(Agent):
                     )
                 ]
         narrator_profile = result.narrator_profile
-        if (
-            "target_authorial_passages_per_episode"
-            not in narrator_profile.model_fields_set
-        ):
+        if "target_authorial_passages_per_episode" not in narrator_profile.model_fields_set:
             result = result.model_copy(
                 update={
                     "narrator_profile": narrator_profile.model_copy(
@@ -127,9 +122,7 @@ class NarrativeStrategyEnrichmentAgent(Agent):
     ) -> dict[str, Any] | None:
         validation_exc = exc.__cause__
         raw_payload = exc.data.get("raw_payload")
-        if not isinstance(validation_exc, ValidationError) or not isinstance(
-            raw_payload, dict
-        ):
+        if not isinstance(validation_exc, ValidationError) or not isinstance(raw_payload, dict):
             return None
 
         episode_constraints: list[dict[str, Any]] = []
@@ -158,9 +151,7 @@ class NarrativeStrategyEnrichmentAgent(Agent):
                             continue
                         action = str(move.get("action", "") or "").strip()
                         statement = str(move.get("statement", "") or "").strip()
-                        revised_statement = str(
-                            move.get("revised_statement", "") or ""
-                        ).strip()
+                        revised_statement = str(move.get("revised_statement", "") or "").strip()
                         assumption_id = str(move.get("assumption_id", "") or "").strip()
                         if action == "introduce" and not statement:
                             issue = {

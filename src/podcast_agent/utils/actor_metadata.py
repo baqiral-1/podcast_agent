@@ -288,9 +288,7 @@ def sanitize_actor_metadata_payload(
         relationships=relationships,
         unresolved_mentions=unresolved_mentions,
         quality_notes=[
-            str(note)
-            for note in raw.get("quality_notes", []) or []
-            if str(note).strip()
+            str(note) for note in raw.get("quality_notes", []) or [] if str(note).strip()
         ],
     )
     return metadata, metrics
@@ -341,11 +339,7 @@ def _sanitize_narrative_functions(value: Any) -> tuple[list[str], int]:
 
 
 def _strip_unknown_actor_fields(actor_payload: dict[str, Any]) -> tuple[dict[str, Any], int]:
-    filtered = {
-        key: value
-        for key, value in actor_payload.items()
-        if key in _ACTOR_PROFILE_FIELDS
-    }
+    filtered = {key: value for key, value in actor_payload.items() if key in _ACTOR_PROFILE_FIELDS}
     return filtered, len(actor_payload) - len(filtered)
 
 
@@ -431,11 +425,7 @@ def clean_strategy_actor_links(
                 ):
                     metrics["unknown_thread_actor_ids"] += 1
                     member_update["arc_actor_id"] = None
-                members.append(
-                    member.model_copy(update=member_update)
-                    if member_update
-                    else member
-                )
+                members.append(member.model_copy(update=member_update) if member_update else member)
             update["human_thread"] = thread.model_copy(update={"members": members})
         cleaned.append(episode.model_copy(update=update))
     return cleaned, metrics
@@ -478,9 +468,7 @@ def clean_narrative_strategy_actor_links(
         seen_registry_actor_ids.add(item.actor_id)
         preferred_plain_gloss = str(item.preferred_plain_gloss or "").strip()
         if not preferred_plain_gloss:
-            preferred_plain_gloss = _fallback_actor_plain_gloss(
-                actor_by_id[item.actor_id]
-            )
+            preferred_plain_gloss = _fallback_actor_plain_gloss(actor_by_id[item.actor_id])
             metrics["fallback_actor_gloss_count"] += 1
         cleaned_registry.append(
             item.model_copy(update={"preferred_plain_gloss": preferred_plain_gloss})
@@ -507,9 +495,7 @@ def clean_narrative_strategy_actor_links(
         )
         dropped_registry_refs = (
             len(episode.authorial_contract.introduce_actor_ids) - len(introduce_actor_ids)
-        ) + (
-            len(episode.authorial_contract.remind_actor_ids) - len(remind_actor_ids)
-        )
+        ) + (len(episode.authorial_contract.remind_actor_ids) - len(remind_actor_ids))
         if dropped_registry_refs:
             metrics["unknown_actor_registry_refs"] += dropped_registry_refs
         updated_episodes.append(
@@ -611,8 +597,7 @@ def compact_actor_metadata(actor_metadata: ActorMetadata) -> dict[str, Any]:
             for actor in actor_metadata.actors
         ],
         "relationships": [
-            relationship.model_dump(mode="json")
-            for relationship in actor_metadata.relationships
+            relationship.model_dump(mode="json") for relationship in actor_metadata.relationships
         ],
         "quality_notes": actor_metadata.quality_notes,
     }

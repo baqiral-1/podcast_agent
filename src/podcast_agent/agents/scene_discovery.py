@@ -67,9 +67,7 @@ class SceneDiscoveryAgent(Agent):
         next_payload["scene_discovery_feedback"] = feedback
         return next_payload
 
-    def _build_retry_feedback(
-        self, exc: RetryableGenerationError
-    ) -> dict[str, object] | None:
+    def _build_retry_feedback(self, exc: RetryableGenerationError) -> dict[str, object] | None:
         issue = str(exc.data.get("issue", "") or "").strip()
         if issue == "candidate_count_out_of_range":
             candidate_count = int(exc.data.get("candidate_count", 0) or 0)

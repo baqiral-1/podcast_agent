@@ -449,9 +449,7 @@ def build_dataset() -> dict[str, Any]:
                 passage_rows.append(row)
 
     if len(passage_rows) != len(MANUAL_AUDITS):
-        raise ValueError(
-            f"Expected {len(MANUAL_AUDITS)} passages, found {len(passage_rows)}"
-        )
+        raise ValueError(f"Expected {len(MANUAL_AUDITS)} passages, found {len(passage_rows)}")
 
     score_counts = Counter(row["score"] for row in passage_rows)
     load_bearing_count = sum(1 for row in passage_rows if row["score"] == 5)
@@ -519,10 +517,7 @@ def build_dataset() -> dict[str, Any]:
 
 def render_bar(value: float, max_value: float) -> str:
     width = 0 if max_value == 0 else round((value / max_value) * 100, 1)
-    return (
-        '<div class="bar-track"><div class="bar-fill" '
-        f'style="width:{width}%"></div></div>'
-    )
+    return f'<div class="bar-track"><div class="bar-fill" style="width:{width}%"></div></div>'
 
 
 def render_mode_table(mode_summary: list[dict[str, Any]]) -> str:
@@ -563,7 +558,7 @@ def render_passage_card(row: dict[str, Any]) -> str:
         (
             '<p class="excerpt-paragraph">'
             f'<span class="paragraph-index">[{item["index"]}]</span> '
-            f'{html.escape(item["text"])}'
+            f"{html.escape(item['text'])}"
             "</p>"
         )
         for item in row["selected_paragraphs"]
@@ -585,7 +580,7 @@ def render_passage_card(row: dict[str, Any]) -> str:
         f'data-episode="{row["episode_number"]}" data-score="{row["score"]}">'
         '<div class="passage-header">'
         f'<div class="passage-kicker">Episode {row["episode_number"]} / {html.escape(row["section_id"])}</div>'
-        f'<h3>{html.escape(row["passage_id"])}</h3>'
+        f"<h3>{html.escape(row['passage_id'])}</h3>"
         '<div class="chip-row">'
         f'<span class="chip mode-chip"><code>{html.escape(row["mode"])}</code></span>'
         f'<span class="chip">{html.escape(row["work_class"])}</span>'
@@ -598,12 +593,12 @@ def render_passage_card(row: dict[str, Any]) -> str:
         "</div>"
         '<div class="claim-block">'
         '<span class="meta-label">Planned claim</span>'
-        f'<p>{html.escape(row["claim"])}</p>'
+        f"<p>{html.escape(row['claim'])}</p>"
         "</div>"
         f"{quote_html}"
         f"{gloss_html}"
         '<div class="meta-block"><span class="meta-label">Audit verdict</span>'
-        f'<p>{html.escape(row["judgment"])}</p></div>'
+        f"<p>{html.escape(row['judgment'])}</p></div>"
         "<details>"
         "<summary>Show realized prose paragraphs</summary>"
         f"{paragraphs_html}"

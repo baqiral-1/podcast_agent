@@ -338,12 +338,8 @@ def test_scene_discovery_agent_builds_payload_and_uses_mode_range() -> None:
 def test_scene_discovery_agent_builds_richer_mode_specific_instructions() -> None:
     agent = SceneDiscoveryAgent(_mock_llm())
 
-    minified_instructions = agent.build_instructions(
-        {"project": {"podcast_mode": "minified"}}
-    )
-    full_instructions = agent.build_instructions(
-        {"project": {"podcast_mode": "full"}}
-    )
+    minified_instructions = agent.build_instructions({"project": {"podcast_mode": "minified"}})
+    full_instructions = agent.build_instructions({"project": {"podcast_mode": "full"}})
 
     assert "This is a `minified` run." in minified_instructions
     assert "Return 18–26 candidates." in minified_instructions
@@ -425,20 +421,14 @@ def test_episode_architecture_agent_requires_promised_beat_accounting() -> None:
     # omits the promised-beat decisions the strategy episode requires.
     section_stages = ["setup", "advance", "advance", "advance", "answer", "close"]
     section_payloads = [
-        _section("section_01", purpose="opening", stage=section_stages[0]).model_dump(
-            mode="json"
-        )
+        _section("section_01", purpose="opening", stage=section_stages[0]).model_dump(mode="json")
     ]
     section_payloads += [
-        _section(f"section_0{idx}", stage=section_stages[idx - 1]).model_dump(
-            mode="json"
-        )
+        _section(f"section_0{idx}", stage=section_stages[idx - 1]).model_dump(mode="json")
         for idx in range(2, 6)
     ]
     section_payloads.append(
-        _section("section_06", purpose="closing", stage=section_stages[5]).model_dump(
-            mode="json"
-        )
+        _section("section_06", purpose="closing", stage=section_stages[5]).model_dump(mode="json")
     )
     architecture = EpisodeArchitecture.model_validate(
         {
@@ -513,10 +503,7 @@ def test_build_spine_plan_diagnostics_reports_scene_job_budget_fields() -> None:
     assert diagnostics["close_follows_answer"] is True
     # Residue is no longer a scene job; the budget keys are answer/close only.
     assert "residue_scene_present" not in diagnostics
-    assert all(
-        "residue" not in warning
-        for warning in diagnostics["scene_job_budget_warnings"]
-    )
+    assert all("residue" not in warning for warning in diagnostics["scene_job_budget_warnings"])
     assert "scene_budget_close_precedes_answer" not in diagnostics["scene_job_budget_warnings"]
 
 
@@ -609,9 +596,9 @@ def test_narration_hook_gloss_warning_flags_authorial_move_without_gloss():
 
     warnings = _build_narration_hook_gloss_warnings(
         [
-            _prim("p1", "causal_compression", ""),   # violation -> warned
+            _prim("p1", "causal_compression", ""),  # violation -> warned
             _prim("p2", "causal_compression", "Say it plainly."),  # ok
-            _prim("p3", "none", ""),                  # no move -> ok
+            _prim("p3", "none", ""),  # no move -> ok
         ]
     )
 

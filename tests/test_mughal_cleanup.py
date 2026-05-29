@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from podcast_agent.utils.mughal_cleanup import clean_mughal_book_text, clean_mughal_ocr_pages, clean_mughal_pages
+from podcast_agent.utils.mughal_cleanup import (
+    clean_mughal_book_text,
+    clean_mughal_ocr_pages,
+    clean_mughal_pages,
+)
 
 
 def test_clean_mughal_book_text_drops_preface_and_keeps_intro() -> None:
@@ -408,7 +412,10 @@ Masir-i-Alamgiri, by Mbhd. Sagi, Mustaid Khan, composed 1122 H., (Bib. Ind.) 8vo
 
     cleaned = clean_mughal_book_text(raw_text)
 
-    assert cleaned.strip() == "Chapter 1:\nThis is the real chapter body and it should survive in the final output."
+    assert (
+        cleaned.strip()
+        == "Chapter 1:\nThis is the real chapter body and it should survive in the final output."
+    )
 
 
 def test_clean_mughal_book_text_drops_note_heavy_tail_block() -> None:

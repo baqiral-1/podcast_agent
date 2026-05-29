@@ -38,9 +38,7 @@ from podcast_agent.schemas.models import (
 
 
 _SCRIPT_PATH = (
-    Path(__file__).resolve().parents[1]
-    / "scripts"
-    / "resume_from_substrate_function_tagging.py"
+    Path(__file__).resolve().parents[1] / "scripts" / "resume_from_substrate_function_tagging.py"
 )
 _SCRIPT_SPEC = importlib.util.spec_from_file_location(
     "resume_from_substrate_function_tagging",
@@ -216,9 +214,7 @@ def _episode_architecture() -> EpisodeArchitecture:
                 "listener_tension": f"Question {index + 1}?",
                 "section_turn": f"Turn {index + 1}.",
                 "transition_logic": f"Transition {index + 1}.",
-                "depends_on_section_ids": (
-                    [] if index == 0 else [f"section_{index}"]
-                ),
+                "depends_on_section_ids": ([] if index == 0 else [f"section_{index}"]),
                 "sets_up_section_ids": (
                     [] if index == len(purposes) - 1 else [f"section_{index + 2}"]
                 ),
@@ -227,9 +223,7 @@ def _episode_architecture() -> EpisodeArchitecture:
                 ),
             }
         )
-        for index, (purpose, stage) in enumerate(
-            zip(purposes, stages_for_purposes(purposes))
-        )
+        for index, (purpose, stage) in enumerate(zip(purposes, stages_for_purposes(purposes)))
     ]
     return EpisodeArchitecture.model_validate(
         {
@@ -286,9 +280,7 @@ def _build_project_dir(tmp_path: Path) -> Path:
     )
     corpus = ThematicCorpus(project_id="run_1", axes=[axis])
 
-    _write_json(
-        project_dir / "thematic_axes.json", {"axes": [axis.model_dump(mode="json")]}
-    )
+    _write_json(project_dir / "thematic_axes.json", {"axes": [axis.model_dump(mode="json")]})
     _write_json(project_dir / "thematic_project.json", project)
     _write_json(project_dir / "thematic_corpus.json", corpus)
     _write_json(project_dir / "actor_metadata.json", actor_metadata)
@@ -347,9 +339,7 @@ def test_resume_from_substrate_function_tagging_reruns_tagging_and_downstream(
             _write_json(project_dir / "narrative_strategy.json", strategy)
             return strategy, {"unknown_actor_ids": 0}
 
-        async def _discover_scenes(
-            self, **kwargs: Any
-        ) -> SceneDiscoveryArtifact:
+        async def _discover_scenes(self, **kwargs: Any) -> SceneDiscoveryArtifact:
             calls["order"].append("scene_discovery")
             scene_discovery = _build_scene_discovery()
             project_dir = kwargs["project_dir"]
@@ -409,7 +399,6 @@ def test_resume_from_substrate_function_tagging_reruns_tagging_and_downstream(
             if project_dir is not None:
                 _write_json(project_dir / "retained_excerpts.json", artifact)
             return artifact
-
 
         def _resolve_episode_count_from_strategy(
             self,
@@ -474,9 +463,7 @@ def test_resume_from_substrate_function_tagging_reruns_tagging_and_downstream(
             calls["production_config"] = project.config
             calls["host_policy"] = host_policy
             calls["primitive_lookup"] = primitive_lookup
-            return plan.episode_number, SimpleNamespace(
-                episode_number=plan.episode_number
-            )
+            return plan.episode_number, SimpleNamespace(episode_number=plan.episode_number)
 
         def _write_passage_utilization(self, **kwargs: Any) -> None:
             calls["passage_utilization"] = kwargs
@@ -654,7 +641,10 @@ def test_resume_from_substrate_function_tagging_fails_when_upstream_artifact_cha
             primitives: SynthesisPrimitivesArtifact,
             actor_metadata: ActorMetadata,
         ) -> tuple[SynthesisPrimitivesArtifact, dict[str, Any]]:
-            _write_json(project_dir / "substrate_primitives.json", SynthesisPrimitivesArtifact(project_id="run_1", primitives=[]))
+            _write_json(
+                project_dir / "substrate_primitives.json",
+                SynthesisPrimitivesArtifact(project_id="run_1", primitives=[]),
+            )
             tagged = _build_substrate_primitives()
             _write_json(project_dir / "tagged_primitives.json", tagged)
             return tagged, {
@@ -676,9 +666,7 @@ def test_resume_from_substrate_function_tagging_fails_when_upstream_artifact_cha
             _write_json(project_dir / "narrative_strategy.json", strategy)
             return strategy, {"unknown_actor_ids": 0}
 
-        async def _discover_scenes(
-            self, **kwargs: Any
-        ) -> SceneDiscoveryArtifact:
+        async def _discover_scenes(self, **kwargs: Any) -> SceneDiscoveryArtifact:
             scene_discovery = _build_scene_discovery()
             project_dir = kwargs["project_dir"]
             _write_json(project_dir / "scene_discovery.json", scene_discovery)
@@ -732,7 +720,6 @@ def test_resume_from_substrate_function_tagging_fails_when_upstream_artifact_cha
                 _write_json(project_dir / "retained_excerpts.json", artifact)
             return artifact
 
-
         def _resolve_episode_count_from_strategy(
             self,
             project: ThematicProject,
@@ -741,8 +728,9 @@ def test_resume_from_substrate_function_tagging_fails_when_upstream_artifact_cha
             return project.model_copy(update={"episode_count": 1})
 
         async def _plan_series_with_narrative_state(
-            self, **_: Any,
-                ) -> tuple[
+            self,
+            **_: Any,
+        ) -> tuple[
             list[EpisodeArchitecture],
             list[Any],
             dict[int, NarrativeState],
@@ -779,9 +767,7 @@ def test_resume_from_substrate_function_tagging_fails_when_upstream_artifact_cha
             narrative_state_post: NarrativeState | None = None,
             **kwargs: Any,
         ) -> tuple[int, Any]:
-            return plan.episode_number, SimpleNamespace(
-                episode_number=plan.episode_number
-            )
+            return plan.episode_number, SimpleNamespace(episode_number=plan.episode_number)
 
         def _write_passage_utilization(self, **kwargs: Any) -> None:
             return None
@@ -870,9 +856,7 @@ def test_resume_from_substrate_function_tagging_uses_stage_label_in_resume_failu
             _write_json(project_dir / "narrative_strategy.json", strategy)
             return strategy, {"unknown_actor_ids": 0}
 
-        async def _discover_scenes(
-            self, **kwargs: Any
-        ) -> SceneDiscoveryArtifact:
+        async def _discover_scenes(self, **kwargs: Any) -> SceneDiscoveryArtifact:
             scene_discovery = _build_scene_discovery()
             project_dir = kwargs["project_dir"]
             _write_json(project_dir / "scene_discovery.json", scene_discovery)
@@ -925,7 +909,6 @@ def test_resume_from_substrate_function_tagging_uses_stage_label_in_resume_failu
                 _write_json(project_dir / "retained_excerpts.json", artifact)
             return artifact
 
-
         def _resolve_episode_count_from_strategy(
             self,
             project: ThematicProject,
@@ -934,8 +917,9 @@ def test_resume_from_substrate_function_tagging_uses_stage_label_in_resume_failu
             return project.model_copy(update={"episode_count": 1})
 
         async def _plan_series_with_narrative_state(
-            self, **_: Any,
-                ) -> tuple[
+            self,
+            **_: Any,
+        ) -> tuple[
             list[EpisodeArchitecture],
             list[Any],
             dict[int, NarrativeState],

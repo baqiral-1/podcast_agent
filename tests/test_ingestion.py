@@ -6,7 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from podcast_agent.ingestion import read_source_text, normalize_source_text, extract_chapters_from_source
+from podcast_agent.ingestion import (
+    read_source_text,
+    normalize_source_text,
+    extract_chapters_from_source,
+)
 
 
 class TestReadSourceText:
@@ -49,20 +53,14 @@ class TestNormalizeSourceText:
 
 class TestExtractChaptersFromSource:
     def test_extracts_chapters_from_headings(self):
-        raw_text = (
-            "Chapter 1\n\n" + ("word " * 1000) +
-            "\n\nChapter 2\n\n" + ("word " * 1000)
-        )
+        raw_text = "Chapter 1\n\n" + ("word " * 1000) + "\n\nChapter 2\n\n" + ("word " * 1000)
         chapters = extract_chapters_from_source(raw_text)
         assert len(chapters) == 2
         assert chapters[0].title.lower().startswith("chapter 1")
         assert chapters[1].title.lower().startswith("chapter 2")
 
     def test_extracts_markdown_headings(self):
-        raw_text = (
-            "# Chapter 1\n\n" + ("word " * 1000) +
-            "\n\n## Chapter 2\n\n" + ("word " * 1000)
-        )
+        raw_text = "# Chapter 1\n\n" + ("word " * 1000) + "\n\n## Chapter 2\n\n" + ("word " * 1000)
         chapters = extract_chapters_from_source(raw_text)
         assert len(chapters) == 2
 

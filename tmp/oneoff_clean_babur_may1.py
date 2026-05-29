@@ -24,7 +24,11 @@ from podcast_agent.utils.mughal_cleanup import (
 )
 
 
-DEFAULT_SOURCE = Path.home() / "Downloads" / "dokumen.pub_babur-timurid-prince-and-mughal-emperor-1483-1530-9781108470070-9781107107267.pdf"
+DEFAULT_SOURCE = (
+    Path.home()
+    / "Downloads"
+    / "dokumen.pub_babur-timurid-prince-and-mughal-emperor-1483-1530-9781108470070-9781107107267.pdf"
+)
 _CITATION_RE = re.compile(
     r"\b(BN[–-]M|Beveridge|ibid\.?|trans\.|ed\.|vol\.|pp?\.|fs?\.|University Press|"
     r"Cambridge:|Leiden|Boston:|New York:|Princeton:|Kyoto:|London:|Delhi:|"
@@ -35,7 +39,9 @@ _FOOTNOTE_AFTER_WORD_RE = re.compile(r"(?<=[A-Za-z)\]\"'’”])\d{1,3}(?=(?:\s|
 _FOOTNOTE_AFTER_PUNCT_RE = re.compile(r"(?<!\d\.)(?<=[.!?])\d{1,3}(?=(?:\s|$))")
 _FOOTNOTE_AFTER_YEAR_RE = re.compile(r"(?<=\d{4}\.)\d{1,3}(?=(?:\s|$))")
 _VISIBLE_PAGE_NUMBER_RE = re.compile(r"^\d{1,3}$")
-_PART_HEADING_RE = re.compile(r"^part\s+(?:[ivxlcdm]+|\d+|one|two|three|four|five|six)$", re.IGNORECASE)
+_PART_HEADING_RE = re.compile(
+    r"^part\s+(?:[ivxlcdm]+|\d+|one|two|three|four|five|six)$", re.IGNORECASE
+)
 _DISPLAY_TITLE_TOKEN_RE = re.compile(r"^[A-Z0-9][A-Za-z0-9'’\"“”()/:,&.-]*$")
 _EXTRACTION_SCAR_REPLACEMENTS = {
     "GrecoIslamic": "Greco-Islamic",
@@ -73,8 +79,10 @@ def _looks_reference_heavy(lines: list[str]) -> bool:
     marker_count = len(_CITATION_RE.findall(text))
     numbered_lines = sum(1 for line in lines if re.match(r"^\d{1,3}[.)]?\s", line))
     short_lines = sum(1 for line in lines if len(line.split()) <= 16)
-    return marker_count >= 3 or (marker_count >= 2 and numbered_lines >= 2) or (
-        "Endnotes" in text and short_lines >= 2
+    return (
+        marker_count >= 3
+        or (marker_count >= 2 and numbered_lines >= 2)
+        or ("Endnotes" in text and short_lines >= 2)
     )
 
 
@@ -163,11 +171,7 @@ def _looks_like_inline_heading(line: str, next_nonblank: str, repeated_headings:
 def _merge_false_breaks(paragraphs: list[str]) -> list[str]:
     merged: list[str] = []
     for paragraph in paragraphs:
-        if (
-            merged
-            and paragraph
-            and not re.search(r"[.!?][\"'’”\]]?$", merged[-1])
-        ):
+        if merged and paragraph and not re.search(r"[.!?][\"'’”\]]?$", merged[-1]):
             merged[-1] = f"{merged[-1]} {paragraph}".strip()
             continue
         merged.append(paragraph)
@@ -209,7 +213,12 @@ def _collapse_lines(lines: list[str], repeated_headings: set[str]) -> str:
 
 def _render_chapters(bodies: list[str]) -> str:
     chapters = [body for body in bodies if body]
-    return "\n\n".join(f"Chapter {index}:\n{body}" for index, body in enumerate(chapters, start=1)).strip() + "\n"
+    return (
+        "\n\n".join(
+            f"Chapter {index}:\n{body}" for index, body in enumerate(chapters, start=1)
+        ).strip()
+        + "\n"
+    )
 
 
 def _postprocess_extraction_scars(text: str) -> str:
@@ -222,7 +231,10 @@ def main() -> int:
     args = parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
     extracted = extract_mughal_book_source(args.source)
-    raw_pages = [[line.strip() for line in page.splitlines() if line.strip()] for page in extracted.page_texts]
+    raw_pages = [
+        [line.strip() for line in page.splitlines() if line.strip()]
+        for page in extracted.page_texts
+    ]
     prepared_pages = [_prepare_page(page) for page in extracted.page_texts]
     repeated_headings = _build_repeated_headings(prepared_pages)
 

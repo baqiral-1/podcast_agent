@@ -23,4 +23,3 @@ class DeterministicEmbeddings(Embeddings):
 
     def embed_texts(self, texts: Iterable[str]) -> list[list[float]]:
         return [embed_text(text, dimensions=self.dimensions) for text in texts]
-

@@ -22,7 +22,12 @@ def _split_chapters(text: str) -> list[str]:
 
 
 def _render_chapters(bodies: list[str]) -> str:
-    return "\n\n".join(f"Chapter {index}\n\n{body.strip()}" for index, body in enumerate(bodies, start=1)).strip() + "\n"
+    return (
+        "\n\n".join(
+            f"Chapter {index}\n\n{body.strip()}" for index, body in enumerate(bodies, start=1)
+        ).strip()
+        + "\n"
+    )
 
 
 def _replace_prefix(body: str, old: str, new: str) -> str:
@@ -95,7 +100,7 @@ def _normalize_opening_spacing(body: str) -> str:
     head = re.sub(r'([A-Za-z0-9,.;!?])\s+(["”])', r"\1\2", head)
     head = re.sub(r'([.!?]["”])(?=[A-Z])', r"\1 ", head)
     head = re.sub(r'([,;:])(?=[A-Za-z"])', r"\1 ", head)
-    head = re.sub(r'(?<=\d)(A\.M\.|P\.M\.)', r" \1", head)
+    head = re.sub(r"(?<=\d)(A\.M\.|P\.M\.)", r" \1", head)
     head = re.sub(r"\b(\d{4}) s\b", r"\1s", head)
     head = re.sub(r"\s{2,}", " ", head)
     return head + tail
@@ -234,8 +239,14 @@ def _fix_plan(text: str) -> str:
             "IN MARCH , Tenet met secretly with two individuals who would be critical to covert action insid INMARCH, Tenet met secretly",
             "IN MARCH, Tenet met secretly with two individuals who would be critical to covert action inside Iraq:",
         ),
-        11: ('1 2 "S TOP BOTHERING ME!"the president said', '"STOP BOTHERING ME!" the president said'),
-        12: ("1 3 W ITH THE PRESIDENTIALfinding authorizing", "WITH THE PRESIDENTIAL finding authorizing"),
+        11: (
+            '1 2 "S TOP BOTHERING ME!"the president said',
+            '"STOP BOTHERING ME!" the president said',
+        ),
+        12: (
+            "1 3 W ITH THE PRESIDENTIALfinding authorizing",
+            "WITH THE PRESIDENTIAL finding authorizing",
+        ),
         13: (
             "AT 4:30 P.M. on Monday, August 5, Franks, carrying 110 slides of Top Secret/Polo Step war planni A T 4:30 P.M. on Monday, August 5,",
             "AT 4:30 P.M. on Monday, August 5, Franks, carrying 110 slides of Top Secret/Polo Step war planning,",
@@ -268,7 +279,10 @@ def _fix_plan(text: str) -> str:
         27: ("2 8 A T A PRIVATE MEETINGwith", "AT A PRIVATE MEETING with"),
         28: ("2 9 O NWEDNESDAY,February 5,", "ON WEDNESDAY, February 5,"),
         29: ("3 0 F EBRUARY 15HAD BEEN Apotential", "FEBRUARY 15 HAD BEEN A potential"),
-        30: ('3 1 "L OOKS REALLY GOOD. This is going to happen,"Saul', '"LOOKS REALLY GOOD. This is going to happen," Saul'),
+        30: (
+            '3 1 "L OOKS REALLY GOOD. This is going to happen,"Saul',
+            '"LOOKS REALLY GOOD. This is going to happen," Saul',
+        ),
         31: ("3 2 W HEN THE PRESIDENTmet", "WHEN THE PRESIDENT met"),
         32: ("3 3 A NDYCARD HAD SUGGESTEDthat", "ANDY CARD HAD SUGGESTED that"),
         33: ("3 4 I NWASHINGTON THE NEXT DAY,Monday,", "IN WASHINGTON THE NEXT DAY, Monday,"),
@@ -350,8 +364,12 @@ def _fix_pity(text: str) -> str:
         count=1,
         flags=re.DOTALL,
     )
-    bodies[6] = _replace_start_regex(bodies[6], r"^.*?The dark brown wooden door", "The dark brown wooden door")
-    bodies[7] = _replace_start_regex(bodies[7], r"^.*?The young man wanted to help us\.", "The young man wanted to help us.")
+    bodies[6] = _replace_start_regex(
+        bodies[6], r"^.*?The dark brown wooden door", "The dark brown wooden door"
+    )
+    bodies[7] = _replace_start_regex(
+        bodies[7], r"^.*?The young man wanted to help us\.", "The young man wanted to help us."
+    )
     bodies[9] = _replace_prefix(bodies[9], "As Sar", "As Safir")
     bodies[10] = _replace_before_anchor(
         bodies[10],
@@ -363,8 +381,16 @@ def _fix_pity(text: str) -> str:
         r"^.*?The week after the massacre at Sabra and Chatila,",
         "The week after the massacre at Sabra and Chatila,",
     )
-    bodies[12] = _replace_start_regex(bodies[12], r"^.*?The winter rains came early in 1982\.", "The winter rains came early in 1982.")
-    bodies[13] = _replace_start_regex(bodies[13], r"^.*?The two Phalangists were frightened\.", "The two Phalangists were frightened.")
+    bodies[12] = _replace_start_regex(
+        bodies[12],
+        r"^.*?The winter rains came early in 1982\.",
+        "The winter rains came early in 1982.",
+    )
+    bodies[13] = _replace_start_regex(
+        bodies[13],
+        r"^.*?The two Phalangists were frightened\.",
+        "The two Phalangists were frightened.",
+    )
     bodies[14] = _replace_start_regex(
         bodies[14],
         r"^.*?The pariah of Lebanon became the honoured guest of Syria in just 24 hours\.",
@@ -375,7 +401,9 @@ def _fix_pity(text: str) -> str:
         "Our guards had seen the piece on the early news",
         "Our guards had seen the piece on the early news",
     )
-    bodies[16] = _replace_start_regex(bodies[16], r"^.*?IN early December 1991", "In early December 1991")
+    bodies[16] = _replace_start_regex(
+        bodies[16], r"^.*?IN early December 1991", "In early December 1991"
+    )
     bodies[4] = _replace_prefix(bodies[4], "May 1980 On 23 March 1978,", "On 23 March 1978,")
     bodies = [_normalize_opening_spacing(body) for body in bodies]
     return _render_chapters(bodies)
@@ -424,7 +452,9 @@ def _fix_imperial(text: str) -> str:
         "while most CPA staffers were still eating breakfast.",
         "OUR MOTORCADE ROARED AWAY from the Republican Palace while most CPA staffers were still eating breakfast.",
     )
-    bodies[2] = _replace_prefix(bodies[2], "IHAD MY FIRST LOOK INSIDE", "I HAD MY FIRST LOOK INSIDE")
+    bodies[2] = _replace_prefix(
+        bodies[2], "IHAD MY FIRST LOOK INSIDE", "I HAD MY FIRST LOOK INSIDE"
+    )
     bodies[4] = _replace_prefix(bodies[4], "AFEW HOURS AFTER", "A FEW HOURS AFTER")
     bodies[12] = _replace_prefix(bodies[12], "EVERY TIME IWALKED", "EVERY TIME I WALKED")
     bodies[14] = _replace_prefix(bodies[14], "\"IDON'TKNOW", "\"I DON'T KNOW")
@@ -440,7 +470,9 @@ def _fix_imperial(text: str) -> str:
 
 def _fix_one_palestine(text: str) -> str:
     bodies = _split_chapters(text)
-    bodies[11] = _replace_prefix(bodies[11], "1 1 1. Some of the immigrants", "Some of the immigrants")
+    bodies[11] = _replace_prefix(
+        bodies[11], "1 1 1. Some of the immigrants", "Some of the immigrants"
+    )
     bodies[18] = bodies[18].replace("ACambridge graduate", "A Cambridge graduate", 1)
     bodies = [_normalize_opening_spacing(body) for body in bodies]
     return _render_chapters(bodies)
@@ -460,7 +492,9 @@ def _fix_india_wins(text: str) -> str:
 
 def _fix_indian_mutiny(text: str) -> str:
     bodies = _split_chapters(text)
-    bodies[3] = _replace_start_regex(bodies[3], r"^.*?Historians have tended to agree\.", "Historians have tended to agree.")
+    bodies[3] = _replace_start_regex(
+        bodies[3], r"^.*?Historians have tended to agree\.", "Historians have tended to agree."
+    )
     bodies[6] = _replace_prefix(bodies[6], "British Army led,", "Where the British Army led,")
     bodies[13] = _replace_before_anchor(
         bodies[13],
@@ -484,7 +518,10 @@ def _fix_iron_wall(text: str) -> str:
         1: ("T HE STATE OF ISRAEL", "THE STATE OF ISRAEL"),
         6: ("L EVI ESHKOL", "LEVI ESHKOL"),
         9: ("THE LIKUD'SVICTORY IN", "THE LIKUD'S VICTORY IN"),
-        11: ("1 1 POLITICAL PARALYSIS 1984-1988 EMBROILMENT IN THE LEBANESE", "EMBROILMENT IN THE LEBANESE"),
+        11: (
+            "1 1 POLITICAL PARALYSIS 1984-1988 EMBROILMENT IN THE LEBANESE",
+            "EMBROILMENT IN THE LEBANESE",
+        ),
         13: ("W HEN THE LABOR PARTY", "WHEN THE LABOR PARTY"),
         18: ("I N THE QUARTER OF", "IN THE QUARTER OF"),
         19: ("L ESS THAN A MONTH", "LESS THAN A MONTH"),

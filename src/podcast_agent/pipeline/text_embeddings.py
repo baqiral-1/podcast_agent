@@ -65,18 +65,12 @@ class TextEmbedder:
         return float(np.dot(a, b) / denom)
 
     @staticmethod
-    def cosine_matrix(
-        queries: np.ndarray, references: np.ndarray
-    ) -> np.ndarray:
+    def cosine_matrix(queries: np.ndarray, references: np.ndarray) -> np.ndarray:
         """Pairwise cosine similarity. Returns ``(len(queries), len(references))``."""
         if queries.size == 0 or references.size == 0:
             return np.zeros((queries.shape[0], references.shape[0]), dtype=np.float32)
-        q_norm = queries / np.clip(
-            np.linalg.norm(queries, axis=1, keepdims=True), 1e-9, None
-        )
-        r_norm = references / np.clip(
-            np.linalg.norm(references, axis=1, keepdims=True), 1e-9, None
-        )
+        q_norm = queries / np.clip(np.linalg.norm(queries, axis=1, keepdims=True), 1e-9, None)
+        r_norm = references / np.clip(np.linalg.norm(references, axis=1, keepdims=True), 1e-9, None)
         return q_norm @ r_norm.T
 
 

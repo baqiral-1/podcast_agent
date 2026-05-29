@@ -197,7 +197,13 @@ def test_build_audio_style_report_script_writes_outputs(tmp_path: Path) -> None:
 
 def test_piecewise_calibration_hits_anchor_points() -> None:
     for raw_value, calibrated_value in zip(AFS_RAW_ANCHORS, AFS_CALIBRATED_ANCHORS, strict=True):
-        assert _piecewise_calibrate(raw_value, AFS_RAW_ANCHORS, AFS_CALIBRATED_ANCHORS) == calibrated_value
+        assert (
+            _piecewise_calibrate(raw_value, AFS_RAW_ANCHORS, AFS_CALIBRATED_ANCHORS)
+            == calibrated_value
+        )
 
     for raw_value, calibrated_value in zip(TSS_RAW_ANCHORS, TSS_CALIBRATED_ANCHORS, strict=True):
-        assert _piecewise_calibrate(raw_value, TSS_RAW_ANCHORS, TSS_CALIBRATED_ANCHORS) == calibrated_value
+        assert (
+            _piecewise_calibrate(raw_value, TSS_RAW_ANCHORS, TSS_CALIBRATED_ANCHORS)
+            == calibrated_value
+        )

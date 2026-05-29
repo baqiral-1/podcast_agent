@@ -16,7 +16,9 @@ def _parse_counts(raw: str) -> tuple[int, ...]:
     try:
         values = tuple(int(part.strip()) for part in raw.split(",") if part.strip())
     except ValueError as exc:  # pragma: no cover - argparse surfaces the message
-        raise argparse.ArgumentTypeError("counts must be a comma-separated list of integers") from exc
+        raise argparse.ArgumentTypeError(
+            "counts must be a comma-separated list of integers"
+        ) from exc
     if not values:
         raise argparse.ArgumentTypeError("counts must include at least one integer")
     return values

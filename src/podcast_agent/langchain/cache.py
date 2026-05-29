@@ -39,4 +39,3 @@ def configure_llm_cache(config: LangChainConfig) -> None:
         return
     cache = _build_cache(config)
     set_llm_cache(cache)
-

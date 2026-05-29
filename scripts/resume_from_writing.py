@@ -101,17 +101,11 @@ def _load_episode_architectures(project_dir: Path) -> list[EpisodeArchitecture]:
     payload = _load_json(project_dir / "episode_architectures.json")
     episodes_payload = payload.get("episodes")
     if not isinstance(episodes_payload, list) or not episodes_payload:
-        raise RuntimeError(
-            "episode_architectures.json must contain a non-empty episodes list"
-        )
-    architectures = [
-        EpisodeArchitecture.model_validate(item) for item in episodes_payload
-    ]
+        raise RuntimeError("episode_architectures.json must contain a non-empty episodes list")
+    architectures = [EpisodeArchitecture.model_validate(item) for item in episodes_payload]
     episode_numbers = [episode.episode_number for episode in architectures]
     if len(episode_numbers) != len(set(episode_numbers)):
-        raise RuntimeError(
-            "episode_architectures.json contains duplicate episode_number values"
-        )
+        raise RuntimeError("episode_architectures.json contains duplicate episode_number values")
     return sorted(architectures, key=lambda episode: episode.episode_number)
 
 
@@ -135,26 +129,16 @@ async def _resume_from_writing(project_id: str) -> None:
 
     strict_snapshots = _capture_snapshots(project_dir)
 
-    project = ThematicProject.model_validate(
-        _load_json(project_dir / "thematic_project.json")
-    )
-    corpus = ThematicCorpus.model_validate(
-        _load_json(project_dir / "thematic_corpus.json")
-    )
+    project = ThematicProject.model_validate(_load_json(project_dir / "thematic_project.json"))
+    corpus = ThematicCorpus.model_validate(_load_json(project_dir / "thematic_corpus.json"))
     _ = SynthesisPrimitivesArtifact.model_validate(
         _load_json(project_dir / "synthesis_primitives.json")
     )
-    synthesis_map = SynthesisMap.model_validate(
-        _load_json(project_dir / "synthesis_map.json")
-    )
-    strategy = NarrativeStrategy.model_validate(
-        _load_json(project_dir / "narrative_strategy.json")
-    )
+    synthesis_map = SynthesisMap.model_validate(_load_json(project_dir / "synthesis_map.json"))
+    strategy = NarrativeStrategy.model_validate(_load_json(project_dir / "narrative_strategy.json"))
     episode_architectures = _load_episode_architectures(project_dir)
     episode_plans = _load_episode_plans(project_dir)
-    actor_metadata = ActorMetadata.model_validate(
-        _load_json(project_dir / "actor_metadata.json")
-    )
+    actor_metadata = ActorMetadata.model_validate(_load_json(project_dir / "actor_metadata.json"))
 
     orchestrator._bind_run_logger(project_dir)
 
@@ -176,12 +160,8 @@ async def _resume_from_writing(project_id: str) -> None:
     )
     _save_json(project_dir / "thematic_project.json", project)
 
-    architecture_by_number = {
-        episode.episode_number: episode for episode in episode_architectures
-    }
-    strategy_by_number = {
-        episode.episode_number: episode for episode in strategy.episodes
-    }
+    architecture_by_number = {episode.episode_number: episode for episode in episode_architectures}
+    strategy_by_number = {episode.episode_number: episode for episode in strategy.episodes}
     try:
         sem = asyncio.Semaphore(max(1, project.config.episode_write_concurrency))
         spoken_sem = asyncio.Semaphore(
@@ -220,9 +200,7 @@ async def _resume_from_writing(project_id: str) -> None:
             spoken_scripts.append(result)
         spoken_scripts.sort(key=lambda item: item[0])
 
-        completed_episode_numbers = [
-            episode_number for episode_number, _ in spoken_scripts
-        ]
+        completed_episode_numbers = [episode_number for episode_number, _ in spoken_scripts]
         expected_episode_numbers = [plan.episode_number for plan in episode_plans]
         if completed_episode_numbers != expected_episode_numbers:
             production_errors.append(
@@ -277,9 +255,7 @@ async def _resume_from_writing(project_id: str) -> None:
 
         if production_errors or audio_errors:
             details = production_errors + audio_errors
-            raise RuntimeError(
-                "Resume failed from writing onward: " + "; ".join(details)
-            )
+            raise RuntimeError("Resume failed from writing onward: " + "; ".join(details))
 
         _verify_snapshots_unchanged(project_dir=project_dir, before=strict_snapshots)
 

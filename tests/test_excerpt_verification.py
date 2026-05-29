@@ -33,17 +33,13 @@ class TestVerifyExcerpt:
         # Source has "They sold our independence to the foreign powers"; the
         # excerpt has lightly retranslated word order ("They have sold...").
         excerpt = _record("They have sold our independence to foreign powers")
-        passages = {
-            "p1": "He told the room: They sold our independence to the foreign powers."
-        }
+        passages = {"p1": "He told the room: They sold our independence to the foreign powers."}
         result = verify_excerpt(excerpt, passages)
         assert result.verbatim_excerpt == ""
         assert result.verbatim_match_ratio < 0.30
 
     def test_fully_fabricated_dropped(self) -> None:
-        excerpt = _record(
-            "This sentence is entirely invented and does not appear anywhere."
-        )
+        excerpt = _record("This sentence is entirely invented and does not appear anywhere.")
         passages = {"p1": "Some unrelated passage about a different topic."}
         result = verify_excerpt(excerpt, passages)
         assert result.verbatim_excerpt == ""
@@ -60,8 +56,7 @@ class TestVerifyExcerpt:
 
     def test_ellipsis_compression_tolerated(self) -> None:
         excerpt = _record(
-            "They sold our independence to the foreign powers … "
-            "and that moment was deliberate."
+            "They sold our independence to the foreign powers … and that moment was deliberate."
         )
         passages = {
             "p1": (
@@ -76,7 +71,9 @@ class TestVerifyExcerpt:
 
     def test_curly_quotes_normalized(self) -> None:
         excerpt = _record("‘They sold our independence to the foreign powers’")
-        passages = {"p1": "He told them: 'They sold our independence to the foreign powers' that day."}
+        passages = {
+            "p1": "He told them: 'They sold our independence to the foreign powers' that day."
+        }
         result = verify_excerpt(excerpt, passages)
         assert result.verbatim_excerpt == excerpt.verbatim_excerpt
         assert result.verbatim_match_ratio >= 0.30

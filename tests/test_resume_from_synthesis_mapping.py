@@ -33,9 +33,7 @@ from podcast_agent.schemas.models import (
 )
 
 
-_SCRIPT_PATH = (
-    Path(__file__).resolve().parents[1] / "scripts" / "resume_from_synthesis_mapping.py"
-)
+_SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "resume_from_synthesis_mapping.py"
 _SCRIPT_SPEC = importlib.util.spec_from_file_location(
     "resume_from_synthesis_mapping",
     _SCRIPT_PATH,
@@ -95,9 +93,7 @@ def _build_project_dir(tmp_path: Path) -> Path:
     )
     corpus = ThematicCorpus(project_id="run_1", axes=[axis])
 
-    _write_json(
-        project_dir / "thematic_axes.json", {"axes": [axis.model_dump(mode="json")]}
-    )
+    _write_json(project_dir / "thematic_axes.json", {"axes": [axis.model_dump(mode="json")]})
     _write_json(project_dir / "thematic_project.json", project)
     _write_json(project_dir / "thematic_corpus.json", corpus)
     _write_json(project_dir / "actor_metadata.json", actor_metadata)
@@ -249,9 +245,7 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
             _write_json(project_dir / "narrative_strategy.json", strategy)
             return strategy, {"unknown_actor_ids": 0}
 
-        async def _discover_scenes(
-            self, **_: Any
-        ) -> SceneDiscoveryArtifact:
+        async def _discover_scenes(self, **_: Any) -> SceneDiscoveryArtifact:
             calls["order"].append("scene_discovery")
             scene_discovery = _build_scene_discovery()
             _write_json(project_dir / "scene_discovery.json", scene_discovery)
@@ -318,7 +312,6 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
                 _write_json(project_dir / "retained_excerpts.json", artifact)
             return artifact
 
-
         def _resolve_episode_count_from_strategy(
             self,
             project: ThematicProject,
@@ -348,7 +341,9 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
                     for section in [
                         {
                             "section_id": "section_01",
-                            "section_progression": make_section_progression("setup", label="section_01"),
+                            "section_progression": make_section_progression(
+                                "setup", label="section_01"
+                            ),
                             "purpose": "opening",
                             "approx_runtime_minutes": 10.0,
                             "primitive_ids": ["primitive_1"],
@@ -369,7 +364,9 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
                         },
                         {
                             "section_id": "section_02",
-                            "section_progression": make_section_progression("advance", label="section_02"),
+                            "section_progression": make_section_progression(
+                                "advance", label="section_02"
+                            ),
                             "purpose": "setup",
                             "approx_runtime_minutes": 10.0,
                             "primitive_ids": ["primitive_1"],
@@ -390,7 +387,9 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
                         },
                         {
                             "section_id": "section_03",
-                            "section_progression": make_section_progression("advance", label="section_03"),
+                            "section_progression": make_section_progression(
+                                "advance", label="section_03"
+                            ),
                             "purpose": "turn",
                             "approx_runtime_minutes": 12.5,
                             "primitive_ids": ["primitive_1"],
@@ -411,7 +410,9 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
                         },
                         {
                             "section_id": "section_04",
-                            "section_progression": make_section_progression("advance", label="section_04"),
+                            "section_progression": make_section_progression(
+                                "advance", label="section_04"
+                            ),
                             "purpose": "setup",
                             "approx_runtime_minutes": 12.5,
                             "primitive_ids": ["primitive_1"],
@@ -432,7 +433,9 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
                         },
                         {
                             "section_id": "section_05",
-                            "section_progression": make_section_progression("advance", label="section_05"),
+                            "section_progression": make_section_progression(
+                                "advance", label="section_05"
+                            ),
                             "purpose": "setup",
                             "approx_runtime_minutes": 10.0,
                             "primitive_ids": ["primitive_1"],
@@ -453,7 +456,9 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
                         },
                         {
                             "section_id": "section_06",
-                            "section_progression": make_section_progression("advance", label="section_06"),
+                            "section_progression": make_section_progression(
+                                "advance", label="section_06"
+                            ),
                             "purpose": "setup",
                             "approx_runtime_minutes": 10.0,
                             "primitive_ids": ["primitive_1"],
@@ -474,7 +479,9 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
                         },
                         {
                             "section_id": "section_07",
-                            "section_progression": make_section_progression("advance", label="section_07"),
+                            "section_progression": make_section_progression(
+                                "advance", label="section_07"
+                            ),
                             "purpose": "setup",
                             "approx_runtime_minutes": 7.5,
                             "primitive_ids": ["primitive_1"],
@@ -495,7 +502,9 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
                         },
                         {
                             "section_id": "section_08",
-                            "section_progression": make_section_progression("answer", label="section_08"),
+                            "section_progression": make_section_progression(
+                                "answer", label="section_08"
+                            ),
                             "purpose": "setup",
                             "approx_runtime_minutes": 7.5,
                             "primitive_ids": ["primitive_1"],
@@ -516,7 +525,9 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
                         },
                         {
                             "section_id": "section_09",
-                            "section_progression": make_section_progression("close", label="section_09"),
+                            "section_progression": make_section_progression(
+                                "close", label="section_09"
+                            ),
                             "purpose": "closing",
                             "approx_runtime_minutes": 10.0,
                             "primitive_ids": ["primitive_1"],
@@ -586,9 +597,7 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
             calls["production_architecture"] = architecture
             calls["host_policy"] = host_policy
             calls["primitive_lookup"] = primitive_lookup
-            return plan.episode_number, SimpleNamespace(
-                episode_number=plan.episode_number
-            )
+            return plan.episode_number, SimpleNamespace(episode_number=plan.episode_number)
 
         def _write_passage_utilization(self, **kwargs: Any) -> None:
             calls["passage_utilization"] = kwargs
@@ -803,9 +812,7 @@ def test_resume_from_synthesis_mapping_fails_when_upstream_artifact_changes(
             _write_json(project_dir / "narrative_strategy.json", strategy)
             return strategy, {"unknown_actor_ids": 0}
 
-        async def _discover_scenes(
-            self, **_: Any
-        ) -> SceneDiscoveryArtifact:
+        async def _discover_scenes(self, **_: Any) -> SceneDiscoveryArtifact:
             scene_discovery = _build_scene_discovery()
             _write_json(project_dir / "scene_discovery.json", scene_discovery)
             return scene_discovery
@@ -866,7 +873,6 @@ def test_resume_from_synthesis_mapping_fails_when_upstream_artifact_changes(
                 _write_json(project_dir / "retained_excerpts.json", artifact)
             return artifact
 
-
         def _resolve_episode_count_from_strategy(
             self,
             project: ThematicProject,
@@ -875,8 +881,9 @@ def test_resume_from_synthesis_mapping_fails_when_upstream_artifact_changes(
             return project.model_copy(update={"episode_count": 1})
 
         async def _plan_series_with_narrative_state(
-            self, **_: Any,
-                ) -> tuple[
+            self,
+            **_: Any,
+        ) -> tuple[
             list[EpisodeArchitecture],
             list[Any],
             dict[int, NarrativeState],
@@ -925,9 +932,7 @@ def test_resume_from_synthesis_mapping_fails_when_upstream_artifact_changes(
             narrative_state_post: NarrativeState | None = None,
             **kwargs: Any,
         ) -> tuple[int, Any]:
-            return plan.episode_number, SimpleNamespace(
-                episode_number=plan.episode_number
-            )
+            return plan.episode_number, SimpleNamespace(episode_number=plan.episode_number)
 
         def _write_passage_utilization(self, **kwargs: Any) -> None:
             return None

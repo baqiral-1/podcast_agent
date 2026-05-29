@@ -68,16 +68,10 @@ class LLMConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     llm_provider: str = Field(
-        default_factory=lambda: (
-            os.getenv("LLM_PROVIDER") or os.getenv("LLM_TYPE") or "anthropic"
-        )
+        default_factory=lambda: os.getenv("LLM_PROVIDER") or os.getenv("LLM_TYPE") or "anthropic"
     )
-    provider: str = Field(
-        default_factory=lambda: os.getenv("LLM_PROVIDER", "anthropic")
-    )
-    model_name: str = Field(
-        default_factory=lambda: os.getenv("LLM_MODEL_NAME", "claude-opus-4-8")
-    )
+    provider: str = Field(default_factory=lambda: os.getenv("LLM_PROVIDER", "anthropic"))
+    model_name: str = Field(default_factory=lambda: os.getenv("LLM_MODEL_NAME", "claude-opus-4-8"))
     model_overrides: dict[str, str] = Field(
         default_factory=dict,
         description="Per-schema model overrides keyed by schema_name.",
@@ -102,17 +96,11 @@ class LLMConfig(BaseModel):
     )
     api_key: str | None = Field(default_factory=lambda: os.getenv("OPENAI_API_KEY"))
     base_url: str = Field(
-        default_factory=lambda: os.getenv(
-            "OPENAI_BASE_URL", "https://api.openai.com/v1"
-        ),
+        default_factory=lambda: os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
     )
-    anthropic_api_key: str | None = Field(
-        default_factory=lambda: os.getenv("ANTHROPIC_API_KEY")
-    )
+    anthropic_api_key: str | None = Field(default_factory=lambda: os.getenv("ANTHROPIC_API_KEY"))
     anthropic_base_url: str = Field(
-        default_factory=lambda: os.getenv(
-            "ANTHROPIC_BASE_URL", "https://api.anthropic.com"
-        ),
+        default_factory=lambda: os.getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com"),
     )
     anthropic_max_tokens: int = Field(
         default_factory=lambda: int(os.getenv("ANTHROPIC_MAX_TOKENS", "100000")), ge=1
@@ -127,9 +115,7 @@ class LLMConfig(BaseModel):
         default_factory=lambda: _env_bool("ANTHROPIC_PROMPT_CACHING_ENABLED", True)
     )
     anthropic_prompt_caching_auto_fallback: bool = Field(
-        default_factory=lambda: _env_bool(
-            "ANTHROPIC_PROMPT_CACHING_AUTO_FALLBACK", True
-        )
+        default_factory=lambda: _env_bool("ANTHROPIC_PROMPT_CACHING_AUTO_FALLBACK", True)
     )
     timeout_seconds: float = Field(default=600.0, gt=0.0)
     timeout_seconds_overrides: dict[str, float] = Field(
@@ -565,15 +551,11 @@ class PipelineRuntimeConfig(BaseModel):
         if self.synthesis_axis_max < self.synthesis_axis_min:
             raise ValueError("synthesis_axis_max must be >= synthesis_axis_min")
         if self.synthesis_axis_floor_max < self.synthesis_axis_floor_min:
-            raise ValueError(
-                "synthesis_axis_floor_max must be >= synthesis_axis_floor_min"
-            )
+            raise ValueError("synthesis_axis_floor_max must be >= synthesis_axis_floor_min")
         if self.planning_axis_max < self.planning_axis_min:
             raise ValueError("planning_axis_max must be >= planning_axis_min")
         if self.synthesis_trim_top_fraction + self.synthesis_trim_mid_fraction > 1.0:
-            raise ValueError(
-                "synthesis trim top and mid fractions must sum to <= 1.0"
-            )
+            raise ValueError("synthesis trim top and mid fractions must sum to <= 1.0")
         if self.architecture_section_target_max < self.architecture_section_target_min:
             raise ValueError(
                 "architecture_section_target_max must be >= architecture_section_target_min"
@@ -586,13 +568,9 @@ class PipelineRuntimeConfig(BaseModel):
 class EmbeddingsConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    provider: str = Field(
-        default_factory=lambda: os.getenv("EMBEDDINGS_PROVIDER", "openai")
-    )
+    provider: str = Field(default_factory=lambda: os.getenv("EMBEDDINGS_PROVIDER", "openai"))
     model_name: str = Field(
-        default_factory=lambda: os.getenv(
-            "EMBEDDINGS_MODEL_NAME", "text-embedding-3-small"
-        )
+        default_factory=lambda: os.getenv("EMBEDDINGS_MODEL_NAME", "text-embedding-3-small")
     )
     dimensions: int | None = Field(
         default_factory=lambda: int(os.getenv("EMBEDDINGS_DIMENSIONS", "0")) or None
@@ -610,9 +588,7 @@ class RetrievalConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     collection_name: str = Field(
-        default_factory=lambda: os.getenv(
-            "RETRIEVAL_COLLECTION_NAME", "podcast_agent_chunks"
-        )
+        default_factory=lambda: os.getenv("RETRIEVAL_COLLECTION_NAME", "podcast_agent_chunks")
     )
     oversample_factor: int = Field(
         default_factory=lambda: int(os.getenv("RETRIEVAL_OVERSAMPLE_FACTOR", "3")), ge=1
@@ -637,9 +613,7 @@ class LangChainConfig(BaseModel):
     cache_redis_url: str | None = Field(
         default_factory=lambda: os.getenv("LANGCHAIN_CACHE_REDIS_URL")
     )
-    cache_enabled: bool = Field(
-        default_factory=lambda: _env_bool("LANGCHAIN_CACHE_ENABLED", True)
-    )
+    cache_enabled: bool = Field(default_factory=lambda: _env_bool("LANGCHAIN_CACHE_ENABLED", True))
 
 
 class Settings(BaseModel):

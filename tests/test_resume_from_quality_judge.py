@@ -35,11 +35,7 @@ from podcast_agent.schemas.models import (
 )
 
 
-_SCRIPT_PATH = (
-    Path(__file__).resolve().parents[1]
-    / "scripts"
-    / "resume_from_quality_judge.py"
-)
+_SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "resume_from_quality_judge.py"
 _SCRIPT_SPEC = importlib.util.spec_from_file_location(
     "resume_from_quality_judge",
     _SCRIPT_PATH,
@@ -367,7 +363,9 @@ def _retained_excerpts() -> ExcerptArtifact:
     )
 
 
-def _build_project_dir(tmp_path: Path, *, include_retained_excerpts: bool = True) -> tuple[Path, list[EpisodePlan]]:
+def _build_project_dir(
+    tmp_path: Path, *, include_retained_excerpts: bool = True
+) -> tuple[Path, list[EpisodePlan]]:
     project_dir = tmp_path / "run_1"
     project_dir.mkdir()
 
@@ -485,7 +483,9 @@ def _build_project_dir(tmp_path: Path, *, include_retained_excerpts: bool = True
 
     for plan in plans:
         ep_dir = project_dir / "episodes" / str(plan.episode_number)
-        _write_json(ep_dir / "episode_script.json", _episode_script(plan, f"Episode {plan.episode_number}"))
+        _write_json(
+            ep_dir / "episode_script.json", _episode_script(plan, f"Episode {plan.episode_number}")
+        )
         _write_json(ep_dir / "narrative_state_pre.json", NarrativeState(project_id="run_1"))
         _write_json(ep_dir / "narrative_state_post.json", NarrativeState(project_id="run_1"))
         _write_json(ep_dir / "spine_diagnostics.json", {"episode": plan.episode_number})
@@ -640,9 +640,7 @@ def test_resume_from_quality_judge_uses_persisted_scripts_and_context(
     assert calls["actor_metadata_metrics"]["metrics"]["episode_planning"] == {
         "unknown_actor_ids": 0
     }
-    assert calls["actor_metadata_metrics"]["metrics"]["writing"] == {
-        "completed_episode_count": 2
-    }
+    assert calls["actor_metadata_metrics"]["metrics"]["writing"] == {"completed_episode_count": 2}
     for plan in plans:
         ep_dir = project_dir / "episodes" / str(plan.episode_number)
         assert (ep_dir / "quality_judgment.json").exists()

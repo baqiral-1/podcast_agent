@@ -168,9 +168,7 @@ def _load_script_context(
             if section.get("section_id")
         }
         section_by_id = {
-            str(section["section_id"]): section
-            for section in sections
-            if section.get("section_id")
+            str(section["section_id"]): section for section in sections if section.get("section_id")
         }
         section_ids_by_scene_id: dict[str, list[str]] = {}
         for section in sections:
@@ -181,12 +179,12 @@ def _load_script_context(
                 section_ids_by_scene_id.setdefault(str(scene_id), []).append(section_id)
         contexts[episode_number] = {
             "artifact_name": script_path.name,
-                "artifact_path": str(script_path),
-                "sections": sections,
-                "section_by_id": section_by_id,
-                "section_text_by_id": section_text_by_id,
-                "section_ids_by_scene_id": section_ids_by_scene_id,
-            }
+            "artifact_path": str(script_path),
+            "sections": sections,
+            "section_by_id": section_by_id,
+            "section_text_by_id": section_text_by_id,
+            "section_ids_by_scene_id": section_ids_by_scene_id,
+        }
     return contexts
 
 
@@ -266,7 +264,9 @@ def _find_script_hit_in_episode(
     return None
 
 
-def _gloss_overlap(preferred_plain_gloss: str, snippet: str, actor_phrases: Sequence[str]) -> list[str]:
+def _gloss_overlap(
+    preferred_plain_gloss: str, snippet: str, actor_phrases: Sequence[str]
+) -> list[str]:
     gloss_tokens = _keyword_tokens(preferred_plain_gloss)
     actor_tokens = set()
     for phrase in actor_phrases:
@@ -348,8 +348,7 @@ def build_actor_explanation_audit_payload(
             continue
         actor_profile = actor_by_id.get(actor_id, {})
         actor_title = (
-            str(actor_profile.get("display_name", "") or "")
-            or actor_id.replace("_", " ").title()
+            str(actor_profile.get("display_name", "") or "") or actor_id.replace("_", " ").title()
         )
 
         obligations: list[dict[str, Any]] = []
@@ -392,15 +391,11 @@ def build_actor_explanation_audit_payload(
                             architecture_matches.append(
                                 {
                                     "section_id": str(section.get("section_id", "") or ""),
-                                    "section_anchor": str(
-                                        section.get("section_anchor", "") or ""
-                                    ),
+                                    "section_anchor": str(section.get("section_anchor", "") or ""),
                                     "background_depth": str(
                                         explanation.get("background_depth", "") or ""
                                     ),
-                                    "role_label": str(
-                                        explanation.get("role_label", "") or ""
-                                    ),
+                                    "role_label": str(explanation.get("role_label", "") or ""),
                                     "source_passage_ids": [
                                         str(passage_id)
                                         for passage_id in (
@@ -410,9 +405,7 @@ def build_actor_explanation_audit_payload(
                                     ],
                                     "intro_facts": [
                                         str(fact)
-                                        for fact in (
-                                            explanation.get("intro_facts", []) or []
-                                        )
+                                        for fact in (explanation.get("intro_facts", []) or [])
                                         if str(fact).strip()
                                     ],
                                     "why_now": str(explanation.get("why_now", "") or ""),
@@ -501,8 +494,10 @@ def build_actor_explanation_audit_payload(
                         }
                     )
 
-                if stage_name == "introduce" and first_seen_index is not None and (
-                    first_intro_index is None or first_seen_index < first_intro_index
+                if (
+                    stage_name == "introduce"
+                    and first_seen_index is not None
+                    and (first_intro_index is None or first_seen_index < first_intro_index)
                 ):
                     issues.append(
                         {
@@ -518,15 +513,11 @@ def build_actor_explanation_audit_payload(
                 script_context = script_contexts.get(episode_number, {})
                 section_by_id = script_context.get("section_by_id", {}) or {}
                 section_text_by_id = script_context.get("section_text_by_id", {}) or {}
-                section_ids_by_scene_id = (
-                    script_context.get("section_ids_by_scene_id", {}) or {}
-                )
+                section_ids_by_scene_id = script_context.get("section_ids_by_scene_id", {}) or {}
                 script_audits = []
                 script_found = False
                 for plan_match in plan_matches:
-                    mapped_section_ids = section_ids_by_scene_id.get(
-                        plan_match["scene_id"], []
-                    )
+                    mapped_section_ids = section_ids_by_scene_id.get(plan_match["scene_id"], [])
                     realization_payload: dict[str, Any] | None = None
                     hit_payload: dict[str, Any] | None = None
                     status = "missing"
@@ -542,9 +533,7 @@ def build_actor_explanation_audit_payload(
                             status = "mapped_section_realization"
                             script_found = True
                         else:
-                            mapped_text = str(
-                                section_text_by_id.get(mapped_section_id, "") or ""
-                            )
+                            mapped_text = str(section_text_by_id.get(mapped_section_id, "") or "")
                             hit_payload = _find_script_hit(
                                 section_text=mapped_text,
                                 phrases=actor_phrases,
@@ -686,59 +675,78 @@ def render_actor_explanation_audit_html(payload: dict[str, Any]) -> str:
         return f"<span class='{class_attr}'>{escape(text)}</span>"
 
     summary = payload["summary"]
-    issue_items = "".join(
-        f"<li><strong>Episode {issue['episode_number']}</strong> · <code>{escape(issue['actor_id'])}</code> · {escape(issue['stage'])}: {escape(issue['message'])}</li>"
-        for issue in payload["issues"]
-    ) or "<li>No flagged issues.</li>"
+    issue_items = (
+        "".join(
+            f"<li><strong>Episode {issue['episode_number']}</strong> · <code>{escape(issue['actor_id'])}</code> · {escape(issue['stage'])}: {escape(issue['message'])}</li>"
+            for issue in payload["issues"]
+        )
+        or "<li>No flagged issues.</li>"
+    )
 
     actor_cards_html: list[str] = []
     for actor in payload["actors"]:
         obligation_blocks: list[str] = []
         for obligation in actor["obligations"]:
-            architecture_html = "".join(
-                "<li><code>{section_id}</code> · {stage} · {depth}<br><span class='muted'>{role}</span><br><span class='tiny'>Passages: {passages}</span><br><span class='tiny'>Facts: {facts}</span><br><span class='tiny'>Why now: {why_now}</span></li>".format(
-                    section_id=escape(match["section_id"]),
-                    stage=escape(obligation["stage"]),
-                    depth=escape(match["background_depth"]),
-                    role=escape(match["role_label"] or match["preferred_plain_gloss"] or "No role label"),
-                    passages=escape(", ".join(match["source_passage_ids"]) or "none"),
-                    facts=escape(" | ".join(match["intro_facts"]) or "none"),
-                    why_now=escape(match["why_now"] or "none"),
+            architecture_html = (
+                "".join(
+                    "<li><code>{section_id}</code> · {stage} · {depth}<br><span class='muted'>{role}</span><br><span class='tiny'>Passages: {passages}</span><br><span class='tiny'>Facts: {facts}</span><br><span class='tiny'>Why now: {why_now}</span></li>".format(
+                        section_id=escape(match["section_id"]),
+                        stage=escape(obligation["stage"]),
+                        depth=escape(match["background_depth"]),
+                        role=escape(
+                            match["role_label"] or match["preferred_plain_gloss"] or "No role label"
+                        ),
+                        passages=escape(", ".join(match["source_passage_ids"]) or "none"),
+                        facts=escape(" | ".join(match["intro_facts"]) or "none"),
+                        why_now=escape(match["why_now"] or "none"),
+                    )
+                    for match in obligation["architecture_matches"]
                 )
-                for match in obligation["architecture_matches"]
-            ) or "<li>Missing architecture placement.</li>"
-            plan_html = "".join(
-                "<li>Scene {scene_index} · <code>{scene_id}</code> · {title} · {presence}{stage}<br><span class='tiny'>{role}</span><br><span class='tiny'>Passages: {passages}</span></li>".format(
-                    scene_index=escape(
-                        str(match["scene_index"] + 1)
-                        if isinstance(match["scene_index"], int)
-                        else "?"
-                    ),
-                    scene_id=escape(match["scene_id"]),
-                    title=escape(match["scene_title"]),
-                    presence=escape(match["presence"] or "unknown"),
-                    stage=(
-                        f" · {escape(str(match['explanation_stage']))}"
-                        if match.get("explanation_stage")
-                        else ""
-                    ),
-                    role=escape(match["role_label"] or match["preferred_plain_gloss"] or "No role label"),
-                    passages=escape(", ".join(match["source_passage_ids"]) or "none"),
+                or "<li>Missing architecture placement.</li>"
+            )
+            plan_html = (
+                "".join(
+                    "<li>Scene {scene_index} · <code>{scene_id}</code> · {title} · {presence}{stage}<br><span class='tiny'>{role}</span><br><span class='tiny'>Passages: {passages}</span></li>".format(
+                        scene_index=escape(
+                            str(match["scene_index"] + 1)
+                            if isinstance(match["scene_index"], int)
+                            else "?"
+                        ),
+                        scene_id=escape(match["scene_id"]),
+                        title=escape(match["scene_title"]),
+                        presence=escape(match["presence"] or "unknown"),
+                        stage=(
+                            f" · {escape(str(match['explanation_stage']))}"
+                            if match.get("explanation_stage")
+                            else ""
+                        ),
+                        role=escape(
+                            match["role_label"] or match["preferred_plain_gloss"] or "No role label"
+                        ),
+                        passages=escape(", ".join(match["source_passage_ids"]) or "none"),
+                    )
+                    for match in obligation["plan_matches"]
                 )
-                for match in obligation["plan_matches"]
-            ) or "<li>Missing plan scene placement.</li>"
-            script_html = "".join(
-                "<li><code>{scene_id}</code> → <code>{section_id}</code> · {status}<br><blockquote>{snippet}</blockquote><div class='tiny'>Matched: {phrase} · Passages: {passages} · Realized facts: {facts}</div></li>".format(
-                    scene_id=escape(audit["scene_id"]),
-                    section_id=escape(audit["mapped_section_id"] or "missing"),
-                    status=escape(audit["status"]),
-                    snippet=escape(audit["snippet"] or "No actor mention found in the chosen script artifact."),
-                    phrase=escape(audit["matched_phrase"] or "none"),
-                    passages=escape(", ".join(audit["source_passage_ids"]) or "none"),
-                    facts=escape(" | ".join(audit["realized_facts"]) or "none"),
+                or "<li>Missing plan scene placement.</li>"
+            )
+            script_html = (
+                "".join(
+                    "<li><code>{scene_id}</code> → <code>{section_id}</code> · {status}<br><blockquote>{snippet}</blockquote><div class='tiny'>Matched: {phrase} · Passages: {passages} · Realized facts: {facts}</div></li>".format(
+                        scene_id=escape(audit["scene_id"]),
+                        section_id=escape(audit["mapped_section_id"] or "missing"),
+                        status=escape(audit["status"]),
+                        snippet=escape(
+                            audit["snippet"]
+                            or "No actor mention found in the chosen script artifact."
+                        ),
+                        phrase=escape(audit["matched_phrase"] or "none"),
+                        passages=escape(", ".join(audit["source_passage_ids"]) or "none"),
+                        facts=escape(" | ".join(audit["realized_facts"]) or "none"),
+                    )
+                    for audit in obligation["script_audits"]
                 )
-                for audit in obligation["script_audits"]
-            ) or "<li>No script audit rows because no plan placement was found.</li>"
+                or "<li>No script audit rows because no plan placement was found.</li>"
+            )
             obligation_blocks.append(
                 """
                 <details class='obligation' open>
@@ -822,7 +830,7 @@ def render_actor_explanation_audit_html(payload: dict[str, Any]) -> str:
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>{escape(str(payload['title']))}</title>
+  <title>{escape(str(payload["title"]))}</title>
   <style>
     :root {{
       --bg: #f2eadf;
@@ -1025,7 +1033,7 @@ def render_actor_explanation_audit_html(payload: dict[str, Any]) -> str:
       <h2>Flagged Issues</h2>
       <ul class="issues">{issue_items}</ul>
     </section>
-    {''.join(actor_cards_html)}
+    {"".join(actor_cards_html)}
     <section class="panel">
       <details class="data">
         <summary><strong>Embedded Payload</strong></summary>

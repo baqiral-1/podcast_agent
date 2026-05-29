@@ -50,9 +50,7 @@ def _dedupe(items: list[str]) -> list[str]:
     return list(dict.fromkeys(item for item in items if item))
 
 
-def apply_agenda_moves(
-    state: NarrativeState, agenda: EpisodeNarrativeAgenda
-) -> NarrativeState:
+def apply_agenda_moves(state: NarrativeState, agenda: EpisodeNarrativeAgenda) -> NarrativeState:
     """Apply one episode's planned agenda moves to ``state``, returning the
     resulting state. Mirrors the heuristic reconciler's transition semantics
     (preserve prior entries; overlay the latest action; never silently un-resolve
@@ -70,8 +68,7 @@ def apply_agenda_moves(
         + list(lis.introduce_explanation_item_ids)
     )
     listener["known_actor_ids"] = _dedupe(
-        list(listener.get("known_actor_ids", []) or [])
-        + list(lis.introduce_actor_ids)
+        list(listener.get("known_actor_ids", []) or []) + list(lis.introduce_actor_ids)
     )
 
     # Listener questions.
@@ -84,14 +81,10 @@ def apply_agenda_moves(
         qid = move.question_id.strip()
         if not qid:
             continue
-        entry = questions.get(
-            qid, {"question_id": qid, "text": move.text or qid, "status": "open"}
-        )
+        entry = questions.get(qid, {"question_id": qid, "text": move.text or qid, "status": "open"})
         if move.text:
             entry["text"] = move.text
-        entry["status"] = QUESTION_STATUS_BY_ACTION.get(
-            move.action, entry.get("status", "open")
-        )
+        entry["status"] = QUESTION_STATUS_BY_ACTION.get(move.action, entry.get("status", "open"))
         questions[qid] = entry
     listener["questions"] = list(questions.values())
 
@@ -132,14 +125,10 @@ def apply_agenda_moves(
         mid = move.mystery_id.strip()
         if not mid:
             continue
-        entry = mysteries.get(
-            mid, {"mystery_id": mid, "text": move.text or mid, "status": "open"}
-        )
+        entry = mysteries.get(mid, {"mystery_id": mid, "text": move.text or mid, "status": "open"})
         if move.text:
             entry["text"] = move.text
-        entry["status"] = QUESTION_STATUS_BY_ACTION.get(
-            move.action, entry.get("status", "open")
-        )
+        entry["status"] = QUESTION_STATUS_BY_ACTION.get(move.action, entry.get("status", "open"))
         mysteries[mid] = entry
     host["mysteries"] = list(mysteries.values())
 
@@ -184,9 +173,7 @@ def apply_agenda_moves(
         )
         if move.statement:
             entry["statement"] = move.statement
-        entry["status"] = THEORY_STATUS_BY_ACTION.get(
-            move.action, entry.get("status", "proposed")
-        )
+        entry["status"] = THEORY_STATUS_BY_ACTION.get(move.action, entry.get("status", "proposed"))
         theories[tid] = entry
         if move.action in {"strengthen", "replace", "retire"}:
             revisions.append(move.statement or tid)
@@ -203,15 +190,11 @@ def apply_agenda_moves(
 
     # Recent revisions reflect this episode's host motion; confidence is derived.
     host["recent_revisions"] = revisions[-4:]
-    unresolved = any(
-        m.get("status") in {"open", "advanced"} for m in mysteries.values()
-    )
+    unresolved = any(m.get("status") in {"open", "advanced"} for m in mysteries.values())
     destabilized = any(
         a.get("status") in {"weakened", "revised", "dropped"} for a in assumptions.values()
     )
-    stabilizing = any(
-        t.get("status") in {"strengthened", "replaced"} for t in theories.values()
-    )
+    stabilizing = any(t.get("status") in {"strengthened", "replaced"} for t in theories.values())
     if unresolved or (destabilized and not stabilizing):
         host["confidence_posture"] = "tentative"
     elif not unresolved and stabilizing:

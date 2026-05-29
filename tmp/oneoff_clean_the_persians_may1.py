@@ -29,7 +29,10 @@ OPENING_REPLACEMENTS = (
         "In the period",
     ),
     (r"^FIRST YEARS\b", "In the first years"),
-    (r"^PERSONALLY RULED Iran between 1963 and 1978\.", "The shah personally ruled Iran between 1963 and 1978."),
+    (
+        r"^PERSONALLY RULED Iran between 1963 and 1978\.",
+        "The shah personally ruled Iran between 1963 and 1978.",
+    ),
     (r"^\(November 1978\) THE SHAH BELIEVED THAT\b", "The shah believed that"),
     (
         r"^Revolution in Two Moves \(1984\) THE REVOLUTION THAT 'SHOULD NOT HAVE HAPPENED' NS O M EO FI T Sbasic characteristics,",
@@ -57,9 +60,15 @@ def polish(text: str) -> str:
     text = re.sub(r"\bText\s+[A-Z][A-Z ]+\s+\d+\s+", "", text)
     text = re.sub(r"\bCHAPTER\s+\d+\b(?:\s+[A-Z][A-Za-z,&-]+){0,8}\s*", "", text)
     text = re.sub(r"\bText\b", "", text)
-    text = re.sub(r"\bTHE POLITICS OF ELIMINATION\s+The politics of elimination\b", "The politics of elimination", text)
+    text = re.sub(
+        r"\bTHE POLITICS OF ELIMINATION\s+The politics of elimination\b",
+        "The politics of elimination",
+        text,
+    )
     text = re.sub(r"\btreasurehouseof\b", "treasure house of ", text)
-    text = re.sub(r"\bconflictingsentimentsandemotions\b", "conflicting sentiments and emotions", text)
+    text = re.sub(
+        r"\bconflictingsentimentsandemotions\b", "conflicting sentiments and emotions", text
+    )
     text = re.sub(r"\bunified cultural entity\b", "unified cultural entity", text)
     text = re.sub(r"\bY et\b", "Yet", text)
     text = re.sub(r"\bY az([a-z]+)\b", r"Yaz\1", text)
@@ -126,9 +135,18 @@ def polish(text: str) -> str:
     text = text.replace("alSadr", "al-Sadr")
     text = text.replace("Kia-Rostami", "Kiarostami")
     text = text.replace("born in Mecca c. into", "born in Mecca c. 570 into")
-    text = text.replace("dangerous from the start. first converts included", "dangerous from the start. The first converts included")
-    text = text.replace("the line of Keyanian –'key' meaning chief or king –with whom Shahnameh's second cycle begins. KEYANIYAN Kavus is", "the line of Keyanian – 'key' meaning chief or king – with whom Shahnameh's second cycle begins. Kavus is")
-    text = text.replace("The tragedy of Rostam and Sohrab The story of Rostam and Sohrab", "The story of Rostam and Sohrab")
+    text = text.replace(
+        "dangerous from the start. first converts included",
+        "dangerous from the start. The first converts included",
+    )
+    text = text.replace(
+        "the line of Keyanian –'key' meaning chief or king –with whom Shahnameh's second cycle begins. KEYANIYAN Kavus is",
+        "the line of Keyanian – 'key' meaning chief or king – with whom Shahnameh's second cycle begins. Kavus is",
+    )
+    text = text.replace(
+        "The tragedy of Rostam and Sohrab The story of Rostam and Sohrab",
+        "The story of Rostam and Sohrab",
+    )
     text = text.replace("governmentrunning", "government running")
     text = text.replace("fancydress", "fancy-dress")
     text = text.replace("opponentsand", "opponents and")
@@ -136,11 +154,19 @@ def polish(text: str) -> str:
     text = text.replace("otherworldy", "otherworldly")
     text = text.replace("Ashraf 's", "Ashraf's")
     text = text.replace("Saoshiyant", "Saoshyant")
-    text = text.replace("in in virtually every Iranian village", "in virtually every Iranian village")
+    text = text.replace(
+        "in in virtually every Iranian village", "in virtually every Iranian village"
+    )
     text = text.replace("emanated form Ahura Mazda", "emanated from Ahura Mazda")
     text = text.replace("Cosmic history All beneficent", "All beneficent")
-    text = text.replace("The rise of New Persian and classical literature It used to be believed", "It used to be believed")
-    text = text.replace("The last great Seljuk The glorious days of the Seljuk empire", "The glorious days of the Seljuk empire")
+    text = text.replace(
+        "The rise of New Persian and classical literature It used to be believed",
+        "It used to be believed",
+    )
+    text = text.replace(
+        "The last great Seljuk The glorious days of the Seljuk empire",
+        "The glorious days of the Seljuk empire",
+    )
     text = text.replace("most wellknown", "most well-known")
     text = text.replace("Sa' eb-e Tabizi", "Sa' eb-e Tabrizi")
     text = text.replace("Hazrat-e Abodl'azim", "Hazrat-e Abdol'azim")
@@ -154,10 +180,19 @@ def polish(text: str) -> str:
     text = text.replace("325 He was pictured", "He was pictured")
     text = text.replace("liberaldemocratic", "liberal-democratic")
     text = text.replace("SAV AK.", "SAVAK.")
-    text = text.replace("courts for Law\n\nFOR LAW 171 in the centre and into the hands of", "courts in the centre and into the hands of")
+    text = text.replace(
+        "courts for Law\n\nFOR LAW 171 in the centre and into the hands of",
+        "courts in the centre and into the hands of",
+    )
     text = text.replace("city's 200, inhabitants", "city's inhabitants")
-    text = text.replace("he had 12, concubines in his 'golden harem' (moshku-ye zarrin). Even if 1 per cent of that number is true,", "he had thousands of concubines in his 'golden harem' (moshku-ye zarrin). Even if that number is exaggerated,")
-    text = text.replace("Malkam cashed the £40, worth of royalties and moved into open opposition", "Malkam cashed the royalties and moved into open opposition")
+    text = text.replace(
+        "he had 12, concubines in his 'golden harem' (moshku-ye zarrin). Even if 1 per cent of that number is true,",
+        "he had thousands of concubines in his 'golden harem' (moshku-ye zarrin). Even if that number is exaggerated,",
+    )
+    text = text.replace(
+        "Malkam cashed the £40, worth of royalties and moved into open opposition",
+        "Malkam cashed the royalties and moved into open opposition",
+    )
     text = re.sub(r"\b(\d+)\.\s+per cent\b", r"\1 per cent", text)
     text = text.replace(
         "In 1941 the wholesale price index was at 20.; by 1944 it had risen to 61.. In the same period, the general cost of living index rose from 16 to 67. and the index for food from 18. to 75..",
@@ -184,16 +219,26 @@ def polish(text: str) -> str:
     paragraphs = [paragraph.strip() for paragraph in re.split(r"\n{2,}", text) if paragraph.strip()]
     cleaned: list[str] = []
     for paragraph in paragraphs:
-        paragraph = re.sub(r"^(?:[A-Z][A-Z'’\-]+(?:\s+[A-Z][A-Z'’\-]+){1,6})\s+(?=[A-Z][a-z])", "", paragraph)
+        paragraph = re.sub(
+            r"^(?:[A-Z][A-Z'’\-]+(?:\s+[A-Z][A-Z'’\-]+){1,6})\s+(?=[A-Z][a-z])", "", paragraph
+        )
         paragraph = re.sub(r"^[ \t]{2,}", " ", paragraph)
         paragraph = re.sub(r"[ \t]{2,}", " ", paragraph)
         cleaned.append(paragraph.strip())
     text = "\n\n".join(paragraph for paragraph in cleaned if paragraph)
-    text = re.sub(r"(?<=[.!?])\s+'?[A-Z][A-Z'’.\-]+(?:\s+[A-Z][A-Z'’.\-]+){1,8}'?\s+(?=[A-Z][a-z])", " ", text)
+    text = re.sub(
+        r"(?<=[.!?])\s+'?[A-Z][A-Z'’.\-]+(?:\s+[A-Z][A-Z'’.\-]+){1,8}'?\s+(?=[A-Z][a-z])", " ", text
+    )
     text = text.replace("law..", "law.")
     text = text.replace("following month 40 that", "following month that")
-    text = text.replace("There were campaigns against him especially in Tehran, Tabriz and Isfahan The Belgian customs officials", "There were campaigns against him especially in Tehran, Tabriz and Isfahan. The Belgian customs officials")
-    text = text.replace("the protector of law.. The legislative assembly", "the protector of law. The legislative assembly")
+    text = text.replace(
+        "There were campaigns against him especially in Tehran, Tabriz and Isfahan The Belgian customs officials",
+        "There were campaigns against him especially in Tehran, Tabriz and Isfahan. The Belgian customs officials",
+    )
+    text = text.replace(
+        "the protector of law.. The legislative assembly",
+        "the protector of law. The legislative assembly",
+    )
     text = text.replace("the law.. Observing religion", "the law. Observing religion")
     text = text.replace("the AIOC. The shah was anxious", "the AIOC, and the shah was anxious")
     text = text.replace("WINDS OF CHANGE On 5 June 1989", "On 5 June 1989")
@@ -203,8 +248,12 @@ def polish(text: str) -> str:
 
 def main() -> None:
     spec = BookSpec(
-        pdf_path=Path("/Users/baqir/Downloads/_OceanofPDF.com_The_Persians_Ancient_Mediaeval_and_Modern_Iran_-_Homa_Katouzian.pdf"),
-        output_path=Path("/Users/baqir/Python/podcast_agent/sample_books/iran/the_persians.cleaned.txt"),
+        pdf_path=Path(
+            "/Users/baqir/Downloads/_OceanofPDF.com_The_Persians_Ancient_Mediaeval_and_Modern_Iran_-_Homa_Katouzian.pdf"
+        ),
+        output_path=Path(
+            "/Users/baqir/Python/podcast_agent/sample_books/iran/the_persians.cleaned.txt"
+        ),
         book_title="The Persians",
         chapter_selector=keep_chapter,
         last_page_inclusive=405,

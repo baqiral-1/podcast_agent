@@ -30,9 +30,7 @@ def make_section_progression(
     is_close = stage == "close"
     return {
         "stage": stage,
-        "becomes_obvious": (
-            f"The {stage} step makes the next move in the answer visible{suffix}."
-        ),
+        "becomes_obvious": (f"The {stage} step makes the next move in the answer visible{suffix}."),
         "answer_contribution": (
             f"This section advances the episode answer at the {stage} stage{suffix}."
         ),

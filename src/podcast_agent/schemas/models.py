@@ -55,9 +55,7 @@ def _validate_list_item_word_limit(
     normalized = [str(value or "").strip() for value in values]
     for item in normalized:
         if item and _word_count(item) > max_words:
-            raise ValueError(
-                f"each {field_name} entry must be at most {max_words} words"
-            )
+            raise ValueError(f"each {field_name} entry must be at most {max_words} words")
     return normalized
 
 
@@ -120,6 +118,7 @@ class SynthesisTag(str, Enum):
     EXEMPLIFIES = "exemplifies"
     CONTEXTUALIZES = "contextualizes"
     INDEPENDENT = "independent"
+
 
 class SupportPrimitiveRole(str, Enum):
     STAKES = "stakes"
@@ -397,9 +396,7 @@ class PipelineConfig(StrictModel):
     excerpt_extraction_count_max: int = Field(default=220, ge=0)
     excerpt_extraction_total_passage_cap: int = Field(default=250, ge=1)
     excerpt_extraction_axis_passage_floor: int = Field(default=5, ge=0)
-    excerpt_extraction_axis_passage_ceiling_fraction: float = Field(
-        default=0.35, gt=0.0, le=1.0
-    )
+    excerpt_extraction_axis_passage_ceiling_fraction: float = Field(default=0.35, gt=0.0, le=1.0)
     narrative_strategy_episode_count_min: int = Field(default=10, ge=1)
     narrative_strategy_episode_count_max: int = Field(default=16, ge=1)
     min_episode_minutes: float = Field(default=108.0, gt=0.0)
@@ -431,15 +428,11 @@ class PipelineConfig(StrictModel):
         if self.synthesis_axis_max < self.synthesis_axis_min:
             raise ValueError("synthesis_axis_max must be >= synthesis_axis_min")
         if self.synthesis_axis_floor_max < self.synthesis_axis_floor_min:
-            raise ValueError(
-                "synthesis_axis_floor_max must be >= synthesis_axis_floor_min"
-            )
+            raise ValueError("synthesis_axis_floor_max must be >= synthesis_axis_floor_min")
         if self.planning_axis_max < self.planning_axis_min:
             raise ValueError("planning_axis_max must be >= planning_axis_min")
         if self.synthesis_trim_top_fraction + self.synthesis_trim_mid_fraction > 1.0:
-            raise ValueError(
-                "synthesis trim top and mid fractions must sum to <= 1.0"
-            )
+            raise ValueError("synthesis trim top and mid fractions must sum to <= 1.0")
         if self.architecture_section_target_max < self.architecture_section_target_min:
             raise ValueError(
                 "architecture_section_target_max must be >= architecture_section_target_min"
@@ -461,13 +454,8 @@ class PipelineConfig(StrictModel):
                 "episode_spine_support_primitive_target_min"
             )
         if self.episode_spine_recall_primitive_target_max > 3:
-            raise ValueError(
-                "episode_spine_recall_primitive_target_max must be <= 3"
-            )
-        if (
-            self.narrative_strategy_episode_count_max
-            < self.narrative_strategy_episode_count_min
-        ):
+            raise ValueError("episode_spine_recall_primitive_target_max must be <= 3")
+        if self.narrative_strategy_episode_count_max < self.narrative_strategy_episode_count_min:
             raise ValueError(
                 "narrative_strategy_episode_count_max must be >= "
                 "narrative_strategy_episode_count_min"
@@ -475,9 +463,7 @@ class PipelineConfig(StrictModel):
         if self.scene_card_target_max < self.scene_card_target_min:
             raise ValueError("scene_card_target_max must be >= scene_card_target_min")
         if self.scene_card_primitives_max < self.scene_card_primitives_min:
-            raise ValueError(
-                "scene_card_primitives_max must be >= scene_card_primitives_min"
-            )
+            raise ValueError("scene_card_primitives_max must be >= scene_card_primitives_min")
         if self.max_episode_minutes < self.min_episode_minutes:
             raise ValueError("max_episode_minutes must be >= min_episode_minutes")
         if self.dense_section_runtime_max_minutes < self.dense_section_runtime_min_minutes:
@@ -488,10 +474,7 @@ class PipelineConfig(StrictModel):
             raise ValueError(
                 "section_runtime_ceiling_minutes must be >= section_runtime_floor_minutes"
             )
-        if (
-            self.section_runtime_ceiling_minutes
-            >= self.dense_section_runtime_min_minutes
-        ):
+        if self.section_runtime_ceiling_minutes >= self.dense_section_runtime_min_minutes:
             raise ValueError(
                 "section_runtime_ceiling_minutes must be strictly less than "
                 "dense_section_runtime_min_minutes (the dense band must not overlap "
@@ -500,8 +483,7 @@ class PipelineConfig(StrictModel):
         if (
             self.series_runtime_target_min_minutes is not None
             and self.series_runtime_target_max_minutes is not None
-            and self.series_runtime_target_max_minutes
-            < self.series_runtime_target_min_minutes
+            and self.series_runtime_target_max_minutes < self.series_runtime_target_min_minutes
         ):
             raise ValueError(
                 "series_runtime_target_max_minutes must be >= series_runtime_target_min_minutes"
@@ -520,9 +502,7 @@ def _divide_range_floor(
     return reduced_lower, max(reduced_lower, reduced_upper)
 
 
-def _scale_range_floor_by_ratio(
-    range_values: tuple[int, int], *, ratio: float
-) -> tuple[int, int]:
+def _scale_range_floor_by_ratio(range_values: tuple[int, int], *, ratio: float) -> tuple[int, int]:
     lower_bound, upper_bound = range_values
     reduced_lower = max(0, math.floor(lower_bound * ratio))
     reduced_upper = max(0, math.floor(upper_bound * ratio))
@@ -533,9 +513,7 @@ MINIFIED_AUTHORIAL_PASSAGE_TARGET_RANGE: tuple[int, int] = (12, 16)
 MINIFIED_DENSE_SECTION_AUTHORIAL_PASSAGE_RANGE: tuple[int, int] = (2, 5)
 
 
-def _scale_range_containing_span(
-    base_range: tuple[int, int], multiplier: float
-) -> tuple[int, int]:
+def _scale_range_containing_span(base_range: tuple[int, int], multiplier: float) -> tuple[int, int]:
     lower_bound, upper_bound = base_range
     return math.floor(lower_bound * multiplier), math.ceil(upper_bound * multiplier)
 
@@ -779,9 +757,9 @@ class ActorTier(str, Enum):
 
 
 class ActorSeriesScope(str, Enum):
-    SERIES_WIDE = "series_wide"   # recurs across the whole series
-    RECURRING = "recurring"       # spans a contiguous run of episodes
-    LOCAL = "local"               # relevant only where its primitives land
+    SERIES_WIDE = "series_wide"  # recurs across the whole series
+    RECURRING = "recurring"  # spans a contiguous run of episodes
+    LOCAL = "local"  # relevant only where its primitives land
 
 
 class ActorProfile(StrictModel):
@@ -998,9 +976,7 @@ class ContestCandidateReading(StrictModel):
 
 
 class ContestJustification(StrictModel):
-    candidate_readings: list[ContestCandidateReading] = Field(
-        default_factory=list, min_length=2
-    )
+    candidate_readings: list[ContestCandidateReading] = Field(default_factory=list, min_length=2)
 
 
 CandidateReading = ContestCandidateReading
@@ -1070,9 +1046,7 @@ class PrimitiveEnrichmentOverlay(StrictModel):
         }
         for function, payload in required_payloads.items():
             if function in self.functions and payload is None:
-                raise ValueError(
-                    f"{function.value} requires its paired justification payload"
-                )
+                raise ValueError(f"{function.value} requires its paired justification payload")
             if function not in self.functions and payload is not None:
                 raise ValueError(
                     f"{function.value} justification is not allowed unless the function tag is present"
@@ -1128,9 +1102,7 @@ class BaseSynthesisPrimitive(StrictModel):
         if len(self.functions) > 3:
             raise ValueError("functions must contain at most 3 entries")
         if not self.passage_ids:
-            raise ValueError(
-                "primitives must include at least one core or support passage id"
-            )
+            raise ValueError("primitives must include at least one core or support passage id")
         required_payloads = {
             PrimitiveFunction.PIVOT: self.pivot,
             PrimitiveFunction.STAKE: self.stake,
@@ -1142,9 +1114,7 @@ class BaseSynthesisPrimitive(StrictModel):
         }
         for function, payload in required_payloads.items():
             if function in self.functions and payload is None:
-                raise ValueError(
-                    f"{function.value} requires its paired justification payload"
-                )
+                raise ValueError(f"{function.value} requires its paired justification payload")
             if function not in self.functions and payload is not None:
                 raise ValueError(
                     f"{function.value} justification is not allowed unless the function tag is present"
@@ -1287,9 +1257,7 @@ class BaseExtractionPrimitive(StrictModel):
         if len(self.functions) > 3:
             raise ValueError("functions must contain at most 3 entries")
         if not self.passage_ids:
-            raise ValueError(
-                "primitives must include at least one core or support passage id"
-            )
+            raise ValueError("primitives must include at least one core or support passage id")
         required_payloads = {
             PrimitiveFunction.PIVOT: self.pivot,
             PrimitiveFunction.STAKE: self.stake,
@@ -1301,9 +1269,7 @@ class BaseExtractionPrimitive(StrictModel):
         }
         for function, payload in required_payloads.items():
             if function in self.functions and payload is None:
-                raise ValueError(
-                    f"{function.value} requires its paired justification payload"
-                )
+                raise ValueError(f"{function.value} requires its paired justification payload")
             if function not in self.functions and payload is not None:
                 raise ValueError(
                     f"{function.value} justification is not allowed unless the function tag is present"
@@ -1436,9 +1402,7 @@ AnyExtractedSynthesisPrimitive = Annotated[
 ]
 
 
-PRIMITIVE_SUBSTRATES: tuple[str, ...] = tuple(
-    member.value for member in PrimitiveSubstrate
-)
+PRIMITIVE_SUBSTRATES: tuple[str, ...] = tuple(member.value for member in PrimitiveSubstrate)
 PRIMITIVE_FUNCTIONS: tuple[str, ...] = tuple(member.value for member in PrimitiveFunction)
 PRIMITIVE_SUBSTRATE_SET = set(PRIMITIVE_SUBSTRATES)
 PRIMITIVE_FUNCTION_SET = set(PRIMITIVE_FUNCTIONS)
@@ -1505,9 +1469,7 @@ def _serialize_grouped_primitive_artifact(
     quality_score: float,
     quality_notes: list[str],
 ) -> dict[str, Any]:
-    grouped: dict[str, list[dict[str, Any]]] = {
-        substrate: [] for substrate in PRIMITIVE_SUBSTRATES
-    }
+    grouped: dict[str, list[dict[str, Any]]] = {substrate: [] for substrate in PRIMITIVE_SUBSTRATES}
     for primitive in primitives:
         payload = (
             primitive.model_dump(mode="json")
@@ -1568,9 +1530,7 @@ class GroupedExtractionPrimitiveBase(StrictModel):
         if len(self.functions) > 3:
             raise ValueError("functions must contain at most 3 entries")
         if not self.passage_ids:
-            raise ValueError(
-                "primitives must include at least one core or support passage id"
-            )
+            raise ValueError("primitives must include at least one core or support passage id")
         required_payloads = {
             PrimitiveFunction.PIVOT: self.pivot,
             PrimitiveFunction.STAKE: self.stake,
@@ -1582,9 +1542,7 @@ class GroupedExtractionPrimitiveBase(StrictModel):
         }
         for function, payload in required_payloads.items():
             if function in self.functions and payload is None:
-                raise ValueError(
-                    f"{function.value} requires its paired justification payload"
-                )
+                raise ValueError(f"{function.value} requires its paired justification payload")
             if function not in self.functions and payload is not None:
                 raise ValueError(
                     f"{function.value} justification is not allowed unless the function tag is present"
@@ -1907,9 +1865,7 @@ class EpisodeSpine(StrictModel):
     episode_answer: str = Field(min_length=1)
     pressure_line: str = ""
     core_primitive_ids: list[str] = Field(min_length=1)
-    support_primitive_roles: dict[str, SupportPrimitiveRole] = Field(
-        default_factory=dict
-    )
+    support_primitive_roles: dict[str, SupportPrimitiveRole] = Field(default_factory=dict)
     recall_primitive_ids: list[str] = Field(default_factory=list)
     excerpt_ids: list[str] = Field(default_factory=list)
     recall_excerpt_ids: list[str] = Field(default_factory=list)
@@ -1936,20 +1892,13 @@ class EpisodeSpine(StrictModel):
             deduped_core_primitive_ids.append(primitive_id)
         self.core_primitive_ids = deduped_core_primitive_ids
         if not self.core_primitive_ids:
-            raise ValueError(
-                "core_primitive_ids must contain at least one primitive id"
-            )
+            raise ValueError("core_primitive_ids must contain at least one primitive id")
         if len(self.core_primitive_ids) < 2 or len(self.core_primitive_ids) > 11:
             raise ValueError("core_primitive_ids must contain 2-11 primitive ids")
-        if (
-            len(self.support_primitive_roles) < 2
-            or len(self.support_primitive_roles) > 13
-        ):
+        if len(self.support_primitive_roles) < 2 or len(self.support_primitive_roles) > 13:
             raise ValueError("support_primitive_roles must contain 2-13 primitive ids")
 
-        overlap = sorted(
-            set(self.core_primitive_ids).intersection(self.support_primitive_roles)
-        )
+        overlap = sorted(set(self.core_primitive_ids).intersection(self.support_primitive_roles))
         if overlap:
             raise ValueError(
                 f"support primitives cannot also appear in core_primitive_ids: {overlap}"
@@ -1957,9 +1906,7 @@ class EpisodeSpine(StrictModel):
 
         recall_primitive_ids: list[str] = []
         seen_recall_ids: set[str] = set()
-        reserved_primitive_ids = set(self.core_primitive_ids).union(
-            self.support_primitive_roles
-        )
+        reserved_primitive_ids = set(self.core_primitive_ids).union(self.support_primitive_roles)
         for primitive_id in self.recall_primitive_ids:
             if (
                 not primitive_id
@@ -1971,9 +1918,7 @@ class EpisodeSpine(StrictModel):
             recall_primitive_ids.append(primitive_id)
         self.recall_primitive_ids = recall_primitive_ids
         if len(self.recall_primitive_ids) > 3:
-            raise ValueError(
-                "recall_primitive_ids must contain at most 3 primitive ids"
-            )
+            raise ValueError("recall_primitive_ids must contain at most 3 primitive ids")
 
         # Excerpts ride a separate, first-class budget; they are not primitives and
         # are intentionally excluded from the core/support/recall count and overlap
@@ -2008,9 +1953,7 @@ class EpisodeSpine(StrictModel):
             deduped_recall_excerpt_ids.append(normalized)
         self.recall_excerpt_ids = deduped_recall_excerpt_ids
         if len(self.recall_excerpt_ids) > 3:
-            raise ValueError(
-                "recall_excerpt_ids must contain at most 3 excerpt ids"
-            )
+            raise ValueError("recall_excerpt_ids must contain at most 3 excerpt ids")
         return self
 
     @property
@@ -2060,8 +2003,7 @@ def validate_episode_spine_targets(
     core_count = len(spine.core_primitive_ids)
     if core_count < core_target_min or core_count > core_target_max:
         raise ValueError(
-            "core_primitive_ids must contain "
-            f"{core_target_min}-{core_target_max} primitive ids"
+            f"core_primitive_ids must contain {core_target_min}-{core_target_max} primitive ids"
         )
     support_count = len(spine.support_primitive_roles)
     if support_count < support_target_min or support_count > support_target_max:
@@ -2073,8 +2015,7 @@ def validate_episode_spine_targets(
     if recall_count > recall_target_max:
         primitive_label = "primitive id" if recall_target_max == 1 else "primitive ids"
         raise ValueError(
-            "recall_primitive_ids must contain at most "
-            f"{recall_target_max} {primitive_label}"
+            f"recall_primitive_ids must contain at most {recall_target_max} {primitive_label}"
         )
 
 
@@ -2102,9 +2043,7 @@ class ActorArcThread(StrictModel):
 
 class ActorArcDirective(StrictModel):
     actor_id: str = Field(min_length=1)
-    arc_threads: list[ActorArcThread] = Field(
-        default_factory=list, min_length=1, max_length=8
-    )
+    arc_threads: list[ActorArcThread] = Field(default_factory=list, min_length=1, max_length=8)
 
     @model_validator(mode="after")
     def validate_unique_thread_ids(self) -> "ActorArcDirective":
@@ -2193,29 +2132,19 @@ class HumanThread(StrictModel):
         member_ids = [member.member_id for member in self.members]
         if len(member_ids) != len(set(member_ids)):
             raise ValueError("human thread member_id values must be unique")
-        anchors = [
-            member
-            for member in self.members
-            if member.role == ThreadMemberRole.ANCHOR
-        ]
+        anchors = [member for member in self.members if member.role == ThreadMemberRole.ANCHOR]
         if len(anchors) != 1:
             raise ValueError("human thread must have exactly one anchor member")
         if self.anchor_member_id not in member_ids:
             raise ValueError("anchor_member_id must reference a thread member")
         if anchors[0].member_id != self.anchor_member_id:
-            raise ValueError(
-                "anchor_member_id must reference the member whose role is anchor"
-            )
+            raise ValueError("anchor_member_id must reference the member whose role is anchor")
         if self.kind == ThreadKind.PERSON and len(self.members) != 1:
             raise ValueError("a person thread must contain exactly one member")
-        if self.kind in (ThreadKind.FAMILY, ThreadKind.COHORT) and len(
-            self.members
-        ) < 2:
+        if self.kind in (ThreadKind.FAMILY, ThreadKind.COHORT) and len(self.members) < 2:
             raise ValueError("a family/cohort thread must contain at least two members")
         arc_actor_ids = [
-            member.arc_actor_id
-            for member in self.members
-            if member.arc_actor_id is not None
+            member.arc_actor_id for member in self.members if member.arc_actor_id is not None
         ]
         if len(arc_actor_ids) != len(set(arc_actor_ids)):
             raise ValueError("arc_actor_id values must be unique across members")
@@ -2243,28 +2172,21 @@ class SectionThreadRef(StrictModel):
         if self.presence == ThreadSectionPresence.CARRIED:
             if not self.grounding_primitive_ids or not self.grounding_passage_ids:
                 raise ValueError(
-                    "a carried thread binding must ground in at least one primitive "
-                    "and one passage"
+                    "a carried thread binding must ground in at least one primitive and one passage"
                 )
             if self.carrying_member_id is None:
                 raise ValueError("a carried thread binding must name a carrying member")
         elif self.presence == ThreadSectionPresence.PERIPHERAL:
             if not self.grounding_passage_ids:
-                raise ValueError(
-                    "a peripheral thread binding must ground in at least one passage"
-                )
+                raise ValueError("a peripheral thread binding must ground in at least one passage")
         else:  # ABSENT
             if self.fallback_mode == ThreadFallbackMode.NONE:
-                raise ValueError(
-                    "an absent thread binding must declare a non-none fallback_mode"
-                )
+                raise ValueError("an absent thread binding must declare a non-none fallback_mode")
             if (
                 self.fallback_mode == ThreadFallbackMode.PERIPHERAL_TOUCH
                 and not self.grounding_passage_ids
             ):
-                raise ValueError(
-                    "a peripheral_touch fallback must ground in at least one passage"
-                )
+                raise ValueError("a peripheral_touch fallback must ground in at least one passage")
         return self
 
 
@@ -2283,9 +2205,7 @@ class EpisodeAuthorialContract(StrictModel):
     governing_lenses: list[str] = Field(default_factory=list, max_length=3)
     must_clarify_terms: list[str] = Field(default_factory=list, max_length=4)
     must_clarify_institutions: list[str] = Field(default_factory=list, max_length=4)
-    introduce_explanation_item_ids: list[str] = Field(
-        default_factory=list, max_length=4
-    )
+    introduce_explanation_item_ids: list[str] = Field(default_factory=list, max_length=4)
     remind_explanation_item_ids: list[str] = Field(default_factory=list, max_length=4)
     introduce_actor_ids: list[str] = Field(default_factory=list, max_length=4)
     remind_actor_ids: list[str] = Field(default_factory=list, max_length=4)
@@ -2404,7 +2324,9 @@ def _coerce_continuity_carry_items(
         if isinstance(value, dict):
             coerced.append(ContinuityCarryItem.model_validate(value))
             continue
-        raise TypeError("continuity carry items must be strings, dicts, or ContinuityCarryItem values")
+        raise TypeError(
+            "continuity carry items must be strings, dicts, or ContinuityCarryItem values"
+        )
     return coerced
 
 
@@ -2423,9 +2345,7 @@ class ListenerEpisodeAgenda(StrictModel):
     introduce_actor_ids: list[str] = Field(default_factory=list, max_length=4)
     remind_actor_ids: list[str] = Field(default_factory=list, max_length=4)
     question_moves: list[ListenerQuestionMove] = Field(default_factory=list, max_length=6)
-    memory_thread_moves: list[ListenerMemoryThreadMove] = Field(
-        default_factory=list, max_length=6
-    )
+    memory_thread_moves: list[ListenerMemoryThreadMove] = Field(default_factory=list, max_length=6)
     carry_forward_memory: list[ContinuityCarryItem] = Field(default_factory=list, max_length=4)
     episode_takeaway: EpisodeTakeaway | None = None
 
@@ -2561,9 +2481,7 @@ class NarrativeStateDelta(StrictModel):
     introduced_explanation_item_ids: list[str] = Field(default_factory=list)
     introduced_actor_ids: list[str] = Field(default_factory=list)
     listener_question_updates: list[ListenerQuestionState] = Field(default_factory=list)
-    listener_memory_thread_updates: list[ListenerMemoryThreadState] = Field(
-        default_factory=list
-    )
+    listener_memory_thread_updates: list[ListenerMemoryThreadState] = Field(default_factory=list)
     host_mystery_updates: list[HostMysteryState] = Field(default_factory=list)
     host_assumption_updates: list[HostAssumptionState] = Field(default_factory=list)
     host_theory_updates: list[HostTheoryState] = Field(default_factory=list)
@@ -2578,9 +2496,7 @@ class NarrativeStateDelta(StrictModel):
 
     @field_validator("listener_carry_forward_memory", mode="before")
     @classmethod
-    def validate_listener_carry_forward_memory(
-        cls, value: Any
-    ) -> list[ContinuityCarryItem]:
+    def validate_listener_carry_forward_memory(cls, value: Any) -> list[ContinuityCarryItem]:
         return _coerce_continuity_carry_items(value)
 
 
@@ -2626,9 +2542,17 @@ class SceneDiscoveryCandidate(StrictModel):
 
     @model_validator(mode="after")
     def validate_references(self) -> "SceneDiscoveryCandidate":
-        self.primitive_ids = list(dict.fromkeys(_nonempty_text(item) for item in self.primitive_ids if _nonempty_text(item)))
-        self.passage_ids = list(dict.fromkeys(_nonempty_text(item) for item in self.passage_ids if _nonempty_text(item)))
-        self.actor_ids = list(dict.fromkeys(_nonempty_text(item) for item in self.actor_ids if _nonempty_text(item)))
+        self.primitive_ids = list(
+            dict.fromkeys(
+                _nonempty_text(item) for item in self.primitive_ids if _nonempty_text(item)
+            )
+        )
+        self.passage_ids = list(
+            dict.fromkeys(_nonempty_text(item) for item in self.passage_ids if _nonempty_text(item))
+        )
+        self.actor_ids = list(
+            dict.fromkeys(_nonempty_text(item) for item in self.actor_ids if _nonempty_text(item))
+        )
         self.scene_jobs = list(dict.fromkeys(self.scene_jobs))
         if not self.primitive_ids:
             raise ValueError("scene discovery candidates must reference primitive_ids")
@@ -2662,16 +2586,12 @@ class PromisedBeat(StrictModel):
     def validate_sources(self) -> "PromisedBeat":
         self.source_candidate_ids = list(
             dict.fromkeys(
-                _nonempty_text(item)
-                for item in self.source_candidate_ids
-                if _nonempty_text(item)
+                _nonempty_text(item) for item in self.source_candidate_ids if _nonempty_text(item)
             )
         )
         self.source_primitive_ids = list(
             dict.fromkeys(
-                _nonempty_text(item)
-                for item in self.source_primitive_ids
-                if _nonempty_text(item)
+                _nonempty_text(item) for item in self.source_primitive_ids if _nonempty_text(item)
             )
         )
         if not self.source_candidate_ids and not self.source_primitive_ids:
@@ -2716,19 +2636,11 @@ class StrategyEpisode(StrictModel):
     arc_summary: str = Field(min_length=1)
     unresolved_questions: list[str] = Field(default_factory=list)
     episode_spine: EpisodeSpine
-    actor_arc_directives: list[ActorArcDirective] = Field(
-        default_factory=list, max_length=4
-    )
+    actor_arc_directives: list[ActorArcDirective] = Field(default_factory=list, max_length=4)
     human_thread: HumanThread | None = None
-    narrator_contract: EpisodeNarratorContract = Field(
-        default_factory=EpisodeNarratorContract
-    )
-    authorial_contract: EpisodeAuthorialContract = Field(
-        default_factory=EpisodeAuthorialContract
-    )
-    narrative_agenda: EpisodeNarrativeAgenda = Field(
-        default_factory=EpisodeNarrativeAgenda
-    )
+    narrator_contract: EpisodeNarratorContract = Field(default_factory=EpisodeNarratorContract)
+    authorial_contract: EpisodeAuthorialContract = Field(default_factory=EpisodeAuthorialContract)
+    narrative_agenda: EpisodeNarrativeAgenda = Field(default_factory=EpisodeNarrativeAgenda)
     promised_beats: list[PromisedBeat] = Field(default_factory=list, max_length=12)
     negative_scope: NegativeScope = Field(default_factory=NegativeScope)
 
@@ -2778,7 +2690,9 @@ class StrategyEpisode(StrictModel):
                         ContinuityCarryItem(
                             item_id=f"episode_{self.episode_number}_carry_term_{index}",
                             label=item,
-                            kind="institution" if item in self.authorial_contract.must_clarify_institutions else "takeaway",
+                            kind="institution"
+                            if item in self.authorial_contract.must_clarify_institutions
+                            else "takeaway",
                             source_episode_number=self.episode_number,
                             priority="normal",
                             desired_surface="body",
@@ -2814,17 +2728,13 @@ class StrategyEpisodeSkeleton(StrictModel):
     arc_summary: str = Field(min_length=1)
     unresolved_questions: list[str] = Field(default_factory=list)
     episode_spine: EpisodeSpine
-    actor_arc_directives: list[ActorArcDirective] = Field(
-        default_factory=list, max_length=4
-    )
+    actor_arc_directives: list[ActorArcDirective] = Field(default_factory=list, max_length=4)
     human_thread: HumanThread | None = None
     negative_scope: NegativeScope = Field(default_factory=NegativeScope)
 
 
 class NarrativeStrategySkeleton(StrictModel):
-    strategy_type: Literal[
-        "thesis_driven", "debate", "chronological", "convergence", "mosaic"
-    ]
+    strategy_type: Literal["thesis_driven", "debate", "chronological", "convergence", "mosaic"]
     justification: str = Field(min_length=1)
     series_arc: str = Field(min_length=1)
     episode_arc_outline: list[str] = Field(default_factory=list)
@@ -2835,20 +2745,12 @@ class NarrativeStrategySkeleton(StrictModel):
     def validate_strategy(self) -> "NarrativeStrategySkeleton":
         episode_numbers = [episode.episode_number for episode in self.episodes]
         if len(episode_numbers) != len(set(episode_numbers)):
-            raise ValueError(
-                "episodes must not contain duplicate episode_number values"
-            )
-        if self.episode_arc_outline and len(self.episode_arc_outline) != len(
-            self.episodes
-        ):
-            raise ValueError(
-                "episode_arc_outline must align with episodes when provided"
-            )
+            raise ValueError("episodes must not contain duplicate episode_number values")
+        if self.episode_arc_outline and len(self.episode_arc_outline) != len(self.episodes):
+            raise ValueError("episode_arc_outline must align with episodes when provided")
         if self.recommended_episode_count is not None and self.episodes:
             if self.recommended_episode_count != len(self.episodes):
-                raise ValueError(
-                    "recommended_episode_count must match the number of episodes"
-                )
+                raise ValueError("recommended_episode_count must match the number of episodes")
         return self
 
 
@@ -2873,9 +2775,7 @@ def effective_narrator_allowed_moves(
     allowed_moves: list[str] | tuple[str, ...] | None = None,
 ) -> list[str]:
     normalized = list(
-        dict.fromkeys(
-            str(move).strip() for move in (allowed_moves or []) if str(move).strip()
-        )
+        dict.fromkeys(str(move).strip() for move in (allowed_moves or []) if str(move).strip())
     )
     if not normalized:
         return list(_DEFAULT_NARRATOR_ALLOWED_MOVES)
@@ -2904,9 +2804,7 @@ class NarratorPersona(StrictModel):
 class SeriesNarratorProfile(StrictModel):
     presence_mode: Literal["visible_host"] = "visible_host"
     baseline_tone: Literal["dry", "plainspoken", "wry", "grave"] = "plainspoken"
-    spoken_style_contract: Literal["classic", "anti_academic_oral"] = (
-        "anti_academic_oral"
-    )
+    spoken_style_contract: Literal["classic", "anti_academic_oral"] = "anti_academic_oral"
     allowed_moves: list[
         Literal[
             "orient",
@@ -2921,9 +2819,7 @@ class SeriesNarratorProfile(StrictModel):
             "surprise",
             "persona_aside",
         ]
-    ] = Field(
-        default_factory=lambda: list(_DEFAULT_NARRATOR_ALLOWED_MOVES)
-    )
+    ] = Field(default_factory=lambda: list(_DEFAULT_NARRATOR_ALLOWED_MOVES))
     forbidden_moves: list[
         Literal["unsupported_psychology", "cheap_joke", "fake_banter", "teaser_hype"]
     ] = Field(
@@ -2935,9 +2831,7 @@ class SeriesNarratorProfile(StrictModel):
         ]
     )
     target_full_phase_scene_coverage_min: float = Field(default=0.60, ge=0.0, le=1.0)
-    target_full_phase_scene_coverage_target: float = Field(
-        default=0.75, ge=0.0, le=1.0
-    )
+    target_full_phase_scene_coverage_target: float = Field(default=0.75, ge=0.0, le=1.0)
     analysis_mode: Literal["scene_led", "hybrid", "analysis_forward"] = "hybrid"
     analysis_density: Literal["light", "medium", "high"] = "medium"
     quote_gloss_preference: Literal["avoid", "allow", "prefer"] = "allow"
@@ -2951,10 +2845,7 @@ class SeriesNarratorProfile(StrictModel):
 
     @model_validator(mode="after")
     def validate_coverage_targets(self) -> "SeriesNarratorProfile":
-        if (
-            self.target_full_phase_scene_coverage_target
-            < self.target_full_phase_scene_coverage_min
-        ):
+        if self.target_full_phase_scene_coverage_target < self.target_full_phase_scene_coverage_min:
             raise ValueError(
                 "target_full_phase_scene_coverage_target must be greater than or "
                 "equal to target_full_phase_scene_coverage_min"
@@ -2964,16 +2855,12 @@ class SeriesNarratorProfile(StrictModel):
 
 
 class NarrativeStrategy(StrictModel):
-    strategy_type: Literal[
-        "thesis_driven", "debate", "chronological", "convergence", "mosaic"
-    ]
+    strategy_type: Literal["thesis_driven", "debate", "chronological", "convergence", "mosaic"]
     justification: str = Field(min_length=1)
     series_arc: str = Field(min_length=1)
     episode_arc_outline: list[str] = Field(default_factory=list)
     recommended_episode_count: int | None = Field(default=None, ge=1)
-    narrator_profile: SeriesNarratorProfile = Field(
-        default_factory=SeriesNarratorProfile
-    )
+    narrator_profile: SeriesNarratorProfile = Field(default_factory=SeriesNarratorProfile)
     series_explanation_registry: list[SeriesExplanationItem] = Field(
         default_factory=list, max_length=12
     )
@@ -2986,36 +2873,24 @@ class NarrativeStrategy(StrictModel):
     def validate_strategy(self) -> "NarrativeStrategy":
         episode_numbers = [episode.episode_number for episode in self.episodes]
         if len(episode_numbers) != len(set(episode_numbers)):
-            raise ValueError(
-                "episodes must not contain duplicate episode_number values"
-            )
-        if self.episode_arc_outline and len(self.episode_arc_outline) != len(
-            self.episodes
-        ):
-            raise ValueError(
-                "episode_arc_outline must align with episodes when provided"
-            )
+            raise ValueError("episodes must not contain duplicate episode_number values")
+        if self.episode_arc_outline and len(self.episode_arc_outline) != len(self.episodes):
+            raise ValueError("episode_arc_outline must align with episodes when provided")
         if self.recommended_episode_count is not None and self.episodes:
             if self.recommended_episode_count != len(self.episodes):
-                raise ValueError(
-                    "recommended_episode_count must match the number of episodes"
-                )
+                raise ValueError("recommended_episode_count must match the number of episodes")
         registry_ids = [item.item_id for item in self.series_explanation_registry]
         if len(registry_ids) != len(set(registry_ids)):
             raise ValueError(
                 "series_explanation_registry must not contain duplicate item_id values"
             )
-        actor_registry_ids = [
-            item.actor_id for item in self.series_actor_explanation_registry
-        ]
+        actor_registry_ids = [item.actor_id for item in self.series_actor_explanation_registry]
         if len(actor_registry_ids) != len(set(actor_registry_ids)):
             raise ValueError(
                 "series_actor_explanation_registry must not contain duplicate actor_id values"
             )
         if self.episodes and self.series_explanation_registry:
-            valid_episode_numbers = {
-                episode.episode_number for episode in self.episodes
-            }
+            valid_episode_numbers = {episode.episode_number for episode in self.episodes}
             for item in self.series_explanation_registry:
                 if item.introduction_episode_number not in valid_episode_numbers:
                     raise ValueError(
@@ -3023,9 +2898,7 @@ class NarrativeStrategy(StrictModel):
                         "must reference an existing episode"
                     )
         if self.episodes and self.series_actor_explanation_registry:
-            valid_episode_numbers = {
-                episode.episode_number for episode in self.episodes
-            }
+            valid_episode_numbers = {episode.episode_number for episode in self.episodes}
             for item in self.series_actor_explanation_registry:
                 if item.introduction_episode_number not in valid_episode_numbers:
                     raise ValueError(
@@ -3095,20 +2968,14 @@ class NarrativeStrategy(StrictModel):
                     )
                 for actor_id in introduce_actor_ids:
                     registry_item = actor_registry_by_id[actor_id]
-                    if (
-                        registry_item.introduction_episode_number
-                        != episode.episode_number
-                    ):
+                    if registry_item.introduction_episode_number != episode.episode_number:
                         raise ValueError(
                             "introduced actor ids must match their canonical "
                             "introduction_episode_number"
                         )
                 for actor_id in remind_actor_ids:
                     registry_item = actor_registry_by_id[actor_id]
-                    if (
-                        registry_item.introduction_episode_number
-                        > episode.episode_number
-                    ):
+                    if registry_item.introduction_episode_number > episode.episode_number:
                         raise ValueError(
                             "remind actor ids must not appear before the actor's "
                             "introduction episode"
@@ -3118,15 +2985,9 @@ class NarrativeStrategy(StrictModel):
 
 class StrategyEpisodeEnrichment(StrictModel):
     episode_number: int = Field(ge=1)
-    narrator_contract: EpisodeNarratorContract = Field(
-        default_factory=EpisodeNarratorContract
-    )
-    authorial_contract: EpisodeAuthorialContract = Field(
-        default_factory=EpisodeAuthorialContract
-    )
-    narrative_agenda: EpisodeNarrativeAgenda = Field(
-        default_factory=EpisodeNarrativeAgenda
-    )
+    narrator_contract: EpisodeNarratorContract = Field(default_factory=EpisodeNarratorContract)
+    authorial_contract: EpisodeAuthorialContract = Field(default_factory=EpisodeAuthorialContract)
+    narrative_agenda: EpisodeNarrativeAgenda = Field(default_factory=EpisodeNarrativeAgenda)
     promised_beats: list[PromisedBeat] = Field(default_factory=list, max_length=12)
 
     @model_validator(mode="after")
@@ -3143,9 +3004,7 @@ class StrategyEpisodeEnrichment(StrictModel):
 
 
 class NarrativeStrategyEnrichment(StrictModel):
-    narrator_profile: SeriesNarratorProfile = Field(
-        default_factory=SeriesNarratorProfile
-    )
+    narrator_profile: SeriesNarratorProfile = Field(default_factory=SeriesNarratorProfile)
     series_explanation_registry: list[SeriesExplanationItem] = Field(
         default_factory=list, max_length=12
     )
@@ -3158,25 +3017,19 @@ class NarrativeStrategyEnrichment(StrictModel):
     def validate_strategy(self) -> "NarrativeStrategyEnrichment":
         episode_numbers = [episode.episode_number for episode in self.episodes]
         if len(episode_numbers) != len(set(episode_numbers)):
-            raise ValueError(
-                "episodes must not contain duplicate episode_number values"
-            )
+            raise ValueError("episodes must not contain duplicate episode_number values")
         registry_ids = [item.item_id for item in self.series_explanation_registry]
         if len(registry_ids) != len(set(registry_ids)):
             raise ValueError(
                 "series_explanation_registry must not contain duplicate item_id values"
             )
-        actor_registry_ids = [
-            item.actor_id for item in self.series_actor_explanation_registry
-        ]
+        actor_registry_ids = [item.actor_id for item in self.series_actor_explanation_registry]
         if len(actor_registry_ids) != len(set(actor_registry_ids)):
             raise ValueError(
                 "series_actor_explanation_registry must not contain duplicate actor_id values"
             )
         if self.episodes and self.series_explanation_registry:
-            valid_episode_numbers = {
-                episode.episode_number for episode in self.episodes
-            }
+            valid_episode_numbers = {episode.episode_number for episode in self.episodes}
             for item in self.series_explanation_registry:
                 if item.introduction_episode_number not in valid_episode_numbers:
                     raise ValueError(
@@ -3184,9 +3037,7 @@ class NarrativeStrategyEnrichment(StrictModel):
                         "must reference an existing episode"
                     )
         if self.episodes and self.series_actor_explanation_registry:
-            valid_episode_numbers = {
-                episode.episode_number for episode in self.episodes
-            }
+            valid_episode_numbers = {episode.episode_number for episode in self.episodes}
             for item in self.series_actor_explanation_registry:
                 if item.introduction_episode_number not in valid_episode_numbers:
                     raise ValueError(
@@ -3256,20 +3107,14 @@ class NarrativeStrategyEnrichment(StrictModel):
                     )
                 for actor_id in introduce_actor_ids:
                     registry_item = actor_registry_by_id[actor_id]
-                    if (
-                        registry_item.introduction_episode_number
-                        != episode.episode_number
-                    ):
+                    if registry_item.introduction_episode_number != episode.episode_number:
                         raise ValueError(
                             "introduced actor ids must match their canonical "
                             "introduction_episode_number"
                         )
                 for actor_id in remind_actor_ids:
                     registry_item = actor_registry_by_id[actor_id]
-                    if (
-                        registry_item.introduction_episode_number
-                        > episode.episode_number
-                    ):
+                    if registry_item.introduction_episode_number > episode.episode_number:
                         raise ValueError(
                             "remind actor ids must not appear before the actor's "
                             "introduction episode"
@@ -3341,9 +3186,7 @@ class WithholdUntil(StrictModel):
 
 
 class AuthorialPassage(StrictModel):
-    authorial_passage_id: str = Field(
-        default_factory=lambda: f"authorial_{new_id()[:8]}"
-    )
+    authorial_passage_id: str = Field(default_factory=lambda: f"authorial_{new_id()[:8]}")
     passage_id: str = Field(min_length=1)
     mode: Literal[
         "quote_then_gloss",
@@ -3356,9 +3199,7 @@ class AuthorialPassage(StrictModel):
     placement: Literal["open", "mid", "close"] = "mid"
     claim: str = Field(min_length=1)
     claim_certainty: Literal["settled", "probable", "contested_memory"] = "settled"
-    source_primitive_ids: list[str] = Field(
-        default_factory=list, min_length=1, max_length=3
-    )
+    source_primitive_ids: list[str] = Field(default_factory=list, min_length=1, max_length=3)
     source_passage_ids: list[str] = Field(default_factory=list, max_length=4)
     counter_source_passage_ids: list[str] = Field(default_factory=list, max_length=4)
     quote_anchor: str = ""
@@ -3499,18 +3340,10 @@ class SectionStateEffects(StrictModel):
     """Continuity/state mutations a section causes, nested under section_progression."""
 
     question_moves: list[ListenerQuestionMove] = Field(default_factory=list, max_length=4)
-    memory_thread_moves: list[ListenerMemoryThreadMove] = Field(
-        default_factory=list, max_length=4
-    )
-    host_mystery_moves: list[HostMysteryMove] = Field(
-        default_factory=list, max_length=4
-    )
-    host_assumption_moves: list[HostAssumptionMove] = Field(
-        default_factory=list, max_length=4
-    )
-    host_theory_moves: list[HostTheoryMove] = Field(
-        default_factory=list, max_length=4
-    )
+    memory_thread_moves: list[ListenerMemoryThreadMove] = Field(default_factory=list, max_length=4)
+    host_mystery_moves: list[HostMysteryMove] = Field(default_factory=list, max_length=4)
+    host_assumption_moves: list[HostAssumptionMove] = Field(default_factory=list, max_length=4)
+    host_theory_moves: list[HostTheoryMove] = Field(default_factory=list, max_length=4)
 
 
 class SectionProgression(StrictModel):
@@ -3523,16 +3356,12 @@ class SectionProgression(StrictModel):
     what_remains_live: str = Field(min_length=1)
     state_effects: SectionStateEffects = Field(default_factory=SectionStateEffects)
 
-    @field_validator(
-        "becomes_obvious", "answer_contribution", "theme_link", "what_remains_live"
-    )
+    @field_validator("becomes_obvious", "answer_contribution", "theme_link", "what_remains_live")
     @classmethod
     def _strip_required_prose(cls, value: str) -> str:
         cleaned = value.strip()
         if not cleaned:
-            raise ValueError(
-                "section_progression prose fields must not be blank"
-            )
+            raise ValueError("section_progression prose fields must not be blank")
         return cleaned
 
 
@@ -3549,28 +3378,20 @@ class ArchitectureSection(StrictModel):
     density_rationale: str = Field(default="", max_length=400)
     primitive_ids: list[str] = Field(default_factory=list, min_length=1)
     excerpt_ids: list[str] = Field(default_factory=list)
-    open_mode: Literal[
-        "scene_anchor", "voice_first", "question_first", "condition_first"
-    ] = "scene_anchor"
+    open_mode: Literal["scene_anchor", "voice_first", "question_first", "condition_first"] = (
+        "scene_anchor"
+    )
     section_anchor: str = Field(default="")
     must_stage_beats: list[str] = Field(default_factory=list, max_length=4)
     priority_core_passage_ids: list[str] = Field(default_factory=list)
     key_terms: list[str] = Field(default_factory=list, max_length=6)
-    authorial_passages: list[AuthorialPassage] = Field(
-        default_factory=list, max_length=4
-    )
-    term_explanations: list[TermExplanationPlan] = Field(
-        default_factory=list, max_length=4
-    )
-    actor_explanations: list[ActorExplanationPlan] = Field(
-        default_factory=list, max_length=4
-    )
+    authorial_passages: list[AuthorialPassage] = Field(default_factory=list, max_length=4)
+    term_explanations: list[TermExplanationPlan] = Field(default_factory=list, max_length=4)
+    actor_explanations: list[ActorExplanationPlan] = Field(default_factory=list, max_length=4)
     section_progression: SectionProgression
     section_sonic_plan: SectionSonicPlan | None = None
     thread_binding: SectionThreadRef | None = None
-    host_beat_designations: list[HostBeatDesignation] = Field(
-        default_factory=list, max_length=3
-    )
+    host_beat_designations: list[HostBeatDesignation] = Field(default_factory=list, max_length=3)
 
     @model_validator(mode="before")
     @classmethod
@@ -3615,9 +3436,7 @@ class ArchitectureSection(StrictModel):
         if any(not item for item in cleaned):
             raise ValueError("must_stage_beats must not contain blank items")
         if len(cleaned) < 2:
-            raise ValueError(
-                "must_stage_beats must contain at least 2 items when provided"
-            )
+            raise ValueError("must_stage_beats must contain at least 2 items when provided")
         return cleaned
 
     @model_validator(mode="after")
@@ -3641,8 +3460,7 @@ class ArchitectureSection(StrictModel):
                 )
             if self.purpose == SectionPurpose.CLOSING:
                 raise ValueError(
-                    "closing-purpose section cannot be dense "
-                    f"(section_id={self.section_id})"
+                    f"closing-purpose section cannot be dense (section_id={self.section_id})"
                 )
         return self
 
@@ -3652,15 +3470,11 @@ class EpisodeArchitecture(StrictModel):
     major_turn_section_id: str = Field(min_length=1)
     allowed_recurring_primitive_ids: list[str] = Field(default_factory=list)
     forbidden_redundancies: list[str] = Field(default_factory=list)
-    promised_beat_decisions: list[PromisedBeatDecisionRecord] = Field(
-        default_factory=list
-    )
+    promised_beat_decisions: list[PromisedBeatDecisionRecord] = Field(default_factory=list)
     # Hard schema bounds widened (Change 1). Business policy (preferred 12-18
     # full / 6-10 minified) is enforced softly via
     # validate_episode_architecture_targets using project config.
-    sections: list[ArchitectureSection] = Field(
-        default_factory=list, min_length=4, max_length=18
-    )
+    sections: list[ArchitectureSection] = Field(default_factory=list, min_length=4, max_length=18)
     architecture_notes: list[str] = Field(default_factory=list)
 
     @model_validator(mode="before")
@@ -3712,41 +3526,29 @@ class EpisodeArchitecture(StrictModel):
             if section.section_progression.stage == ProgressionStage.CLOSE
         ]
         if len(answer_indices) != 1:
-            raise ValueError(
-                "exactly one section must have section_progression.stage='answer'"
-            )
+            raise ValueError("exactly one section must have section_progression.stage='answer'")
         if len(close_indices) != 1:
-            raise ValueError(
-                "exactly one section must have section_progression.stage='close'"
-            )
+            raise ValueError("exactly one section must have section_progression.stage='close'")
         answer_idx = answer_indices[0]
         close_idx = close_indices[0]
         if close_idx != len(self.sections) - 1:
-            raise ValueError(
-                "the close stage must be on the final section"
-            )
+            raise ValueError("the close stage must be on the final section")
         if answer_idx >= close_idx:
             raise ValueError("the answer stage must occur before the close stage")
         for idx, section in enumerate(self.sections):
             stage = section.section_progression.stage
-            if stage == ProgressionStage.AFTERPRESSURE and not (
-                answer_idx < idx < close_idx
-            ):
+            if stage == ProgressionStage.AFTERPRESSURE and not (answer_idx < idx < close_idx):
                 raise ValueError(
                     "afterpressure sections must occur after the answer stage "
                     "and before the close stage"
                 )
         answer_section = self.sections[answer_idx]
         if answer_section.purpose == SectionPurpose.OPENING:
-            raise ValueError(
-                "the answer stage must not be on an opening-purpose section"
-            )
+            raise ValueError("the answer stage must not be on an opening-purpose section")
         # One verdict, only at the answer section; the close section exits on live pressure.
         for section in self.sections:
             stage = section.section_progression.stage
-            has_verdict = any(
-                ap.mode == "verdict_landing" for ap in section.authorial_passages
-            )
+            has_verdict = any(ap.mode == "verdict_landing" for ap in section.authorial_passages)
             if has_verdict and stage != ProgressionStage.ANSWER:
                 raise ValueError(
                     "verdict_landing may only appear in the answer-stage section; "
@@ -3760,9 +3562,7 @@ class EpisodeArchitecture(StrictModel):
                     "it hands off section_progression.what_remains_live"
                 )
         for section in self.sections:
-            is_close_stage = (
-                section.section_progression.stage == ProgressionStage.CLOSE
-            )
+            is_close_stage = section.section_progression.stage == ProgressionStage.CLOSE
             is_closing_purpose = section.purpose == SectionPurpose.CLOSING
             if is_close_stage != is_closing_purpose:
                 raise ValueError(
@@ -3771,9 +3571,7 @@ class EpisodeArchitecture(StrictModel):
 
         beat_ids = [record.beat_id for record in self.promised_beat_decisions]
         if len(beat_ids) != len(set(beat_ids)):
-            raise ValueError(
-                "promised_beat_decisions must use unique beat_id values"
-            )
+            raise ValueError("promised_beat_decisions must use unique beat_id values")
         return self
 
 
@@ -3785,10 +3583,7 @@ def validate_episode_architecture_targets(
 ) -> None:
     section_count = len(architecture.sections)
     if section_count < section_target_min or section_count > section_target_max:
-        raise ValueError(
-            "sections must contain "
-            f"{section_target_min}-{section_target_max} items"
-        )
+        raise ValueError(f"sections must contain {section_target_min}-{section_target_max} items")
 
 
 def validate_density_budget(
@@ -3848,13 +3643,9 @@ def validate_episode_runtime_envelope(
     total = architecture.runtime_minutes
     msgs: list[str] = []
     if total < min_episode_minutes:
-        msgs.append(
-            f"episode_runtime_below_min: {total} < {min_episode_minutes}"
-        )
+        msgs.append(f"episode_runtime_below_min: {total} < {min_episode_minutes}")
     if total > max_episode_minutes:
-        msgs.append(
-            f"episode_runtime_above_max: {total} > {max_episode_minutes}"
-        )
+        msgs.append(f"episode_runtime_above_max: {total} > {max_episode_minutes}")
     if msgs and policy == "enforce":
         raise ValueError("; ".join(msgs))
     return msgs
@@ -3992,10 +3783,7 @@ def derive_section_scene_targets(
         max_allocated = sum(amt for _, amt in max_floored)
         max_leftover = max(0, remaining_max - max_allocated)
         max_fractional = sorted(
-            (
-                (s, max_shares[i][1] - max_floored[i][1])
-                for i, (s, _) in enumerate(max_floored)
-            ),
+            ((s, max_shares[i][1] - max_floored[i][1]) for i, (s, _) in enumerate(max_floored)),
             key=lambda x: x[1],
             reverse=True,
         )
@@ -4050,7 +3838,11 @@ class SceneActor(StrictModel):
                 raise ValueError(
                     "scene actors marked for introduce must include an evidence-backed intro payload or a legacy preferred_plain_gloss"
                 )
-            if self.background_depth == "full" and has_evidence_payload and len(self.intro_facts) < 2:
+            if (
+                self.background_depth == "full"
+                and has_evidence_payload
+                and len(self.intro_facts) < 2
+            ):
                 raise ValueError(
                     "scene actors marked for introduce with background_depth='full' must include at least 2 intro_facts"
                 )
@@ -4109,8 +3901,7 @@ class HostMoveCue(StrictModel):
             str(cleaned.get("surface_mode", "mixed") or "mixed").strip() or "mixed"
         )
         cleaned["address_mode"] = (
-            str(cleaned.get("address_mode", "implicit") or "implicit").strip()
-            or "implicit"
+            str(cleaned.get("address_mode", "implicit") or "implicit").strip() or "implicit"
         )
         return cleaned
 
@@ -4349,23 +4140,17 @@ class EpisodePlanDraft(StrictModel):
         if len(scene_ids) != len(set(scene_ids)):
             raise ValueError("scene_cards must use unique scene_id values")
         if self.framing.handoff_scene_card_id not in set(scene_ids):
-            raise ValueError(
-                "framing.handoff_scene_card_id must reference an existing scene card"
-            )
+            raise ValueError("framing.handoff_scene_card_id must reference an existing scene card")
         scene_by_id = {scene.scene_id: scene for scene in self.scene_cards}
         if self.answer_scene_card_id is not None:
             answer_scene = scene_by_id.get(self.answer_scene_card_id)
             if answer_scene is None:
-                raise ValueError(
-                    "answer_scene_card_id must reference an existing scene card"
-                )
+                raise ValueError("answer_scene_card_id must reference an existing scene card")
             if answer_scene.scene_job != SceneJob.ANSWER:
                 raise ValueError(
                     "answer_scene_card_id must reference a scene card with scene_job='answer'"
                 )
-        scene_index_by_id = {
-            scene.scene_id: idx for idx, scene in enumerate(self.scene_cards)
-        }
+        scene_index_by_id = {scene.scene_id: idx for idx, scene in enumerate(self.scene_cards)}
         for scene in self.scene_cards:
             withhold = scene.withhold_until
             if withhold is None or withhold.reveal_scene_id is None:
@@ -4490,9 +4275,7 @@ class SectionQualityScore(StrictModel):
     def _validate_criteria_complete_and_weakest(self) -> "SectionQualityScore":
         seen = {cs.criterion for cs in self.criterion_scores}
         if seen != set(QualityCriterion):
-            raise ValueError(
-                "section criterion_scores must cover all six QualityCriterion values"
-            )
+            raise ValueError("section criterion_scores must cover all six QualityCriterion values")
         # weakest_criterion is AUTO-CORRECTED, never rejected. The LLM's
         # per-criterion numerical scoring is approximate; its semantic
         # judgment of "weakest" is more confident. When the LLM's pick is
@@ -4507,16 +4290,10 @@ class SectionQualityScore(StrictModel):
         # useful context about which tied-criterion is most actionable.
         min_score = min(cs.score for cs in self.criterion_scores)
         llm_score = next(
-            cs.score
-            for cs in self.criterion_scores
-            if cs.criterion == self.weakest_criterion
+            cs.score for cs in self.criterion_scores if cs.criterion == self.weakest_criterion
         )
         if llm_score != min_score:
-            corrected = next(
-                cs.criterion
-                for cs in self.criterion_scores
-                if cs.score == min_score
-            )
+            corrected = next(cs.criterion for cs in self.criterion_scores if cs.score == min_score)
             object.__setattr__(self, "weakest_criterion", corrected)
         return self
 
@@ -4534,9 +4311,7 @@ class EpisodeQualityScore(StrictModel):
     def _validate_episode_score(self) -> "EpisodeQualityScore":
         seen = {cs.criterion for cs in self.criterion_scores}
         if seen != set(QualityCriterion):
-            raise ValueError(
-                "episode criterion_scores must cover all six QualityCriterion values"
-            )
+            raise ValueError("episode criterion_scores must cover all six QualityCriterion values")
         section_ids = {s.section_id for s in self.section_scores}
         for target in self.weakest_sections:
             if target not in section_ids:
@@ -4596,9 +4371,7 @@ class SpeechHints(StrictModel):
     pause_after_ms: int = Field(default=300, ge=0, le=2000)
     pronunciation_hints: list[PronunciationHint] = Field(default_factory=list)
     emphasis_targets: list[str] = Field(default_factory=list)
-    render_strategy: Literal[
-        "plain", "isolate_phrase", "split_sentences", "slow_clause"
-    ] = "plain"
+    render_strategy: Literal["plain", "isolate_phrase", "split_sentences", "slow_clause"] = "plain"
 
 
 class SonicCue(StrictModel):
@@ -4626,7 +4399,7 @@ class SpokenRegister(str, Enum):
 
 class SpokenSpeakerRole(str, Enum):
     PRIMARY = "primary"  # narrator/host voice
-    ACTOR = "actor"      # voiced historical excerpt
+    ACTOR = "actor"  # voiced historical excerpt
 
 
 class SpokenSegment(StrictModel):
@@ -4652,8 +4425,7 @@ class SpokenSegment(StrictModel):
                 )
             if self.speaker_id is None:
                 raise ValueError(
-                    "actor segments must set speaker_id "
-                    f"(segment_id={self.segment_id})"
+                    f"actor segments must set speaker_id (segment_id={self.segment_id})"
                 )
         return self
 

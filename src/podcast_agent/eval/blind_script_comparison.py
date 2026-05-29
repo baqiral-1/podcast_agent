@@ -8,7 +8,7 @@ import json
 import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Sequence
 
 WORD_RE = re.compile(r"[a-z0-9']+")
 DEFAULT_COUNTS_BY_EPISODE = (13, 13, 12, 12)
@@ -133,11 +133,7 @@ def _build_snippet_source(
         chosen.append(paragraphs[end_index])
         total_words = sum(_word_count(part) for part in chosen)
 
-    if (
-        total_words < min_words
-        and len(chosen) < MAX_PARAGRAPHS_PER_SNIPPET
-        and start_index > 0
-    ):
+    if total_words < min_words and len(chosen) < MAX_PARAGRAPHS_PER_SNIPPET and start_index > 0:
         start_index -= 1
         chosen.insert(0, paragraphs[start_index])
         total_words = sum(_word_count(part) for part in chosen)

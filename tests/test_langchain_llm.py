@@ -26,9 +26,7 @@ def test_apply_schema_caps_truncates_chapter_summary_analysis_lists() -> None:
         },
     }
 
-    capped, truncations = _apply_schema_caps(
-        payload, ChapterSummaryResponse, "chapter_summary"
-    )
+    capped, truncations = _apply_schema_caps(payload, ChapterSummaryResponse, "chapter_summary")
 
     analysis = capped["analysis"]
     assert len(analysis["themes_touched"]) == 8
@@ -379,9 +377,8 @@ class _FakeAIMessageChunk:
         self.response_metadata = response_metadata or {}
 
     def __add__(self, other: "_FakeAIMessageChunk") -> "_FakeAIMessageChunk":
-        merged_content = (
-            (self.content if isinstance(self.content, str) else "")
-            + (other.content if isinstance(other.content, str) else "")
+        merged_content = (self.content if isinstance(self.content, str) else "") + (
+            other.content if isinstance(other.content, str) else ""
         )
         # When either side has list content, prefer concatenation of lists.
         if isinstance(self.content, list) or isinstance(other.content, list):
@@ -517,7 +514,7 @@ def test_generate_json_records_thinking_tokens_from_streaming(
     chunks = [
         _FakeAIMessageChunk('{"k":'),
         _FakeAIMessageChunk(
-            '1}',
+            "1}",
             usage_metadata={
                 "input_tokens": 100,
                 "output_tokens": 50,
@@ -553,15 +550,9 @@ def test_generate_json_counts_thinking_by_index_not_by_delta(
     # own AIMessageChunk with `content=[{"type":"thinking","index":N,...}]`.
     # Many deltas for one logical block share an index; we must dedupe.
     chunks = [
-        _FakeAIMessageChunk(
-            [{"type": "thinking", "thinking": "part one ", "index": 0}]
-        ),
-        _FakeAIMessageChunk(
-            [{"type": "thinking", "thinking": "part two.", "index": 0}]
-        ),
-        _FakeAIMessageChunk(
-            [{"type": "thinking", "signature": "sig-abc", "index": 0}]
-        ),
+        _FakeAIMessageChunk([{"type": "thinking", "thinking": "part one ", "index": 0}]),
+        _FakeAIMessageChunk([{"type": "thinking", "thinking": "part two.", "index": 0}]),
+        _FakeAIMessageChunk([{"type": "thinking", "signature": "sig-abc", "index": 0}]),
         _FakeAIMessageChunk(
             '{"k":1}',
             usage_metadata={"input_tokens": 50, "output_tokens": 30},
@@ -591,18 +582,10 @@ def test_generate_json_counts_two_distinct_thinking_blocks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     chunks = [
-        _FakeAIMessageChunk(
-            [{"type": "thinking", "thinking": "aaa", "index": 0}]
-        ),
-        _FakeAIMessageChunk(
-            [{"type": "thinking", "signature": "sig-0", "index": 0}]
-        ),
-        _FakeAIMessageChunk(
-            [{"type": "thinking", "thinking": "bbb", "index": 1}]
-        ),
-        _FakeAIMessageChunk(
-            [{"type": "thinking", "signature": "sig-1", "index": 1}]
-        ),
+        _FakeAIMessageChunk([{"type": "thinking", "thinking": "aaa", "index": 0}]),
+        _FakeAIMessageChunk([{"type": "thinking", "signature": "sig-0", "index": 0}]),
+        _FakeAIMessageChunk([{"type": "thinking", "thinking": "bbb", "index": 1}]),
+        _FakeAIMessageChunk([{"type": "thinking", "signature": "sig-1", "index": 1}]),
         _FakeAIMessageChunk(
             '{"k":1}',
             usage_metadata={"input_tokens": 10, "output_tokens": 10},
@@ -660,9 +643,7 @@ def test_generate_json_signature_fingerprint_is_deterministic(
 ) -> None:
     def _run_with_signatures(sigs: list[str]) -> dict[str, Any]:
         chunks = [
-            _FakeAIMessageChunk(
-                [{"type": "thinking", "signature": sig, "index": i}]
-            )
+            _FakeAIMessageChunk([{"type": "thinking", "signature": sig, "index": i}])
             for i, sig in enumerate(sigs)
         ] + [
             _FakeAIMessageChunk(

@@ -343,9 +343,7 @@ def _validate_only_chunk(only_chunk: int | None, chunk_count: int) -> None:
     if only_chunk < 1:
         raise ValueError("--only-chunk must be at least 1.")
     if only_chunk > chunk_count:
-        raise ValueError(
-            f"--only-chunk {only_chunk} exceeds the {chunk_count} planned chunks."
-        )
+        raise ValueError(f"--only-chunk {only_chunk} exceeds the {chunk_count} planned chunks.")
 
 
 def _print_chunk_plan(chunks: list[str]) -> None:
@@ -546,11 +544,7 @@ def _generate_audio_files(
 
         torchaudio.save(str(chunk_path), audio_for_save, model.sr)
 
-        if (
-            silence_path is None
-            and args.silence_ms > 0
-            and len(text_chunks) > 1
-        ):
+        if silence_path is None and args.silence_ms > 0 and len(text_chunks) > 1:
             silence_path = _silence_wav_path(chunk_output_dir, args.silence_ms)
             if silence_path.exists():
                 del generated_audio
@@ -758,9 +752,7 @@ def synthesize(args: argparse.Namespace) -> None:
     if args.isolate_chunks and args.only_chunk is not None:
         raise ValueError("--isolate-chunks cannot be combined with --only-chunk.")
     if args.isolate_chunks and args.merge_existing_chunks:
-        raise ValueError(
-            "--isolate-chunks cannot be combined with --merge-existing-chunks."
-        )
+        raise ValueError("--isolate-chunks cannot be combined with --merge-existing-chunks.")
     if args.isolate_chunks and args.chunk_output_dir is None:
         args.chunk_output_dir = _default_chunk_output_dir(args.output)
     if args.only_chunk is not None and args.chunk_output_dir is None:

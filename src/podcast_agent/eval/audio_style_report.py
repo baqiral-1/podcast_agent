@@ -497,7 +497,9 @@ def _tokenize(text: str) -> list[str]:
 
 
 def _sentence_lengths(text: str) -> list[int]:
-    sentences = [segment.strip() for segment in SENTENCE_SPLIT_RE.split(text.strip()) if segment.strip()]
+    sentences = [
+        segment.strip() for segment in SENTENCE_SPLIT_RE.split(text.strip()) if segment.strip()
+    ]
     return [len(_tokenize(sentence)) for sentence in sentences]
 
 
@@ -533,15 +535,12 @@ def _verdict_parallel_count(text: str) -> int:
     frame the prose overuses.
     """
     sentences = [
-        segment.strip()
-        for segment in SENTENCE_SPLIT_RE.split(text.strip())
-        if segment.strip()
+        segment.strip() for segment in SENTENCE_SPLIT_RE.split(text.strip()) if segment.strip()
     ]
     negated_short = sum(
         1
         for sentence in sentences
-        if len(_tokenize(sentence)) <= 12
-        and _VERDICT_NEGATED_PREDICATE_RE.search(sentence)
+        if len(_tokenize(sentence)) <= 12 and _VERDICT_NEGATED_PREDICATE_RE.search(sentence)
     )
     not_openers = len(_VERDICT_NOT_OPENER_RE.findall(text))
     return negated_short + not_openers
@@ -568,7 +567,9 @@ def _paragraph_word_counts(paragraphs: Sequence[str]) -> list[int]:
     return [len(_tokenize(paragraph)) for paragraph in paragraphs]
 
 
-def _window_from_start(paragraphs: Sequence[str], paragraph_word_counts: Sequence[int], target_words: int) -> tuple[int, int]:
+def _window_from_start(
+    paragraphs: Sequence[str], paragraph_word_counts: Sequence[int], target_words: int
+) -> tuple[int, int]:
     total = 0
     end_index = 0
     while end_index < len(paragraphs) and total < target_words:
@@ -626,7 +627,11 @@ def _build_sample_windows(
     fractions = (0.15, 0.5, 0.82)
     windows: list[SampleWindow] = []
     for index, label in enumerate(labels):
-        target_words = sample_word_targets[index] if index < len(sample_word_targets) else sample_word_targets[-1]
+        target_words = (
+            sample_word_targets[index]
+            if index < len(sample_word_targets)
+            else sample_word_targets[-1]
+        )
         if label == "opening":
             start, end = _window_from_start(paragraphs, paragraph_word_counts, target_words)
         else:
@@ -649,7 +654,9 @@ def _build_sample_windows(
     return windows
 
 
-def _merged_window_text(windows: Sequence[SampleWindow], paragraphs: Sequence[str]) -> tuple[str, int]:
+def _merged_window_text(
+    windows: Sequence[SampleWindow], paragraphs: Sequence[str]
+) -> tuple[str, int]:
     if not windows:
         return "", 0
     paragraph_indexes: list[int] = []
@@ -693,7 +700,10 @@ def _count_concrete_openers(paragraphs: Sequence[str]) -> tuple[int, int]:
             concrete_hits += 1
         if concrete_hits >= 2:
             concrete += 1
-        if any(re.search(pattern, opener_lower, flags=re.IGNORECASE) for pattern in ABSTRACT_OPENER_PATTERNS):
+        if any(
+            re.search(pattern, opener_lower, flags=re.IGNORECASE)
+            for pattern in ABSTRACT_OPENER_PATTERNS
+        ):
             abstract += 1
     return concrete, abstract
 
@@ -706,24 +716,38 @@ def extract_auto_metrics(text: str, *, paragraphs: Sequence[str], opening_text: 
     paragraph_count = len(paragraphs)
     avg_sentence_length = sum(sentence_lengths) / sentence_count if sentence_count else 0.0
     short_sentence_share = (
-        100.0 * sum(1 for length in sentence_lengths if length <= 8) / sentence_count if sentence_count else 0.0
+        100.0 * sum(1 for length in sentence_lengths if length <= 8) / sentence_count
+        if sentence_count
+        else 0.0
     )
     long_sentence_share = (
-        100.0 * sum(1 for length in sentence_lengths if length >= 35) / sentence_count if sentence_count else 0.0
+        100.0 * sum(1 for length in sentence_lengths if length >= 35) / sentence_count
+        if sentence_count
+        else 0.0
     )
     fragment_share = (
-        100.0 * sum(1 for length in sentence_lengths if length <= 5) / sentence_count if sentence_count else 0.0
+        100.0 * sum(1 for length in sentence_lengths if length <= 5) / sentence_count
+        if sentence_count
+        else 0.0
     )
     question_density = _per_thousand(text.count("?"), word_count)
     first_person_density = _per_thousand(
-        len(re.findall(r"\b(?:i|me|my|mine|myself|we|us|our|ours|let's|let us)\b", text, flags=re.IGNORECASE)),
+        len(
+            re.findall(
+                r"\b(?:i|me|my|mine|myself|we|us|our|ours|let's|let us)\b",
+                text,
+                flags=re.IGNORECASE,
+            )
+        ),
         word_count,
     )
     direct_address_density = _per_thousand(
         len(re.findall(r"\b(?:you|your|yours)\b", text, flags=re.IGNORECASE)),
         word_count,
     )
-    listener_guidance_density = _per_thousand(_count_pattern_hits(text, GUIDANCE_PATTERNS), word_count)
+    listener_guidance_density = _per_thousand(
+        _count_pattern_hits(text, GUIDANCE_PATTERNS), word_count
+    )
     callback_density = _per_thousand(_count_pattern_hits(text, CALLBACK_PATTERNS), word_count)
     analogy_density = _per_thousand(_count_pattern_hits(text, ANALOGY_PATTERNS), word_count)
     contrast_density = _per_thousand(_count_pattern_hits(text, CONTRAST_PATTERNS), word_count)
@@ -779,7 +803,9 @@ def _clamp(value: float, lower: float = 0.0, upper: float = 1.0) -> float:
     return max(lower, min(upper, value))
 
 
-def _band_score(value: float, *, ideal_low: float, ideal_high: float, hard_low: float, hard_high: float) -> float:
+def _band_score(
+    value: float, *, ideal_low: float, ideal_high: float, hard_low: float, hard_high: float
+) -> float:
     if ideal_low <= value <= ideal_high:
         return 1.0
     if value < ideal_low:
@@ -813,11 +839,14 @@ def _afs_dimension_rating(key: str, metrics: AutoMetrics) -> float:
         score = (
             0.45
             * _range_score(
-                metrics.first_person_density + metrics.direct_address_density + metrics.meta_density,
+                metrics.first_person_density
+                + metrics.direct_address_density
+                + metrics.meta_density,
                 low=0.5,
                 high=8.0,
             )
-            + 0.35 * _range_score(metrics.contraction_density + metrics.aside_density, low=0.1, high=6.0)
+            + 0.35
+            * _range_score(metrics.contraction_density + metrics.aside_density, low=0.1, high=6.0)
             + 0.20 * _range_score(metrics.direct_address_density, low=0.1, high=4.0)
         )
     elif key == "conversational_cadence":
@@ -956,7 +985,9 @@ def _rating_similarity(rating: float, target_rating: float) -> float:
     return _clamp(1.0 - (abs(rating - target_rating) / 5.0))
 
 
-def _piecewise_calibrate(value: float, raw_anchors: Sequence[float], calibrated_anchors: Sequence[float]) -> float:
+def _piecewise_calibrate(
+    value: float, raw_anchors: Sequence[float], calibrated_anchors: Sequence[float]
+) -> float:
     if len(raw_anchors) != len(calibrated_anchors):
         raise ValueError("raw_anchors and calibrated_anchors must have the same length")
     if len(raw_anchors) < 2:
@@ -1020,7 +1051,9 @@ def _dimension_results(
 
 
 def _pick_best_sentence(text: str, patterns: Iterable[str]) -> str:
-    sentences = [segment.strip() for segment in SENTENCE_SPLIT_RE.split(text.strip()) if segment.strip()]
+    sentences = [
+        segment.strip() for segment in SENTENCE_SPLIT_RE.split(text.strip()) if segment.strip()
+    ]
     best_sentence = ""
     best_score = -1
     for sentence in sentences:
@@ -1032,7 +1065,9 @@ def _pick_best_sentence(text: str, patterns: Iterable[str]) -> str:
 
 
 def _pick_memorable_line(text: str) -> str:
-    sentences = [segment.strip() for segment in SENTENCE_SPLIT_RE.split(text.strip()) if segment.strip()]
+    sentences = [
+        segment.strip() for segment in SENTENCE_SPLIT_RE.split(text.strip()) if segment.strip()
+    ]
     best_sentence = ""
     best_score = -1.0
     for sentence in sentences:
@@ -1057,7 +1092,9 @@ def _pick_page_bound_paragraph(paragraphs: Sequence[str]) -> str:
     worst_score = -1.0
     for paragraph in paragraphs:
         sentence_lengths = _sentence_lengths(paragraph)
-        avg_sentence_length = sum(sentence_lengths) / len(sentence_lengths) if sentence_lengths else 0.0
+        avg_sentence_length = (
+            sum(sentence_lengths) / len(sentence_lengths) if sentence_lengths else 0.0
+        )
         score = (
             avg_sentence_length
             + _count_pattern_hits(paragraph, ABSTRACT_OPENER_PATTERNS) * 4.0
@@ -1089,11 +1126,15 @@ def _build_episode_report(
     tss = _round_score(_piecewise_calibrate(raw_tss, TSS_RAW_ANCHORS, TSS_CALIBRATED_ANCHORS))
     tss_v2 = None
     if comparison_target_metrics is not None:
-        tss_v2 = _round_score(
-            sum(dimension.tss_v2_points or 0.0 for dimension in dimensions)
-        )
-    title = payload.get("title") if isinstance(payload.get("title"), str) else script_path.parent.name
-    episode_number = payload.get("episode_number") if isinstance(payload.get("episode_number"), int) else int(script_path.parent.name)
+        tss_v2 = _round_score(sum(dimension.tss_v2_points or 0.0 for dimension in dimensions))
+    title = (
+        payload.get("title") if isinstance(payload.get("title"), str) else script_path.parent.name
+    )
+    episode_number = (
+        payload.get("episode_number")
+        if isinstance(payload.get("episode_number"), int)
+        else int(script_path.parent.name)
+    )
     evidence = {
         "best_opening_paragraph": paragraphs[0] if paragraphs else "",
         "best_listener_guidance_line": _pick_best_sentence(sample_text, GUIDANCE_PATTERNS),
@@ -1131,7 +1172,9 @@ def _combine_metrics(metrics_list: Sequence[AutoMetrics]) -> AutoMetrics:
         return extract_auto_metrics("", paragraphs=[], opening_text="")
 
     def weighted(attribute: str, weight_attr: str = "word_count") -> float:
-        pairs = [(getattr(metric, attribute), getattr(metric, weight_attr)) for metric in metrics_list]
+        pairs = [
+            (getattr(metric, attribute), getattr(metric, weight_attr)) for metric in metrics_list
+        ]
         return _weighted_average(pairs)
 
     word_count = sum(metric.word_count for metric in metrics_list)
@@ -1176,7 +1219,11 @@ def _combine_dimensions(dimensions_list: Sequence[list[DimensionScore]]) -> list
         items = [dimensions[index] for dimensions in dimensions_list]
         afs_rating = _weighted_average([(item.afs_rating, item.afs_weight) for item in items])
         tss_rating = _weighted_average([(item.tss_rating, item.tss_weight) for item in items])
-        tss_v2_items = [(item.tss_v2_rating, item.tss_weight) for item in items if item.tss_v2_rating is not None]
+        tss_v2_items = [
+            (item.tss_v2_rating, item.tss_weight)
+            for item in items
+            if item.tss_v2_rating is not None
+        ]
         tss_v2_rating = _weighted_average(tss_v2_items) if tss_v2_items else None
         results.append(
             DimensionScore(
@@ -1190,7 +1237,9 @@ def _combine_dimensions(dimensions_list: Sequence[list[DimensionScore]]) -> list
                 tss_points=_round_score((tss_rating / 5.0) * tss_weight),
                 tss_v2_rating=_round_score(tss_v2_rating) if tss_v2_rating is not None else None,
                 tss_v2_points=(
-                    _round_score((tss_v2_rating / 5.0) * tss_weight) if tss_v2_rating is not None else None
+                    _round_score((tss_v2_rating / 5.0) * tss_weight)
+                    if tss_v2_rating is not None
+                    else None
                 ),
                 help_text=DIMENSION_HELP[key],
             )
@@ -1235,16 +1284,22 @@ def build_audio_style_payload(
         total_word_count = sum(episode.total_word_count for episode in episodes)
         sampled_word_count = sum(episode.sample_word_count for episode in episodes)
         raw_afs = _round_score(
-            _weighted_average([(episode.raw_afs, max(episode.sample_word_count, 1)) for episode in episodes])
+            _weighted_average(
+                [(episode.raw_afs, max(episode.sample_word_count, 1)) for episode in episodes]
+            )
         )
         raw_tss = _round_score(
-            _weighted_average([(episode.raw_tss, max(episode.sample_word_count, 1)) for episode in episodes])
+            _weighted_average(
+                [(episode.raw_tss, max(episode.sample_word_count, 1)) for episode in episodes]
+            )
         )
         afs = _round_score(_piecewise_calibrate(raw_afs, AFS_RAW_ANCHORS, AFS_CALIBRATED_ANCHORS))
         tss = _round_score(_piecewise_calibrate(raw_tss, TSS_RAW_ANCHORS, TSS_CALIBRATED_ANCHORS))
         tss_v2 = None
         tss_v2 = _round_score(
-            _weighted_average([(episode.tss_v2 or 0.0, max(episode.sample_word_count, 1)) for episode in episodes])
+            _weighted_average(
+                [(episode.tss_v2 or 0.0, max(episode.sample_word_count, 1)) for episode in episodes]
+            )
         )
         run_reports.append(
             RunReport(
@@ -1270,10 +1325,20 @@ def build_audio_style_payload(
         "episode_count": sum(report.episode_count for report in run_reports),
         "mean_afs": _round_score(sum(report.afs for report in run_reports) / len(run_reports)),
         "mean_tss": _round_score(sum(report.tss for report in run_reports) / len(run_reports)),
-        "mean_tss_v2": _round_score(sum(report.tss_v2 or 0.0 for report in run_reports) / len(run_reports)),
+        "mean_tss_v2": _round_score(
+            sum(report.tss_v2 or 0.0 for report in run_reports) / len(run_reports)
+        ),
         "winner_by_afs": ranked_runs[0].run_id if ranked_runs else None,
-        "winner_by_tss": sorted(run_reports, key=lambda report: (-report.tss, -report.afs, report.run_id))[0].run_id if run_reports else None,
-        "winner_by_tss_v2": sorted(run_reports, key=lambda report: (-(report.tss_v2 or 0.0), -report.afs, report.run_id))[0].run_id if run_reports else None,
+        "winner_by_tss": sorted(
+            run_reports, key=lambda report: (-report.tss, -report.afs, report.run_id)
+        )[0].run_id
+        if run_reports
+        else None,
+        "winner_by_tss_v2": sorted(
+            run_reports, key=lambda report: (-(report.tss_v2 or 0.0), -report.afs, report.run_id)
+        )[0].run_id
+        if run_reports
+        else None,
     }
     result = {
         "title": title,
@@ -1281,7 +1346,9 @@ def build_audio_style_payload(
         "sample_word_targets": list(sample_word_targets),
         "summary": summary,
         "target": {
-            "label": "Default spoken-host target snippet" if target_snippet is None else "Custom target snippet",
+            "label": "Default spoken-host target snippet"
+            if target_snippet is None
+            else "Custom target snippet",
             "word_count": target_metrics.word_count,
             "metrics": target_metrics.to_dict(),
             "text": target_text,
@@ -1315,14 +1382,18 @@ def render_audio_style_html(payload: dict[str, object]) -> str:
             return ""
         return (
             f'<div class="score-badge {tone}"><span class="badge-label">{esc(label)}</span>'
-            f'<strong>{value:.2f}</strong></div>'
+            f"<strong>{value:.2f}</strong></div>"
         )
 
     def stat_chip(label: str, value: str) -> str:
-        return f'<div class="stat-chip"><span>{esc(label)}</span><strong>{esc(value)}</strong></div>'
+        return (
+            f'<div class="stat-chip"><span>{esc(label)}</span><strong>{esc(value)}</strong></div>'
+        )
 
     def metric_chip(label: str, value: str) -> str:
-        return f'<div class="metric-chip"><span>{esc(label)}</span><strong>{esc(value)}</strong></div>'
+        return (
+            f'<div class="metric-chip"><span>{esc(label)}</span><strong>{esc(value)}</strong></div>'
+        )
 
     def winner_tags(run_id: str) -> str:
         tags: list[str] = []
@@ -1352,14 +1423,16 @@ def render_audio_style_html(payload: dict[str, object]) -> str:
 
     run_nav = "".join(
         f'<a class="run-nav-link" href="#run-{slugify(run["run_id"])}">'
-        f'<span>{esc(run["run_id"])}</span><strong>{run["afs"]:.2f}</strong></a>'
+        f"<span>{esc(run['run_id'])}</span><strong>{run['afs']:.2f}</strong></a>"
         for run in sorted_runs
     )
 
     leaderboard_rows: list[str] = []
     for run in sorted_runs:
         run_id = str(run["run_id"])
-        tss_v2_cell = f"<td>{run['tss_v2']:.2f}</td>" if has_tss_v2 and run["tss_v2"] is not None else ""
+        tss_v2_cell = (
+            f"<td>{run['tss_v2']:.2f}</td>" if has_tss_v2 and run["tss_v2"] is not None else ""
+        )
         leaderboard_rows.append(
             f"""
             <tr>
@@ -1370,10 +1443,10 @@ def render_audio_style_html(payload: dict[str, object]) -> str:
                   <div class="winner-tag-row">{winner_tags(run_id)}</div>
                 </div>
               </td>
-              <td>{run['afs']:.2f}</td>
-              <td>{run['tss']:.2f}</td>
+              <td>{run["afs"]:.2f}</td>
+              <td>{run["tss"]:.2f}</td>
               {tss_v2_cell}
-              <td>{run['sampled_word_count']}</td>
+              <td>{run["sampled_word_count"]}</td>
             </tr>
             """
         )
@@ -1405,30 +1478,32 @@ def render_audio_style_html(payload: dict[str, object]) -> str:
                 f"""
                 <div class="dimension-row">
                   <div class="dimension-copy">
-                    <h4>{esc(dimension['label'])}</h4>
-                    <p>{esc(dimension['help_text'])}</p>
+                    <h4>{esc(dimension["label"])}</h4>
+                    <p>{esc(dimension["help_text"])}</p>
                   </div>
                   <div class="dimension-bars">
-                    {score_bar("AFS", dimension['afs_rating'], "afs")}
-                    {score_bar("TSS", dimension['tss_rating'], "tss")}
-                    {score_bar("TSSv2", dimension.get('tss_v2_rating'), "tssv2") if has_tss_v2 else ""}
+                    {score_bar("AFS", dimension["afs_rating"], "afs")}
+                    {score_bar("TSS", dimension["tss_rating"], "tss")}
+                    {score_bar("TSSv2", dimension.get("tss_v2_rating"), "tssv2") if has_tss_v2 else ""}
                   </div>
                 </div>
                 """
             )
             tss_v2_cells = (
                 f"<td>{dimension['tss_v2_rating']:.2f} / 5</td><td>{dimension['tss_v2_points']:.2f}</td>"
-                if has_tss_v2 and dimension.get("tss_v2_rating") is not None and dimension.get("tss_v2_points") is not None
+                if has_tss_v2
+                and dimension.get("tss_v2_rating") is not None
+                and dimension.get("tss_v2_points") is not None
                 else ""
             )
             technical_rows.append(
                 f"""
                 <tr>
-                  <th>{esc(dimension['label'])}</th>
-                  <td>{dimension['afs_rating']:.2f} / 5</td>
-                  <td>{dimension['afs_points']:.2f}</td>
-                  <td>{dimension['tss_rating']:.2f} / 5</td>
-                  <td>{dimension['tss_points']:.2f}</td>
+                  <th>{esc(dimension["label"])}</th>
+                  <td>{dimension["afs_rating"]:.2f} / 5</td>
+                  <td>{dimension["afs_points"]:.2f}</td>
+                  <td>{dimension["tss_rating"]:.2f} / 5</td>
+                  <td>{dimension["tss_points"]:.2f}</td>
                   {tss_v2_cells}
                 </tr>
                 """
@@ -1438,15 +1513,15 @@ def render_audio_style_html(payload: dict[str, object]) -> str:
         metric_chips_html = "".join(
             [
                 metric_chip("Avg sentence", str(metrics["avg_sentence_length"])),
-                metric_chip("Short sentences", f'{metrics["short_sentence_share"]}%'),
-                metric_chip("Long sentences", f'{metrics["long_sentence_share"]}%'),
-                metric_chip("Guidance density", f'{metrics["listener_guidance_density"]} / 1k'),
-                metric_chip("Question density", f'{metrics["question_density"]} / 1k'),
-                metric_chip("First-person density", f'{metrics["first_person_density"]} / 1k'),
-                metric_chip("Analogy density", f'{metrics["analogy_density"]} / 1k'),
-                metric_chip("Concrete openers", f'{metrics["concrete_opener_rate"]}%'),
-                metric_chip("Abstract openers", f'{metrics["abstract_opener_rate"]}%'),
-                metric_chip("Entity load", f'{metrics["entity_load_per_200_words"]} / 200w'),
+                metric_chip("Short sentences", f"{metrics['short_sentence_share']}%"),
+                metric_chip("Long sentences", f"{metrics['long_sentence_share']}%"),
+                metric_chip("Guidance density", f"{metrics['listener_guidance_density']} / 1k"),
+                metric_chip("Question density", f"{metrics['question_density']} / 1k"),
+                metric_chip("First-person density", f"{metrics['first_person_density']} / 1k"),
+                metric_chip("Analogy density", f"{metrics['analogy_density']} / 1k"),
+                metric_chip("Concrete openers", f"{metrics['concrete_opener_rate']}%"),
+                metric_chip("Abstract openers", f"{metrics['abstract_opener_rate']}%"),
+                metric_chip("Entity load", f"{metrics['entity_load_per_200_words']} / 200w"),
             ]
         )
 
@@ -1462,10 +1537,10 @@ def render_audio_style_html(payload: dict[str, object]) -> str:
                 stat_chip("Artifact", episode["script_artifact"]),
                 stat_chip("Total words", str(episode["total_word_count"])),
                 stat_chip("Sampled words", str(episode["sample_word_count"])),
-                stat_chip("Raw AFS/TSS", f'{episode["raw_afs"]:.2f} / {episode["raw_tss"]:.2f}'),
+                stat_chip("Raw AFS/TSS", f"{episode['raw_afs']:.2f} / {episode['raw_tss']:.2f}"),
             ]
             if has_tss_v2 and episode["tss_v2"] is not None:
-                episode_meta.append(stat_chip("TSSv2", f'{episode["tss_v2"]:.2f}'))
+                episode_meta.append(stat_chip("TSSv2", f"{episode['tss_v2']:.2f}"))
 
             evidence_cards = [
                 (
@@ -1494,8 +1569,8 @@ def render_audio_style_html(payload: dict[str, object]) -> str:
             window_cards = "".join(
                 f"""
                 <details class="window-card">
-                  <summary>{esc(window['label'].title())} sample <span>{window['word_count']} words</span></summary>
-                  <pre>{esc(window['text'])}</pre>
+                  <summary>{esc(window["label"].title())} sample <span>{window["word_count"]} words</span></summary>
+                  <pre>{esc(window["text"])}</pre>
                 </details>
                 """
                 for window in episode["sample_windows"]
@@ -1503,10 +1578,12 @@ def render_audio_style_html(payload: dict[str, object]) -> str:
             episode_metric_strip = "".join(
                 [
                     metric_chip("Avg sentence", str(episode["metrics"]["avg_sentence_length"])),
-                    metric_chip("Short", f'{episode["metrics"]["short_sentence_share"]}%'),
-                    metric_chip("Long", f'{episode["metrics"]["long_sentence_share"]}%'),
-                    metric_chip("Guidance", f'{episode["metrics"]["listener_guidance_density"]} / 1k'),
-                    metric_chip("Analogy", f'{episode["metrics"]["analogy_density"]} / 1k'),
+                    metric_chip("Short", f"{episode['metrics']['short_sentence_share']}%"),
+                    metric_chip("Long", f"{episode['metrics']['long_sentence_share']}%"),
+                    metric_chip(
+                        "Guidance", f"{episode['metrics']['listener_guidance_density']} / 1k"
+                    ),
+                    metric_chip("Analogy", f"{episode['metrics']['analogy_density']} / 1k"),
                 ]
             )
             episode_cards.append(
@@ -1514,20 +1591,20 @@ def render_audio_style_html(payload: dict[str, object]) -> str:
                 <details class="episode-card">
                   <summary>
                     <div>
-                      <div class="episode-kicker">Episode {episode['episode_number']}</div>
-                      <h3>{esc(episode['title'])}</h3>
+                      <div class="episode-kicker">Episode {episode["episode_number"]}</div>
+                      <h3>{esc(episode["title"])}</h3>
                     </div>
-                    <div class="episode-score-row">{''.join(episode_score_badges)}</div>
+                    <div class="episode-score-row">{"".join(episode_score_badges)}</div>
                   </summary>
                   <div class="episode-body">
-                    <div class="chip-grid compact">{''.join(episode_meta)}</div>
+                    <div class="chip-grid compact">{"".join(episode_meta)}</div>
                     <div class="episode-columns">
                       <div class="evidence-stack">{evidence_html}</div>
                       <div class="support-stack">
                         <div class="metric-chip-grid compact">{episode_metric_strip}</div>
                         <details class="window-card">
                           <summary>Most page-bound paragraph</summary>
-                          <pre>{esc(episode['evidence']['most_page_bound_paragraph'])}</pre>
+                          <pre>{esc(episode["evidence"]["most_page_bound_paragraph"])}</pre>
                         </details>
                       </div>
                     </div>
@@ -1537,9 +1614,7 @@ def render_audio_style_html(payload: dict[str, object]) -> str:
                 """
             )
 
-        technical_head = (
-            "<th>TSSv2 rating</th><th>TSSv2 points</th>" if has_tss_v2 else ""
-        )
+        technical_head = "<th>TSSv2 rating</th><th>TSSv2 points</th>" if has_tss_v2 else ""
         run_sections.append(
             f"""
             <section id="run-{run_slug}" class="run-section panel">
@@ -1549,9 +1624,9 @@ def render_audio_style_html(payload: dict[str, object]) -> str:
                   <h2>{esc(run_id)}</h2>
                   <div class="winner-tag-row">{winner_tags(run_id)}</div>
                 </div>
-                <div class="score-badge-row">{''.join(score_badges)}</div>
+                <div class="score-badge-row">{"".join(score_badges)}</div>
               </header>
-              <div class="chip-grid">{''.join(summary_chips)}</div>
+              <div class="chip-grid">{"".join(summary_chips)}</div>
               <div class="run-grid">
                 <section class="subpanel">
                   <div class="subpanel-head">
@@ -1560,7 +1635,7 @@ def render_audio_style_html(payload: dict[str, object]) -> str:
                       <h3>How the run scores by rubric dimension</h3>
                     </div>
                   </div>
-                  <div class="dimension-list">{''.join(dimension_rows)}</div>
+                  <div class="dimension-list">{"".join(dimension_rows)}</div>
                   <details class="technical-card">
                     <summary>Show technical dimension table</summary>
                     <table>
@@ -1575,7 +1650,7 @@ def render_audio_style_html(payload: dict[str, object]) -> str:
                         </tr>
                       </thead>
                       <tbody>
-                        {''.join(technical_rows)}
+                        {"".join(technical_rows)}
                       </tbody>
                     </table>
                   </details>
@@ -1597,7 +1672,7 @@ def render_audio_style_html(payload: dict[str, object]) -> str:
                     <h3>Evidence and sampled windows</h3>
                   </div>
                 </div>
-                <div class="episode-list">{''.join(episode_cards)}</div>
+                <div class="episode-list">{"".join(episode_cards)}</div>
               </section>
             </section>
             """
@@ -1635,23 +1710,23 @@ def render_audio_style_html(payload: dict[str, object]) -> str:
         "Raw rubric totals are shown alongside them for transparency."
     )
     if has_tss_v2:
-        calibration_note += " TSSv2 is a direct 0-100 weighted similarity score and is not anchor-calibrated."
+        calibration_note += (
+            " TSSv2 is a direct 0-100 weighted similarity score and is not anchor-calibrated."
+        )
 
     comparison_section = ""
     if has_tss_v2 and isinstance(comparison_target, dict):
-        comparison_section = (
-            f"""
+        comparison_section = f"""
             <section class="sidebar-section">
               <div class="card-eyebrow">Comparison Sample</div>
-              <h3>{esc(comparison_target['label'])}</h3>
-              <p class="small">{comparison_target['word_count']} words</p>
+              <h3>{esc(comparison_target["label"])}</h3>
+              <p class="small">{comparison_target["word_count"]} words</p>
               <details class="sidebar-detail">
                 <summary>Show comparison sample</summary>
-                <pre>{esc(comparison_target['text'])}</pre>
+                <pre>{esc(comparison_target["text"])}</pre>
               </details>
             </section>
             """
-        )
 
     artifact_tags = "".join(
         f'<span class="nav-tag">{esc(artifact)}</span>' for artifact in payload["script_artifacts"]
@@ -2257,10 +2332,10 @@ def render_audio_style_html(payload: dict[str, object]) -> str:
             <article class="hero-card">
               <div class="card-eyebrow">Summary</div>
               <div class="summary-grid">
-                <div class="summary-card"><span class="small">Runs</span><strong>{summary['run_count']}</strong></div>
-                <div class="summary-card"><span class="small">Episodes</span><strong>{summary['episode_count']}</strong></div>
-                <div class="summary-card"><span class="small">Winner by AFS</span><strong>{esc(summary['winner_by_afs'])}</strong></div>
-                <div class="summary-card"><span class="small">Winner by TSS</span><strong>{esc(summary['winner_by_tss'])}</strong></div>
+                <div class="summary-card"><span class="small">Runs</span><strong>{summary["run_count"]}</strong></div>
+                <div class="summary-card"><span class="small">Episodes</span><strong>{summary["episode_count"]}</strong></div>
+                <div class="summary-card"><span class="small">Winner by AFS</span><strong>{esc(summary["winner_by_afs"])}</strong></div>
+                <div class="summary-card"><span class="small">Winner by TSS</span><strong>{esc(summary["winner_by_tss"])}</strong></div>
               </div>
             </article>
             <article class="hero-card">
@@ -2288,7 +2363,7 @@ def render_audio_style_html(payload: dict[str, object]) -> str:
               </tr>
             </thead>
             <tbody>
-              {''.join(leaderboard_rows)}
+              {"".join(leaderboard_rows)}
             </tbody>
           </table>
         </article>
@@ -2303,7 +2378,7 @@ def render_audio_style_html(payload: dict[str, object]) -> str:
 
       <section class="workspace">
         <main class="main-stack">
-          {''.join(run_sections)}
+          {"".join(run_sections)}
         </main>
         <aside class="panel sidebar">
           <section class="sidebar-section">
@@ -2320,17 +2395,17 @@ def render_audio_style_html(payload: dict[str, object]) -> str:
                 </tr>
               </thead>
               <tbody>
-                {''.join(rubric_rows)}
+                {"".join(rubric_rows)}
               </tbody>
             </table>
           </section>
           <section class="sidebar-section">
             <div class="card-eyebrow">Target Snippet</div>
-            <h3>{esc(payload['target']['label'])}</h3>
-            <p class="small">{payload['target']['word_count']} words</p>
+            <h3>{esc(payload["target"]["label"])}</h3>
+            <p class="small">{payload["target"]["word_count"]} words</p>
             <details class="sidebar-detail">
               <summary>Show target snippet</summary>
-              <pre>{esc(payload['target']['text'])}</pre>
+              <pre>{esc(payload["target"]["text"])}</pre>
             </details>
           </section>
           {comparison_section}

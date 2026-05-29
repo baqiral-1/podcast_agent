@@ -71,9 +71,7 @@ class QualityJudgeAgent(Agent):
         new_payload = dict(payload)
         new_payload["retry_feedback"] = (
             "Your previous attempt was rejected by the response schema. "
-            "Fix exactly these fields on this attempt:\n"
-            + "\n".join(lines)
-            + suffix
+            "Fix exactly these fields on this attempt:\n" + "\n".join(lines) + suffix
         )
         return new_payload
 
@@ -110,9 +108,7 @@ class QualityJudgeAgent(Agent):
         if series_state is not None:
             payload["series_state"] = series_state
         if prior_episode_remediation_hints:
-            payload["prior_episode_remediation_hints"] = list(
-                prior_episode_remediation_hints
-            )
+            payload["prior_episode_remediation_hints"] = list(prior_episode_remediation_hints)
         return payload
 
     def validate_result(

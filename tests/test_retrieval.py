@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
-
-import pytest
 
 from podcast_agent.config import Settings
 from podcast_agent.retrieval.search import RetrievalService
@@ -39,13 +36,16 @@ class TestRetrievalService:
     def test_retrieve_for_axis_no_database(self):
         service = self._make_service()
         axis = ThematicAxis(
-            axis_id="ax1", name="Test",
+            axis_id="ax1",
+            name="Test",
             description="Test axis",
             theme_importance_score=0.5,
         )
         result = service.retrieve_for_axis(
-            axis=axis, project_id="proj1",
-            book_ids=["b1", "b2"], k_per_book=10,
+            axis=axis,
+            project_id="proj1",
+            book_ids=["b1", "b2"],
+            k_per_book=10,
         )
         # With no database, returns empty
         assert result == {"b1": [], "b2": []}
@@ -73,7 +73,9 @@ class TestPGVectorRetrieval:
         )
         vs = PGVectorRetrieval(settings)
         results = vs.similarity_search(
-            query="test", k=10, project_id="proj1",
+            query="test",
+            k=10,
+            project_id="proj1",
         )
         assert results == []
 
@@ -98,8 +100,11 @@ class TestPGVectorRetrieval:
 class TestRetrievalHit:
     def test_creation(self):
         hit = RetrievalHit(
-            chunk_id="c1", book_id="b1", chapter_id="ch1",
-            text="Some chunk text", score=0.95,
+            chunk_id="c1",
+            book_id="b1",
+            chapter_id="ch1",
+            text="Some chunk text",
+            score=0.95,
             metadata={"author": "Author A"},
         )
         assert hit.chunk_id == "c1"

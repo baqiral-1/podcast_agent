@@ -28,9 +28,13 @@ class RunStatsError(RuntimeError):
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Generate run-stats.html for a completed run directory.")
+    parser = argparse.ArgumentParser(
+        description="Generate run-stats.html for a completed run directory."
+    )
     parser.add_argument("run_dir", help="Path to runs/<project-id> directory")
-    parser.add_argument("--output", help="Optional output HTML path. Defaults to <run_dir>/run-stats.html.")
+    parser.add_argument(
+        "--output", help="Optional output HTML path. Defaults to <run_dir>/run-stats.html."
+    )
     return parser.parse_args()
 
 
@@ -139,7 +143,9 @@ def _render_episode_cards(run_dir: Path, strategy: dict[str, Any]) -> str:
               <p><strong>Spoken sections:</strong> {spoken_count}</p>
             </section>
             """.format(
-                title=_escape(episode.get("title", f"Episode {episode.get('episode_number', '?')}")),
+                title=_escape(
+                    episode.get("title", f"Episode {episode.get('episode_number', '?')}")
+                ),
                 question=_escape(listener_question),
                 core_primitive_count=len(core_primitive_ids),
                 section_count=len(script.get("prose_sections", [])),
@@ -157,11 +163,7 @@ def _render_html(run_dir: Path) -> str:
     series_plan = _load_json(run_dir / "series_plan.json")
     episodes = strategy.get("episodes", [])
     planned_episodes = series_plan.get("episodes", []) if isinstance(series_plan, dict) else []
-    primitive_list = (
-        primitives.get("primitives", [])
-        if isinstance(primitives, dict)
-        else []
-    )
+    primitive_list = primitives.get("primitives", []) if isinstance(primitives, dict) else []
     primitives_by_substrate = _group_primitives_by_substrate(
         primitive_list if isinstance(primitive_list, list) else []
     )
@@ -189,13 +191,13 @@ def _render_html(run_dir: Path) -> str:
   </style>
 </head>
 <body>
-  <h1>{_escape(project.get('theme', 'Run Stats'))}</h1>
-  <p><strong>Project:</strong> <code>{_escape(project.get('project_id'))}</code></p>
-  <p><strong>Status:</strong> {_escape(project.get('status'))}</p>
+  <h1>{_escape(project.get("theme", "Run Stats"))}</h1>
+  <p><strong>Project:</strong> <code>{_escape(project.get("project_id"))}</code></p>
+  <p><strong>Status:</strong> {_escape(project.get("status"))}</p>
   <div class='grid'>
     <section class='card'><h2>Primitives</h2>{primitive_count_rows}</section>
-    <section class='card'><h2>Synthesis Map</h2><p>Quality score: {_escape(synthesis_map.get('quality_score'))}</p></section>
-    <section class='card'><h2>Strategy</h2><p>Type: {_escape(strategy.get('strategy_type'))}</p><p>Episodes: {len(episodes)}</p></section>
+    <section class='card'><h2>Synthesis Map</h2><p>Quality score: {_escape(synthesis_map.get("quality_score"))}</p></section>
+    <section class='card'><h2>Strategy</h2><p>Type: {_escape(strategy.get("strategy_type"))}</p><p>Episodes: {len(episodes)}</p></section>
     <section class='card'><h2>Planning</h2><p>Planned episodes: {len(planned_episodes)}</p></section>
   </div>
   <h2>Primitive Retention</h2>

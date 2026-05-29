@@ -178,9 +178,7 @@ def _lower_tokens(text: str) -> list[str]:
 
 def _sentence_lengths(text: str) -> list[int]:
     sentences = [
-        segment.strip()
-        for segment in SENTENCE_SPLIT_RE.split(text.strip())
-        if segment.strip()
+        segment.strip() for segment in SENTENCE_SPLIT_RE.split(text.strip()) if segment.strip()
     ]
     if not sentences:
         return []
@@ -206,9 +204,7 @@ def _percentile(values: list[int], quantile: float) -> float:
 
 def _count_pattern_hits(text: str, patterns: Iterable[str]) -> int:
     lowered = text.lower()
-    return sum(
-        len(re.findall(pattern, lowered, flags=re.IGNORECASE)) for pattern in patterns
-    )
+    return sum(len(re.findall(pattern, lowered, flags=re.IGNORECASE)) for pattern in patterns)
 
 
 def _per_thousand(count: int, word_count: int) -> float:
@@ -222,43 +218,29 @@ def extract_feature_vector(text: str) -> FeatureVector:
     word_count = len(tokens)
     sentence_lengths = _sentence_lengths(text)
     sentence_count = len(sentence_lengths)
-    mean_sentence_length = (
-        sum(sentence_lengths) / sentence_count if sentence_count else 0.0
-    )
+    mean_sentence_length = sum(sentence_lengths) / sentence_count if sentence_count else 0.0
     p90_sentence_length = _percentile(sentence_lengths, 0.9)
 
     host_guidance_density = _per_thousand(
         _count_pattern_hits(text, HOST_GUIDANCE_PATTERNS), word_count
     )
-    translation_density = _per_thousand(
-        _count_pattern_hits(text, TRANSLATION_PATTERNS), word_count
-    )
-    callback_density = _per_thousand(
-        _count_pattern_hits(text, CALLBACK_PATTERNS), word_count
-    )
+    translation_density = _per_thousand(_count_pattern_hits(text, TRANSLATION_PATTERNS), word_count)
+    callback_density = _per_thousand(_count_pattern_hits(text, CALLBACK_PATTERNS), word_count)
     eval_contrast_density = _per_thousand(
         _count_pattern_hits(text, EVAL_CONTRAST_PATTERNS), word_count
     )
-    contraction_density = _per_thousand(
-        _count_pattern_hits(text, CONTRACTION_PATTERNS), word_count
-    )
-    pronoun_density = _per_thousand(
-        _count_pattern_hits(text, PRONOUN_PATTERNS), word_count
-    )
+    contraction_density = _per_thousand(_count_pattern_hits(text, CONTRACTION_PATTERNS), word_count)
+    pronoun_density = _per_thousand(_count_pattern_hits(text, PRONOUN_PATTERNS), word_count)
     orality_raw = 0.6 * contraction_density + 0.4 * pronoun_density
     meta_announcer_density = _per_thousand(
         _count_pattern_hits(text, META_ANNOUNCER_PATTERNS), word_count
     )
 
     nominalization_rate = (
-        _count_pattern_hits(text, (NOMINALIZATION_PATTERN,)) / word_count
-        if word_count
-        else 0.0
+        _count_pattern_hits(text, (NOMINALIZATION_PATTERN,)) / word_count if word_count else 0.0
     )
     long_word_ratio = (
-        _count_pattern_hits(text, (LONG_WORD_PATTERN,)) / word_count
-        if word_count
-        else 0.0
+        _count_pattern_hits(text, (LONG_WORD_PATTERN,)) / word_count if word_count else 0.0
     )
     formality_raw = 0.6 * nominalization_rate + 0.4 * long_word_ratio
     aside_density = _per_thousand(_count_pattern_hits(text, ASIDE_PATTERNS), word_count)
@@ -308,9 +290,7 @@ def score_text_against_benchmark(
         benchmark.eval_contrast_density,
         SCALES["eval_contrast"],
     )
-    orality_score = closeness(
-        features.orality_raw, benchmark.orality_raw, SCALES["orality"]
-    )
+    orality_score = closeness(features.orality_raw, benchmark.orality_raw, SCALES["orality"])
     meta_announcer_score = closeness(
         features.meta_announcer_density,
         benchmark.meta_announcer_density,
@@ -328,9 +308,7 @@ def score_text_against_benchmark(
     formality_score = closeness(
         features.formality_raw, benchmark.formality_raw, SCALES["formality"]
     )
-    aside_score = closeness(
-        features.aside_density, benchmark.aside_density, SCALES["aside"]
-    )
+    aside_score = closeness(features.aside_density, benchmark.aside_density, SCALES["aside"])
 
     feature_scores = {
         "host_guidance": _round_score(host_guidance_score),
@@ -355,9 +333,7 @@ def load_episode_body_text(
     payload = json.loads(script_path.read_text(encoding="utf-8"))
     prose_sections = payload.get("prose_sections") or []
     body_sections = (
-        prose_sections[1:]
-        if ignore_intro_section and len(prose_sections) > 1
-        else prose_sections
+        prose_sections[1:] if ignore_intro_section and len(prose_sections) > 1 else prose_sections
     )
     body_text = "\n\n".join(
         section.get("text", "").strip()
@@ -375,9 +351,7 @@ def iter_episode_script_paths(run_dir: Path) -> list[Path]:
         key=lambda path: int(path.parent.name),
     )
     if not paths:
-        raise FileNotFoundError(
-            f"No episode_script.json artifacts found under {run_dir}"
-        )
+        raise FileNotFoundError(f"No episode_script.json artifacts found under {run_dir}")
     return paths
 
 
@@ -416,17 +390,12 @@ def score_run_dir(
         weighted_word_total += features.word_count
 
     corpus_text = "\n\n".join(part for part in corpus_text_parts if part)
-    corpus_score, _, corpus_features = score_text_against_benchmark(
-        corpus_text, benchmark_features
-    )
+    corpus_score, _, corpus_features = score_text_against_benchmark(corpus_text, benchmark_features)
     mean_episode_score = _round_score(
-        sum(episode.similarity_score for episode in episode_scores)
-        / len(episode_scores)
+        sum(episode.similarity_score for episode in episode_scores) / len(episode_scores)
     )
     weighted_episode_score = _round_score(
-        weighted_score_total / weighted_word_total
-        if weighted_word_total
-        else mean_episode_score
+        weighted_score_total / weighted_word_total if weighted_word_total else mean_episode_score
     )
 
     return RunSimilarityScore(

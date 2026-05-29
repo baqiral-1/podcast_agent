@@ -209,8 +209,7 @@ def test_extract_host_snippets_supports_i_address_mode(tmp_path: Path) -> None:
                     "scene_card_ids": ["sc01_intro"],
                     "movement_goal": "orient",
                     "text": (
-                        "I keep coming back to the turn in the room. "
-                        "Then the crowd starts moving."
+                        "I keep coming back to the turn in the room. Then the crowd starts moving."
                     ),
                 }
             ],

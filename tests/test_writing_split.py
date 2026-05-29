@@ -20,7 +20,6 @@ from podcast_agent.schemas.models import (
     EpisodeArchitecture,
     EpisodePlan,
     ExtractedPassage,
-    SceneActor,
     StrategyEpisode,
     ThematicCorpus,
     ThematicProject,
@@ -329,7 +328,9 @@ def _project() -> ThematicProject:
 
 def _build_orchestrator(monkeypatch: pytest.MonkeyPatch) -> PipelineOrchestrator:
     heuristic = HeuristicLLMClient()
-    monkeypatch.setattr("podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic)
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic
+    )
     monkeypatch.setattr(
         "podcast_agent.pipeline.orchestrator.PGVectorRetrieval",
         lambda settings, run_logger=None: SimpleNamespace(),
@@ -359,7 +360,11 @@ def test_write_episode_splits_large_episode_into_two_sequential_parts(
                 "prose_sections": [
                     {
                         "section_id": section["section_id"],
-                        "scene_card_ids": [scene["scene_id"] for scene in payload["plan"]["scene_cards"] if scene["section_id"] == section["section_id"]],
+                        "scene_card_ids": [
+                            scene["scene_id"]
+                            for scene in payload["plan"]["scene_cards"]
+                            if scene["section_id"] == section["section_id"]
+                        ],
                         "movement_goal": "discover",
                         "text": " ".join(
                             f"Draft for {scene['scene_id']}."
@@ -447,7 +452,9 @@ def test_write_episode_splits_large_episode_into_two_sequential_parts(
     assert (tmp_path / "stage_artifacts" / "write_episode_1_part_2" / "input.json").exists()
     assert (tmp_path / "stage_artifacts" / "write_episode_1_part_3" / "input.json").exists()
     assert (tmp_path / "stage_artifacts" / "write_episode_1_part_4" / "input.json").exists()
-    assert [scene_id for section in script.prose_sections for scene_id in section.scene_card_ids] == [
+    assert [
+        scene_id for section in script.prose_sections for scene_id in section.scene_card_ids
+    ] == [
         "scene_1",
         "scene_2",
         "scene_3",
@@ -494,7 +501,11 @@ def test_write_episode_retries_failed_second_part_from_start(
                 "prose_sections": [
                     {
                         "section_id": section["section_id"],
-                        "scene_card_ids": [scene["scene_id"] for scene in payload["plan"]["scene_cards"] if scene["section_id"] == section["section_id"]],
+                        "scene_card_ids": [
+                            scene["scene_id"]
+                            for scene in payload["plan"]["scene_cards"]
+                            if scene["section_id"] == section["section_id"]
+                        ],
                         "movement_goal": "discover",
                         "text": " ".join(
                             f"Draft for {scene['scene_id']}."
@@ -545,7 +556,9 @@ def test_write_episode_retries_failed_second_part_from_start(
     assert "writing_feedback" not in captured_payloads[4]
     assert "writing_feedback" not in captured_payloads[5]
     assert "scene_renamed" in str(captured_payloads[3]["writing_feedback"])
-    assert [scene_id for section in script.prose_sections for scene_id in section.scene_card_ids] == [
+    assert [
+        scene_id for section in script.prose_sections for scene_id in section.scene_card_ids
+    ] == [
         "scene_1",
         "scene_2",
         "scene_3",
@@ -635,7 +648,9 @@ def test_write_episode_retries_transient_failure_for_second_part(
         {"attempt": 1, "scene_ids": ["scene_3"]},
         {"attempt": 1, "scene_ids": ["scene_4"]},
     ]
-    assert [scene_id for section in script.prose_sections for scene_id in section.scene_card_ids] == [
+    assert [
+        scene_id for section in script.prose_sections for scene_id in section.scene_card_ids
+    ] == [
         "scene_1",
         "scene_2",
         "scene_3",

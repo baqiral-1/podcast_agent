@@ -29,9 +29,7 @@ from podcast_agent.schemas.models import (
 )
 
 
-_SCRIPT_PATH = (
-    Path(__file__).resolve().parents[1] / "scripts" / "resume_from_writing.py"
-)
+_SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "resume_from_writing.py"
 _SCRIPT_SPEC = importlib.util.spec_from_file_location(
     "resume_from_writing",
     _SCRIPT_PATH,
@@ -286,10 +284,7 @@ def _episode_architecture() -> EpisodeArchitecture:
         major_turn_section_id=payload["major_turn_section_id"],
         allowed_recurring_primitive_ids=payload["allowed_recurring_primitive_ids"],
         forbidden_redundancies=payload["forbidden_redundancies"],
-        sections=[
-            ArchitectureSection.model_validate(section)
-            for section in payload["sections"]
-        ],
+        sections=[ArchitectureSection.model_validate(section) for section in payload["sections"]],
         architecture_notes=payload["architecture_notes"],
     )
 
@@ -394,9 +389,7 @@ def _build_project_dir(tmp_path: Path) -> Path:
     plan = _episode_plan()
     architecture = _episode_architecture()
 
-    _write_json(
-        project_dir / "thematic_axes.json", {"axes": [axis.model_dump(mode="json")]}
-    )
+    _write_json(project_dir / "thematic_axes.json", {"axes": [axis.model_dump(mode="json")]})
     _write_json(project_dir / "thematic_project.json", project)
     _write_json(project_dir / "thematic_corpus.json", corpus)
     _write_json(project_dir / "synthesis_primitives.json", primitives)
@@ -406,9 +399,7 @@ def _build_project_dir(tmp_path: Path) -> Path:
         project_dir / "episode_architectures.json",
         {"episodes": [architecture.model_dump(mode="json")]},
     )
-    _write_json(
-        project_dir / "series_plan.json", {"episodes": [plan.model_dump(mode="json")]}
-    )
+    _write_json(project_dir / "series_plan.json", {"episodes": [plan.model_dump(mode="json")]})
     _write_json(project_dir / "actor_metadata.json", actor_metadata)
     _write_json(
         project_dir / "actor_metadata_metrics.json",
@@ -452,9 +443,7 @@ def test_resume_from_writing_uses_series_plan_and_actor_metadata(
             calls["produced_architecture"] = architecture
             calls["host_policy"] = host_policy
             calls["primitive_lookup"] = primitive_lookup
-            return plan.episode_number, SimpleNamespace(
-                episode_number=plan.episode_number
-            )
+            return plan.episode_number, SimpleNamespace(episode_number=plan.episode_number)
 
         def _write_passage_utilization(self, **kwargs: Any) -> None:
             calls["passage_utilization"] = kwargs
@@ -506,9 +495,7 @@ def test_resume_from_writing_uses_series_plan_and_actor_metadata(
     assert calls["actor_metadata_metrics"]["metrics"]["episode_planning"] == {
         "unknown_actor_ids": 0
     }
-    assert calls["actor_metadata_metrics"]["metrics"]["writing"] == {
-        "completed_episode_count": 1
-    }
+    assert calls["actor_metadata_metrics"]["metrics"]["writing"] == {"completed_episode_count": 1}
 
     final_project = ThematicProject.model_validate(
         json.loads((project_dir / "thematic_project.json").read_text(encoding="utf-8"))

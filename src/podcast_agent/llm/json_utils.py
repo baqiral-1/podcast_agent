@@ -36,4 +36,3 @@ def unwrap_response_payload(payload: dict[str, Any]) -> dict[str, Any]:
     if "result" in payload and isinstance(payload["result"], dict):
         return payload["result"]
     return payload
-

@@ -113,9 +113,7 @@ class Agent(ABC):
                     last_exc = exc
                     if attempt < self.max_retry_attempts:
                         if isinstance(exc, RetryableGenerationError):
-                            current_payload = self.prepare_retry_payload(
-                                current_payload, exc
-                            )
+                            current_payload = self.prepare_retry_payload(current_payload, exc)
                             instructions = self.build_instructions(current_payload)
                         backoff = min(2 ** (attempt - 1), 16) + (time.monotonic() % 1)
                         self._log_retry_scheduled(
@@ -126,8 +124,12 @@ class Agent(ABC):
                         )
                         logger.warning(
                             "Agent %s attempt %d/%d failed (%s: %s), retrying in %.1fs",
-                            self.schema_name, attempt, self.max_retry_attempts,
-                            type(exc).__name__, exc, backoff,
+                            self.schema_name,
+                            attempt,
+                            self.max_retry_attempts,
+                            type(exc).__name__,
+                            exc,
+                            backoff,
                         )
                         time.sleep(backoff)
                     continue
@@ -145,8 +147,12 @@ class Agent(ABC):
                         )
                         logger.warning(
                             "Agent %s attempt %d/%d failed (%s: %s), retrying in %.1fs",
-                            self.schema_name, attempt, self.max_retry_attempts,
-                            type(exc).__name__, exc, backoff,
+                            self.schema_name,
+                            attempt,
+                            self.max_retry_attempts,
+                            type(exc).__name__,
+                            exc,
+                            backoff,
                         )
                         time.sleep(backoff)
                     continue

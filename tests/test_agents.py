@@ -103,9 +103,7 @@ class TestCoreAgents:
     def test_chapter_summary_response_allows_more_than_six_key_events(self):
         response = ChapterSummaryResponse.model_validate(
             {
-                "analysis": {
-                    "key_events_or_arguments": [f"event-{idx}" for idx in range(7)]
-                },
+                "analysis": {"key_events_or_arguments": [f"event-{idx}" for idx in range(7)]},
             }
         )
         assert len(response.analysis.key_events_or_arguments) == 7
@@ -149,10 +147,7 @@ class TestCoreAgents:
         assert "`uncertainty_notes` when there is no caveat" in agent.instructions
         assert "Actor list-of-string fields" in agent.instructions
         assert "`chapter_refs` must be an array of objects" in agent.instructions
-        assert (
-            "`evidence_confidence` must be one of: `high`, `medium`, `low`"
-            in agent.instructions
-        )
+        assert "`evidence_confidence` must be one of: `high`, `medium`, `low`" in agent.instructions
         assert "`narrative_functions` values must be drawn from" in agent.instructions
         assert "top-level `actor_metadata.relationships`" in agent.instructions
         assert "relationship `confidence` is optional" in agent.instructions
@@ -305,19 +300,12 @@ class TestCoreAgents:
         assert payload["candidate_passages"][0]["passage_id"] == "p1"
         assert "`candidate_passages`" in agent.instructions
         assert (
-            "Score passages relative to the other candidates for this axis."
-            in agent.instructions
+            "Score passages relative to the other candidates for this axis." in agent.instructions
         )
         assert "Do not tag everything as `exemplifies`." in agent.instructions
-        assert (
-            "A pair should teach something a single passage cannot."
-            in agent.instructions
-        )
+        assert "A pair should teach something a single passage cannot." in agent.instructions
         assert "Self-check before returning:" in agent.instructions
-        assert (
-            "Every input passage appears exactly once in `passages`."
-            in agent.instructions
-        )
+        assert "Every input passage appears exactly once in `passages`." in agent.instructions
 
 
 class TestRedesignedAgents:
@@ -327,14 +315,10 @@ class TestRedesignedAgents:
             project_id="proj",
             podcast_mode="minified",
             axes_summary=[{"axis_id": "axis_1"}],
-            passages_by_axis={
-                "axis_1": [{"book_id": "b1", "passages": [{"passage_id": "p1"}]}]
-            },
+            passages_by_axis={"axis_1": [{"book_id": "b1", "passages": [{"passage_id": "p1"}]}]},
             cross_book_pairs=[{"passage_a_id": "p1", "passage_b_id": "p2"}],
             book_metadata=[{"book_id": "b1"}],
-            primitive_target_ranges=primitive_substrate_target_ranges_for_mode(
-                "minified"
-            ),
+            primitive_target_ranges=primitive_substrate_target_ranges_for_mode("minified"),
             actor_metadata={"actors": [{"actor_id": "actor_1"}]},
             synthesis_feedback={"issue": "thin_grounding"},
         )
@@ -381,7 +365,10 @@ class TestRedesignedAgents:
         assert "Do not let tail episodes become everything left over." in instructions
         assert "trim or demote primitives rather than adding more" in instructions
         assert "usually spend one directive slot on a human carrier" in instructions
-        assert "Sovereigns or state heads alone are not always a sufficient character spine" in instructions
+        assert (
+            "Sovereigns or state heads alone are not always a sufficient character spine"
+            in instructions
+        )
 
     def test_narrative_strategy_skeleton_agent_prepare_retry_payload_adds_targeted_feedback(
         self,
@@ -427,7 +414,9 @@ class TestRedesignedAgents:
                     "loc": ("episodes", 0, "episode_spine"),
                     "msg": "Value error, core_primitive_ids must contain 2-11 primitive ids",
                     "input": raw_payload["episodes"][0]["spine"],
-                    "ctx": {"error": ValueError("core_primitive_ids must contain 2-11 primitive ids")},
+                    "ctx": {
+                        "error": ValueError("core_primitive_ids must contain 2-11 primitive ids")
+                    },
                 },
                 {
                     "type": "extra_forbidden",
@@ -445,9 +434,7 @@ class TestRedesignedAgents:
         assert feedback["canonical_field_names"]["negative_scope"] == "negative_scope"
         assert feedback["episode_constraints_by_number"][0]["episode_number"] == 1
         assert (
-            feedback["episode_constraints_by_number"][0]["direction_by_field"][
-                "core_primitive_ids"
-            ]
+            feedback["episode_constraints_by_number"][0]["direction_by_field"]["core_primitive_ids"]
             == "underfull"
         )
         assert (
@@ -456,15 +443,18 @@ class TestRedesignedAgents:
             ]
             == "underfull"
         )
+        assert feedback["episode_constraints_by_number"][0]["recommended_action"] == "merge_episode"
         assert (
-            feedback["episode_constraints_by_number"][0]["recommended_action"]
-            == "merge_episode"
+            "Use `negative_scope`, not `scope`."
+            in feedback["episode_constraints_by_number"][0]["required_fix"]
         )
-        assert "Use `negative_scope`, not `scope`." in feedback[
-            "episode_constraints_by_number"
-        ][0]["required_fix"]
-        assert "forbidden_scope_alias" in feedback["episode_constraints_by_number"][0]["issue_types"]
-        assert "core_primitive_count_underfull" in feedback["episode_constraints_by_number"][0]["issue_types"]
+        assert (
+            "forbidden_scope_alias" in feedback["episode_constraints_by_number"][0]["issue_types"]
+        )
+        assert (
+            "core_primitive_count_underfull"
+            in feedback["episode_constraints_by_number"][0]["issue_types"]
+        )
         assert (
             "support_primitive_count_underfull"
             in feedback["episode_constraints_by_number"][0]["issue_types"]
@@ -496,9 +486,7 @@ class TestRedesignedAgents:
                     "episode_number": 8,
                     "spine": {
                         "core_prims": [f"e{i}" for i in range(12)],
-                        "support_roles": {
-                            f"s{i}": "mechanism" for i in range(14)
-                        },
+                        "support_roles": {f"s{i}": "mechanism" for i in range(14)},
                         "recall_prims": ["r1", "r2", "r3"],
                     },
                 }
@@ -516,7 +504,9 @@ class TestRedesignedAgents:
                     "loc": ("episodes", 0, "episode_spine"),
                     "msg": "Value error, core_primitive_ids must contain 2-11 primitive ids",
                     "input": raw_payload["episodes"][0]["spine"],
-                    "ctx": {"error": ValueError("core_primitive_ids must contain 2-11 primitive ids")},
+                    "ctx": {
+                        "error": ValueError("core_primitive_ids must contain 2-11 primitive ids")
+                    },
                 },
             ],
         )
@@ -525,9 +515,7 @@ class TestRedesignedAgents:
 
         feedback = next_payload["strategy_skeleton_feedback"]
         assert (
-            feedback["episode_constraints_by_number"][0]["direction_by_field"][
-                "core_primitive_ids"
-            ]
+            feedback["episode_constraints_by_number"][0]["direction_by_field"]["core_primitive_ids"]
             == "overfull"
         )
         assert (
@@ -536,22 +524,23 @@ class TestRedesignedAgents:
             ]
             == "overfull"
         )
+        assert feedback["episode_constraints_by_number"][0]["recommended_action"] == "trim_core"
         assert (
-            feedback["episode_constraints_by_number"][0]["recommended_action"]
-            == "trim_core"
+            "Demote or remove non-thesis primitives from core."
+            in feedback["episode_constraints_by_number"][0]["required_fix"]
         )
-        assert "Demote or remove non-thesis primitives from core." in feedback[
-            "episode_constraints_by_number"
-        ][0]["required_fix"]
-        assert "core_primitive_count_overfull" in feedback[
-            "episode_constraints_by_number"
-        ][0]["issue_types"]
-        assert "support_primitive_count_overfull" in feedback[
-            "episode_constraints_by_number"
-        ][0]["issue_types"]
-        assert "If an episode is overfull, trim or demote primitives rather than adding more." in feedback[
-            "instruction"
-        ]
+        assert (
+            "core_primitive_count_overfull"
+            in feedback["episode_constraints_by_number"][0]["issue_types"]
+        )
+        assert (
+            "support_primitive_count_overfull"
+            in feedback["episode_constraints_by_number"][0]["issue_types"]
+        )
+        assert (
+            "If an episode is overfull, trim or demote primitives rather than adding more."
+            in feedback["instruction"]
+        )
 
     def test_narrative_strategy_enrichment_agent_payload(self):
         agent = NarrativeStrategyEnrichmentAgent(_mock_llm())
@@ -637,7 +626,9 @@ class TestRedesignedAgents:
                         0,
                     ),
                     "msg": "Value error, host assumption introduce/revise moves must include statement",
-                    "input": raw_payload["episodes"][0]["narrative_agenda"]["host"]["assumption_moves"][0],
+                    "input": raw_payload["episodes"][0]["narrative_agenda"]["host"][
+                        "assumption_moves"
+                    ][0],
                     "ctx": {
                         "error": ValueError(
                             "host assumption introduce/revise moves must include statement"
@@ -662,17 +653,12 @@ class TestRedesignedAgents:
             "host_assumption_revise_missing_statement",
             "forbidden_promised_beat_kind_field",
         ]
-        assert (
-            feedback["canonical_field_names"]["promised_beats[].kind"]
-            == "remove this field"
-        )
+        assert feedback["canonical_field_names"]["promised_beats[].kind"] == "remove this field"
         assert "Remove `kind`" in feedback["episode_constraints_by_number"][0]["required_fix"]
         assert "assumption_moves.revise" in feedback["instruction"]
 
     def test_primitive_function_tagging_agent_payload(self):
-        agent = PrimitiveFunctionTaggingAgent(
-            _mock_llm(), substrate=PrimitiveSubstrate.EVENTS
-        )
+        agent = PrimitiveFunctionTaggingAgent(_mock_llm(), substrate=PrimitiveSubstrate.EVENTS)
         payload = agent.build_payload(
             project_id="proj",
             podcast_mode="full",
@@ -975,31 +961,17 @@ class TestRedesignedAgents:
         assert payload["series_actor_explanation_registry"][0]["actor_id"] == "kermit_roosevelt"
         assert payload["actor_metadata"]["actors"][0]["actor_id"] == "actor_1"
         assert payload["architecture_feedback"]["issue"] == "missing_turn"
-        assert (
-            "Convert the episode spine into 12–18 binding sections."
-            in instructions
-        )
+        assert "Convert the episode spine into 12–18 binding sections." in instructions
         assert (
             "The final section must use `purpose` = `closing` (aligned with `stage = close`)."
             in instructions
         )
         assert "approx_runtime_minutes` at or below 2.0" in instructions
         assert "Do not build a second ending." in instructions
-        assert (
-            "Target 8-12 support-primitive placements across sections."
-            in instructions
-        )
-        assert (
-            "Do not place all assigned support primitives by default."
-            in instructions
-        )
-        assert (
-            "RUNTIME AND DENSITY BUDGET"
-            in instructions
-        )
-        assert (
-            "`priority_core_passage_ids`" in instructions
-        )
+        assert "Target 8-12 support-primitive placements across sections." in instructions
+        assert "Do not place all assigned support primitives by default." in instructions
+        assert "RUNTIME AND DENSITY BUDGET" in instructions
+        assert "`priority_core_passage_ids`" in instructions
         assert "`support_passages`" in instructions
         assert "`episode_scenes`" in instructions
         assert "`section_anchor`" in instructions
@@ -1015,7 +987,9 @@ class TestRedesignedAgents:
         assert "`host_theory_moves`" in instructions
         assert "24–32 total `authorial_passages`" in instructions
         assert "are not scene cards, scene counts" in instructions
-        assert "The first `must_stage_beats` item should usually open from the section" in instructions
+        assert (
+            "The first `must_stage_beats` item should usually open from the section" in instructions
+        )
         assert "`section_progression`" in instructions
         assert "Exactly one section must use `section_progression.stage = answer`." in instructions
         assert "`closure_mode`" not in instructions
@@ -1029,10 +1003,7 @@ class TestRedesignedAgents:
             "Treat those actor-registry fields as routing metadata only, not as copy-ready prose for `actor_explanations`."
             in instructions
         )
-        assert (
-            "Attach `source_primitive_ids`,"
-            in instructions
-        )
+        assert "Attach `source_primitive_ids`," in instructions
         assert "`source_passage_ids`, `intro_facts`, `role_label`, and `why_now`" in instructions
 
     def test_episode_architecture_agent_builds_minified_instructions_from_payload(self):
@@ -1052,7 +1023,9 @@ class TestRedesignedAgents:
         instructions = agent.build_instructions(payload)
 
         assert "Convert the episode spine into 7–9 binding sections." in instructions
-        assert "Most minified episodes should carry 12–16 total `authorial_passages`." in instructions
+        assert (
+            "Most minified episodes should carry 12–16 total `authorial_passages`." in instructions
+        )
         assert "Dense minified sections may use 2–5 `authorial_passages`" in instructions
 
     def test_episode_planning_agent_payload(self):
@@ -1084,10 +1057,7 @@ class TestRedesignedAgents:
         assert "`available_passages`" in instructions
         assert "`estimated_duration_seconds`" in instructions
         assert "PRIORITY RULES" in instructions
-        assert (
-            "Every scene card must be grounded in provided `passage_ids`."
-            in instructions
-        )
+        assert "Every scene card must be grounded in provided `passage_ids`." in instructions
         assert "scene cards for this episode." in instructions
         assert "Build each section through accumulation." in instructions
         assert (
@@ -1104,15 +1074,16 @@ class TestRedesignedAgents:
             in instructions
         )
         assert "`section_sonic_plan`" in instructions
-        assert "`section_sonic_plan.obligation` may only be `required` or `preferred`." in instructions
+        assert (
+            "`section_sonic_plan.obligation` may only be `required` or `preferred`." in instructions
+        )
         assert "scene-local derived realization" in instructions
         assert "should not repeat that anchor verbatim" in instructions
         assert "`must_stage_beats`, `section_progression`" in instructions
         assert "`closure_mode`" not in instructions
         assert "should create curiosity in the same territory as" in instructions
         assert (
-            "When a section has `priority_core_passage_ids`, prefer those passages"
-            in instructions
+            "When a section has `priority_core_passage_ids`, prefer those passages" in instructions
         )
         assert "When a section has `actor_explanations`" in instructions
         assert "`explanation_stage = introduce` or `reminder`." in instructions
@@ -1121,21 +1092,18 @@ class TestRedesignedAgents:
         assert "Episode 1, set this to null" in instructions
         assert "may not invent new" in instructions
         assert "memory-thread, or host-state progression not already in strategy" in instructions
-        assert (
-            "Carry the section plan's `background_depth`, `role_label`,"
-            in instructions
-        )
-        assert (
-            "Do not add copied registry glosses or lifted prose when placing the"
-            in instructions
-        )
+        assert "Carry the section plan's `background_depth`, `role_label`," in instructions
+        assert "Do not add copied registry glosses or lifted prose when placing the" in instructions
         assert "Copy the section plan's `background_depth`, `role_label`," not in instructions
         assert "`host_policy`" in instructions
         assert "Every scene card carries a `host_moves` object with" in instructions
         assert "`host_moves` must be non-empty on structural scenes" in instructions
         assert "Default to one populated phase with one cue." in instructions
         assert "Ordinary `build` cards may leave all buckets empty." in instructions
-        assert "Omit optional fields entirely instead of returning blank strings or empty arrays." in instructions
+        assert (
+            "Omit optional fields entirely instead of returning blank strings or empty arrays."
+            in instructions
+        )
         assert "COMPACT TRANSPORT KEYS" not in instructions
         assert "`audible_detail -> audio`" not in instructions
         assert "Treat `must_land_facts` as the card's factual spine." in instructions
@@ -1150,21 +1118,32 @@ class TestRedesignedAgents:
         )
         assert "State the through-line." in instructions
         assert "`i` for taste, candid uncertainty, or comparison" in instructions
-        assert "Use `i` / `we` / `you` when brief, scene-rooted, and earning their keep" in instructions
+        assert (
+            "Use `i` / `we` / `you` when brief, scene-rooted, and earning their keep"
+            in instructions
+        )
         assert "`section_id`" in instructions
         assert "`scene_function`" in instructions
-        assert "The answer card must live inside the section whose `section_progression.stage`" in instructions
+        assert (
+            "The answer card must live inside the section whose `section_progression.stage`"
+            in instructions
+        )
         assert "After-pressure content" in instructions
         assert "`afterpressure`-stage sections" in instructions
         assert "If `planning_feedback.issue = answer_scene_wrong_section`" in instructions
         assert "residue_scene_wrong_section" not in instructions
+        assert "context_setup, actor_setup, action, shock, contestation, reaction," in instructions
         assert (
-            "context_setup, actor_setup, action, shock, contestation, reaction,"
+            "Ordinary sections should usually contain at most one `implication` card."
             in instructions
         )
-        assert "Ordinary sections should usually contain at most one `implication` card." in instructions
-        assert "When the real job is \"what changed because of this,\" prefer `fallout`." in instructions
-        assert "Sections that open in `context_setup` or `actor_setup` should usually pick up a concrete event, confrontation, or consequence beat inside the same section." in instructions
+        assert (
+            'When the real job is "what changed because of this," prefer `fallout`.' in instructions
+        )
+        assert (
+            "Sections that open in `context_setup` or `actor_setup` should usually pick up a concrete event, confrontation, or consequence beat inside the same section."
+            in instructions
+        )
         assert "Target 36–42 scene cards for this episode." in agent.instructions
 
     def test_episode_planning_agent_build_llm_payload_keeps_canonical_keys(self):
@@ -1206,19 +1185,19 @@ class TestRedesignedAgents:
 
         assert "Target 21–26 scene cards for this episode." in instructions
         assert "fallout, implication" in agent.instructions
-        assert (
-            "scene, hinge, mechanism, turn, landing, callback, afterlife"
-            in agent.instructions
-        )
+        assert "scene, hinge, mechanism, turn, landing, callback, afterlife" in agent.instructions
         assert "`term_explanations`" in agent.instructions
         assert "Every `note` must contain both:" in agent.instructions
         assert "Move-type-specific note rules:" in agent.instructions
         assert "Phase-specific note rules:" in agent.instructions
+        assert "Use its `allowed_moves` as binding" in agent.instructions
         assert (
-            "Use its `allowed_moves` as binding" in agent.instructions
+            "`clarify` after complexity, `contrast` to kill a false reading" in agent.instructions
         )
-        assert "`clarify` after complexity, `contrast` to kill a false reading" in agent.instructions
-        assert "Avoid section shapes that are effectively `setup -> implication -> implication`" in agent.instructions
+        assert (
+            "Avoid section shapes that are effectively `setup -> implication -> implication`"
+            in agent.instructions
+        )
 
     def test_style_audit_agent_payload(self):
         agent = StyleAuditAgent(_mock_llm())
@@ -1257,10 +1236,7 @@ class TestRedesignedAgents:
         assert "spoken_style_contract = anti_academic_oral" in agent.instructions
         assert "`term_explanations`" in agent.instructions
         assert "`actor_explanations`" in agent.instructions
-        assert (
-            'Visible production-frame phrasing such as "This series..."'
-            in agent.instructions
-        )
+        assert 'Visible production-frame phrasing such as "This series..."' in agent.instructions
 
     def test_build_host_policy_payload_includes_spoken_style_contract(self):
         payload = _build_host_policy_payload(SeriesNarratorProfile())
@@ -1321,10 +1297,7 @@ class TestRedesignedAgents:
         assert "`episode_target_word_count_higher`" in agent.instructions
         assert "`passages[].text`" in agent.instructions
         assert agent.instructions.count("Optional `actor_metadata`") == 1
-        assert (
-            "Treat it as narrative scaffolding, not factual authority."
-            in agent.instructions
-        )
+        assert "Treat it as narrative scaffolding, not factual authority." in agent.instructions
         assert "`must_land_facts`" in agent.instructions
         assert "`passage_ids`" in agent.instructions
         assert "`host_policy`" in agent.instructions
@@ -1338,10 +1311,7 @@ class TestRedesignedAgents:
         assert "Optional `continuity_contract_pre`" in agent.instructions
         assert "Optional `continuity_contract_post`" in agent.instructions
         assert "Optional `prior_window_continuity`" in agent.instructions
-        assert (
-            "reference-only guidance for handoff, pacing, and continuity"
-            in agent.instructions
-        )
+        assert "reference-only guidance for handoff, pacing, and continuity" in agent.instructions
         assert (
             "maintain local continuity across the split" in agent.instructions
             and "not factual authority" in agent.instructions
@@ -1361,10 +1331,7 @@ class TestRedesignedAgents:
         assert "Do not reproduce `section_sonic_plan.opening_anchor` verbatim" in agent.instructions
         assert "`term_explanations`" in agent.instructions
         assert "`actor_explanations`" in agent.instructions
-        assert (
-            "In planned `authorial_passages`, you may quote then gloss"
-            in agent.instructions
-        )
+        assert "In planned `authorial_passages`, you may quote then gloss" in agent.instructions
         assert "For `term_explanations.stage = define`" in agent.instructions
         assert "For `term_explanations.stage = reminder`" in agent.instructions
         assert "For `actors[].explanation_stage = introduce`" in agent.instructions
@@ -1374,23 +1341,25 @@ class TestRedesignedAgents:
             in agent.instructions
         )
         assert "actor_metadata` when present, and the" in agent.instructions
-        assert (
-            "Do not use self-referential announcer lines in body prose"
-            in agent.instructions
-        )
+        assert "Do not use self-referential announcer lines in body prose" in agent.instructions
         assert "Target 8-12 prose sections for the episode" not in agent.instructions
         assert "`entry_image`" in agent.instructions
         assert "`audible_detail`" in agent.instructions
         assert "SCENE ROLE SEMANTICS" in agent.instructions
         assert "SCENE JOB SEMANTICS" in agent.instructions
         assert "`action`: stage a materially consequential move" in agent.instructions
-        assert "`build`: carry most accumulation, setup, mechanism, contest, reaction, and consequence work." in agent.instructions
+        assert (
+            "`build`: carry most accumulation, setup, mechanism, contest, reaction, and consequence work."
+            in agent.instructions
+        )
         assert "Do not write standalone transition paragraphs" in agent.instructions
         assert "Structural cards should stay concrete and brief." in agent.instructions
         assert "Planned `host_moves` should shape the scene's narration" in agent.instructions
         assert "translate each host target into concrete scene" in agent.instructions.lower()
         assert "Do not surface control words unless the" in agent.instructions
-        assert "For compact output, you may omit `section_id`, `scene_card_ids`," in agent.instructions
+        assert (
+            "For compact output, you may omit `section_id`, `scene_card_ids`," in agent.instructions
+        )
         assert "Omit empty `source_book_ids`." in agent.instructions
 
     def test_writing_response_allows_teaser_line(self):
@@ -1488,10 +1457,7 @@ class TestRedesignedAgents:
             in agent.instructions
         )
         assert "Return one output item per input section" in agent.instructions
-        assert (
-            "Aim to deliver the episode in 8-12 prose sections"
-            not in agent.instructions
-        )
+        assert "Aim to deliver the episode in 8-12 prose sections" not in agent.instructions
         assert "Optional `actor_metadata`" in agent.instructions
         assert "Passages are evidence." in agent.instructions
         assert (
@@ -1513,43 +1479,48 @@ class TestRedesignedAgents:
         )
         assert (
             "maintain local continuity across the split" in agent.instructions
-            or "cannot override the current window"
-            in agent.instructions
-            in agent.instructions
+            or "cannot override the current window" in agent.instructions in agent.instructions
         )
         assert "`prior_window_continuity` is reference-only." in agent.instructions
         assert "Do not include a `citations` field" in agent.instructions
         assert "concrete scene leverage" in agent.instructions
         assert "no leaked host-target control phrasing" in agent.instructions
         assert "omit the field when empty rather than guessing" in agent.instructions
-        assert "For compact output, you may omit `section_id`, `scene_card_ids`, and" in agent.instructions
+        assert (
+            "For compact output, you may omit `section_id`, `scene_card_ids`, and"
+            in agent.instructions
+        )
         assert "Target total narration for this call within" in agent.instructions
         assert "`entry_image`" in agent.instructions
         assert "`audible_detail`" in agent.instructions
         assert "`section_sonic_plan`" in agent.instructions
-        assert "`section_sonic_plan.obligation` may only be `required` or `preferred`." in agent.instructions
-        assert "Treat scene-level `audible_detail` as a local derived realization" in agent.instructions
+        assert (
+            "`section_sonic_plan.obligation` may only be `required` or `preferred`."
+            in agent.instructions
+        )
+        assert (
+            "Treat scene-level `audible_detail` as a local derived realization"
+            in agent.instructions
+        )
         assert "SCENE ROLES AND JOBS" in agent.instructions
         assert "Structural cards must stay concrete and brief." in agent.instructions
         assert "SCENE ROLE SEMANTICS" in agent.instructions
         assert "SCENE JOB SEMANTICS" in agent.instructions
         assert "`action`: stage a materially consequential move" in agent.instructions
-        assert "`build`: carry most accumulation, setup, mechanism, contest, reaction, and consequence work." in agent.instructions
+        assert (
+            "`build`: carry most accumulation, setup, mechanism, contest, reaction, and consequence work."
+            in agent.instructions
+        )
         assert "Do not expose scaffolding" in agent.instructions
         assert "no meta-transitions" in agent.instructions
         assert "let `surface_mode` and `address_mode` decide" in agent.instructions
         assert "Distinct host lines are allowed" in agent.instructions
         assert "not the default" in agent.instructions
-        assert (
-            "Planned `authorial_passages` may be more explanatory" in agent.instructions
-        )
+        assert "Planned `authorial_passages` may be more explanatory" in agent.instructions
         assert "For `term_explanations.stage = define`" in agent.instructions
         assert "For `term_explanations.stage = reminder`" in agent.instructions
         assert "For `actors[].explanation_stage = introduce`" in agent.instructions
-        assert (
-            "Do not use self-referential announcer lines in body prose"
-            in agent.instructions
-        )
+        assert "Do not use self-referential announcer lines in body prose" in agent.instructions
         assert "spoken historical narration" in agent.instructions
         assert "spoken_style_contract = anti_academic_oral" in agent.instructions
         assert "Host-line archetypes are welcome when earned" in agent.instructions
@@ -1578,14 +1549,23 @@ class TestRedesignedAgents:
         payload = agent.build_payload(
             episode_number=1,
             title="Test Episode",
-            framing={"opening_image": "x", "threat_or_unresolved_action": "y",
-                     "opening_question": "z", "handoff_scene_card_id": "sc01"},
+            framing={
+                "opening_image": "x",
+                "threat_or_unresolved_action": "y",
+                "opening_question": "z",
+                "handoff_scene_card_id": "sc01",
+            },
             prose_sections=[{"section_id": "s1", "text": "hello"}],
-            architecture_summary=[{
-                "section_id": "s1", "purpose": "opening", "stage": "setup",
-                "is_dense": False, "approx_runtime_minutes": 5.0,
-                "must_stage_beats": [],
-            }],
+            architecture_summary=[
+                {
+                    "section_id": "s1",
+                    "purpose": "opening",
+                    "stage": "setup",
+                    "is_dense": False,
+                    "approx_runtime_minutes": 5.0,
+                    "must_stage_beats": [],
+                }
+            ],
             excerpt_staging=[],
             rubric_thresholds={"criterion_floor_for_in_place_fixes": 70},
             style_audit_lint_flags={"tic_counts": {}, "tic_locations": {}, "by_section": {}},
@@ -1673,13 +1653,22 @@ class TestRedesignedAgents:
         assert "`episode_spine -> spine`" not in prompt
         assert "`major_turn_section_id -> major_turn`" not in prompt
         assert "`grounding_actor_candidates` (optional)" not in prompt
-        assert "Prefer the `human_thread` members as the recurring human carrier across sections" in prompt
+        assert (
+            "Prefer the `human_thread` members as the recurring human carrier across sections"
+            in prompt
+        )
         assert "reserve `episode.actor_arc_directives` for non-thread supporting actors" in prompt
         assert "`thread_binding` (required when the episode has a `human_thread`" in prompt
         assert "Adjacent explanatory sections should usually differ in `open_mode`" in prompt
         assert "`open_mode` sets the rhetorical shape of the section's opening" in prompt
-        assert "Sections built mostly from `mechanisms`, `conditions`, or `readings` should usually tie those abstractions to an event, act, artifact, attached excerpt, or recurring human pressure thread" in prompt
-        assert "Sections carry `section_sonic_plan` whenever their primary excerpt is audible" in prompt
+        assert (
+            "Sections built mostly from `mechanisms`, `conditions`, or `readings` should usually tie those abstractions to an event, act, artifact, attached excerpt, or recurring human pressure thread"
+            in prompt
+        )
+        assert (
+            "Sections carry `section_sonic_plan` whenever their primary excerpt is audible"
+            in prompt
+        )
         assert "`section_sonic_plan.obligation` must be exactly" in prompt
         assert "`required` or `preferred`." in prompt
 
@@ -1691,8 +1680,14 @@ class TestRedesignedAgents:
         prompt = prompt_builder()
         assert "Treat `address_mode = we` and `address_mode = i` as stance signals" in prompt
         assert "Let the scene begin inside the world." in prompt
-        assert "Treat `spoken_style_contract = anti_academic_oral` as the default narrator mode." in prompt
-        assert "For `comparative_aside`, prefer: scene fact -> carried comparison -> explicit snap-back." in prompt
+        assert (
+            "Treat `spoken_style_contract = anti_academic_oral` as the default narrator mode."
+            in prompt
+        )
+        assert (
+            "For `comparative_aside`, prefer: scene fact -> carried comparison -> explicit snap-back."
+            in prompt
+        )
         assert "Write this to be heard, not admired on the page." in prompt
         assert "forceful host explaining history out loud." in prompt
         assert "claim_certainty = probable" in prompt
@@ -1702,9 +1697,15 @@ class TestRedesignedAgents:
         assert "If a first-person clause adds no real insight, comparison, surprise," in prompt
         assert "Prefer one inhabited clause of judgment or comparison" in prompt
         assert "Do not become more oral by getting much shorter." in prompt
-        assert "`implication`: land earned interpretation after evidence or consequence has already become legible." in prompt
+        assert (
+            "`implication`: land earned interpretation after evidence or consequence has already become legible."
+            in prompt
+        )
         assert "Scene jobs are structural jobs, not licenses for abstraction." in prompt
-        assert "When the real job is materially staged disagreement or rival reading, prefer `contestation`." in prompt
+        assert (
+            "When the real job is materially staged disagreement or rival reading, prefer `contestation`."
+            in prompt
+        )
         assert "Do not restart consecutive scenes with the same explanatory frame" in prompt
 
 
@@ -1734,9 +1735,7 @@ class TestHeuristicClient:
 
     def test_synthesis_primitives_agent_run_retries_on_transient_error(self):
         llm = _mock_llm()
-        expected = SynthesisPrimitivesAgent(
-            HeuristicLLMClient()
-        ).response_model.model_validate(
+        expected = SynthesisPrimitivesAgent(HeuristicLLMClient()).response_model.model_validate(
             {
                 "project_id": "proj",
                 "events": [
@@ -1771,9 +1770,7 @@ class TestHeuristicClient:
 
     def test_synthesis_primitives_agent_run_retries_on_overloaded_provider_error(self):
         llm = _mock_llm()
-        expected = SynthesisPrimitivesAgent(
-            HeuristicLLMClient()
-        ).response_model.model_validate(
+        expected = SynthesisPrimitivesAgent(HeuristicLLMClient()).response_model.model_validate(
             {
                 "project_id": "proj",
                 "events": [

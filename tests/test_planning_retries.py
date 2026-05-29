@@ -225,21 +225,23 @@ def test_build_architecture_retry_feedback_extracts_pydantic_field_errors() -> N
     from podcast_agent.schemas.models import ArchitectureSection
 
     try:
-        ArchitectureSection.model_validate({
-            "section_id": "s1",
-            "purpose": "setup",
-            "approx_runtime_minutes": 8.0,
-            "is_dense": True,
-            "density_rationale": "x" * 450,
-            "primitive_ids": ["p1"],
-            "section_progression": {
-                "stage": "setup",
-                "becomes_obvious": "a",
-                "answer_contribution": "b",
-                "theme_link": "c",
-                "what_remains_live": "d",
-            },
-        })
+        ArchitectureSection.model_validate(
+            {
+                "section_id": "s1",
+                "purpose": "setup",
+                "approx_runtime_minutes": 8.0,
+                "is_dense": True,
+                "density_rationale": "x" * 450,
+                "primitive_ids": ["p1"],
+                "section_progression": {
+                    "stage": "setup",
+                    "becomes_obvious": "a",
+                    "answer_contribution": "b",
+                    "theme_link": "c",
+                    "what_remains_live": "d",
+                },
+            }
+        )
     except _PydValidationError as exc:
         feedback = _build_architecture_retry_feedback(exc)
     else:
@@ -251,7 +253,9 @@ def test_build_architecture_retry_feedback_extracts_pydantic_field_errors() -> N
 
 
 def _valid_plan_payload(payload: dict, *, use_invalid_section_primitive: bool) -> dict:
-    section_two_primitives = ["core_1", "support_1"] if use_invalid_section_primitive else ["core_1"]
+    section_two_primitives = (
+        ["core_1", "support_1"] if use_invalid_section_primitive else ["core_1"]
+    )
     return {
         "episode_number": payload["strategy_episode"]["episode_number"],
         "framing": {
@@ -358,15 +362,15 @@ def _valid_plan_draft(
         {"strategy_episode": {"episode_number": 1}},
         use_invalid_section_primitive=False,
     )
-    payload["dropped_support_primitive_reasons"] = dict(
-        dropped_support_primitive_reasons or {}
-    )
+    payload["dropped_support_primitive_reasons"] = dict(dropped_support_primitive_reasons or {})
     return EpisodePlanDraft.model_validate(payload)
 
 
 def _build_orchestrator(monkeypatch: pytest.MonkeyPatch) -> PipelineOrchestrator:
     heuristic = HeuristicLLMClient()
-    monkeypatch.setattr("podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic)
+    monkeypatch.setattr(
+        "podcast_agent.pipeline.orchestrator.build_llm_client", lambda settings: heuristic
+    )
     monkeypatch.setattr(
         "podcast_agent.pipeline.orchestrator.PGVectorRetrieval",
         lambda settings, run_logger=None: SimpleNamespace(),
@@ -401,7 +405,15 @@ def test_plan_series_ignores_legacy_scene_primitive_ids(monkeypatch, tmp_path):
     project = ThematicProject(
         project_id="proj",
         theme="Theme",
-        books=[BookRecord(book_id="b1", title="Book 1", author="Author", source_path="/tmp/book.txt", source_type="txt")],
+        books=[
+            BookRecord(
+                book_id="b1",
+                title="Book 1",
+                author="Author",
+                source_path="/tmp/book.txt",
+                source_type="txt",
+            )
+        ],
         episode_count=1,
         config=PipelineConfig(),
     )
@@ -443,9 +455,7 @@ def test_plan_series_ignores_legacy_scene_primitive_ids(monkeypatch, tmp_path):
 
 def test_validate_plan_transition_allows_dropped_support_primitives_missing_after_architecture_filtering():
     plan = _valid_plan_draft(
-        dropped_support_primitive_reasons={
-            "support_4": "It does not fit the final scene chain."
-        }
+        dropped_support_primitive_reasons={"support_4": "It does not fit the final scene chain."}
     )
 
     validated_plan = _validate_plan_transition(
@@ -485,9 +495,7 @@ def test_validate_plan_transition_allows_dense_scene_fact_cards():
                     },
                     "passage_ids": ["p_support_1"],
                     "host_moves": {
-                        "open": [
-                            {"move_type": "orient", "target": "opening conditions"}
-                        ]
+                        "open": [{"move_type": "orient", "target": "opening conditions"}]
                     },
                     "estimated_duration_seconds": 120,
                 },
@@ -500,9 +508,7 @@ def test_validate_plan_transition_allows_dense_scene_fact_cards():
                     "beat_change": "The answer lands.",
                     "must_land_facts": {"required": ["Fact 7"]},
                     "passage_ids": ["p_core_1"],
-                    "host_moves": {
-                        "open": [{"move_type": "clarify", "target": "the hinge"}]
-                    },
+                    "host_moves": {"open": [{"move_type": "clarify", "target": "the hinge"}]},
                     "estimated_duration_seconds": 120,
                 },
                 {
@@ -514,9 +520,7 @@ def test_validate_plan_transition_allows_dense_scene_fact_cards():
                     "beat_change": "The cost becomes visible.",
                     "must_land_facts": {"required": ["Fact 8"]},
                     "passage_ids": ["p_support_2"],
-                    "host_moves": {
-                        "open": [{"move_type": "evaluate", "target": "visible cost"}]
-                    },
+                    "host_moves": {"open": [{"move_type": "evaluate", "target": "visible cost"}]},
                     "estimated_duration_seconds": 120,
                 },
                 {
@@ -528,9 +532,7 @@ def test_validate_plan_transition_allows_dense_scene_fact_cards():
                     "beat_change": "The close contains the answer.",
                     "must_land_facts": {"required": ["Fact 9"]},
                     "passage_ids": ["p_support_3"],
-                    "host_moves": {
-                        "close": [{"move_type": "callback", "target": "opening image"}]
-                    },
+                    "host_moves": {"close": [{"move_type": "callback", "target": "opening image"}]},
                     "estimated_duration_seconds": 120,
                 },
             ],
@@ -566,11 +568,7 @@ def test_build_plan_transition_feedback_includes_scene_and_phase_ids():
     assert feedback["phase_ids"] == ["scene_2:pivot"]
 
 
-
-
-def test_plan_series_does_not_raise_on_legacy_scene_primitive_ids(
-    monkeypatch, tmp_path
-):
+def test_plan_series_does_not_raise_on_legacy_scene_primitive_ids(monkeypatch, tmp_path):
     async def fake_sleep(_seconds: float) -> None:
         return None
 
@@ -589,7 +587,15 @@ def test_plan_series_does_not_raise_on_legacy_scene_primitive_ids(
     project = ThematicProject(
         project_id="proj",
         theme="Theme",
-        books=[BookRecord(book_id="b1", title="Book 1", author="Author", source_path="/tmp/book.txt", source_type="txt")],
+        books=[
+            BookRecord(
+                book_id="b1",
+                title="Book 1",
+                author="Author",
+                source_path="/tmp/book.txt",
+                source_type="txt",
+            )
+        ],
         episode_count=1,
         config=PipelineConfig(),
     )
@@ -702,17 +708,13 @@ def test_plan_series_accepts_surprise_move_after_narrator_profile_normalization(
                     "must_land_facts": {"required": ["Fact 4"]},
                     "primitive_ids": ["support_3"],
                     "passage_ids": ["p_support_3"],
-                    "host_moves": {
-                        "close": [{"move_type": "callback", "target": "opening image"}]
-                    },
+                    "host_moves": {"close": [{"move_type": "callback", "target": "opening image"}]},
                     "estimated_duration_seconds": 120,
                 },
             ],
             "answer_scene_card_id": "scene_2",
         }
-        return orchestrator.episode_planning_agent.response_model.model_validate(
-            plan_payload
-        )
+        return orchestrator.episode_planning_agent.response_model.model_validate(plan_payload)
 
     orchestrator.episode_planning_agent.run = fake_planning_run
     project = ThematicProject(
@@ -783,9 +785,7 @@ def test_plan_series_accepts_surprise_move_after_narrator_profile_normalization(
     ]
 
 
-def test_plan_series_warns_without_retry_on_late_actor_introduction(
-    monkeypatch, tmp_path
-):
+def test_plan_series_warns_without_retry_on_late_actor_introduction(monkeypatch, tmp_path):
     async def fake_sleep(_seconds: float) -> None:
         return None
 
@@ -802,7 +802,9 @@ def test_plan_series_warns_without_retry_on_late_actor_introduction(
     architecture = _episode_architecture().model_copy(
         update={
             "sections": [
-                _episode_architecture().sections[0].model_copy(
+                _episode_architecture()
+                .sections[0]
+                .model_copy(
                     update={
                         "actor_explanations": [
                             ActorExplanationPlan(
@@ -907,7 +909,9 @@ def test_plan_series_warns_without_retry_on_late_actor_introduction(
                         "beat_change": "The pressure starts to move.",
                         "passage_ids": ["p_core_1"],
                         "host_moves": {
-                            "open": [{"move_type": "orient", "note": "Enter through the chamber doors."}]
+                            "open": [
+                                {"move_type": "orient", "note": "Enter through the chamber doors."}
+                            ]
                         },
                         "estimated_duration_seconds": 90,
                     },
@@ -920,7 +924,12 @@ def test_plan_series_warns_without_retry_on_late_actor_introduction(
                         "beat_change": "The cost is now visible.",
                         "passage_ids": ["p_support_2"],
                         "host_moves": {
-                            "open": [{"move_type": "evaluate", "note": "Let the cost settle on the room."}]
+                            "open": [
+                                {
+                                    "move_type": "evaluate",
+                                    "note": "Let the cost settle on the room.",
+                                }
+                            ]
                         },
                         "estimated_duration_seconds": 90,
                     },
@@ -933,7 +942,12 @@ def test_plan_series_warns_without_retry_on_late_actor_introduction(
                         "beat_change": "The residue is named.",
                         "passage_ids": ["p_support_3"],
                         "host_moves": {
-                            "open": [{"move_type": "callback", "note": "Carry the first corridor image into the close."}]
+                            "open": [
+                                {
+                                    "move_type": "callback",
+                                    "note": "Carry the first corridor image into the close.",
+                                }
+                            ]
                         },
                         "estimated_duration_seconds": 90,
                     },
@@ -946,7 +960,15 @@ def test_plan_series_warns_without_retry_on_late_actor_introduction(
     project = ThematicProject(
         project_id="proj",
         theme="Theme",
-        books=[BookRecord(book_id="b1", title="Book 1", author="Author", source_path="/tmp/book.txt", source_type="txt")],
+        books=[
+            BookRecord(
+                book_id="b1",
+                title="Book 1",
+                author="Author",
+                source_path="/tmp/book.txt",
+                source_type="txt",
+            )
+        ],
         episode_count=1,
         config=PipelineConfig(),
     )
@@ -997,9 +1019,7 @@ def test_plan_series_warns_without_retry_on_late_actor_introduction(
     )
 
 
-def test_plan_series_warns_without_retry_on_missing_actor_explanation_link(
-    monkeypatch, tmp_path
-):
+def test_plan_series_warns_without_retry_on_missing_actor_explanation_link(monkeypatch, tmp_path):
     async def fake_sleep(_seconds: float) -> None:
         return None
 
@@ -1016,7 +1036,9 @@ def test_plan_series_warns_without_retry_on_missing_actor_explanation_link(
     architecture = _episode_architecture().model_copy(
         update={
             "sections": [
-                _episode_architecture().sections[0].model_copy(
+                _episode_architecture()
+                .sections[0]
+                .model_copy(
                     update={
                         "actor_explanations": [
                             ActorExplanationPlan(
@@ -1089,7 +1111,9 @@ def test_plan_series_warns_without_retry_on_missing_actor_explanation_link(
                         "beat_change": "The pressure starts to move.",
                         "passage_ids": ["p_core_1"],
                         "host_moves": {
-                            "open": [{"move_type": "orient", "note": "Enter through the chamber doors."}]
+                            "open": [
+                                {"move_type": "orient", "note": "Enter through the chamber doors."}
+                            ]
                         },
                         "estimated_duration_seconds": 90,
                     },
@@ -1102,7 +1126,12 @@ def test_plan_series_warns_without_retry_on_missing_actor_explanation_link(
                         "beat_change": "The cost is now visible.",
                         "passage_ids": ["p_support_2"],
                         "host_moves": {
-                            "open": [{"move_type": "evaluate", "note": "Let the cost settle on the room."}]
+                            "open": [
+                                {
+                                    "move_type": "evaluate",
+                                    "note": "Let the cost settle on the room.",
+                                }
+                            ]
                         },
                         "estimated_duration_seconds": 90,
                     },
@@ -1115,7 +1144,12 @@ def test_plan_series_warns_without_retry_on_missing_actor_explanation_link(
                         "beat_change": "The residue is named.",
                         "passage_ids": ["p_support_3"],
                         "host_moves": {
-                            "open": [{"move_type": "callback", "note": "Carry the first corridor image into the close."}]
+                            "open": [
+                                {
+                                    "move_type": "callback",
+                                    "note": "Carry the first corridor image into the close.",
+                                }
+                            ]
                         },
                         "estimated_duration_seconds": 90,
                     },
@@ -1128,7 +1162,15 @@ def test_plan_series_warns_without_retry_on_missing_actor_explanation_link(
     project = ThematicProject(
         project_id="proj",
         theme="Theme",
-        books=[BookRecord(book_id="b1", title="Book 1", author="Author", source_path="/tmp/book.txt", source_type="txt")],
+        books=[
+            BookRecord(
+                book_id="b1",
+                title="Book 1",
+                author="Author",
+                source_path="/tmp/book.txt",
+                source_type="txt",
+            )
+        ],
         episode_count=1,
         config=PipelineConfig(),
     )

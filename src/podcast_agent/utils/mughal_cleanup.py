@@ -97,7 +97,9 @@ _GENEALOGICAL_FRAGMENT_RE = re.compile(
     re.IGNORECASE,
 )
 _OPENING_ARTIFACT_RE = re.compile(r"^\[\s+")
-_SECTION_SUBHEADING_RE = re.compile(r"^sec(?:tion)?\.?\s*[ivxlcdm0-9]+(?:\s*[-.:|]|$)", re.IGNORECASE)
+_SECTION_SUBHEADING_RE = re.compile(
+    r"^sec(?:tion)?\.?\s*[ivxlcdm0-9]+(?:\s*[-.:|]|$)", re.IGNORECASE
+)
 _EMBEDDED_TERMINAL_MARKER_RE = re.compile(
     r"(?P<prefix>.*?)(?:[.!?]\s+|\s+)(?P<marker>NOTES|BIBLIOGRAPHY|REFERENCES|INDEX)\b",
     re.DOTALL,
@@ -275,7 +277,11 @@ def clean_mughal_ocr_pages(page_texts: list[str]) -> str:
         if not info.body_lines or not _section_has_narrative(info.body_lines):
             continue
 
-        chapter_header = info.header_key if info.header_key in repeated_headers and info.header_key != book_header else None
+        chapter_header = (
+            info.header_key
+            if info.header_key in repeated_headers and info.header_key != book_header
+            else None
+        )
         if not started and chapter_header is None:
             continue
         if chapter_header and chapter_header != current_title:
@@ -311,7 +317,9 @@ def _extract_sections(lines: list[str]) -> list[tuple[str, list[str]]]:
     started = False
     for position, heading_index in enumerate(heading_indexes):
         heading = lines[heading_index]
-        next_heading_index = heading_indexes[position + 1] if position + 1 < len(heading_indexes) else len(lines)
+        next_heading_index = (
+            heading_indexes[position + 1] if position + 1 < len(heading_indexes) else len(lines)
+        )
         body_start_index = _section_body_start(lines, heading_index, next_heading_index)
         body_lines = lines[body_start_index:next_heading_index]
 
@@ -467,7 +475,9 @@ def _best_toc_start(
         page_info = page_infos[page_index]
         if page_info.is_skippable or page_info.is_terminal:
             continue
-        score, body_start_index = _score_toc_start_candidate(page_info, entry, page_index, predicted_index)
+        score, body_start_index = _score_toc_start_candidate(
+            page_info, entry, page_index, predicted_index
+        )
         if score > best_score and body_start_index is not None:
             best_score = score
             best_start = _ChapterStart(
@@ -550,7 +560,10 @@ def _extract_toc_entries(page_infos: list[_PreparedPage]) -> list[_TocEntry]:
 
         for entry in page_candidates:
             if entry.number in entries_by_number:
-                if entries_by_number[entry.number].page_number is None and entry.page_number is not None:
+                if (
+                    entries_by_number[entry.number].page_number is None
+                    and entry.page_number is not None
+                ):
                     entries_by_number[entry.number] = entry
                 continue
             entries_by_number[entry.number] = entry
@@ -585,16 +598,26 @@ def _dedupe_chapter_starts(starts: list[_ChapterStart]) -> list[_ChapterStart]:
     return deduped
 
 
-def _render_page_chapters(page_infos: list[_PreparedPage], chapter_starts: list[_ChapterStart]) -> str:
+def _render_page_chapters(
+    page_infos: list[_PreparedPage], chapter_starts: list[_ChapterStart]
+) -> str:
     rendered_bodies: list[str] = []
     for index, start in enumerate(chapter_starts):
-        end_page = chapter_starts[index + 1].page_index if index + 1 < len(chapter_starts) else len(page_infos)
+        end_page = (
+            chapter_starts[index + 1].page_index
+            if index + 1 < len(chapter_starts)
+            else len(page_infos)
+        )
         chapter_lines: list[str] = []
         for page_index in range(start.page_index, end_page):
             page_info = page_infos[page_index]
             if page_info.is_terminal and page_index > start.page_index:
                 break
-            lines = page_info.body_lines[start.body_start_index:] if page_index == start.page_index else page_info.body_lines
+            lines = (
+                page_info.body_lines[start.body_start_index :]
+                if page_index == start.page_index
+                else page_info.body_lines
+            )
             if page_index > start.page_index and _starts_terminal_named_section(lines):
                 break
             filtered_lines = _drop_page_artifacts(lines)
@@ -645,7 +668,8 @@ def _is_section_heading_at(lines: list[str], index: int) -> bool:
 def _is_narrative_section_heading(lines: list[str], index: int) -> bool:
     line = lines[index]
     return bool(
-        _looks_like_multiline_numbered_heading(lines, index) or _NARRATIVE_NAMED_SECTION_RE.match(line)
+        _looks_like_multiline_numbered_heading(lines, index)
+        or _NARRATIVE_NAMED_SECTION_RE.match(line)
     )
 
 
@@ -698,7 +722,9 @@ def _flush_paragraph(current_lines: list[str], paragraphs: list[str]) -> None:
 
 def _trim_edge_paragraphs(paragraphs: list[str]) -> list[str]:
     trimmed = list(paragraphs)
-    while trimmed and (_FRONT_MATTER_PARAGRAPH_RE.search(trimmed[0]) or _looks_like_toc_paragraph(trimmed[0])):
+    while trimmed and (
+        _FRONT_MATTER_PARAGRAPH_RE.search(trimmed[0]) or _looks_like_toc_paragraph(trimmed[0])
+    ):
         trimmed.pop(0)
     note_block_start: int | None = None
     note_count = 0
@@ -799,7 +825,12 @@ def _extract_pages_with_ocr(path: Path, tmp_dir: Path) -> list[str]:
     page_count = len(reader.pages)
     max_workers = min(4, page_count)
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        return list(executor.map(lambda page_number: _ocr_pdf_page(path, tmp_dir, page_number), range(1, page_count + 1)))
+        return list(
+            executor.map(
+                lambda page_number: _ocr_pdf_page(path, tmp_dir, page_number),
+                range(1, page_count + 1),
+            )
+        )
 
 
 def _ocr_pdf_page(path: Path, tmp_dir: Path, page_number: int) -> str:
@@ -876,7 +907,10 @@ def _prepare_page(page_text: str) -> _PreparedPage:
         ),
         is_terminal=bool(
             first_body_line
-            and (_TERMINAL_SECTION_RE.match(first_body_line) or _CONCLUSION_SECTION_RE.match(first_body_line))
+            and (
+                _TERMINAL_SECTION_RE.match(first_body_line)
+                or _CONCLUSION_SECTION_RE.match(first_body_line)
+            )
         ),
         word_count=len(re.findall(r"\b\w+\b", " ".join(body_lines))),
     )
@@ -920,7 +954,9 @@ def _page_looks_like_toc(lines: list[str]) -> bool:
         if re.fullmatch(r"[IVXLC]+\.?\s+.+\s+\d{1,3}", compact, flags=re.IGNORECASE):
             toc_like += 1
             continue
-        if re.fullmatch(r"(appendix|chapter)\s+[a-z0-9ivxlc]+.*\d{1,3}", compact, flags=re.IGNORECASE):
+        if re.fullmatch(
+            r"(appendix|chapter)\s+[a-z0-9ivxlc]+.*\d{1,3}", compact, flags=re.IGNORECASE
+        ):
             toc_like += 1
             continue
     return toc_like >= 3
@@ -965,7 +1001,9 @@ def _detect_explicit_chapter_start(page_info: _PreparedPage) -> _ChapterStart | 
         body_start_index = _find_body_start_after_heading(lines, first_index)
         if body_start_index is None:
             continue
-        return _ChapterStart(page_index=-1, body_start_index=body_start_index, number_hint=chapter_number)
+        return _ChapterStart(
+            page_index=-1, body_start_index=body_start_index, number_hint=chapter_number
+        )
     return None
 
 
@@ -1041,7 +1079,10 @@ def _drop_page_artifacts(lines: list[str]) -> list[str]:
 
 def _starts_terminal_named_section(lines: list[str]) -> bool:
     first_line = next((line for line in lines if line), "")
-    return bool(first_line and (_TERMINAL_SECTION_RE.match(first_line) or _CONCLUSION_SECTION_RE.match(first_line)))
+    return bool(
+        first_line
+        and (_TERMINAL_SECTION_RE.match(first_line) or _CONCLUSION_SECTION_RE.match(first_line))
+    )
 
 
 def _parse_chapter_number(text: str) -> int | None:
@@ -1177,11 +1218,17 @@ def _looks_like_spurious_trailing_paragraph(paragraph: str) -> bool:
         return True
     if _REFERENCE_TAIL_RE.search(paragraph):
         return True
-    if re.search(r"\b(tomb|churchyard|monument|inscription|epitaph)\b", paragraph, flags=re.IGNORECASE):
+    if re.search(
+        r"\b(tomb|churchyard|monument|inscription|epitaph)\b", paragraph, flags=re.IGNORECASE
+    ):
         return True
-    if re.search(r"\b(london|calcutta|lahore|benares),\s*(17|18|19)\d{2}\b", paragraph, flags=re.IGNORECASE):
+    if re.search(
+        r"\b(london|calcutta|lahore|benares),\s*(17|18|19)\d{2}\b", paragraph, flags=re.IGNORECASE
+    ):
         return True
-    if len(paragraph.split()) <= 20 and ("Like us" in paragraph or "human cares and woes" in paragraph):
+    if len(paragraph.split()) <= 20 and (
+        "Like us" in paragraph or "human cares and woes" in paragraph
+    ):
         return True
     if paragraph.count("\n") >= 2 and len(paragraph.split()) <= 60:
         return True
@@ -1195,7 +1242,10 @@ def _looks_like_spurious_opening_section(body: str) -> bool:
     word_count = len(body.split())
     if word_count > 900:
         return False
-    return all(_looks_like_spurious_opening_paragraph(paragraph) for paragraph in paragraphs[: min(3, len(paragraphs))])
+    return all(
+        _looks_like_spurious_opening_paragraph(paragraph)
+        for paragraph in paragraphs[: min(3, len(paragraphs))]
+    )
 
 
 def _looks_like_spurious_trailing_section(body: str) -> bool:
