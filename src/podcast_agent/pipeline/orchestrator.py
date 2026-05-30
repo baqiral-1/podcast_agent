@@ -31,6 +31,12 @@ from uuid import uuid4
 
 from pydantic import ValidationError
 
+from podcast_agent.agents._architecture_feedback import (
+    build_section_context_from_architecture_payload,
+    format_validation_errors as _format_architecture_validation_errors,
+    layer_in_episode_support_passages,
+    shape_specific_appendix as _architecture_shape_specific_appendix,
+)
 from podcast_agent.agents.book_summary import BookSummaryAgent
 from podcast_agent.agents.chapter_summary import ChapterSummaryAgent
 from podcast_agent.agents.episode_architecture import EpisodeArchitectureAgent
@@ -1732,7 +1738,6 @@ def _build_style_audit_sections_payload(
                 },
                 "citations": section_citations,
                 "host_moves": host_moves_by_section.get(prose_section.section_id, []),
-                "key_terms": list(meta.key_terms),
                 "authorial_passages": section_authorial_passages_by_section_id.get(
                     prose_section.section_id,
                     [passage.model_dump(mode="json") for passage in meta.authorial_passages],
@@ -1820,9 +1825,6 @@ def _build_spoken_delivery_sections_payload(
                 "scene_card_ids": list(prose_section.scene_card_ids),
                 "scene_cues": scene_cues,
                 "host_moves": host_moves_by_section.get(prose_section.section_id, []),
-                "key_terms": (
-                    list(architecture_section.key_terms) if architecture_section is not None else []
-                ),
                 "authorial_passages": (
                     section_authorial_passages_by_section_id.get(
                         prose_section.section_id,
@@ -1882,9 +1884,6 @@ def _build_script_sections_payload(
                     else prose_section.section_sonic_plan.model_dump(mode="json")
                     if prose_section.section_sonic_plan is not None
                     else None
-                ),
-                "key_terms": (
-                    list(architecture_section.key_terms) if architecture_section is not None else []
                 ),
                 "authorial_passages": (
                     [
@@ -4016,8 +4015,7 @@ def _build_scene_discovery_diagnostics(
 
 
 _PRIMITIVE_ANNOTATION_BATCH_CONCURRENCY = 8
-_PRIMITIVE_ANNOTATION_BATCH_THRESHOLD = 30
-_PRIMITIVE_ANNOTATION_SPLIT_BATCH_COUNT = 2
+_PRIMITIVE_ANNOTATION_TARGET_BATCH_SIZE = 40
 
 
 def _flatten_base_synthesis_primitives(
@@ -4028,11 +4026,28 @@ def _flatten_base_synthesis_primitives(
 
 def _split_primitive_annotation_batches(
     primitives: list[BaseSynthesisPrimitive],
+    target_batch_size: int = _PRIMITIVE_ANNOTATION_TARGET_BATCH_SIZE,
 ) -> list[list[BaseSynthesisPrimitive]]:
-    if len(primitives) <= _PRIMITIVE_ANNOTATION_BATCH_THRESHOLD:
+    """Even-shard a substrate's primitives into batches near ``target_batch_size``.
+
+    Returns ``[primitives]`` when the list is already at or below target. Above
+    target, splits into ``ceil(n / target)`` shards of as-even size as possible
+    (each shard gets ``ceil`` or ``floor`` of ``n / n_batches``) preserving
+    input order.
+    """
+    if target_batch_size <= 0:
+        raise ValueError("target_batch_size must be positive")
+    if len(primitives) <= target_batch_size:
         return [primitives]
-    midpoint = (len(primitives) + 1) // _PRIMITIVE_ANNOTATION_SPLIT_BATCH_COUNT
-    return [primitives[:midpoint], primitives[midpoint:]]
+    n_batches = math.ceil(len(primitives) / target_batch_size)
+    base, remainder = divmod(len(primitives), n_batches)
+    shards: list[list[BaseSynthesisPrimitive]] = []
+    cursor = 0
+    for shard_index in range(n_batches):
+        size = base + (1 if shard_index < remainder else 0)
+        shards.append(primitives[cursor : cursor + size])
+        cursor += size
+    return shards
 
 
 def _collect_strategy_selected_primitive_ids(strategy: NarrativeStrategy) -> list[str]:
@@ -4431,7 +4446,12 @@ def _build_plan_transition_feedback(exc: ComplianceViolationError) -> dict[str, 
     return feedback
 
 
-def _build_architecture_retry_feedback(exc: Exception) -> dict[str, Any]:
+def _build_architecture_retry_feedback(
+    exc: Exception,
+    *,
+    section_context: dict[str, dict[str, list[str]]] | None = None,
+    sections_by_index: dict[int, str] | None = None,
+) -> dict[str, Any]:
     data = getattr(exc, "data", None) or {}
     issue = str(data.get("issue", "architecture_contract_invalid"))
     if issue == "voice_first_unvoiceable":
@@ -4455,30 +4475,27 @@ def _build_architecture_retry_feedback(exc: Exception) -> dict[str, Any]:
             ),
         }
     # Pydantic field-level validation errors: extract loc/msg/ctx so the
-    # agent sees exactly which field failed and by what rule. Without this
-    # the agent gets only the generic fallback below and tends to rewrite
-    # the same offending field on retry.
+    # agent sees exactly which field failed and by what rule. The shared
+    # appendix from agents/_architecture_feedback.py adds shape-specific
+    # repair guidance for the two recurring failure modes (peripheral_touch
+    # ungrounded fallback, eligible_phases hallucinated literal).
     if isinstance(exc, ValidationError):
-        lines: list[str] = []
-        for err in exc.errors()[:8]:
-            loc = ".".join(str(part) for part in err.get("loc", ()))
-            msg = str(err.get("msg", "validation error"))
-            ctx = err.get("ctx") or {}
-            ctx_bits = ", ".join(f"{k}={v}" for k, v in ctx.items())
-            if ctx_bits:
-                lines.append(f"- `{loc}`: {msg} ({ctx_bits})")
-            else:
-                lines.append(f"- `{loc}`: {msg}")
-        total = len(exc.errors())
-        suffix = f" (+{total - 8} more)" if total > 8 else ""
+        body = _format_architecture_validation_errors(exc)
+        appendix = _architecture_shape_specific_appendix(
+            exc,
+            section_context=section_context,
+            sections_by_index=sections_by_index,
+        )
         return {
             "issue": "schema_validation_failed",
             "episode_number": data.get("episode_number"),
             "instruction": (
                 "Pydantic schema validation failed on the previous attempt. "
-                "Fix each named field on the next attempt and keep all other "
-                "fields unchanged. Pay attention to max_length / min_length / "
-                "max_items constraints on the offending fields.\n" + "\n".join(lines) + suffix
+                "Repair every named field on the next attempt and keep every "
+                "other field unchanged. Pay attention to max_length / min_length "
+                "/ max_items constraints on the offending fields.\n"
+                + body
+                + appendix
             ),
         }
     # Model-validator ValueError messages already include the field name
@@ -6976,8 +6993,7 @@ def _section_is_explanation_overloaded(section: Any) -> bool:
             and getattr(section, "approx_runtime_minutes", 0.0) >= 8.0
         )
         or (
-            len(getattr(section, "key_terms", [])) >= 4
-            and len(getattr(section, "authorial_passages", [])) <= 1
+            len(getattr(section, "authorial_passages", [])) <= 1
             and len(getattr(section, "term_explanations", [])) >= 2
         )
     )
@@ -7269,6 +7285,14 @@ def _build_episode_architecture_realization(
     overloaded_section_ids = _overloaded_architecture_section_ids(architecture)
     if overloaded_section_ids:
         warnings.append(f"explanation_section_overloaded: {_preview_ids(overloaded_section_ids)}")
+    overlong_claim_ids = [
+        passage.authorial_passage_id
+        for section in architecture.sections
+        for passage in section.authorial_passages
+        if len(passage.claim.split()) > 30
+    ]
+    if overlong_claim_ids:
+        warnings.append(f"authorial_claim_over_30_words: {_preview_ids(overlong_claim_ids)}")
     grounding_diagnostics = _build_architecture_grounding_diagnostics(
         strategy_episode=strategy_episode,
         architecture=architecture,
@@ -10980,6 +11004,8 @@ class PipelineOrchestrator:
         async def _tag_substrate_batch(
             substrate: str,
             substrate_primitives: list[BaseSynthesisPrimitive],
+            shard_index: int,
+            shard_count: int,
         ) -> PrimitiveFunctionTaggingOverlayArtifact:
             async with tagging_sem:
                 batch_actor_ids = collect_actor_ids_for_primitives(substrate_primitives)
@@ -10988,11 +11014,15 @@ class PipelineOrchestrator:
                     batch_actor_ids,
                 )
                 stage_name = f"primitive_function_tagging_{substrate}"
+                if shard_count > 1:
+                    stage_name = f"{stage_name}_shard_{shard_index + 1}_of_{shard_count}"
                 async with _stage_log(
                     self.run_logger,
                     stage_name,
                     project_dir,
                     substrate=substrate,
+                    shard_index=shard_index,
+                    shard_count=shard_count,
                     primitive_count=len(substrate_primitives),
                 ) as batch_ctx:
                     payload = self.primitive_function_tagging_agents[substrate].build_payload(
@@ -11017,6 +11047,8 @@ class PipelineOrchestrator:
                     )
                     batch_ctx["output_summary"] = {
                         "substrate": substrate,
+                        "shard_index": shard_index,
+                        "shard_count": shard_count,
                         "primitive_count": len(tagged_batch.overlays_by_id),
                     }
                 return tagged_batch
@@ -11025,12 +11057,17 @@ class PipelineOrchestrator:
         for substrate, substrate_primitives in primitives.primitives_by_substrate().items():
             if not substrate_primitives:
                 continue
-            tagging_tasks.append(
-                _tag_substrate_batch(
-                    substrate,
-                    substrate_primitives,
+            shards = _split_primitive_annotation_batches(substrate_primitives)
+            shard_count = len(shards)
+            for shard_index, shard_primitives in enumerate(shards):
+                tagging_tasks.append(
+                    _tag_substrate_batch(
+                        substrate,
+                        shard_primitives,
+                        shard_index,
+                        shard_count,
+                    )
                 )
-            )
         for tagged_batch in await asyncio.gather(*tagging_tasks):
             overlay_by_primitive_id.update(tagged_batch.overlays_by_id)
 
@@ -11648,6 +11685,29 @@ class PipelineOrchestrator:
         attempts: list[dict[str, Any]] = []
         max_attempts = self.episode_architecture_agent.max_retry_attempts
         architecture: EpisodeArchitecture | None = None
+
+        episode_support_passage_ids = [
+            str(item["passage_id"])
+            for item in support_passages
+            if isinstance(item, dict) and item.get("passage_id")
+        ]
+
+        def _section_context_from_exception(
+            exc: Exception,
+        ) -> tuple[dict[str, dict[str, list[str]]], dict[int, str]]:
+            """Pull the failed attempt's raw architecture payload out of ``exc``
+            (when the inner loop wrapped a Pydantic validation failure) and turn it
+            into ``(section_context, sections_by_index)`` for the shape-specific
+            appendix. Degrades gracefully to empty dicts when the exception has no
+            raw payload (e.g. ComplianceViolationError or a plain ValueError from
+            validate_result)."""
+            data = getattr(exc, "data", None) or {}
+            raw_payload = data.get("raw_payload") if isinstance(data, dict) else None
+            ctx, idx_map = build_section_context_from_architecture_payload(raw_payload)
+            if ctx:
+                layer_in_episode_support_passages(ctx, episode_support_passage_ids)
+            return ctx, idx_map
+
         for attempt in range(1, max_attempts + 1):
             payload = self.episode_architecture_agent.build_payload(
                 episode=strategy_episode.model_dump(mode="json"),
@@ -11677,7 +11737,12 @@ class PipelineOrchestrator:
                     excerpt_by_id=excerpt_by_id,
                 )
             except ComplianceViolationError as exc:
-                architecture_feedback = _build_architecture_retry_feedback(exc)
+                section_context, sections_by_index = _section_context_from_exception(exc)
+                architecture_feedback = _build_architecture_retry_feedback(
+                    exc,
+                    section_context=section_context or None,
+                    sections_by_index=sections_by_index or None,
+                )
                 attempts.append(
                     _build_attempt_record(
                         attempt=attempt,
@@ -11712,7 +11777,12 @@ class PipelineOrchestrator:
                 await asyncio.sleep(backoff)
                 continue
             except (ValidationError, ValueError) as exc:
-                architecture_feedback = _build_architecture_retry_feedback(exc)
+                section_context, sections_by_index = _section_context_from_exception(exc)
+                architecture_feedback = _build_architecture_retry_feedback(
+                    exc,
+                    section_context=section_context or None,
+                    sections_by_index=sections_by_index or None,
+                )
                 attempts.append(
                     _build_attempt_record(
                         attempt=attempt,
@@ -11747,7 +11817,12 @@ class PipelineOrchestrator:
                 await asyncio.sleep(backoff)
                 continue
             except Exception as exc:
-                architecture_feedback = _build_architecture_retry_feedback(exc)
+                section_context, sections_by_index = _section_context_from_exception(exc)
+                architecture_feedback = _build_architecture_retry_feedback(
+                    exc,
+                    section_context=section_context or None,
+                    sections_by_index=sections_by_index or None,
+                )
                 attempts.append(
                     _build_attempt_record(
                         attempt=attempt,

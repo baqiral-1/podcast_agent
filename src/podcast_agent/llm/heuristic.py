@@ -884,7 +884,7 @@ class HeuristicLLMClient(LLMClient):
         if not primitive_ids:
             primitive_ids = list(episode_spine.get("core_primitive_ids") or ["primitive_001"])
         section_target_min = int(project.get("architecture_section_target_min", 12))
-        section_target_max = int(project.get("architecture_section_target_max", 18))
+        section_target_max = int(project.get("architecture_section_target_max", 16))
         section_count = (
             min(section_target_max, max(section_target_min, len(primitive_ids)))
             if primitive_ids
@@ -1026,9 +1026,6 @@ class HeuristicLLMClient(LLMClient):
                             f"Section {idx + 1} advances the episode answer at the "
                             f"{section_stage} stage."
                         ),
-                        "theme_link": (
-                            "Ties this section's pressure to the episode's overall theme."
-                        ),
                         "what_remains_live": (
                             "The episode exits without reopening the answer."
                             if is_closing
@@ -1047,7 +1044,6 @@ class HeuristicLLMClient(LLMClient):
                         if idx in (1, section_count - 1)
                         else ""
                     ),
-                    "key_terms": [],
                     "authorial_passages": (
                         [
                             {
@@ -1058,8 +1054,6 @@ class HeuristicLLMClient(LLMClient):
                                 "source_primitive_ids": local_primitive_ids,
                                 "source_passage_ids": [],
                                 "quote_anchor": "",
-                                "gloss_seed": "Say plainly what changes here.",
-                                "must_name_terms": [],
                                 "budget_sentences": 3,
                             }
                         ]
@@ -1088,7 +1082,6 @@ class HeuristicLLMClient(LLMClient):
             "episode_number": int(episode.get("episode_number", 1)),
             "major_turn_section_id": sections[turn_section_idx]["section_id"],
             "allowed_recurring_primitive_ids": primitive_ids[:2],
-            "forbidden_redundancies": [],
             "promised_beat_decisions": promised_beat_decisions,
             "sections": sections,
             "architecture_notes": ["Heuristic architecture output."],

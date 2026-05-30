@@ -94,7 +94,6 @@ def _episode_architecture() -> EpisodeArchitecture:
         "episode_number": 1,
         "major_turn_section_id": "section_1",
         "allowed_recurring_primitive_ids": [],
-        "forbidden_redundancies": [],
         "sections": [
             {
                 "section_id": "section_1",
@@ -283,7 +282,6 @@ def _episode_architecture() -> EpisodeArchitecture:
         episode_number=payload["episode_number"],
         major_turn_section_id=payload["major_turn_section_id"],
         allowed_recurring_primitive_ids=payload["allowed_recurring_primitive_ids"],
-        forbidden_redundancies=payload["forbidden_redundancies"],
         sections=[ArchitectureSection.model_validate(section) for section in payload["sections"]],
         architecture_notes=payload["architecture_notes"],
     )

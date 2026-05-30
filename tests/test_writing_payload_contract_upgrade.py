@@ -88,7 +88,6 @@ def _architecture() -> EpisodeArchitecture:
         episode_number=1,
         major_turn_section_id="section_1",
         allowed_recurring_primitive_ids=[],
-        forbidden_redundancies=[],
         promised_beat_decisions=[],
         sections=[section],
         architecture_notes=[],
@@ -298,7 +297,6 @@ def test_comparative_aside_scene_warnings_flag_tight_close_answer_stack() -> Non
         episode_number=1,
         major_turn_section_id="section_1",
         allowed_recurring_primitive_ids=[],
-        forbidden_redundancies=[],
         promised_beat_decisions=[],
         sections=[
             ArchitectureSection.model_validate(

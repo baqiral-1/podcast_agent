@@ -237,7 +237,6 @@ def test_build_architecture_retry_feedback_extracts_pydantic_field_errors() -> N
                     "stage": "setup",
                     "becomes_obvious": "a",
                     "answer_contribution": "b",
-                    "theme_link": "c",
                     "what_remains_live": "d",
                 },
             }
@@ -250,6 +249,83 @@ def test_build_architecture_retry_feedback_extracts_pydantic_field_errors() -> N
     assert feedback["issue"] == "schema_validation_failed"
     assert "density_rationale" in feedback["instruction"]
     assert "400" in feedback["instruction"]
+
+
+def test_build_architecture_retry_feedback_peripheral_touch_appendix_with_section_context() -> None:
+    # When ``section_context`` carries the failing sections' available
+    # passages, the shape-specific appendix must render them per-section so
+    # the model knows exactly which passage_ids it could ground in.
+    from pydantic import ValidationError as _PydValidationError
+
+    cause = _PydValidationError.from_exception_data(
+        "EpisodeArchitecture",
+        [
+            {
+                "type": "value_error",
+                "loc": ("sections", 0, "thread_binding"),
+                "msg": "Value error, a peripheral_touch fallback must ground in at least one passage",
+                "input": {"fallback_mode": "peripheral_touch"},
+                "ctx": {
+                    "error": ValueError(
+                        "a peripheral_touch fallback must ground in at least one passage"
+                    )
+                },
+            },
+        ],
+    )
+
+    feedback = _build_architecture_retry_feedback(
+        cause,
+        section_context={
+            "sec3_man": {
+                "priority_core_passage_ids": ["0b006f", "0400b1"],
+                "support_passage_ids": [],
+            }
+        },
+        sections_by_index={0: "sec3_man"},
+    )
+
+    instr = feedback["instruction"]
+    assert "peripheral_touch repair rule" in instr
+    assert "structural_only" in instr
+    assert "section `sec3_man`" in instr
+    assert '"0b006f"' in instr
+    assert '"0400b1"' in instr
+
+
+def test_build_architecture_retry_feedback_eligible_phases_appendix_enumerates_legal_set() -> None:
+    # An eligible_phases literal violation (the "mid" hallucination from
+    # iranian_revolution_v74 ep8) must produce an appendix naming the legal
+    # triple and explicitly rejecting "mid".
+    from pydantic import ValidationError as _PydValidationError
+
+    cause = _PydValidationError.from_exception_data(
+        "EpisodeArchitecture",
+        [
+            {
+                "type": "literal_error",
+                "loc": (
+                    "sections",
+                    6,
+                    "host_beat_designations",
+                    1,
+                    "eligible_phases",
+                    0,
+                ),
+                "msg": "Input should be 'open', 'pivot' or 'close'",
+                "input": "mid",
+                "ctx": {"expected": "'open', 'pivot' or 'close'"},
+            },
+        ],
+    )
+
+    feedback = _build_architecture_retry_feedback(cause)
+
+    instr = feedback["instruction"]
+    assert feedback["issue"] == "schema_validation_failed"
+    assert "eligible_phases repair rule" in instr
+    assert "`open`, `pivot`, `close`" in instr
+    assert "`mid`" in instr
 
 
 def _valid_plan_payload(payload: dict, *, use_invalid_section_primitive: bool) -> dict:

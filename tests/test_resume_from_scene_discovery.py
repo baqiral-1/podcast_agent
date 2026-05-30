@@ -209,7 +209,6 @@ def _episode_architecture() -> EpisodeArchitecture:
             "episode_number": 1,
             "major_turn_section_id": "section_4",
             "allowed_recurring_primitive_ids": ["primitive_1"],
-            "forbidden_redundancies": [],
             "sections": [section.model_dump(mode="json") for section in sections],
             "architecture_notes": [],
         }

@@ -11,6 +11,8 @@ from podcast_agent.agents.base import Agent
 from podcast_agent.langchain.runnables import RetryableGenerationError
 from podcast_agent.prompts import primitive_function_tagging_instructions
 from podcast_agent.schemas.models import (
+    PRIMITIVE_OVERLAY_COMMON_FIELDS,
+    PRIMITIVE_OVERLAY_DEFERRED_FIELDS_BY_SUBSTRATE,
     PrimitiveFunctionTaggingArtifact,
     PrimitiveFunctionTaggingOverlayArtifact,
     PrimitiveSubstrate,
@@ -24,29 +26,11 @@ _FUNCTION_VALIDATION_PATTERN = re.compile(
     r")$"
 )
 
-_DEFERRED_SUBSTRATE_FIELDS: dict[str, tuple[str, ...]] = {
-    PrimitiveSubstrate.EVENTS.value: ("event_result",),
-    PrimitiveSubstrate.ACTS.value: ("immediate_result",),
-    PrimitiveSubstrate.ACTOR_PORTRAITS.value: ("operating_pressure",),
-    PrimitiveSubstrate.MECHANISMS.value: ("operating_chain", "inputs", "outputs"),
-    PrimitiveSubstrate.CONDITIONS.value: ("active_tension",),
-    PrimitiveSubstrate.ARTIFACTS.value: ("artifact_detail",),
-}
-
-_COMMON_OVERLAY_FIELDS = frozenset(
-    {
-        "functions",
-        "salience",
-        "pivot",
-        "stake",
-        "texture",
-        "cost",
-        "complication",
-        "recurrence",
-        "contest",
-        "narration_hooks",
-    }
-)
+# Schema-derived overlay vocabulary. Imported from ``schemas.models`` so the
+# allowlist used by validation feedback stays in lockstep with the prompt and
+# the ``PrimitiveEnrichmentOverlay`` field set.
+_DEFERRED_SUBSTRATE_FIELDS = PRIMITIVE_OVERLAY_DEFERRED_FIELDS_BY_SUBSTRATE
+_COMMON_OVERLAY_FIELDS = frozenset(PRIMITIVE_OVERLAY_COMMON_FIELDS)
 
 
 class PrimitiveFunctionTaggingAgent(Agent):

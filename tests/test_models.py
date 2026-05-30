@@ -212,14 +212,14 @@ class TestThematicProject:
         assert config.spoken_delivery_concurrency == 8
         assert config.min_episode_minutes == 124.0
         assert config.max_episode_minutes == 145.0
-        assert config.architecture_section_target_min == 14
-        assert config.architecture_section_target_max == 21
+        assert config.architecture_section_target_min == 12
+        assert config.architecture_section_target_max == 16
         # Change 1: density budget defaults
         assert config.max_dense_sections_per_episode == 2
         assert config.dense_section_runtime_min_minutes == 16.0
-        assert config.dense_section_runtime_max_minutes == 21.0
-        assert config.section_runtime_floor_minutes == 4.5
-        assert config.section_runtime_ceiling_minutes == 15.0
+        assert config.dense_section_runtime_max_minutes == 22.0
+        assert config.section_runtime_floor_minutes == 6.0
+        assert config.section_runtime_ceiling_minutes == 14.0
         # Change 2 + 3 defaults
         assert config.style_tic_semantic_threshold == 0.78
         assert config.series_carryover_threshold == 3
@@ -252,6 +252,7 @@ class TestThematicProject:
         assert config.episode_spine_recall_primitive_target_max == 1
         assert config.architecture_section_target_min == 6
         assert config.architecture_section_target_max == 10
+        assert config.max_dense_sections_per_episode == 2
         assert config.dense_section_runtime_min_minutes == 7.0
         assert config.dense_section_runtime_max_minutes == 9.0
         assert config.section_runtime_floor_minutes == 2.0
@@ -273,27 +274,28 @@ class TestThematicProject:
         assert config.narrative_strategy_episode_count_max == 12
         assert config.synthesis_total_passage_cap == 750
         assert config.episode_writing_batch_count == 5
-        assert config.architecture_section_target_min == 14
-        assert config.architecture_section_target_max == 21
+        assert config.architecture_section_target_min == 12
+        assert config.architecture_section_target_max == 16
+        assert config.max_dense_sections_per_episode == 2
         assert config.dense_section_runtime_min_minutes == 16.0
-        assert config.dense_section_runtime_max_minutes == 21.0
-        assert config.section_runtime_floor_minutes == 4.5
-        assert config.section_runtime_ceiling_minutes == 15.0
+        assert config.dense_section_runtime_max_minutes == 22.0
+        assert config.section_runtime_floor_minutes == 6.0
+        assert config.section_runtime_ceiling_minutes == 14.0
         assert config.min_episode_minutes == 124.0
         assert config.max_episode_minutes == 145.0
         assert config.scene_card_target_min == 41
         assert config.scene_card_target_max == 48
 
     def test_authorial_passage_target_ranges_for_modes(self):
-        assert authorial_passage_target_range_for_mode(PodcastMode.FULL) == (17, 22)
-        assert authorial_passage_target_range_for_mode(PodcastMode.MINIFIED) == (12, 16)
+        assert authorial_passage_target_range_for_mode(PodcastMode.FULL) == (12, 15)
+        assert authorial_passage_target_range_for_mode(PodcastMode.MINIFIED) == (8, 11)
         assert dense_section_authorial_passage_range_for_mode(PodcastMode.FULL) == (
-            3,
-            7,
+            2,
+            5,
         )
-        assert dense_section_authorial_passage_range_for_mode(PodcastMode.MINIFIED) == (2, 5)
-        assert authorial_passage_target_for_mode(PodcastMode.FULL) == 19
-        assert authorial_passage_target_for_mode(PodcastMode.MINIFIED) == 14
+        assert dense_section_authorial_passage_range_for_mode(PodcastMode.MINIFIED) == (1, 4)
+        assert authorial_passage_target_for_mode(PodcastMode.FULL) == 13
+        assert authorial_passage_target_for_mode(PodcastMode.MINIFIED) == 9
 
     def test_authorial_passage_allows_six_sentence_budget(self):
         passage = AuthorialPassage.model_validate(
@@ -405,7 +407,7 @@ class TestThematicProject:
         assert profile.spoken_style_contract == "anti_academic_oral"
         assert profile.analysis_mode == "hybrid"
         assert profile.analysis_density == "medium"
-        assert profile.target_authorial_passages_per_episode == 19
+        assert profile.target_authorial_passages_per_episode == 13
 
     def test_host_presence_beat_normalizes_legacy_term_reminder(self):
         beat = HostPresenceBeat.model_validate(
@@ -455,11 +457,9 @@ class TestThematicProject:
             claim="Some accounts remember the scene differently.",
             claim_certainty="contested_memory",
             source_primitive_ids=["primitive_1"],
-            counter_source_passage_ids=["p2", "p3"],
         )
 
         assert passage.claim_certainty == "contested_memory"
-        assert passage.counter_source_passage_ids == ["p2", "p3"]
 
     def test_episode_takeaway_requires_both_agency_parts(self):
         takeaway = EpisodeTakeaway(
@@ -1370,7 +1370,6 @@ class TestEpisodeArchitectureModels:
             episode_number=1,
             major_turn_section_id=sections[min(2, len(sections) - 1)].section_id,
             allowed_recurring_primitive_ids=[],
-            forbidden_redundancies=[],
             sections=sections,
             architecture_notes=[],
         )

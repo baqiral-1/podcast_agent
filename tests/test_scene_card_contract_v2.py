@@ -218,7 +218,6 @@ def test_section_plan_realization_adds_section_load_warnings() -> None:
         episode_number=1,
         major_turn_section_id="section_1",
         allowed_recurring_primitive_ids=[],
-        forbidden_redundancies=[],
         sections=[_section("section_1")],
         architecture_notes=[],
     )
@@ -244,7 +243,6 @@ def test_section_plan_realization_warns_when_required_section_sonic_plan_lacks_d
         episode_number=1,
         major_turn_section_id="section_1",
         allowed_recurring_primitive_ids=[],
-        forbidden_redundancies=[],
         sections=[
             _section("section_1").model_copy(
                 update={
@@ -319,7 +317,6 @@ def test_style_audit_payload_includes_section_load_metadata() -> None:
         episode_number=1,
         major_turn_section_id="section_1",
         allowed_recurring_primitive_ids=[],
-        forbidden_redundancies=[],
         sections=[
             _section("section_1").model_copy(
                 update={
@@ -357,7 +354,6 @@ def test_section_plan_realization_warns_on_verbatim_section_sonic_copy_and_unbou
         episode_number=1,
         major_turn_section_id="section_1",
         allowed_recurring_primitive_ids=[],
-        forbidden_redundancies=[],
         sections=[
             _section("section_1").model_copy(
                 update={
@@ -444,7 +440,6 @@ def test_host_density_diagnostics_flag_build_scene_overcoverage_and_verdict_dens
         episode_number=1,
         major_turn_section_id="section_1",
         allowed_recurring_primitive_ids=[],
-        forbidden_redundancies=[],
         sections=[
             ArchitectureSection(
                 section_id="section_1",
@@ -524,7 +519,6 @@ def test_architecture_grounding_diagnostics_flag_overloaded_run_without_actor_ar
         episode_number=1,
         major_turn_section_id="section_2",
         allowed_recurring_primitive_ids=[],
-        forbidden_redundancies=[],
         sections=[
             ArchitectureSection(
                 section_id="section_1",
@@ -534,7 +528,6 @@ def test_architecture_grounding_diagnostics_flag_overloaded_run_without_actor_ar
                 primitive_ids=["core_1"],
                 section_anchor="Ledger one.",
                 must_stage_beats=["Beat one.", "Beat two."],
-                key_terms=["court", "waqf", "registry", "decree"],
                 term_explanations=[
                     {"item_id": "term_1", "stage": "define"},
                     {"item_id": "term_2", "stage": "define"},
@@ -548,7 +541,6 @@ def test_architecture_grounding_diagnostics_flag_overloaded_run_without_actor_ar
                 primitive_ids=["core_2"],
                 section_anchor="Ledger two.",
                 must_stage_beats=["Beat three.", "Beat four."],
-                key_terms=["seminary", "deed", "court", "trustee"],
                 term_explanations=[
                     {"item_id": "term_3", "stage": "define"},
                     {"item_id": "term_4", "stage": "payoff"},
@@ -574,7 +566,6 @@ def test_architecture_grounding_diagnostics_flag_missing_directive_realization()
         episode_number=1,
         major_turn_section_id="section_2",
         allowed_recurring_primitive_ids=[],
-        forbidden_redundancies=[],
         sections=[
             ArchitectureSection(
                 section_id="section_1",
@@ -584,7 +575,6 @@ def test_architecture_grounding_diagnostics_flag_missing_directive_realization()
                 primitive_ids=["core_1"],
                 section_anchor="Ledger one.",
                 must_stage_beats=["Beat one.", "Beat two."],
-                key_terms=["court", "waqf", "registry", "decree"],
                 term_explanations=[
                     {"item_id": "term_1", "stage": "define"},
                     {"item_id": "term_2", "stage": "define"},
@@ -601,7 +591,6 @@ def test_architecture_grounding_diagnostics_flag_missing_directive_realization()
                 primitive_ids=["core_2"],
                 section_anchor="Ledger two.",
                 must_stage_beats=["Beat three.", "Beat four."],
-                key_terms=["seminary", "deed", "court", "trustee"],
                 term_explanations=[
                     {"item_id": "term_3", "stage": "define"},
                     {"item_id": "term_4", "stage": "payoff"},

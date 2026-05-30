@@ -2,7 +2,17 @@
 
 from __future__ import annotations
 
+from pydantic import ValidationError
+
+from podcast_agent.agents._architecture_feedback import (
+    INNER_RETRY_INSTRUCTION_HEADER,
+    build_section_context_from_architecture_payload,
+    format_validation_errors,
+    layer_in_episode_support_passages,
+    shape_specific_appendix,
+)
 from podcast_agent.agents.base import Agent
+from podcast_agent.langchain.runnables import RetryableGenerationError
 from podcast_agent.prompts import episode_architecture_instructions
 from podcast_agent.schemas.models import (
     EpisodeArchitecture,
@@ -26,10 +36,10 @@ class EpisodeArchitectureAgent(Agent):
     def _section_target_bounds(payload: dict) -> tuple[int, int]:
         project = payload.get("project")
         if not isinstance(project, dict):
-            return 14, 21
+            return 12, 16
         return (
-            int(project.get("architecture_section_target_min", 14)),
-            int(project.get("architecture_section_target_max", 21)),
+            int(project.get("architecture_section_target_min", 12)),
+            int(project.get("architecture_section_target_max", 16)),
         )
 
     @staticmethod
@@ -40,9 +50,9 @@ class EpisodeArchitectureAgent(Agent):
         return {
             "max_dense_sections": int(project.get("max_dense_sections_per_episode", 2)),
             "dense_min": float(project.get("dense_section_runtime_min_minutes", 16.0)),
-            "dense_max": float(project.get("dense_section_runtime_max_minutes", 21.0)),
-            "section_floor": float(project.get("section_runtime_floor_minutes", 4.5)),
-            "section_ceiling": float(project.get("section_runtime_ceiling_minutes", 15.0)),
+            "dense_max": float(project.get("dense_section_runtime_max_minutes", 22.0)),
+            "section_floor": float(project.get("section_runtime_floor_minutes", 6.0)),
+            "section_ceiling": float(project.get("section_runtime_ceiling_minutes", 14.0)),
             "episode_min": float(project.get("min_episode_minutes", 124.0)),
             "episode_max": float(project.get("max_episode_minutes", 145.0)),
             "policy": str(project.get("series_runtime_policy", "warn")),
@@ -122,6 +132,77 @@ class EpisodeArchitectureAgent(Agent):
                 "episode architecture must account for every promised beat exactly once"
             )
         return result
+
+    def prepare_retry_payload(
+        self,
+        payload: dict,
+        exc: RetryableGenerationError,
+    ) -> dict:
+        """Inject the previous attempt's validation failure into the next call.
+
+        The inner LLM retry loop (Agent.run) calls this before each retry on
+        a RetryableGenerationError. Without this override the same prompt
+        would be resent verbatim and the same violation would recur — which
+        is exactly what happened on episode 11 of iranian_revolution_v74,
+        where three identical peripheral_touch grounding failures burned in
+        a row before the orchestrator's outer retry took over.
+
+        We write into the same ``architecture_feedback`` key the
+        orchestrator's outer retry uses, so the prompt only describes one
+        feedback channel. ``source=inner_retry`` is purely diagnostic.
+        """
+        cause = exc.__cause__
+        if isinstance(cause, ValidationError):
+            data = getattr(exc, "data", None) or {}
+            raw_payload = data.get("raw_payload")
+            section_context, sections_by_index = (
+                build_section_context_from_architecture_payload(raw_payload)
+                if isinstance(raw_payload, dict)
+                else ({}, {})
+            )
+            support_passage_ids = [
+                str(item.get("passage_id"))
+                for item in payload.get("support_passages", []) or []
+                if isinstance(item, dict) and item.get("passage_id")
+            ]
+            if section_context:
+                layer_in_episode_support_passages(section_context, support_passage_ids)
+            instruction = (
+                INNER_RETRY_INSTRUCTION_HEADER
+                + format_validation_errors(cause)
+                + shape_specific_appendix(
+                    cause,
+                    section_context=section_context or None,
+                    sections_by_index=sections_by_index or None,
+                )
+            )
+            feedback: dict = {
+                "issue": "schema_validation_failed",
+                "source": "inner_retry",
+                "instruction": instruction,
+            }
+        else:
+            # JSON parse error or other RetryableGenerationError without a
+            # wrapped Pydantic cause. Surface parse coordinates if present
+            # so the model knows its prior output was structurally invalid.
+            data = getattr(exc, "data", None) or {}
+            instruction = (
+                "The previous attempt's response was not valid JSON for the "
+                "episode_architecture schema. Re-emit a complete, well-formed JSON "
+                "object — no truncation, no trailing commentary, no markdown fences. "
+                f"Underlying parser error: {exc}"
+            )
+            feedback = {
+                "issue": "generation_unparseable",
+                "source": "inner_retry",
+                "instruction": instruction,
+            }
+            if data.get("parse_error_line") is not None:
+                feedback["parse_error_line"] = data["parse_error_line"]
+                feedback["parse_error_column"] = data["parse_error_column"]
+        next_payload = dict(payload)
+        next_payload["architecture_feedback"] = feedback
+        return next_payload
 
     def build_payload(
         self,

@@ -38,7 +38,9 @@ from podcast_agent.pipeline.orchestrator import (
     _round_allocations_to_total,
     _scene_duration_bounds,
     _scene_importance_weight,
+    _PRIMITIVE_ANNOTATION_TARGET_BATCH_SIZE,
     _split_episode_writing_windows,
+    _split_primitive_annotation_batches,
     _extract_previous_spoken_tail,
     _split_sentences,
     _script_total_word_count,
@@ -289,7 +291,6 @@ def _episode_architecture_for_scene_cards(scene_cards: list[SceneCard]) -> Episo
         episode_number=1,
         major_turn_section_id=ordered_section_ids[min(len(ordered_section_ids), 2) - 1],
         allowed_recurring_primitive_ids=[],
-        forbidden_redundancies=[],
         sections=sections,
         architecture_notes=[],
     )
@@ -616,6 +617,36 @@ def test_script_total_word_count_counts_sections():
 def test_estimate_duration_seconds_from_words_handles_zero_rate():
     assert _estimate_duration_seconds_from_words(120, 120) == 60
     assert _estimate_duration_seconds_from_words(120, 0) == 0
+
+
+def test_split_primitive_annotation_batches_keeps_small_substrates_intact():
+    primitives = [_primitive(f"event_{i}") for i in range(_PRIMITIVE_ANNOTATION_TARGET_BATCH_SIZE)]
+    shards = _split_primitive_annotation_batches(primitives)
+    assert len(shards) == 1
+    assert shards[0] == primitives
+
+
+def test_split_primitive_annotation_batches_even_shards_above_target():
+    # 121 primitives at target=40 → ceil(121/40)=4 shards, sized 31+30+30+30.
+    primitives = [_primitive(f"event_{i}") for i in range(121)]
+    shards = _split_primitive_annotation_batches(
+        primitives, target_batch_size=40
+    )
+    assert len(shards) == 4
+    sizes = [len(shard) for shard in shards]
+    assert sum(sizes) == 121
+    # Shard sizes should differ by at most 1 to keep wall-time balanced.
+    assert max(sizes) - min(sizes) <= 1
+    # No shard exceeds the target.
+    assert max(sizes) <= 40
+    # Merging shards preserves order and identity.
+    merged = [primitive for shard in shards for primitive in shard]
+    assert [p.id for p in merged] == [p.id for p in primitives]
+
+
+def test_split_primitive_annotation_batches_rejects_nonpositive_target():
+    with pytest.raises(ValueError):
+        _split_primitive_annotation_batches([], target_batch_size=0)
 
 
 def test_compute_scene_word_count_targets_uses_scene_durations():
@@ -2531,7 +2562,6 @@ def test_spoken_delivery_payload_includes_scene_cues_from_plan():
         episode_number=1,
         major_turn_section_id="section_1",
         allowed_recurring_primitive_ids=[],
-        forbidden_redundancies=[],
         sections=[
             ArchitectureSection(
                 section_id="section_1",

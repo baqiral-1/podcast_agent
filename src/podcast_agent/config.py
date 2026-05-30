@@ -155,7 +155,7 @@ class LLMConfig(BaseModel):
             "primitive_function_tagging_readings": 20000,
             "narrative_strategy_skeleton": 30000,
             "narrative_strategy_enrichment": 30000,
-            "episode_architecture": 30000,
+            "episode_architecture": 12000,
             "episode_planning": 30000,
             "episode_writing": 30000,
             "style_audit": 30000,
@@ -177,7 +177,8 @@ class LLMConfig(BaseModel):
         ),
     )
     anthropic_thinking_effort_overrides: dict[str, str] = Field(
-        default_factory=dict,
+        default_factory=lambda: {
+        },
         description=(
             "Per-schema Anthropic adaptive thinking effort override. "
             "Allowed values: low, medium, high, xhigh, max."
@@ -231,43 +232,43 @@ class LLMConfig(BaseModel):
             "primitive_function_tagging_events": AgentConfig(
                 model_name="claude-opus-4-8",
                 temperature=0.4,
-                max_retry_attempts=2,
+                max_retry_attempts=3,
                 concurrency_limit=8,
             ),
             "primitive_function_tagging_acts": AgentConfig(
                 model_name="claude-opus-4-8",
                 temperature=0.4,
-                max_retry_attempts=2,
+                max_retry_attempts=3,
                 concurrency_limit=8,
             ),
             "primitive_function_tagging_actor_portraits": AgentConfig(
                 model_name="claude-opus-4-8",
                 temperature=0.4,
-                max_retry_attempts=2,
+                max_retry_attempts=3,
                 concurrency_limit=8,
             ),
             "primitive_function_tagging_mechanisms": AgentConfig(
                 model_name="claude-opus-4-8",
                 temperature=0.4,
-                max_retry_attempts=2,
+                max_retry_attempts=3,
                 concurrency_limit=8,
             ),
             "primitive_function_tagging_conditions": AgentConfig(
                 model_name="claude-opus-4-8",
                 temperature=0.4,
-                max_retry_attempts=2,
+                max_retry_attempts=3,
                 concurrency_limit=8,
             ),
             "primitive_function_tagging_artifacts": AgentConfig(
                 model_name="claude-opus-4-8",
                 temperature=0.4,
-                max_retry_attempts=2,
+                max_retry_attempts=3,
                 concurrency_limit=8,
             ),
             "primitive_function_tagging_readings": AgentConfig(
                 model_name="claude-opus-4-8",
                 temperature=0.4,
-                max_retry_attempts=2,
+                max_retry_attempts=3,
                 concurrency_limit=8,
             ),
             "synthesis_primitives": AgentConfig(
@@ -291,7 +292,14 @@ class LLMConfig(BaseModel):
             "episode_architecture": AgentConfig(
                 model_name="claude-opus-4-8",
                 temperature=0.5,
-                max_retry_attempts=3,
+                # With prepare_retry_payload injecting per-attempt validation
+                # feedback (see EpisodeArchitectureAgent.prepare_retry_payload),
+                # a third inner attempt rarely adds signal — by then the
+                # orchestrator's outer retry can take over with its own
+                # feedback channel. Two inner attempts catches transient JSON
+                # parse glitches without burning a third 10-20-minute generation
+                # on a repeatable validation failure.
+                max_retry_attempts=2,
                 concurrency_limit=6,
             ),
             "episode_planning": AgentConfig(
@@ -537,8 +545,8 @@ class PipelineRuntimeConfig(BaseModel):
     synthesis_quality_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
     passage_extraction_concurrency: int = Field(default=16, ge=1)
     spoken_chunk_max_words: int = Field(default=250, ge=50)
-    architecture_section_target_min: int = Field(default=14, ge=1)
-    architecture_section_target_max: int = Field(default=21, ge=1)
+    architecture_section_target_min: int = Field(default=12, ge=1)
+    architecture_section_target_max: int = Field(default=16, ge=1)
     scene_card_target_min: int = Field(default=41, ge=1)
     scene_card_target_max: int = Field(default=48, ge=1)
 

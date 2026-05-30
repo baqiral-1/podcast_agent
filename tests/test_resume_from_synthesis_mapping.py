@@ -335,7 +335,6 @@ def test_resume_from_synthesis_mapping_uses_artifacts_and_forces_skips(
                 episode_number=1,
                 major_turn_section_id="section_03",
                 allowed_recurring_primitive_ids=["primitive_1"],
-                forbidden_redundancies=[],
                 sections=[
                     ArchitectureSection.model_validate(section)
                     for section in [
@@ -894,7 +893,6 @@ def test_resume_from_synthesis_mapping_fails_when_upstream_artifact_changes(
                 episode_number=1,
                 major_turn_section_id="section_01",
                 allowed_recurring_primitive_ids=["primitive_1"],
-                forbidden_redundancies=[],
                 sections=[],
                 architecture_notes=[],
             )

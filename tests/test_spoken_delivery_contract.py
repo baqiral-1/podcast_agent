@@ -83,7 +83,6 @@ def _architecture() -> EpisodeArchitecture:
         episode_number=payload["episode_number"],
         major_turn_section_id=payload["major_turn_section_id"],
         allowed_recurring_primitive_ids=[],
-        forbidden_redundancies=[],
         sections=[ArchitectureSection.model_validate(section) for section in payload["sections"]],
         architecture_notes=[],
     )

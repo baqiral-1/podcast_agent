@@ -11,6 +11,7 @@ from podcast_agent.schemas.models import (
     authorial_passage_target_range_for_mode,
     dense_section_authorial_passage_range_for_mode,
     persona_aside_target_for_mode,
+    primitive_overlay_allowed_fields,
 )
 
 
@@ -194,10 +195,28 @@ def _format_function_tagging_deferred_detail_completion(substrate: str) -> str:
     return "\n".join(_FUNCTION_TAGGING_DEFERRED_DETAIL_LINES[substrate])
 
 
+def _format_function_tagging_allowed_overlay_keys(substrate: str) -> str:
+    """Render the exact schema-allowed overlay key list for one substrate."""
+    allowed = primitive_overlay_allowed_fields(substrate)
+    formatted = ", ".join(f"`{name}`" for name in allowed)
+    return dedent(
+        f"""
+        The only top-level keys allowed inside each overlay are:
+        {formatted}.
+        Any other key — including notes, reasoning, comments, or commentary
+        fields you might be tempted to add (for example `functions_note`,
+        `reasoning`, `notes`, `rationale`, `comment`) — will be rejected by
+        schema validation. If you need to leave a single sentence of reasoning,
+        place it in `salience.justification`; do not introduce a new field for
+        it.
+        """
+    ).strip()
+
+
 def _format_function_tagging_self_check(substrate: str) -> str:
     lines = [
         "- Does `overlays_by_id` contain exactly the input primitive ids, with no missing or extra keys?",
-        "- Did you return only enrichment-owned fields inside each overlay?",
+        "- Did you return only enrichment-owned fields inside each overlay, with no invented keys outside the allowed overlay key list above?",
         *_FUNCTION_TAGGING_SELF_CHECK_LINES[substrate],
         "- Does each function describe what the primitive does in narrative rather than what kind of thing it is?",
         "- Compare `functions` against `pivot`, `stake`, `texture`, `cost`, `complication`, `recurrence`, and `contest`: does every listed function have a non-null paired payload, and does every non-null payload have its matching function tag listed?",
@@ -836,6 +855,7 @@ def primitive_function_tagging_instructions(
     deferred_detail_completion = _format_function_tagging_deferred_detail_completion(
         substrate_value
     )
+    allowed_overlay_keys = _format_function_tagging_allowed_overlay_keys(substrate_value)
     self_check = _format_function_tagging_self_check(substrate_value)
     return dedent(
         f"""
@@ -862,6 +882,9 @@ def primitive_function_tagging_instructions(
         - Do not merge, drop, split, rename, or invent primitives.
         - Do not change the substrate.
         - Assign between 0 and 3 function tags per primitive.
+
+        ALLOWED OVERLAY KEYS
+        {indent(allowed_overlay_keys, "        ").lstrip()}
 
         AUTHORITY ORDER
         1. the passage text resolved from the primitive's `core_passage_ids` and `support_passage_ids` into `passage_list`
@@ -1736,7 +1759,7 @@ def episode_planning_instructions(
           realize that section's `must_stage_beats`, `section_progression` (its
           `becomes_obvious`, `what_remains_live`, and `state_effects` moves), and any
           planned `authorial_passages`, `term_explanations`, `actor_explanations`,
-          `section_sonic_plan`, or `key_terms`.
+          or `section_sonic_plan`.
         - A non-opening section should open from the prior section's
           `inherited_pressure` when present, then build to its own `becomes_obvious`.
         - Build each section through accumulation. The first scene opens in the
@@ -2251,8 +2274,8 @@ def narrative_state_reconciler_instructions() -> str:
 
 def episode_architecture_instructions(
     *,
-    section_target_min: int = 14,
-    section_target_max: int = 21,
+    section_target_min: int = 12,
+    section_target_max: int = 16,
     authorial_passage_target_min: int = authorial_passage_target_range_for_mode(PodcastMode.FULL)[
         0
     ],
@@ -2268,9 +2291,9 @@ def episode_architecture_instructions(
     podcast_mode: PodcastMode | str = PodcastMode.FULL,
     max_dense_sections_per_episode: int = 2,
     dense_section_runtime_min: float = 16.0,
-    dense_section_runtime_max: float = 21.0,
-    section_runtime_floor: float = 4.5,
-    section_runtime_ceiling: float = 15.0,
+    dense_section_runtime_max: float = 22.0,
+    section_runtime_floor: float = 6.0,
+    section_runtime_ceiling: float = 14.0,
     target_episode_runtime_min: float = 124.0,
     target_episode_runtime_max: float = 145.0,
 ) -> str:
@@ -2284,7 +2307,7 @@ def episode_architecture_instructions(
     )
     if mode == PodcastMode.MINIFIED:
         total_authorial_guidance = (
-            "Most minified episodes should carry 12–16 total `authorial_passages`."
+            f"Most minified episodes should carry {authorial_range} total `authorial_passages`."
         )
         dense_section_guidance = (
             f"Dense minified sections may use {dense_authorial_range} "
@@ -2336,7 +2359,14 @@ def episode_architecture_instructions(
         - `core_passages`: summarized text for core-primitive core passages only
         - `support_passages`: summarized text for support-primitive evidence
         - `actor_metadata`: episode-relevant canonical actor context
-        - Optional `architecture_feedback`: retry feedback from the orchestrator
+        - Optional `architecture_feedback`: retry feedback carrying the previous
+          attempt's failure (Pydantic field path + violated rule, a model-validator
+          message, or — when `issue=generation_unparseable` — a JSON-parse hint).
+          When present, treat its `instruction` as a hard override: repair every
+          named field exactly as instructed, keep every other field unchanged, and
+          do not reintroduce the named violations. The same key carries both
+          inner-loop (`source=inner_retry`) and outer-loop feedback; either way,
+          repairing the named issue is the primary objective of this attempt.
 
         PRIMARY RESPONSIBILITY
         - Convert the episode spine into {section_range} binding sections.
@@ -2356,14 +2386,26 @@ def episode_architecture_instructions(
           section, emit a `thread_binding` (SectionThreadRef): which member carries it
           here (`carrying_member_id`), `presence` (carried/peripheral/absent), and when
           absent a `fallback_mode` (family_relay / ensemble / peripheral_touch /
-          structural_only). Ground carried/peripheral bindings in this section's own
-          passages. State `thread_movement` (the evidence-supported change in the member's
-          situation) and `binds_to_answer_via` (how this section's `answer_contribution`
-          lands through that body). Keep the carrier woven across the arc: the `answer`-stage
-          and `major_turn` sections MUST be `carried` or `family_relay` (never `structural_only`),
-          at most about 30% of sections may be `absent`, and no long contiguous run may drop the
-          carrier. Use `return_obligation` to name the concrete "return to the thread" beat the
-          planner must realize. If the episode has no `human_thread`, omit `thread_binding` on every section.
+          structural_only). State `thread_movement` (the evidence-supported change in
+          the member's situation); the section's `answer_contribution` already names how
+          its work lands, so do not restate that through the thread.
+        - Grounding rule (strict). Every `thread_binding` whose `presence` is `carried`
+          OR `peripheral`, AND every `thread_binding` whose `fallback_mode` is
+          `family_relay`, `ensemble`, or `peripheral_touch`, MUST list at least one
+          entry in `grounding_passage_ids` drawn from this section's
+          `priority_core_passage_ids` or the episode's support passages. `carried`
+          additionally requires at least one entry in `grounding_primitive_ids`. If no
+          section-local passage supports a touch, choose `fallback_mode = structural_only`
+          (which requires no grounding) — never emit `peripheral_touch` (or any other
+          non-structural fallback) with empty `grounding_passage_ids`. `peripheral_touch`
+          is reserved for a genuine absent-with-glance moment that one section passage
+          actually supports, not as a graceful fallback when grounding cannot be found.
+        - Carrier weave. Keep the carrier woven across the arc: the `answer`-stage and
+          `major_turn` sections MUST be `carried` or `family_relay` (never
+          `structural_only`), at most about 30% of sections may be `absent`, and no
+          long contiguous run may drop the carrier. Use `return_obligation` to name
+          the concrete "return to the thread" beat the planner must realize. If the
+          episode has no `human_thread`, omit `thread_binding` on every section.
 
         RULES
         - Treat the input `episode` as authoritative for title, thematic focus,
@@ -2477,9 +2519,12 @@ def episode_architecture_instructions(
         - `authorial_passages` should reserve real explanatory work such as doctrinal unpacking,
           institutional clarification, quote-then-gloss, comparative aside, or the single
           verdict landing. The verdict landing must name both the inherited condition AND the
-          proximate contingency (mirroring the episode takeaway); mark `claim_certainty` honestly
-          (`probable`/`contested_memory` where the evidence is genuinely disputed, not a reflexive
-          `settled`).
+          proximate contingency (mirroring the episode takeaway). Omit `claim_certainty`
+          entirely when the claim is settled (the default); set it only for `probable` or
+          `contested_memory`, where the evidence is genuinely disputed.
+        - `authorial_passages.claim` must be 20-25 words: name the proposition, not the
+          explanation. Planning expands it into spoken prose; architecture only commits to what
+          the passage will prove. Claims longer than 30 words are flagged by post-stage lint.
         - `authorial_passages.mode` carries the explanatory job and must be one of:
           `quote_then_gloss`, `doctrinal_unpack`, `institutional_clarifier`,
           `causal_compression`, `comparative_aside`, `verdict_landing`.
@@ -2502,7 +2547,6 @@ def episode_architecture_instructions(
         - `approx_runtime_minutes`
         - `primitive_ids`
         - `priority_core_passage_ids`
-        - `key_terms`
         - `authorial_passages`
         - `term_explanations`
         - `actor_explanations`
@@ -2539,7 +2583,6 @@ def episode_architecture_instructions(
           - `close`: exits the episode without reopening or re-answering it.
         - `becomes_obvious`: the listener-facing realization newly legible by the section's end. One clause; control metadata, not prose.
         - `answer_contribution`: how this section changes the episode's answer trajectory. One clause.
-        - `theme_link`: how this section connects to the episode's overall theme. One clause; it informs emphasis and is never paraphrased into the script.
         - `what_remains_live`: the pressure, ambiguity, consequence, or inheritance the next section (or the final exit) should carry. One clause.
         - `state_effects`: the continuity/state mutations the section causes, nested as
           `question_moves`, `memory_thread_moves`, `host_mystery_moves`,
@@ -2585,11 +2628,16 @@ def episode_architecture_instructions(
         - Place them at genuine turns and landings, NOT mechanically at every section close.
           Spread `persona_aside` beats across the episode and across phases; do not stack them all
           in `close` and do not put them all in the closing section.
-        - `eligible_phases` says which scene phase(s) may realize the beat; `rationale` says why this
-          section earns it. Most sections need ZERO host beats; reserve them for sections that change
-          the host's view or land a consequence.
-        - Across the whole episode, designate at most `target_persona_asides_per_episode` (from the
-          narrator profile) `persona_aside` beats.
+        - `eligible_phases` is a non-empty subset of exactly `{{"open", "pivot", "close"}}`
+          — these are the only legal scene phases for a host beat. Do NOT use `"mid"`,
+          `"middle"`, or any label outside that triple; any other value will be rejected.
+          (Note: `authorial_passages.placement` uses a different triple — `{{open, mid,
+          close}}` — do not transfer that vocabulary to `host_beat_designations`.)
+        - `rationale` says why this section earns the beat. Most sections need ZERO host
+          beats; reserve them for sections that change the host's view or land a
+          consequence.
+        - Across the whole episode, designate at most `target_persona_asides_per_episode`
+          (from the narrator profile) `persona_aside` beats.
 
         ARCHITECTURE-LEVEL REQUIRED FIELDS
         - `major_turn_section_id`
@@ -2635,7 +2683,6 @@ def episode_architecture_instructions(
         - Heavier interpretive landing belongs mainly in `answer`, `afterpressure`, and `close` sections; other sections should usually earn it through concrete pressure first.
         - Keep runtime weight uneven when the argument needs it; do not spread
           sections evenly by default.
-        - `key_terms` should only name terms that must remain audible in the prose.
         - `authorial_passages` should be numerous enough to carry the episode's real
           explanatory burden, but still specific and evidence-backed.
         - `term_explanations` should distinguish full definition, payoff, and later reminder work; foundational introduction episodes should usually create both `define` and `payoff`.
@@ -2646,8 +2693,6 @@ def episode_architecture_instructions(
           sound-or-silence handle, not soundtrack direction.
         - `section_sonic_plan.opening_pressure` should explain why hearing that
           opening cue matters in this section.
-        - `section_sonic_plan.opening_realization_note` is brief control
-          metadata, not prose.
         - `section_sonic_plan.later_beats` may contain at most two later sonic
           turns. Each beat should carry `moment`, `cue`, and optional `why_here`.
         - Do not invent extra sonic categories or taxonomies beyond
@@ -2922,7 +2967,7 @@ def episode_writing_instructions() -> str:
             - Preserve the binding `architecture.sections` order.
             - Treat `architecture.sections[].must_stage_beats`, `section_progression`
               (its `becomes_obvious`, `what_remains_live`, and `state_effects` moves),
-              `key_terms`, `authorial_passages`, `term_explanations`,
+              `authorial_passages`, `term_explanations`,
               `actor_explanations`, and `section_sonic_plan` as the binding
               section-level obligations.
             - Realize each section's `section_progression.becomes_obvious` by its end,
@@ -3209,7 +3254,7 @@ def episode_writing_no_citations_instructions() -> str:
 
         SECTION AND SCENE EXECUTION
         - For each output section:
-          - Read the section's `must_stage_beats`, `section_progression`, `key_terms`,
+          - Read the section's `must_stage_beats`, `section_progression`,
             `authorial_passages`, `term_explanations`,
             `actor_explanations`, and `section_sonic_plan`.
           - Draft through the section's scene cards in order.
@@ -3841,7 +3886,6 @@ def style_audit_instructions() -> str:
         - `must_land_facts` (binding `required` + `strongly_preferred` aggregated from this section's scene cards)
         - `citations` (binding; every citation here must survive in the output)
         - `host_moves`
-        - `key_terms`
         - `authorial_passages`
         - `term_explanations`
         - `actor_explanations`
@@ -3855,7 +3899,7 @@ def style_audit_instructions() -> str:
         - `must_land_facts`, `citations`, `scene_card_ids`, and
           `actor_explanation_realizations` are binding contracts from upstream.
         - `purpose`, `open_mode`, `anchor`, `section_progression`,
-          `inherited_pressure`, `host_moves`, `key_terms`, `authorial_passages`,
+          `inherited_pressure`, `host_moves`, `authorial_passages`,
           `term_explanations`, `actor_explanations`, `host_policy`, and optional
           `series_explanation_registry` are control signals.
         - `open_mode` records how the section was opened (scene/voice/question/condition).

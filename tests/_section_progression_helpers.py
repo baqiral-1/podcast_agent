@@ -34,7 +34,6 @@ def make_section_progression(
         "answer_contribution": (
             f"This section advances the episode answer at the {stage} stage{suffix}."
         ),
-        "theme_link": f"Ties this section's pressure to the episode theme{suffix}.",
         "what_remains_live": (
             "The episode exits without reopening the answer."
             if is_close

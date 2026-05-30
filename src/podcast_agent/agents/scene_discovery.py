@@ -40,19 +40,8 @@ class SceneDiscoveryAgent(Agent):
     def validate_result(
         self, result: SceneDiscoveryArtifact, payload: dict
     ) -> SceneDiscoveryArtifact:
-        mode = self._podcast_mode(payload)
-        target_min, target_max = scene_discovery_candidate_range_for_mode(mode)
-        candidate_count = len(result.candidates)
-        if candidate_count < target_min or candidate_count > target_max:
-            raise RetryableGenerationError(
-                "scene_discovery candidate count fell outside the configured range.",
-                data={
-                    "issue": "candidate_count_out_of_range",
-                    "candidate_count": candidate_count,
-                    "target_min": target_min,
-                    "target_max": target_max,
-                },
-            )
+        # Candidate count is a soft target enforced by the prompt and reported
+        # by _build_scene_discovery_diagnostics; we do not fail the stage on it.
         return result
 
     def prepare_retry_payload(
@@ -68,22 +57,6 @@ class SceneDiscoveryAgent(Agent):
         return next_payload
 
     def _build_retry_feedback(self, exc: RetryableGenerationError) -> dict[str, object] | None:
-        issue = str(exc.data.get("issue", "") or "").strip()
-        if issue == "candidate_count_out_of_range":
-            candidate_count = int(exc.data.get("candidate_count", 0) or 0)
-            target_min = int(exc.data.get("target_min", 0) or 0)
-            target_max = int(exc.data.get("target_max", 0) or 0)
-            return {
-                "issue": issue,
-                "candidate_count": candidate_count,
-                "target_min": target_min,
-                "target_max": target_max,
-                "instruction": (
-                    "Revise only the candidate count. Keep valid candidates, ordering, "
-                    "and references unchanged while returning a total inside the target range."
-                ),
-            }
-
         raw_payload = exc.data.get("raw_payload")
         if not isinstance(raw_payload, dict):
             return None

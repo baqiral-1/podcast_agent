@@ -581,7 +581,7 @@ class TestRedesignedAgents:
         )
         assert "- `kind`:" not in instructions
         assert (
-            "`target_authorial_passages_per_episode` should usually land around 12–16."
+            "`target_authorial_passages_per_episode` should usually land around 8–11."
             in instructions
         )
         # CHOOSE blocks moved from skeleton to enrichment.
@@ -834,6 +834,38 @@ class TestRedesignedAgents:
             }
         ]
 
+    def test_primitive_function_tagging_prompt_lists_allowed_overlay_keys(self):
+        from podcast_agent.schemas.models import (
+            PRIMITIVE_OVERLAY_COMMON_FIELDS,
+            PRIMITIVE_OVERLAY_DEFERRED_FIELDS_BY_SUBSTRATE,
+            primitive_overlay_allowed_fields,
+        )
+
+        # Schema-derived expected vocabulary per substrate.
+        for substrate in PrimitiveSubstrate:
+            expected = primitive_overlay_allowed_fields(substrate)
+            assert (
+                expected
+                == PRIMITIVE_OVERLAY_COMMON_FIELDS
+                + PRIMITIVE_OVERLAY_DEFERRED_FIELDS_BY_SUBSTRATE[substrate.value]
+            )
+
+            agent = PrimitiveFunctionTaggingAgent(_mock_llm(), substrate=substrate)
+            instructions = agent.build_instructions(
+                agent.build_payload(
+                    project_id="proj",
+                    podcast_mode="full",
+                    base_primitives=[],
+                    passage_list=[],
+                )
+            )
+            assert "ALLOWED OVERLAY KEYS" in instructions
+            for field_name in expected:
+                assert f"`{field_name}`" in instructions
+            # Reasoning-note hallucination redirect.
+            assert "`functions_note`" in instructions
+            assert "`salience.justification`" in instructions
+
     def test_theme_decomposition_agent_retries_transient_error(self):
         llm = _mock_llm()
         expected = object()
@@ -988,7 +1020,7 @@ class TestRedesignedAgents:
         assert payload["series_actor_explanation_registry"][0]["actor_id"] == "kermit_roosevelt"
         assert payload["actor_metadata"]["actors"][0]["actor_id"] == "actor_1"
         assert payload["architecture_feedback"]["issue"] == "missing_turn"
-        assert "Convert the episode spine into 14–21 binding sections." in instructions
+        assert "Convert the episode spine into 12–16 binding sections." in instructions
         assert (
             "The final section must use `purpose` = `closing` (aligned with `stage = close`)."
             in instructions
@@ -1012,7 +1044,7 @@ class TestRedesignedAgents:
         assert "`host_mystery_moves`" in instructions
         assert "`host_assumption_moves`" in instructions
         assert "`host_theory_moves`" in instructions
-        assert "17–22 total `authorial_passages`" in instructions
+        assert "12–15 total `authorial_passages`" in instructions
         assert "are not scene cards, scene counts" in instructions
         assert (
             "The first `must_stage_beats` item should usually open from the section" in instructions
@@ -1051,9 +1083,9 @@ class TestRedesignedAgents:
 
         assert "Convert the episode spine into 7–9 binding sections." in instructions
         assert (
-            "Most minified episodes should carry 12–16 total `authorial_passages`." in instructions
+            "Most minified episodes should carry 8–11 total `authorial_passages`." in instructions
         )
-        assert "Dense minified sections may use 2–5 `authorial_passages`" in instructions
+        assert "Dense minified sections may use 1–4 `authorial_passages`" in instructions
 
     def test_episode_planning_agent_payload(self):
         agent = EpisodePlanningAgent(_mock_llm())
@@ -1714,6 +1746,162 @@ class TestRedesignedAgents:
         )
         assert "`section_sonic_plan.obligation` must be exactly" in prompt
         assert "`required` or `preferred`." in prompt
+        # peripheral_touch grounding rewrite (proposal 2): the prompt must
+        # explicitly name `structural_only` as the legal escape and reject
+        # ungrounded peripheral_touch.
+        assert "Grounding rule (strict)" in prompt
+        assert "fallback_mode = structural_only" in prompt
+        assert "never emit `peripheral_touch`" in prompt
+        assert "non-structural fallback) with empty `grounding_passage_ids`" in prompt
+        assert "peripheral_touch`\n  is reserved for a genuine absent-with-glance" in prompt
+        # eligible_phases enumeration (proposal 4).
+        assert '`eligible_phases` is a non-empty subset of exactly `{"open", "pivot", "close"}`' in prompt
+        assert 'Do NOT use `"mid"`' in prompt
+        # architecture_feedback bullet rewrite (proposal 3).
+        assert "treat its `instruction` as a hard override" in prompt
+        assert "`source=inner_retry`" in prompt
+
+    def test_episode_architecture_agent_prepare_retry_payload_writes_validation_feedback(
+        self,
+    ):
+        # Inner-loop feedback injection (proposal 1): on a Pydantic ValidationError
+        # wrapped in RetryableGenerationError, the agent must populate
+        # architecture_feedback with a schema_validation_failed instruction that
+        # names the failing fields AND the peripheral_touch repair rule.
+        agent = EpisodeArchitectureAgent(_mock_llm())
+        raw_payload = {
+            "episode_number": 11,
+            "sections": [
+                {"section_id": "s1_poison", "priority_core_passage_ids": ["0e001h"]},
+                {"section_id": "s4_dual", "priority_core_passage_ids": []},
+            ],
+        }
+        cause = ValidationError.from_exception_data(
+            "EpisodeArchitecture",
+            [
+                {
+                    "type": "value_error",
+                    "loc": ("sections", 0, "thread_binding"),
+                    "msg": "Value error, a peripheral_touch fallback must ground in at least one passage",
+                    "input": {"fallback_mode": "peripheral_touch"},
+                    "ctx": {
+                        "error": ValueError(
+                            "a peripheral_touch fallback must ground in at least one passage"
+                        )
+                    },
+                },
+                {
+                    "type": "value_error",
+                    "loc": ("sections", 1, "thread_binding"),
+                    "msg": "Value error, a peripheral_touch fallback must ground in at least one passage",
+                    "input": {"fallback_mode": "peripheral_touch"},
+                    "ctx": {
+                        "error": ValueError(
+                            "a peripheral_touch fallback must ground in at least one passage"
+                        )
+                    },
+                },
+            ],
+        )
+        exc = RetryableGenerationError(
+            "Schema validation failed for episode_architecture",
+            data={"raw_payload": raw_payload},
+        )
+        exc.__cause__ = cause
+        payload = {
+            "episode": {"episode_number": 11},
+            "support_passages": [
+                {"passage_id": "0400d8"},
+                {"passage_id": "09004r"},
+            ],
+        }
+
+        next_payload = agent.prepare_retry_payload(payload, exc)
+
+        feedback = next_payload["architecture_feedback"]
+        assert feedback["issue"] == "schema_validation_failed"
+        assert feedback["source"] == "inner_retry"
+        instr = feedback["instruction"]
+        assert "previous attempt produced an invalid episode architecture" in instr
+        assert "sections.0.thread_binding" in instr
+        assert "sections.1.thread_binding" in instr
+        assert "peripheral_touch repair rule" in instr
+        assert "structural_only" in instr
+        # Per-section available passage list rendered from raw_payload +
+        # episode-level support_passages.
+        assert "section `s1_poison`" in instr
+        assert '"0e001h"' in instr
+        assert '"0400d8"' in instr
+        # The section with no priority_core_passage_ids but episode support
+        # available should still show the support-passage IDs.
+        assert "section `s4_dual`" in instr
+        assert '"09004r"' in instr
+
+    def test_episode_architecture_agent_prepare_retry_payload_handles_eligible_phases_literal(
+        self,
+    ):
+        # Literal "mid" hallucination (Theme B). The inner-loop feedback must
+        # call out the legal triple and explicitly reject `mid`.
+        agent = EpisodeArchitectureAgent(_mock_llm())
+        cause = ValidationError.from_exception_data(
+            "EpisodeArchitecture",
+            [
+                {
+                    "type": "literal_error",
+                    "loc": (
+                        "sections",
+                        6,
+                        "host_beat_designations",
+                        1,
+                        "eligible_phases",
+                        0,
+                    ),
+                    "msg": "Input should be 'open', 'pivot' or 'close'",
+                    "input": "mid",
+                    "ctx": {"expected": "'open', 'pivot' or 'close'"},
+                },
+            ],
+        )
+        exc = RetryableGenerationError(
+            "Schema validation failed for episode_architecture",
+            data={"raw_payload": {"sections": []}},
+        )
+        exc.__cause__ = cause
+        payload = {"episode": {"episode_number": 8}, "support_passages": []}
+
+        next_payload = agent.prepare_retry_payload(payload, exc)
+
+        instr = next_payload["architecture_feedback"]["instruction"]
+        assert "eligible_phases repair rule" in instr
+        assert "`open`, `pivot`, `close`" in instr
+        assert "`mid`" in instr
+
+    def test_episode_architecture_agent_prepare_retry_payload_handles_json_parse_error(
+        self,
+    ):
+        # JSON-parse failure (Theme C): no Pydantic cause, but the exception
+        # carries parse_error_line/column. The feedback should mark
+        # generation_unparseable and surface the parse coordinates.
+        agent = EpisodeArchitectureAgent(_mock_llm())
+        exc = RetryableGenerationError(
+            "JSON parsing failed for episode_architecture: Expecting ',' delimiter: line 422 column 10 (char 25225)",
+            data={
+                "raw_content": "{...}",
+                "parse_error_line": 422,
+                "parse_error_column": 10,
+                "parse_error_char": 25225,
+            },
+        )
+        payload = {"episode": {"episode_number": 6}, "support_passages": []}
+
+        next_payload = agent.prepare_retry_payload(payload, exc)
+
+        feedback = next_payload["architecture_feedback"]
+        assert feedback["issue"] == "generation_unparseable"
+        assert feedback["source"] == "inner_retry"
+        assert feedback["parse_error_line"] == 422
+        assert feedback["parse_error_column"] == 10
+        assert "not valid JSON" in feedback["instruction"]
 
     @pytest.mark.parametrize(
         "prompt_builder",

@@ -145,29 +145,26 @@ def test_section_thread_ref_evidence_gate_ladder():
         presence="carried",
         carrying_member_id="anchor",
         thread_movement="loses his post",
-        binds_to_answer_via="the decree lands on him",
         grounding_primitive_ids=["p"],
         grounding_passage_ids=["x"],
     )
     with pytest.raises(ValidationError):
-        SectionThreadRef(presence="carried", thread_movement="m", binds_to_answer_via="b")
+        SectionThreadRef(presence="carried", thread_movement="m")
     # peripheral needs a passage
     SectionThreadRef(
         presence="peripheral",
         thread_movement="m",
-        binds_to_answer_via="b",
         grounding_passage_ids=["x"],
     )
     with pytest.raises(ValidationError):
-        SectionThreadRef(presence="peripheral", thread_movement="m", binds_to_answer_via="b")
+        SectionThreadRef(presence="peripheral", thread_movement="m")
     # absent must declare a non-none fallback
     with pytest.raises(ValidationError):
-        SectionThreadRef(presence="absent", thread_movement="m", binds_to_answer_via="b")
+        SectionThreadRef(presence="absent", thread_movement="m")
     SectionThreadRef(
         presence="absent",
         fallback_mode="structural_only",
         thread_movement="the family is offstage this section",
-        binds_to_answer_via="the mechanism advances without them",
     )
 
 
@@ -186,14 +183,12 @@ def test_thread_binding_on_section_canonical():
                 "stage": "setup",
                 "becomes_obvious": "the throne can enter the shrine",
                 "answer_contribution": "opens the question",
-                "theme_link": "state vs sanctuary",
                 "what_remains_live": "who answers for it",
             },
             "thread_binding": {
                 "presence": "carried",
                 "carrying_member_id": "anchor",
                 "thread_movement": "is seized in the sanctuary",
-                "binds_to_answer_via": "the violation is felt on his body",
                 "grounding_primitive_ids": ["pr1"],
                 "grounding_passage_ids": ["x1"],
             },
@@ -277,7 +272,6 @@ def test_section_validates_without_thread_binding():
                 "stage": "setup",
                 "becomes_obvious": "x",
                 "answer_contribution": "y",
-                "theme_link": "z",
                 "what_remains_live": "w",
             },
         }

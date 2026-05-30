@@ -329,7 +329,6 @@ def _episode_architecture(
         episode_number=1,
         major_turn_section_id=normalized_sections[min(2, len(normalized_sections) - 1)].section_id,
         allowed_recurring_primitive_ids=list(allowed_recurring_primitive_ids or []),
-        forbidden_redundancies=[],
         sections=normalized_sections,
         architecture_notes=[],
     )
@@ -512,7 +511,7 @@ def test_build_episode_architecture_realization_reports_omitted_support_and_reca
     assert realization["missing_recall_primitive_ids"] == ["recall_1"]
     assert realization["warning_count"] >= 4
     assert (
-        "architecture_section_count_below_target: 4 < 14 (target range 14-21)"
+        "architecture_section_count_below_target: 4 < 12 (target range 12-16)"
         in realization["warnings"]
     )
     assert any(
@@ -533,7 +532,7 @@ def test_build_episode_architecture_realization_skips_section_count_warning_insi
             ArchitectureSection(
                 section_id=section_id,
                 purpose="opening" if idx == 0 else "closing" if idx == closing_idx else "setup",
-                approx_runtime_minutes=15.0,
+                approx_runtime_minutes=10.0,
                 primitive_ids=["core_1"],
                 section_question=f"Q{idx + 1}?",
                 section_resolution=f"R{idx + 1}",
@@ -615,17 +614,14 @@ def test_build_episode_architecture_realization_warns_for_missing_payoff_and_low
                 pressure_type="mass_political",
                 resolution_type="escalation",
                 closure_level="low",
-                key_terms=["taqlid", "marjaiya", "ijtihad", "khums"],
                 term_explanations=[
                     {
                         "item_id": "taqlid",
                         "stage": "define",
-                        "plain_gloss_seed": "follow a recognized jurist",
                     },
                     {
                         "item_id": "marjaiya",
                         "stage": "define",
-                        "plain_gloss_seed": "clerical ranking",
                     },
                 ],
                 host_presence_beats=[
@@ -664,7 +660,6 @@ def test_build_episode_architecture_realization_warns_for_missing_payoff_and_low
                     {
                         "item_id": "marjaiya",
                         "stage": "define",
-                        "plain_gloss_seed": "clerical ranking",
                     }
                 ],
                 host_presence_beats=[

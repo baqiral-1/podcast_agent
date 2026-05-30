@@ -361,16 +361,16 @@ class PipelineConfig(StrictModel):
     episode_write_concurrency: int = Field(default=8, ge=1)
     episode_writing_batch_count: int = Field(default=5, ge=1)
     spoken_delivery_concurrency: int | None = Field(default=8, ge=1)
-    architecture_section_target_min: int = Field(default=14, ge=1)
-    architecture_section_target_max: int = Field(default=21, ge=1)
+    architecture_section_target_min: int = Field(default=12, ge=1)
+    architecture_section_target_max: int = Field(default=16, ge=1)
     # Density budget: at most N sections per episode may run in the dense band.
     max_dense_sections_per_episode: int = Field(default=2, ge=0, le=4)
     dense_section_runtime_min_minutes: float = Field(default=16.0, gt=0.0)
-    dense_section_runtime_max_minutes: float = Field(default=21.0, gt=0.0)
+    dense_section_runtime_max_minutes: float = Field(default=22.0, gt=0.0)
     # Non-dense runtime guardrails. Closing section is exempt (must be <= 2.0 min by
     # the architecture validator).
-    section_runtime_floor_minutes: float = Field(default=4.5, gt=0.0)
-    section_runtime_ceiling_minutes: float = Field(default=15.0, gt=0.0)
+    section_runtime_floor_minutes: float = Field(default=6.0, gt=0.0)
+    section_runtime_ceiling_minutes: float = Field(default=14.0, gt=0.0)
     # Series runtime envelope. When None, derived from episode count * per-episode
     # bounds in the orchestrator.
     series_runtime_target_min_minutes: float | None = None
@@ -509,8 +509,8 @@ def _scale_range_floor_by_ratio(range_values: tuple[int, int], *, ratio: float) 
     return reduced_lower, max(reduced_lower, reduced_upper)
 
 
-MINIFIED_AUTHORIAL_PASSAGE_TARGET_RANGE: tuple[int, int] = (12, 16)
-MINIFIED_DENSE_SECTION_AUTHORIAL_PASSAGE_RANGE: tuple[int, int] = (2, 5)
+MINIFIED_AUTHORIAL_PASSAGE_TARGET_RANGE: tuple[int, int] = (8, 11)
+MINIFIED_DENSE_SECTION_AUTHORIAL_PASSAGE_RANGE: tuple[int, int] = (1, 4)
 
 
 def _scale_range_containing_span(base_range: tuple[int, int], multiplier: float) -> tuple[int, int]:
@@ -518,8 +518,8 @@ def _scale_range_containing_span(base_range: tuple[int, int], multiplier: float)
     return math.floor(lower_bound * multiplier), math.ceil(upper_bound * multiplier)
 
 
-FULL_AUTHORIAL_PASSAGE_TARGET_RANGE: tuple[int, int] = (17, 22)
-FULL_DENSE_SECTION_AUTHORIAL_PASSAGE_RANGE: tuple[int, int] = (3, 7)
+FULL_AUTHORIAL_PASSAGE_TARGET_RANGE: tuple[int, int] = (12, 15)
+FULL_DENSE_SECTION_AUTHORIAL_PASSAGE_RANGE: tuple[int, int] = (2, 5)
 
 
 def authorial_passage_target_range_for_mode(
@@ -592,7 +592,7 @@ def scene_discovery_candidate_range_for_mode(
 ) -> tuple[int, int]:
     if PodcastMode(mode) == PodcastMode.MINIFIED:
         return 18, 26
-    return 78, 113
+    return 78, 150
 
 
 def resolve_pipeline_config_for_mode(config: "PipelineConfig") -> "PipelineConfig":
@@ -652,12 +652,13 @@ def resolve_pipeline_config_for_mode(config: "PipelineConfig") -> "PipelineConfi
             "narrative_strategy_episode_count_min": 8,
             "narrative_strategy_episode_count_max": 12,
             "episode_writing_batch_count": 5,
-            "architecture_section_target_min": 14,
-            "architecture_section_target_max": 21,
+            "architecture_section_target_min": 12,
+            "architecture_section_target_max": 16,
+            "max_dense_sections_per_episode": 2,
             "dense_section_runtime_min_minutes": 16.0,
-            "dense_section_runtime_max_minutes": 21.0,
-            "section_runtime_floor_minutes": 4.5,
-            "section_runtime_ceiling_minutes": 15.0,
+            "dense_section_runtime_max_minutes": 22.0,
+            "section_runtime_floor_minutes": 6.0,
+            "section_runtime_ceiling_minutes": 14.0,
             "min_episode_minutes": 124.0,
             "max_episode_minutes": 145.0,
             "scene_card_target_min": 41,
@@ -1001,6 +1002,45 @@ class NarrationHooks(StrictModel):
         "comparative_aside",
         "verdict_landing",
     ] = "none"
+
+
+#: Overlay fields that are valid for every substrate's enrichment overlay.
+PRIMITIVE_OVERLAY_COMMON_FIELDS: tuple[str, ...] = (
+    "functions",
+    "salience",
+    "pivot",
+    "stake",
+    "texture",
+    "cost",
+    "complication",
+    "recurrence",
+    "contest",
+    "narration_hooks",
+)
+
+#: Deferred substrate-detail fields the function-tagging pass may fill, by substrate.
+PRIMITIVE_OVERLAY_DEFERRED_FIELDS_BY_SUBSTRATE: dict[str, tuple[str, ...]] = {
+    PrimitiveSubstrate.EVENTS.value: ("event_result",),
+    PrimitiveSubstrate.ACTS.value: ("immediate_result",),
+    PrimitiveSubstrate.ACTOR_PORTRAITS.value: ("operating_pressure",),
+    PrimitiveSubstrate.MECHANISMS.value: ("operating_chain", "inputs", "outputs"),
+    PrimitiveSubstrate.CONDITIONS.value: ("active_tension",),
+    PrimitiveSubstrate.ARTIFACTS.value: ("artifact_detail",),
+    PrimitiveSubstrate.READINGS.value: (),
+}
+
+
+def primitive_overlay_allowed_fields(substrate: PrimitiveSubstrate | str) -> tuple[str, ...]:
+    """Return the ordered allowlist of overlay keys for one substrate.
+
+    The order is the common-fields order followed by the substrate's deferred
+    fields. Used by both the schema-validation feedback path and the prompt to
+    keep the model's allowlist in lockstep with the schema.
+    """
+    substrate_value = PrimitiveSubstrate(substrate).value
+    return PRIMITIVE_OVERLAY_COMMON_FIELDS + PRIMITIVE_OVERLAY_DEFERRED_FIELDS_BY_SUBSTRATE.get(
+        substrate_value, ()
+    )
 
 
 class PrimitiveEnrichmentOverlay(StrictModel):
@@ -2162,7 +2202,6 @@ class SectionThreadRef(StrictModel):
     presence: ThreadSectionPresence
     fallback_mode: ThreadFallbackMode = ThreadFallbackMode.NONE
     thread_movement: str = Field(min_length=1)
-    binds_to_answer_via: str = Field(min_length=1)
     return_obligation: str = ""
     grounding_primitive_ids: list[str] = Field(default_factory=list)
     grounding_passage_ids: list[str] = Field(default_factory=list)
@@ -3201,10 +3240,7 @@ class AuthorialPassage(StrictModel):
     claim_certainty: Literal["settled", "probable", "contested_memory"] = "settled"
     source_primitive_ids: list[str] = Field(default_factory=list, min_length=1, max_length=3)
     source_passage_ids: list[str] = Field(default_factory=list, max_length=4)
-    counter_source_passage_ids: list[str] = Field(default_factory=list, max_length=4)
     quote_anchor: str = ""
-    gloss_seed: str = ""
-    must_name_terms: list[str] = Field(default_factory=list, max_length=4)
     budget_sentences: Literal[2, 3, 4, 5, 6] = 3
 
     @model_validator(mode="after")
@@ -3224,7 +3260,6 @@ class TermExplanationPlan(StrictModel):
     item_id: str = Field(min_length=1)
     stage: Literal["define", "payoff", "reminder"]
     delivery_zone: Literal["open", "mid", "close"] = "mid"
-    plain_gloss_seed: str = ""
     must_survive_style_audit: bool = True
 
 
@@ -3311,13 +3346,11 @@ class SectionSonicPlan(StrictModel):
     obligation: SectionSonicObligation = SectionSonicObligation.PREFERRED
     opening_anchor: str = Field(min_length=1)
     opening_pressure: str = Field(min_length=1)
-    opening_realization_note: str = ""
     later_beats: list[SectionSonicBeat] = Field(default_factory=list, max_length=2)
 
     @field_validator(
         "opening_anchor",
         "opening_pressure",
-        "opening_realization_note",
         mode="before",
     )
     @classmethod
@@ -3352,11 +3385,10 @@ class SectionProgression(StrictModel):
     stage: ProgressionStage
     becomes_obvious: str = Field(min_length=1)
     answer_contribution: str = Field(min_length=1)
-    theme_link: str = Field(min_length=1)
     what_remains_live: str = Field(min_length=1)
     state_effects: SectionStateEffects = Field(default_factory=SectionStateEffects)
 
-    @field_validator("becomes_obvious", "answer_contribution", "theme_link", "what_remains_live")
+    @field_validator("becomes_obvious", "answer_contribution", "what_remains_live")
     @classmethod
     def _strip_required_prose(cls, value: str) -> str:
         cleaned = value.strip()
@@ -3384,7 +3416,6 @@ class ArchitectureSection(StrictModel):
     section_anchor: str = Field(default="")
     must_stage_beats: list[str] = Field(default_factory=list, max_length=4)
     priority_core_passage_ids: list[str] = Field(default_factory=list)
-    key_terms: list[str] = Field(default_factory=list, max_length=6)
     authorial_passages: list[AuthorialPassage] = Field(default_factory=list, max_length=4)
     term_explanations: list[TermExplanationPlan] = Field(default_factory=list, max_length=4)
     actor_explanations: list[ActorExplanationPlan] = Field(default_factory=list, max_length=4)
@@ -3469,7 +3500,6 @@ class EpisodeArchitecture(StrictModel):
     episode_number: int = Field(ge=1)
     major_turn_section_id: str = Field(min_length=1)
     allowed_recurring_primitive_ids: list[str] = Field(default_factory=list)
-    forbidden_redundancies: list[str] = Field(default_factory=list)
     promised_beat_decisions: list[PromisedBeatDecisionRecord] = Field(default_factory=list)
     # Hard schema bounds widened (Change 1). Business policy (preferred 14-21
     # full / 6-10 minified) is enforced softly via

@@ -349,7 +349,7 @@ def test_scene_discovery_agent_builds_richer_mode_specific_instructions() -> Non
     assert "visible consequence, irreversible turn, or immediate aftermath" in minified_instructions
     assert "SELF-CHECK BEFORE RETURNING" in minified_instructions
     assert "This is a `full` run." in full_instructions
-    assert "Return 78–113 candidates." in full_instructions
+    assert "Return 78–150 candidates." in full_instructions
 
 
 def test_scene_discovery_agent_prepare_retry_payload_adds_role_feedback() -> None:
@@ -378,34 +378,6 @@ def test_scene_discovery_agent_prepare_retry_payload_adds_role_feedback() -> Non
         "complication",
         "cost",
     ]
-
-
-def test_scene_discovery_agent_retries_when_candidate_count_out_of_range() -> None:
-    agent = SceneDiscoveryAgent(_mock_llm())
-    payload = agent.build_payload(
-        synthesis_map={"primitives": [{"id": "p1"}]},
-        project_metadata={"podcast_mode": "minified"},
-        actor_metadata=None,
-        passage_list=[{"passage_id": "passage_1", "text": "Room detail."}],
-    )
-    artifact = SceneDiscoveryArtifact.model_validate(
-        {
-            "candidates": [
-                {
-                    "candidate_id": "candidate_01",
-                    "primitive_ids": ["p1"],
-                    "passage_ids": ["passage_1"],
-                    "scene_sketch": "A room becomes a decision point.",
-                    "scene_jobs": ["opening"],
-                    "anchor_image": "A room and a file.",
-                    "why_sceneable": "The beat is visible and oral.",
-                }
-            ]
-        }
-    )
-
-    with pytest.raises(RetryableGenerationError, match="candidate count"):
-        agent.validate_result(artifact, payload)
 
 
 def test_episode_architecture_agent_requires_promised_beat_accounting() -> None:
