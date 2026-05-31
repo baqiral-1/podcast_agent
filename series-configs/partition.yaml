@@ -1,0 +1,103 @@
+slug: the-partition-of-india-follow
+series_title: The Partition of India
+proto_badge: Prototype · v41
+
+run_dir: ../runs/independence_v41
+template: ../templates/player.html
+out: ../docs/the-partition-of-india-follow.html
+# Also write the built HTML to the published filename so it stays in sync.
+mirror_out: ../docs/the-partition-of-india.html
+
+# Smart-cap long auto-cleaned event/act labels at this length (word boundary +
+# trailing conjunction/preposition strip, no "…" suffix). Curated aliases bypass.
+label_cap_chars: 36
+
+# Episodes 1–8 are published as a GitHub release; eps 9–13 are not yet
+# synthesized, so those will 404 on play until a later release adds them.
+audio_base_url: https://github.com/baqiral-1/podcast_agent/releases/download/partition-of-india-episodes-1-8-20260420T0000/
+audio_filename_pattern: episode-{ep}.mp3
+
+# Episode cover images — drawn from the partition asset set in docs/images/.
+image_by_ep:
+  1:  images/partition-2.jpg
+  2:  images/partition-salt-march.jpg
+  3:  images/partition-gandhi.jpg
+  4:  images/partition-jinnah-gandhi.jpg
+  5:  images/partition-3.jpg
+  6:  images/partition-leaders.jpg
+  7:  images/partition-jinnah.jpg
+  8:  images/partition-mountbatten.jpg
+  9:  images/partition-4.jpg
+  10: images/partition-nehru.jpg
+  11: images/partition-5.jpg
+  12: images/partition-refugees.jpg
+  13: images/partition-7.jpg
+
+# Per-actor role tags — pipeline doesn't carry these.
+# Keys are actor_id from actor_metadata.json. Only actors who actually appear
+# in any scene_cards[*].actors[*] get rendered; tagging the rest is harmless.
+role_tags:
+  mahatma_gandhi:          "INC LEADER · 1869–1948"
+  muhammad_ali_jinnah:     "MUSLIM LEAGUE · QUAID-E-AZAM"
+  jawaharlal_nehru:        "INC PRESIDENT · FIRST PM"
+  vallabhbhai_patel:       "INC · DEPUTY PM · 1947–50"
+  louis_mountbatten:       "LAST VICEROY · 1947"
+  br_ambedkar:             "DALIT LEADER · LAW MINISTER"
+  maulana_azad:            "INC PRESIDENT · 1940–46"
+  subhas_chandra_bose:     "FORWARD BLOC · INA"
+  vp_menon:                "REFORMS COMMISSIONER"
+  lord_wavell:             "VICEROY · 1943–47"
+  stafford_cripps:         "CRIPPS MISSION · 1942"
+  liaquat_ali_khan:        "ML · FIRST PM OF PAKISTAN"
+  winston_churchill:       "UK PM · 1940–45"
+  cyril_radcliffe:         "BOUNDARY COMMISSION"
+  nathuram_godse:          "GANDHI'S ASSASSIN"
+  master_tara_singh:       "AKALI DAL · SIKH LEADER"
+  sheikh_abdullah:         "NATIONAL CONFERENCE · KASHMIR"
+  hari_singh:              "MAHARAJA OF KASHMIR"
+  osman_ali_khan:          "NIZAM OF HYDERABAD"
+  aruna_asaf_ali:          "QUIT INDIA · 1942"
+  shah_nawaz_khan:         "INA · GENERAL"
+  bahadur_shah_zafar:      "LAST MUGHAL · 1857"
+  bhagat_singh:            "HSRA · 1907–31"
+  gopal_patha_mukherjee:   "GREAT CALCUTTA KILLINGS"
+  nana_sahib:              "1857 REBEL LEADER"
+  raj_kumar_shukla:        "CHAMPARAN PEASANT · 1917"
+
+# Timeline landmark threshold + curated aliases. Threshold is set above 1.0
+# so only explicitly-aliased events become landmarks (auto-promoted events
+# fall back to anonymous accent ticks under the axis).
+landmark_threshold: 1.01
+event_aliases:
+  # ── pre-Gandhian / foundational ──
+  e55: "1857 Mutiny"           # May 1857 — colonial preamble
+  # ── Gandhian movement ──
+  e52: "Champaran-Kheda"       # 1917-18 — Gandhi's first satyagrahas
+  e84: "Jallianwala Bagh"      # Apr 1919 — pivot to non-cooperation
+  e8:  "Non-Cooperation"       # 1920-22 — first mass movement
+  e10: "Chauri Chaura"         # Feb 1922 — Gandhi calls off NCM
+  e45: "Salt March"            # Mar-Apr 1930 — march to Dandi
+  e83: "Round Table"           # 1930-32 — constitutional negotiations
+  e69: "Bhagat Singh hanged"   # 1931 — revolutionary nationalism
+  # ── Muslim League rises ──
+  e80: "Lucknow League"        # 1937 — League revives
+  e7:  "Lahore Resolution"     # Mar 1940 — Pakistan demand crystallizes
+  # ── WW2 and Quit India ──
+  e11: "Cripps Mission"        # 1942 — pre-Quit India offer
+  e12: "Quit India"            # Aug 1942 — final mass movement
+  e15: "Bengal Famine"         # 1943 — colonial atrocity
+  e72: "INA at Imphal"         # Mar 1944 — Bose's army at the border
+  # ── post-war collapse ──
+  e13: "INA trials"            # Nov 1945 — Red Fort
+  e14: "RIN mutiny"            # Feb 1946 — military disaffection
+  e1:  "Cabinet Mission"       # Jun-Jul 1946 — political deal
+  e6:  "Direct Action Day"     # Aug 1946 — Great Calcutta Killings
+  e61: "Noakhali violence"     # Oct 1946 — religious cleansing
+  # ── partition ──
+  e17: "3 June Plan"           # Jun 1947 — partition plan announced
+  e18: "Radcliffe arrives"     # 8 Jul 1947 — boundary commission
+  e23: "Transfer of Power"     # Aug 1947 — India and Pakistan born
+  e25: "Forced migration"      # 1947-48 — millions displaced
+  # ── aftermath ──
+  e44: "Gandhi's last fast"    # Jan 1948 — communal peace bid
+  e42: "Gandhi assassinated"   # Jan 1948 — the closing scene
