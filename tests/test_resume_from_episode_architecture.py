@@ -31,6 +31,7 @@ from podcast_agent.schemas.models import (
     ThematicCorpus,
     ThematicProject,
     ExcerptArtifact,
+    ExcerptRecord,
 )
 
 
@@ -646,15 +647,12 @@ def _excerpt_record(
     excerpt_id: str = "x1",
     verbatim: str = "We must answer the call of history.",
     quotability: float = 0.62,
-) -> "ExcerptRecord":
-    from podcast_agent.schemas.models import ExcerptRecord
-
+) -> ExcerptRecord:
     return ExcerptRecord(
         id=excerpt_id,
         excerpt_type="speech",
         title="A quotable line",
         passage_ids=["passage_1"],
-        summary="The speaker addresses the crowd.",
         verbatim_excerpt=verbatim,
         plain_gloss="",
         quotability=quotability,
